@@ -22,21 +22,23 @@ public class NavMenuTests : BunitContext
 
         var navText = cut.Find("nav").TextContent;
         navText.Should().NotContain("Home");
-        navText.Should().Contain("Review");
-        navText.Should().Contain("Library");
-        navText.Should().Contain("Analysis");
+        navText.Should().Contain("Project Inputs");
+        navText.Should().Contain("Document Review");
+        navText.Should().Contain("Source Review");
+        navText.Should().Contain("Quality & Testing");
         navText.Should().Contain("Dashboard");
         navText.Should().Contain("Specification Explorer");
         navText.Should().NotContain("Specification Review");
         navText.Should().NotContain("QA Artifact Library");
         navText.Should().NotContain("Create Test Scenario");
-        navText.Should().NotContain("AI REVIEW");
+        navText.Should().NotContain("AI Review");
         navText.Should().NotContain("AI Change Review");
         navText.Should().NotContain("Spec Comparison");
         navText.Should().NotContain("Specification Deltas");
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal));
-        navText.IndexOf("Specification Explorer", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Sample Projects", StringComparison.Ordinal));
+        navText.IndexOf("Sample Projects", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal),
+            "project inputs come before the pages that consume them");
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();
         cut.Find("a[href='specification-explorer']").Should().NotBeNull();
@@ -60,7 +62,7 @@ public class NavMenuTests : BunitContext
         var cut = Render<NavMenu>();
 
         var navText = cut.Find("nav").TextContent;
-        navText.Should().Contain("AI REVIEW");
+        navText.Should().Contain("AI Review");
         navText.Should().Contain("AI Change Review");
         cut.Find("a[href='ai-change-auditor']").Should().NotBeNull();
     }

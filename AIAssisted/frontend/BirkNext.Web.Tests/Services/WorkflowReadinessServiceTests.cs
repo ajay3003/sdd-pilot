@@ -1,3 +1,4 @@
+using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,10 +24,11 @@ public sealed class WorkflowReadinessServiceTests
         readiness.WorkspaceLoaded.Should().BeFalse();
         readiness.WorkspaceName.Should().Be("No workspace loaded");
         readiness.Workspace.AvailableRoleCount.Should().Be(0);
-        readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        readiness.Steps.Should().ContainSingle(step => step.Key == WorkflowReadinessService.LoadWorkspaceKey);
+        readiness.NextRecommendedAction!.Title.Should().Be("Give BirkNext project context");
+        readiness.NextRecommendedAction.Key.Should().Be(WorkflowReadinessService.LoadWorkspaceKey);
+        readiness.IsOnboarding.Should().BeTrue();
+        readiness.Steps.Should().BeEmpty("the three project inputs are the way in, not a document step");
         readiness.CanRelease.Should().BeFalse();
-        readiness.ReleaseReason.Should().Contain("Load a workspace");
         readiness.ReleaseReadinessPercent.Should().BeNull("nothing is assessed without a workspace: no 0%");
         fixture.VerifyBackendNeverCalled();
     }
@@ -176,7 +178,8 @@ public sealed class WorkflowReadinessServiceTests
         readiness.CanRelease.Should().Be(expectedRelease);
         readiness.ReleaseReadinessPercent.Should().Be(expectedPercent);
         if (expectedCurrentStep is null)
-            readiness.NextRecommendedAction.Should().BeNull();
+            readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review",
+                "document steps done: the next applicable review, not nothing");
         else
             readiness.NextRecommendedAction!.Key.Should().Be(expectedCurrentStep);
     }
@@ -250,7 +253,11 @@ public sealed class WorkflowReadinessServiceTests
         public Fixture(CurrentWorkspaceSnapshot snapshot)
         {
             Projection = WorkspaceSnapshots.Projection(snapshot);
-            Service = new WorkflowReadinessService(Projection.Object, WorkflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
+            // No active Target Environment: no source and no target, so only the documents input varies in these tests.
+            var contexts = new Mock<IFrontendAnalysisContextFactory>();
+            contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
+            var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, Projection.Object);
+            Service = new WorkflowReadinessService(Projection.Object, applicability, WorkflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
         }
 
         public void VerifyBackendNeverCalled() =>

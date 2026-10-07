@@ -43,26 +43,43 @@
             </div>
         }
 
-        <div class="rw-workspace-status" role="status" aria-live="polite">
-            <div class="rw-status-header">
-                <span class="rw-section-label">Automatic State</span>
-                <span class="rw-artifact-count">Detection unlocks pages; it does not approve review work.</span>
+        <section class="rw-inputs" aria-labelledby="rw-inputs-heading" data-testid="rw-inputs">
+            <div class="rw-inputs-header">
+                <h2 id="rw-inputs-heading" class="rw-inputs-title">Project inputs</h2>
+                <p class="rw-inputs-lead">Documents, source and a target environment each unlock different reviews. Start with any of them; none is required for every project.</p>
             </div>
-            <div class="rw-status-indicators">
-                <span class="rw-artifact-badge @(_readiness.WorkspaceLoaded ? "is-detected" : "is-missing")" data-testid="rw-workspace-badge">
-                    <span class="rw-badge-icon">@(_readiness.WorkspaceLoaded ? "✓" : _readiness.WorkspaceError ? "!" : "-")</span>
-                    Workspace
-                </span>
-                @foreach (var role in _readiness.Workspace.Roles)
+            <div class="rw-input-grid" role="status" aria-live="polite">
+                @foreach (var input in _readiness.Inputs.All)
                 {
-                    <span class="rw-artifact-badge @(role.IsAvailable ? "is-detected" : "is-missing")" data-testid="rw-role-badge" data-role="@role.Role" data-availability="@role.Availability"
-                          title="@RoleTitle(role)">
-                        <span class="rw-badge-icon">@RoleIcon(role)</span>
-                        @role.Label
-                    </span>
+                    <article class="rw-input rw-input-@input.Kind.ToString().ToLowerInvariant() is-@input.Status.ToString().ToLowerInvariant()"
+                             data-testid="rw-input" data-kind="@input.Kind" data-status="@input.Status" aria-labelledby="rw-input-@input.Kind-title">
+                        <div class="rw-input-head">
+                            <h3 class="rw-input-title" id="rw-input-@input.Kind-title">@input.Title</h3>
+                            <span class="rw-input-requirement">@input.Requirement</span>
+                        </div>
+                        <p class="rw-input-status" data-testid="rw-input-status"><span class="rw-input-status-icon" aria-hidden="true">@InputIcon(input)</span>@input.StatusLabel</p>
+                        <p class="rw-input-detail">@input.Detail</p>
+                        @if (input.Kind == ProjectInputKind.Documents && _readiness.Workspace.WorkspaceLoaded)
+                        {
+                            <ul class="rw-input-facts" aria-label="Artifact roles">
+                                @foreach (var role in _readiness.Workspace.Roles)
+                                {
+                                    <li class="rw-artifact-badge @(role.IsAvailable ? "is-detected" : "is-missing")" data-testid="rw-role-badge" data-role="@role.Role" data-availability="@role.Availability"
+                                        title="@RoleTitle(role)"><span class="rw-badge-icon" aria-hidden="true">@RoleIcon(role)</span>@role.Label<span class="visually-hidden">: @(role.Availability switch { ArtifactRoleAvailability.Available => "available", ArtifactRoleAvailability.Unknown => "unknown", _ => "missing" })</span></li>
+                                }
+                            </ul>
+                        }
+                        else if (input.Facts.Count > 0)
+                        {
+                            <ul class="rw-input-facts">
+                                @foreach (var fact in input.Facts) { <li class="rw-input-fact">@fact</li> }
+                            </ul>
+                        }
+                        <a href="@input.Route" class="rw-input-action" data-testid="rw-input-action">@input.ActionLabel →</a>
+                    </article>
                 }
             </div>
-        </div>
+        </section>
 
         <div class="rw-layout">
             <main class="rw-main" aria-label="Recommended workflow">
@@ -78,8 +95,23 @@
                 </div>
                 <div class="rw-next-action-label">Why this is the next step</div>
                 <p class="rw-next-action-desc">@_readiness.NextRecommendedAction.Description</p>
-                @RenderQuickAction(_readiness.NextRecommendedAction)
+                <div class="rw-next-action-buttons">
+                    @RenderQuickAction(_readiness.NextRecommendedAction)
+                    @foreach (var alternative in _readiness.AlternativeActions)
+                    {
+                        <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
+                    }
+                </div>
             </div>
+        }
+        else if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
+        {
+            <p class="rw-no-next-action" data-testid="rw-no-next-action">No open recommendation: the document review steps are approved and no further review applies to the current inputs.</p>
+        }
+
+        @if (_readiness.Steps.Count > 0)
+        {
+            <h2 class="rw-section-heading">Document review steps</h2>
         }
 
         <div class="rw-phases">
@@ -128,6 +160,29 @@
             }
         </div>
 
+        @if (_readiness.ApplicableReviews.Count > 0)
+        {
+            <section class="rw-reviews" aria-labelledby="rw-reviews-heading" data-testid="rw-applicable-reviews">
+                <h2 id="rw-reviews-heading" class="rw-section-heading">Applicable reviews</h2>
+                <p class="rw-reviews-lead">Reviews the current inputs make applicable, grouped as in the sidebar. Applicability is not a result: open a review to run it.</p>
+                @foreach (var lane in _readiness.ApplicableReviews.GroupBy(r => r.Lane))
+                {
+                    <div class="rw-review-lane">
+                        <h3 class="rw-review-lane-title">@lane.Key</h3>
+                        <ul class="rw-review-list">
+                            @foreach (var review in lane)
+                            {
+                                <li data-testid="rw-applicable-review" data-review="@review.ReviewId">
+                                    <a href="@review.Route">@review.Label</a>
+                                    @if (review.Status == BirkNext.Applicability.ApplicabilityStatus.PartiallyApplicable) { <span class="rw-review-partial">Partial</span> }
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </section>
+        }
+
         @if (_readiness.CanRelease)
         {
             <div class="rw-release">
@@ -173,12 +228,16 @@
                                     <span class="rw-detail-value" data-testid="rw-project">@ProjectValue</span>
                                 </div>
                                 <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Artifact roles</span>
+                                    <span class="rw-detail-label">Documents</span>
                                     <span class="rw-detail-value" data-testid="rw-artifact-roles">@ArtifactRolesValue</span>
                                 </div>
                                 <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Manual Review</span>
-                                    <span class="rw-detail-value">@ManualApprovalValue</span>
+                                    <span class="rw-detail-label">Source</span>
+                                    <span class="rw-detail-value" data-testid="rw-source-summary">@InputSummary(_readiness.Inputs.Source)</span>
+                                </div>
+                                <div class="rw-detail-item">
+                                    <span class="rw-detail-label">Target</span>
+                                    <span class="rw-detail-value" data-testid="rw-target-summary">@InputSummary(_readiness.Inputs.Target)</span>
                                 </div>
                                 <div class="rw-detail-item">
                                     <span class="rw-detail-label">Release Readiness</span>
@@ -198,15 +257,14 @@
                         @if (_readiness.Workspace.State == CurrentWorkspaceState.NoWorkspace)
                         {
                             <div class="rw-no-workspace" data-testid="rw-no-workspace">
-                                <p>No workspace loaded.</p>
+                                <p>No document workspace loaded.</p>
                                 <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
                             </div>
                         }
                     </div>
 
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
-                        <MetricCard Value="@AutomaticSetupValue" Label="Automatic Setup" Sublabel="@AutomaticSetupSublabel" Variant="@AutomaticSetupVariant" />
-                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved, incl. optional" Variant="@ManualApprovalVariant" />
+                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
                         <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
                     </div>
                 </div>
@@ -269,10 +327,13 @@
     private int ManualApprovedCount =>
         ManualReviewSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
 
-    private string ManualApprovalValue => ManualReviewSteps.Count == 0 ? "None applicable" : $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
+    private string ManualApprovalValue => ManualReviewSteps.Count == 0 ? "Not required" : $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
 
-    private string ManualApprovalVariant =>
-        ManualReviewSteps.Count > 0 && ManualApprovedCount == ManualReviewSteps.Count ? "success" : "warning";
+    private string ManualApprovalSublabel => ManualReviewSteps.Count == 0 ? "No document review steps" : "Approved, incl. optional";
+
+    /// <summary>Neutral until complete: pending approvals are not a warning, and the text carries the state.</summary>
+    private string? ManualApprovalVariant =>
+        ManualReviewSteps.Count > 0 && ManualApprovedCount == ManualReviewSteps.Count ? "success" : null;
 
     private CurrentWorkspaceSnapshot? Workspace => _readiness?.Workspace;
 
@@ -286,26 +347,20 @@
     {
         { WorkspaceLoaded: true, AvailableRoleCount: > 0 } ws => ws.RoleSummary,
         { WorkspaceLoaded: true } => "None available",
-        _ => "-",
+        _ => "Not provided",
     };
 
-    private string AutomaticSetupValue => Workspace switch
+    private static string InputIcon(ProjectInput input) => input.Status switch
     {
-        { State: CurrentWorkspaceState.Error } => "Unavailable",
-        { WorkspaceLoaded: true, AvailableRoleCount: > 0 } => "Ready",
-        { WorkspaceLoaded: true } => "Setup required",
-        _ => "Missing",
+        ProjectInputStatus.Ready => "✓",
+        ProjectInputStatus.Partial or ProjectInputStatus.NeedsAttention => "!",
+        ProjectInputStatus.Unknown => "?",
+        _ => "○",
     };
 
-    private string AutomaticSetupSublabel => Workspace switch
-    {
-        { State: CurrentWorkspaceState.Error } => "Workspace could not be read",
-        { WorkspaceLoaded: true, AvailableRoleCount: > 0 } ws => ws.RoleSummary,
-        { WorkspaceLoaded: true } => "Workspace loaded, no artifact roles",
-        _ => "No workspace loaded",
-    };
-
-    private string AutomaticSetupVariant => AutomaticSetupValue == "Ready" ? "info" : "warning";
+    /// <summary>Sidebar line for an input: its status plus the most telling fact (archive, environment and host).</summary>
+    private static string InputSummary(ProjectInput input) =>
+        input.Facts.Count == 0 ? input.StatusLabel : $"{input.StatusLabel} · {string.Join(" · ", input.Facts.Take(2))}";
 
     /// <summary>Not assessed (nothing reviewed yet, or nothing to review) is shown as a dash, never as 0%.</summary>
     private string ReleaseReadinessValue =>
@@ -341,8 +396,8 @@
              + (role.Selection == ArtifactRoleSelection.SelectionRequired ? ", selection required" : ""),
     };
 
-    private string ReleaseReadinessVariant =>
-        _readiness?.CanRelease == true ? "success" : "info";
+    private string? ReleaseReadinessVariant =>
+        _readiness?.CanRelease == true ? "success" : null;
 
     private static bool IsManualReviewStep(WorkflowStepViewModel step) =>
         !IsLoadWorkspaceStep(step) && (step.RequiresManualReview || step.RequiresApproval);

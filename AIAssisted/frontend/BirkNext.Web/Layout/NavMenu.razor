@@ -20,7 +20,6 @@
     <nav class="flex-column" aria-label="Main">
         @foreach (var group in NavigationCatalog.Sections)
         {
-            if (!group.Visible(FeatureViz)) continue;
             var items = group.Items.Where(i => i.Visible(FeatureViz)).ToList();
             if (items.Count == 0) continue;
             var collapsed = _sections.IsCollapsed(group.Id);
@@ -28,7 +27,7 @@
             <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
                     aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
                     @onclick="() => _sections.Toggle(group.Id)" @onclick:stopPropagation="true">@group.Label</button>
-            <div id="@listId" class="nav-group" hidden="@collapsed">
+            <div id="@listId" class="nav-group" role="group" aria-label="@($"{group.Label} navigation group")" hidden="@collapsed">
                 @foreach (var item in items)
                 {
                     var status = item.ReviewId is { } reviewId ? NavStatusPresentation.For(item, _applicability?.For(reviewId)) : null;

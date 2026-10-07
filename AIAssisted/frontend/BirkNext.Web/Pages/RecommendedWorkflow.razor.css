@@ -1106,3 +1106,194 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* ── Project inputs: documents, source, target ─────────────────────────────────────────────────────────────────────
+   One restrained accent per input (left border + title); the status tone is green (ready), amber (needs action) or
+   neutral (not provided / unknown). Every status is also text with an icon, never colour alone. */
+.rw-inputs {
+    margin-bottom: 1.25rem;
+}
+
+.rw-inputs-header {
+    margin-bottom: 0.75rem;
+}
+
+.rw-inputs-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin: 0 0 0.25rem;
+}
+
+.rw-inputs-lead {
+    font-size: 0.85rem;
+    color: var(--clr-text-muted);
+    margin: 0;
+}
+
+.rw-input-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 0.75rem;
+}
+
+.rw-input {
+    --rw-input-accent: #1d4ed8;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 0.85rem 1rem;
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--rw-input-accent);
+    border-radius: 8px;
+}
+
+.rw-input-documents { --rw-input-accent: #1d4ed8; }
+.rw-input-source    { --rw-input-accent: #4338ca; }
+.rw-input-target    { --rw-input-accent: #0f766e; }
+
+.rw-input-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 0.5rem;
+}
+
+.rw-input-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--rw-input-accent);
+    margin: 0;
+}
+
+.rw-input-requirement {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--clr-text-muted);
+}
+
+.rw-input-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    align-self: flex-start;
+    margin: 0;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 999px;
+    color: var(--clr-text-muted);
+    background: var(--clr-surface);
+    border: 1px solid var(--clr-border);
+}
+
+.rw-input.is-ready .rw-input-status {
+    color: var(--clr-success);
+    background: var(--clr-success-bg-light);
+    border-color: var(--clr-success-border);
+}
+
+.rw-input.is-partial .rw-input-status,
+.rw-input.is-needsattention .rw-input-status {
+    color: var(--clr-warning);
+    background: var(--clr-warning-bg-light);
+    border-color: var(--clr-warning-border);
+}
+
+.rw-input-detail {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--clr-text-body);
+    overflow-wrap: anywhere;
+}
+
+.rw-input-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.rw-input-fact {
+    font-size: 0.72rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 4px;
+    color: var(--clr-text-muted);
+    background: var(--clr-surface);
+    overflow-wrap: anywhere;
+}
+
+.rw-input-action {
+    margin-top: auto;
+    align-self: flex-start;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--rw-input-accent);
+}
+
+.rw-next-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.rw-next-action-alt {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e40af;
+}
+
+.rw-no-next-action {
+    font-size: 0.85rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 1rem;
+}
+
+.rw-section-heading {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+    margin: 1.25rem 0 0.6rem;
+}
+
+.rw-reviews-lead {
+    font-size: 0.82rem;
+    color: var(--clr-text-muted);
+    margin: 0 0 0.6rem;
+}
+
+.rw-review-lane {
+    margin-bottom: 0.6rem;
+}
+
+.rw-review-lane-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--clr-text-muted);
+    margin: 0 0 0.3rem;
+}
+
+.rw-review-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.85rem;
+}
+
+.rw-review-partial {
+    margin-left: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--clr-warning);
+}

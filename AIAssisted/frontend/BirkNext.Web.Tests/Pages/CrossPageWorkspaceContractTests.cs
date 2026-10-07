@@ -112,7 +112,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         Dashboard(dashboard).Name.Should().Be("Person Module");
         Workflow(workflow).Roles.Values.Should().OnlyContain(a => a == nameof(ArtifactRoleAvailability.Available));
         workflow.Markup.Should().NotContain("No workspace loaded");
-        workflow.Markup.Should().NotContain("Load project artifacts");
+        workflow.Markup.Should().NotContain("Load project artifacts").And.NotContain("Give BirkNext project context");
         workflow.Markup.Should().NotContain("of 5");
         workflow.Find("[data-testid=rw-release-readiness]").TextContent.Should().Be("—", "nothing has been reviewed yet: not assessed, not 0%");
         workflow.Find("[data-testid=rw-save-status]").TextContent.Should().Be("Not saved", "an unsaved workspace is still loaded");
@@ -166,7 +166,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         workflow.WaitForAssertion(() => Workflow(workflow).HasWorkspace.Should().BeFalse());
         dashboard.WaitForAssertion(() => Dashboard(dashboard).HasWorkspace.Should().BeFalse());
         ShouldAgree(Dashboard(dashboard), Workflow(workflow));
-        workflow.Markup.Should().Contain("Load project artifacts");
+        workflow.Markup.Should().Contain("Give BirkNext project context");
         workflow.Markup.Should().NotContain("Person Module");
         dashboard.Markup.Should().NotContain("Person Module");
     }

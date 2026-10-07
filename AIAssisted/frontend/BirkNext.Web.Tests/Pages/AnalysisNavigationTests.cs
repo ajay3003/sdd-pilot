@@ -100,14 +100,15 @@ public class AnalysisNavigationTests : BunitContext
         nav.IndexOf("Plan Explorer", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Task Explorer", StringComparison.Ordinal));
 
-        nav.IndexOf("Spec Drift", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
-        nav.IndexOf("Impact Analysis", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Requirements Traceability", StringComparison.Ordinal));
+        // Traceability: requirements first, then implementation, then the change-oriented views.
         nav.IndexOf("Requirements Traceability", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Implementation Review", StringComparison.Ordinal));
         nav.IndexOf("Implementation Review", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Implementation Traceability", StringComparison.Ordinal));
+        nav.IndexOf("Implementation Traceability", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Spec Drift", StringComparison.Ordinal));
+        nav.IndexOf("Spec Drift", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
     }
 
     [Fact]

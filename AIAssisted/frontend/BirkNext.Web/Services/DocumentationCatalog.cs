@@ -65,7 +65,7 @@ public static class DocumentationCatalog
 
     private static readonly IReadOnlyDictionary<string, DocumentationGuideDetail> GuideDetails = new Dictionary<string, DocumentationGuideDetail>(StringComparer.OrdinalIgnoreCase)
     {
-        ["getting-started"] = new("Shows a workspace-aware suggested next step.", "Loaded project/artifacts and recorded review state.", "A recommendation is not a required release sequence or approval."),
+        ["getting-started"] = new("Shows the three project inputs (documents, source, target) and the next step for them.", "Current workspace documents, the active environment's latest source snapshot, the active Target Environment, review applicability and recorded review state.", "A recommendation is not a required release sequence or approval."),
         ["user-guide"] = new("Reference for current feature ownership and evidence boundaries.", "Product navigation and documented capability metadata.", "Structured health checks cannot prove prose accuracy."),
         ["dashboard"] = new("Aggregates assessed project areas and recent workspace activity.", "Current project and stored review/evidence summaries.", "Unsupported/N/A do not lower quality; coverage differs from quality."),
         ["specification-explorer"] = new("Inspects requirements and specification structure.", "Specification artifact and supported project IDs.", "A requirement or designed test does not prove implementation or execution."),
@@ -74,6 +74,7 @@ public static class DocumentationCatalog
         ["plan-explorer"] = new("Presents plan decisions, phases, gates and risks.", "Plan artifact.", "A normalized phase key is not necessarily a unique declaration."),
         ["task-explorer"] = new("Presents work items and requirement relationships.", "Tasks artifact and shared graph evidence.", "A task link does not prove code completion."),
         ["sample-projects"] = new("Discovers sample documents recursively, classifies them by artifact role and selects the project context.", "Configured local sample projects (any folder structure and filenames).", "Samples are examples; roles are optional and a missing role is not a project failure; loading does not make every review applicable."),
+        ["target-environments"] = new("Shortcut to System Settings › Target Environments: the runtime input (application URL, authentication, endpoints, integrations).", "Target Environment profiles stored for this browser; source snapshots are also kept per environment.", "A configured target enables runtime reviews; it is not a test result and is not needed for document-only work."),
         ["source-analysis"] = new("Creates reusable normalized source evidence.", "Uploaded source archive analyzed into immutable fingerprinted snapshots.", "Source evidence does not prove runtime or deployment behavior."),
         ["technology-coverage"] = new("Shows detected technology and support by capability dimension.", "Source inventory and analyzer/provider support metadata.", "Unsupported is a tool limitation, not a project quality failure."),
         ["environment-analysis"] = new("Reads environment inventory through an available provider.", "Configured provider; current page uses Azure.", "Provider available/detected does not mean BirkNext is Azure-only or the project uses Azure."),
@@ -98,7 +99,13 @@ public static class DocumentationCatalog
         .SelectMany(t => t.GetCustomAttributes<RouteAttribute>().Select(a => NormalizeRoute(a.Template)))
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    public static string NormalizeRoute(string route) => "/" + route.Trim().TrimStart('/').TrimEnd('/');
+    /// <summary>The page route: a deep link's query string or fragment (e.g. a System Settings section) is not part of the route.</summary>
+    public static string NormalizeRoute(string route)
+    {
+        var path = route.Trim();
+        var cut = path.IndexOfAny(['?', '#']);
+        return "/" + (cut >= 0 ? path[..cut] : path).TrimStart('/').TrimEnd('/');
+    }
 
     public static IReadOnlyList<string>? ReadGuideSource(Assembly assembly)
     {
@@ -193,48 +200,40 @@ public static class DocumentationCatalog
         {
             ("getting-started","Recommended Workflow","/getting-started","getting-started","Getting Started",null,null),
             ("user-guide","User Guide","/user-guide","overview","Getting Started",null,null),
-            ("dashboard","Dashboard","/dashboard","feature-matrix","Review",null,null),
-            ("specification-explorer","Specification Explorer","/specification-explorer","getting-started","Review",null,null),
-            ("constitution-explorer","Constitution Explorer","/constitution-explorer","getting-started","Review",null,null),
-            ("data-model-explorer","Data Model Explorer","/data-model-explorer","getting-started","Review",null,null),
-            ("plan-explorer","Plan Explorer","/plan-explorer","getting-started","Review",null,null),
-            ("task-explorer","Task Explorer","/task-explorer","getting-started","Review",null,null),
-            ("sample-projects","Sample Projects","/sample-projects","getting-started","Library",null,null),
+            ("dashboard","Dashboard","/dashboard","feature-matrix","Getting Started",null,null),
+            ("sample-projects","Sample Projects","/sample-projects","project-inputs","Project Inputs",null,null),
+            ("source-analysis","Source Analysis","/source-analysis","source-analysis","Project Inputs",null,null),
+            ("target-environments","Target Environments","/admin/system-settings?section=target-environments","project-inputs","Project Inputs",null,null),
+            ("specification-explorer","Specification Explorer","/specification-explorer","getting-started","Document Review",null,null),
+            ("constitution-explorer","Constitution Explorer","/constitution-explorer","getting-started","Document Review",null,null),
+            ("data-model-explorer","Data Model Explorer","/data-model-explorer","getting-started","Document Review",null,null),
+            ("plan-explorer","Plan Explorer","/plan-explorer","getting-started","Document Review",null,null),
+            ("task-explorer","Task Explorer","/task-explorer","getting-started","Document Review",null,null),
+            ("artifact-traceability","Requirements Traceability","/artifact-traceability","traceability","Traceability",null,null),
+            ("task-alignment","Implementation Review","/task-alignment","traceability","Traceability",null,null),
+            ("implementation-traceability","Implementation Traceability","/implementation-traceability","traceability","Traceability",null,null),
+            ("spec-drift","Spec Drift","/spec-drift","traceability","Traceability",null,null),
+            ("impact-analysis","Impact Analysis","/impact-analysis","traceability","Traceability",null,null),
             ("traceability","Traceability & Coverage","/traceability","traceability","Traceability",null,null),
             ("traceability/suggestions","Traceability Suggestions","/traceability/suggestions","traceability","Traceability",null,null),
             ("code-traceability","Code Traceability","/code-traceability","traceability","Traceability",null,null),
-            ("spec-drift","Spec Drift","/spec-drift","traceability","Analysis",null,null),
-            ("impact-analysis","Impact Analysis","/impact-analysis","traceability","Analysis",null,null),
-            ("artifact-traceability","Requirements Traceability","/artifact-traceability","traceability","Analysis",null,null),
-            ("task-alignment","Implementation Review","/task-alignment","traceability","Analysis",null,null),
-            ("implementation-traceability","Implementation Traceability","/implementation-traceability","traceability","Analysis",null,null),
-            ("source-analysis","Source Analysis","/source-analysis","source-analysis","Analysis",null,null),
-            ("technology-coverage","Technology Coverage","/technology-coverage","technology-coverage","Analysis",null,null),
-            ("environment-analysis","Environment Analysis","/azure-environment","environment-analysis","Analysis","Azure",null),
-            ("quality-review","Quality Review","/quality-review","quality-reviews","Quality",null,null),
-            ("frontend-quality-review","Frontend Quality Review","/frontend-quality-review","quality-reviews","Quality",null,null),
-            ("api-quality-review","API Quality Review","/api-quality-review","quality-reviews","Quality",null,null),
-            ("integration-quality-review","Integration Quality Review","/integration-quality-review","quality-reviews","Quality",null,null),
-            ("performance-test-review","Performance Test Review","/performance-test-review","testing","Quality",null,null),
-            ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Quality",null,"M2LB child-security-classification"),
-            ("dependency-review","Dependency Review","/dependency-review","quality-reviews","Quality",null,null),
-            ("pipeline-review","Pipeline Review","/pipeline-review","pipeline","Quality",null,null),
-            ("critical-e2e-regression","Critical E2E Regression","/critical-e2e-regression","testing","Quality",null,null),
+            ("technology-coverage","Technology Coverage","/technology-coverage","technology-coverage","Source Review",null,null),
+            ("dependency-review","Dependency Review","/dependency-review","quality-reviews","Source Review",null,null),
+            ("pipeline-review","Pipeline Review","/pipeline-review","pipeline","Source Review",null,null),
+            ("environment-analysis","Environment Analysis","/azure-environment","environment-analysis","Source Review","Azure",null),
+            ("quality-review","Quality Review","/quality-review","quality-reviews","Quality & Testing",null,null),
+            ("frontend-quality-review","Frontend Quality Review","/frontend-quality-review","quality-reviews","Quality & Testing",null,null),
+            ("api-quality-review","API Quality Review","/api-quality-review","quality-reviews","Quality & Testing",null,null),
+            ("integration-quality-review","Integration Quality Review","/integration-quality-review","quality-reviews","Quality & Testing",null,null),
+            ("performance-test-review","Performance Test Review","/performance-test-review","testing","Quality & Testing",null,null),
+            ("critical-e2e-regression","Critical E2E Regression","/critical-e2e-regression","testing","Quality & Testing",null,null),
+            ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
         };
         var optional = new HashSet<string>(["traceability", "traceability/suggestions", "code-traceability", "ai-change-auditor"], StringComparer.OrdinalIgnoreCase);
         return definitions.Select(d => new DocumentationFeature(d.Id,d.Name,d.Route,d.Anchor,d.Category,Required: !optional.Contains(d.Id),ProviderScope:d.Provider,ExtensionScope:d.Extension)).ToArray();
     }
-
-    private static string sCategory(string route) => route switch
-    {
-        "getting-started" or "user-guide" => "Getting Started",
-        "sample-projects" => "Library",
-        "quality-review" or "frontend-quality-review" or "api-quality-review" or "integration-quality-review" or "performance-test-review" or "security-classification-review" or "dependency-review" or "pipeline-review" or "critical-e2e-regression" => "Quality",
-        "admin/system-settings" => "Admin",
-        _ => "Analysis"
-    };
 }
 
 public sealed record DocumentationFinding(string Severity, string Category, string? FeatureId, string? Route,

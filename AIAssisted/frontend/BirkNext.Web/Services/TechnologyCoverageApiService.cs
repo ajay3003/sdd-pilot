@@ -39,7 +39,9 @@ public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api,
 
     private int _generation;
 
-    public Task EnsureLoadedAsync() => _loading ??= RefreshAsync();
+    /// <summary>Loads once. Loaded is set before <see cref="Changed"/> fires, so a listener that calls this again while the first
+    /// refresh is publishing (a synchronously completing refresh) returns at once instead of starting another refresh.</summary>
+    public Task EnsureLoadedAsync() => Loaded ? Task.CompletedTask : _loading ??= RefreshAsync();
 
     /// <summary>Re-evaluates for the current profile, catalog and workspace (project switch, template applied, reset). When refreshes
     /// overlap, only the latest one is published, so an older response can never overwrite a newer state.</summary>

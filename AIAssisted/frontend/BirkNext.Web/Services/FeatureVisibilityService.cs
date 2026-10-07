@@ -66,17 +66,6 @@ public class FeatureVisibilityService
     public bool AdminSystemSettings  => _flags.AdminSystemSettings;
     public bool QualityReview        => _flags.QualityReview;
 
-    // Section-level helpers: show the section header only if at least one child item is visible.
-    public bool ShowSectionGettingStarted => RecommendedWorkflow || UserGuide;
-    public bool ShowSectionReview         => Dashboard || SpecificationExplorer || ConstitutionExplorer || DataModelExplorer || PlanExplorer || TaskExplorer;
-    public bool ShowSectionLibrary        => QaArtifactLibrary || SampleProjects;
-    public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
-                                             && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability || SourceAnalysis || AzureEnvironmentAnalysis;
-    public bool ShowSectionQuality        => QualityReview || FrontendQualityReview || ApiQualityReview || IntegrationQualityReview || CriticalE2ERegression;
-    public bool ShowSectionAiReview       => AiChangeReview;
-    public bool ShowSectionAdmin          => AdminSystemSettings;
-
     public void ApplyLocalFlags(FeatureVisibilityDto flags)
     {
         _flags = flags;

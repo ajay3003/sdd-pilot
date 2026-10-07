@@ -177,45 +177,45 @@ public sealed class NavMenuLayoutTests : BunitContext
     public void SectionHeadings_AreButtonsThatCollapseTheirGroup()
     {
         var cut = Render<NavMenu>();
-        var quality = cut.Find("[data-testid=nav-section-quality]");
+        var quality = cut.Find("[data-testid=nav-section-quality-testing]");
 
         quality.TagName.Should().Be("BUTTON");
         quality.GetAttribute("aria-expanded").Should().Be("true");
-        quality.GetAttribute("aria-controls").Should().Be("nav-section-quality");
-        cut.Find("#nav-section-quality").HasAttribute("hidden").Should().BeFalse();
+        quality.GetAttribute("aria-controls").Should().Be("nav-section-quality-testing");
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse();
 
         quality.Click();
 
-        cut.Find("[data-testid=nav-section-quality]").GetAttribute("aria-expanded").Should().Be("false");
-        cut.Find("#nav-section-quality").HasAttribute("hidden").Should().BeTrue();
-        cut.Find("#nav-section-analysis").HasAttribute("hidden").Should().BeFalse("other sections are unaffected");
+        cut.Find("[data-testid=nav-section-quality-testing]").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
+        cut.Find("#nav-section-source-review").HasAttribute("hidden").Should().BeFalse("other sections are unaffected");
 
-        cut.Find("[data-testid=nav-section-quality]").Click();
-        cut.Find("#nav-section-quality").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=nav-section-quality-testing]").Click();
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse();
     }
 
     [Fact]
     public void CollapseState_SurvivesARemount_ForTheSession()
     {
         var first = Render<NavMenu>();
-        first.Find("[data-testid=nav-section-analysis]").Click();
+        first.Find("[data-testid=nav-section-source-review]").Click();
         first.Dispose();
 
         var second = Render<NavMenu>();
-        second.Find("[data-testid=nav-section-analysis]").GetAttribute("aria-expanded").Should().Be("false");
+        second.Find("[data-testid=nav-section-source-review]").GetAttribute("aria-expanded").Should().Be("false");
     }
 
     [Fact]
     public void NavigatingIntoACollapsedSection_ExpandsIt_AndMarksTheRowActive()
     {
         var cut = Render<NavMenu>();
-        cut.Find("[data-testid=nav-section-quality]").Click();
-        cut.Find("#nav-section-quality").HasAttribute("hidden").Should().BeTrue();
+        cut.Find("[data-testid=nav-section-quality-testing]").Click();
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
 
         Services.GetRequiredService<NavigationManager>().NavigateTo("performance-test-review");
 
-        cut.WaitForAssertion(() => cut.Find("#nav-section-quality").HasAttribute("hidden").Should().BeFalse());
-        cut.Find("[data-testid=nav-section-quality]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.WaitForAssertion(() => cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse());
+        cut.Find("[data-testid=nav-section-quality-testing]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Find("a[href='performance-test-review']").ClassList.Should().Contain("active");
         cut.FindAll("a.active").Should().ContainSingle();
     }
@@ -245,16 +245,106 @@ public sealed class NavMenuLayoutTests : BunitContext
     public void SectionToggle_DoesNotCloseTheMobileMenu()
     {
         var cut = Render<NavMenu>();
-        cut.Find("[data-testid=nav-section-quality]").Click();
+        cut.Find("[data-testid=nav-section-quality-testing]").Click();
         cut.Find(".nav-scrollable").ClassList.Should().NotContain("collapse");
     }
 
     [Fact]
     public void Catalog_ResolvesSections_ForPrefixAndExactRoutes()
     {
-        NavigationCatalog.SectionFor("dashboard/details")!.Id.Should().Be("review");
-        NavigationCatalog.SectionFor("critical-e2e-regression")!.Id.Should().Be("quality");
+        NavigationCatalog.SectionFor("dashboard/details")!.Id.Should().Be("getting-started");
+        NavigationCatalog.SectionFor("critical-e2e-regression")!.Id.Should().Be("quality-testing");
+        NavigationCatalog.SectionFor("admin/system-settings")!.Id.Should().Be("admin", "the Target Environments deep link never claims the System Settings page");
         NavigationCatalog.SectionFor("plan-explorer/extra").Should().BeNull("exact-match rows do not claim sub-paths");
         NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void Sections_FollowTheEvidenceFlow_InputsFirst_ThenTheirConsumers()
+    {
+        var cut = Render<NavMenu>();
+
+        cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
+            "getting-started", "project-inputs", "document-review", "traceability", "source-review", "quality-testing", "extensions", "admin");
+        cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().StartWith(["Getting Started", "Project Inputs", "Document Review"]);
+    }
+
+    [Theory]
+    [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
+    [InlineData("project-inputs", new[] { "sample-projects", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer" })]
+    [InlineData("source-review", new[] { "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("quality-testing", new[] { "quality-review", "frontend-quality-review", "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
+    [InlineData("extensions", new[] { "security-classification-review" })]
+    [InlineData("admin", new[] { "admin/system-settings" })]
+    public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)
+    {
+        var cut = Render<NavMenu>();
+
+        cut.FindAll($"#nav-section-{section} a.nav-link").Select(a => a.GetAttribute("href")).Should().Equal(routes);
+    }
+
+    [Fact]
+    public void TraceabilitySection_ListsRequirementsThenImplementation()
+    {
+        var cut = Render<NavMenu>();
+
+        cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
+            .StartWith(["artifact-traceability", "task-alignment", "implementation-traceability"]);
+    }
+
+    [Fact]
+    public void EveryRowAppearsOnce_AndSourceAnalysisIsOnlyAnInput()
+    {
+        var routes = NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).ToList();
+
+        routes.Should().OnlyHaveUniqueItems();
+        NavigationCatalog.Sections.Where(s => s.Items.Any(i => i.Route == "source-analysis")).Select(s => s.Id).Should().Equal("project-inputs");
+        NavigationCatalog.Sections.Where(s => s.Items.Any(i => i.Route == "security-classification-review")).Select(s => s.Id).Should().Equal("extensions");
+        NavigationCatalog.Sections.Select(s => s.Id).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void TargetEnvironments_IsADeepLinkIntoSystemSettings_NotASecondPage()
+    {
+        var cut = Render<NavMenu>();
+
+        var link = cut.Find("#nav-section-project-inputs a[href='admin/system-settings?section=target-environments']");
+        link.QuerySelector(".nav-label")!.TextContent.Should().Be("Target Environments");
+        link.GetAttribute("title").Should().Contain("opens System Settings");
+        cut.FindAll("#nav-section-admin a[href='admin/system-settings']").Should().ContainSingle("System Settings stays under Admin");
+        DocumentationCatalog.NormalizeRoute(NavigationCatalog.TargetEnvironmentsRoute).Should().Be("/admin/system-settings");
+    }
+
+    [Fact]
+    public void Groups_HaveMeaningfulAccessibleNames()
+    {
+        var cut = Render<NavMenu>();
+
+        cut.Find("#nav-section-project-inputs").GetAttribute("role").Should().Be("group");
+        cut.Find("#nav-section-project-inputs").GetAttribute("aria-label").Should().Be("Project Inputs navigation group");
+    }
+
+    [Fact]
+    public void SecurityClassification_KeepsItsExtensionApplicability_InTheExtensionsGroup()
+    {
+        RegisterApplicability();
+        _api.Coverage = Snapshot(extensions: [DomainExtensionIds.M2lbChildSecurityClassification]);
+        var cut = Render<NavMenu>();
+
+        cut.WaitForAssertion(() => cut.Find("#nav-section-extensions [data-testid=nav-applicability-security-classification-review]").TextContent.Should().Be("Extension"));
+    }
+
+    [Fact]
+    public void ASectionWithoutVisibleRows_IsNotShown()
+    {
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
+        {
+            SpecificationExplorer = false, ConstitutionExplorer = false, DataModelExplorer = false, PlanExplorer = false, TaskExplorer = false,
+        });
+        var cut = Render<NavMenu>();
+
+        cut.FindAll("[data-testid=nav-section-document-review]").Should().BeEmpty();
+        cut.FindAll("[data-testid=nav-section-source-review]").Should().ContainSingle("Technology Coverage is always visible");
     }
 }
