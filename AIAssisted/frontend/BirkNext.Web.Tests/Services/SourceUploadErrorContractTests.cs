@@ -32,6 +32,63 @@ public sealed class SourceUploadErrorContractTests
         failure.Limit.Should().Be(50L * 1024 * 1024);
     }
 
+    [Fact]
+    public async Task ParsesProblemDetailsDetailAndFlattenedExtensionsWithoutGenericFallback()
+    {
+        const string json = """{"type":"about:blank","title":"Source archive rejected","status":400,"detail":"Archive entry escapes the project root.","code":"ARCHIVE_PATH_TRAVERSAL","stage":"ArchiveValidation","entryPath":"../escape.cs","actual":null,"limit":null}""";
+        var client = Create(HttpStatusCode.BadRequest, json);
+
+        var (_, failure) = await client.AnalyzeSourceSnapshotDetailedAsync("dev", "unsafe.zip", new MemoryStream([1, 2, 3]));
+
+        failure.Should().NotBeNull();
+        failure!.Code.Should().Be("ARCHIVE_PATH_TRAVERSAL");
+        failure.Stage.Should().Be("validation");
+        failure.Message.Should().Be("Archive entry escapes the project root.");
+        failure.EntryPath.Should().Be("../escape.cs");
+    }
+
+    [Fact]
+    public async Task UnstructuredBadRequestIsTheOnlyArchiveRejectedFallback()
+    {
+        var client = Create(HttpStatusCode.BadRequest, "legacy proxy response with no known reason");
+        var (_, failure) = await client.AnalyzeSourceSnapshotDetailedAsync("dev", "unknown.zip", new MemoryStream([1]));
+        failure!.Code.Should().Be("ARCHIVE_REJECTED");
+        failure.Stage.Should().Be("validation");
+    }
+
+    [Fact]
+    public async Task Unstructured422IsAnalysisFailureRatherThanArchiveRejection()
+    {
+        var client = Create(HttpStatusCode.UnprocessableEntity, "legacy analysis response");
+        var (_, failure) = await client.AnalyzeSourceSnapshotDetailedAsync("dev", "valid.zip", new MemoryStream([1]));
+        failure!.Code.Should().Be("SOURCE_ANALYSIS_FAILED");
+        failure.Stage.Should().Be("analysis");
+        failure.Code.Should().NotBe("ARCHIVE_REJECTED");
+    }
+
+    [Fact]
+    public async Task ProblemDetailsDoesNotExposeServerPathOrStackTrace()
+    {
+        const string json = """{"status":400,"detail":"InvalidDataException at C:\\temp\\extract\\archive.zip","code":"ARCHIVE_INVALID_ZIP","stage":"ArchiveValidation","entryPath":"C:\\temp\\secret.txt"}""";
+        var client = Create(HttpStatusCode.BadRequest, json);
+
+        var (_, failure) = await client.AnalyzeSourceSnapshotDetailedAsync("dev", "broken.zip", new MemoryStream([1]));
+
+        failure.Should().NotBeNull();
+        failure!.Code.Should().Be("ARCHIVE_INVALID_ZIP");
+        failure.Message.Should().Be("The uploaded file is not a valid ZIP archive or is incomplete.");
+        failure.EntryPath.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ServerErrorWithLegacyValidationWordsIsNotMappedToArchiveRejection()
+    {
+        var client = Create(HttpStatusCode.InternalServerError, "Invalid or incomplete ZIP archive at /tmp/server-path");
+        var (_, failure) = await client.AnalyzeSourceSnapshotDetailedAsync("dev", "broken.zip", new MemoryStream([1]));
+        failure!.Code.Should().Be("SOURCE_SERVER_ERROR");
+        failure.Stage.Should().Be("analysis");
+    }
+
     private static IntegrationCatalogApiService Create(HttpStatusCode status, string body)
     {
         var http = new HttpClient(new FixedResponseHandler(status, body)) { BaseAddress = new Uri("http://localhost/") };

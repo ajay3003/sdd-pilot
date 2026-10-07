@@ -147,33 +147,145 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
     private static async Task<SourceUploadFailure> ReadSourceUploadFailure(HttpResponseMessage response, CancellationToken ct)
     {
         var status = (int)response.StatusCode;
+        var body = await response.Content.ReadAsStringAsync(ct);
         try
         {
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            using var json = JsonDocument.Parse(body);
             var root = json.RootElement;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("code", out var codeNode) && codeNode.ValueKind == JsonValueKind.String
-                && codeNode.GetString() is { Length: > 0 } code && root.TryGetProperty("message", out var messageNode)
-                && messageNode.ValueKind == JsonValueKind.String && messageNode.GetString() is { Length: > 0 } message)
+            if (root.ValueKind == JsonValueKind.Object)
             {
-                var stage = root.TryGetProperty("stage", out var stageNode) && stageNode.ValueKind == JsonValueKind.String ? stageNode.GetString() ?? "upload" : "upload";
-                var entry = root.TryGetProperty("entryPath", out var entryNode) && entryNode.ValueKind == JsonValueKind.String ? entryNode.GetString() : null;
-                long? actual = root.TryGetProperty("actual", out var actualNode) && actualNode.ValueKind == JsonValueKind.Number && actualNode.TryGetInt64(out var actualValue) ? actualValue : null;
-                long? limit = root.TryGetProperty("limit", out var limitNode) && limitNode.ValueKind == JsonValueKind.Number && limitNode.TryGetInt64(out var limitValue) ? limitValue : null;
-                return new(code, stage, message, entry, actual, limit);
+                var code = StringValue(root, "code");
+                var detail = StringValue(root, "message") ?? StringValue(root, "detail");
+                var extensions = Property(root, "extensions");
+                code ??= extensions is { ValueKind: JsonValueKind.Object } ? StringValue(extensions.Value, "code") : null;
+                detail ??= extensions is { ValueKind: JsonValueKind.Object }
+                    ? StringValue(extensions.Value, "message") ?? StringValue(extensions.Value, "detail")
+                    : null;
+
+                // ASP.NET ProblemDetails uses `detail`, while the upload endpoint's
+                // compact contract uses `message`. Extensions can be flattened or nested.
+                if (!string.IsNullOrWhiteSpace(code))
+                {
+                    var stage = StringValue(root, "stage")
+                        ?? (extensions is { ValueKind: JsonValueKind.Object } ? StringValue(extensions.Value, "stage") : null)
+                        ?? StageForCode(code, status);
+                    var entry = StringValue(root, "entryPath")
+                        ?? (extensions is { ValueKind: JsonValueKind.Object } ? StringValue(extensions.Value, "entryPath") : null);
+                    var actual = Int64Value(root, "actual") ?? (extensions is { ValueKind: JsonValueKind.Object } ? Int64Value(extensions.Value, "actual") : null);
+                    var limit = Int64Value(root, "limit") ?? (extensions is { ValueKind: JsonValueKind.Object } ? Int64Value(extensions.Value, "limit") : null);
+                    return new(code, NormalizeStage(stage), SafeMessage(code, detail), SafeEntryPath(entry), actual, limit);
+                }
+
+                var legacy = MapKnownLegacyMessage(body, status);
+                if (legacy is not null) return legacy;
             }
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String
-                && status >= 500)
-                return StatusFallback(status);
         }
         catch (JsonException) { }
+        var mappedLegacy = MapKnownLegacyMessage(body, status);
+        if (mappedLegacy is not null) return mappedLegacy;
         return StatusFallback(status);
+    }
+
+    private static JsonElement? Property(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object
+        ? value.EnumerateObject().FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { Value.ValueKind: not JsonValueKind.Undefined } property
+            ? property.Value : null
+        : null;
+
+    private static string? StringValue(JsonElement value, string name) => Property(value, name) is { ValueKind: JsonValueKind.String } property
+        ? property.GetString() : null;
+
+    private static long? Int64Value(JsonElement value, string name) => Property(value, name) is { ValueKind: JsonValueKind.Number } property && property.TryGetInt64(out var actual)
+        ? actual : null;
+
+    private static string StageForCode(string code, int status) => code switch
+    {
+        "NO_ACTIVE_ENVIRONMENT" => "prerequisite",
+        "SOURCE_SNAPSHOT_SAVE_FAILED" or "SOURCE_SNAPSHOT_RESPONSE_INVALID" => "persistence",
+        "SOURCE_ANALYSIS_FAILED" or "SOURCE_ANALYSIS_UNAVAILABLE" or "SOURCE_SERVER_ERROR" => "analysis",
+        "ARCHIVE_EXTRACTION_FAILED" => "extraction",
+        _ => status == 422 ? "analysis" : "validation",
+    };
+
+    private static string NormalizeStage(string stage) => stage.ToLowerInvariant() switch
+    {
+        "archivevalidation" or "validation" => "validation",
+        "prerequisite" => "prerequisite",
+        "extraction" or "archivereading" => "extraction",
+        "snapshotcreation" or "persistence" => "persistence",
+        "analysis" => "analysis",
+        "upload" => "upload",
+        _ => stage,
+    };
+
+    private static string SafeMessage(string code, string? detail) => IsSafeDetail(detail)
+        ? detail!
+        : code switch
+        {
+            "ARCHIVE_INVALID_ZIP" => "The uploaded file is not a valid ZIP archive or is incomplete.",
+            "ARCHIVE_UNSUPPORTED_FORMAT" => "Choose a ZIP archive for Source Analysis.",
+            "ARCHIVE_EMPTY_UPLOAD" or "ARCHIVE_EMPTY" => "The uploaded ZIP contains no files.",
+            "UPLOAD_MULTIPART_REQUIRED" or "UPLOAD_INVALID_FORM" => "The ZIP upload could not be read. Choose the file again and retry.",
+            "UPLOAD_FILE_COUNT_INVALID" => "Choose exactly one ZIP archive to upload.",
+            "ARCHIVE_PATH_TRAVERSAL" => "The archive contains a path that escapes the project root.",
+            "ARCHIVE_ABSOLUTE_PATH" or "ARCHIVE_UNC_PATH" => "The archive contains an absolute path; archive entries must stay inside the project root.",
+            "ARCHIVE_INVALID_PATH" => "The archive contains a path that cannot be safely used across platforms.",
+            "ARCHIVE_PATH_TOO_LONG" => "An archive entry path exceeds the supported safety limit.",
+            "ARCHIVE_SYMLINK_UNSUPPORTED" => "Symbolic links are not supported in source archives.",
+            "ARCHIVE_TOO_LARGE" => "The ZIP archive exceeds the 50 MB compressed size limit.",
+            "ARCHIVE_EXPANDED_SIZE_EXCEEDED" => "The archive expands beyond the allowed source-analysis limit.",
+            "ARCHIVE_TOO_MANY_ENTRIES" => "The archive contains more entries than Source Analysis allows.",
+            "ARCHIVE_ENTRY_TOO_LARGE" => "An archive entry exceeds the per-file analysis limit.",
+            "ARCHIVE_DUPLICATE_PATH" => "The archive contains entries that resolve to the same path.",
+            "ARCHIVE_ENCRYPTED_UNSUPPORTED" => "Encrypted ZIP entries or unsupported compression methods are not supported.",
+            _ => "The source upload could not be completed. Correct the issue and retry.",
+        };
+
+    private static bool IsSafeDetail(string? detail) => !string.IsNullOrWhiteSpace(detail)
+        && !detail.Contains(" at ", StringComparison.OrdinalIgnoreCase)
+        && !detail.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+        && !detail.Contains("\\\\", StringComparison.Ordinal)
+        && !detail.Contains("/tmp/", StringComparison.OrdinalIgnoreCase)
+        && !detail.Contains("\\temp\\", StringComparison.OrdinalIgnoreCase)
+        && !detail.Contains("C:\\", StringComparison.OrdinalIgnoreCase)
+        && !detail.Contains("\\Users\\", StringComparison.OrdinalIgnoreCase);
+
+    private static string? SafeEntryPath(string? entry) => string.IsNullOrWhiteSpace(entry)
+        || entry.Contains(':')
+        || entry.StartsWith('/')
+        || entry.StartsWith('\\')
+        || entry.Contains('\0')
+        ? null
+        : entry;
+
+    private static SourceUploadFailure? MapKnownLegacyMessage(string body, int status)
+    {
+        // Translate only deterministic legacy phrases into safe messages; never show
+        // arbitrary server text, exception messages, or filesystem paths to the user.
+        if (status is not (400 or 413)) return null;
+        if (body.Contains("not a valid zip", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("invalid or incomplete zip", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_INVALID_ZIP", "validation", SafeMessage("ARCHIVE_INVALID_ZIP", null));
+        if (body.Contains("path traversal", StringComparison.OrdinalIgnoreCase) || body.Contains("escapes the project root", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_PATH_TRAVERSAL", "validation", SafeMessage("ARCHIVE_PATH_TRAVERSAL", null));
+        if (body.Contains("encrypted", StringComparison.OrdinalIgnoreCase) || body.Contains("unsupported compression", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_ENCRYPTED_UNSUPPORTED", "validation", SafeMessage("ARCHIVE_ENCRYPTED_UNSUPPORTED", null));
+        if (body.Contains("too many entr", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_TOO_MANY_ENTRIES", "validation", SafeMessage("ARCHIVE_TOO_MANY_ENTRIES", null));
+        if (body.Contains("expanded size", StringComparison.OrdinalIgnoreCase) || body.Contains("expands beyond", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_EXPANDED_SIZE_EXCEEDED", "validation", SafeMessage("ARCHIVE_EXPANDED_SIZE_EXCEEDED", null));
+        if (body.Contains("exceeds the 50 mb", StringComparison.OrdinalIgnoreCase) || status == 413)
+            return new("ARCHIVE_TOO_LARGE", "upload", SafeMessage("ARCHIVE_TOO_LARGE", null), Limit: 50L * 1024 * 1024);
+        if (body.Contains("duplicate path", StringComparison.OrdinalIgnoreCase))
+            return new("ARCHIVE_DUPLICATE_PATH", "validation", SafeMessage("ARCHIVE_DUPLICATE_PATH", null));
+        return null;
     }
 
     private static SourceUploadFailure StatusFallback(int status) => status switch
     {
         413 => new("ARCHIVE_TOO_LARGE", "upload", "Upload exceeds the 50 MB compressed archive limit.", Actual: null, Limit: 50L * 1024 * 1024),
-        400 or 422 => new("ARCHIVE_REJECTED", "validation", "The source archive was rejected, but the server did not return a structured reason. Try creating the ZIP again or contact support with the error code."),
-        >= 500 => new("SOURCE_ANALYSIS_UNAVAILABLE", "analysis", "Source Analysis could not complete the request. No new snapshot was selected."),
+        400 => new("ARCHIVE_REJECTED", "validation", "The source archive was rejected, but the server did not return a structured reason. Try creating the ZIP again or contact support with the error code."),
+        422 => new("SOURCE_ANALYSIS_FAILED", "analysis", "The archive passed validation, but source analysis could not complete. Retry the analysis or choose a smaller archive."),
+        >= 500 => new("SOURCE_SERVER_ERROR", "analysis", "Source upload failed unexpectedly. No new snapshot was selected."),
         _ => new("SOURCE_UPLOAD_FAILED", "upload", "Source upload could not be completed. Existing snapshots are unchanged."),
     };
     public async Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default)
