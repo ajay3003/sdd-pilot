@@ -55,6 +55,9 @@ public class WorkflowStepViewModel
     public bool RequiresApproval { get; set; } = true;
     public bool RequiresManualReview { get; set; } = true;
 
+    /// <summary>Artifact roles the step needs (backend WorkflowDefinitions). Empty for steps without artifact prerequisites.</summary>
+    public List<string> RequiredArtifacts { get; set; } = new();
+
     // State indicators
     public WorkflowStepStatus Status { get; set; }
     public PrerequisiteState Prerequisites { get; set; }

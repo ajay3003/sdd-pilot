@@ -24,10 +24,11 @@ public sealed class WorkflowReadinessServiceTests
         readiness.WorkspaceLoaded.Should().BeFalse();
         readiness.WorkspaceName.Should().Be("No workspace loaded");
         readiness.Workspace.AvailableRoleCount.Should().Be(0);
-        readiness.NextRecommendedAction!.Title.Should().Be("Give BirkNext project context");
+        readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
         readiness.NextRecommendedAction.Key.Should().Be(WorkflowReadinessService.LoadWorkspaceKey);
         readiness.IsOnboarding.Should().BeTrue();
-        readiness.Steps.Should().BeEmpty("the three project inputs are the way in, not a document step");
+        readiness.Steps.Should().ContainSingle().Which.Should().BeSameAs(readiness.NextRecommendedAction, "step 1 is the current step");
+        readiness.ArtifactLoad.Should().Be(ArtifactLoadState.Required);
         readiness.CanRelease.Should().BeFalse();
         readiness.ReleaseReadinessPercent.Should().BeNull("nothing is assessed without a workspace: no 0%");
         fixture.VerifyBackendNeverCalled();
@@ -68,7 +69,7 @@ public sealed class WorkflowReadinessServiceTests
     }
 
     [Fact]
-    public async Task LoadedWorkspaceWithoutArtifacts_RecommendsAddingArtifacts_NotLoadingAWorkspace()
+    public async Task LoadedWorkspaceWithoutArtifacts_RecommendsLoadingArtifacts_AsStepOne()
     {
         var fixture = new Fixture(WorkspaceSnapshots.Loaded("Source only", "source-only", "Source only"));
         fixture.WorkflowApi.SetupBuildSteps([Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Locked)]);
@@ -76,8 +77,8 @@ public sealed class WorkflowReadinessServiceTests
         var readiness = await fixture.Service.GetReadinessAsync();
 
         readiness.WorkspaceLoaded.Should().BeTrue();
-        readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.AddArtifactsKey);
-        readiness.NextRecommendedAction.Title.Should().NotBe("Load project artifacts");
+        readiness.ArtifactLoad.Should().Be(ArtifactLoadState.Required, "a workspace without artifacts has not completed step 1");
+        readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
     }
 
     [Fact]

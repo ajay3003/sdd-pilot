@@ -70,6 +70,9 @@ public class WorkflowStepViewModel
     public bool RequiresApproval { get; set; } = true;
     public bool RequiresManualReview { get; set; } = true;
 
+    /// <summary>Artifact roles the step needs (from WorkflowDefinitions), so the UI can say exactly what a locked step is missing.</summary>
+    public List<string> RequiredArtifacts { get; set; } = new();
+
     // State indicators
     public WorkflowStepStatus Status { get; set; } = WorkflowStepStatus.Locked;
     public PrerequisiteState Prerequisites { get; set; } = PrerequisiteState.Missing;

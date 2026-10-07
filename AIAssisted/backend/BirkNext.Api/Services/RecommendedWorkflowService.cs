@@ -222,7 +222,8 @@ public class RecommendedWorkflowService : IRecommendedWorkflowService
                 IsFuture = !isAvailable,
                 IsOptional = definition.IsOptional,
                 RequiresApproval = definition.RequiresApproval,
-                RequiresManualReview = definition.RequiresManualReview
+                RequiresManualReview = definition.RequiresManualReview,
+                RequiredArtifacts = definition.RequiredArtifacts.ToList()
             };
 
             viewModels.Add(vm);

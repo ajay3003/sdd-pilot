@@ -85,17 +85,17 @@ public sealed class ProjectInputWorkflowTests
     // ── Scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task EmptyStart_RecommendsASampleProject_AndOffersSourceAndTargetAsAlternatives()
+    public async Task EmptyStart_RecommendsLoadingArtifacts_AndOffersImportSourceAndTargetAsAlternatives()
     {
         var r = await ReadinessAsync();
 
         r.IsOnboarding.Should().BeTrue();
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Absent);
-        r.NextRecommendedAction!.Title.Should().Be("Give BirkNext project context");
+        r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
         r.NextRecommendedAction.Route.Should().Be("sample-projects");
-        r.NextRecommendedAction.ActionLabel.Should().Be("Choose Sample Project");
-        r.NextRecommendedAction.Description.Should().Contain("quickest").And.Contain("No input is required for every project");
-        r.AlternativeActions.Select(a => a.Route).Should().Equal("source-analysis", NavigationCatalog.TargetEnvironmentsRoute);
+        r.NextRecommendedAction.ActionLabel.Should().Be("Load artifacts");
+        r.NextRecommendedAction.Description.Should().StartWith("Required project artifacts are missing.");
+        r.AlternativeActions.Select(a => a.Route).Should().Equal("specification-explorer", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute);
         r.Inputs.Documents.Requirement.Should().Be("Recommended start");
         r.Inputs.Source.Requirement.Should().StartWith("Optional");
         r.Inputs.Target.Requirement.Should().Be("Required for runtime reviews");
@@ -117,7 +117,8 @@ public sealed class ProjectInputWorkflowTests
         r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Absent);
         r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Absent);
         r.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
-        r.NextRecommendedAction.Title.Should().NotBe("Load project artifacts").And.NotBe("Give BirkNext project context");
+        r.NextRecommendedAction.Title.Should().NotBe("Load project artifacts");
+        r.ArtifactLoad.Should().Be(ArtifactLoadState.Done);
         r.AlternativeActions.Should().BeEmpty("source and target are optional, not blockers");
     }
 

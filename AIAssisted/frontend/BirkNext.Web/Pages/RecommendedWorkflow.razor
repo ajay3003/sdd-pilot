@@ -85,7 +85,7 @@
             <main class="rw-main" aria-label="Recommended workflow">
         @if (_readiness.NextRecommendedAction is not null)
         {
-            <div class="rw-next-action">
+            <div class="rw-next-action" data-testid="rw-next-action">
                 <div class="rw-next-action-header">
                     <span class="rw-next-action-icon">▶</span>
                     <div>
@@ -95,13 +95,20 @@
                 </div>
                 <div class="rw-next-action-label">Why this is the next step</div>
                 <p class="rw-next-action-desc">@_readiness.NextRecommendedAction.Description</p>
-                <div class="rw-next-action-buttons">
-                    @RenderQuickAction(_readiness.NextRecommendedAction)
-                    @foreach (var alternative in _readiness.AlternativeActions)
-                    {
-                        <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
-                    }
-                </div>
+                @if (_readiness.RecommendationIsListedStep)
+                {
+                    <p class="rw-next-action-step" data-testid="rw-next-action-step">Step @_readiness.NextRecommendedAction.Number below.</p>
+                }
+                else
+                {
+                    <div class="rw-next-action-buttons">
+                        @RenderQuickAction(_readiness.NextRecommendedAction)
+                        @foreach (var alternative in _readiness.AlternativeActions)
+                        {
+                            <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
+                        }
+                    </div>
+                }
             </div>
         }
         else if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
@@ -111,13 +118,14 @@
 
         @if (_readiness.Steps.Count > 0)
         {
-            <h2 class="rw-section-heading">Document review steps</h2>
+            <h2 class="rw-section-heading">Workflow steps</h2>
         }
 
         <div class="rw-phases">
             @foreach (var step in _readiness.Steps)
             {
-                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "") @(step.IsFuture ? "is-disabled" : "") @(step.Status == WorkflowStepStatus.NeedsAttention ? "is-invalidated" : "")" style="--rw-phase-color: @GetStepColor(step);">
+                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "") @(step.Status == WorkflowStepStatus.NeedsAttention ? "is-invalidated" : "")" style="--rw-phase-color: @GetStepColor(step);"
+                     data-testid="rw-step" data-step="@step.Key" data-state="@GetStepStateLabel(step)" aria-current="@(step.IsCurrent ? "step" : null)">
                     <div class="rw-phase-header">
                         <div class="rw-phase-num">
                             @if (step.Status == WorkflowStepStatus.NeedsAttention)
@@ -126,14 +134,14 @@
                             }
                             else
                             {
-                                @(step.Status == WorkflowStepStatus.Approved ? "✓" : step.Number.ToString())
+                                @(step.Status == WorkflowStepStatus.Approved ? "✓" : step.Status == WorkflowStepStatus.Locked ? "🔒" : step.Number.ToString())
                             }
                         </div>
                         <div class="rw-phase-titles">
                             <div class="rw-phase-label">Step @step.Number</div>
                             <div class="rw-phase-name">@step.Title</div>
                         </div>
-                        <span class="badge rw-step-badge @GetStepBadgeClass(step)">@GetStepStateLabel(step)</span>
+                        <span class="badge rw-step-badge @GetStepBadgeClass(step)" data-testid="rw-step-state">@GetStepStateLabel(step)</span>
                     </div>
                     @if (step.Status == WorkflowStepStatus.NeedsAttention)
                     {
@@ -148,7 +156,7 @@
                     <div class="rw-phase-body">
                         <p class="rw-goal">@step.Description</p>
                         <div class="rw-phase-footer">
-                            @RenderAction(step, "rw-cta")
+                            @RenderAction(step)
                         </div>
                     </div>
                 </div>
@@ -200,10 +208,7 @@
                 <div class="rw-sidebar-inner">
                     <div class="rw-workspace-actions">
                         <div class="rw-workspace-header">
-                            <div>
-                                <div class="rw-workspace-actions-header">Current Workspace</div>
-                                <div class="rw-workspace-title" data-testid="rw-workspace-name">@_readiness.WorkspaceName</div>
-                            </div>
+                            <h2 class="rw-workspace-actions-header">Current workspace</h2>
                             <details class="rw-workspace-menu" @ref="_workspaceMenuRef">
                                 <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
                                 <div class="rw-workspace-menu-list">
@@ -217,55 +222,38 @@
                             </details>
                         </div>
 
-                        <div class="rw-workspace-info">
-                            <div class="rw-workspace-details">
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Workspace</span>
-                                    <span class="rw-detail-value">@_readiness.WorkspaceName</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Project</span>
-                                    <span class="rw-detail-value" data-testid="rw-project">@ProjectValue</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Documents</span>
-                                    <span class="rw-detail-value" data-testid="rw-artifact-roles">@ArtifactRolesValue</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Source</span>
-                                    <span class="rw-detail-value" data-testid="rw-source-summary">@InputSummary(_readiness.Inputs.Source)</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Target</span>
-                                    <span class="rw-detail-value" data-testid="rw-target-summary">@InputSummary(_readiness.Inputs.Target)</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Release Readiness</span>
-                                    <span class="rw-detail-value" data-testid="rw-release-readiness">@ReleaseReadinessValue</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Save status</span>
-                                    <span class="rw-detail-value @SaveStatusClass" data-testid="rw-save-status">@_readiness.Workspace.SaveStatusLabel</span>
-                                </div>
-                                <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Last Saved</span>
-                                    <span class="rw-detail-value">@_readiness.LastSavedText</span>
-                                </div>
+                        <dl class="rw-workspace-details">
+                            <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Workspace</dt>
+                                <dd class="rw-detail-value" data-testid="rw-workspace-name" title="@_readiness.WorkspaceName">@_readiness.WorkspaceName</dd>
                             </div>
-                        </div>
+                            <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Project</dt>
+                                <dd class="rw-detail-value" data-testid="rw-project" title="@ProjectValue">@ProjectValue</dd>
+                            </div>
+                            <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Artifact roles</dt>
+                                <dd class="rw-detail-value" data-testid="rw-artifact-roles">@ArtifactRolesValue</dd>
+                            </div>
+                            <div class="rw-detail-item">
+                                <dt class="rw-detail-label">Saved</dt>
+                                <dd class="rw-detail-value" data-testid="rw-saved"><span class="@SaveStatusClass" data-testid="rw-save-status">@_readiness.Workspace.SaveStatusLabel</span>@(_readiness.Workspace.LastSavedAt is null ? "" : $" · {_readiness.LastSavedText}")</dd>
+                            </div>
+                        </dl>
 
                         @if (_readiness.Workspace.State == CurrentWorkspaceState.NoWorkspace)
                         {
                             <div class="rw-no-workspace" data-testid="rw-no-workspace">
-                                <p>No document workspace loaded.</p>
-                                <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
+                                <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume a saved workspace</SecondaryButton>
                             </div>
                         }
                     </div>
 
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
                         <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
-                        <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                        <div class="rw-metric" data-testid="rw-release-readiness-card">
+                            <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -406,57 +394,55 @@
         step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
         || step.Key.Equals(WorkflowReadinessService.LoadWorkspaceKey, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The step's state in words. Step 1 (artifact loading) is "Action required" or "Done" — never a review state. Review steps are
+    /// Ready, In review (opened), Pending approval (marked reviewed by a person), Approved, Needs changes or Locked.
+    /// </summary>
     private string GetStepStateLabel(WorkflowStepViewModel step)
     {
-        // Loading is not reviewing: the load step is simply done once a workspace exists.
-        if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
-        {
-            return "Done";
-        }
+        if (IsLoadWorkspaceStep(step))
+            return _readiness?.ArtifactLoad == ArtifactLoadState.Done ? "Done" : "Action required";
 
         if (step.ApprovalState == ApprovalState.NeedsChanges ||
             step.ApprovalState == ApprovalState.InvalidatedByArtifactChange ||
             step.Status == WorkflowStepStatus.NeedsAttention)
         {
-            return "Needs Changes";
+            return "Needs changes";
         }
 
         return step.Status switch
         {
             WorkflowStepStatus.Locked => "Locked",
-            WorkflowStepStatus.Available => "Available",
-            WorkflowStepStatus.InProgress => "In Review",
-            WorkflowStepStatus.Reviewed when step.RequiresApproval => "Pending Approval",
+            WorkflowStepStatus.InProgress => "In review",
+            WorkflowStepStatus.Reviewed when step.RequiresApproval => "Pending approval",
             WorkflowStepStatus.Reviewed => "Reviewed",
             WorkflowStepStatus.Approved => "Approved",
-            _ => "Available"
+            _ => "Ready"
         };
     }
 
     private string GetStepBadgeClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
     {
-        "Approved" => "rw-badge-approved",
-        "Needs Changes" => "rw-badge-needs-changes",
-        "In Review" => "rw-badge-in-review",
-        "Pending Approval" => "rw-badge-pending",
-        "Reviewed" or "Done" => "rw-badge-reviewed",
+        "Approved" or "Done" => "rw-badge-approved",
+        "Needs changes" => "rw-badge-needs-changes",
+        "Action required" => "rw-badge-action",
+        "In review" => "rw-badge-in-review",
+        "Pending approval" or "Reviewed" => "rw-badge-pending",
         "Locked" => "rw-badge-locked",
         _ => "rw-badge-available"
     };
 
     private string GetStepCardClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
     {
-        "Approved" => "is-approved",
-        "Needs Changes" => "is-attention",
-        "In Review" => "is-current",
-        "Pending Approval" => "is-reviewed",
-        "Reviewed" or "Done" => "is-reviewed",
-        "Locked" => "is-disabled",
+        "Approved" or "Done" => "is-approved",
+        "Needs changes" => "is-attention",
+        "Pending approval" or "Reviewed" => "is-reviewed",
+        "Locked" => "is-locked-step",
         _ => ""
     };
 
     private string GetStepColor(WorkflowStepViewModel step) =>
-        GetStepStateLabel(step) == "Approved" ? "#15803d" : step.Color;
+        GetStepStateLabel(step) is "Approved" or "Done" ? "#15803d" : step.Color;
 
     private RenderFragment RenderQuickAction(WorkflowStepViewModel step) => builder =>
     {
@@ -472,34 +458,36 @@
         builder.CloseElement();
     };
 
-    private RenderFragment RenderAction(WorkflowStepViewModel step, string cssClass) => builder =>
+    private RenderFragment RenderAction(WorkflowStepViewModel step) => __builder =>
     {
-        if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
+        if (IsLoadWorkspaceStep(step))
         {
+            if (_readiness?.ArtifactLoad == ArtifactLoadState.Done) return;
+            <div class="rw-step-actions">
+                <a href="@step.Route" class="rw-cta" data-testid="rw-load-artifacts">@step.ActionLabel</a>
+                @foreach (var alternative in _readiness?.AlternativeActions ?? [])
+                {
+                    <a href="@alternative.Route" class="rw-step-link" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
+                }
+            </div>
+            return;
+        }
+
+        if (step.Status == WorkflowStepStatus.Locked)
+        {
+            // A locked step says why, as text; it offers no review or approval controls.
+            <p class="rw-step-locked-reason" data-testid="rw-step-locked-reason">@(string.IsNullOrWhiteSpace(step.DisabledReason) ? "Complete the previous step first" : step.DisabledReason)</p>
             return;
         }
 
         if (step.CanOpen)
         {
-            builder.OpenElement(0, "a");
-            builder.AddAttribute(1, "href", step.Route);
-            builder.AddAttribute(2, "class", cssClass);
-            builder.AddContent(3, $"{step.ActionLabel} →");
-            builder.CloseElement();
-        }
-        else
-        {
-            builder.OpenElement(4, "button");
-            builder.AddAttribute(5, "type", "button");
-            builder.AddAttribute(6, "class", $"{cssClass} is-disabled");
-            builder.AddAttribute(7, "disabled", true);
-            builder.AddContent(8, step.DisabledReason);
-            builder.CloseElement();
+            <a href="@step.Route" class="@(step.IsCurrent ? "rw-cta" : "rw-cta rw-cta-secondary")">@step.ActionLabel →</a>
         }
 
         if (step.RequiresManualReview || step.RequiresApproval)
         {
-            RenderApprovalButtons(builder, step);
+            RenderApprovalButtons(__builder, step);
         }
     };
 

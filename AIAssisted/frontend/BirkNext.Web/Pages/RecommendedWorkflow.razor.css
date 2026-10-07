@@ -53,7 +53,7 @@
     color: #1e40af;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 0.25rem;
+    margin: 0.35rem 0 0;
 }
 
 .rw-workspace-title {
@@ -134,9 +134,13 @@
 
 .rw-detail-item {
     display: grid;
-    grid-template-columns: minmax(6.4rem, auto) minmax(0, 1fr);
-    gap: 0.5rem;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 0.75rem;
     align-items: baseline;
+}
+
+.rw-workspace-details {
+    margin: 0;
 }
 
 .rw-detail-label {
@@ -147,13 +151,16 @@
     letter-spacing: 0.05em;
 }
 
+/* Values wrap between words (long identifiers break only when they must), left-aligned under each other. */
 .rw-detail-value {
+    margin: 0;
     font-size: 0.86rem;
-    font-weight: 500;
+    font-weight: 600;
     color: #1e293b;
-    font-family: 'Monaco', 'Courier New', monospace;
-    text-align: right;
-    overflow-wrap: anywhere;
+    text-align: left;
+    overflow-wrap: break-word;
+    word-break: normal;
+    min-width: 0;
 }
 
 .rw-detail-value.status-saved {
@@ -409,7 +416,7 @@
 
 .rw-artifact-badge.is-missing {
     background: #f3f4f6;
-    color: #6b7280;
+    color: #4b5563;
     border: 1px solid #e5e7eb;
 }
 
@@ -581,7 +588,7 @@
 
 .rw-step-badge.rw-badge-locked {
     background: #f3f4f6;
-    color: #6b7280;
+    color: #4b5563;
 }
 
 .rw-phase-num {
@@ -1028,31 +1035,14 @@
         flex-direction: column;
     }
 
-    .rw-main {
-        display: contents;
-    }
-
-    .rw-next-action {
-        order: 1;
-    }
-
+    /* Stacked in reading order: recommendation and steps first (the action), then the workspace summary. */
+    .rw-main,
     .rw-sidebar {
-        order: 2;
         width: 100%;
     }
 
     .rw-sidebar-inner {
         position: static;
-    }
-
-    .rw-phases {
-        order: 3;
-        width: 100%;
-    }
-
-    .rw-release {
-        order: 4;
-        width: 100%;
     }
 
     .rw-workspace-details {
@@ -1296,4 +1286,73 @@
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--clr-warning);
+}
+
+
+/* ── Step hierarchy: one current step, locked steps subdued (without opacity, so text keeps its contrast) ───────── */
+.rw-step-badge.rw-badge-action {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.rw-phase.is-locked-step {
+    background: var(--clr-surface);
+    border-left-color: #cbd5e1;
+    box-shadow: none;
+}
+
+.rw-phase.is-locked-step .rw-phase-name,
+.rw-phase.is-locked-step .rw-goal {
+    color: var(--clr-text-muted);
+}
+
+.rw-phase.is-locked-step .rw-phase-num {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.rw-step-locked-reason {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.rw-step-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+}
+
+.rw-step-link {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e40af;
+}
+
+.rw-next-action-step {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e40af;
+}
+
+.rw-metric {
+    display: contents;
+}
+
+@media (max-width: 480px) {
+    .rw-detail-item {
+        grid-template-columns: 1fr;
+        gap: 0.1rem;
+    }
+}
+
+/* Secondary step links: readable dark text on white; the step colour stays as the border (some step colours fail as text). */
+.rw-phase .rw-cta.rw-cta-secondary,
+.rw-phase .rw-cta.rw-cta-secondary:hover {
+    color: var(--clr-text-heading);
+    background: var(--clr-surface-white);
+    border: 1.5px solid var(--rw-phase-color);
 }
