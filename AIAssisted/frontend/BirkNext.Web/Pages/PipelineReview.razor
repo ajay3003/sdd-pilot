@@ -278,7 +278,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfile;
+        // No active Target Environment is the "No Target Environment selected" state, never an empty environment id.
+        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
         if (_profile is not null)
         {
             _sources = await Api.SourcesAsync(_profile.Id);

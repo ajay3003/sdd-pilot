@@ -27,7 +27,8 @@ public sealed class AzureEnvironmentApiService(HttpClient http) : IAzureEnvironm
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string Base = "api/azure-environment";
 
-    private static AzureConnectionStatus Unreachable(Exception e) => new() { State = AzureConnectionState.Failed, Message = $"BirkNext.Api could not be reached ({e.GetType().Name})." };
+    /// <summary>A failed request to BirkNext.Api, classified: an HTTP error status is not "could not be reached".</summary>
+    private static AzureConnectionStatus Unreachable(Exception e) => new() { State = AzureConnectionState.Failed, Message = BackendRequestClassifier.FromException("Azure connection status", e).UserMessage };
 
     public async Task<AzureConnectionStatus> StatusAsync(CancellationToken ct = default)
     {
@@ -60,7 +61,7 @@ public sealed class AzureEnvironmentApiService(HttpClient http) : IAzureEnvironm
             var body = await response.Content.ReadFromJsonAsync<SubscriptionsBody>(Json, ct);
             return new(body?.Subscriptions ?? [], body?.Capability, null);
         }
-        catch (HttpRequestException e) { return new([], null, $"BirkNext.Api could not be reached ({e.GetType().Name})."); }
+        catch (HttpRequestException e) { return new([], null, BackendRequestClassifier.FromException("Azure subscriptions", e).UserMessage); }
     }
 
     private sealed record SubscriptionsBody(List<AzureSubscription> Subscriptions, AzureCapability? Capability);
@@ -72,7 +73,7 @@ public sealed class AzureEnvironmentApiService(HttpClient http) : IAzureEnvironm
             using var response = await http.PostAsJsonAsync($"{Base}/analyze", request, Json, ct);
             return response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<AzureEnvironmentSnapshot>(Json, ct), null) : (null, await Message(response, ct));
         }
-        catch (HttpRequestException e) { return (null, $"BirkNext.Api could not be reached ({e.GetType().Name})."); }
+        catch (HttpRequestException e) { return (null, BackendRequestClassifier.FromException("Azure environment request", e).UserMessage); }
     }
 
     public async Task<IReadOnlyList<AzureEnvironmentSnapshotSummary>> SnapshotsAsync(string environmentId, CancellationToken ct = default)
@@ -96,7 +97,7 @@ public sealed class AzureEnvironmentApiService(HttpClient http) : IAzureEnvironm
             using var response = await http.GetAsync(url, ct);
             return response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<DeclaredObservedComparison>(Json, ct), null) : (null, await Message(response, ct));
         }
-        catch (HttpRequestException e) { return (null, $"BirkNext.Api could not be reached ({e.GetType().Name})."); }
+        catch (HttpRequestException e) { return (null, BackendRequestClassifier.FromException("Azure environment request", e).UserMessage); }
     }
 
     public async Task<IReadOnlyList<AzureTargetSuggestion>> TargetSuggestionsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default)

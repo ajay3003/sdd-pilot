@@ -148,7 +148,7 @@
     private async Task ReloadScopeAsync()
     {
         try { _scope.Options = await Api.ApplicationMessagingSourceScopeAsync(EnvironmentId, _scope.Request); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded: the BirkNext backend did not answer."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Source Analysis snapshots", ex).UserMessage; }
     }
 
     private async Task FocusAsync() { if (_selector is not null) await _selector.FocusAsync(); }
@@ -169,7 +169,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _error = "The messaging evidence could not be built: the BirkNext backend did not answer. Nothing was stored.";
+            _error = $"{BackendRequestClassifier.FromException("Building the messaging evidence", ex).UserMessage} Nothing was stored.";
             _status = "";
         }
         finally { _busy = false; }

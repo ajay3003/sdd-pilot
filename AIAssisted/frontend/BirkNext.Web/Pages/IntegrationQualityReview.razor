@@ -756,7 +756,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _error = "The BirkNext backend did not answer; configured integrations are stored by the backend.";
+            _error = $"{BackendRequestClassifier.FromException("Configured integrations", ex).UserMessage} Configured integrations are stored by the backend.";
         }
     }
 
@@ -774,7 +774,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _error = "The review could not be completed: the BirkNext backend did not answer.";
+            _error = BackendRequestClassifier.FromException("Integration Quality Review run", ex).UserMessage;
             if (_context is not null) RuntimeReviews.MarkIntegrationQualityFailed(_context, _error);
         }
         finally { _running = false; }

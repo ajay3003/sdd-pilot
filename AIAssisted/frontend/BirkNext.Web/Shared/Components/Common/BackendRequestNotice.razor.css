@@ -1,0 +1,53 @@
+.brn {
+    margin: 0.6rem 0;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--clr-warning-border);
+    border-left-width: 4px;
+    border-radius: var(--radius-md);
+    background: var(--clr-warning-bg-light, var(--clr-warning-bg));
+    color: var(--clr-text-body);
+    min-width: 0;
+}
+
+.brn-danger { border-color: var(--clr-danger-border); background: var(--clr-danger-bg-light, var(--clr-danger-bg)); }
+.brn-info { border-color: var(--clr-info-border); background: var(--clr-info-bg-light, var(--clr-info-bg)); }
+
+.brn-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
+
+.brn-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+}
+
+.brn-category { font-size: 0.8rem; font-weight: 600; color: var(--clr-text-heading); }
+
+.brn-message, .brn-hint { margin: 0.35rem 0 0; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.brn-hint { color: var(--clr-text-body); }
+
+.brn-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem 0.8rem; margin-top: 0.5rem; }
+
+.brn-details { font-size: 0.8rem; min-width: 0; }
+.brn-details summary { cursor: pointer; font-weight: 600; color: var(--clr-text-heading); }
+.brn-details dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.15rem 0.7rem; margin: 0.4rem 0 0; }
+.brn-details dt { font-weight: 600; }
+.brn-details dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Own button: the shared faint secondary button does not reach 4.5:1 on the tinted notice backgrounds. */
+.brn-retry {
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--clr-text-heading);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    color: var(--clr-text-heading);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.brn-retry:hover:not(:disabled) { background: var(--clr-surface); }
+.brn-retry:focus-visible { outline: 2px solid var(--clr-info); outline-offset: 2px; }
+.brn-retry:disabled { cursor: progress; opacity: 0.75; }

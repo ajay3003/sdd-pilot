@@ -39,7 +39,7 @@ public sealed class PipelineReviewApiService(HttpClient http) : IPipelineReviewA
             try { if (JsonDocument.Parse(text).RootElement.TryGetProperty("message", out var m)) return (null, m.GetString()); } catch (JsonException) { }
             return (null, $"The review could not be loaded (HTTP {(int)response.StatusCode}).");
         }
-        catch (HttpRequestException e) { return (null, $"BirkNext.Api could not be reached ({e.GetType().Name})."); }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { return (null, BackendRequestClassifier.FromException("Pipeline Review", e, "GET api/pipeline-review", ct).UserMessage); }
     }
 
     public async Task<PathProbeResult?> ProbeAsync(string environmentId, Guid snapshotId, string path, CancellationToken ct = default)

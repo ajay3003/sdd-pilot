@@ -652,7 +652,7 @@
     protected override async Task OnInitializedAsync()
     {
         try { _history = await Api.HistoryAsync(); }
-        catch (HttpRequestException) { _status = "Stored reviews could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _status = BackendRequestClassifier.FromException("Stored reviews", ex).UserMessage; }
         await LoadHealthListsAsync();
         await LoadSourcesAsync();
         try { if (!TargetSettings.IsLoaded) await TargetSettings.LoadAsync(JS); }
@@ -765,7 +765,7 @@
             _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull?.Id;
             if (_environmentId is not null) _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request);
         }
-        catch (HttpRequestException) { _status = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _status = BackendRequestClassifier.FromException("Source Analysis snapshots", ex).UserMessage; }
     }
 
     /// <summary>Re-reads the scope's options (candidates, newer snapshots, problems) after an explicit change — never auto-includes.</summary>
@@ -773,7 +773,7 @@
     {
         if (_environmentId is null) return;
         try { _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request); }
-        catch (HttpRequestException) { _error = "Related sources could not be checked (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Checking related sources", ex).UserMessage; }
     }
 
     private async Task PrimaryChangedAsync(Guid? id)
@@ -814,7 +814,7 @@
             _history = await Api.HistoryAsync();
             await LoadHealthListsAsync(); // each reviewed source is also a declared-dependency inventory
         }
-        catch (HttpRequestException ex) { _error = $"The review could not be run: {ex.Message}"; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Running the review", ex).UserMessage; _status = null; }
         finally { _busy = false; }
     }
 
@@ -827,7 +827,7 @@
             if (await Api.GetAsync(id) is { } run) { Show(run); _status = $"Showing stored review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC."; }
             else _error = "That review is no longer stored.";
         }
-        catch (HttpRequestException ex) { _error = $"The review could not be loaded: {ex.Message}"; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("The stored review", ex).UserMessage; }
         finally { _busy = false; }
     }
 
@@ -881,7 +881,7 @@
             _singleResult = simulation;
             _singleError = error;
         }
-        catch (HttpRequestException ex) { _singleError = $"The simulation could not be run: {ex.Message}"; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _singleError = BackendRequestClassifier.FromException("Running the simulation", ex).UserMessage; }
         finally { _busy = false; }
     }
 
@@ -926,7 +926,7 @@
             _inventories = await Api.InventoriesAsync();
             _healthHistory = await Api.HealthHistoryAsync();
         }
-        catch (HttpRequestException) { _healthStatus = "Stored inventories could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthStatus = BackendRequestClassifier.FromException("Stored inventories", ex).UserMessage; }
     }
 
     private void PickInventory(ChangeEventArgs e)
@@ -984,7 +984,7 @@
             _healthStatus = $"Dependency health review stored {run!.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC{(run.RefreshOf is not null ? " as a new run; the earlier run is unchanged" : "")}.";
             await LoadHealthListsAsync();
         }
-        catch (HttpRequestException ex) { _healthError = $"The dependency health review could not be run: {ex.Message}"; _healthStatus = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthError = BackendRequestClassifier.FromException("Running the dependency health review", ex).UserMessage; _healthStatus = null; }
         finally { _busy = false; }
     }
 
@@ -1002,7 +1002,7 @@
             await LoadHealthListsAsync();
             _inventoryId = import.Inventory.Id;
         }
-        catch (HttpRequestException ex) { _healthError = $"The document could not be uploaded: {ex.Message}"; _healthStatus = null; return; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthError = BackendRequestClassifier.FromException("Uploading the document", ex).UserMessage; _healthStatus = null; return; }
         finally { _busy = false; }
         await HealthAsync(() => Api.RunHealthAsync(Request(_inventoryId!.Value)), "SBOM stored as an inventory. Checking registry, advisory and license evidence…");
     }
@@ -1021,7 +1021,7 @@
             _deployedId = capture.Inventory.Id;
             _healthStatus = $"Captured {capture.Inventory.Dependencies} deployed assembl{(capture.Inventory.Dependencies == 1 ? "y" : "ies")} (versions not proven). Selected as deployed evidence for the next dependency health review.";
         }
-        catch (HttpRequestException ex) { _healthError = $"Deployed evidence could not be captured: {ex.Message}"; _healthStatus = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthError = BackendRequestClassifier.FromException("Capturing deployed evidence", ex).UserMessage; _healthStatus = null; }
         finally { _busy = false; }
     }
 
@@ -1034,7 +1034,7 @@
             if (await Api.GetHealthAsync(id) is { } run) { ShowHealth(run); _healthStatus = $"Showing stored dependency health review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC, exactly as recorded."; }
             else _healthError = "That review is no longer stored.";
         }
-        catch (HttpRequestException ex) { _healthError = $"The review could not be loaded: {ex.Message}"; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthError = BackendRequestClassifier.FromException("The stored dependency health review", ex).UserMessage; }
         finally { _busy = false; }
     }
 

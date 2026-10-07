@@ -11,13 +11,20 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
+// One configured backend address for every BirkNext API client (wwwroot/appsettings.json "BackendUrl"). A feature client
+// with its own hard-coded host or port drifts from the rest: its calls fail while other pages work, and the failure
+// reads as "backend not reachable". SECURITY: HTTPS required in production; HTTP only for loopback in Development.
+var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
+BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
+var backendBase = BackendUrlValidator.BaseAddress(backendUrl);
+
 builder.Services
     .AddBirkNextClient()
     .ConfigureHttpClient(client =>
-        client.BaseAddress = new Uri("http://localhost:5000/graphql"));
+        client.BaseAddress = new Uri(backendBase, "graphql"));
 
 builder.Services.AddHttpClient<AdminApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<MarkdownRenderingService>();
@@ -80,13 +87,13 @@ builder.Services.AddScoped<ISecurityScanner, SecurityScannerAdapter>();
 builder.Services.AddScoped<IFrontendQualityTargetAccessResolver, FrontendQualityTargetAccessResolver>();
 builder.Services.AddScoped<IFrontendQualityReviewOrchestrator, FrontendQualityReviewOrchestrator>();
 builder.Services.AddHttpClient<IQualityReviewPageModelService, QualityReviewPageModelService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IAnalysisPageModelService, AnalysisPageModelService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ILibraryPageModelService, LibraryPageModelService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ReviewPageModelService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
 builder.Services.AddScoped<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
 builder.Services.AddSingleton<WorkspaceArtifactRepository>();
@@ -99,9 +106,9 @@ builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifact
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
 builder.Services.AddSingleton<LocalDataResetEpoch>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // The one current-workspace read model: Dashboard, Recommended Workflow and navigation applicability all read it.
 builder.Services.AddScoped<ICurrentWorkspaceProjection, CurrentWorkspaceProjection>();
 builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
@@ -113,12 +120,12 @@ builder.Services.AddScoped<ApplicationRuntimeResetService>();
 builder.Services.AddScoped<TaskAlignmentSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<SourceChangeImpactApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
 builder.Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
@@ -129,28 +136,24 @@ builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTarg
 builder.Services.AddScoped<IAuthenticatedBrowserSessionService, AuthenticatedBrowserSessionService>();
 builder.Services.AddScoped<IFrontendAnalysisContextFactory, FrontendAnalysisContextFactory>();
 builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
-// Target environment detection — uses backend API
-// SECURITY: HTTPS required in production. HTTP allowed only for loopback in Development.
-var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
-BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 
 builder.Services.AddHttpClient<IManagedEdgeCdpApiService, ManagedEdgeCdpApiService>(client =>
 {
-    client.BaseAddress = new Uri(backendUrl);
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddScoped<ManagedEdgeRuntime>();
 builder.Services.AddHttpClient<ILocalHttpsProxyApiService, LocalHttpsProxyApiService>(client =>
 {
-    client.BaseAddress = new Uri(backendUrl);
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<LocalHttpsProxyRuntime>();
 builder.Services.AddHttpClient<IBrowserCompanionApiService, BrowserCompanionApiService>(client =>
 {
-    client.BaseAddress = new Uri(backendUrl);
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<BrowserCompanionRuntime>();
@@ -158,14 +161,14 @@ builder.Services.AddScoped<BrowserCompanionRuntime>();
 // short review timeout.
 builder.Services.AddHttpClient<ICriticalE2EApiService, CriticalE2EApiService>(client =>
 {
-    client.BaseAddress = new Uri(backendUrl);
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromMinutes(10);
 });
 builder.Services.AddScoped<IBrowserQualityEvidenceSource, BrowserQualityEvidenceSource>();
 builder.Services.AddScoped<IPerformanceQualityEvidenceSource, PerformanceQualityEvidenceSource>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
-    client.BaseAddress = new Uri(backendUrl);
+    client.BaseAddress = backendBase;
     // Security: Validate SSL certificates in production
     if (!builder.HostEnvironment.IsDevelopment())
     {
@@ -174,13 +177,13 @@ builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvi
 });
 
 builder.Services.AddHttpClient<IBlazorWasmPerformanceReviewService, BlazorWasmPerformanceReviewService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 // Generic Sample Project document discovery (recursive inventory + deterministic role classification), shared by the
 // Sample Projects page, the Dashboard and the document resolver the Explorers use.
@@ -201,70 +204,70 @@ builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerC
         sp.GetRequiredService<IWorkspaceStateManager>()));
 
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // Azure Environment Analysis: sign-in status, read-only analysis into snapshots, declared-vs-observed comparison (the backend only reads Azure).
 builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // Pipeline Review: delivery-flow interpretation of Source Analysis CI/CD evidence (GET only).
 // Technology & Analysis Coverage: source technology inventory + configured integrations (GET only); applicability is evaluated in the browser.
 builder.Services.AddHttpClient<ITechnologyCoverageApiService, TechnologyCoverageApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddScoped<ProjectApplicabilityState>();
 builder.Services.AddScoped<NavigationSectionState>();
 // Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).
 builder.Services.AddHttpClient<IPerformanceTestApiService, PerformanceTestApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.
 builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 // Dependency Review: read-only analysis of uploaded repository archives (synthetic version simulation only) and source-free dependency
 // health over stored inventories (registry/advisory lookups for hundreds of packages can take a while, hence the longer timeout).
 builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiService>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 builder.Services.AddHttpClient<ISddEvidenceApiService, SddEvidenceApiService>();
 builder.Services.AddScoped<SddEvidenceGraphService>();
 // Test evidence: TRX result preview and Source Analysis test definitions; imported executions are recorded in the workspace SDD lifecycle.
-builder.Services.AddHttpClient<ITestEvidenceApiService, TestEvidenceApiService>(client => client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<ITestEvidenceApiService, TestEvidenceApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddScoped<SddTestEvidenceNotifier>();
 // Trusted GraphQL schema artifacts per (Target Environment, API target) — API Quality Review's fallback schema for compatibility.
 builder.Services.AddHttpClient<IGraphQlSchemaArtifactApiService, GraphQlSchemaArtifactApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 
 builder.Services.AddHttpClient<IAuthenticatedReviewCapabilitiesService, AuthenticatedReviewCapabilitiesService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IFrontendAuthenticatedApiSurfaceService, FrontendAuthenticatedApiSurfaceService>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromSeconds(60);
 });
 
 builder.Services.AddHttpClient<IFrontendBrowserRuntimeReviewApiService, FrontendBrowserRuntimeReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IFrontendAccessibilityReviewApiService, FrontendAccessibilityReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IFrontendLighthouseReviewApiService, FrontendLighthouseReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IFrontendPassiveSecurityApiService, FrontendPassiveSecurityApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
-builder.Services.AddFrontendQualityEngineStatusApi(new Uri("http://localhost:5000/"));
-builder.Services.AddBrowserAutomationDiagnosticApi(new Uri("http://localhost:5000/"));
+    client.BaseAddress = backendBase);
+builder.Services.AddFrontendQualityEngineStatusApi(backendBase);
+builder.Services.AddBrowserAutomationDiagnosticApi(backendBase);
 builder.Services.AddHttpClient<IHeadlessDiagnosticApiService, HeadlessDiagnosticApiService>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.BaseAddress = backendBase;
     client.Timeout = TimeSpan.FromMinutes(2);
 });
 

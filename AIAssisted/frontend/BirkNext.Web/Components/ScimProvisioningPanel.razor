@@ -348,7 +348,7 @@
             _check = _overview.Latest?.PlatformId == Platform.Id ? _overview.Latest : null;
             _scope.Restore(_overview.Source?.SourceScope); // the snapshot the current SCIM evidence came from (never the latest one)
         }
-        catch (HttpRequestException) { _error = "SCIM evidence could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("SCIM evidence", ex).UserMessage; }
         await ReloadScopeAsync();
     }
 
@@ -364,7 +364,7 @@
     private async Task ReloadScopeAsync()
     {
         try { _scope.Options = await Api.ScimSourceScopeAsync(Profile.Id, _scope.Request); }
-        catch (HttpRequestException) { _error = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Source Analysis snapshots", ex).UserMessage; }
     }
 
     private async Task FocusSelectorAsync() { if (_selector is not null) await _selector.FocusAsync(); }
@@ -384,7 +384,7 @@
             _status = evidence!.Detected ? $"Saved. SCIM detected in {evidence.Project}: {evidence.Operations.Count} operation(s), {evidence.Requirements.Count} requirement(s) classified. Run safe SCIM checks to combine it with configuration and runtime evidence."
                 : "Saved. SCIM was not detected in the selected source snapshot.";
         }
-        catch (HttpRequestException) { _error = "The SCIM evidence could not be read (backend not reachable)."; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Reading the SCIM evidence", ex).UserMessage; _status = null; }
         finally { _busy = false; }
     }
 
@@ -402,7 +402,7 @@
             _status = $"Checked. {ScimPresentation.Headline(check!)}.";
             _focusResult = true;
         }
-        catch (HttpRequestException) { _error = "The SCIM checks could not be run (backend not reachable)."; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Running the SCIM checks", ex).UserMessage; _status = null; }
         finally { _busy = false; }
     }
 
@@ -413,7 +413,7 @@
         {
             if (await Api.ScimCheckAsync(id) is { } check) { _check = check; _status = $"Showing the stored check from {check.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC."; }
         }
-        catch (HttpRequestException) { _error = "The stored check could not be loaded."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("The stored SCIM check", ex).UserMessage; }
     }
 
     private void BeginEdit()

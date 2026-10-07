@@ -18,8 +18,8 @@ public sealed class TechnologyCoverageApiService(HttpClient http) : ITechnologyC
 
     public async Task<ProjectTechnologyCoverage?> GetAsync(string environmentId, CancellationToken ct = default)
     {
-        try { return await http.GetFromJsonAsync<ProjectTechnologyCoverage>($"api/technology-coverage?environmentId={Uri.EscapeDataString(environmentId)}", Json, ct); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return null; }
+        // Failures propagate: the caller classifies them (an HTTP error is not "the backend did not answer").
+        return await http.GetFromJsonAsync<ProjectTechnologyCoverage>($"api/technology-coverage?environmentId={Uri.EscapeDataString(environmentId)}", Json, ct);
     }
 }
 
@@ -54,6 +54,8 @@ public sealed class ProjectApplicabilityState : IDisposable
     public FrontendAnalysisProfile? Profile { get; private set; }
     public IReadOnlyDictionary<string, ReviewApplicability> Reviews { get; private set; } = new Dictionary<string, ReviewApplicability>();
     public bool Loaded { get; private set; }
+    /// <summary>Why the coverage read failed, classified; null when it succeeded or nothing was requested (no target).</summary>
+    public BackendRequestError? LoadError { get; private set; }
     public event Action? Changed;
 
     private int _generation;
@@ -69,6 +71,7 @@ public sealed class ProjectApplicabilityState : IDisposable
         var generation = ++_generation;
         FrontendAnalysisProfile? profile = null;
         ProjectTechnologyCoverage? coverage = null;
+        BackendRequestError? loadError = null;
         // Artifact roles come from the current workspace (Sample Project documents and imported artifacts alike), not session copies.
         var current = await workspace.GetAsync();
         try
@@ -79,13 +82,15 @@ public sealed class ProjectApplicabilityState : IDisposable
             profile = context.ActiveTargetError is null && context.ActiveProfile is { Id.Length: > 0 } active ? active : null;
             coverage = profile is null ? null : await api.GetAsync(profile.Id);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex))
         {
             coverage = null;
+            loadError = BackendRequestClassifier.FromException("Technology coverage", ex, "GET api/technology-coverage");
         }
         if (generation != _generation) return;
         Profile = profile;
         Coverage = coverage;
+        LoadError = loadError;
         Reviews = ApplicabilityEvaluator.EvaluateAll(TechnologyCoveragePresentation.Input(Coverage, Profile,
             current.Has(WorkspaceArtifactType.Specification), current.Has(WorkspaceArtifactType.Plan) || current.Has(WorkspaceArtifactType.Constitution)));
         Loaded = true;

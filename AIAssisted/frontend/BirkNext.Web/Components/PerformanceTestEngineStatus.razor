@@ -29,7 +29,7 @@
     {
         <div class="pte-error" role="alert" data-testid="pte-error">
             <strong>Performance engine capabilities could not be loaded.</strong>
-            <span>The backend did not answer. Nothing is shown as unsupported because nothing could be checked.</span>
+            <span>@(_api?.LastReadError?.UserMessage ?? "The engine requests failed.") Nothing is shown as unsupported because nothing could be checked.</span>
         </div>
     }
     else

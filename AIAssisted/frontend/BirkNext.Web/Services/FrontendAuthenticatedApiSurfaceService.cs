@@ -32,7 +32,8 @@ public sealed class FrontendAuthenticatedApiSurfaceService(HttpClient http) : IF
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            return NotExecuted(request, BackendUnavailableReason);
+            var error = BackendRequestClassifier.FromException("Authenticated API surface", ex, "POST api/frontend-quality/authenticated-api-surface", cancellationToken);
+            return NotExecuted(request, error.IsTransportFailure ? BackendUnavailableReason : $"Authenticated API surface not checked: {error.Detail}");
         }
     }
 

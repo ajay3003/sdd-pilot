@@ -22,9 +22,9 @@ public sealed class ImplementationTraceabilityApiService
                 "api/implementation-traceability/status");
             return result ?? new ProviderStatus { Configured = false, UsingMock = true, Message = "Status unavailable." };
         }
-        catch
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
         {
-            return new ProviderStatus { Configured = false, UsingMock = true, Message = "Backend unavailable." };
+            return new ProviderStatus { Configured = false, UsingMock = true, Message = BackendRequestClassifier.FromException("Implementation traceability status", ex, "GET api/implementation-traceability/status").UserMessage };
         }
     }
 

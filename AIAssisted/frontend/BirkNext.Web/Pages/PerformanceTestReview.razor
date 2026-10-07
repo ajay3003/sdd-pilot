@@ -56,7 +56,8 @@
     {
         <div class="ptc-empty ptc-empty-error" role="alert" data-testid="pt-unavailable">
             <span class="ptc-empty-icon" aria-hidden="true">!</span>
-            <div><h2>Performance tests could not be loaded</h2><p>The BirkNext backend did not answer. Performance tests are stored and executed by the backend; nothing is shown until it answers.</p></div>
+            <div><h2>Performance tests could not be loaded</h2><p>Performance tests are stored and executed by the backend; nothing is shown until the overview can be read.</p>
+                <BackendRequestNotice Error="Api.LastReadError" OnRetry="() => ReloadAsync(null)" TestId="pt-unavailable-detail" /></div>
         </div>
     }
     else
@@ -316,7 +317,8 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfile;
+        // No active Target Environment is the "no performance target" state; it is never sent as an empty environment id.
+        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
         if (_profile is not null) await ReloadAsync(null);
         _loaded = true;
     }

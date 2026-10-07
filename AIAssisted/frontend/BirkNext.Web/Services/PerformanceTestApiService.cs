@@ -15,6 +15,8 @@ public sealed record PerformanceApiResult<T>(T? Value, string? Error, List<strin
 public interface IPerformanceTestApiService
 {
     Task<PerformanceTestOverview?> OverviewAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Why the last read returned null, classified (an HTTP error is not "the backend did not answer"). Null after a successful read.</summary>
+    BackendRequestError? LastReadError => null;
     /// <summary>Installation-level provider availability and capabilities (System Settings → Performance Test Engines).</summary>
     Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => Task.FromResult<List<PerformanceProviderStatus>>([]);
     /// <summary>Explicit container-network check (one request from the k6 container). Null when the backend did not answer.</summary>
@@ -62,7 +64,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
             return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceTestDefinition>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTestDefinition>(Json, ct))!)
                 : PerformanceApiResult<PerformanceTestDefinition>.Fail(await Message(response, ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestDefinition>.Fail("The BirkNext backend did not answer."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestDefinition>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
 
     public async Task<PerformanceApiResult<PerformanceTestDataProfile>> SaveDataProfileAsync(string environmentId, PerformanceTestDataProfile profile, CancellationToken ct = default)
@@ -73,7 +75,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
             return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceTestDataProfile>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTestDataProfile>(Json, ct))!)
                 : PerformanceApiResult<PerformanceTestDataProfile>.Fail(await Message(response, ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestDataProfile>.Fail("The BirkNext backend did not answer."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestDataProfile>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
 
     public async Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => await Get<List<PerformanceProviderStatus>>($"{Base}/providers", ct) ?? [];
@@ -100,7 +102,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
             using var response = await http.PostAsync(url, null, ct);
             return response.IsSuccessStatusCode ? PerformanceApiResult<T>.Ok((await response.Content.ReadFromJsonAsync<T>(Json, ct))!) : PerformanceApiResult<T>.Fail(await Message(response, ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<T>.Fail("The BirkNext backend did not answer."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<T>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
 
     public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
@@ -116,7 +118,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
                 return PerformanceApiResult<PerformanceTestRun>.Fail(blocked.Message ?? "The performance test cannot run.", blocked.Blockers ?? []);
             return PerformanceApiResult<PerformanceTestRun>.Fail(await Message(response, ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestRun>.Fail("The BirkNext backend did not answer."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceTestRun>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
 
     public Task<PerformanceTestRun?> RunAsync(string environmentId, Guid runId, CancellationToken ct = default) => Get<PerformanceTestRun>($"{Base}/runs/{runId}?{Env(environmentId)}", ct);
@@ -144,16 +146,28 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
             using var response = await http.PostAsJsonAsync($"{Base}/baselines?{Env(environmentId)}", request, Json, ct);
             return await response.Content.ReadFromJsonAsync<PerformanceBaselinePromotionResult>(Json, ct) ?? new(null, null, "No answer.");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(null, null, "The BirkNext backend did not answer."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(null, null, BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
     }
 
     public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
         Get<PerformanceRunComparison>($"{Base}/compare?{Env(environmentId)}&current={current}{(reference is { } r ? "&reference=" + r : "")}{(baselineId is null ? "" : "&baselineId=" + Uri.EscapeDataString(baselineId))}", ct);
 
+    public BackendRequestError? LastReadError { get; private set; }
+
     private async Task<T?> Get<T>(string url, CancellationToken ct)
     {
-        try { return await http.GetFromJsonAsync<T>(url, Json, ct); }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException) { return default; }
+        try
+        {
+            var value = await http.GetFromJsonAsync<T>(url, Json, ct);
+            LastReadError = null;
+            return value;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
+        {
+            // The route template only: never the query string (environment id, run ids).
+            LastReadError = BackendRequestClassifier.FromException("Performance tests", ex, "GET " + url.Split('?')[0], ct);
+            return default;
+        }
     }
 
     private static async Task<string> Message(HttpResponseMessage response, CancellationToken ct)

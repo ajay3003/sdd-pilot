@@ -109,7 +109,7 @@
             }
             else Fail(target, result.Error ?? "The schema artifact was rejected.");
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, "The BirkNext backend did not answer; nothing was saved."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, $"{BackendRequestClassifier.FromException("Saving the schema artifact", ex).UserMessage} Nothing was saved."); }
         finally { _busy = null; }
     }
 
@@ -123,7 +123,7 @@
             _status = $"{artifact.FileName} removed. Future reviews of {ApiReviewPresentation.DisplayName(target)} have no schema fallback; earlier results are unchanged.";
             await Changed.InvokeAsync();
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, "The BirkNext backend did not answer; the artifact was not removed."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, $"{BackendRequestClassifier.FromException("Removing the schema artifact", ex).UserMessage} The artifact was not removed."); }
         finally { _busy = null; }
     }
 

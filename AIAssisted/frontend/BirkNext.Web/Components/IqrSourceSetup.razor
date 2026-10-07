@@ -60,7 +60,7 @@
         _busy = true;
         await BusyChanged.InvokeAsync(true);
         try { state.Options = await Api.IqrSourceScopeAsync(EnvironmentId, state.PrimaryId); _error = null; }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException) { _error = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex)) { _error = BackendRequestClassifier.FromException("Source Analysis snapshots", ex).UserMessage; }
         finally { _busy = false; await BusyChanged.InvokeAsync(false); }
     }
 

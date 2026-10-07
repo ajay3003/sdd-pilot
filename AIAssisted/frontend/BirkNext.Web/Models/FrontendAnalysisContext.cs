@@ -22,7 +22,7 @@ public sealed class FrontendAnalysisContext
     /// null-checking <see cref="ActiveProfile"/>, or they send an empty environment id.
     /// </summary>
     public FrontendAnalysisProfile? ActiveProfileOrNull =>
-        ActiveTargetError is null && !string.IsNullOrWhiteSpace(ActiveProfile.Id) ? ActiveProfile : null;
+        ActiveTargetError is null && ActiveProfile is { Id: { Length: > 0 } id } profile && !string.IsNullOrWhiteSpace(id) ? profile : null;
 
     // Frontend URL (= TargetUrl on the profile — used by Frontend Quality Review)
     public string                            TargetUrl                  { get; set; } = "";

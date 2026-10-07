@@ -90,7 +90,13 @@ public sealed class TargetPreflightService : ITargetPreflightService
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            return new TargetPreflightResult { Status = PreflightStatus.ScannerUnavailable, Message = BackendUnavailableMessage };
+            // Only a transport failure is "could not be reached"; a timeout or unreadable answer says so instead.
+            var error = BackendRequestClassifier.FromException("Reachability check", ex, "POST api/frontend-target/reachability");
+            return new TargetPreflightResult
+            {
+                Status = PreflightStatus.ScannerUnavailable,
+                Message = error.IsTransportFailure ? BackendUnavailableMessage : $"Reachability check unavailable: {error.Detail}",
+            };
         }
 
         if (probe is null)

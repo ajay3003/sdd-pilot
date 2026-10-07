@@ -77,7 +77,11 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
     public BrowserCompanionStatus For(string? profileId) =>
         profileId is not null && _profileId == profileId ? Status : new BrowserCompanionStatus { ProfileId = profileId, Message = "Browser Companion not paired." };
 
+    /// <summary>True only when the status request got no HTTP response (a transport failure).</summary>
     public bool BackendUnavailable => _backendUnavailable;
+
+    /// <summary>The last failed status request, classified; null once a status is read. An HTTP error is not "unreachable".</summary>
+    public BackendRequestError? StatusError { get; private set; }
 
     /// <summary>Follow the environment being viewed: (re)start polling its companion status. Cheap when already following it.</summary>
     public async Task FollowAsync(FrontendAnalysisProfile? profile)
@@ -112,7 +116,7 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
             await api.StartPairingAsync(request);
             if (generation == _generation) await RefreshAsync();
         }
-        catch { if (generation == _generation) LastError = "Pairing could not be started. Check that the local BirkNext backend is running."; }
+        catch (Exception ex) { if (generation == _generation) LastError = BackendRequestClassifier.FromException("Starting pairing", ex, "POST api/browser-companion/pairing/start").UserMessage; }
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 
@@ -140,12 +144,14 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
             if (generation != _generation) return;
             Status = status;
             _backendUnavailable = false;
+            StatusError = null;
         }
-        catch
+        catch (Exception ex)
         {
             if (generation != _generation) return;
-            _backendUnavailable = true;
-            Status = new BrowserCompanionStatus { ProfileId = profileId, State = BrowserCompanionState.NotPaired, Message = "Browser Companion status unavailable: the local BirkNext backend is not reachable." };
+            StatusError = BackendRequestClassifier.FromException("Browser Companion status", ex, "POST api/browser-companion/status");
+            _backendUnavailable = StatusError.IsTransportFailure;
+            Status = new BrowserCompanionStatus { ProfileId = profileId, State = BrowserCompanionState.NotPaired, Message = StatusError.UserMessage };
         }
         Changed?.Invoke();
     }

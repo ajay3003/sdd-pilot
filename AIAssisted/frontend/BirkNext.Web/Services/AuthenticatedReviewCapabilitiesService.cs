@@ -16,12 +16,13 @@ public sealed class AuthenticatedReviewCapabilitiesService(HttpClient http) : IA
         try
         {
             using var response = await http.PostAsJsonAsync("api/authenticated-review/capabilities", identity, ct);
-            if (!response.IsSuccessStatusCode) return Fallback(identity);
+            if (!response.IsSuccessStatusCode)
+                return Fallback(identity, BackendRequestClassifier.FromStatus("Authenticated capability status", response.StatusCode, "POST api/authenticated-review/capabilities").UserMessage);
             return (await response.Content.ReadFromJsonAsync<AuthenticatedReviewCapabilities>(cancellationToken: ct)) ?? Fallback(identity);
         }
-        catch (Exception) { return Fallback(identity); }
+        catch (Exception ex) { return Fallback(identity, BackendRequestClassifier.FromException("Authenticated capability status", ex, "POST api/authenticated-review/capabilities", ct).UserMessage); }
     }
 
-    private static AuthenticatedReviewCapabilities Fallback(AuthenticatedReviewIdentity identity) =>
-        new() { Method = identity.Method, PublicApi = true, Reason = "Authenticated capability status is unavailable; the backend could not be reached." };
+    private static AuthenticatedReviewCapabilities Fallback(AuthenticatedReviewIdentity identity, string? reason = null) =>
+        new() { Method = identity.Method, PublicApi = true, Reason = reason ?? "Authenticated capability status is unavailable." };
 }

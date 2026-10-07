@@ -85,9 +85,11 @@
     {
         <p class="bcp-note" data-testid="browser-companion-message">@Status.Message</p>
     }
-    @if (Runtime?.BackendUnavailable == true)
+    @if (Runtime?.StatusError is { } statusError)
     {
-        <p class="bcp-warn" role="alert" data-testid="browser-companion-backend">The local BirkNext backend is not reachable; companion status cannot be read.</p>
+        <div data-testid="browser-companion-backend">
+            <BackendRequestNotice Error="statusError" OnRetry="Runtime.RefreshAsync" TestId="browser-companion-status-error" Hint="Companion status cannot be read until this request succeeds." />
+        </div>
     }
     @if (Runtime?.LastError is { Length: > 0 } error)
     {

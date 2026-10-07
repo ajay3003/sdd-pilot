@@ -333,7 +333,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _status = "The Service Bus review could not run: the BirkNext backend did not answer. Nothing was changed.";
+            _status = $"{BackendRequestClassifier.FromException("Service Bus review", ex).UserMessage} Nothing was changed.";
         }
         finally { _busy = false; }
     }

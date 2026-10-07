@@ -321,7 +321,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            if (!_disposed.IsCancellationRequested && key == _loadedFor) _error = "Active test readiness could not be loaded: the BirkNext backend did not answer.";
+            if (!_disposed.IsCancellationRequested && key == _loadedFor) _error = BackendRequestClassifier.FromException("Active test readiness", ex).UserMessage;
         }
         finally { if (key == _loadedFor) _loading = false; }
     }
@@ -345,7 +345,7 @@
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             // The request may have reached the backend: say so rather than implying nothing happened.
-            if (!_disposed.IsCancellationRequested) _error = "The backend did not answer the start request. Check the history below before starting again — the run may have started.";
+            if (!_disposed.IsCancellationRequested) _error = $"{BackendRequestClassifier.FromException("Starting the active test", ex).UserMessage} Check the history below before starting again — the run may have started.";
         }
         finally { _starting = false; }
         if (_run is { Completed: false }) await PollAsync(_run.RunId);
@@ -364,7 +364,7 @@
             catch (TaskCanceledException) { return; }
             catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
             {
-                _error = "Live progress is unavailable (the backend did not answer). The run continues in the backend; open it from the history.";
+                _error = $"Live progress is unavailable: {BackendRequestClassifier.FromException("Run progress", ex).Detail} The run continues in the backend; open it from the history.";
                 return;
             }
             StateHasChanged();
@@ -384,7 +384,7 @@
         if (_run is null) return;
         _cancelling = true;
         try { if (!await Api!.CancelAsync(_run.RunId, _disposed.Token)) _error = "The run is no longer in flight."; }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = "Cancellation could not be requested: the backend did not answer."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = BackendRequestClassifier.FromException("Requesting cancellation", ex).UserMessage; }
     }
 
     private async Task OpenAsync(Guid runId)

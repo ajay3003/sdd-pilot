@@ -1,0 +1,64 @@
+@using BirkNext.Web.Services
+@* One failed backend request, shown where it failed (a section, not the whole app).
+
+   Says whether the backend was reachable, what went wrong in plain words, and — on demand — the operation, route
+   template, HTTP status and category. Never a query string, body, identity value or token: the error object does
+   not carry them. "Check again" reruns only the request that failed (the caller's OnRetry).
+
+   Usage: <BackendRequestNotice Error="_overviewError" OnRetry="LoadOverviewAsync" TestId="x" /> *@
+
+@if (Error is { } error)
+{
+    <div class="brn brn-@Tone(error)" role="alert" data-testid="@TestId" data-connectivity="@error.Connectivity" data-category="@error.Category">
+        <div class="brn-head">
+            <span class="brn-badge" data-testid="@(TestId is null ? null : $"{TestId}-connectivity")">@error.ConnectivityLabel</span>
+            <span class="brn-category">@error.CategoryLabel</span>
+        </div>
+        <p class="brn-message" data-testid="@(TestId is null ? null : $"{TestId}-message")">@error.UserMessage</p>
+        @if (Hint is not null) { <p class="brn-hint">@Hint</p> }
+        <div class="brn-actions">
+            @if (OnRetry.HasDelegate && error.Retryable)
+            {
+                <button type="button" class="brn-retry" disabled="@_retrying" @onclick="RetryAsync"
+                        data-testid="@(TestId is null ? null : $"{TestId}-retry")">@(_retrying ? "Checking…" : "Check again")</button>
+            }
+            <details class="brn-details">
+                <summary>Technical details</summary>
+                <dl>
+                    <dt>Operation</dt><dd>@error.Operation</dd>
+                    @if (error.Endpoint is { Length: > 0 } endpoint) { <dt>Endpoint</dt><dd><code>@endpoint</code></dd> }
+                    <dt>Connectivity</dt><dd>@error.Connectivity</dd>
+                    <dt>HTTP status</dt><dd>@(error.HttpStatus?.ToString() ?? "No HTTP response")</dd>
+                    <dt>Category</dt><dd>@error.Category</dd>
+                    <dt>Time</dt><dd>@error.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+                </dl>
+            </details>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public BackendRequestError? Error { get; set; }
+    /// <summary>Reruns the request that failed. Shown only when set and the failure is retryable.</summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+    /// <summary>Optional one-line consequence, e.g. "Other configuration can still be viewed."</summary>
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string? TestId { get; set; }
+
+    private bool _retrying;
+
+    private async Task RetryAsync()
+    {
+        _retrying = true;
+        try { await OnRetry.InvokeAsync(); }
+        finally { _retrying = false; }
+    }
+
+    /// <summary>Red only for a transport failure; an endpoint failure on a reachable backend is amber; auth/access is info.</summary>
+    private static string Tone(BackendRequestError e) => e.Category switch
+    {
+        _ when e.IsTransportFailure => "danger",
+        BackendRequestCategory.Unauthorized or BackendRequestCategory.Forbidden or BackendRequestCategory.Cancelled => "info",
+        _ => "warning",
+    };
+}

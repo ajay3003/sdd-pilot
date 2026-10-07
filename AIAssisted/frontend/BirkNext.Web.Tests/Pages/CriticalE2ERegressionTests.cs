@@ -453,7 +453,9 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         Services.AddSingleton<ICriticalE2EApiService>(new ThrowingApi());
         Services.AddSingleton<IFrontendAnalysisContextFactory>(new StubContextFactory());
         var page = base.Render<CriticalE2ERegression>();
-        page.Find("[data-testid=e2e-error]").TextContent.Should().Contain("not reachable");
+        // A transport failure (no HTTP response) is the one case that may say "unreachable".
+        page.Find("[data-testid=e2e-overview-error-connectivity]").TextContent.Should().Be("Backend unreachable");
+        page.Find("[data-testid=e2e-overview-error-message]").TextContent.Should().Contain("unreachable").And.NotContain("local");
     }
 
     private sealed class ThrowingApi : ICriticalE2EApiService

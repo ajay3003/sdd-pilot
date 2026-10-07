@@ -26,10 +26,25 @@
 
     @if (_profile is null)
     {
-        <p class="sc-muted" role="status" data-testid="sc-loading">@(_error ?? "Loading the active Target Environment…")</p>
+        @if (_contextError is not null)
+        {
+            <BackendRequestNotice Error="_contextError" OnRetry="InitializeAsync" TestId="sc-context-error" />
+        }
+        else if (_noTarget)
+        {
+            @* A configuration state, not a backend failure: nothing is requested without an environment. *@
+            <p class="sc-muted" role="status" data-testid="sc-no-target">No Target Environment is selected. Choose one in <a href="@NavigationCatalog.TargetEnvironmentsRoute">Target Environments</a> to load reviews, source evidence and the test context.</p>
+        }
+        else
+        {
+            <p class="sc-muted" role="status" data-testid="sc-loading">Loading the active Target Environment…</p>
+        }
     }
     else
     {
+        @* Stored reviews and the temporary test context come from one request; source evidence is loaded separately and stays usable if it fails. *@
+        <BackendRequestNotice Error="_overviewError" OnRetry="LoadOverviewAsync" TestId="sc-overview-error"
+                              Hint="Stored reviews and the temporary test context could not be read. Source evidence below is loaded separately." />
         <section class="sc-card sc-source" aria-labelledby="sc-source-heading" data-testid="sc-source-evidence">
             <h2 id="sc-source-heading" tabindex="-1" @ref="_sourceHeading">Source evidence</h2>
             <p class="sc-muted">Security source analysis uses snapshots managed by Source Analysis — one primary snapshot plus any related source you include, each kept with its own fingerprint. Nothing is uploaded here, and choosing a snapshot only reads Source Analysis (no runtime, Azure, database or GraphQL call).</p>
@@ -364,6 +379,9 @@
     private string? _status;
     private string? _error;
     private string? _sourceError;
+    private BackendRequestError? _overviewError;
+    private BackendRequestError? _contextError;
+    private bool _noTarget;
     private bool _editing;
     private string? _formError;
     private string? _unauthorizedToken;
@@ -420,7 +438,10 @@
             _scope.Options = _options;
             _sourceError = null;
         }
-        catch (HttpRequestException) { _sourceError = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _sourceError = BackendRequestClassifier.FromException("Source Analysis snapshots", ex, "GET api/security-classification/source-scope").UserMessage;
+        }
     }
 
     private async Task ReloadScopeAsync()
@@ -554,26 +575,53 @@
             _editing = false;
             _status = "Temporary test context cleared from memory. Stored reviews are unchanged.";
         }
-        catch (HttpRequestException) { _error = "The test context could not be cleared (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _error = BackendRequestClassifier.FromException("Clearing the test context", ex, "DELETE api/security-classification/context").UserMessage;
+        }
         finally { _busy = false; }
     }
     /// <summary>Levels from the selected source evidence; otherwise those recorded with the shown review.</summary>
     private IReadOnlyList<ClassificationLevel> Levels => FeatureViz.SourceAnalysis && _options?.Evidence?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];
     private ClassificationTestChild? Child(int level) => Context.TestChildren.FirstOrDefault(c => c.Nivaa == level && c.BarnRegistreringId is not null);
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync() => InitializeAsync();
+
+    /// <summary>
+    /// No active Target Environment is a configuration state: nothing is requested (an empty environment id is a 400,
+    /// which used to read as "backend not reachable"). The overview and the source scope are separate requests that fail
+    /// separately.
+    /// </summary>
+    private async Task InitializeAsync()
     {
+        _contextError = null;
+        try { _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull; }
+        catch (Exception ex)
+        {
+            _contextError = BackendRequestClassifier.FromException("Target Environment settings", ex);
+            return;
+        }
+        _noTarget = _profile is null;
+        if (_profile is null) return;
+        await LoadOverviewAsync();
+        await LoadScopeAsync();
+    }
+
+    private async Task LoadOverviewAsync()
+    {
+        if (_profile is null) return;
         try
         {
-            _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfile;
-            if (_profile is null) { _error = "No active Target Environment."; return; }
             _overview = await Api.OverviewAsync(_profile.Id);
-            _result = _overview.Latest;
+            _overviewError = null;
+            _result ??= _overview.Latest;
             // The previous run's exact scope is proposed again (never the latest snapshot silently); a newer snapshot is only offered.
-            _scope.Restore(_overview.Latest?.SourceScope);
-            await LoadScopeAsync();
+            if (_result is not null && ReferenceEquals(_result, _overview.Latest)) _scope.Restore(_overview.Latest?.SourceScope);
         }
-        catch (HttpRequestException) { _error = "The review could not be loaded (backend not reachable)."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _overviewError = BackendRequestClassifier.FromException("Security Classification reviews", ex, "GET api/security-classification");
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -618,7 +666,10 @@
             _editing = false;
             _status = "Test context kept in memory for this session (not saved to the database).";
         }
-        catch (HttpRequestException) { _formError = "The test context could not be saved."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _formError = BackendRequestClassifier.FromException("Saving the test context", ex, "PUT api/security-classification/context").UserMessage;
+        }
         finally { _busy = false; }
     }
 
@@ -645,7 +696,11 @@
             _focusResult = true;
         }
         catch (InvalidOperationException e) { _error = e.Message; _status = null; }
-        catch (HttpRequestException) { _error = "The review could not be run (backend not reachable)."; _status = null; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _error = BackendRequestClassifier.FromException("Running the safe security checks", ex, "POST api/security-classification/runs").UserMessage;
+            _status = null;
+        }
         finally { _busy = false; }
     }
 
@@ -656,7 +711,10 @@
         {
             if (await Api.GetRunAsync(id) is { } run) { _result = run; _status = $"Showing the stored review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC with its recorded source scope."; }
         }
-        catch (HttpRequestException) { _error = "The stored review could not be loaded."; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _error = BackendRequestClassifier.FromException("The stored review", ex, "GET api/security-classification/runs/{runId}").UserMessage;
+        }
     }
 
     private async Task ExportAsync()

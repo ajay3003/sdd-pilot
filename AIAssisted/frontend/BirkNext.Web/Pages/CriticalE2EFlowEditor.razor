@@ -403,9 +403,9 @@
                 _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
             _picks[id] = result;
         }
-        catch
+        catch (Exception ex)
         {
-            if (ReferenceEquals(draft, _draft)) _picks[id] = new CriticalE2EElementPickResult { Outcome = CriticalE2EPickOutcome.Failed, Message = "the local BirkNext backend did not answer." };
+            if (ReferenceEquals(draft, _draft)) _picks[id] = new CriticalE2EElementPickResult { Outcome = CriticalE2EPickOutcome.Failed, Message = BackendRequestClassifier.FromException("Element picking", ex, "POST api/critical-e2e/pick-element").Detail };
         }
         finally
         {

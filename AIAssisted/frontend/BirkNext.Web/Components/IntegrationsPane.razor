@@ -553,7 +553,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _sourcesError = "Source discovery could not run: the BirkNext backend did not answer. Nothing was changed.";
+            _sourcesError = $"{BackendRequestClassifier.FromException("Source discovery", ex).UserMessage} Nothing was changed.";
         }
         finally { _discovering = false; }
     }
@@ -652,7 +652,7 @@
             if (Profile.Id != environmentId) return;
             MappingEvidence.Record(environmentId, new() { IntegrationId = definition.Id, Topic = definition.EndpointOrTopic, SuggestedConsumer = definition.Consumer.DisplayName,
                 CompletedAt = DateTimeOffset.UtcNow, OverallState = IntegrationMappingEvidenceState.NotTestable,
-                Checks = [new() { Label = "Evidence service", State = IntegrationEvidenceState.Unavailable, Summary = "The evidence service did not answer. Retry the check; the mapping is unchanged.", MissingReason = "The evidence service did not answer. Retry the check; the mapping is unchanged." }] });
+                Checks = [new() { Label = "Evidence service", State = IntegrationEvidenceState.Unavailable, Summary = $"{BackendRequestClassifier.FromException("Mapping evidence", ex).UserMessage} Retry the check; the mapping is unchanged.", MissingReason = $"{BackendRequestClassifier.FromException("Mapping evidence", ex).UserMessage} Retry the check; the mapping is unchanged." }] });
             _evidenceViewing = definition.Id;
             _mappingAnnouncement = "Mapping evidence unavailable. The mapping is unchanged.";
         }
@@ -710,7 +710,7 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _loadError = "the BirkNext backend did not answer. Integrations are stored by the backend.";
+            _loadError = $"{BackendRequestClassifier.FromException("Integrations", ex).Detail} Integrations are stored by the backend.";
         }
     }
 

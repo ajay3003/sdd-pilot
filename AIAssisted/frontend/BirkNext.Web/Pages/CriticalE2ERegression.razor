@@ -14,13 +14,14 @@
     <PageHeader Title="Critical E2E Regression"
                 Description="Run critical user journeys as attended browser automation against the build being shipped." />
 
-    @if (_error is { } error)
-    {
-        <p class="e2e-error" role="alert" data-testid="e2e-error">@error</p>
-    }
+    @* An action that failed (run, save, history) is reported here; it never replaces the page. *@
+    <BackendRequestNotice Error="_actionError" TestId="e2e-action-error" />
     @if (_overview is not { } overview)
     {
-        @if (_error is null) { <p class="e2e-loading" data-testid="e2e-loading">Loading…</p> }
+        @* Without the overview there is nothing to show, so its failure is the page's — classified, never assumed unreachable. *@
+        <BackendRequestNotice Error="_overviewError" OnRetry="RefreshAsync" TestId="e2e-overview-error"
+                              Hint="Target, build, flow coverage and browser readiness come from this overview." />
+        @if (_overviewError is null) { <p class="e2e-loading" data-testid="e2e-loading">Loading…</p> }
     }
     else
     {
@@ -127,6 +128,8 @@
                     }
                 </div>
             </div>
+            <BackendRequestNotice Error="_flowsError" OnRetry="LoadFlowsAsync" TestId="e2e-flows-error"
+                                  Hint="Flow summaries are shown; editing a flow needs its full definition." />
             @if (!showEmpty && diagnosticCount > 0)
             {
                 <div class="e2e-flows-subhead">
@@ -513,7 +516,6 @@
     private DotNetObjectReference<CriticalE2ERegression>? _self;
     private ElementReference _addButton;
     private bool _focusAdd;
-    private string? _error;
     private string? _running;
     private CancellationTokenSource? _run;
     private string _profileId = "";
@@ -536,29 +538,59 @@
 
     private static string? Trim(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    /// <summary>
+    /// The overview and the flow definitions are two requests and fail separately: a failed definitions call leaves the
+    /// overview (target, build, coverage, browser readiness) on screen. No active Target Environment is a configuration
+    /// state the overview reports itself — it is never sent to the flows endpoint as an empty id.
+    /// </summary>
     private async Task RefreshAsync()
     {
+        FrontendAnalysisContext context;
+        try { context = await ContextFactory.GetActiveContextAsync(); }
+        catch (Exception ex)
+        {
+            _overviewError = BackendRequestClassifier.FromException("Target Environment settings", ex);
+            return;
+        }
+        var profile = context.ActiveProfileOrNull;
+        _profileId = profile?.Id ?? "";
+        _environmentId = profile?.Id ?? "";
+        _environmentName = profile?.Name ?? "";
+        _environmentType = profile?.EnvironmentType.ToString() ?? "";
+        var request = Request() with
+        {
+            AuthenticationMethod = ReviewAuthenticationIdentity.ForContext(context).Method.ToString(),
+            ContextFingerprint = ReviewAuthenticationIdentity.ForContext(context).ContextFingerprint,
+        };
         try
         {
-            var context = await ContextFactory.GetActiveContextAsync();
-            _profileId = context.ActiveProfile.Id;
-            _environmentId = context.ActiveProfile.Id;
-            _environmentName = context.ActiveProfile.Name;
-            _environmentType = context.ActiveProfile.EnvironmentType.ToString();
-            var request = Request() with
-            {
-                AuthenticationMethod = ReviewAuthenticationIdentity.ForContext(context).Method.ToString(),
-                ContextFingerprint = ReviewAuthenticationIdentity.ForContext(context).ContextFingerprint,
-            };
             _overview = await Api.OverviewAsync(request);
-            _definitions = await Api.FlowsAsync(_environmentId);
-            _error = null;
+            _overviewError = null;
         }
-        catch
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
         {
-            _error = "Critical E2E is unavailable: the local BirkNext backend is not reachable.";
+            _overviewError = BackendRequestClassifier.FromException("Critical E2E overview", ex, "POST api/critical-e2e/overview");
+        }
+        await LoadFlowsAsync();
+    }
+
+    private async Task LoadFlowsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_environmentId)) { _definitions = []; _flowsError = null; return; }
+        try
+        {
+            _definitions = await Api.FlowsAsync(_environmentId);
+            _flowsError = null;
+        }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            _flowsError = BackendRequestClassifier.FromException("Critical flow definitions", ex, "GET api/critical-e2e/flows");
         }
     }
+
+    private BackendRequestError? _overviewError;
+    private BackendRequestError? _flowsError;
+    private BackendRequestError? _actionError;
 
     private Task RunAsync(CriticalE2EExecutionMode mode) => StartAsync(mode.ToString(), new CriticalE2ERunFlowRequest { Context = Request(), Mode = mode });
 
@@ -568,6 +600,7 @@
     {
         if (_running is not null) return;
         _running = token;
+        _actionError = null;
         _run = new CancellationTokenSource();
         try
         {
@@ -575,8 +608,8 @@
             _overview = batch.Overview;
             _lastRun = batch.Runs.LastOrDefault();
         }
-        catch (OperationCanceledException) { await RefreshAsync(); }
-        catch { _error = "The run could not be completed."; }
+        catch (OperationCanceledException) when (_run?.IsCancellationRequested == true) { await RefreshAsync(); }
+        catch (Exception ex) { _actionError = BackendRequestClassifier.FromException("Critical E2E run", ex, "POST api/critical-e2e/run"); }
         finally
         {
             _running = null;
@@ -601,6 +634,7 @@
 
     private async Task SaveFlowAsync(CriticalE2EFlowDefinition flow)
     {
+        _actionError = null;
         try
         {
             await Api.SaveFlowAsync(flow);
@@ -608,7 +642,7 @@
             _focusAdd = true;
             await RefreshAsync();
         }
-        catch { _error = "The flow could not be saved."; }
+        catch (Exception ex) { _actionError = BackendRequestClassifier.FromException("Saving the critical flow", ex, "POST api/critical-e2e/flows"); }
     }
 
     private void CancelEdit()
