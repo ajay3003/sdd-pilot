@@ -78,7 +78,10 @@ internal sealed class MockSampleProjectDocumentResolver : ISampleProjectDocument
     public Task<IReadOnlyList<SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<SampleProjectDto>>(_projects.Values.ToList());
 
-    public string? GetSelectedProject() => _selectedProject;
+    /// <summary>When set, the selected project is the repository's (as in the app) instead of <see cref="SetSelectedProject"/>.</summary>
+    public IWorkspaceArtifactRepository? Repository { get; set; }
+
+    public string? GetSelectedProject() => Repository is not null ? Repository.ProjectName : _selectedProject;
 
     public void SetSelectedProject(string? projectSlug) => _selectedProject = projectSlug;
 

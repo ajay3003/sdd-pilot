@@ -1767,6 +1767,7 @@ public class ViewBehaviorTests : BunitContext
         autoSave.Setup(service => service.StopMonitoringAsync()).Returns(Task.CompletedTask);
 
         Services.AddSingleton(readinessService.Object);
+        Services.AddSingleton(Mock.Of<ICurrentWorkspaceProjection>());
         Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
         Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
         Services.AddSingleton(autoSave.Object);
@@ -1778,15 +1779,6 @@ public class ViewBehaviorTests : BunitContext
 
     private static WorkflowReadiness CreateTraceabilityFirstReadiness()
     {
-        var artifactStatus = new WorkspaceArtifactStatus(
-            HasConstitution: true,
-            HasSpecification: true,
-            HasPlan: true,
-            HasTasks: true,
-            HasDataModel: true,
-            ArtifactCount: 5,
-            ActiveProjectName: "Traceability fixture");
-
         var traceabilityStep = new WorkflowStepViewModel
         {
             Number = 1,
@@ -1824,33 +1816,18 @@ public class ViewBehaviorTests : BunitContext
         };
 
         return new WorkflowReadiness(
-            CurrentWorkspace: new WorkflowWorkspace(Guid.NewGuid(), "Traceability fixture", "Traceability fixture", 5, DateTimeOffset.UtcNow, null, false),
-            WorkspaceLoaded: true,
-            WorkspaceName: "Traceability fixture",
-            ProjectName: "Traceability fixture",
-            WorkspaceStatus: "Not Saved",
-            WorkspaceStatusClass: "status-not-saved",
-            LastSavedAt: null,
-            LastSavedText: "Not saved",
-            ArtifactStatus: artifactStatus,
-            Artifacts:
-            [
-                new("Constitution", true),
-                new("Specification", true),
-                new("Plan", true),
-                new("Tasks", true),
-                new("Data Model", true)
-            ],
+            Workspace: BirkNext.Web.Tests.Services.WorkspaceSnapshots.AllRoles("Traceability fixture", "Traceability fixture"),
             SpecificationExplorerState: null,
             TraceabilityState: traceabilityStep,
             ImplementationReviewState: null,
             QualityGateState: null,
             NextRecommendedAction: traceabilityStep,
             OverallReadiness: new WorkflowReadinessBreakdown { OverallReadiness = 80, ArtifactReadiness = 100, ReviewReadiness = 50, ApprovalReadiness = 50 },
+            RequiredReviewCount: 1,
+            ApprovedReviewCount: 0,
             Steps: [traceabilityStep, libraryStep],
             CanRelease: false,
-            ReleaseReason: "Manual approvals required.",
-            Warnings: []);
+            ReleaseReason: "Manual approvals required.");
     }
 
     private IRenderedComponent<TaskExplorerPanel> RenderTaskExplorerWithImplementationGaps()

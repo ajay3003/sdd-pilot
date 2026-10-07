@@ -50,6 +50,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "pay", Name = "PaymentHub", TargetUrl = targetUrl } });
         Services.AddSingleton(context.Object);
         Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(new FakeCoverageApi(coverage));
         Services.AddScoped<ProjectApplicabilityState>();
     }
@@ -106,6 +107,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
         Services.AddSingleton(context.Object);
         Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         var api = new Mock<ITechnologyCoverageApiService>(MockBehavior.Strict);
         Services.AddSingleton(api.Object);
         Services.AddScoped<ProjectApplicabilityState>();

@@ -250,7 +250,7 @@ public sealed class PipelineReviewSidebarStatusTests : BunitContext
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "env", Name = "Env" } });
         Services.AddSingleton(context.Object);
-        var workspace = new Mock<IWorkspaceSessionService>();
+        var workspace = BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None());
         Services.AddSingleton(workspace.Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(api);
         Services.AddScoped<ProjectApplicabilityState>();
@@ -260,13 +260,13 @@ public sealed class PipelineReviewSidebarStatusTests : BunitContext
         nav.WaitForAssertion(() => Badge().Should().Be("N/A", "an analyzed snapshot without pipeline definitions"));
 
         api.Coverage = Coverage(outdated: true, pipeline: false, version: null);
-        workspace.Raise(w => w.ReviewContextRebuildNeeded += null, EventArgs.Empty);
+        workspace.Raise(w => w.Changed += null);
         nav.WaitForAssertion(() => Badge().Should().Be("Needs refresh"));
         nav.Find("[data-testid=nav-applicability-pipeline-review]").GetAttribute("title").Should().Contain("before CI/CD evidence existed");
         nav.Find("a[href='pipeline-review'] .visually-hidden").TextContent.Should().Be(", Needs refresh");
 
         api.Coverage = Coverage(outdated: false, pipeline: true, version: 2);
-        workspace.Raise(w => w.ReviewContextRebuildNeeded += null, EventArgs.Empty);
+        workspace.Raise(w => w.Changed += null);
         nav.WaitForAssertion(() => Badge().Should().BeNull("an applicable review needs no badge"));
     }
 

@@ -7,217 +7,194 @@ public interface IWorkflowReadinessService
     Task<WorkflowReadiness> GetReadinessAsync();
 }
 
+/// <summary>
+/// Workflow readiness for the current workspace. Whether a workspace, project or artifact exists comes from
+/// <see cref="CurrentWorkspaceSnapshot"/> (the same read model the Dashboard uses); this record only adds the review steps,
+/// the next recommended action and release readiness.
+/// </summary>
 public sealed record WorkflowReadiness(
-    WorkflowWorkspace? CurrentWorkspace,
-    bool WorkspaceLoaded,
-    string WorkspaceName,
-    string ProjectName,
-    string WorkspaceStatus,
-    string WorkspaceStatusClass,
-    DateTimeOffset? LastSavedAt,
-    string LastSavedText,
-    WorkspaceArtifactStatus ArtifactStatus,
-    IReadOnlyList<WorkflowArtifactReadiness> Artifacts,
+    CurrentWorkspaceSnapshot Workspace,
     WorkflowStepViewModel? SpecificationExplorerState,
     WorkflowStepViewModel? TraceabilityState,
     WorkflowStepViewModel? ImplementationReviewState,
     WorkflowStepViewModel? QualityGateState,
     WorkflowStepViewModel? NextRecommendedAction,
     WorkflowReadinessBreakdown OverallReadiness,
+    int RequiredReviewCount,
+    int ApprovedReviewCount,
     IReadOnlyList<WorkflowStepViewModel> Steps,
     bool CanRelease,
-    string ReleaseReason,
-    IReadOnlyList<string> Warnings);
+    string ReleaseReason)
+{
+    public bool WorkspaceLoaded => Workspace.WorkspaceLoaded;
+    public bool WorkspaceError => Workspace.State == CurrentWorkspaceState.Error;
+    public string WorkspaceName => Workspace.WorkspaceName;
+    public string ProjectName => Workspace.ProjectDisplay;
+    public Guid? WorkspaceId => Workspace.WorkspaceId;
 
-public sealed record WorkflowWorkspace(
-    Guid? WorkspaceId,
-    string WorkspaceName,
-    string? ProjectName,
-    int ArtifactCount,
-    DateTimeOffset? LoadedAt,
-    string? ArtifactSetHash,
-    bool AutoSaved);
+    /// <summary>
+    /// Approved share of the required review steps, or null when nothing has been assessed yet (no required step, or no step
+    /// reviewed, approved or rejected). Not assessed is never shown as 0%.
+    /// </summary>
+    public int? ReleaseReadinessPercent { get; init; }
 
-public sealed record WorkflowArtifactReadiness(string Name, bool IsLoaded);
+    public string LastSavedText => Workspace.LastSavedAt is { } at ? FormatElapsed(at) : "-";
+
+    private static string FormatElapsed(DateTimeOffset at)
+    {
+        var elapsed = DateTimeOffset.UtcNow - at;
+        return elapsed.TotalSeconds < 60 ? "just now"
+            : elapsed.TotalMinutes < 60 ? $"{(int)elapsed.TotalMinutes}m ago"
+            : elapsed.TotalHours < 24 ? $"{(int)elapsed.TotalHours}h ago"
+            : $"{(int)elapsed.TotalDays}d ago";
+    }
+}
 
 public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDisposable
 {
-    private readonly IWorkspaceArtifactStatusService _artifactStatus;
-    private readonly IWorkspaceSessionRestoreService _workspaceRestore;
-    private readonly IWorkspaceSessionService _workspaceSession;
-    private readonly IWorkspaceUpdateCoordinator _updates;
-    private readonly IWorkspacePersistenceApiService _workspacePersistence;
+    public const string LoadWorkspaceKey = "LoadWorkspace";
+    public const string AddArtifactsKey = "AddArtifacts";
+    public const string ChooseArtifactsKey = "ChooseArtifacts";
+
+    private readonly ICurrentWorkspaceProjection _workspace;
     private readonly IRecommendedWorkflowApiService _workflowApi;
     private readonly ILogger<WorkflowReadinessService> _logger;
 
     public event Action? ReadinessChanged;
 
     public WorkflowReadinessService(
-        IWorkspaceArtifactStatusService artifactStatus,
-        IWorkspaceSessionRestoreService workspaceRestore,
-        IWorkspaceSessionService workspaceSession,
-        IWorkspaceUpdateCoordinator updates,
-        IWorkspacePersistenceApiService workspacePersistence,
+        ICurrentWorkspaceProjection workspace,
         IRecommendedWorkflowApiService workflowApi,
         ILogger<WorkflowReadinessService> logger)
     {
-        _artifactStatus = artifactStatus;
-        _workspaceRestore = workspaceRestore;
-        _workspaceSession = workspaceSession;
-        _updates = updates;
-        _workspacePersistence = workspacePersistence;
+        _workspace = workspace;
         _workflowApi = workflowApi;
         _logger = logger;
-
-        _artifactStatus.StatusChanged += OnReadinessChanged;
-        // ReviewContextProvider now owns ReviewContextRebuildNeeded - we rely on ArtifactsChanged
-        _updates.ArtifactsChanged += OnArtifactsChanged;
+        _workspace.Changed += OnWorkspaceChanged;
     }
 
     public async Task<WorkflowReadiness> GetReadinessAsync()
     {
-        var artifactStatus = _artifactStatus.GetStatus();
-        var metadata = await _workspaceRestore.GetCurrentWorkspaceMetadataAsync();
-        var persistedState = await _workspacePersistence.GetCurrentStateAsync();
-        var workspaceLoaded = metadata is not null || artifactStatus.ArtifactCount > 0;
-        var workspace = BuildWorkspace(metadata, persistedState, artifactStatus, workspaceLoaded);
+        // Recommendations are computed only from a finished workspace snapshot, never from a partially initialized one.
+        var workspace = await _workspace.GetAsync();
 
-        if (!workspaceLoaded)
+        if (workspace.State == CurrentWorkspaceState.Error)
+            return Empty(workspace, null, "The workspace could not be read, so release readiness cannot be evaluated.");
+
+        if (!workspace.WorkspaceLoaded)
         {
-            return CreateEmptyReadiness(artifactStatus);
+            var load = Synthetic(LoadWorkspaceKey, "Load project artifacts",
+                "Select a Sample Project, import documents in an explorer, or resume a saved workspace to begin the review workflow.",
+                "sample-projects", "Open Sample Projects");
+            return Empty(workspace, load, "Load a workspace before release readiness can be evaluated.") with { Steps = [load] };
         }
 
-        var workspaceId = workspace?.WorkspaceId ?? Guid.Empty;
-        var steps = await _workflowApi.BuildWorkflowStepsAsync(
-            workspaceId,
-            artifactStatus.HasConstitution,
-            artifactStatus.HasSpecification,
-            artifactStatus.HasPlan,
-            artifactStatus.HasTasks,
-            artifactStatus.HasDataModel) ?? [];
-        steps = steps.Where(IsVisibleWorkflowStep).ToList();
+        var steps = (await _workflowApi.BuildWorkflowStepsAsync(
+            workspace.WorkspaceId ?? Guid.Empty,
+            workspace.Has(WorkspaceArtifactType.Constitution),
+            workspace.Has(WorkspaceArtifactType.Specification),
+            workspace.Has(WorkspaceArtifactType.Plan),
+            workspace.Has(WorkspaceArtifactType.Tasks),
+            workspace.Has(WorkspaceArtifactType.DataModel)) ?? [])
+            .Where(IsVisibleWorkflowStep)
+            .ToList();
 
         var specificationState = FindStep(steps, "Specification");
         var traceabilityState = FindStep(steps, "Traceability");
         var implementationState = FindStep(steps, "Implementation");
         var qualityGateState = FindStep(steps, "Quality");
-        var nextAction = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step))
-            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step) && step.Status != WorkflowStepStatus.Approved);
-        var canRelease = artifactStatus.IsFullyLoaded
-            && IsApproved(specificationState)
+
+        // Required review steps lock themselves when their artifacts are missing, so an approved, unlocked step implies its artifacts.
+        var canRelease = IsApproved(specificationState)
             && IsApproved(traceabilityState)
             && IsApproved(implementationState)
             && IsQualityGatePassed(qualityGateState);
 
-        var warnings = new List<string>();
-        if (metadata is null && artifactStatus.ArtifactCount > 0)
-        {
-            warnings.Add("Artifacts are loaded in the current session, but the workspace has not been saved yet.");
-        }
-
-        var workspaceStatus = persistedState?.Status ?? (metadata?.AutoSaved == true ? "AutoSaved" : "Not Saved");
-        var lastSavedAt = persistedState?.LastSavedAt ?? metadata?.LoadedAt;
+        var required = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional).ToList();
+        var approved = required.Count(step => step.ApprovalState == ApprovalState.Approved);
+        var assessed = required.Any(step => step.ApprovalState != ApprovalState.Pending || step.ReviewState != ReviewState.NotStarted);
+        int? releasePercent = required.Count > 0 && assessed ? approved * 100 / required.Count : null;
 
         return new WorkflowReadiness(
-            CurrentWorkspace: workspace,
-            WorkspaceLoaded: true,
-            WorkspaceName: workspace?.WorkspaceName ?? "Unsaved workspace",
-            ProjectName: ResolveProjectName(artifactStatus, metadata, persistedState),
-            WorkspaceStatus: workspaceStatus,
-            WorkspaceStatusClass: GetStatusClass(workspaceStatus),
-            LastSavedAt: lastSavedAt,
-            LastSavedText: GetLastSavedText(lastSavedAt),
-            ArtifactStatus: artifactStatus,
-            Artifacts: BuildArtifactReadiness(artifactStatus),
+            Workspace: workspace,
             SpecificationExplorerState: specificationState,
             TraceabilityState: traceabilityState,
             ImplementationReviewState: implementationState,
             QualityGateState: qualityGateState,
-            NextRecommendedAction: nextAction,
-            OverallReadiness: BuildOverallReadiness(artifactStatus, steps, canRelease),
+            NextRecommendedAction: NextAction(workspace, steps),
+            OverallReadiness: new WorkflowReadinessBreakdown
+            {
+                ArtifactReadiness = workspace.AvailableRoleCount * 100 / CurrentWorkspaceSnapshot.WorkflowRoles.Count,
+                ReviewReadiness = releasePercent ?? 0,
+                ApprovalReadiness = releasePercent ?? 0,
+                OverallReadiness = releasePercent ?? 0
+            },
+            RequiredReviewCount: required.Count,
+            ApprovedReviewCount: approved,
             Steps: steps,
             CanRelease: canRelease,
             ReleaseReason: canRelease
                 ? "Specification reviewed. Traceability approved. Implementation approved. Quality gates passed."
-                : "Release is available only after artifacts are loaded and all required review steps are approved.",
-            Warnings: warnings);
+                : "Release is available only after all required review steps are approved.")
+        {
+            ReleaseReadinessPercent = releasePercent
+        };
     }
 
-    private static WorkflowWorkspace? BuildWorkspace(
-        CurrentWorkspaceMetadata? metadata,
-        CurrentWorkspaceStateDto? persistedState,
-        WorkspaceArtifactStatus artifactStatus,
-        bool workspaceLoaded)
+    /// <summary>
+    /// The next action from the actual workspace state: no artifacts → add them; a role with several artifacts and no choice →
+    /// choose one; otherwise the first open review step. Never "Load project artifacts" while the workspace has artifacts.
+    /// </summary>
+    private static WorkflowStepViewModel? NextAction(CurrentWorkspaceSnapshot workspace, IReadOnlyList<WorkflowStepViewModel> steps)
     {
-        if (!workspaceLoaded)
+        if (workspace.AvailableRoleCount == 0 && workspace.Roles.All(r => r.Availability == ArtifactRoleAvailability.Missing))
         {
-            return null;
+            return Synthetic(AddArtifactsKey, "Add project artifacts",
+                $"Workspace {workspace.WorkspaceName} has no Constitution, Specification, Plan, Tasks or Data Model artifact yet. Import one in an explorer to start the review workflow.",
+                "specification-explorer", "Open Specification Explorer");
         }
 
-        return new WorkflowWorkspace(
-            WorkspaceId: metadata?.WorkspaceId ?? persistedState?.CurrentWorkspaceId,
-            WorkspaceName: metadata?.WorkspaceName
-                ?? persistedState?.WorkspaceName
-                ?? ResolveProjectName(artifactStatus, metadata, persistedState),
-            ProjectName: metadata?.ProjectName ?? persistedState?.ProjectName ?? artifactStatus.ActiveProjectName,
-            ArtifactCount: artifactStatus.ArtifactCount,
-            LoadedAt: metadata?.LoadedAt ?? persistedState?.LastSavedAt,
-            ArtifactSetHash: metadata?.ArtifactSetHash,
-            AutoSaved: metadata?.AutoSaved ?? false);
-    }
-
-    private static WorkflowReadiness CreateEmptyReadiness(WorkspaceArtifactStatus artifactStatus)
-    {
-        var emptyAction = new WorkflowStepViewModel
+        if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
         {
-            Number = 1,
-            Key = "LoadWorkspace",
-            Title = "Load project artifacts",
-            Description = "Load a Sample Project, import documents in an explorer, or resume a saved workspace to begin the review workflow.",
-            Route = "sample-projects",
-            ActionLabel = "Open Sample Projects",
-            Color = "#0284c7",
-            CanOpen = true,
-            IsCurrent = true,
-            Status = WorkflowStepStatus.Available,
-            Prerequisites = PrerequisiteState.Available,
-            ReviewState = ReviewState.NotStarted,
-            ApprovalState = ApprovalState.Pending,
-            RequiresApproval = false,
-            RequiresManualReview = false
-        };
+            return Synthetic(ChooseArtifactsKey, $"Choose the {unresolved.Label} to review",
+                $"The workspace has {unresolved.ArtifactCount} {unresolved.Label} artifacts and none is selected. Reviews read the selected one.",
+                ExplorerRoute(unresolved.Role), $"Open {unresolved.Label} Explorer");
+        }
 
-        return new WorkflowReadiness(
-            CurrentWorkspace: null,
-            WorkspaceLoaded: false,
-            WorkspaceName: "No workspace loaded",
-            ProjectName: "No project loaded",
-            WorkspaceStatus: "Not Saved",
-            WorkspaceStatusClass: GetStatusClass("Not Saved"),
-            LastSavedAt: null,
-            LastSavedText: "-",
-            ArtifactStatus: artifactStatus,
-            Artifacts: BuildArtifactReadiness(artifactStatus),
-            SpecificationExplorerState: null,
-            TraceabilityState: null,
-            ImplementationReviewState: null,
-            QualityGateState: null,
-            NextRecommendedAction: emptyAction,
-            OverallReadiness: new WorkflowReadinessBreakdown(),
-            Steps: [emptyAction],
-            CanRelease: false,
-            ReleaseReason: "Load a workspace before release readiness can be evaluated.",
-            Warnings: []);
+        return steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step))
+            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step) && step.Status != WorkflowStepStatus.Approved);
     }
 
-    private static IReadOnlyList<WorkflowArtifactReadiness> BuildArtifactReadiness(WorkspaceArtifactStatus status) =>
-    [
-        new("Constitution", status.HasConstitution),
-        new("Specification", status.HasSpecification),
-        new("Plan", status.HasPlan),
-        new("Tasks", status.HasTasks),
-        new("Data Model", status.HasDataModel)
-    ];
+    private static string ExplorerRoute(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Constitution => "constitution-explorer",
+        WorkspaceArtifactType.Plan => "plan-explorer",
+        WorkspaceArtifactType.Tasks => "task-explorer",
+        WorkspaceArtifactType.DataModel => "data-model-explorer",
+        _ => "specification-explorer",
+    };
+
+    private static WorkflowReadiness Empty(CurrentWorkspaceSnapshot workspace, WorkflowStepViewModel? next, string reason) =>
+        new(workspace, null, null, null, null, next, new WorkflowReadinessBreakdown(), 0, 0, [], false, reason);
+
+    private static WorkflowStepViewModel Synthetic(string key, string title, string description, string route, string actionLabel) => new()
+    {
+        Number = 1,
+        Key = key,
+        Title = title,
+        Description = description,
+        Route = route,
+        ActionLabel = actionLabel,
+        Color = "#0284c7",
+        CanOpen = true,
+        IsCurrent = true,
+        Status = WorkflowStepStatus.Available,
+        Prerequisites = PrerequisiteState.Available,
+        ReviewState = ReviewState.NotStarted,
+        ApprovalState = ApprovalState.Pending,
+        RequiresApproval = false,
+        RequiresManualReview = false
+    };
 
     private static WorkflowStepViewModel? FindStep(IReadOnlyList<WorkflowStepViewModel> steps, string token) =>
         steps.FirstOrDefault(step =>
@@ -225,7 +202,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             || step.Key.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsApproved(WorkflowStepViewModel? step) =>
-        step?.ApprovalState == ApprovalState.Approved;
+        step?.ApprovalState == ApprovalState.Approved && step.Status != WorkflowStepStatus.Locked;
 
     private static bool IsQualityGatePassed(WorkflowStepViewModel? step) =>
         step is null
@@ -237,67 +214,12 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     private static bool IsReleaseReviewStep(WorkflowStepViewModel step) =>
         !step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
-        && !step.Key.Equals("LoadWorkspace", StringComparison.OrdinalIgnoreCase)
+        && !step.Key.Equals(LoadWorkspaceKey, StringComparison.OrdinalIgnoreCase)
         && !step.Key.Equals("Dashboard", StringComparison.OrdinalIgnoreCase)
         && !step.Key.Equals("ReviewContextValidation", StringComparison.OrdinalIgnoreCase)
         && (step.RequiresManualReview || step.RequiresApproval);
 
-    private static WorkflowReadinessBreakdown BuildOverallReadiness(
-        WorkspaceArtifactStatus artifactStatus,
-        IReadOnlyList<WorkflowStepViewModel> steps,
-        bool canRelease)
-    {
-        var requiredSteps = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional).ToList();
-        var approvedSteps = requiredSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
-        var approvalReadiness = requiredSteps.Count == 0 ? 0 : approvedSteps * 100 / requiredSteps.Count;
+    private void OnWorkspaceChanged() => ReadinessChanged?.Invoke();
 
-        return new WorkflowReadinessBreakdown
-        {
-            ArtifactReadiness = artifactStatus.ArtifactCount * 20,
-            ReviewReadiness = approvalReadiness,
-            ApprovalReadiness = approvalReadiness,
-            OverallReadiness = approvalReadiness
-        };
-    }
-
-    private static string ResolveProjectName(
-        WorkspaceArtifactStatus artifactStatus,
-        CurrentWorkspaceMetadata? metadata,
-        CurrentWorkspaceStateDto? persistedState) =>
-        FirstNonBlank(metadata?.ProjectName, persistedState?.ProjectName, artifactStatus.ActiveProjectName, "No project loaded");
-
-    private static string FirstNonBlank(params string?[] values) =>
-        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
-
-    private static string GetStatusClass(string? status) => status switch
-    {
-        "Saved" => "status-saved",
-        "AutoSaved" => "status-auto-saved",
-        "UnsavedChanges" => "status-unsaved",
-        _ => "status-not-saved"
-    };
-
-    private static string GetLastSavedText(DateTimeOffset? lastSavedAt)
-    {
-        if (lastSavedAt is null) return "-";
-
-        var elapsed = DateTimeOffset.UtcNow - lastSavedAt.Value;
-        return elapsed.TotalSeconds < 60
-            ? "just now"
-            : elapsed.TotalMinutes < 60
-                ? $"{(int)elapsed.TotalMinutes}m ago"
-                : elapsed.TotalHours < 24
-                    ? $"{(int)elapsed.TotalHours}h ago"
-                    : $"{(int)elapsed.TotalDays}d ago";
-    }
-
-    private void OnReadinessChanged() => ReadinessChanged?.Invoke();
-
-    private void OnArtifactsChanged(object? sender, EventArgs e) => OnReadinessChanged();
-
-    public void Dispose()
-    {
-        _artifactStatus.StatusChanged -= OnReadinessChanged;
-        _updates.ArtifactsChanged -= OnArtifactsChanged;
-    }
+    public void Dispose() => _workspace.Changed -= OnWorkspaceChanged;
 }

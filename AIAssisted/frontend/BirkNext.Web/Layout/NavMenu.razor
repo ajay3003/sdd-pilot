@@ -53,7 +53,7 @@
 @code {
     private bool collapseNavMenu = false;
     private ProjectApplicabilityState? _applicability;
-    private IWorkspaceSessionService? _workspace;
+    private ICurrentWorkspaceProjection? _workspace;
     private NavigationSectionState _sections = new();
 
     protected override async Task OnInitializedAsync()
@@ -66,9 +66,9 @@
         _applicability = ServiceProvider.GetService<ProjectApplicabilityState>();
         if (_applicability is null) return;
         _applicability.Changed += OnApplicabilityChanged;
-        // Project switch, workspace load and Reset Local Database all rebuild the workspace; statuses follow.
-        _workspace = ServiceProvider.GetService<IWorkspaceSessionService>();
-        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded += OnWorkspaceChanged;
+        // Project switch, artifact import, workspace resume and Reset Local Data all change the current workspace; statuses follow.
+        _workspace = ServiceProvider.GetService<ICurrentWorkspaceProjection>();
+        if (_workspace is not null) _workspace.Changed += OnWorkspaceChanged;
         try { await _applicability.EnsureLoadedAsync(); } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
     }
 
@@ -86,7 +86,7 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = RefreshApplicabilityAsync();
+    private void OnWorkspaceChanged() => _ = RefreshApplicabilityAsync();
 
     private async Task RefreshApplicabilityAsync()
     {
@@ -100,7 +100,7 @@
     {
         Navigation.LocationChanged -= OnLocationChanged;
         if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
-        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded -= OnWorkspaceChanged;
+        if (_workspace is not null) _workspace.Changed -= OnWorkspaceChanged;
     }
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;

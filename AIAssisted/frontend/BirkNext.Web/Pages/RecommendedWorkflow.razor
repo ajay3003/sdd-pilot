@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
 @inject IWorkflowReadinessService WorkflowReadiness
+@inject ICurrentWorkspaceProjection CurrentWorkspace
 @inject IWorkspacePersistenceApiService WorkspacePersistence
 @inject IWorkspaceSessionRestoreService WorkspaceRestore
 @inject IWorkspaceAutoSaveService AutoSave
@@ -21,7 +22,7 @@
 
     @if (_readiness is null)
     {
-        <p class="loading-state">Loading workflow...</p>
+        <p class="loading-state" role="status">Loading workspace…</p>
     }
     else
     {
@@ -34,21 +35,30 @@
             </div>
         }
 
+        @if (_readiness.WorkspaceError)
+        {
+            <div class="rw-error-alert" role="alert" data-testid="rw-workspace-error">
+                <span class="rw-error-icon">!</span>
+                <span class="rw-error-message">Unable to load workspace @_readiness.ProjectName. @_readiness.Workspace.Error</span>
+            </div>
+        }
+
         <div class="rw-workspace-status" role="status" aria-live="polite">
             <div class="rw-status-header">
                 <span class="rw-section-label">Automatic State</span>
                 <span class="rw-artifact-count">Detection unlocks pages; it does not approve review work.</span>
             </div>
             <div class="rw-status-indicators">
-                <span class="rw-artifact-badge @(_readiness.WorkspaceLoaded ? "is-detected" : "is-missing")">
-                    <span class="rw-badge-icon">@(_readiness.WorkspaceLoaded ? "✓" : "-")</span>
+                <span class="rw-artifact-badge @(_readiness.WorkspaceLoaded ? "is-detected" : "is-missing")" data-testid="rw-workspace-badge">
+                    <span class="rw-badge-icon">@(_readiness.WorkspaceLoaded ? "✓" : _readiness.WorkspaceError ? "!" : "-")</span>
                     Workspace
                 </span>
-                @foreach (var artifact in _readiness.Artifacts)
+                @foreach (var role in _readiness.Workspace.Roles)
                 {
-                    <span class="rw-artifact-badge @(artifact.IsLoaded ? "is-detected" : "is-missing")">
-                        <span class="rw-badge-icon">@(artifact.IsLoaded ? "✓" : "○")</span>
-                        @artifact.Name
+                    <span class="rw-artifact-badge @(role.IsAvailable ? "is-detected" : "is-missing")" data-testid="rw-role-badge" data-role="@role.Role" data-availability="@role.Availability"
+                          title="@RoleTitle(role)">
+                        <span class="rw-badge-icon">@RoleIcon(role)</span>
+                        @role.Label
                     </span>
                 }
             </div>
@@ -137,7 +147,7 @@
                         <div class="rw-workspace-header">
                             <div>
                                 <div class="rw-workspace-actions-header">Current Workspace</div>
-                                <div class="rw-workspace-title">@_readiness.WorkspaceName</div>
+                                <div class="rw-workspace-title" data-testid="rw-workspace-name">@_readiness.WorkspaceName</div>
                             </div>
                             <details class="rw-workspace-menu" @ref="_workspaceMenuRef">
                                 <summary class="btn-secondary rw-workspace-menu-trigger">Workspace</summary>
@@ -160,11 +170,11 @@
                                 </div>
                                 <div class="rw-detail-item">
                                     <span class="rw-detail-label">Project</span>
-                                    <span class="rw-detail-value">@_readiness.ProjectName</span>
+                                    <span class="rw-detail-value" data-testid="rw-project">@ProjectValue</span>
                                 </div>
                                 <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Artifacts</span>
-                                    <span class="rw-detail-value">@_readiness.ArtifactStatus.ArtifactCount of 5</span>
+                                    <span class="rw-detail-label">Artifact roles</span>
+                                    <span class="rw-detail-value" data-testid="rw-artifact-roles">@ArtifactRolesValue</span>
                                 </div>
                                 <div class="rw-detail-item">
                                     <span class="rw-detail-label">Manual Review</span>
@@ -172,11 +182,11 @@
                                 </div>
                                 <div class="rw-detail-item">
                                     <span class="rw-detail-label">Release Readiness</span>
-                                    <span class="rw-detail-value">@($"{_readiness.OverallReadiness.OverallReadiness}%")</span>
+                                    <span class="rw-detail-value" data-testid="rw-release-readiness">@ReleaseReadinessValue</span>
                                 </div>
                                 <div class="rw-detail-item">
-                                    <span class="rw-detail-label">Status</span>
-                                    <span class="rw-detail-value @_readiness.WorkspaceStatusClass">@_readiness.WorkspaceStatus</span>
+                                    <span class="rw-detail-label">Save status</span>
+                                    <span class="rw-detail-value @SaveStatusClass" data-testid="rw-save-status">@_readiness.Workspace.SaveStatusLabel</span>
                                 </div>
                                 <div class="rw-detail-item">
                                     <span class="rw-detail-label">Last Saved</span>
@@ -185,9 +195,9 @@
                             </div>
                         </div>
 
-                        @if (!_readiness.WorkspaceLoaded)
+                        @if (_readiness.Workspace.State == CurrentWorkspaceState.NoWorkspace)
                         {
-                            <div class="rw-no-workspace">
+                            <div class="rw-no-workspace" data-testid="rw-no-workspace">
                                 <p>No workspace loaded.</p>
                                 <SecondaryButton OnClick="ShowManageWorkspacesAsync">Resume Workspace</SecondaryButton>
                             </div>
@@ -196,8 +206,8 @@
 
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
                         <MetricCard Value="@AutomaticSetupValue" Label="Automatic Setup" Sublabel="@AutomaticSetupSublabel" Variant="@AutomaticSetupVariant" />
-                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved" Variant="@ManualApprovalVariant" />
-                        <MetricCard Value="@($"{_readiness.OverallReadiness.OverallReadiness}%")" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
+                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="Approved, incl. optional" Variant="@ManualApprovalVariant" />
+                        <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
                     </div>
                 </div>
             </aside>
@@ -238,11 +248,11 @@
         }
     }
 
+    // Auto-save listens to artifact and project changes itself; a readiness change (including a save) never schedules one.
     private async void OnReadinessChanged()
     {
         await InvokeAsync(async () =>
         {
-            AutoSave.OnArtifactChanged();
             await RefreshReadinessAsync();
             StateHasChanged();
         });
@@ -259,24 +269,77 @@
     private int ManualApprovedCount =>
         ManualReviewSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
 
-    private string ManualApprovalValue => $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
+    private string ManualApprovalValue => ManualReviewSteps.Count == 0 ? "None applicable" : $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
 
     private string ManualApprovalVariant =>
         ManualReviewSteps.Count > 0 && ManualApprovedCount == ManualReviewSteps.Count ? "success" : "warning";
 
-    private string AutomaticSetupValue =>
-        _readiness?.WorkspaceLoaded == true && _readiness.ArtifactStatus.ArtifactCount > 0 ? "Ready" : "Missing";
+    private CurrentWorkspaceSnapshot? Workspace => _readiness?.Workspace;
 
-    private string AutomaticSetupSublabel =>
-        _readiness?.WorkspaceLoaded == true
-            ? $"Workspace, {_readiness.ArtifactStatus.ArtifactCount} / 5 artifacts"
-            : "No workspace loaded";
+    private string ProjectValue => Workspace switch
+    {
+        { State: CurrentWorkspaceState.NoWorkspace } or null => "No project loaded",
+        var ws => ws.ProjectDisplay,
+    };
 
-    private string AutomaticSetupVariant =>
-        _readiness?.WorkspaceLoaded == true && _readiness.ArtifactStatus.ArtifactCount > 0 ? "info" : "warning";
+    private string ArtifactRolesValue => Workspace switch
+    {
+        { WorkspaceLoaded: true, AvailableRoleCount: > 0 } ws => ws.RoleSummary,
+        { WorkspaceLoaded: true } => "None available",
+        _ => "-",
+    };
+
+    private string AutomaticSetupValue => Workspace switch
+    {
+        { State: CurrentWorkspaceState.Error } => "Unavailable",
+        { WorkspaceLoaded: true, AvailableRoleCount: > 0 } => "Ready",
+        { WorkspaceLoaded: true } => "Setup required",
+        _ => "Missing",
+    };
+
+    private string AutomaticSetupSublabel => Workspace switch
+    {
+        { State: CurrentWorkspaceState.Error } => "Workspace could not be read",
+        { WorkspaceLoaded: true, AvailableRoleCount: > 0 } ws => ws.RoleSummary,
+        { WorkspaceLoaded: true } => "Workspace loaded, no artifact roles",
+        _ => "No workspace loaded",
+    };
+
+    private string AutomaticSetupVariant => AutomaticSetupValue == "Ready" ? "info" : "warning";
+
+    /// <summary>Not assessed (nothing reviewed yet, or nothing to review) is shown as a dash, never as 0%.</summary>
+    private string ReleaseReadinessValue =>
+        _readiness?.ReleaseReadinessPercent is { } percent ? $"{percent}%" : "—";
 
     private string ReleaseReadinessSublabel =>
-        _readiness?.CanRelease == true ? "Release recommended" : "Manual approvals required";
+        _readiness?.CanRelease == true ? "Release recommended"
+        : _readiness is not { WorkspaceLoaded: true } ? "Not assessed"
+        : _readiness.RequiredReviewCount == 0 ? "No required reviews"
+        : _readiness.ReleaseReadinessPercent is null ? $"Not assessed · 0 of {_readiness.RequiredReviewCount} required approved"
+        : $"{_readiness.ApprovedReviewCount} of {_readiness.RequiredReviewCount} required approved";
+
+    private string SaveStatusClass => Workspace?.SaveStatus switch
+    {
+        "Saved" => "status-saved",
+        "AutoSaved" => "status-auto-saved",
+        "UnsavedChanges" => "status-unsaved",
+        _ => "status-not-saved"
+    };
+
+    private static string RoleIcon(ArtifactRoleStatus role) => role.Availability switch
+    {
+        ArtifactRoleAvailability.Available => "✓",
+        ArtifactRoleAvailability.Unknown => "?",
+        _ => "○",
+    };
+
+    private static string RoleTitle(ArtifactRoleStatus role) => role.Availability switch
+    {
+        ArtifactRoleAvailability.Unknown => $"{role.Label}: availability unknown",
+        ArtifactRoleAvailability.Missing => $"{role.Label}: missing",
+        _ => $"{role.Label}: {role.ArtifactCount} artifact{(role.ArtifactCount == 1 ? "" : "s")}"
+             + (role.Selection == ArtifactRoleSelection.SelectionRequired ? ", selection required" : ""),
+    };
 
     private string ReleaseReadinessVariant =>
         _readiness?.CanRelease == true ? "success" : "info";
@@ -286,13 +349,14 @@
 
     private static bool IsLoadWorkspaceStep(WorkflowStepViewModel step) =>
         step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
-        || step.Key.Equals("LoadWorkspace", StringComparison.OrdinalIgnoreCase);
+        || step.Key.Equals(WorkflowReadinessService.LoadWorkspaceKey, StringComparison.OrdinalIgnoreCase);
 
     private string GetStepStateLabel(WorkflowStepViewModel step)
     {
+        // Loading is not reviewing: the load step is simply done once a workspace exists.
         if (IsLoadWorkspaceStep(step) && _readiness?.WorkspaceLoaded == true)
         {
-            return "Reviewed";
+            return "Done";
         }
 
         if (step.ApprovalState == ApprovalState.NeedsChanges ||
@@ -320,7 +384,7 @@
         "Needs Changes" => "rw-badge-needs-changes",
         "In Review" => "rw-badge-in-review",
         "Pending Approval" => "rw-badge-pending",
-        "Reviewed" => "rw-badge-reviewed",
+        "Reviewed" or "Done" => "rw-badge-reviewed",
         "Locked" => "rw-badge-locked",
         _ => "rw-badge-available"
     };
@@ -331,7 +395,7 @@
         "Needs Changes" => "is-attention",
         "In Review" => "is-current",
         "Pending Approval" => "is-reviewed",
-        "Reviewed" => "is-reviewed",
+        "Reviewed" or "Done" => "is-reviewed",
         "Locked" => "is-disabled",
         _ => ""
     };
@@ -446,6 +510,7 @@
             var result = await WorkspacePersistence.SaveCurrentAsync();
             if (result != null)
             {
+                CurrentWorkspace.Invalidate();
                 await RefreshReadinessAsync();
                 StateHasChanged();
                 await CloseWorkspaceMenuAsync();
@@ -472,6 +537,7 @@
             var result = await WorkspacePersistence.SaveAsAsync(name);
             if (result != null)
             {
+                CurrentWorkspace.Invalidate();
                 await RefreshReadinessAsync();
                 StateHasChanged();
                 await CloseWorkspaceMenuAsync();
@@ -497,6 +563,7 @@
     private async Task OnWorkspaceManagerCloseAsync()
     {
         _showWorkspaceManager = false;
+        CurrentWorkspace.Invalidate();
         await RefreshReadinessAsync();
         StateHasChanged();
     }
@@ -600,7 +667,7 @@
         }
     }
 
-    private Guid GetWorkspaceId() => _readiness?.CurrentWorkspace?.WorkspaceId ?? Guid.Empty;
+    private Guid GetWorkspaceId() => _readiness?.WorkspaceId ?? Guid.Empty;
 
     private async Task<string?> GetWorkspaceNameFromUserAsync()
     {

@@ -25,10 +25,10 @@ public sealed class TechnologyCoverageApiService(HttpClient http) : ITechnologyC
 
 /// <summary>
 /// Per-session applicability of every review for the active Target Environment: backend source/catalog facts plus the target URL and the
-/// loaded workspace documents, evaluated by the shared <see cref="ApplicabilityEvaluator"/>. Navigation and the coverage page read it; it never
+/// artifact roles of the current workspace (<see cref="ICurrentWorkspaceProjection"/>), evaluated by the shared <see cref="ApplicabilityEvaluator"/>. Navigation and the coverage page read it; it never
 /// hides a review — it labels it.
 /// </summary>
-public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api, IFrontendAnalysisContextFactory contexts, IWorkspaceSessionService workspace)
+public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api, IFrontendAnalysisContextFactory contexts, ICurrentWorkspaceProjection workspace)
 {
     private Task? _loading;
     public ProjectTechnologyCoverage? Coverage { get; private set; }
@@ -48,6 +48,8 @@ public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api,
         var generation = ++_generation;
         FrontendAnalysisProfile? profile = null;
         ProjectTechnologyCoverage? coverage = null;
+        // Artifact roles come from the current workspace (Sample Project documents and imported artifacts alike), not session copies.
+        var current = await workspace.GetAsync();
         try
         {
             // Without an active Target Environment (e.g. right after a local data reset) the context carries an empty placeholder profile:
@@ -64,7 +66,7 @@ public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api,
         Profile = profile;
         Coverage = coverage;
         Reviews = ApplicabilityEvaluator.EvaluateAll(TechnologyCoveragePresentation.Input(Coverage, Profile,
-            workspace.Has(WorkspaceArtifactKind.Specification), workspace.Has(WorkspaceArtifactKind.Plan) || workspace.Has(WorkspaceArtifactKind.Constitution)));
+            current.Has(WorkspaceArtifactType.Specification), current.Has(WorkspaceArtifactType.Plan) || current.Has(WorkspaceArtifactType.Constitution)));
         Loaded = true;
         Changed?.Invoke();
     }

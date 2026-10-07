@@ -2,16 +2,16 @@
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
 @inject IDashboardSnapshotService Snapshot
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject QualityReviewSessionService QualitySession
 @inject IWorkspaceSessionService Workspace
-@inject IWorkspaceArtifactStatusService ArtifactStatus
+@inject ICurrentWorkspaceProjection CurrentWorkspace
 @inject IReportExportService ExportService
 @inject IWorkflowReadinessService WorkflowReadiness
-@inject SampleProjectsApiService SampleProjects
-@inject BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery SampleDocumentDiscovery
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -49,12 +49,19 @@
     </PageHeader>
 
     @* ── Workspace Status Panel ─────────────────────────────────────────────────── *@
-    <section class="db-workspace-panel" role="region" aria-label="Workspace status">
+    @* Driven only by the current-workspace read model (ICurrentWorkspaceProjection), the same one Recommended Workflow reads. *@
+    <section class="db-workspace-panel" role="region" aria-label="Workspace status" data-testid="db-workspace-panel">
         <div class="db-workspace-header">
             <span class="db-workspace-title">Current Workspace</span>
         </div>
 
-        @if (_workspaceStatus.ArtifactCount == 0 && !_isSampleProjectMode && !_sampleProjectCatalogFailed)
+        @if (_workspace is null)
+        {
+            <div class="db-workspace-content">
+                <p class="db-workspace-message" role="status">Loading workspace…</p>
+            </div>
+        }
+        else if (_workspace.State == CurrentWorkspaceState.NoWorkspace)
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-empty">
@@ -67,93 +74,41 @@
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-info">
-                    @if (!string.IsNullOrEmpty(_sampleProjectDisplayName))
+                    <span class="db-workspace-project" data-testid="db-workspace-name">📁 @(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
+                    @if (_workspace.State == CurrentWorkspaceState.Error)
                     {
-                        <span class="db-workspace-project">📁 @_sampleProjectDisplayName</span>
+                        <span class="db-workspace-count" data-testid="db-workspace-roles">Unable to load workspace artifacts</span>
                     }
-                    else if (!string.IsNullOrEmpty(_workspaceStatus.ActiveProjectName))
+                    else if (_workspace.ProjectLoaded && !_workspace.ProjectInCatalog)
                     {
-                        <span class="db-workspace-project">📁 @_workspaceStatus.ActiveProjectName</span>
-                    }
-                    @if (_sampleProjectCatalogFailed && !string.IsNullOrEmpty(Workspace.CurrentProject))
-                    {
-                        <span class="db-workspace-count">Artifact availability unavailable</span>
-                    }
-                    else if (_isSampleProjectMode)
-                    {
-                        <span class="db-workspace-count">@_sampleProjectAvailableCount artifact role@(_sampleProjectAvailableCount == 1 ? "" : "s") detected</span>
+                        <span class="db-workspace-count" data-testid="db-workspace-roles">Artifact availability unavailable</span>
                     }
                     else
                     {
-                        <span class="db-workspace-count">@_workspaceStatus.ArtifactCount / 5 artifacts loaded</span>
+                        <span class="db-workspace-count" data-testid="db-workspace-roles">@_workspace.RoleSummary</span>
                     }
                 </div>
 
                 <div class="db-workspace-badges">
-                    @if (_sampleProjectCatalogFailed && !string.IsNullOrEmpty(Workspace.CurrentProject))
+                    @foreach (var role in _workspace.Roles)
                     {
-                        <span class="db-artifact-badge is-missing">○ Constitution</span>
-                        <span class="db-artifact-badge is-missing">○ Specification</span>
-                        <span class="db-artifact-badge is-missing">○ Plan</span>
-                        <span class="db-artifact-badge is-missing">○ Tasks</span>
-                        <span class="db-artifact-badge is-missing">○ Data Model</span>
-                    }
-                    else if (_isSampleProjectMode)
-                    {
-                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Constitution] ? "is-loaded" : "is-missing")">
-                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Constitution] ? "✓" : "○") Constitution
-                        </span>
-                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Specification] ? "is-loaded" : "is-missing")">
-                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Specification] ? "✓" : "○") Specification
-                        </span>
-                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Plan] ? "is-loaded" : "is-missing")">
-                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Plan] ? "✓" : "○") Plan
-                        </span>
-                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.Tasks] ? "is-loaded" : "is-missing")">
-                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.Tasks] ? "✓" : "○") Tasks
-                        </span>
-                        <span class="db-artifact-badge @(_sampleProjectArtifacts[WorkspaceArtifactKind.DataModel] ? "is-loaded" : "is-missing")">
-                            @(_sampleProjectArtifacts[WorkspaceArtifactKind.DataModel] ? "✓" : "○") Data Model
-                        </span>
-                    }
-                    else
-                    {
-                        <span class="db-artifact-badge @(_workspaceStatus.HasConstitution ? "is-loaded" : "is-missing")">
-                            @(_workspaceStatus.HasConstitution ? "✓" : "○") Constitution
-                        </span>
-                        <span class="db-artifact-badge @(_workspaceStatus.HasSpecification ? "is-loaded" : "is-missing")">
-                            @(_workspaceStatus.HasSpecification ? "✓" : "○") Specification
-                        </span>
-                        <span class="db-artifact-badge @(_workspaceStatus.HasPlan ? "is-loaded" : "is-missing")">
-                            @(_workspaceStatus.HasPlan ? "✓" : "○") Plan
-                        </span>
-                        <span class="db-artifact-badge @(_workspaceStatus.HasTasks ? "is-loaded" : "is-missing")">
-                            @(_workspaceStatus.HasTasks ? "✓" : "○") Tasks
-                        </span>
-                        <span class="db-artifact-badge @(_workspaceStatus.HasDataModel ? "is-loaded" : "is-missing")">
-                            @(_workspaceStatus.HasDataModel ? "✓" : "○") Data Model
+                        <span class="db-artifact-badge @(role.IsAvailable ? "is-loaded" : "is-missing")" data-testid="db-role-badge" data-role="@role.Role" data-availability="@role.Availability">
+                            @(role.Availability switch { ArtifactRoleAvailability.Available => "✓", ArtifactRoleAvailability.Unknown => "?", _ => "○" }) @role.Label
                         </span>
                     }
                 </div>
 
                 <div class="db-workspace-status">
-                    @if (_workspaceStatus.IsFullyLoaded)
-                    {
-                        <span class="db-status-badge db-status-ready">Ready for review</span>
-                    }
-                    else if (_workspaceStatus.IsPartiallyLoaded)
-                    {
-                        <span class="db-status-badge db-status-partial">Partially loaded</span>
-                    }
+                    <span class="db-status-badge db-status-notrun" data-testid="db-save-status" title="Save status. A workspace is loaded whether or not it is saved.">@_workspace.SaveStatusLabel</span>
                 </div>
 
-                @if (!_workspaceStatus.IsFullyLoaded && _workspaceStatus.ArtifactCount > 0)
+                @if (_workspace.WorkspaceLoaded && _workspace.AvailableRoleCount == 0)
                 {
-                    <a href="sample-projects" class="btn-secondary db-workspace-action">Complete workspace →</a>
+                    <a href="sample-projects" class="btn-secondary db-workspace-action">Add artifacts →</a>
                 }
-                else if (_workspaceStatus.IsFullyLoaded && _hasAnyScore)
+                else if (_workspace.WorkspaceLoaded)
                 {
-                    <a href="quality-review" class="btn-secondary db-workspace-action">Run Quality Review →</a>
+                    <a href="getting-started" class="btn-secondary db-workspace-action">Open Recommended Workflow →</a>
                 }
             </div>
         }
@@ -173,10 +128,9 @@
 
     @* ── KPI Strip ─────────────────────────────────────────────────────────── *@
     <div class="db-kpi-strip" aria-label="Key performance indicators">
-        <MetricCard Value="@($"{_governanceLoadPercent}%")"
+        <MetricCard Value="@GovernanceValue"
                     Label="Governance"
-                    Sublabel="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")"
-                    Variant="@(_governanceLoadPercent == 100 ? "success" : _governanceLoadPercent > 0 ? "warning" : null)" />
+                    Sublabel="@GovernanceSublabel" />
         <MetricCard Value="@TraceabilityHealthVal"
                     Label="Traceability"
                     Sublabel="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)"
@@ -206,7 +160,7 @@
         }
         @if (_workflowReadiness is not null)
         {
-            <MetricCard Value="@($"{_workflowReadiness.OverallReadiness.OverallReadiness}%")"
+            <MetricCard Value="@WorkflowValue"
                         Label="Workflow"
                         Sublabel="@WorkflowStatusLabel"
                         Variant="@WorkflowStatusVariant" />
@@ -220,9 +174,8 @@
 
             <div class="db-health-card">
                 <span class="db-health-label">Governance</span>
-                <span class="db-health-value @(_governanceLoadPercent == 100 ? "db-val-good" : _governanceLoadPercent > 0 ? "db-val-warn" : "db-val-empty")">@_governanceLoadPercent%</span>
-                <StatusChip Status="@(_governanceLoadPercent == 100 ? "healthy" : _governanceLoadPercent > 0 ? "warning" : "neutral")"
-                            Label="@(_governanceLoadPercent == 100 ? "Complete" : _governanceLoadPercent > 0 ? "Partial" : "Setup")" />
+                <span class="db-health-value @(_workspace is { WorkspaceLoaded: true } ? "" : "db-val-empty")" data-testid="db-governance-value">@GovernanceValue</span>
+                <StatusChip Status="neutral" Label="@GovernanceSublabel" />
             </div>
 
             <div class="db-health-card">
@@ -276,143 +229,100 @@
     </section>
 
     @* ── Governance Status ─────────────────────────────────────────────────── *@
+    @* Availability (from the current workspace) and analysis (from this session's reports) are separate facts, shown as separate badges. *@
     <section class="db-section">
-        <SectionHeader Title="Governance Status" Description="Loaded · Reviewed · Analyzed" />
+        <SectionHeader Title="Governance Status" Description="Available · Selected · Analyzed" />
         <div class="db-artifact-grid">
 
-            <div class="db-artifact-card db-artifact-constitution @(_constitutionLoaded ? "db-artifact-loaded" : "")">
+            <div class="db-artifact-card db-artifact-constitution @(Available(WorkspaceArtifactType.Constitution) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Constitution">
                 <div class="db-artifact-icon" aria-hidden="true">⚖</div>
                 <div class="db-artifact-name">Constitution</div>
-                <div class="db-artifact-badges">
-                    @if (_constitutionLoaded)  { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_constitutionAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_constitutionLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
-                </div>
-                @if (Snapshot.ComplianceReport?.HasConstitution == true)
+                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Constitution, _constitutionAnalyzed)</div>
+                @if (Available(WorkspaceArtifactType.Constitution) && Snapshot.ComplianceReport?.HasConstitution == true)
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@Snapshot.ComplianceReport.Coverage.TotalItems rules</span>
                     </div>
                 }
-                else if (Workspace.Get(WorkspaceArtifactKind.Constitution) is { } wsConst)
+                else
                 {
-                    <div class="db-artifact-stats">
-                        @if (wsConst.FileName is not null)    { <span class="db-stat-pill">@wsConst.FileName</span> }
-                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
-                        <span class="db-stat-pill">@wsConst.LoadedAt.ToString("HH:mm")</span>
-                    </div>
+                    @RoleStats(WorkspaceArtifactType.Constitution)
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_constitutionLoaded ? 50 : 0) + (_constitutionAnalyzed ? 50 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Constitution, _constitutionAnalyzed)%"></div>
                 </div>
                 <a href="constitution-explorer" class="db-artifact-action">Open Constitution Explorer →</a>
             </div>
 
-            <div class="db-artifact-card db-artifact-specification @(_specLoaded ? "db-artifact-loaded" : "")">
+            <div class="db-artifact-card db-artifact-specification @(Available(WorkspaceArtifactType.Specification) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Specification">
                 <div class="db-artifact-icon" aria-hidden="true">📋</div>
                 <div class="db-artifact-name">Specification</div>
-                <div class="db-artifact-badges">
-                    @if (_specLoaded)               { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_specAnalyzed) { <span class="db-badge db-badge-reviewed">Reviewed</span> }
-                    @if (_specAnalyzed)              { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_specLoaded) { <span class="db-badge db-badge-empty">Not loaded</span> }
-                </div>
-                @if (Snapshot.TraceabilityReport is { Health.TotalRequirements: > 0 } specTrace)
+                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Specification, _specAnalyzed)</div>
+                @if (Available(WorkspaceArtifactType.Specification) && Snapshot.TraceabilityReport is { Health.TotalRequirements: > 0 } specTrace)
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@specTrace.Health.TotalRequirements requirements</span>
                         <span class="db-stat-pill">@specTrace.SpecificationCoverage.CoveragePercentage.ToString("0")% coverage</span>
                     </div>
                 }
-                else if (Workspace.Get(WorkspaceArtifactKind.Specification) is { } wsSpec)
+                else
                 {
-                    <div class="db-artifact-stats">
-                        @if (wsSpec.FileName is not null)      { <span class="db-stat-pill">@wsSpec.FileName</span> }
-                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
-                        <span class="db-stat-pill">@wsSpec.LoadedAt.ToString("HH:mm")</span>
-                    </div>
+                    @RoleStats(WorkspaceArtifactType.Specification)
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_specLoaded ? 50 : 0) + (_specAnalyzed ? 50 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Specification, _specAnalyzed)%"></div>
                 </div>
                 <a href="specification-explorer" class="db-artifact-action">Open Specification Explorer →</a>
             </div>
 
-            <div class="db-artifact-card db-artifact-plan @(_planLoaded ? "db-artifact-loaded" : "")">
+            <div class="db-artifact-card db-artifact-plan @(Available(WorkspaceArtifactType.Plan) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Plan">
                 <div class="db-artifact-icon" aria-hidden="true">🗺</div>
                 <div class="db-artifact-name">Plan</div>
-                <div class="db-artifact-badges">
-                    @if (_planLoaded)   { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_planAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_planLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
-                </div>
-                @if (Snapshot.TraceabilityReport?.HasPlan == true)
+                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Plan, _planAnalyzed)</div>
+                @if (Available(WorkspaceArtifactType.Plan) && Snapshot.TraceabilityReport?.HasPlan == true)
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.TotalItems items</span>
                     </div>
                 }
-                else if (Workspace.Get(WorkspaceArtifactKind.Plan) is { } wsPlan)
+                else
                 {
-                    <div class="db-artifact-stats">
-                        @if (wsPlan.FileName is not null)      { <span class="db-stat-pill">@wsPlan.FileName</span> }
-                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
-                        <span class="db-stat-pill">@wsPlan.LoadedAt.ToString("HH:mm")</span>
-                    </div>
+                    @RoleStats(WorkspaceArtifactType.Plan)
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_planLoaded ? 50 : 0) + (_planAnalyzed ? 50 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Plan, _planAnalyzed)%"></div>
                 </div>
                 <a href="plan-explorer" class="db-artifact-action">Open Plan Explorer →</a>
             </div>
 
-            <div class="db-artifact-card db-artifact-tasks @(_tasksLoaded ? "db-artifact-loaded" : "")">
+            <div class="db-artifact-card db-artifact-tasks @(Available(WorkspaceArtifactType.Tasks) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Tasks">
                 <div class="db-artifact-icon" aria-hidden="true">✅</div>
                 <div class="db-artifact-name">Tasks</div>
-                <div class="db-artifact-badges">
-                    @if (_tasksLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_tasksAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_tasksLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
-                </div>
-                @if (Snapshot.TraceabilityReport is { Health.TotalTasks: > 0 } taskTrace)
+                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.Tasks, _tasksAnalyzed)</div>
+                @if (Available(WorkspaceArtifactType.Tasks) && Snapshot.TraceabilityReport is { Health.TotalTasks: > 0 } taskTrace)
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@taskTrace.Health.TotalTasks tasks</span>
                         <span class="db-stat-pill">@taskTrace.TaskCoverage.CoveragePercentage.ToString("0")% coverage</span>
                     </div>
                 }
-                else if (Workspace.Get(WorkspaceArtifactKind.Tasks) is { } wsTasks)
+                else
                 {
-                    <div class="db-artifact-stats">
-                        @if (wsTasks.FileName is not null)     { <span class="db-stat-pill">@wsTasks.FileName</span> }
-                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
-                        <span class="db-stat-pill">@wsTasks.LoadedAt.ToString("HH:mm")</span>
-                    </div>
+                    @RoleStats(WorkspaceArtifactType.Tasks)
                 }
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_tasksLoaded ? 50 : 0) + (_tasksAnalyzed ? 50 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Tasks, _tasksAnalyzed)%"></div>
                 </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
             </div>
 
-            <div class="db-artifact-card db-artifact-datamodel @(_dataModelLoaded ? "db-artifact-loaded" : "")">
+            <div class="db-artifact-card db-artifact-datamodel @(Available(WorkspaceArtifactType.DataModel) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="DataModel">
                 <div class="db-artifact-icon" aria-hidden="true">🗄️</div>
                 <div class="db-artifact-name">Data Model</div>
-                <div class="db-artifact-badges">
-                    @if (_dataModelLoaded) { <span class="db-badge db-badge-loaded">Loaded</span> }
-                    @if (_dataModelAnalyzed) { <span class="db-badge db-badge-analyzed">Analyzed</span> }
-                    @if (!_dataModelLoaded)  { <span class="db-badge db-badge-empty">Not loaded</span> }
-                </div>
-                @if (Workspace.Get(WorkspaceArtifactKind.DataModel) is { } wsDataModel)
-                {
-                    <div class="db-artifact-stats">
-                        @if (wsDataModel.FileName is not null)     { <span class="db-stat-pill">@wsDataModel.FileName</span> }
-                        @if (Workspace.ProjectName is not null) { <span class="db-stat-pill">@Workspace.ProjectName</span> }
-                        <span class="db-stat-pill">@wsDataModel.LoadedAt.ToString("HH:mm")</span>
-                    </div>
-                }
+                <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.DataModel, _dataModelAnalyzed)</div>
+                @RoleStats(WorkspaceArtifactType.DataModel)
                 <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @((_dataModelLoaded ? 50 : 0) + (_dataModelAnalyzed ? 50 : 0))%"></div>
+                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.DataModel, _dataModelAnalyzed)%"></div>
                 </div>
                 <a href="data-model-explorer" class="db-artifact-action">Open Data Model Explorer →</a>
             </div>
@@ -883,20 +793,19 @@
 @code {
     // ── Workspace status ──────────────────────────────────────────────────────
 
-    private WorkspaceArtifactStatus _workspaceStatus = new(false, false, false, false, false, 0, null);
+    /// <summary>The current workspace (null while it loads). Every presence fact on this page comes from it.</summary>
+    private CurrentWorkspaceSnapshot? _workspace;
 
     protected override void OnInitialized()
     {
-        _workspaceStatus = ArtifactStatus.GetStatus();
-        ArtifactStatus.StatusChanged += OnWorkspaceStatusChanged;
+        CurrentWorkspace.Changed += OnWorkspaceChanged;
     }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            await RefreshWorkflowReadinessAsync();
-            await RefreshSampleProjectStatusAsync();
+            await RefreshWorkspaceAsync();
         }
         catch (Exception ex)
         {
@@ -904,27 +813,106 @@
         }
     }
 
-    private void OnWorkspaceStatusChanged()
+    private void OnWorkspaceChanged() => _ = InvokeAsync(RefreshWorkspaceAsync);
+
+    private async Task RefreshWorkspaceAsync()
     {
-        _workspaceStatus = ArtifactStatus.GetStatus();
-        _ = RefreshWorkflowReadinessAsync();
-        _ = RefreshSampleProjectStatusAsync();
+        _workspace = await CurrentWorkspace.GetAsync();
         StateHasChanged();
+        await RefreshWorkflowReadinessAsync();
     }
+
+    public void Dispose() => CurrentWorkspace.Changed -= OnWorkspaceChanged;
+
+    private bool Available(WorkspaceArtifactType role) => _workspace?.Has(role) == true;
+
+    /// <summary>Availability, selection and analysis as separate badges. Analysis counts only for an available artifact.</summary>
+    private RenderFragment RoleBadges(WorkspaceArtifactType role, bool analyzed) => __builder =>
+    {
+        var status = _workspace?.Role(role);
+        switch (status?.Availability)
+        {
+            case ArtifactRoleAvailability.Available:
+                <span class="db-badge db-badge-loaded">Available@(status.ArtifactCount > 1 ? $" · {status.ArtifactCount}" : "")</span>
+                if (status.Selection == ArtifactRoleSelection.SelectionRequired)
+                {
+                    <span class="db-badge db-badge-empty">Selection required</span>
+                }
+                if (analyzed)
+                {
+                    <span class="db-badge db-badge-analyzed">Analyzed</span>
+                }
+                else
+                {
+                    <span class="db-badge db-badge-empty">Not analyzed</span>
+                }
+                break;
+            case ArtifactRoleAvailability.Unknown:
+                <span class="db-badge db-badge-empty">Availability unknown</span>
+                break;
+            default:
+                <span class="db-badge db-badge-empty">Missing</span>
+                break;
+        }
+    };
+
+    /// <summary>The selected artifact's file and project, or how many artifacts wait for a choice.</summary>
+    private RenderFragment RoleStats(WorkspaceArtifactType role) => __builder =>
+    {
+        var status = _workspace?.Role(role);
+        if (status is not { IsAvailable: true }) return;
+        <div class="db-artifact-stats">
+            @if (status.SelectedArtifact is { } selected)
+            {
+                <span class="db-stat-pill">@selected.FileName</span>
+            }
+            else
+            {
+                <span class="db-stat-pill">@status.ArtifactCount artifacts</span>
+            }
+            @if (_workspace!.ProjectName is { } project)
+            {
+                <span class="db-stat-pill">@project</span>
+            }
+        </div>
+    };
+
+    private int Progress(WorkspaceArtifactType role, bool analyzed) =>
+        Available(role) ? 50 + (analyzed ? 50 : 0) : 0;
+
+    private static readonly WorkspaceArtifactType[] GovernanceRoles =
+        [WorkspaceArtifactType.Constitution, WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan, WorkspaceArtifactType.Tasks];
+
+    private int _governanceRoleCount => GovernanceRoles.Count(Available);
+
+    /// <summary>Governance artifact roles available ("3 / 4"). Availability, not a score: there is no 0% without a workspace.</summary>
+    private string GovernanceValue => _workspace is { WorkspaceLoaded: true } ? $"{_governanceRoleCount} / {GovernanceRoles.Length}" : "—";
+
+    private string GovernanceSublabel => _workspace switch
+    {
+        null => "Loading",
+        { State: CurrentWorkspaceState.Error } => "Unavailable",
+        { WorkspaceLoaded: false } => "No workspace",
+        _ => "Roles available",
+    };
 
     // ── Workflow readiness ────────────────────────────────────────────────────
 
     private WorkflowReadiness? _workflowReadiness;
 
-    private string WorkflowStatusLabel => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    /// <summary>Approved share of the required reviews; "—" when nothing is assessed yet (never 0% by default).</summary>
+    private string WorkflowValue => _workflowReadiness?.ReleaseReadinessPercent is { } percent ? $"{percent}%" : "—";
+
+    private string WorkflowStatusLabel => _workflowReadiness switch
     {
-        100 => "Complete",
-        >= 50 => "In Progress",
-        > 0 => "Started",
-        _ => "Not Started"
+        null or { WorkspaceLoaded: false } => "Not assessed",
+        { ReleaseReadinessPercent: null } => "Not Started",
+        { ReleaseReadinessPercent: 100 } => "Complete",
+        { ReleaseReadinessPercent: >= 50 } => "In Progress",
+        _ => "Started"
     };
 
-    private string? WorkflowStatusVariant => _workflowReadiness?.OverallReadiness.OverallReadiness switch
+    private string? WorkflowStatusVariant => _workflowReadiness?.ReleaseReadinessPercent switch
     {
         100 => "success",
         >= 50 => "warning",
@@ -967,13 +955,11 @@
         RuntimeReviews.ApiQualityReview.HasResult ||
         RuntimeReviews.IntegrationQualityReview.HasResult;
 
+    // While the workspace loads it is not "no workspace": the onboarding card waits for the snapshot.
     private bool _hasAnyWorkspace =>
-        _workspaceStatus.ArtifactCount > 0;
+        _workspace is null || _workspace.State != CurrentWorkspaceState.NoWorkspace;
 
     // ── Artifact loaded / analyzed ────────────────────────────────────────────
-
-    private bool _constitutionLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Constitution);
 
     private bool _constitutionAnalyzed =>
         Snapshot.TraceabilityReport?.HasConstitution == true ||
@@ -982,17 +968,11 @@
         Snapshot.DeliveryReport?.HasConstitution == true ||
         Snapshot.ReadinessReport?.HasConstitution == true;
 
-    private bool _specLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Specification);
-
     private bool _specAnalyzed =>
         Snapshot.TraceabilityReport?.HasSpecification == true ||
         Snapshot.ComplianceReport?.HasSpecification == true ||
         Snapshot.AuditReport?.HasSpecification == true ||
         Snapshot.ReadinessReport?.HasSpecification == true;
-
-    private bool _planLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Plan);
 
     private bool _planAnalyzed =>
         Snapshot.TraceabilityReport?.HasPlan == true ||
@@ -1001,17 +981,11 @@
         Snapshot.DeliveryReport?.HasPlan == true ||
         Snapshot.ReadinessReport?.HasPlan == true;
 
-    private bool _tasksLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.Tasks);
-
     private bool _tasksAnalyzed =>
         Snapshot.TraceabilityReport?.HasTasks == true ||
         Snapshot.AuditReport?.HasTasks == true ||
         Snapshot.DeliveryReport?.HasTasks == true ||
         Snapshot.ReadinessReport?.HasTasks == true;
-
-    private bool _dataModelLoaded =>
-        Workspace.Has(WorkspaceArtifactKind.DataModel);
 
     private bool _dataModelAnalyzed =>
         false;  // Data Model analysis not yet integrated into report system
@@ -1041,7 +1015,7 @@
     /// <summary>A QA result only counts as assessed when there was a specification to assess. A report built without one (insufficient
     /// data) scores 0 by construction — that is missing evidence, not low quality, so it never enters the quality average.</summary>
     private bool _qaAssessed => DashboardQualityAggregate.QaAssessed(_qaHasData, QualitySession.HasResult,
-        Workspace.Has(WorkspaceArtifactKind.Specification) && (QualitySession.Report is not { AssessedPacks: 0 }),
+        Available(WorkspaceArtifactType.Specification) && (QualitySession.Report is not { AssessedPacks: 0 }),
         Snapshot.AuditReport?.HasSpecification, Snapshot.ReadinessReport?.HasSpecification);
 
     /// <summary>The six dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality.</summary>
@@ -1070,12 +1044,8 @@
 
     private string _projectPhase =>
         _tasksAnalyzed ? "Testing" :
-        _planLoaded    ? "Implementation" :
-        _specLoaded    ? "Specification" : "Setup";
-
-    private int _governanceLoadPercent =>
-        (_constitutionLoaded ? 25 : 0) + (_specLoaded ? 25 : 0) +
-        (_planLoaded         ? 25 : 0) + (_tasksLoaded ? 25 : 0);
+        Available(WorkspaceArtifactType.Plan)          ? "Implementation" :
+        Available(WorkspaceArtifactType.Specification) ? "Specification" : "Setup";
 
     // ── Top risks ─────────────────────────────────────────────────────────────
 
@@ -1284,78 +1254,6 @@
             _perfReport,
             _iqrReport);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"dashboard-summary-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
-    }
-
-    // ── Sample Project status ─────────────────────────────────────────────────
-
-    private bool _isSampleProjectMode = false;
-    private bool _sampleProjectCatalogFailed = false;
-    private string? _sampleProjectDisplayName = null;
-    private int _sampleProjectAvailableCount = 0;
-    private Dictionary<WorkspaceArtifactKind, bool> _sampleProjectArtifacts = new();
-
-    private async Task RefreshSampleProjectStatusAsync()
-    {
-        _isSampleProjectMode = false;
-        _sampleProjectCatalogFailed = false;
-        _sampleProjectDisplayName = null;
-        _sampleProjectAvailableCount = 0;
-        _sampleProjectArtifacts = new();
-
-        try
-        {
-            var currentProject = Workspace.CurrentProject;
-            if (string.IsNullOrWhiteSpace(currentProject))
-            {
-                return;
-            }
-
-            var projects = await SampleProjects.GetProjectsAsync();
-            var project = projects.FirstOrDefault(p => p.Slug == currentProject);
-
-            if (project is null)
-            {
-                if (projects.Count == 0)
-                {
-                    _sampleProjectCatalogFailed = true;
-                }
-                return;
-            }
-
-            _isSampleProjectMode = true;
-            _sampleProjectDisplayName = project.Name;
-
-            // Roles come from generic document discovery (any filename or folder), never from canonical filenames.
-            var discovery = await SampleDocumentDiscovery.DiscoverAsync(project);
-            foreach (var (role, artifactKind) in new[]
-            {
-                (WorkspaceArtifactType.Constitution, WorkspaceArtifactKind.Constitution),
-                (WorkspaceArtifactType.Specification, WorkspaceArtifactKind.Specification),
-                (WorkspaceArtifactType.Plan, WorkspaceArtifactKind.Plan),
-                (WorkspaceArtifactType.Tasks, WorkspaceArtifactKind.Tasks),
-                (WorkspaceArtifactType.DataModel, WorkspaceArtifactKind.DataModel),
-            })
-            {
-                var isAvailable = discovery.Role(role).Documents.Count > 0;
-                _sampleProjectArtifacts[artifactKind] = isAvailable;
-                if (isAvailable)
-                {
-                    _sampleProjectAvailableCount++;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error loading sample project status: {ex.Message}");
-            if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
-            {
-                _sampleProjectCatalogFailed = true;
-            }
-        }
-        finally
-        {
-            StateHasChanged();
-        }
     }
 
     // ── Data loading ──────────────────────────────────────────────────────────

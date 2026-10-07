@@ -249,7 +249,8 @@
 .db-badge-loaded   { background: #dbeafe; color: #1d4ed8; }
 .db-badge-reviewed { background: var(--clr-success-bg); color: var(--clr-success); }
 .db-badge-analyzed { background: #ede9fe; color: #6d28d9; }
-.db-badge-empty    { background: transparent; color: var(--clr-text-placeholder); font-style: italic; font-weight: 400; }
+/* Missing, Not analyzed, Selection required: status facts, so readable text (muted, not placeholder). */
+.db-badge-empty    { background: transparent; color: var(--clr-text-muted); font-style: italic; font-weight: 400; }
 
 .db-artifact-stats {
     display: flex;

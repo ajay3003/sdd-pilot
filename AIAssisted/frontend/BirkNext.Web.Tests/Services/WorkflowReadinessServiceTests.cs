@@ -5,56 +5,119 @@ using Moq;
 
 namespace BirkNext.Web.Tests.Services;
 
+/// <summary>
+/// Workflow readiness reads workspace and artifact presence only from the current-workspace projection. It adds review steps,
+/// the next action and release readiness, and never re-decides whether a workspace exists.
+/// </summary>
 public sealed class WorkflowReadinessServiceTests
 {
+    private static readonly WorkspaceArtifactType[] AllRoles = [.. CurrentWorkspaceSnapshot.WorkflowRoles];
+
     [Fact]
-    public async Task EmptyWorkspace_ReturnsEmptyReadinessWithoutBackendWorkflowState()
+    public async Task NoWorkspace_RecommendsLoadingArtifacts_WithoutBackendWorkflowState()
     {
-        var fixture = new Fixture();
-        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(EmptyArtifacts());
-        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync((CurrentWorkspaceMetadata?)null);
-        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync((CurrentWorkspaceStateDto?)null);
+        var fixture = new Fixture(CurrentWorkspaceSnapshot.None());
 
         var readiness = await fixture.Service.GetReadinessAsync();
 
         readiness.WorkspaceLoaded.Should().BeFalse();
         readiness.WorkspaceName.Should().Be("No workspace loaded");
-        readiness.ArtifactStatus.ArtifactCount.Should().Be(0);
-        readiness.NextRecommendedAction.Should().NotBeNull();
+        readiness.Workspace.AvailableRoleCount.Should().Be(0);
         readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        readiness.SpecificationExplorerState.Should().BeNull();
-        readiness.TraceabilityState.Should().BeNull();
-        readiness.ImplementationReviewState.Should().BeNull();
+        readiness.Steps.Should().ContainSingle(step => step.Key == WorkflowReadinessService.LoadWorkspaceKey);
         readiness.CanRelease.Should().BeFalse();
         readiness.ReleaseReason.Should().Contain("Load a workspace");
-        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
-        readiness.OverallReadiness.ArtifactReadiness.Should().Be(0);
-        readiness.OverallReadiness.ReviewReadiness.Should().Be(0);
-        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
-        readiness.Steps.Should().NotContain(step => step.Status == WorkflowStepStatus.Approved);
-        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(
-            It.IsAny<Guid>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>()), Times.Never);
+        readiness.ReleaseReadinessPercent.Should().BeNull("nothing is assessed without a workspace: no 0%");
+        fixture.VerifyBackendNeverCalled();
     }
 
     [Fact]
-    public async Task WorkspaceLoaded_DisplaysArtifactStatusAndBlocksReleaseBeforeApprovals()
+    public async Task PersonModule_WithFiveRoles_IsLoaded_AndNeverRecommendsLoadingArtifacts()
     {
-        var fixture = new Fixture();
-        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(new WorkspaceArtifactStatus(
-            HasConstitution: true,
-            HasSpecification: true,
-            HasPlan: true,
-            HasTasks: false,
-            HasDataModel: false,
-            ArtifactCount: 3,
-            ActiveProjectName: "Sample Project"));
-        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace(count: 3));
-        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState(count: 3));
+        var fixture = new Fixture(WorkspaceSnapshots.Loaded("Person Module", "person-module", "Person Module", AllRoles));
+        fixture.WorkflowApi.SetupBuildSteps([
+            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Available, isCurrent: true),
+            Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Available),
+            Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Locked),
+        ]);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.WorkspaceLoaded.Should().BeTrue();
+        readiness.WorkspaceName.Should().Be("Person Module");
+        readiness.ProjectName.Should().Be("Person Module");
+        readiness.Workspace.AvailableRoleCount.Should().Be(5);
+        readiness.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
+        readiness.Steps.Should().NotContain(step => step.Key == WorkflowReadinessService.LoadWorkspaceKey);
+        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), true, true, true, true, true), Times.Once);
+    }
+
+    [Fact]
+    public async Task TwoRoleProject_PassesExactRoleAvailabilityToTheBackend()
+    {
+        var fixture = new Fixture(WorkspaceSnapshots.Loaded("Docs", "docs", "Docs", WorkspaceArtifactType.Specification, WorkspaceArtifactType.Tasks));
+        fixture.WorkflowApi.SetupBuildSteps([Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Available, isCurrent: true)]);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.WorkspaceLoaded.Should().BeTrue();
+        readiness.Workspace.AvailableRoleCount.Should().Be(2);
+        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), false, true, false, true, false), Times.Once);
+    }
+
+    [Fact]
+    public async Task LoadedWorkspaceWithoutArtifacts_RecommendsAddingArtifacts_NotLoadingAWorkspace()
+    {
+        var fixture = new Fixture(WorkspaceSnapshots.Loaded("Source only", "source-only", "Source only"));
+        fixture.WorkflowApi.SetupBuildSteps([Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Locked)]);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.WorkspaceLoaded.Should().BeTrue();
+        readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.AddArtifactsKey);
+        readiness.NextRecommendedAction.Title.Should().NotBe("Load project artifacts");
+    }
+
+    [Fact]
+    public async Task SeveralSpecificationsWithoutAChoice_RecommendChoosingOne_BeforeReviewSteps()
+    {
+        var snapshot = WorkspaceSnapshots.Loaded("Docs", null, null, AllRoles);
+        snapshot = snapshot with
+        {
+            Roles = snapshot.Roles.Select(r => r.Role == WorkspaceArtifactType.Specification ? WorkspaceSnapshots.Available(r.Role, count: 3) : r).ToList()
+        };
+        var fixture = new Fixture(snapshot);
+        fixture.WorkflowApi.SetupBuildSteps([Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Available, isCurrent: true)]);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.Workspace.AvailableRoleCount.Should().Be(5, "several artifacts of a role are one available role");
+        readiness.Workspace.ArtifactCount.Should().Be(7);
+        readiness.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.ChooseArtifactsKey);
+        readiness.NextRecommendedAction.Route.Should().Be("specification-explorer");
+    }
+
+    [Fact]
+    public async Task UnreadableWorkspace_IsAnError_NotNoWorkspace()
+    {
+        var error = CurrentWorkspaceSnapshot.None() with
+        {
+            State = CurrentWorkspaceState.Error, ProjectSlug = "person-module", WorkspaceName = "Unable to load workspace", Error = "offline"
+        };
+        var fixture = new Fixture(error);
+
+        var readiness = await fixture.Service.GetReadinessAsync();
+
+        readiness.WorkspaceError.Should().BeTrue();
+        readiness.NextRecommendedAction.Should().BeNull("no recommendation is computed from an unread workspace");
+        readiness.Steps.Should().BeEmpty();
+        fixture.VerifyBackendNeverCalled();
+    }
+
+    [Fact]
+    public async Task NothingReviewedYet_ReleaseReadinessIsNotAssessed_NotZero()
+    {
+        var fixture = new Fixture(WorkspaceSnapshots.AllRoles());
         fixture.WorkflowApi.SetupBuildSteps([
             Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Available, isCurrent: true),
             Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Locked),
@@ -64,26 +127,18 @@ public sealed class WorkflowReadinessServiceTests
 
         var readiness = await fixture.Service.GetReadinessAsync();
 
-        readiness.WorkspaceLoaded.Should().BeTrue();
-        readiness.WorkspaceName.Should().Be("Saved workspace");
-        readiness.ArtifactStatus.ArtifactCount.Should().Be(3);
-        readiness.Artifacts.Count(a => a.IsLoaded).Should().Be(3);
+        readiness.ReleaseReadinessPercent.Should().BeNull();
+        readiness.RequiredReviewCount.Should().Be(3);
+        readiness.ApprovedReviewCount.Should().Be(0);
         readiness.Steps.Should().NotContain(step => step.Key == "ReviewContextValidation");
-        readiness.OverallReadiness.ArtifactReadiness.Should().Be(60);
-        readiness.OverallReadiness.ReviewReadiness.Should().Be(0);
-        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
-        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
-        readiness.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
+        readiness.OverallReadiness.ArtifactReadiness.Should().Be(100);
         readiness.CanRelease.Should().BeFalse();
     }
 
     [Fact]
-    public async Task ReviewedSteps_DoNotIncreaseReleaseReadinessWithoutApproval()
+    public async Task ReviewedStep_MakesReadinessAssessed_WithoutCountingAsApproved()
     {
-        var fixture = new Fixture();
-        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(LoadedArtifacts());
-        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace());
-        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState());
+        var fixture = new Fixture(WorkspaceSnapshots.AllRoles());
         fixture.WorkflowApi.SetupBuildSteps([
             Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Reviewed, approvalState: ApprovalState.Pending),
             Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Available),
@@ -92,27 +147,23 @@ public sealed class WorkflowReadinessServiceTests
 
         var readiness = await fixture.Service.GetReadinessAsync();
 
-        readiness.OverallReadiness.ArtifactReadiness.Should().Be(100);
-        readiness.OverallReadiness.ApprovalReadiness.Should().Be(0);
-        readiness.OverallReadiness.OverallReadiness.Should().Be(0);
+        readiness.ReleaseReadinessPercent.Should().Be(0, "a review decision exists, so 0 approved is an assessed 0");
         readiness.CanRelease.Should().BeFalse();
     }
 
     [Theory]
-    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Available, WorkflowStepStatus.Locked, "ArtifactTraceability", false)]
-    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Available, "ImplementationReview", false)]
-    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, null, true)]
+    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Available, WorkflowStepStatus.Locked, "ArtifactTraceability", false, 33)]
+    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Available, "ImplementationReview", false, 66)]
+    [InlineData(WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, WorkflowStepStatus.Approved, null, true, 100)]
     public async Task ReviewApprovalChain_DerivesNextActionAndReleaseReadiness(
         WorkflowStepStatus specificationStatus,
         WorkflowStepStatus traceabilityStatus,
         WorkflowStepStatus implementationStatus,
         string? expectedCurrentStep,
-        bool expectedRelease)
+        bool expectedRelease,
+        int expectedPercent)
     {
-        var fixture = new Fixture();
-        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(LoadedArtifacts());
-        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync(Workspace());
-        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync(CurrentState());
+        var fixture = new Fixture(WorkspaceSnapshots.AllRoles());
         fixture.WorkflowApi.SetupBuildSteps([
             Step("SpecificationExplorer", "Specification Explorer", specificationStatus, expectedCurrentStep == "SpecificationExplorer"),
             Step("ArtifactTraceability", "Artifact Traceability", traceabilityStatus, expectedCurrentStep == "ArtifactTraceability"),
@@ -123,71 +174,39 @@ public sealed class WorkflowReadinessServiceTests
         var readiness = await fixture.Service.GetReadinessAsync();
 
         readiness.CanRelease.Should().Be(expectedRelease);
+        readiness.ReleaseReadinessPercent.Should().Be(expectedPercent);
         if (expectedCurrentStep is null)
-        {
             readiness.NextRecommendedAction.Should().BeNull();
-            readiness.Steps.Should().NotContain(step => step.Key == "ReviewContextValidation");
-        }
         else
-        {
             readiness.NextRecommendedAction!.Key.Should().Be(expectedCurrentStep);
-        }
     }
 
     [Fact]
-    public async Task WorkspaceCleared_ResetsReadinessAndSuppressesStaleReleaseState()
+    public async Task ApprovedButLockedStep_DoesNotAllowRelease()
     {
-        var fixture = new Fixture();
-        fixture.ArtifactStatus.Setup(s => s.GetStatus()).Returns(EmptyArtifacts());
-        fixture.WorkspaceRestore.Setup(s => s.GetCurrentWorkspaceMetadataAsync()).ReturnsAsync((CurrentWorkspaceMetadata?)null);
-        fixture.WorkspacePersistence.Setup(s => s.GetCurrentStateAsync()).ReturnsAsync((CurrentWorkspaceStateDto?)null);
+        var fixture = new Fixture(WorkspaceSnapshots.Loaded("Docs", "docs", "Docs", WorkspaceArtifactType.Constitution));
         fixture.WorkflowApi.SetupBuildSteps([
-            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Approved),
-            Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Approved),
-            Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Approved)
+            Step("SpecificationExplorer", "Specification Explorer", WorkflowStepStatus.Locked, approvalState: ApprovalState.Approved),
+            Step("ArtifactTraceability", "Artifact Traceability", WorkflowStepStatus.Locked, approvalState: ApprovalState.Approved),
+            Step("ImplementationReview", "Implementation Review", WorkflowStepStatus.Locked, approvalState: ApprovalState.Approved)
         ]);
 
         var readiness = await fixture.Service.GetReadinessAsync();
 
-        readiness.WorkspaceLoaded.Should().BeFalse();
-        readiness.ArtifactStatus.ArtifactCount.Should().Be(0);
-        readiness.CanRelease.Should().BeFalse();
-        readiness.Steps.Should().ContainSingle(step => step.Key == "LoadWorkspace");
-        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(
-            It.IsAny<Guid>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>(),
-            It.IsAny<bool>()), Times.Never);
+        readiness.CanRelease.Should().BeFalse("an approval whose artifacts are gone no longer unlocks release");
     }
 
-    private static WorkspaceArtifactStatus EmptyArtifacts() =>
-        new(false, false, false, false, false, 0, null);
+    [Fact]
+    public async Task WorkspaceChange_RaisesReadinessChanged()
+    {
+        var fixture = new Fixture(CurrentWorkspaceSnapshot.None());
+        var raised = 0;
+        fixture.Service.ReadinessChanged += () => raised++;
 
-    private static WorkspaceArtifactStatus LoadedArtifacts(int count = 5, bool hasDataModel = true) =>
-        new(true, true, true, true, hasDataModel, count, "Sample Project");
+        fixture.Projection.Raise(p => p.Changed += null);
 
-    private static CurrentWorkspaceMetadata Workspace(int count = 5) =>
-        new()
-        {
-            WorkspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            WorkspaceName = "Saved workspace",
-            ProjectName = "Sample Project",
-            ArtifactCount = count,
-            LoadedAt = DateTimeOffset.UtcNow
-        };
-
-    private static CurrentWorkspaceStateDto CurrentState(int count = 5) =>
-        new()
-        {
-            CurrentWorkspaceId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            WorkspaceName = "Saved workspace",
-            ProjectName = "Sample Project",
-            ArtifactCount = count,
-            Status = "Saved",
-            LastSavedAt = DateTimeOffset.UtcNow
-        };
+        raised.Should().Be(1);
+    }
 
     private static WorkflowStepViewModel Step(
         string key,
@@ -224,26 +243,19 @@ public sealed class WorkflowReadinessServiceTests
 
     private sealed class Fixture
     {
-        public Mock<IWorkspaceArtifactStatusService> ArtifactStatus { get; } = new();
-        public Mock<IWorkspaceSessionRestoreService> WorkspaceRestore { get; } = new();
-        public Mock<IWorkspaceSessionService> WorkspaceSession { get; } = new();
-        public Mock<IWorkspaceUpdateCoordinator> Updates { get; } = new();
-        public Mock<IWorkspacePersistenceApiService> WorkspacePersistence { get; } = new();
+        public Mock<ICurrentWorkspaceProjection> Projection { get; }
         public Mock<IRecommendedWorkflowApiService> WorkflowApi { get; } = new();
-
         public WorkflowReadinessService Service { get; }
 
-        public Fixture()
+        public Fixture(CurrentWorkspaceSnapshot snapshot)
         {
-            Service = new WorkflowReadinessService(
-                ArtifactStatus.Object,
-                WorkspaceRestore.Object,
-                WorkspaceSession.Object,
-                Updates.Object,
-                WorkspacePersistence.Object,
-                WorkflowApi.Object,
-                NullLogger<WorkflowReadinessService>.Instance);
+            Projection = WorkspaceSnapshots.Projection(snapshot);
+            Service = new WorkflowReadinessService(Projection.Object, WorkflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
         }
+
+        public void VerifyBackendNeverCalled() =>
+            WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(
+                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
     }
 }
 
@@ -262,4 +274,3 @@ file static class RecommendedWorkflowApiMockExtensions
             .ReturnsAsync(steps);
     }
 }
-

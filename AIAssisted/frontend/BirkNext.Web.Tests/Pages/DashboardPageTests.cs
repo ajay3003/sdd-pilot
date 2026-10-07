@@ -22,10 +22,7 @@ public class DashboardPageTests : BunitContext
     {
         Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
         Services.AddSingleton(new Mock<IReportExportService>().Object);
-        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
-        artifactStatus.Setup(service => service.GetStatus())
-            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
-        Services.AddSingleton(artifactStatus.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
         Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
         Services.AddSingleton(new RuntimeReviewSessionService());
@@ -57,8 +54,7 @@ public class DashboardPageTests : BunitContext
             cut.Markup.Should().Contain("SDD Governance Dashboard");
             cut.Markup.Should().Contain("Project Health");
             cut.Markup.Should().Contain("Workflow");
-            cut.Markup.Should().Contain("0%");
-            cut.Markup.Should().Contain("Not Started");
+            cut.Markup.Should().Contain("Not assessed");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -71,8 +67,8 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("0%");
-            cut.Markup.Should().Contain("Not Started");
+            cut.Markup.Should().NotContain(">0%<", "nothing is assessed without a workspace");
+            cut.Markup.Should().Contain("Not assessed");
             cut.Markup.Should().Contain("No workspace loaded");
             cut.Markup.Should().Contain("Project Health");
             cut.Markup.Should().Contain("Traceability");
@@ -147,7 +143,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Markup.Should().Contain("SDD Governance Dashboard");
             cut.Markup.Should().Contain("No workspace loaded");
-            cut.Markup.Should().Contain("Not Started");
+            cut.Markup.Should().Contain("Not assessed");
         }, timeout: TimeSpan.FromSeconds(1));
     }
 
@@ -223,60 +219,46 @@ public class DashboardPageTests : BunitContext
 
     private static WorkflowReadiness EmptyWorkflowReadiness() =>
         new(
-            CurrentWorkspace: null,
-            WorkspaceLoaded: false,
-            WorkspaceName: "No workspace loaded",
-            ProjectName: "No project loaded",
-            WorkspaceStatus: "Not Saved",
-            WorkspaceStatusClass: "status-not-saved",
-            LastSavedAt: null,
-            LastSavedText: "-",
-            ArtifactStatus: new WorkspaceArtifactStatus(false, false, false, false, false, 0, null),
-            Artifacts: [],
+            Workspace: CurrentWorkspaceSnapshot.None(),
             SpecificationExplorerState: null,
             TraceabilityState: null,
             ImplementationReviewState: null,
             QualityGateState: null,
             NextRecommendedAction: null,
             OverallReadiness: new WorkflowReadinessBreakdown(),
+            RequiredReviewCount: 0,
+            ApprovedReviewCount: 0,
             Steps: [],
             CanRelease: false,
-            ReleaseReason: "Load a workspace before release readiness can be evaluated.",
-            Warnings: []);
+            ReleaseReason: "Load a workspace before release readiness can be evaluated.");
 
     private static WorkflowReadiness LoadedWorkflowReadiness() =>
         EmptyWorkflowReadiness() with
         {
-            CurrentWorkspace = new WorkflowWorkspace(
-                WorkspaceId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                WorkspaceName: "Saved workspace",
-                ProjectName: "Sample Project",
-                ArtifactCount: 3,
-                LoadedAt: DateTimeOffset.UtcNow,
-                ArtifactSetHash: null,
-                AutoSaved: false),
-            WorkspaceLoaded = true,
-            WorkspaceName = "Saved workspace",
-            ProjectName = "Sample Project",
-            ArtifactStatus = new WorkspaceArtifactStatus(true, true, true, false, false, 3, "Sample Project"),
+            Workspace = BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Saved workspace", "sample-project", "Sample Project",
+                WorkspaceArtifactType.Constitution, WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan),
+            RequiredReviewCount = 3,
+            ApprovedReviewCount = 1,
+            ReleaseReadinessPercent = 30,
             OverallReadiness = new WorkflowReadinessBreakdown
             {
                 ArtifactReadiness = 60,
-                ReviewReadiness = 0,
-                ApprovalReadiness = 0,
+                ReviewReadiness = 30,
+                ApprovalReadiness = 30,
                 OverallReadiness = 30
             }
         };
 
 
     private IRenderedComponent<Dashboard> RenderDashboardWithWorkspace(
-        string currentProject,
+        string? currentProject,
         params SampleProjectDto[] projects)
-        => RenderDashboardWithWorkspace(currentProject, null, projects);
+        => RenderDashboardWithWorkspace(currentProject, null, null, projects);
 
     private IRenderedComponent<Dashboard> RenderDashboardWithWorkspace(
-        string currentProject,
+        string? currentProject,
         Action<SampleProjectsHttpHandler>? configureHandler,
+        Action<WorkspaceArtifactRepository>? configureWorkspace,
         params SampleProjectDto[] projects)
     {
         var handler = new SampleProjectsHttpHandler();
@@ -284,33 +266,40 @@ public class DashboardPageTests : BunitContext
         configureHandler?.Invoke(handler);
 
         var workspace = new WorkspaceArtifactRepository();
+        configureWorkspace?.Invoke(workspace);
         workspace.CurrentProject = currentProject;
 
         var ctx = new BunitContext();
         ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
         ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
-
-        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
-        artifactStatus.Setup(s => s.GetStatus())
-            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
-        ctx.Services.AddSingleton(artifactStatus.Object);
-
         ctx.Services.AddSingleton<IWorkspaceArtifactRepository>(workspace);
         ctx.Services.AddSingleton<IWorkspaceSessionService>(workspace);
         ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
         ctx.Services.AddSingleton(new RuntimeReviewSessionService());
         ctx.Services.AddSingleton(new QualityReviewSessionService());
         ctx.Services.AddSingleton(_workflowReadiness.Object);
-
-        var client = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("http://localhost/")
-        };
-        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
-        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
+        AddCurrentWorkspace(ctx.Services, workspace, handler);
 
         return ctx.Render<Dashboard>();
     }
+
+    /// <summary>The production current-workspace stack: Sample Project discovery + resolver + explorer context + projection.</summary>
+    internal static void AddCurrentWorkspace(IServiceCollection services, WorkspaceArtifactRepository workspace, HttpMessageHandler handler)
+    {
+        var api = new SampleProjectsApiService(new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") });
+        var discovery = new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(api);
+        var resolver = new SampleProjectDocumentResolver(api, workspace, discovery);
+        var explorers = new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(workspace, resolver, discovery);
+        services.AddSingleton(api);
+        services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(discovery);
+        services.AddSingleton<ISampleProjectDocumentResolver>(resolver);
+        services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(explorers);
+        services.AddSingleton<ICurrentWorkspaceProjection>(new CurrentWorkspaceProjection(
+            explorers, Mock.Of<IWorkspaceSessionRestoreService>(), Mock.Of<IWorkspacePersistenceApiService>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<CurrentWorkspaceProjection>.Instance));
+    }
+
+    private static string Text(IRenderedComponent<Dashboard> cut, string testId) => cut.Find($"[data-testid={testId}]").TextContent.Trim();
 
     [Fact]
     public void SelectedSampleProjectShowsAvailabilityWithoutWorkspaceCopies()
@@ -319,22 +308,28 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Autorisasjon");
-            cut.Markup.Should().Contain("5 artifact roles detected");
+            Text(cut, "db-workspace-name").Should().Contain("Autorisasjon");
+            Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
 
     [Fact]
-    public void RestartedSampleProjectShowsAvailabilityWithoutWorkspaceCopies()
+    public void SelectedSampleProject_ArtifactCardsSayAvailable_NeverNotLoaded()
     {
         var cut = RenderDashboardWithWorkspace("autorisasjon", CreateSampleProject("autorisasjon", "Autorisasjon"));
 
-        cut.WaitForAssertion(() =>
+        cut.WaitForAssertion(() => Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available"));
+        var cards = cut.FindAll("[data-testid=db-artifact-card]");
+        cards.Should().HaveCount(5);
+        foreach (var card in cards)
         {
-            cut.Markup.Should().Contain("5 artifact roles detected");
-            cut.Markup.Should().NotContain("artifacts loaded");
-        });
+            card.TextContent.Should().Contain("Available");
+            card.TextContent.Should().Contain("Not analyzed", "no analysis has run in this session");
+            card.TextContent.Should().NotContain("Not loaded");
+            card.TextContent.Should().NotContain("Missing");
+        }
+        Text(cut, "db-governance-value").Should().Be("4 / 4", "governance is role availability, never a 0% score beside available roles");
     }
 
     [Fact]
@@ -360,7 +355,8 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("3 artifact roles detected");
+            Text(cut, "db-workspace-roles").Should().Be("3 artifact roles available");
+            cut.Find("[data-testid=db-artifact-card][data-role=Constitution]").TextContent.Should().Contain("Missing");
         });
     }
 
@@ -387,7 +383,8 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("0 artifact roles detected");
+            Text(cut, "db-workspace-roles").Should().Be("0 artifact roles available");
+            cut.Markup.Should().NotContain("No workspace loaded", "a project without documents is still a loaded workspace");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -399,118 +396,83 @@ public class DashboardPageTests : BunitContext
         var cut = RenderDashboardWithWorkspace(
             "autorisasjon",
             h => h.FailGetProjects(),
+            null,
             CreateSampleProject("autorisasjon", "Autorisasjon"));
 
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Artifact availability unavailable");
-            cut.Markup.Should().NotContain("artifacts loaded");
-            cut.Markup.Should().NotContain("artifact roles detected");
+            cut.Markup.Should().NotContain("No workspace loaded");
+            cut.Markup.Should().NotContain("artifact roles available");
         });
     }
 
     [Fact]
-    public void GenericWorkspaceWithoutSampleProjectShowsLoadedCount()
+    public void GenericWorkspaceWithoutSampleProjectShowsAvailableRoles()
     {
-        var ctx = new BunitContext();
-        ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
-        ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
-
-        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
-        artifactStatus.Setup(s => s.GetStatus())
-            .Returns(new WorkspaceArtifactStatus(true, true, false, false, false, 2, null));
-        ctx.Services.AddSingleton(artifactStatus.Object);
-
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-        mockWorkspace.Setup(w => w.CurrentProject).Returns(null as string);
-        ctx.Services.AddSingleton(mockWorkspace.Object);
-
-        ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
-        ctx.Services.AddSingleton(new RuntimeReviewSessionService());
-        ctx.Services.AddSingleton(new QualityReviewSessionService());
-        ctx.Services.AddSingleton(_workflowReadiness.Object);
-
-        var handler = new SampleProjectsHttpHandler();
-        var client = new HttpClient(handler)
+        var cut = RenderDashboardWithWorkspace(null, null, workspace =>
         {
-            BaseAddress = new Uri("http://localhost/")
-        };
-        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
-        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
-
-        var cut = ctx.Render<Dashboard>();
+            workspace.AddArtifactRevision(WorkspaceArtifactType.Constitution, "# Rules", "rules.md", null, null, "File", select: true);
+            workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, "# Requirements", "requirements.md", null, null, "File", select: true);
+        });
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("2 / 5 artifacts loaded");
-            cut.Markup.Should().NotContain("artifact roles detected");
+            Text(cut, "db-workspace-roles").Should().Be("2 artifact roles available");
+            Text(cut, "db-workspace-name").Should().Contain("Unsaved workspace");
+            cut.Find("[data-testid=db-artifact-card][data-role=Specification]").TextContent.Should().Contain("requirements.md");
         });
     }
 
     [Fact]
     public void EmptyWorkspaceDashboardDoesNotShowLoadedArtifacts()
     {
-        var ctx = new BunitContext();
-        ctx.Services.AddSingleton<IDashboardMetricsService, DashboardMetricsService>();
-        ctx.Services.AddSingleton(new Mock<IReportExportService>().Object);
-
-        var artifactStatus = new Mock<IWorkspaceArtifactStatusService>();
-        artifactStatus.Setup(s => s.GetStatus())
-            .Returns(new WorkspaceArtifactStatus(false, false, false, false, false, 0, null));
-        ctx.Services.AddSingleton(artifactStatus.Object);
-
-        var mockWorkspace = new Mock<IWorkspaceSessionService>();
-        mockWorkspace.Setup(w => w.CurrentProject).Returns(null as string);
-        ctx.Services.AddSingleton(mockWorkspace.Object);
-
-        ctx.Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
-        ctx.Services.AddSingleton(new RuntimeReviewSessionService());
-        ctx.Services.AddSingleton(new QualityReviewSessionService());
-        ctx.Services.AddSingleton(_workflowReadiness.Object);
-
-        var handler = new SampleProjectsHttpHandler();
-        var client = new HttpClient(handler)
-        {
-            BaseAddress = new Uri("http://localhost/")
-        };
-        ctx.Services.AddSingleton(new SampleProjectsApiService(client));
-        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
-
-        var cut = ctx.Render<Dashboard>();
+        var cut = RenderDashboardWithWorkspace(null);
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().NotContain("5 / 5 artifacts loaded");
+            cut.Markup.Should().Contain("No workspace loaded");
+            Text(cut, "db-governance-value").Should().Be("—", "no workspace is not a 0% governance score");
             cut.Markup.Should().NotContain("Ready for review");
-            cut.Markup.Should().NotContain("Governance = 100%");
+            cut.FindAll("[data-testid=db-artifact-card]").Should().OnlyContain(card => card.TextContent.Contains("Missing"));
         });
     }
 
     [Fact]
     public void LegacySampleProjectWorkspaceRestoresSlugOnlyAndSkipsPersistedArtifactCopies()
     {
-        var autorisasjonProject = CreateSampleProject("autorisasjon", "Autorisasjon");
-
-        var workspace = new WorkspaceArtifactRepository();
-        workspace.CurrentProject = "autorisasjon";
-
-        // Simulate restored Workspace with legacy Sample Project artifact copies
-        workspace.Set(WorkspaceArtifactType.Constitution, "old constitution content");
-        workspace.Set(WorkspaceArtifactType.Specification, "old spec content");
-        workspace.Set(WorkspaceArtifactType.Plan, "old plan content");
-        workspace.Set(WorkspaceArtifactType.Tasks, "old tasks content");
-        workspace.Set(WorkspaceArtifactType.DataModel, "old datamodel content");
-
-        var cut = RenderDashboardWithWorkspace(
-            "autorisasjon",
-            h => { },
-            autorisasjonProject);
+        var cut = RenderDashboardWithWorkspace("autorisasjon", null, workspace =>
+        {
+            // Legacy unscoped session copies left behind by an old restore; the selected project's documents are what count.
+            workspace.Set(WorkspaceArtifactType.Constitution, "old constitution content");
+            workspace.Set(WorkspaceArtifactType.Specification, "old spec content");
+        }, CreateSampleProject("autorisasjon", "Autorisasjon"));
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Autorisasjon");
-            cut.Markup.Should().Contain("5 artifact roles detected");
+            Text(cut, "db-workspace-name").Should().Contain("Autorisasjon");
+            Text(cut, "db-workspace-roles").Should().Be("5 artifact roles available");
             cut.Markup.Should().NotContain("artifacts loaded");
+        });
+    }
+
+    [Fact]
+    public void SeveralSpecifications_CountAsOneRole_AndShowSelectionRequired()
+    {
+        var project = CreateSampleProject("multi", "Multi") with
+        {
+            Files = [new SampleFileDto("specs/001-a/spec.md", true, "Specification", "", "", true, false),
+                     new SampleFileDto("specs/002-b/spec.md", true, "Specification", "", "", true, false),
+                     new SampleFileDto("plan.md", true, "Plan", "", "", true, false)]
+        };
+
+        var cut = RenderDashboardWithWorkspace("multi", project);
+
+        cut.WaitForAssertion(() =>
+        {
+            Text(cut, "db-workspace-roles").Should().Be("2 artifact roles available · 3 artifacts");
+            var spec = cut.Find("[data-testid=db-artifact-card][data-role=Specification]").TextContent;
+            spec.Should().Contain("Available · 2").And.Contain("Selection required");
         });
     }
 

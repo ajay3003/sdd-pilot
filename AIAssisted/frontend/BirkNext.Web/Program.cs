@@ -102,6 +102,8 @@ builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersist
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+// The one current-workspace read model: Dashboard, Recommended Workflow and navigation applicability all read it.
+builder.Services.AddScoped<ICurrentWorkspaceProjection, CurrentWorkspaceProjection>();
 builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();

@@ -24,7 +24,8 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     private readonly MutableCoverageApi _api = new();
-    private readonly Mock<IWorkspaceSessionService> _workspace = new();
+    private readonly Mock<ICurrentWorkspaceProjection> _workspace = new();
+    private CurrentWorkspaceSnapshot _snapshot = CurrentWorkspaceSnapshot.None();
     private FrontendAnalysisProfile? _profile = new() { Id = "env", Name = "Env" };
 
     public NavMenuLayoutTests()
@@ -38,6 +39,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(() => new FrontendAnalysisContext { ActiveProfile = _profile });
         Services.AddSingleton(context.Object);
+        _workspace.Setup(w => w.GetAsync()).ReturnsAsync(() => _snapshot);
         Services.AddSingleton(_workspace.Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(_api);
         Services.AddScoped<ProjectApplicabilityState>();
@@ -118,7 +120,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.Find("a[href='security-classification-review']").TextContent.Should().NotContain("M2LB").And.NotContain("Extension");
 
         _api.Coverage = Snapshot(extensions: [DomainExtensionIds.M2lbChildSecurityClassification]);
-        _workspace.Raise(w => w.ReviewContextRebuildNeeded += null, EventArgs.Empty);
+        _workspace.Raise(w => w.Changed += null);
 
         cut.WaitForAssertion(() => Status(cut, "security-classification-review").Should().Be("Extension"));
         var badge = cut.Find("[data-testid=nav-applicability-security-classification-review]");
@@ -138,7 +140,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.Find("a[href='azure-environment'] .visually-hidden").TextContent.Should().Be(", Provider: Azure");
 
         _api.Coverage = Snapshot([Tech("lang.java", "Java", TechnologyArea.Language)]);
-        _workspace.Raise(w => w.ReviewContextRebuildNeeded += null, EventArgs.Empty);
+        _workspace.Raise(w => w.Changed += null);
         cut.WaitForAssertion(() => Status(cut, "azure-environment").Should().Be("N/A"));
     }
 
@@ -161,8 +163,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [Fact]
     public void DocumentOnlyProject_ShowsNeutralStates_AndNoBadgeForAnApplicableReview()
     {
-        _workspace.Setup(w => w.Has(WorkspaceArtifactKind.Specification)).Returns(true);
-        _workspace.Setup(w => w.Has(WorkspaceArtifactKind.Plan)).Returns(true);
+        _snapshot = BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Docs", "docs", "Docs", WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan);
         RegisterApplicability();
         var cut = Render<NavMenu>();
 

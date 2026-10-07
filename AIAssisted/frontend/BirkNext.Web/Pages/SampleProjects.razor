@@ -712,6 +712,8 @@
     private void ChooseDocument(SampleProjectDto project, WorkspaceArtifactType role, string? relativePath)
     {
         DocumentDiscovery.ChooseDocument(project.Slug, role, relativePath);
+        // The choice changes which document reviews read: the current workspace (and every page reading it) follows.
+        if (IsCurrentWorkspace(project)) Workspace.NotifyArtifactsChanged();
         _ = RefreshDiscoveryAsync(project);
     }
 

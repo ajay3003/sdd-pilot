@@ -225,6 +225,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         }
         revision.Authority = authority;
         if (authority == "Superseded") revision.IsCurrentSelection = false;
+        // Authority decides which artifact explorers prefer: every reader of the workspace follows the change.
+        NotifyArtifactsChanged();
     }
 
     /// <summary>Captures the exact revisions explicitly marked Baseline. New drafts/selections cannot alter this manifest.</summary>

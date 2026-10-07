@@ -1,5 +1,8 @@
 # Document Explorers and the workspace artifact repository
 
+Presence (is a workspace loaded, which roles exist) for every page comes from the current-workspace projection built on this
+context: see [current-workspace.md](current-workspace.md).
+
 The Constitution, Specification, Plan, Task and Data Model Explorers read artifacts by **role** from the current workspace.
 They do not depend on a Sample Project being selected or on file names such as `spec.md` or `constitution.md`.
 
