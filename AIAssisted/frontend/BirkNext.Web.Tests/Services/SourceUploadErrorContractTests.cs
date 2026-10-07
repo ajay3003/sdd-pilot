@@ -89,6 +89,25 @@ public sealed class SourceUploadErrorContractTests
         failure.Stage.Should().Be("analysis");
     }
 
+    [Fact]
+    public void SourceAnalysisClientTimeoutAllowsLongDeterministicAnalysis()
+    {
+        var http = new HttpClient(new FixedResponseHandler(HttpStatusCode.OK, "{}"));
+
+        _ = new IntegrationCatalogApiService(http);
+
+        http.Timeout.Should().BeGreaterThan(TimeSpan.FromSeconds(100));
+    }
+
+    [Fact]
+    public void UploadTimeoutGuidanceDoesNotClaimTheArchiveWasRejected()
+    {
+        var failure = new SourceUploadFailure("SOURCE_UPLOAD_TIMEOUT", "upload", "The upload timed out.");
+
+        failure.Guidance.Should().Contain("Check the snapshot list").And.NotContain("rejected");
+        failure.StageLabel.Should().Be("Upload");
+    }
+
     private static IntegrationCatalogApiService Create(HttpStatusCode status, string body)
     {
         var http = new HttpClient(new FixedResponseHandler(status, body)) { BaseAddress = new Uri("http://localhost/") };

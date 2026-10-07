@@ -23,6 +23,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     private List<IqrSourceSnapshot> _snapshots = [];
     private int _uploads;
     private SourceUploadFailure? _uploadFailure;
+    private bool _uploadTimesOut;
 
     public SourceAnalysisLandingTests()
     {
@@ -30,6 +31,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         _api.Setup(a => a.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
+                if (_uploadTimesOut) throw new TaskCanceledException("The upload exceeded its request timeout.");
                 if (_uploadFailure is { } failure) return ((IqrSourceSnapshot?)null, failure);
                 _uploads++;
                 var s = Snapshot("shop-api.zip", new string('e', 64), DateTimeOffset.Parse("2026-09-30T12:00:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0));
@@ -270,6 +272,25 @@ public sealed class SourceAnalysisLandingTests : BunitContext
             cut.FindAll("[data-testid=sa-error]").Should().BeEmpty();
             cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip");
             cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().NotBe(existing.Id.ToString());
+        });
+    }
+
+    [Fact]
+    public void LongAnalysisTimeoutIsNotReportedAsArchiveRejectionAndPreservesSelection()
+    {
+        var existing = Snapshot("current.zip", new string('a', 64), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0));
+        _snapshots = [existing];
+        var cut = Render<SourceAnalysis>();
+        _uploadTimesOut = true;
+
+        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "large-repo.zip"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid=sa-error]").TextContent.Should().Contain("Source upload could not be completed").And.Contain("SOURCE_UPLOAD_TIMEOUT")
+                .And.Contain("Check the snapshot list before retrying");
+            cut.Markup.Should().NotContain("Source archive rejected").And.NotContain("ARCHIVE_REJECTED");
+            cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(existing.Id.ToString());
         });
     }
 }

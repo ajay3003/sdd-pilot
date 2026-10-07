@@ -323,6 +323,7 @@
         try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
         catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
         catch (HttpRequestException) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
+        catch (TaskCanceledException) { _error = new("SOURCE_UPLOAD_TIMEOUT", "upload", "The source upload did not finish before the request timed out. Check the snapshot list before retrying; the server may have completed analysis."); }
         catch (Exception) { _error = new("SOURCE_UPLOAD_FAILED", "upload", "The source upload could not be completed. Existing snapshots are unchanged; correct the archive or retry."); }
         finally { _busy = false; }
     }

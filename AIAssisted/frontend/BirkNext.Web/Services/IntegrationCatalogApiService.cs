@@ -10,6 +10,7 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 {
     public string Guidance => Code switch
     {
+        "SOURCE_UPLOAD_TIMEOUT" => "Check the snapshot list before retrying; the server may have completed the analysis after the request timed out.",
         "NO_ACTIVE_ENVIRONMENT" => "Select or create a Target Environment, then retry the upload.",
         "ARCHIVE_TOO_LARGE" => "Choose a ZIP archive smaller than 50 MB.",
         "ARCHIVE_EXPANDED_SIZE_EXCEEDED" => "Remove generated or unnecessary files and create a smaller source archive.",
@@ -114,8 +115,20 @@ public interface IIntegrationCatalogApiService
     Task<ScimEvidenceCheck?> ScimCheckAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<ScimEvidenceCheck?>(null);
 }
 
-public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegrationCatalogApiService
+public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 {
+    private static readonly TimeSpan SourceUploadTimeout = TimeSpan.FromMinutes(5);
+    private readonly HttpClient http;
+
+    public IntegrationCatalogApiService(HttpClient http)
+    {
+        this.http = http;
+        // Source Analysis performs deterministic analysis before returning its snapshot. The real
+        // 2,165-entry M2LB archive takes about two minutes on the current host, beyond HttpClient's
+        // 100-second default. Keep the longer timeout scoped to this typed integration client.
+        this.http.Timeout = SourceUploadTimeout;
+    }
+
     public async Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default)
     {
         static string Q(string name, string? value) => value is null ? "" : $"&{name}={Uri.EscapeDataString(value)}";
