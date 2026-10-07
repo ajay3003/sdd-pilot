@@ -762,7 +762,7 @@
         if (!FeatureViz.SourceAnalysis) return; // feature visibility is respected: hidden Source Analysis offers no snapshots here
         try
         {
-            _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfile?.Id;
+            _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull?.Id;
             if (_environmentId is not null) _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request);
         }
         catch (HttpRequestException) { _status = "Source Analysis snapshots could not be loaded (backend not reachable)."; }

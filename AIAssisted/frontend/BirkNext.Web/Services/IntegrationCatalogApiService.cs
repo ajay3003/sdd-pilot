@@ -191,6 +191,9 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
                 var legacy = MapKnownLegacyMessage(body, status);
                 if (legacy is not null) return legacy;
+
+                var request = MapRequestValidationProblem(root, status);
+                if (request is not null) return request;
             }
         }
         catch (JsonException) { }
@@ -269,6 +272,18 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         || entry.Contains('\0')
         ? null
         : entry;
+
+    /// <summary>
+    /// ASP.NET request validation (ProblemDetails with an <c>errors</c> object) rejects the request before the upload endpoint runs:
+    /// the archive was never read, so this is never <c>ARCHIVE_REJECTED</c>. A missing environment id means no active Target Environment.
+    /// </summary>
+    private static SourceUploadFailure? MapRequestValidationProblem(JsonElement root, int status)
+    {
+        if (status != 400 || Property(root, "errors") is not { ValueKind: JsonValueKind.Object } errors) return null;
+        return errors.EnumerateObject().Any(e => e.Name.Equals("environmentId", StringComparison.OrdinalIgnoreCase))
+            ? new("NO_ACTIVE_ENVIRONMENT", "prerequisite", "Select or create a Target Environment before uploading source.")
+            : new("UPLOAD_REQUEST_INVALID", "upload", "The upload request was incomplete, so the archive was not read. Reload the page and retry.");
+    }
 
     private static SourceUploadFailure? MapKnownLegacyMessage(string body, int status)
     {

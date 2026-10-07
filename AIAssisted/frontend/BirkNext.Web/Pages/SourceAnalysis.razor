@@ -315,7 +315,7 @@
     private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
         a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
-    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); _loaded = true; }
+    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; if (_profile is not null) await Load(); _loaded = true; }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
     private async Task Upload(InputFileChangeEventArgs args)
     {

@@ -46,16 +46,18 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     }
 
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string environmentId, CancellationToken ct) =>
+    public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await store.ListAsync(environmentId, ct));
 
     [HttpPost("snapshots")]
     [RequestSizeLimit(IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
-    public Task<IActionResult> AnalyzeSourceSnapshot([FromQuery] string environmentId, CancellationToken ct) =>
+    // environmentId is nullable on purpose: [ApiController] would otherwise reject a missing or empty value with a code-less
+    // ProblemDetails before this action runs, and the client could only show a generic archive rejection.
+    public Task<IActionResult> AnalyzeSourceSnapshot([FromQuery] string? environmentId, CancellationToken ct) =>
         AnalyzeArchive(environmentId, IqrSourceStore.SourceAnalysisOwner, ct);
 
-    private async Task<IActionResult> AnalyzeArchive(string environmentId, string integrationId, CancellationToken ct)
+    private async Task<IActionResult> AnalyzeArchive(string? environmentId, string integrationId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return Failure(StatusCodes.Status400BadRequest,
             new("NO_ACTIVE_ENVIRONMENT", "prerequisite", "Select or create a Target Environment before uploading source."));
@@ -93,7 +95,7 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         if (!validation.IsValid) return Failure(StatusCodes.Status400BadRequest, validation.Failure!, bytes.Length, validation.EntryCount);
 
         IqrSourceSnapshot snapshot;
-        try { snapshot = await store.AnalyzeValidatedAsync(environmentId, integrationId, file.FileName, bytes, validation.Workspace!, ct); }
+        try { snapshot = await store.AnalyzeValidatedAsync(environmentId!, integrationId, file.FileName, bytes, validation.Workspace!, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (SourceSnapshotPersistenceException)
         {

@@ -16,6 +16,14 @@ public sealed class FrontendAnalysisContext
     public string? ActiveTargetError { get; init; }
     public FrontendAnalysisProfile           ActiveProfile              { get; set; } = new();
 
+    /// <summary>
+    /// The active Target Environment, or null when none is active. <see cref="ActiveProfile"/> is never null — without an active
+    /// environment it is a blank profile with an empty Id — so pages that scope data by environment must use this instead of
+    /// null-checking <see cref="ActiveProfile"/>, or they send an empty environment id.
+    /// </summary>
+    public FrontendAnalysisProfile? ActiveProfileOrNull =>
+        ActiveTargetError is null && !string.IsNullOrWhiteSpace(ActiveProfile.Id) ? ActiveProfile : null;
+
     // Frontend URL (= TargetUrl on the profile — used by Frontend Quality Review)
     public string                            TargetUrl                  { get; set; } = "";
 

@@ -175,7 +175,7 @@
     protected override async Task OnInitializedAsync()
     {
         var context = await ContextFactory.GetActiveContextAsync();
-        _profile = context.ActiveProfile;
+        _profile = context.ActiveProfileOrNull;
         _status = await Api.StatusAsync(_cts.Token);
         if (_profile is not null)
         {
