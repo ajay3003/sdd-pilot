@@ -90,19 +90,17 @@ or a Quality Review was run. Opening either page only resolves inputs and displa
 remain explicit user actions. Traceability keeps its existing report state and is not automatically recomputed when
 artifacts become available.
 
-Quality Review pack inputs are deterministic:
+Quality Review selects each pack independently. The roles in the table describe its minimum eligibility and the additional
+optional context the engine receives. Missing unrelated roles do not disable a pack.
 
 | Review Pack | Artifact roles consumed |
 | --- | --- |
-| QA Auditor | Specification, Plan, Tasks |
-| Constitution Compliance | Constitution |
-| Data Model Quality | Data Model |
-| WCAG 2.2 | Specification |
-| OWASP ASVS | Specification |
-| GDPR | Specification, Data Model |
-| ISO 25010 | Specification, Plan |
-| QA Readiness | Specification, Tasks |
-| Delivery Readiness | Plan, Tasks |
+| QA Auditor | Eligible with Specification, Plan or Tasks; the engine also accepts Constitution as context. |
+| Constitution Compliance | Constitution; Specification, Plan and Tasks are optional coverage context. |
+| Data Model Quality | Data Model. |
+| WCAG 2.2, OWASP ASVS / Top 10, GDPR, ISO 25010 | Any of Constitution, Specification, Plan or Tasks enables the pack; all available text from those roles is evaluated together. Data Model is not passed to these packs. |
+| QA Readiness | Eligible with Specification or Tasks; Constitution and Plan are optional context. |
+| Delivery Readiness | Eligible with Plan or Tasks; Constitution and Specification are optional context. |
 
 ## Known limits
 

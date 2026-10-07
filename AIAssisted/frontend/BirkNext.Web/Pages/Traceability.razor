@@ -7,6 +7,7 @@
 @inject SddEvidenceGraphService Graph
 @inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
 @inject ICurrentWorkspaceProjection CurrentWorkspace
+@implements IDisposable
 
 <PageTitle>Requirements Traceability</PageTitle>
 <main class="requirements-traceability">
@@ -67,10 +68,24 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ArtifactContext.Changed += OnArtifactContextChanged;
+        await RefreshWorkspaceAsync();
+    }
+
+    private async Task RefreshWorkspaceAsync()
+    {
         _snapshot = await CurrentWorkspace.GetAsync();
         var states = await Task.WhenAll(CurrentWorkspaceSnapshot.WorkflowRoles.Select(role => ArtifactContext.GetStateAsync(role)));
         _selectionRequired = states.Where(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired)
             .Select(s => _snapshot.Role(s.Role)).ToArray();
     }
+
+    private void OnArtifactContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
+    {
+        await RefreshWorkspaceAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ArtifactContext.Changed -= OnArtifactContextChanged;
 }
 <style>.requirements-traceability{max-width:1600px;margin:auto;padding:0 20px}.requirements-traceability section{margin:20px 0;padding:16px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.requirements-traceability li{margin:.45rem 0}</style>

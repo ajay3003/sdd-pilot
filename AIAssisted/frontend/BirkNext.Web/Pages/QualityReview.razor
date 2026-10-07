@@ -11,6 +11,7 @@
 @inject IJSRuntime JS
 @inject IServiceProvider Services
 @inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
+@implements IDisposable
 
 <PageTitle>Quality Review</PageTitle>
 
@@ -24,7 +25,7 @@
     }
 
     <PageHeader Title="Quality Review"
-                Description="Run quality, compliance, and readiness reviews against the selected Sample Project. Choose review packs and generate a comprehensive report." />
+                Description="Run deterministic quality, compliance, and readiness reviews against artifacts in the current workspace. Choose eligible review packs and generate a report." />
 
     @if (SddRows.Count > 0)
     {
@@ -85,12 +86,12 @@
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">📜</span>
                         <span class="artifact-name">Constitution</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_constitutionText) ? "Available" : "Missing")
+                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Constitution) == "Available" ? "is-loaded" : "")">
+                            @ArtifactStatusLabel(WorkspaceArtifactType.Constitution)
                         </span>
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">constitution.md</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Constitution, "constitution.md")</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Constitution)</div>
                     @if (!string.IsNullOrEmpty(_constitutionText))
                     {
                         <div class="artifact-footer">
@@ -103,12 +104,12 @@
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">📋</span>
                         <span class="artifact-name">Specification</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_specText) ? "Available" : "Missing")
+                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Specification) == "Available" ? "is-loaded" : "")">
+                            @ArtifactStatusLabel(WorkspaceArtifactType.Specification)
                         </span>
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">spec.md</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Specification, "spec.md")</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Specification)</div>
                     @if (!string.IsNullOrEmpty(_specText))
                     {
                         <div class="artifact-footer">
@@ -121,12 +122,12 @@
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">📐</span>
                         <span class="artifact-name">Plan</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_planText) ? "Available" : "Missing")
+                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Plan) == "Available" ? "is-loaded" : "")">
+                            @ArtifactStatusLabel(WorkspaceArtifactType.Plan)
                         </span>
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">plan.md</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Plan, "plan.md")</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Plan)</div>
                     @if (!string.IsNullOrEmpty(_planText))
                     {
                         <div class="artifact-footer">
@@ -139,12 +140,12 @@
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">✅</span>
                         <span class="artifact-name">Tasks</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_taskText) ? "Available" : "Missing")
+                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Tasks) == "Available" ? "is-loaded" : "")">
+                            @ArtifactStatusLabel(WorkspaceArtifactType.Tasks)
                         </span>
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">tasks.md</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Tasks, "tasks.md")</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Tasks)</div>
                     @if (!string.IsNullOrEmpty(_taskText))
                     {
                         <div class="artifact-footer">
@@ -157,12 +158,12 @@
                     <div class="artifact-card-header">
                         <span class="artifact-icon" aria-hidden="true">🗄️</span>
                         <span class="artifact-name">Data Model</span>
-                        <span class="artifact-status @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
-                            @(!string.IsNullOrEmpty(_dataModelText) ? "Available" : "Missing")
+                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.DataModel) == "Available" ? "is-loaded" : "")">
+                            @ArtifactStatusLabel(WorkspaceArtifactType.DataModel)
                         </span>
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">data-model.md</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">Source: Sample Project</div>
+                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.DataModel, "data-model.md")</div>
+                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.DataModel)</div>
                     @if (!string.IsNullOrEmpty(_dataModelText))
                     {
                         <div class="artifact-footer">
@@ -529,6 +530,7 @@
     {
         try
         {
+            ArtifactContext.Changed += OnArtifactContextChanged;
             await QrService.InitializeAsync();
 
             await LoadCurrentWorkspaceArtifacts();
@@ -585,6 +587,7 @@
                     // Project was deselected
                     _selectedProject = null;
                     _selectedProjectName = null;
+                    _roleStates = new Dictionary<WorkspaceArtifactType, BirkNext.Web.Services.Explorers.ArtifactExplorerState>();
                     ClearAllArtifacts();
                     _report = null;
                     _diagnosticSnapshot = null;
@@ -612,6 +615,21 @@
         if (!string.IsNullOrWhiteSpace(_selectedProject)) await UpdateSelectedProjectName();
         ApplyDefaultPackSelections();
     }
+
+    private void OnArtifactContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
+    {
+        var previous = _selectedProject;
+        await LoadCurrentWorkspaceArtifacts();
+        if (!string.Equals(previous, _selectedProject, StringComparison.Ordinal))
+        {
+            _report = null;
+            _diagnosticSnapshot = null;
+            _inputExpanded = true;
+        }
+        StateHasChanged();
+    });
+
+    public void Dispose() => ArtifactContext.Changed -= OnArtifactContextChanged;
 
     private async Task UpdateSelectedProjectName()
     {
@@ -646,6 +664,24 @@
 
     private bool HasWorkspaceArtifacts => AnyArtifactLoaded || _roleStates.Values.Any(s => s.Artifacts.Count > 0);
 
+    private string ArtifactStatusLabel(WorkspaceArtifactType role)
+    {
+        if (!_roleStates.TryGetValue(role, out var state)) return "Not loaded";
+        return state.Status switch
+        {
+            BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired => "Selection required",
+            BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Error => "Unable to load",
+            BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded => "Available",
+            _ => "Missing",
+        };
+    }
+
+    private string ArtifactFileName(WorkspaceArtifactType role, string fallback) =>
+        _roleStates.TryGetValue(role, out var state) ? state.Selected?.FileName ?? state.Artifacts.FirstOrDefault()?.FileName ?? fallback : fallback;
+
+    private string ArtifactSource(WorkspaceArtifactType role) => _roleStates.TryGetValue(role, out var state) && state.Selected is { } artifact
+        ? $"Source: {(artifact.Source == BirkNext.Web.Services.Explorers.ExplorerArtifactSource.SampleProject ? "Sample Project" : "Workspace import")}" : "Source: Current workspace";
+
     private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded || _roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired);
 
     private DeliveryReadinessReport? DeliveryReadinessResult => _report?.PackResults
@@ -671,10 +707,7 @@
             "qa-auditor" => HasSpec || HasPlan || HasTasks,
             "constitution-compliance" => HasConstitution,
             "data-model-quality" => HasDataModel,
-            "wcag-2.2" => HasSpec, // TODO: Add FrontendTargetUrl support when available
-            "owasp-asvs" => HasSpec, // TODO: Add API/Frontend target support when available
-            "gdpr" => HasSpec || HasDataModel,
-            "iso-25010" => HasSpec || HasPlan,
+            _ when pack.PackGroup == "Standards" => HasStandardsText,
             "qa-readiness" => HasSpec || HasTasks,
             "delivery-readiness" => HasPlan || HasTasks,
             _ => true, // Default to available if pack ID not recognized
@@ -686,10 +719,7 @@
             "qa-auditor" => "Requires specification, plan, or tasks",
             "constitution-compliance" => "Requires constitution.md",
             "data-model-quality" => "Requires data-model.md",
-            "wcag-2.2" => "Requires specification",
-            "owasp-asvs" => "Requires specification",
-            "gdpr" => "Requires specification or data model",
-            "iso-25010" => "Requires specification or plan",
+            _ when pack.PackGroup == "Standards" => "Requires Constitution, Specification, Plan or Tasks",
             "qa-readiness" => "Requires specification or tasks",
             "delivery-readiness" => "Requires plan or tasks",
             _ => null,
@@ -728,8 +758,8 @@
     private string? PackPrerequisiteWarning(QualityReviewPackDescriptor pack) =>
         pack.PackId == "constitution-compliance" && string.IsNullOrWhiteSpace(_constitutionText)
             ? "Requires constitution"
-        : pack.PackGroup == "Standards" && string.IsNullOrWhiteSpace(_specText)
-            ? "Requires specification"
+        : pack.PackGroup == "Standards" && !HasStandardsText
+            ? "Requires document text"
         : pack.PackId == "qa-readiness" && string.IsNullOrWhiteSpace(_specText)
             ? "Requires specification"
         : pack.PackId == "delivery-readiness" && !AnyArtifactLoaded
@@ -744,6 +774,7 @@
     private bool HasPlan => !string.IsNullOrWhiteSpace(_planText);
     private bool HasTasks => !string.IsNullOrWhiteSpace(_taskText);
     private bool HasDataModel => !string.IsNullOrWhiteSpace(_dataModelText);
+    private bool HasStandardsText => HasConstitution || HasSpec || HasPlan || HasTasks;
 
     // ── Actions ───────────────────────────────────────────────────────────────
 

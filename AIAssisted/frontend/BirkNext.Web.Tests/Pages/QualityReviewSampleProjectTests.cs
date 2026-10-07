@@ -2,6 +2,8 @@ using AngleSharp.Dom;
 using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
+using BirkNext.Web.Services.Explorers;
+using BirkNext.Web.Services.SampleProjects;
 using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components.Web;
@@ -15,12 +17,18 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     private readonly FakeSampleProjectDocumentResolver _resolver = new();
     private readonly CapturingQualityReviewService _qualityReview = new();
     private readonly QualityReviewSessionService _qualitySession = new();
+    private readonly WorkspaceArtifactRepository _workspace = new();
+    private readonly ArtifactExplorerContext _artifactContext;
 
     public QualityReviewSampleProjectTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
 
+        _artifactContext = new ArtifactExplorerContext(_workspace, _resolver, _resolver);
+
         Services.AddSingleton<ISampleProjectDocumentResolver>(_resolver);
+        Services.AddSingleton<IWorkspaceSessionService>(_workspace);
+        Services.AddSingleton<IArtifactExplorerContext>(_artifactContext);
         Services.AddSingleton<IQualityReviewService>(_qualityReview);
         Services.AddSingleton(_qualitySession);
         Services.AddSingleton(Mock.Of<IDashboardSnapshotService>());
@@ -74,6 +82,58 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
+    public void ImportedSpecificationWithoutProject_IsResolvedAndOnlyRunsOnExplicitAction()
+    {
+        _resolver.SetSelectedProject(null);
+        var imported = _artifactContext.Import(new ArtifactImportRequest(
+            WorkspaceArtifactType.Specification, "# Requirements\n\n## FR-019: Imported requirement\nThe system MUST support imported reviews.", "requirements-school.md", "File"));
+
+        var linksBefore = _workspace.SddLifecycle.Links.Count;
+        var revisionsBefore = _workspace.SddLifecycle.Revisions.Count;
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Markup.Should().Contain("Current Workspace Artifacts");
+            cut.Markup.Should().NotContain("No Sample Project selected");
+            cut.Markup.Should().NotContain("No review artifacts available");
+            FindPackLabel(cut, "QA Auditor").ClassList.Should().NotContain("is-disabled");
+            _qualityReview.Calls.Should().BeEmpty("opening the page does not execute a review");
+            imported.IsSuccess.Should().BeTrue();
+        });
+        _workspace.SddLifecycle.Links.Should().HaveCount(linksBefore, "page initialization must not synchronize lifecycle links");
+        _workspace.SddLifecycle.Revisions.Should().HaveCount(revisionsBefore, "page initialization must not add or rewrite artifacts");
+
+        ClickRun(cut);
+        cut.WaitForAssertion(() =>
+        {
+            _qualityReview.Calls.Should().ContainSingle();
+            _qualityReview.Calls[0].Specification.Should().Contain("FR-019");
+        });
+    }
+
+    [Fact]
+    public void SampleProjectInputs_AreResolvedByRoleAndPageOpenDoesNotRunOrMutateLifecycle()
+    {
+        SeedProjectA(specification: "# Requirements\n\n## FR-021: Sample requirement");
+        _resolver.SetSelectedProject("project-a");
+        var linksBefore = _workspace.SddLifecycle.Links.Count;
+        var revisionsBefore = _workspace.SddLifecycle.Revisions.Count;
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(5);
+            FindPackLabel(cut, "QA Auditor").ClassList.Should().NotContain("is-disabled");
+            _qualityReview.Calls.Should().BeEmpty();
+            cut.Markup.Should().NotContain("No Sample Project selected");
+        });
+        _workspace.SddLifecycle.Links.Should().HaveCount(linksBefore);
+        _workspace.SddLifecycle.Revisions.Should().HaveCount(revisionsBefore, "discovered Sample Project files are read on demand, not copied into the repository");
+    }
+
+    [Fact]
     public void NoProjectSelected_ShowsNoProjectStateWithoutManualFallback()
     {
         _resolver.SetSelectedProject(null);
@@ -82,7 +142,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No Sample Project selected.");
+            cut.Markup.Should().Contain("No review artifacts available.");
             cut.Markup.Should().NotContain("Run Quality Review");
             cut.Markup.Should().NotContain("Sample Project Artifacts");
             cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");
@@ -204,10 +264,10 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         _resolver.SetSelectedProject("project-a");
 
         var cut = Render<QualityReview>();
-        cut.WaitForAssertion(() => _resolver.ResolveCallCount.Should().Be(5));
+        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(5));
 
         cut.Render();
-        cut.WaitForAssertion(() => _resolver.ResolveCallCount.Should().Be(5));
+        cut.WaitForAssertion(() => _resolver.DiscoveryCallCount.Should().Be(5));
 
         _resolver.SetSelectedProject("project-b");
         cut.Render();
@@ -215,7 +275,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Project B");
-            _resolver.ResolveCallCount.Should().Be(10);
+            _resolver.DiscoveryCallCount.Should().Be(10);
         });
     }
 
@@ -289,7 +349,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No Sample Project selected.");
+            cut.Markup.Should().Contain("No review artifacts available.");
             cut.Markup.Should().NotContain("Sample Project Artifacts");
             cut.Markup.Should().NotContain("Captured QA Auditor");
             cut.Markup.Should().NotContain("Run Quality Review");
@@ -1021,7 +1081,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             RunAt = DateTimeOffset.UtcNow,
         };
 
-    private sealed class FakeSampleProjectDocumentResolver : ISampleProjectDocumentResolver
+    private sealed class FakeSampleProjectDocumentResolver : ISampleProjectDocumentResolver, ISampleProjectArtifactDiscovery
     {
         private readonly Dictionary<string, SampleProjectDto> _projects = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<(string ProjectSlug, ExplorerDocumentType Type), string> _documents = [];
@@ -1030,6 +1090,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         public int GetAvailableProjectsCallCount { get; private set; }
         public int ResolveCallCount { get; private set; }
+        public int DiscoveryCallCount { get; private set; }
 
         public void SetProjectDocument(string projectSlug, string projectName, ExplorerDocumentType documentType, string content)
         {
@@ -1081,6 +1142,43 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         public void SetSelectedProject(string? projectSlug) => _selectedProject = projectSlug;
 
         public void ClearProjectCache(string projectSlug) { }
+
+        public Task<SampleProjectDiscoveryResult> DiscoverAsync(SampleProjectDto project, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Discover(project.Slug));
+
+        public Task<SampleProjectDiscoveryResult?> DiscoverAsync(string projectSlug, CancellationToken cancellationToken = default)
+        {
+            DiscoveryCallCount++;
+            return Task.FromResult(_projects.ContainsKey(projectSlug) ? (SampleProjectDiscoveryResult?)Discover(projectSlug) : null);
+        }
+
+        public string? GetContent(string projectSlug, string relativePath) =>
+            _documents.FirstOrDefault(entry => entry.Key.ProjectSlug == projectSlug && GetFilename(entry.Key.Type) == relativePath).Value;
+
+        public void ChooseDocument(string projectSlug, WorkspaceArtifactType role, string? relativePath) { }
+        public void Invalidate() { }
+
+        private SampleProjectDiscoveryResult Discover(string projectSlug)
+        {
+            var documents = _documents.Where(entry => entry.Key.ProjectSlug == projectSlug)
+                .Select(entry => new DiscoveredDocument(GetDiscoveryFilename(entry.Key.Type), GetDiscoveryFilename(entry.Key.Type),
+                    ArtifactDiscoveryStatus.Detected, SampleProjectDocumentResolver.ToRole(entry.Key.Type), ArtifactConfidence.Confirmed,
+                    [], [], null, null)).ToList();
+            var roles = SampleArtifactClassifier.RoleOrder.Select(role => new SampleRoleSummary(role,
+                documents.Where(document => document.Role == role).ToList(),
+                documents.Where(document => document.Role == role).Select(document => document.RelativePath).SingleOrDefault())).ToList();
+            return new SampleProjectDiscoveryResult(projectSlug, documents, [], [], null, roles, null);
+        }
+
+        private static string GetDiscoveryFilename(ExplorerDocumentType documentType) => documentType switch
+        {
+            ExplorerDocumentType.Constitution => "constitution.md",
+            ExplorerDocumentType.Specification => "spec.md",
+            ExplorerDocumentType.Plan => "plan.md",
+            ExplorerDocumentType.Tasks => "tasks.md",
+            ExplorerDocumentType.DataModel => "data-model.md",
+            _ => throw new ArgumentOutOfRangeException(nameof(documentType), documentType, null),
+        };
 
         public TaskCompletionSource<IReadOnlyList<SampleProjectDto>> MakeGetAvailableProjectsIncomplete()
         {
@@ -2099,7 +2197,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
             var header = inputPanel.QuerySelector(".qr-input-panel-header");
             header.Should().NotBeNull();
-            header.TextContent.Should().Contain("Sample Project Artifacts");
+            header.TextContent.Should().Contain("Current Workspace Artifacts");
 
             var toggle = header.QuerySelector(".qr-input-panel-toggle");
             toggle.Should().NotBeNull("toggle button should exist in input panel header");

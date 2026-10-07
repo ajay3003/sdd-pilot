@@ -3,6 +3,7 @@ using BirkNext.Web.Components;
 using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
+using BirkNext.Web.Services.Explorers;
 using BirkNext.Web.Tests.Services;
 using Bunit;
 using FluentAssertions;
@@ -30,6 +31,16 @@ public sealed class TestEvidenceUiTests : BunitContext
         context.Setup(x => x.GetCurrent()).Returns(() => GraphContext(graph));
         Services.AddSingleton(context.Object);
         Services.AddSingleton<IWorkspaceSessionService>(_repository);
+        var artifactContext = new Mock<IArtifactExplorerContext>();
+        var specification = WorkspaceSnapshots.Available(WorkspaceArtifactType.Specification).SelectedArtifact!;
+        artifactContext.Setup(x => x.GetStateAsync(It.IsAny<WorkspaceArtifactType>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((WorkspaceArtifactType role, CancellationToken _) => role == WorkspaceArtifactType.Specification
+                ? new ArtifactExplorerState(role, ExplorerArtifactStatus.Loaded, null, null, [specification], specification,
+                    ExplorerSelectionReason.OnlyArtifact, "# Feature Specification\n\n## Requirements\n\n### FR-023 Test\nText")
+                : new ArtifactExplorerState(role, ExplorerArtifactStatus.Empty, null, null, []));
+        Services.AddSingleton(artifactContext.Object);
+        Services.AddSingleton<ICurrentWorkspaceProjection>(WorkspaceSnapshots.Projection(
+            WorkspaceSnapshots.Loaded("Saved workspace", null, null, WorkspaceArtifactType.Specification)).Object);
         _autosave.Setup(x => x.SaveNowAsync()).ReturnsAsync(true);
         Services.AddSingleton(_autosave.Object);
         Services.AddSingleton(new Mock<ISddEvidenceApiService>().Object);
