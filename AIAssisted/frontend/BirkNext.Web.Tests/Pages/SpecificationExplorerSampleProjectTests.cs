@@ -247,12 +247,57 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             analyzedText.Should().NotBe(workspaceSpec);
             cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("1");
             cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1");
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements analyzed");
             cut.Markup.Should().Contain("FR-001: The system shall approve requests.");
         });
     }
 
     [Fact]
-    public void SpecificationExplorer_ProjectSwitchClearsPreviousAnalysisResult()
+    public void SpecificationExplorer_SeparatesParsedStructureFromUnassessedTraceabilityAndUnrunAnalysis()
+    {
+        const string spec = "# School attendance requirements\n\n## Requirements\n\n- FR-001: The system shall record absence.\n\n## Tests\n\n- Given an absence, when saved, then it is recorded.";
+        _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md");
+            cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Not assessed for this Specification");
+            cut.Find("[data-testid='se-traceability-state'] a[href='artifact-traceability']").TextContent.Should().Contain("Open Requirements Traceability");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Not run");
+            cut.Find("[data-testid='extract-pre-state']").TextContent.Should().Contain("No review analysis has been run");
+            cut.FindAll("[data-testid='requirements-metric'], [data-testid='tests-metric'], [data-testid='clarifications-metric']").Should().BeEmpty();
+            cut.Markup.Should().NotContain("HEALTHY");
+            cut.Markup.Should().NotContain("coverage attention");
+            cut.Markup.Should().NotContain("No traceability information available");
+        });
+        _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void SpecificationExplorer_DistinguishesCompletedAnalysisWithZeroCandidatesFromNotRun()
+    {
+        const string spec = "# Empty review spec\n\n## Notes\nNo candidate patterns.";
+        _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "custom-spec.txt", null, null, "File", select: true);
+        _extractionService.Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeResult([], spec));
+
+        var cut = Render<SpecificationExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Not run"));
+        cut.Find("[data-testid='spec-explorer-analyze']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
+            cut.Find("[data-testid='spec-no-review-candidates']").TextContent.Should().Contain("No review candidates were found");
+            cut.FindAll("[data-testid='extract-pre-state']").Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void SpecificationExplorer_ProjectSwitchMarksPreviousAnalysisStaleAndHidesItsCandidates()
     {
         const string projectASlug = "project-a";
         const string projectBSlug = "project-b";
@@ -285,7 +330,9 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Project B Specification");
             cut.Markup.Should().NotContain("FR-001: Project A only");
-            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Stale");
+            cut.FindAll("[data-testid='candidates-metric']").Should().BeEmpty();
+            cut.Find("[data-testid='extract-pre-state']").TextContent.Should().Contain("Analysis is stale");
         });
     }
 

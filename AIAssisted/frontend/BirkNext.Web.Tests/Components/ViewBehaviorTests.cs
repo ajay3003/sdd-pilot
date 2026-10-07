@@ -1485,25 +1485,23 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void SpecExplorer_ShowsSectionHealth()
+    public void SpecExplorer_DoesNotLabelParsedStructureAsHealthOrCoverage()
     {
         var cut = RenderSpecExplorerWithTraceability();
 
-        var health = cut.FindAll("[data-testid='se-section-health']");
-        health.Should().NotBeEmpty();
-        health.Select(h => h.TextContent).Should().Contain(t =>
-            t.Contains("Healthy") || t.Contains("Partial") || t.Contains("Needs Attention"),
-            "section health must show simplified section status");
+        cut.FindAll("[data-testid='se-section-health'], [data-testid='se-coverage-callout'], [data-testid='se-quick-filters']").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Healthy");
+        cut.Markup.Should().NotContain("Needs Attention");
     }
 
     [Fact]
-    public void SpecExplorer_PromotesCoverageAttention()
+    public void SpecExplorer_DoesNotInferCoverageAttentionFromParsedRequirements()
     {
         var cut = RenderSpecExplorerWithTraceability();
 
-        var callout = cut.Find("[data-testid='se-coverage-callout']");
-        callout.TextContent.Should().Contain("coverage attention");
-        callout.TextContent.Should().Contain("Review Coverage Gaps");
+        cut.FindAll("[data-testid='se-coverage-callout']").Should().BeEmpty();
+        cut.Markup.Should().NotContain("requirements need coverage attention");
+        cut.Markup.Should().NotContain("No traceability information available");
     }
 
     [Fact]
@@ -1543,9 +1541,9 @@ public class ViewBehaviorTests : BunitContext
         detail.Should().Contain("expose search APIs");
         detail.Should().Contain("Source heading");
         detail.Should().Contain("User Story");
-        detail.Should().Contain("Linked tests");
-        detail.Should().Contain("Linked success criteria");
-        detail.Should().Contain("Coverage status");
+        detail.Should().Contain("Scenarios parsed for this requirement");
+        detail.Should().Contain("Success criteria parsed in this section");
+        detail.Should().NotContain("Coverage status");
     }
 
     [Fact]
@@ -1556,7 +1554,7 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".se-row").First(r => r.TextContent.Contains("API Surface")).Click();
 
         var summary = cut.Find("[data-testid='se-section-summary']").TextContent;
-        summary.Should().Contain("Heading Summary");
+        summary.Should().Contain("Parsed structure");
         summary.Should().Contain("Requirements:");
         summary.Should().Contain("Clarifications:");
         summary.Should().NotContain("Coverage:");
@@ -1571,27 +1569,16 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".se-view-btn").First(b => b.TextContent.Contains("Map View")).Click();
 
         cut.FindAll("[data-testid='se-map-structure']")
-            .Should().Contain(e => e.TextContent.Contains("Heading -> Requirements -> Tests -> Success Criteria"));
+            .Should().Contain(e => e.TextContent.Contains("Parsed heading -> document items"));
     }
 
     [Fact]
-    public void SpecExplorer_FiltersByCoverageStatus()
+    public void SpecExplorer_DoesNotOfferCoverageFiltersWithoutTraceabilityAssessment()
     {
         var cut = RenderSpecExplorerWithTraceability();
 
-        var filters = cut.Find("[data-testid='se-quick-filters']").TextContent;
-        filters.Should().Contain("All");
-        filters.Should().Contain("Missing Coverage");
-        filters.Should().Contain("Covered");
-        filters.Should().NotContain("Has Clarifications");
-        filters.Should().NotContain("Has Edge Cases");
-        filters.Should().NotContain("High Risk Sections");
-
-        cut.FindAll(".se-filter-chip").First(b => b.TextContent.Contains("Missing Coverage")).Click();
-
-        var rows = cut.FindAll(".se-row").Select(r => r.TextContent).ToList();
-        rows.Should().Contain(t => t.Contains("Security"));
-        rows.Should().NotContain(t => t.Contains("API Surface") && t.Contains("Healthy"));
+        cut.FindAll("[data-testid='se-quick-filters'], .se-filter-chip").Should().BeEmpty();
+        cut.FindAll(".se-row").Should().NotBeEmpty("structure browsing remains available without coverage assessment");
     }
 
     [Fact]
@@ -1932,4 +1919,3 @@ public class ViewBehaviorTests : BunitContext
         return (specMarkdown, result.Candidates);
     }
 }
-

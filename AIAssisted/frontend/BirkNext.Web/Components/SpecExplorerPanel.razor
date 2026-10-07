@@ -56,10 +56,6 @@
         {
             <div class="se-info-state" data-testid="se-no-requirements">No requirements extracted.</div>
         }
-        else if (Candidates is null or { Count: 0 })
-        {
-            <div class="se-info-state" data-testid="se-no-traceability">No traceability information available.</div>
-        }
 
         <!-- Controls bar -->
         <div class="se-controls">
@@ -84,25 +80,6 @@
                     Show Hidden (@_hiddenCount)
                 </button>
             }
-        </div>
-
-        @if (MissingCoverageSectionCount > 0)
-        {
-            <div class="se-coverage-callout" role="status" data-testid="se-coverage-callout">
-                <div class="se-coverage-callout-copy">
-                    <span class="se-coverage-callout-icon" aria-hidden="true">&#9888;</span>
-                    <strong>@MissingCoverageSectionCount requirement@(MissingCoverageSectionCount == 1 ? "" : "s") @(MissingCoverageSectionCount == 1 ? "needs" : "need") coverage attention</strong>
-                </div>
-                <button class="se-coverage-callout-action" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">
-                    Review Coverage Gaps -&gt;
-                </button>
-            </div>
-        }
-
-        <div class="se-quick-filters" role="group" aria-label="Spec Explorer quick filters" data-testid="se-quick-filters">
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.All ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.All)">All</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.MissingCoverage ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.MissingCoverage)">Missing Coverage</button>
-            <button class="se-filter-chip @(_sectionFilter == SectionFilter.Covered ? "is-active" : "")" @onclick="() => SetSectionFilter(SectionFilter.Covered)">Covered</button>
         </div>
 
         <!-- Main layout: tree/map + details panel -->
@@ -134,7 +111,6 @@
                         var isExpanded = _expandedIds.Contains(node.Id);
                         var isSelected = _selectedNodeId == node.Id;
                         var isHeading = node.HeadingLevel > 0;
-                        var sectionHealth = isHeading ? GetSectionHealth(node) : null;
                         var reqDetail = !isHeading ? GetRequirementDetail(node) : null;
 
                         <div class="se-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading ? "is-heading" : "is-item") @(_isMapView ? "se-row-map" : "")"
@@ -225,15 +201,9 @@
                                 </span>
                             }
 
-                            @if (sectionHealth is not null && sectionHealth.Status != CoverageState.Unknown)
+                            @if (_isMapView && isHeading && node.TotalDescendants > 0)
                             {
-                                <span class="se-section-status se-status-@SectionStatusClass(sectionHealth.Status)" data-testid="se-section-health">
-                                    @SectionStatusLabel(sectionHealth.Status)
-                                </span>
-                                @if (_isMapView)
-                                {
-                                    <span class="se-map-structure" data-testid="se-map-structure">Heading -&gt; Requirements -&gt; Tests -&gt; Success Criteria</span>
-                                }
+                                <span class="se-map-structure" data-testid="se-map-structure">Parsed heading -&gt; document items</span>
                             }
 
                             <button class="se-hide-btn"
@@ -253,7 +223,7 @@
                 var selected = SpecExplorerService.FindNode(_tree.Roots, _selectedNodeId);
                 @if (selected is not null)
                 {
-                    var selectedHealth = selected.HeadingLevel > 0 ? GetSectionHealth(selected) : null;
+                    var selectedHealth = selected.HeadingLevel > 0 ? GetSectionSummary(selected) : null;
                     var selectedRequirement = selected.HeadingLevel == 0 ? GetRequirementDetail(selected) : null;
 
                     <div class="se-details">
@@ -272,7 +242,7 @@
                         @if (selectedHealth is not null)
                         {
                             <div class="se-details-section se-section-summary" data-testid="se-section-summary">
-                                <div class="se-details-label">Heading Summary</div>
+                                <div class="se-details-label">Parsed structure</div>
                                 <div class="se-summary-grid">
                                     <span>Requirements: <strong>@selectedHealth.Requirements</strong></span>
                                     <span>Clarifications: <strong>@selectedHealth.Clarifications</strong></span>
@@ -296,12 +266,12 @@
                                 <div class="se-details-content">@selectedRequirement.RequirementText</div>
                                 <div class="se-summary-line">Source heading: @selectedRequirement.SourceHeading</div>
                                 <div class="se-summary-line">User Story: @(selectedRequirement.UserStory ?? "No user story mapped")</div>
-                                <div class="se-summary-line">Coverage status: @CoverageTitle(selectedRequirement.Status)</div>
+                                <div class="se-summary-line">Structure source: selected Specification artifact</div>
                                 <div class="se-linked-block">
-                                    <strong>Linked tests</strong>
+                                    <strong>Scenarios parsed for this requirement</strong>
                                     @if (selectedRequirement.LinkedTests.Count == 0)
                                     {
-                                        <span>No linked tests.</span>
+                                        <span>No scenarios are parsed for this requirement.</span>
                                     }
                                     else
                                     {
@@ -314,10 +284,10 @@
                                     }
                                 </div>
                                 <div class="se-linked-block">
-                                    <strong>Linked success criteria</strong>
+                                    <strong>Success criteria parsed in this section</strong>
                                     @if (selectedRequirement.LinkedSuccessCriteria.Count == 0)
                                     {
-                                        <span>No linked success criteria.</span>
+                                        <span>No success criteria are parsed in this section.</span>
                                     }
                                     else
                                     {
@@ -587,36 +557,23 @@
     private string? _selectedNodeId;
     private string _searchQuery = string.Empty;
     private bool _isMapView;
-    private SectionFilter _sectionFilter = SectionFilter.All;
     private List<(SpecNode Node, int Depth, bool IsMatch)> _flatCache = [];
     private HashSet<string> _hiddenIds = [];
     private int _hiddenCount;
     private Dictionary<string, ElementReference> _treeItemRefs = [];
 
-    private enum SectionFilter
-    {
-        All,
-        MissingCoverage,
-        Covered,
-    }
-
-    private sealed record SectionHealth(
+    private sealed record SectionSummary(
         int Requirements,
         int Tests,
         int Clarifications,
         int SuccessCriteria,
-        int CoveragePercent,
-        CoverageState Status,
-        int MissingTests,
-        int MissingSuccessCriteria,
         IReadOnlyList<string> UserStories);
 
     private sealed record RequirementTraceDetail(
         string RequirementText,
         string SourceHeading,
         string? UserStory,
-        CoverageState Status,
-        IReadOnlyList<ExtractionCandidate> LinkedTests,
+        IReadOnlyList<SemanticAcceptanceScenario> LinkedTests,
         IReadOnlyList<SpecNode> LinkedSuccessCriteria);
 
     protected override void OnParametersSet()
@@ -630,8 +587,6 @@
             _selectedNodeId = null;
             _searchQuery = string.Empty;
             _isMapView = false;
-            _sectionFilter = SectionFilter.All;
-            ApplyCoverageOverlay();
             RefreshFlatCache();
         }
 
@@ -643,16 +598,9 @@
             _selectedNodeId = null;
             _searchQuery = string.Empty;
             _isMapView = false;
-            ApplyCoverageOverlay();
             RefreshFlatCache();
         }
     }
-
-    private int MissingCoverageSectionCount =>
-        _semanticModel == null
-            ? 0
-            : _semanticModel.Requirements
-                .Count(r => r.LinkedAcceptanceScenarios.Count == 0);
 
 
     private void RefreshFlatCache()
@@ -661,7 +609,6 @@
         var all = SpecExplorerService.GetFlatVisible(_tree.Roots, _expandedIds, _searchQuery);
         _flatCache = all
             .Where(r => _hiddenIds.Count == 0 || !_hiddenIds.Contains(r.Node.Id))
-            .Where(r => MatchesSectionFilter(r.Node))
             .ToList();
     }
 
@@ -680,37 +627,6 @@
         _hiddenIds.Clear();
         _hiddenCount = 0;
         RefreshFlatCache();
-    }
-
-    private void ApplyCoverageOverlay()
-    {
-        if (_tree is null || Candidates is null || Candidates.Count == 0) return;
-        var allNodes = GetAllNodes(_tree.Roots);
-        foreach (var node in allNodes)
-        {
-            if (node.HeadingLevel > 0)
-            {
-                // Only apply coverage to headings that contain requirements
-                if (node.ReqCount == 0) { node.Coverage = CoverageState.Unknown; continue; }
-                var linked = GetLinkedCandidates(node)
-                    .Where(c => c.Classification == ScenarioKind.Requirement)
-                    .ToList();
-                if (linked.Count == 0) { node.Coverage = CoverageState.Unknown; continue; }
-                var accepted = linked.Count(c => c.ReviewStatus == CandidateReviewStatus.Accepted);
-                node.Coverage = accepted == linked.Count ? CoverageState.Covered
-                              : accepted > 0 ? CoverageState.Partial
-                              : CoverageState.Missing;
-            }
-            else if (node.SpecItemId is not null)
-            {
-                var match = Candidates.FirstOrDefault(c =>
-                    c.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase));
-                if (match is null) { node.Coverage = CoverageState.Unknown; continue; }
-                node.Coverage = match.ReviewStatus == CandidateReviewStatus.Accepted ? CoverageState.Covered
-                              : match.ReviewStatus == CandidateReviewStatus.Rejected ? CoverageState.Missing
-                              : CoverageState.Partial;
-            }
-        }
     }
 
     private List<ExtractionCandidate> GetLinkedCandidates(SpecNode node)
@@ -738,12 +654,6 @@
     private void HandleSearchInput(ChangeEventArgs e)
     {
         _searchQuery = e.Value?.ToString() ?? string.Empty;
-        RefreshFlatCache();
-    }
-
-    private void SetSectionFilter(SectionFilter filter)
-    {
-        _sectionFilter = filter;
         RefreshFlatCache();
     }
 
@@ -891,70 +801,23 @@
 
     // ── Labels and icons ──────────────────────────────────────────────────────
 
-    private SectionHealth GetSectionHealth(SpecNode node)
+    private SectionSummary GetSectionSummary(SpecNode node)
     {
-        // Use semantic model as single source of truth
-        if (_semanticModel == null)
-            return new SectionHealth(0, 0, 0, 0, 0, CoverageState.Unknown, 0, 0, []);
-
-        // For section health, derive from semantic model: filter requirements that reference this section
-        var sectionName = node.Title;
-        var relevantReqs = _semanticModel.Requirements
-            .Where(r => r.Text.Contains(sectionName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        var requirements = relevantReqs.Count > 0 ? relevantReqs.Count : node.ReqCount;
-        var successCriteria = _semanticModel.SuccessCriteria
-            .Where(sc => relevantReqs.Any(r => r.LinkedSuccessCriteria.Any(lsc => lsc.Id == sc.Id)))
-            .Count();
-
-        var tests = _semanticModel.AcceptanceScenarios
-            .Where(a => relevantReqs.Any(r => r.LinkedAcceptanceScenarios.Any(las => las.Id == a.Id)))
-            .Count();
-        if (tests == 0) tests = node.TestCount;
-
-        var clarifications = _semanticModel.Clarifications
-            .Where(c => c.AffectedElements.Any(e => relevantReqs.Any(r => r.Id == e)))
-            .Count();
-        if (clarifications == 0) clarifications = node.ClarCount;
-
-        var status = CoverageState.Unknown;
-        var coveragePercent = 0;
-        if (requirements > 0)
-        {
-            coveragePercent = Math.Min(100, (int)Math.Round(tests * 100.0 / requirements));
-            status = tests >= requirements ? CoverageState.Covered
-                   : tests > 0 ? CoverageState.Partial
-                   : CoverageState.Missing;
-        }
-
-        var userStories = _semanticModel.UserStories
-            .Where(us => relevantReqs.Any(r => r.LinkedUserStories.Any(lu => lu.Id == us.Id)))
+        var userStories = _semanticModel?.UserStories
+            .Where(us => us.LinkedRequirements.Any(r => r.Text.Contains(node.Title, StringComparison.OrdinalIgnoreCase)))
             .Select(us => us.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // When initialized from candidates-only (no markdown), extract user story ID from section title
-        // In candidates-only mode, semantic model has no requirements, so relevantReqs is empty and userStories from model is empty
-        if (userStories.Count == 0 && relevantReqs.Count == 0)
+            .ToList() ?? [];
+        if (userStories.Count == 0)
         {
-            var usId = SpecExplorerService.TryExtractUserStoryId(sectionName);
+            var usId = SpecExplorerService.TryExtractUserStoryId(node.Title);
             if (usId is not null)
-            {
                 userStories = [usId];
-            }
         }
 
-        return new SectionHealth(
-            requirements,
-            tests,
-            clarifications,
-            successCriteria,
-            coveragePercent,
-            status,
-            Math.Max(0, requirements - tests),
-            Math.Max(0, requirements - successCriteria),
-            userStories);
+        return new SectionSummary(node.ReqCount, node.TestCount, node.ClarCount, node.ScCount, userStories);
     }
 
     private RequirementTraceDetail? GetRequirementDetail(SpecNode node)
@@ -973,11 +836,7 @@
         var sourceHeading = FindNearestHeadingTitle(_tree?.Roots ?? [], node.Id) ?? "Unknown";
 
         // Use extraction candidates if available; otherwise return empty
-        var linkedTests = Candidates?
-            .Where(c => c.Classification == ScenarioKind.Test
-                     && !string.IsNullOrWhiteSpace(c.ContextHeading)
-                     && string.Equals(c.ContextHeading, sourceHeading, StringComparison.OrdinalIgnoreCase))
-            .ToList() ?? [];
+        var linkedTests = requirement.LinkedAcceptanceScenarios;
 
         // Use tree nodes for success criteria (semantic model doesn't map back to tree)
         var linkedSuccessCriteria = GetAllNodes(_tree?.Roots ?? [])
@@ -986,47 +845,15 @@
                          || (node.SpecItemId is not null && n.Title.Contains(node.SpecItemId, StringComparison.OrdinalIgnoreCase))))
             .ToList();
 
-        var status = requirement.LinkedAcceptanceScenarios.Count > 0 ? CoverageState.Covered : CoverageState.Missing;
         var userStory = requirement.LinkedUserStories.FirstOrDefault()?.Id;
 
         return new RequirementTraceDetail(
             requirement.Text,
             sourceHeading,
             userStory,
-            status,
             linkedTests,
             linkedSuccessCriteria);
     }
-
-    private bool MatchesSectionFilter(SpecNode node)
-    {
-        if (_sectionFilter == SectionFilter.All) return true;
-        if (node.HeadingLevel == 0) return false;
-
-        var health = GetSectionHealth(node);
-        return _sectionFilter switch
-        {
-            SectionFilter.MissingCoverage => health.Status == CoverageState.Missing,
-            SectionFilter.Covered => health.Status == CoverageState.Covered,
-            _ => true,
-        };
-    }
-
-    private static string SectionStatusLabel(CoverageState status) => status switch
-    {
-        CoverageState.Covered => "Healthy",
-        CoverageState.Partial => "Partial",
-        CoverageState.Missing => "Needs Attention",
-        _ => "",
-    };
-
-    private static string SectionStatusClass(CoverageState status) => status switch
-    {
-        CoverageState.Covered => "healthy",
-        CoverageState.Partial => "partial",
-        CoverageState.Missing => "attention",
-        _ => "",
-    };
 
     private static IReadOnlyList<string> ExtractUserStoryLabels(string text)
     {
@@ -1140,14 +967,6 @@
         TableType.ApiSpec        => "API Spec",
         TableType.DependencyMap  => "Dependencies",
         _                        => "Table",
-    };
-
-    private static string CoverageTitle(CoverageState s) => s switch
-    {
-        CoverageState.Covered => "Covered",
-        CoverageState.Partial => "Partial",
-        CoverageState.Missing => "Missing",
-        _ => "Unknown",
     };
 
     private static string? GetSpecIdTitle(string? specItemId)

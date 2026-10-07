@@ -7,8 +7,7 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Tests for coverage overlay callout correctness.
-/// Verifies that the callout displays correct terminology and counts.
+/// Parsed document relationships are not workspace coverage evidence.
 /// </summary>
 public sealed class SpecExplorerCoverageCalloutTests : BunitContext
 {
@@ -32,27 +31,21 @@ public sealed class SpecExplorerCoverageCalloutTests : BunitContext
     };
 
     [Fact]
-    public void CoverageCallout_WithMissingRequirements_DisplaysCorrectCount()
+    public void ParsedRequirementsDoNotProduceCoverageCallout()
     {
         SetupJSInterop();
 
-        // No candidates provided - semantic model will find 3 requirements with no acceptance scenarios
         var cut = Render<SpecExplorerPanel>(p => p
             .Add(c => c.InitialSpecMarkdown, SpecWithRequirements)
             .Add(c => c.Candidates, []));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid='se-coverage-callout']").Should().NotBeNull());
-
-        var callout = cut.Find("[data-testid='se-coverage-callout']");
-        var text = callout.TextContent;
-
-        // Should show "3 requirements need coverage attention" (not "3 sections")
-        text.Should().Contain("3 requirement");
-        text.Should().Contain("need");
+        cut.WaitForAssertion(() => cut.FindAll("[role='treeitem']").Should().NotBeEmpty());
+        cut.FindAll("[data-testid='se-coverage-callout'], [data-testid='se-section-health'], [data-testid='se-quick-filters']").Should().BeEmpty();
+        cut.Markup.Should().Contain("Requirements (3)");
     }
 
     [Fact]
-    public void CoverageCallout_WithSingleMissingRequirement_DisplaysSingularForm()
+    public void SingleParsedRequirementDoesNotImplyMissingCoverage()
     {
         SetupJSInterop();
 
@@ -66,18 +59,13 @@ public sealed class SpecExplorerCoverageCalloutTests : BunitContext
             .Add(c => c.InitialSpecMarkdown, spec)
             .Add(c => c.Candidates, []));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid='se-coverage-callout']").Should().NotBeNull());
-
-        var callout = cut.Find("[data-testid='se-coverage-callout']");
-        var text = callout.TextContent;
-
-        // Singular form: "1 requirement needs coverage attention"
-        text.Should().Contain("1 requirement");
-        text.Should().Contain("needs");
+        cut.WaitForAssertion(() => cut.FindAll("[role='treeitem']").Should().NotBeEmpty());
+        cut.FindAll("[data-testid='se-coverage-callout']").Should().BeEmpty();
+        cut.Markup.Should().Contain("Requirements (1)");
     }
 
     [Fact]
-    public void CoverageCallout_WithNoCandidates_ShowsAllRequirementsNeedAttention()
+    public void NoReviewCandidatesDoesNotCreateCoverageVerdict()
     {
         SetupJSInterop();
 
@@ -85,10 +73,7 @@ public sealed class SpecExplorerCoverageCalloutTests : BunitContext
             .Add(c => c.InitialSpecMarkdown, SpecWithRequirements)
             .Add(c => c.Candidates, []));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid='se-coverage-callout']").Should().NotBeNull());
-
-        // Should show callout since all requirements lack acceptance scenario links
-        var callout = cut.FindAll("[data-testid='se-coverage-callout']");
-        callout.Should().HaveCount(1);
+        cut.WaitForAssertion(() => cut.FindAll("[role='treeitem']").Should().NotBeEmpty());
+        cut.FindAll("[data-testid='se-coverage-callout'], [data-testid='se-section-health']").Should().BeEmpty();
     }
 }

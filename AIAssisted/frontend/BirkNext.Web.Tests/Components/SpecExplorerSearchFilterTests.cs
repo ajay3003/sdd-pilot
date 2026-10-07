@@ -68,28 +68,17 @@ public sealed class SpecExplorerSearchFilterTests : BunitContext
         matchBadge.TextContent.Should().Contain("match", "search should find matches");
     }
 
-    // C. Missing Coverage + empty search (no candidates, so no coverage states)
+    // C. Coverage controls are not offered until the shared traceability view is assessed.
     [Fact]
-    public void MissingCoverageFilter_EmptySearch_FiltersHeadingsOnly()
+    public void CoverageFiltersAreAbsentAndDoNotFilterStructure()
     {
         SetupJSInterop();
         var cut = Render<SpecExplorerPanel>(p => p.Add(c => c.InitialSpecMarkdown, TestSpec));
 
         cut.WaitForAssertion(() => cut.FindAll("[role='treeitem']").Should().NotBeEmpty());
 
-        // Without candidates, all nodes should have Unknown coverage
-        // So MissingCoverage filter should show no headings
-        var filterButton = cut.FindAll("button[class*='se-filter-chip']")
-            .FirstOrDefault(b => b.TextContent.Contains("Missing Coverage"));
-
-        filterButton?.Click();
-
-        cut.WaitForAssertion(() =>
-        {
-            var rows = cut.FindAll("[role='treeitem']");
-            // Without candidates, coverage is Unknown, so MissingCoverage filter should filter out everything
-            rows.Should().HaveCount(0, "no nodes have Missing coverage status without test candidates");
-        });
+        cut.FindAll("button[class*='se-filter-chip']").Should().BeEmpty();
+        cut.FindAll("[role='treeitem']").Should().NotBeEmpty("structure remains browsable while coverage is unassessed");
     }
 
     // G. Hidden nodes stay excluded
