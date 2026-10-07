@@ -556,6 +556,9 @@
                     .SelectMany(p => AllNodes(p.Children))
                     .Where(n => n.NodeType == TaskNodeType.Task)
                     .ToList();
+                // Roving tab stop: one Map task is in the tab order — the selected one, otherwise the first in reading order.
+                var mapOrder = MapTaskOrder(phases);
+                var mapTabStopId = mapOrder.Any(t => t.Id == _selectedNodeId) ? _selectedNodeId : mapOrder.FirstOrDefault()?.Id;
 
                 @if (_tree is null)
                 {
@@ -565,7 +568,8 @@
                 }
                 else
                 {
-                    <div class="te-map" @ref="_mapContainer" role="region" tabindex="0" aria-label="Execution map: tasks by phase" data-testid="te-map">
+                    <div class="te-map" @ref="_mapContainer" role="region" tabindex="0" aria-label="Execution map: tasks by phase" aria-describedby="te-map-keys" data-testid="te-map">
+                        <span id="te-map-keys" class="visually-hidden" data-testid="te-map-keys">Tasks are one tab stop. Use the Up and Down arrow keys to move between tasks, Page Up and Page Down or Left and Right to move to the previous or next phase, Home and End for the first and last task, and Enter or Space to select.</span>
                         <div class="te-map-header pe-section-block">
                             @if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
                             {
@@ -586,7 +590,7 @@
                         }
                         else
                         {
-                            @foreach (var phase in phases)
+                            @foreach (var (phase, phaseIndex) in phases.Select((p, i) => (p, i)))
                             {
                                 var phaseTasks = AllNodes(phase.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
                                 var taskGroups = phase.Children.Where(IsExecutionGroup).ToList();
@@ -613,7 +617,7 @@
                                             <ul class="te-map-task-list" aria-label="@group.Title">
                                                 @foreach (var task in groupTasks)
                                                 {
-                                                    @MapTaskItem(task)
+                                                    @MapTaskItem(task, phaseIndex, mapTabStopId)
                                                 }
                                             </ul>
                                         </div>
@@ -625,7 +629,7 @@
                                         <ul class="te-map-task-list te-map-task-list-direct" aria-label="@phase.Title">
                                             @foreach (var task in directTasks)
                                             {
-                                                @MapTaskItem(task)
+                                                @MapTaskItem(task, phaseIndex, mapTabStopId)
                                             }
                                         </ul>
                                     }
@@ -1296,14 +1300,25 @@
         : AllTasks.Count(t => TaskExplorerService.MatchesFilter(t, _activeFilter, _tableLinkedTaskIds, Evidence));
 
     /// <summary>
+    /// The Map's tasks in reading order (per phase: grouped tasks first, then the phase's direct tasks), which is the order
+    /// the arrow keys walk and the order the roving tab stop falls back to.
+    /// </summary>
+    internal static List<TaskNode> MapTaskOrder(IEnumerable<TaskNode> phases) => phases
+        .SelectMany(phase => phase.Children.Where(IsExecutionGroup)
+            .SelectMany(group => AllNodes(group.Children).Where(n => n.NodeType == TaskNodeType.Task))
+            .Concat(phase.Children.Where(n => n.NodeType == TaskNodeType.Task)))
+        .ToList();
+
+    /// <summary>
     /// One Map task: a list item holding a button (keyboard-reachable, announced as current when selected). The Map is a
     /// set of lists under phase headings, not an ARIA tree; the hierarchical Tree view owns the tree pattern.
     /// </summary>
-    private RenderFragment MapTaskItem(TaskNode task) => __builder =>
+    private RenderFragment MapTaskItem(TaskNode task, int phaseIndex, string? tabStopId) => __builder =>
     {
         var isSelected = _selectedNodeId == task.Id;
         <li class="te-map-task-item">
             <button type="button" class="te-map-task @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)"
+                    tabindex="@(task.Id == tabStopId ? "0" : "-1")" data-map-phase="@phaseIndex"
                     title="@task.Title" data-task-id="@task.TaskId" @onclick="@(() => HandleNodeClick(task))">
                 <span class="te-map-task-id">@(task.TaskId ?? "")</span>
                 <span class="te-map-task-content">
@@ -1497,6 +1512,21 @@
 
     private bool CurrentViewSupportsTaskDetails(TaskNode selected) =>
         IsTreeView || (_isMapView && selected.NodeType == TaskNodeType.Task);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_isMapView || _mapContainer.Context is null)
+            return;
+        try
+        {
+            // Arrow-key movement across the Map's task buttons (one tab stop); the markup already renders the tab stop.
+            await JS.InvokeVoidAsync("birknextRovingAttach", _mapContainer, ".te-map-task");
+        }
+        catch (JSException)
+        {
+            // The markup already renders one tab stop; without the script only the arrow-key movement is lost.
+        }
+    }
 
     protected override void OnParametersSet()
     {

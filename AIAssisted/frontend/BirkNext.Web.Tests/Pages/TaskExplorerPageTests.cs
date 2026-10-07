@@ -52,6 +52,7 @@ public class TaskExplorerPageTests : BunitContext
         JSInterop.SetupVoid("localStorage.setItem", _ => true);
         JSInterop.Setup<string?>("localStorage.getItem", _ => true).SetResult(null);
         JSInterop.SetupVoid("fileImport.initDropZone", _ => true);
+        JSInterop.SetupVoid("birknextRovingAttach", _ => true);
     }
 
     [Fact]

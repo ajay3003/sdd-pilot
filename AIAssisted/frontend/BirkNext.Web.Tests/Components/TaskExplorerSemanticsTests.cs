@@ -209,6 +209,32 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         cut.FindAll(".te-map-task[aria-current]").Should().ContainSingle();
     }
 
+    [Fact]
+    public void MapView_TasksAreOneRovingTabStop_WithArrowKeyHintAndPhaseIndex()
+    {
+        var cut = Render(TitledFixture);
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Map").Click();
+
+        var map = cut.Find("[data-testid=te-map]");
+        var hint = cut.Find("[data-testid=te-map-keys]");
+        map.GetAttribute("aria-describedby").Should().Be(hint.Id);
+        hint.ClassList.Should().Contain("visually-hidden");
+        hint.TextContent.Should().Contain("arrow keys").And.Contain("Home").And.Contain("Page Down");
+
+        var items = cut.FindAll(".te-map-task");
+        items.Count(b => b.GetAttribute("tabindex") == "0").Should().Be(1, "the Map's tasks are a single tab stop");
+        items[0].GetAttribute("tabindex").Should().Be("0", "with no selection the first task in reading order is the tab stop");
+        items.Skip(1).Should().OnlyContain(b => b.GetAttribute("tabindex") == "-1");
+        items.Select(b => b.GetAttribute("data-map-phase")).Should().Equal("0", "0", "1", "2");
+
+        cut.Find(".te-map-task[data-task-id=T003]").Click();
+        var after = cut.FindAll(".te-map-task");
+        after.Single(b => b.GetAttribute("tabindex") == "0").GetAttribute("data-task-id").Should().Be("T003", "the selected task becomes the tab stop");
+
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextRovingAttach",
+            "arrow-key movement is attached to the Map region");
+    }
+
     // ── Planning ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
