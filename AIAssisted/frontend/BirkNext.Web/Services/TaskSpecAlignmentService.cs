@@ -3,11 +3,16 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Implementation Review analysis over the canonical ReviewContext.
-/// This service must not parse markdown or rebuild spec/task relationships.
+/// Implementation Review (task → spec) analysis over the canonical ReviewContext. Every task gets one result;
+/// only Needs review and Possible deviation results are findings. The analysis checks whether a task's explicit
+/// references resolve to the Specification — it does not read source code or verify implementation, and a
+/// direct spec link is not coverage. This service must not parse markdown or rebuild spec/task relationships.
 /// </summary>
 public sealed class TaskSpecAlignmentService
 {
+    /// <summary>Bumped whenever classification rules change, so a stored result can say which rules produced it.</summary>
+    public const string RulesVersion = "task-spec-rules-v2";
+
     private static readonly string[] InfrastructureTerms =
     [
         "csproj", "sln", "solution", "project setup", "project skeleton",
@@ -25,6 +30,12 @@ public sealed class TaskSpecAlignmentService
         "enum", "options", "model", "contract", "schema"
     ];
 
+    /// <summary>Signals of new externally reachable behavior; they override setup keywords, because an endpoint is never "setup only".</summary>
+    private static readonly string[] ExposedBehaviorTerms =
+    [
+        "endpoint", "controller", "route", "post /", "get /", "put /", "patch /", "delete /"
+    ];
+
     private static readonly string[] BehavioralTerms =
     [
         "endpoint", "api", "route", "process", "consume", "publish", "deliver",
@@ -33,82 +44,72 @@ public sealed class TaskSpecAlignmentService
         "health", "alert", "security", "kode 6", "kode 7", "permission"
     ];
 
-    private static readonly (AffectedArea Area, string[] Terms)[] AreaTerms =
-    [
-        (AffectedArea.Security, ["security", "kode 6", "kode 7", "sikkerhetsnivaa", "managed identity", "secret"]),
-        (AffectedArea.Authorization, ["authorize", "authorization", "permission", "access", "bearer", "token"]),
-        (AffectedArea.Ingestion, ["cdc", "ingest", "full load", "batch", "event hubs", "eventhub"]),
-        (AffectedArea.DomainEvents, ["event", "publish", "consumer", "processor", "service bus"]),
-        (AffectedArea.Audit, ["audit", "revisjon"]),
-        (AffectedArea.HealthMonitoring, ["health", "metric", "telemetry", "opentelemetry", "monitor"]),
-        (AffectedArea.Infrastructure, ["csproj", "sln", "appsettings", "configuration", "program.cs", "di", "migration", "dbcontext", "key vault"]),
-        (AffectedArea.Validation, ["validation", "validate", "validator"]),
-        (AffectedArea.Testing, ["test", "xunit", "nsubstitute", "testcontainers", "fixture", "mock", "fake"]),
-        (AffectedArea.ExceptionHandling, ["exception", "error", "failure", "fault"]),
-    ];
-
     public AlignmentReport Analyse(ReviewContext reviewContext)
     {
         ArgumentNullException.ThrowIfNull(reviewContext);
 
-        var findings = reviewContext.GetTasks()
+        var results = reviewContext.GetTasks()
             .Select(task => ClassifyTask(task, reviewContext))
             .ToList();
 
         return new AlignmentReport
         {
-            TotalTasks = findings.Count,
-            LinkedTasks = findings.Count(f => f.Status == AlignmentStatus.Linked),
-            TechnicalOnlyTasks = findings.Count(f => f.Status == AlignmentStatus.TechnicalOnly),
-            NeedsReviewTasks = findings.Count(f => f.Status == AlignmentStatus.NeedsReview),
-            PossibleDeviations = findings.Count(f => f.Status == AlignmentStatus.PossibleDeviation),
-            HighImpactTasks = findings.Count(f => f.ImpactLevel == ImpactLevel.High),
-            MediumImpactTasks = findings.Count(f => f.ImpactLevel == ImpactLevel.Medium),
-            LowImpactTasks = findings.Count(f => f.ImpactLevel == ImpactLevel.Low),
-            UnknownImpactTasks = findings.Count(f => f.ImpactLevel == ImpactLevel.Unknown),
-            RegressionCandidates = findings.Count(f => f.IsRegressionCandidate),
-            Findings = findings,
+            TotalTasks = results.Count,
+            LinkedTasks = results.Count(f => f.Status == AlignmentStatus.Linked),
+            TechnicalOnlyTasks = results.Count(f => f.Status == AlignmentStatus.TechnicalOnly),
+            NeedsReviewTasks = results.Count(f => f.Status == AlignmentStatus.NeedsReview),
+            PossibleDeviations = results.Count(f => f.Status == AlignmentStatus.PossibleDeviation),
+            HighImpactTasks = results.Count(f => f.ImpactLevel == ImpactLevel.High),
+            MediumImpactTasks = results.Count(f => f.ImpactLevel == ImpactLevel.Medium),
+            LowImpactTasks = results.Count(f => f.ImpactLevel == ImpactLevel.Low),
+            UnknownImpactTasks = results.Count(f => f.ImpactLevel == ImpactLevel.Unknown),
+            RegressionCandidates = results.Count(f => f.IsRegressionCandidate),
+            Findings = results,
         };
     }
 
     private static TaskFinding ClassifyTask(TaskItem task, ReviewContext context)
     {
-        var matches = BuildSpecMatches(task, context);
-        var areas = DetectAreas(task);
+        var (matches, unresolved) = ResolveSpecLinks(task, context);
+        var topics = TaskTopicTaxonomy.Detect(task);
 
         if (matches.Count > 0)
-            return BuildLinkedFinding(task, matches, areas);
+            return BuildLinkedResult(task, matches, unresolved, topics);
 
-        if (IsTechnicalOnly(task))
-            return BuildTechnicalFinding(task, areas);
+        if (unresolved.Count > 0)
+            return BuildUnresolvedResult(task, unresolved, topics);
 
-        if (IntroducesBehavior(task))
-            return BuildDeviationFinding(task, areas);
+        var technicalSignal = TechnicalSignal(task);
+        if (technicalSignal is not null)
+            return BuildTechnicalResult(task, technicalSignal, topics);
 
-        return BuildNeedsReviewFinding(task, areas);
+        var behaviorSignal = BehaviorSignal(task);
+        if (behaviorSignal is not null)
+            return BuildDeviationResult(task, behaviorSignal, topics);
+
+        return BuildNeedsReviewResult(task, topics);
     }
 
-    private static List<SpecMatch> BuildSpecMatches(TaskItem task, ReviewContext context)
+    /// <summary>
+    /// The task's explicit references (FR, SC, user-story tag) split into those that resolve to an item in the
+    /// Specification and those that do not. Only resolved references are direct spec links.
+    /// </summary>
+    private static (List<SpecMatch> Matches, List<string> Unresolved) ResolveSpecLinks(TaskItem task, ReviewContext context)
     {
         var matches = new List<SpecMatch>();
+        var unresolved = new List<string>();
 
         foreach (var requirementId in task.LinkedFRIds)
         {
-            var requirement = context.GetRequirement(requirementId);
+            var requirement = context.GetRequirement(requirementId)
+                ?? context.Specification.Requirements.FirstOrDefault(r => r.Id.Equals(requirementId, StringComparison.OrdinalIgnoreCase));
             if (requirement is null)
-                continue;
-
-            if (context.GetLinkedTasks(requirement.Id).Contains(task.Id, StringComparer.OrdinalIgnoreCase)
-                || requirement.LinkedTasks.Contains(task.Id, StringComparer.OrdinalIgnoreCase)
-                || task.LinkedFRIds.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase))
             {
-                matches.Add(new SpecMatch
-                {
-                    ItemId = requirement.Id,
-                    Title = Shorten(requirement.Text),
-                    MatchType = SpecMatchType.Requirement,
-                });
+                unresolved.Add(requirementId);
+                continue;
             }
+
+            matches.Add(new SpecMatch { ItemId = requirement.Id, Title = Shorten(requirement.Text), MatchType = SpecMatchType.Requirement });
         }
 
         foreach (var criterionId in task.LinkedSCIds)
@@ -116,122 +117,144 @@ public sealed class TaskSpecAlignmentService
             var criterion = context.GetSuccessCriteria()
                 .FirstOrDefault(sc => sc.Id.Equals(criterionId, StringComparison.OrdinalIgnoreCase));
             if (criterion is null)
+            {
+                unresolved.Add(criterionId);
                 continue;
-
-            if (context.GetSpecLinks(criterion.Id).Contains(task.Id, StringComparer.OrdinalIgnoreCase)
-                || criterion.LinkedTasks.Contains(task.Id, StringComparer.OrdinalIgnoreCase)
-                || task.LinkedSCIds.Contains(criterion.Id, StringComparer.OrdinalIgnoreCase))
-            {
-                matches.Add(new SpecMatch
-                {
-                    ItemId = criterion.Id,
-                    Title = Shorten(criterion.Text),
-                    MatchType = SpecMatchType.SuccessCriterion,
-                });
             }
+
+            matches.Add(new SpecMatch { ItemId = criterion.Id, Title = Shorten(criterion.Text), MatchType = SpecMatchType.SuccessCriterion });
         }
 
-        var userStory = FindUserStory(task.UserStoryId, context);
-        if (userStory is not null)
+        if (!string.IsNullOrWhiteSpace(task.UserStoryId))
         {
-            matches.Add(new SpecMatch
-            {
-                ItemId = userStory.Id,
-                Title = Shorten(userStory.Title),
-                MatchType = SpecMatchType.UserStory,
-            });
+            var userStory = FindUserStory(task.UserStoryId, context);
+            if (userStory is null)
+                unresolved.Add(task.UserStoryId);
+            else
+                matches.Add(new SpecMatch { ItemId = userStory.Id, Title = Shorten(userStory.Title), MatchType = SpecMatchType.UserStory });
         }
 
-        return matches
-            .GroupBy(match => match.ItemId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
-            .ToList();
+        return (
+            matches.GroupBy(match => match.ItemId, StringComparer.OrdinalIgnoreCase).Select(group => group.First()).ToList(),
+            unresolved.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
 
-    private static TaskFinding BuildLinkedFinding(TaskItem task, List<SpecMatch> matches, List<AffectedArea> areas)
+    private static TaskFinding BuildLinkedResult(TaskItem task, List<SpecMatch> matches, List<string> unresolved, List<AffectedArea> topics)
     {
-        var hasRequirementOrCriterion = matches.Any(m => m.MatchType is SpecMatchType.Requirement or SpecMatchType.SuccessCriterion);
-        var confidence = hasRequirementOrCriterion ? 0.95 : 0.85;
-        var risk = areas.Any(a => AreaImpact(a) == ImpactLevel.High) ? AlignmentRisk.Medium : AlignmentRisk.Low;
+        var explicitReference = matches.Any(m => m.MatchType is SpecMatchType.Requirement or SpecMatchType.SuccessCriterion);
+        var priority = TopicPriority(AlignmentStatus.Linked, topics);
+        var risk = priority == ImpactLevel.High ? AlignmentRisk.Medium : AlignmentRisk.Low;
 
         return new TaskFinding
         {
             TaskId = task.Id,
             Title = task.Title,
+            TaskText = task.Description,
             Status = AlignmentStatus.Linked,
             Risk = risk,
-            Reason = $"Task is linked through ReviewContext to {string.Join(", ", matches.Select(m => m.ItemId))}.",
-            RecommendedAction = "No action required — task is covered by the canonical ReviewContext relationships.",
-            Confidence = confidence,
+            Reason = $"The task references {string.Join(", ", matches.Select(m => m.ItemId))}, which resolve{(matches.Count == 1 ? "s" : "")} to the Specification.",
+            RecommendedAction = unresolved.Count > 0
+                ? $"Check the references that do not resolve: {string.Join(", ", unresolved)}."
+                : "None for spec alignment. The link shows which spec items the task claims; it does not show the task implements them.",
+            ClassificationBasis = explicitReference
+                ? "Explicit FR/SC reference in the task resolved in the Specification"
+                : "User story tag in the task resolved to a user story in the Specification",
             Matches = matches,
-            AffectedAreas = areas,
-            RecommendedTests = BuildTests(areas, 6),
-            ImpactLevel = ComputeImpactLevel(AlignmentStatus.Linked, areas),
-            MatchReason = "ReviewContext semantic relationship",
-            RiskReason = GenerateRiskReason(AlignmentStatus.Linked, risk, areas),
-            IsRegressionCandidate = risk == AlignmentRisk.Medium,
+            UnresolvedReferences = unresolved,
+            AffectedAreas = topics,
+            RecommendedTests = BuildTests(topics, 6),
+            ImpactLevel = priority,
+            MatchReason = explicitReference ? "Explicit reference" : "User story tag",
+            RiskReason = PriorityReason(AlignmentStatus.Linked, priority, topics),
+            IsRegressionCandidate = priority == ImpactLevel.High,
         };
     }
 
-    private static TaskFinding BuildTechnicalFinding(TaskItem task, List<AffectedArea> areas)
+    private static TaskFinding BuildUnresolvedResult(TaskItem task, List<string> unresolved, List<AffectedArea> topics)
     {
-        if (!areas.Contains(AffectedArea.Infrastructure))
-            areas.Add(AffectedArea.Infrastructure);
+        var priority = TopicPriority(AlignmentStatus.NeedsReview, topics);
+        return new TaskFinding
+        {
+            TaskId = task.Id,
+            Title = task.Title,
+            TaskText = task.Description,
+            Status = AlignmentStatus.NeedsReview,
+            Risk = AlignmentRisk.Medium,
+            Reason = $"The task references {string.Join(", ", unresolved)}, but no such item exists in the Specification.",
+            RecommendedAction = "Correct the reference in the Task artifact, or add the missing item to the Specification.",
+            ClassificationBasis = "Reference in the task does not resolve in the Specification",
+            UnresolvedReferences = unresolved,
+            AffectedAreas = topics,
+            RecommendedTests = BuildTests(topics, 6),
+            ImpactLevel = priority,
+            MatchReason = "Unresolved reference",
+            RiskReason = PriorityReason(AlignmentStatus.NeedsReview, priority, topics),
+            IsRegressionCandidate = priority is ImpactLevel.High or ImpactLevel.Medium,
+        };
+    }
+
+    private static TaskFinding BuildTechnicalResult(TaskItem task, string signal, List<AffectedArea> topics)
+    {
+        if (!topics.Contains(AffectedArea.Infrastructure) && !topics.Contains(AffectedArea.Testing))
+            topics.Add(task.IsTestingTask ? AffectedArea.Testing : AffectedArea.Infrastructure);
 
         return new TaskFinding
         {
             TaskId = task.Id,
             Title = task.Title,
+            TaskText = task.Description,
             Status = AlignmentStatus.TechnicalOnly,
             Risk = AlignmentRisk.Low,
-            Reason = "Task is infrastructure, setup, generated-code, or test scaffolding with no ReviewContext spec relationship.",
-            RecommendedAction = "No spec update required unless this task introduces user-visible behavior.",
-            Confidence = 0.80,
-            AffectedAreas = areas,
-            RecommendedTests = BuildTests(areas, 5),
+            Reason = "Setup, infrastructure, generated-code or test work. A direct spec link is not expected for this kind of task.",
+            RecommendedAction = "None, unless the task also introduces user-visible behavior — then link it to the Specification.",
+            ClassificationBasis = "No spec reference; the task matches a setup, infrastructure or test keyword",
+            ClassificationSignal = signal,
+            AffectedAreas = topics,
+            RecommendedTests = BuildTests(topics, 5),
             ImpactLevel = ImpactLevel.Low,
-            MatchReason = "Technical classification helper",
+            MatchReason = "Technical keyword",
             IsRegressionCandidate = false,
         };
     }
 
-    private static TaskFinding BuildDeviationFinding(TaskItem task, List<AffectedArea> areas)
+    private static TaskFinding BuildDeviationResult(TaskItem task, string signal, List<AffectedArea> topics) => new()
     {
-        return new TaskFinding
-        {
-            TaskId = task.Id,
-            Title = task.Title,
-            Status = AlignmentStatus.PossibleDeviation,
-            Risk = AlignmentRisk.High,
-            Reason = "Task appears to introduce behavior, but ReviewContext has no linked requirement, success criterion, or user story.",
-            RecommendedAction = "Link this task to existing specification coverage or update spec.md to document the behavior.",
-            Confidence = 0.75,
-            AffectedAreas = areas,
-            RecommendedTests = BuildTests(areas, 6),
-            ImpactLevel = ImpactLevel.High,
-            MatchReason = "No ReviewContext relationship",
-            RiskReason = GenerateRiskReason(AlignmentStatus.PossibleDeviation, AlignmentRisk.High, areas),
-            IsRegressionCandidate = true,
-        };
-    }
+        TaskId = task.Id,
+        Title = task.Title,
+        TaskText = task.Description,
+        Status = AlignmentStatus.PossibleDeviation,
+        Risk = AlignmentRisk.High,
+        Reason = "The task appears to introduce behavior, but it has no reference to a requirement, success criterion or user story.",
+        RecommendedAction = "Link the task to the requirement it implements, or document the behavior in the Specification.",
+        ClassificationBasis = "No spec reference; the task matches a behavior keyword",
+        ClassificationSignal = signal,
+        AffectedAreas = topics,
+        RecommendedTests = BuildTests(topics, 6),
+        ImpactLevel = ImpactLevel.High,
+        MatchReason = "No spec reference",
+        RiskReason = PriorityReason(AlignmentStatus.PossibleDeviation, ImpactLevel.High, topics),
+        IsRegressionCandidate = true,
+    };
 
-    private static TaskFinding BuildNeedsReviewFinding(TaskItem task, List<AffectedArea> areas)
+    private static TaskFinding BuildNeedsReviewResult(TaskItem task, List<AffectedArea> topics)
     {
+        var priority = TopicPriority(AlignmentStatus.NeedsReview, topics);
         return new TaskFinding
         {
             TaskId = task.Id,
             Title = task.Title,
+            TaskText = task.Description,
             Status = AlignmentStatus.NeedsReview,
             Risk = AlignmentRisk.Medium,
-            Reason = "ReviewContext has no semantic spec relationship for this task, and the remaining helper signals are inconclusive.",
-            RecommendedAction = "Review the task against the specification and either link it, mark it technical-only, or add missing spec coverage.",
-            Confidence = 0.45,
-            AffectedAreas = areas,
-            RecommendedTests = BuildTests(areas, 6),
-            ImpactLevel = ComputeImpactLevel(AlignmentStatus.NeedsReview, areas),
-            MatchReason = "No canonical relationship",
-            RiskReason = GenerateRiskReason(AlignmentStatus.NeedsReview, AlignmentRisk.Medium, areas),
-            IsRegressionCandidate = areas.Any(a => AreaImpact(a) <= ImpactLevel.Medium),
+            Reason = "The task has no spec reference, and no setup or behavior keyword decides whether it needs one.",
+            RecommendedAction = "Review the task against the Specification: link it, or confirm it is technical work.",
+            ClassificationBasis = "No spec reference and no deciding keyword",
+            AffectedAreas = topics,
+            RecommendedTests = BuildTests(topics, 6),
+            ImpactLevel = priority,
+            MatchReason = "No spec reference",
+            RiskReason = PriorityReason(AlignmentStatus.NeedsReview, priority, topics),
+            IsRegressionCandidate = priority is ImpactLevel.High or ImpactLevel.Medium,
         };
     }
 
@@ -248,6 +271,7 @@ public sealed class TaskSpecAlignmentService
         if (directMatch is not null)
             return directMatch;
 
+        // Spec Kit numbers user stories by position ("User Story 1"), so "US1" resolves to the first story.
         var ordinal = ExtractOrdinal(userStoryId);
         if (ordinal is null || ordinal < 1 || ordinal > userStories.Count)
             return null;
@@ -270,80 +294,50 @@ public sealed class TaskSpecAlignmentService
         return int.TryParse(digits, out var ordinal) ? ordinal : null;
     }
 
-    private static bool IsTechnicalOnly(TaskItem task)
+    /// <summary>
+    /// The keyword or file that makes an unlinked task technical-only, or null. Exposed behavior (an endpoint, a
+    /// controller, a route) overrides setup keywords — except in test tasks, which test behavior rather than add it.
+    /// </summary>
+    private static string? TechnicalSignal(TaskItem task)
     {
-        var text = TaskText(task);
-        return task.IsTestingTask
-               || HasAny(text, InfrastructureTerms)
-               || HasAny(text, GeneratedCodeTerms)
-               || task.RelatedFileIds.Any(file => EndsWithAny(file, ".csproj", ".sln", ".json", ".yaml", ".yml"));
+        var text = TaskTopicTaxonomy.TaskText(task);
+        var setup = TaskTopicTaxonomy.MatchedTerm(text, InfrastructureTerms)
+            ?? TaskTopicTaxonomy.MatchedTerm(text, GeneratedCodeTerms)
+            ?? task.RelatedFileIds.FirstOrDefault(file => TaskTopicTaxonomy.HasInfrastructureFile(new TaskItem { RelatedFileIds = [file] }));
+
+        if (task.IsTestingTask)
+            return setup ?? "test task";
+        if (TaskTopicTaxonomy.MatchedTerm(text, ExposedBehaviorTerms) is not null)
+            return null;
+        return setup;
     }
 
-    private static bool IntroducesBehavior(TaskItem task)
+    private static string? BehaviorSignal(TaskItem task)
     {
-        var text = TaskText(task);
-        return task.IsSecurityTask || HasAny(text, BehavioralTerms);
+        var text = TaskTopicTaxonomy.TaskText(task);
+        return TaskTopicTaxonomy.MatchedTerm(text, ExposedBehaviorTerms)
+            ?? TaskTopicTaxonomy.MatchedTerm(text, BehavioralTerms)
+            ?? (task.IsSecurityTask ? "security task" : null);
     }
 
-    private static List<AffectedArea> DetectAreas(TaskItem task)
-    {
-        var text = TaskText(task);
-        var areas = AreaTerms
-            .Where(definition => HasAny(text, definition.Terms))
-            .Select(definition => definition.Area)
-            .Distinct()
-            .ToList();
-
-        if (task.IsTestingTask && !areas.Contains(AffectedArea.Testing))
-            areas.Add(AffectedArea.Testing);
-        if (task.IsSecurityTask && !areas.Contains(AffectedArea.Security))
-            areas.Add(AffectedArea.Security);
-        if (task.RelatedFileIds.Any() && !areas.Contains(AffectedArea.Infrastructure))
-            areas.Add(AffectedArea.Infrastructure);
-
-        return areas;
-    }
-
-    private static string TaskText(TaskItem task) =>
-        $"{task.Title} {task.Description} {string.Join(' ', task.RelatedFileIds)}".ToLowerInvariant();
-
-    private static bool HasAny(string text, IEnumerable<string> terms) =>
-        terms.Any(term => text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-    private static bool EndsWithAny(string text, params string[] suffixes) =>
-        suffixes.Any(suffix => text.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
-
-    private static ImpactLevel ComputeImpactLevel(AlignmentStatus status, List<AffectedArea> areas)
+    private static ImpactLevel TopicPriority(AlignmentStatus status, List<AffectedArea> topics)
     {
         if (status == AlignmentStatus.PossibleDeviation)
             return ImpactLevel.High;
         if (status == AlignmentStatus.TechnicalOnly)
             return ImpactLevel.Low;
-        if (areas.Count == 0)
+        if (topics.Count == 0)
             return ImpactLevel.Unknown;
-        return areas.Select(AreaImpact).Min();
+        return topics.Select(TaskTopicTaxonomy.TestPriority).Min();
     }
 
-    private static ImpactLevel AreaImpact(AffectedArea area) => area switch
-    {
-        AffectedArea.Security
-            or AffectedArea.Authorization
-            or AffectedArea.DomainEvents
-            or AffectedArea.Audit => ImpactLevel.High,
-        AffectedArea.Ingestion
-            or AffectedArea.HealthMonitoring
-            or AffectedArea.Validation
-            or AffectedArea.ExceptionHandling => ImpactLevel.Medium,
-        _ => ImpactLevel.Low,
-    };
-
-    private static List<string> BuildTests(List<AffectedArea> areas, int maxCount) =>
-        areas.SelectMany(TestsForArea)
+    private static List<string> BuildTests(List<AffectedArea> topics, int maxCount) =>
+        topics.SelectMany(TestsForTopic)
             .Distinct()
             .Take(maxCount)
             .ToList();
 
-    private static IEnumerable<string> TestsForArea(AffectedArea area) => area switch
+    private static IEnumerable<string> TestsForTopic(AffectedArea topic) => topic switch
     {
         AffectedArea.Security => ["Security classification negative test", "No sensitive data in logs"],
         AffectedArea.Authorization => ["Unauthorized request rejection", "Permission boundary test"],
@@ -357,29 +351,18 @@ public sealed class TaskSpecAlignmentService
         _ => [],
     };
 
-    private static string GenerateRiskReason(AlignmentStatus status, AlignmentRisk risk, List<AffectedArea> areas)
+    private static string PriorityReason(AlignmentStatus status, ImpactLevel priority, List<AffectedArea> topics)
     {
-        if (risk == AlignmentRisk.Low)
+        if (priority is ImpactLevel.Low or ImpactLevel.Unknown && status != AlignmentStatus.PossibleDeviation)
             return string.Empty;
 
         var reasons = new List<string>();
         if (status == AlignmentStatus.PossibleDeviation)
-            reasons.Add("Behavior has no canonical ReviewContext specification coverage.");
+            reasons.Add("Behavior without a spec reference.");
 
-        foreach (var area in areas.Take(3))
-        {
-            var reason = area switch
-            {
-                AffectedArea.Security => "Touches security-sensitive behavior.",
-                AffectedArea.Authorization => "Touches authorization or access control.",
-                AffectedArea.DomainEvents => "Touches event publication or consumption.",
-                AffectedArea.Ingestion => "Touches ingestion or data synchronization.",
-                AffectedArea.HealthMonitoring => "Touches operational health visibility.",
-                _ => string.Empty,
-            };
-            if (!string.IsNullOrEmpty(reason))
-                reasons.Add(reason);
-        }
+        var prioritized = topics.Where(t => TaskTopicTaxonomy.TestPriority(t) != ImpactLevel.Low).Take(3).ToList();
+        if (prioritized.Count > 0)
+            reasons.Add($"Touches {string.Join(", ", prioritized.Select(t => TaskTopicTaxonomy.Label(t).ToLowerInvariant()))} (keyword topics).");
 
         if (reasons.Count == 0)
             reasons.Add("Manual confirmation is required.");
