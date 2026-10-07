@@ -35,11 +35,18 @@ public interface IManagedEdgeConnector
 
 public sealed class ManagedEdgeConnector : IManagedEdgeConnector
 {
+    private readonly TimeSpan _discoveryTimeout;
+
+    public ManagedEdgeConnector() : this(TimeSpan.FromSeconds(5)) { }
+
+    /// <summary>Tests that exercise endpoint validation (not timing) use a generous timeout so a loaded CI agent cannot turn a validation failure into a timeout.</summary>
+    internal ManagedEdgeConnector(TimeSpan discoveryTimeout) => _discoveryTimeout = discoveryTimeout;
+
     public async Task<IManagedEdgeBrowser> ConnectAsync(string endpoint, CancellationToken cancellationToken)
     {
         var local = ManagedEdgePolicy.Endpoint(endpoint);
         using var handler = new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false, UseCookies = false };
-        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5), MaxResponseContentBufferSize = 16384 };
+        using var http = new HttpClient(handler) { Timeout = _discoveryTimeout, MaxResponseContentBufferSize = 16384 };
         using var response = await http.GetAsync(new Uri(local, "/json/version"), cancellationToken);
         // Reject all redirects, including local redirects. Never hand an unchecked HTTP endpoint to Playwright.
         response.EnsureSuccessStatusCode();

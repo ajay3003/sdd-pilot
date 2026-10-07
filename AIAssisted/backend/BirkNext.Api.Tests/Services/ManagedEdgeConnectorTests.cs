@@ -23,7 +23,7 @@ public sealed class ManagedEdgeConnectorTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var response = Serve(listener, $"HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-        try { await Assert.ThrowsAsync<HttpRequestException>(() => new ManagedEdgeConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
+        try { await Assert.ThrowsAsync<HttpRequestException>(() => ValidationConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
         finally { listener.Stop(); }
     }
 
@@ -38,9 +38,16 @@ public sealed class ManagedEdgeConnectorTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var body = "{\"webSocketDebuggerUrl\":\"" + socket + "\"}";
         var response = Serve(listener, $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}");
-        try { await Assert.ThrowsAsync<ArgumentException>(() => new ManagedEdgeConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
+        try { await Assert.ThrowsAsync<ArgumentException>(() => ValidationConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
         finally { listener.Stop(); }
     }
+
+    /// <summary>
+    /// These tests assert endpoint validation, not timing. The production 5-second discovery timeout made them fail with
+    /// TaskCanceledException when a loaded Linux CI agent delayed the canned response (seen in the Azure pipeline), so they
+    /// use a generous timeout; the assertions on the exception type are unchanged.
+    /// </summary>
+    private static ManagedEdgeConnector ValidationConnector() => new(TimeSpan.FromSeconds(60));
 
     /// <summary>
     /// One canned HTTP exchange with a graceful close: read the whole request head (it can arrive in several segments), send the
