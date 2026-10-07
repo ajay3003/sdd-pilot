@@ -40,6 +40,10 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(_api.Object);
         Services.AddSingleton(context.Object);
+        Services.AddSingleton(Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
+        Services.AddScoped<ProjectApplicabilityState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -230,6 +234,16 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     public void Presentation_UsesModelLabelsOnly()
     {
         var snapshot = Snapshot("x.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.NeedsReview, 1), Db(DatabaseAnalysisStatus.NeedsReview, 1, 0), SourceAnalysisStatus.Failed);
+        SourceAnalysisOverview.Architecture(snapshot).Status.Should().Be("Needs review");
+        SourceAnalysisOverview.Database(snapshot).Status.Should().Be("Needs review");
+        SourceAnalysisOverview.ShortFingerprint("abc").Should().Be("abc");
+        var limitationOnly = Snapshot("y.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.Complete, 1), Db(DatabaseAnalysisStatus.Unsupported, 0, 0));
+        limitationOnly.DatabaseArchitecture!.Diagnostics = [DatabaseArchitectureSnapshot.SourceLimitation];
+        SourceAnalysisOverview.Database(limitationOnly).Reason.Should().Be("No supported database declaration was found in this source snapshot.", "the source limitation is not a reason");
+        SourceAnalysisOverview.SourceEvidence(SourceAnalysisStatus.Failed).Should().Be("No production project found");
+        new[] { SourceAnalysisOverview.Architecture(snapshot), SourceAnalysisOverview.Database(snapshot) }.Select(c => c.Status).Should().NotContain(s => s == "Failed" || s == "Pass");
+    }
+
     [Fact]
     public void FailedReplacementShowsSafeActionableReasonKeepsSelectionAndRetryClearsError()
     {
@@ -257,15 +271,5 @@ public sealed class SourceAnalysisLandingTests : BunitContext
             cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip");
             cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().NotBe(existing.Id.ToString());
         });
-    }
-
-        SourceAnalysisOverview.Architecture(snapshot).Status.Should().Be("Needs review");
-        SourceAnalysisOverview.Database(snapshot).Status.Should().Be("Needs review");
-        SourceAnalysisOverview.ShortFingerprint("abc").Should().Be("abc");
-        var limitationOnly = Snapshot("y.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.Complete, 1), Db(DatabaseAnalysisStatus.Unsupported, 0, 0));
-        limitationOnly.DatabaseArchitecture!.Diagnostics = [DatabaseArchitectureSnapshot.SourceLimitation];
-        SourceAnalysisOverview.Database(limitationOnly).Reason.Should().Be("No supported database declaration was found in this source snapshot.", "the source limitation is not a reason");
-        SourceAnalysisOverview.SourceEvidence(SourceAnalysisStatus.Failed).Should().Be("No production project found");
-        new[] { SourceAnalysisOverview.Architecture(snapshot), SourceAnalysisOverview.Database(snapshot) }.Select(c => c.Status).Should().NotContain(s => s == "Failed" || s == "Pass");
     }
 }

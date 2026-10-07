@@ -205,6 +205,10 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(api.Object);
         Services.AddSingleton(context.Object);
+        Services.AddSingleton(Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
+        Services.AddScoped<ProjectApplicabilityState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         var cut = Render<SourceAnalysis>();
 

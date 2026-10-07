@@ -18,6 +18,7 @@
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column" aria-label="Main">
+        @{ var location = NavigationCatalog.RelativeLocation(Navigation); }
         @foreach (var group in NavigationCatalog.Sections)
         {
             var items = group.Items.Where(i => i.Visible(FeatureViz)).ToList();
@@ -31,8 +32,9 @@
                 @foreach (var item in items)
                 {
                     var status = item.ReviewId is { } reviewId ? NavStatusPresentation.For(item, _applicability?.For(reviewId)) : null;
+                    var current = item.IsCurrentLocation(location);
                     <div class="nav-item px-2">
-                        <NavLink class="nav-link" href="@item.Route" Match="@item.Match" title="@item.Title">
+                        <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
                             <span class="nav-icon @item.Icon" aria-hidden="true"></span>
                             <span class="nav-label">@item.Label</span>
                             @if (status is not null)
@@ -41,7 +43,7 @@
                                       data-testid="nav-applicability-@item.ReviewId" data-kind="@status.Kind" title="@status.Tooltip">@status.Text</span>
                                 <span class="visually-hidden">, @status.Spoken</span>
                             }
-                        </NavLink>
+                        </a>
                     </div>
                 }
             </div>
@@ -74,7 +76,7 @@
     /// <summary>The current page's section is always open; other sections keep the state the person chose.</summary>
     private void ExpandCurrentSection()
     {
-        if (NavigationCatalog.SectionFor(NavigationCatalog.RelativePath(Navigation)) is { } section) _sections.Expand(section.Id);
+        if (NavigationCatalog.SectionForLocation(NavigationCatalog.RelativeLocation(Navigation)) is { } section) _sections.Expand(section.Id);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)

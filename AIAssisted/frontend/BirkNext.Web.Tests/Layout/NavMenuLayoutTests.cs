@@ -42,6 +42,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         _workspace.Setup(w => w.GetAsync()).ReturnsAsync(() => _snapshot);
         Services.AddSingleton(_workspace.Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(_api);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
     }
 
@@ -346,5 +347,40 @@ public sealed class NavMenuLayoutTests : BunitContext
 
         cut.FindAll("[data-testid=nav-section-document-review]").Should().BeEmpty();
         cut.FindAll("[data-testid=nav-section-source-review]").Should().ContainSingle("Technology Coverage is always visible");
+    }
+
+    private static IReadOnlyList<string> CurrentRows(IRenderedComponent<NavMenu> cut) =>
+        cut.FindAll("a.nav-link.active").Select(a => a.GetAttribute("href")!).ToList();
+
+    [Fact]
+    public void TargetEnvironmentsShortcut_IsCurrentOnlyWhileItsSettingsSectionIsActive()
+    {
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        navigation.NavigateTo("admin/system-settings?section=target-environments");
+        var cut = Render<NavMenu>();
+
+        CurrentRows(cut).Should().Equal([NavigationCatalog.TargetEnvironmentsRoute], "the shortcut, not System Settings as well");
+        cut.Find($"a[href='{NavigationCatalog.TargetEnvironmentsRoute}']").GetAttribute("aria-current").Should().Be("page");
+        cut.Find("#nav-section-project-inputs").HasAttribute("hidden").Should().BeFalse();
+
+        navigation.NavigateTo("admin/system-settings?section=performance-test-engines");
+
+        cut.WaitForAssertion(() => CurrentRows(cut).Should().Equal("admin/system-settings"));
+        cut.Find($"a[href='{NavigationCatalog.TargetEnvironmentsRoute}']").HasAttribute("aria-current").Should().BeFalse();
+        cut.FindAll("[aria-current=page]").Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("admin/system-settings", "admin/system-settings")]
+    [InlineData("admin/system-settings?section=maintenance", "admin/system-settings")]
+    [InlineData("admin/system-settings?section=target-environments&tab=auth", NavigationCatalog.TargetEnvironmentsRoute)]
+    [InlineData("dashboard/details", "dashboard")]
+    [InlineData("plan-explorer", "plan-explorer")]
+    public void ExactlyOneRowIsCurrent_ForEachLocation(string location, string expected)
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo(location);
+        var cut = Render<NavMenu>();
+
+        CurrentRows(cut).Should().Equal(expected);
     }
 }

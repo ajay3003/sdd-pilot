@@ -3,6 +3,7 @@ using System.Text;
 using BirkNext.Web.Pages.Admin;
 using BirkNext.Web.Services;
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -511,4 +512,22 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
           ]
         }
         """;
+
+    [Fact]
+    public void SectionChoice_IsUrlState_SoDeepLinksAndBackForwardAgree()
+    {
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        var cut = Render<SystemSettings>();
+        cut.WaitForAssertion(() => FindButton(cut, "Performance Test Engines").Should().NotBeNull());
+
+        FindButton(cut, "Performance Test Engines")!.Click();
+
+        navigation.Uri.Should().EndWith("admin/system-settings?section=performance-test-engines");
+        cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Performance Test Engines");
+
+        // Back to the Target Environments deep link (what Back, or the sidebar shortcut, does).
+        navigation.NavigateTo("admin/system-settings?section=target-environments");
+
+        cut.WaitForAssertion(() => cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Target Environments"));
+    }
 }

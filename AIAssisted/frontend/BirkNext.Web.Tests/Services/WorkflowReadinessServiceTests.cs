@@ -257,7 +257,7 @@ public sealed class WorkflowReadinessServiceTests
             // No active Target Environment: no source and no target, so only the documents input varies in these tests.
             var contexts = new Mock<IFrontendAnalysisContextFactory>();
             contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
-            var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, Projection.Object);
+            var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, Projection.Object, Mock.Of<IFrontendAnalysisSettingsService>());
             Service = new WorkflowReadinessService(Projection.Object, applicability, WorkflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
         }
 

@@ -21,10 +21,16 @@ function: there is no new store. Notes on each:
 - Authentication verification and runtime evidence are not target existence. Each review checks those for itself.
 - Input completeness is never a score.
 
-Change propagation reuses existing events. The projection's `Changed` covers project selection, import, reset and resume.
-`ProjectApplicabilityState.Changed` fires after navigation (NavMenu refreshes on location change), after a workspace change,
-after reset and after integration templates are applied. A Target Environment saved, or a source analyzed, shows up on the
-next navigation. There is no polling.
+Change propagation reuses the owners' own signals; there is no polling and no extra store:
+
+- **Documents.** The projection's `Changed` covers project selection, import, reset and resume.
+- **Target Environment.** `IFrontendAnalysisSettingsService.Changed` is raised after the Target Environments are persisted
+  (create, edit, delete, active switch, reset). `ProjectApplicabilityState` subscribes to it, and unsubscribes on dispose.
+- **Source.** Source Analysis calls `ProjectApplicabilityState.RefreshAsync()` when a snapshot is analyzed or reselected.
+- **Workflow.** `WorkflowReadinessService` relays applicability and workspace changes as `ReadinessChanged`, and an open
+  Recommended Workflow re-reads immediately. The page unsubscribes on dispose.
+- **Rapid changes.** Applicability refreshes are generation-guarded, so only the latest one publishes.
+  `EnsureLoadedAsync` returns at once when already loaded, so a re-read during a publish cannot recurse.
 
 ## Recommended Workflow
 
@@ -73,9 +79,13 @@ Section IDs are stable, and order is deterministic:
 
 Rules:
 
-- **Target Environments** is a deep link (`admin/system-settings?section=target-environments`). System Settings handles
-  `section=` on in-place navigation, so the existing page and state are reused. The row never claims the System Settings
-  page path, so that page stays under Admin.
+- **Target Environments** is a deep link (`admin/system-settings?section=target-environments`). System Settings sections
+  are URL state: choosing a section navigates to `?section=<id>`, and the page parses `section=` on in-place navigation.
+  The existing page and state are reused, and Back/Forward restore the section.
+- **Current row.** NavMenu computes the current row itself (`NavItem.IsCurrentLocation`), because NavLink compares whole URLs.
+  A deep-link row is current only on its page with its query. A page row is current on its path, unless a deep link claims
+  that location. On `?section=target-environments` only the shortcut is current; on any other section, System Settings is.
+  The current row has `aria-current="page"`.
 - **Routes are unchanged.** Badges are still the shared applicability evaluator's single status.
 - **Visibility.** A section is shown when at least one of its rows is visible. The old hand-kept `ShowSection*`
   predicates were removed; they had drifted from the rows.
@@ -90,7 +100,3 @@ Rules:
   model, and it was not changed here.
 - The workflow does not track whether a source or runtime review has already been run. It recommends the first applicable
   one in sidebar order, and the *Applicable reviews* list shows them all.
-- After a Target Environment is saved or a source is analyzed, the workflow updates on the next navigation, which is when
-  applicability refreshes. It does not update while you stay on the settings page.
-- The Target Environments row stays highlighted while you switch to another System Settings section inside the page,
-  because that switch does not change the URL.

@@ -8,6 +8,7 @@
 @using BirkNext.Web.Components.SourceDomains
 @inject IIntegrationCatalogApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject ProjectApplicabilityState Applicability
 @inject IJSRuntime JS
 
 @* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database, Observability), so no
@@ -294,7 +295,8 @@
         _focusId = $"sa-area-{AreaSlug(area)}";
     }
     private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
-    private void SnapshotChanged() { _focusDatabase = null; _databaseTab = null; }
+    // A new or reselected snapshot changes the source input: applicability (sidebar, Recommended Workflow) re-reads it now.
+    private void SnapshotChanged() { _focusDatabase = null; _databaseTab = null; _ = Applicability.RefreshAsync(); }
     private async Task FocusSelectorAsync() { try { await JS.InvokeVoidAsync("birknextFocusElement", "sa-snapshot-select"); } catch (JSException) { } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -325,7 +327,6 @@
         finally { _busy = false; }
     }
     private BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? Previous(IqrSourceSnapshot current) => _snapshots.Where(s => s.IntegrationId == current.IntegrationId && s.AnalyzedAt < current.AnalyzedAt && s.DatabaseArchitecture is not null).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.DatabaseArchitecture;
-}
     private static string UploadErrorTitle(SourceUploadFailure failure) => failure.Stage switch
     {
         "prerequisite" => "Target Environment required",
@@ -336,3 +337,4 @@
     };
     private static string FormatUploadValue(string code, long value) => code.Contains("SIZE", StringComparison.OrdinalIgnoreCase)
         ? $"{value / (1024d * 1024):0.#} MB" : value.ToString("N0");
+}

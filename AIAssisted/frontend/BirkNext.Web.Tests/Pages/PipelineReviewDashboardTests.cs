@@ -253,6 +253,7 @@ public sealed class PipelineReviewSidebarStatusTests : BunitContext
         var workspace = BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None());
         Services.AddSingleton(workspace.Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(api);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
         var nav = Render<NavMenu>();
         string? Badge() => nav.FindAll("[data-testid=nav-applicability-pipeline-review]").SingleOrDefault()?.TextContent;

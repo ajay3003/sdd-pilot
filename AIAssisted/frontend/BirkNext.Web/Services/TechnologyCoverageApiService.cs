@@ -28,9 +28,28 @@ public sealed class TechnologyCoverageApiService(HttpClient http) : ITechnologyC
 /// artifact roles of the current workspace (<see cref="ICurrentWorkspaceProjection"/>), evaluated by the shared <see cref="ApplicabilityEvaluator"/>. Navigation and the coverage page read it; it never
 /// hides a review — it labels it.
 /// </summary>
-public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api, IFrontendAnalysisContextFactory contexts, ICurrentWorkspaceProjection workspace)
+public sealed class ProjectApplicabilityState : IDisposable
 {
+    private readonly ITechnologyCoverageApiService api;
+    private readonly IFrontendAnalysisContextFactory contexts;
+    private readonly ICurrentWorkspaceProjection workspace;
+    private readonly IFrontendAnalysisSettingsService settings;
     private Task? _loading;
+
+    public ProjectApplicabilityState(ITechnologyCoverageApiService api, IFrontendAnalysisContextFactory contexts, ICurrentWorkspaceProjection workspace,
+        IFrontendAnalysisSettingsService settings)
+    {
+        this.api = api;
+        this.contexts = contexts;
+        this.workspace = workspace;
+        this.settings = settings;
+        // A saved Target Environment can change the active target, its URL and (environment-scoped) its source snapshot.
+        this.settings.Changed += OnTargetEnvironmentsChanged;
+    }
+
+    private void OnTargetEnvironmentsChanged() => _ = RefreshAsync();
+
+    public void Dispose() => settings.Changed -= OnTargetEnvironmentsChanged;
     public ProjectTechnologyCoverage? Coverage { get; private set; }
     public FrontendAnalysisProfile? Profile { get; private set; }
     public IReadOnlyDictionary<string, ReviewApplicability> Reviews { get; private set; } = new Dictionary<string, ReviewApplicability>();

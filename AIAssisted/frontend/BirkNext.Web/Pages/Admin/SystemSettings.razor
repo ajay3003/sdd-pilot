@@ -1510,7 +1510,13 @@ else if (_settings is not null)
         (_settings?.AzureDevOps.Enabled == true && _settings?.AzureDevOps.PatConfigured == false ? 1 : 0) +
         (_settings?.Database.MigrationStatus is not null && _settings?.Database.MigrationStatus != "Up to date" ? 1 : 0);
 
-    private void SetSection(string section) => _activeSection = section;
+    /// <summary>The section is URL state (<c>?section=</c>): deep links, Back/Forward and the sidebar's active row follow it.
+    /// OnLocationChanging parses the new URL, so the section switches in place.</summary>
+    private void SetSection(string section)
+    {
+        _activeSection = section;
+        Navigation.NavigateTo($"admin/system-settings?section={Uri.EscapeDataString(section)}");
+    }
 
     private RenderFragment NavItem(string id, string label, int badge = 0) => __builder =>
     {
@@ -2088,7 +2094,8 @@ else if (_settings is not null)
             if (string.IsNullOrWhiteSpace(uriString))
                 return;
 
-            var uri = new Uri(uriString, UriKind.Absolute);
+            // Relative or absolute (a navigation target may be either): resolved against the app base.
+            var uri = Navigation.ToAbsoluteUri(uriString);
             var query = uri.Query;
 
             if (!string.IsNullOrWhiteSpace(query) && query.Contains("section="))

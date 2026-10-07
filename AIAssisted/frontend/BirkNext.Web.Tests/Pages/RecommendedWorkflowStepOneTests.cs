@@ -56,7 +56,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         var projection = WorkspaceSnapshots.Projection(workspace);
         var contexts = new Mock<IFrontendAnalysisContextFactory>();
         contexts.Setup(x => x.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
-        var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object);
+        var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object, Mock.Of<IFrontendAnalysisSettingsService>());
         var api = new Mock<IRecommendedWorkflowApiService>();
         api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
             .ReturnsAsync((Guid _, bool c, bool s, bool p, bool t, bool d) => BackendSteps(c, s, p, t, d));
@@ -162,7 +162,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         implementation.DisabledReason = "Complete prerequisite approvals first";
         api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(steps);
         var r = await new WorkflowReadinessService(projection.Object,
-            new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object),
+            new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object, Mock.Of<IFrontendAnalysisSettingsService>()),
             api.Object, NullLogger<WorkflowReadinessService>.Instance).GetReadinessAsync();
 
         Step(r, "ImplementationReview").DisabledReason.Should().Be("Complete the previous step first");

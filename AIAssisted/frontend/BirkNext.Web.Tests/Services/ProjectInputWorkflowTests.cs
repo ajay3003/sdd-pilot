@@ -47,21 +47,30 @@ public sealed class ProjectInputWorkflowTests
 
     private void NoSourceYet() => _coverage = new ProjectTechnologyCoverage { EnvironmentId = _environment!.Id };
 
-    private async Task<WorkflowReadiness> ReadinessAsync()
+    private readonly Mock<IFrontendAnalysisSettingsService> _settings = new();
+    private readonly Mock<ICurrentWorkspaceProjection> _projection = new();
+
+    private Task<WorkflowReadiness> ReadinessAsync() => Create().Service.GetReadinessAsync();
+
+    /// <summary>The production chain: workspace projection + applicability (Target Environments, source coverage) + readiness.</summary>
+    private (WorkflowReadinessService Service, ProjectApplicabilityState Applicability) Create()
     {
-        var projection = WorkspaceSnapshots.Projection(_workspace);
+        _projection.Setup(p => p.GetAsync()).ReturnsAsync(() => _workspace);
+        var projection = _projection;
         var contexts = new Mock<IFrontendAnalysisContextFactory>();
         contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(() => _environment is null
             ? new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" }
             : new FrontendAnalysisContext { ActiveProfile = _environment, TargetUrl = _environment.TargetUrl });
         var api = new Mock<ITechnologyCoverageApiService>();
         api.Setup(a => a.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _coverage);
-        var applicability = new ProjectApplicabilityState(api.Object, contexts.Object, projection.Object);
+        var applicability = new ProjectApplicabilityState(api.Object, contexts.Object, projection.Object, _settings.Object);
         _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
             .ReturnsAsync(() => _steps);
-        var service = new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
-        return await service.GetReadinessAsync();
+        return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance), applicability);
     }
+
+    /// <summary>A Target Environment saved, created, switched or reset: the settings service announces it.</summary>
+    private void TargetEnvironmentsSaved() => _settings.Raise(s => s.Changed += null);
 
     private static WorkflowStepViewModel Step(string key, WorkflowStepStatus status, bool current = false) => new()
     {
@@ -341,7 +350,7 @@ public sealed class ProjectInputWorkflowTests
         var projection = WorkspaceSnapshots.Projection(_workspace);
         var contexts = new Mock<IFrontendAnalysisContextFactory>();
         contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
-        var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object);
+        var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object, _settings.Object);
         var service = new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance);
         var rereads = 0;
         // A page re-reads readiness on every change; the refresh it triggers completes synchronously here.
@@ -350,5 +359,146 @@ public sealed class ProjectInputWorkflowTests
         await service.GetReadinessAsync();
 
         rereads.Should().Be(1, "the first load publishes once; re-reading during that publish does not refresh again");
+    }
+
+    // ── Reactivity: the open workflow follows source, target and workspace changes without navigation ──────────────────
+
+    [Fact]
+    public async Task SourceAnalyzed_WhileWorkflowIsOpen_SourceCardAndRecommendationUpdateImmediately()
+    {
+        Environment(null);
+        NoSourceYet();
+        var (service, applicability) = Create();
+        (await service.GetReadinessAsync()).Inputs.Source.Status.Should().Be(ProjectInputStatus.Absent);
+        var changed = 0;
+        service.ReadinessChanged += () => changed++;
+
+        Source(detected: [Nuget]);
+        await applicability.RefreshAsync(); // what Source Analysis does after a snapshot is analyzed or reselected
+
+        changed.Should().Be(1, "the open page is told to re-read once");
+        var r = await service.GetReadinessAsync();
+        r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Ready);
+        r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Partial, "the source lives in an environment without an application URL");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "dependency-review");
+    }
+
+    [Fact]
+    public async Task SourceBecomesOutdated_WhileWorkflowIsOpen_ShowsNeedsRefreshImmediately()
+    {
+        Source(detected: [Nuget]);
+        var (service, applicability) = Create();
+        (await service.GetReadinessAsync()).Inputs.Source.Status.Should().Be(ProjectInputStatus.Ready);
+
+        Source(outdatedCiCd: true, detected: [Nuget]);
+        await applicability.RefreshAsync();
+
+        var r = await service.GetReadinessAsync();
+        r.Inputs.Source.StatusLabel.Should().Be("Needs refresh");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.RefreshSourceKey);
+    }
+
+    [Fact]
+    public async Task TargetSaved_WhileWorkflowIsOpen_TargetCardAndRecommendationUpdateImmediately()
+    {
+        Environment("https://example-qa.local");
+        NoSourceYet();
+        var (service, _) = Create();
+        var before = await service.GetReadinessAsync();
+        before.Inputs.Target.StatusLabel.Should().Be("Placeholder URL");
+        before.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.CompleteTargetKey);
+        var changed = 0;
+        service.ReadinessChanged += () => changed++;
+
+        _environment!.TargetUrl = "https://m2lbdev.bufetat.no";
+        TargetEnvironmentsSaved();
+
+        changed.Should().Be(1);
+        var r = await service.GetReadinessAsync();
+        r.Inputs.Target.Status.Should().Be(ProjectInputStatus.Ready);
+        r.Inputs.Target.Facts.Should().Contain("m2lbdev.bufetat.no");
+        r.NextRecommendedAction!.Key.Should().StartWith(WorkflowReadinessService.OpenReviewKeyPrefix);
+    }
+
+    [Fact]
+    public async Task ActiveEnvironmentSwitched_SourceAndTargetFollowTheNewEnvironment()
+    {
+        Environment("https://m2lbdev.bufetat.no");
+        Source(detected: [Nuget]);
+        var (service, _) = Create();
+        (await service.GetReadinessAsync()).Inputs.Source.Facts.Should().Contain("M2LB_2_.zip");
+
+        _environment = new FrontendAnalysisProfile { Id = "env-qa", Name = "QA", TargetUrl = "https://m2lbqa.bufetat.no" };
+        _coverage = new ProjectTechnologyCoverage { EnvironmentId = "env-qa" };
+        TargetEnvironmentsSaved();
+
+        var r = await service.GetReadinessAsync();
+        r.Inputs.Target.Facts.Should().Equal("QA", "m2lbqa.bufetat.no");
+        r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Absent, "the QA environment has no snapshot: nothing of DEV's source remains");
+        r.Inputs.Source.Facts.Should().NotContain("M2LB_2_.zip");
+    }
+
+    [Fact]
+    public async Task Reset_WhileWorkflowIsOpen_ReturnsToTheEmptyThreeInputState()
+    {
+        Documents(AllRoles);
+        Environment("https://m2lbdev.bufetat.no");
+        Source(detected: [Nuget]);
+        var (service, _) = Create();
+        (await service.GetReadinessAsync()).Inputs.All.Should().OnlyContain(i => i.IsProvided);
+
+        // Reset Local Data: the workspace is cleared and the Target Environments go back to the seed (no active one).
+        _workspace = CurrentWorkspaceSnapshot.None();
+        _projection.Raise(p => p.Changed += null);
+        _environment = null;
+        _coverage = null;
+        TargetEnvironmentsSaved();
+
+        var r = await service.GetReadinessAsync();
+        r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Absent);
+        r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
+    }
+
+    [Fact]
+    public async Task RapidChanges_SettleOnTheLastState_WithoutRecursion()
+    {
+        Environment(null);
+        NoSourceYet();
+        var (service, _) = Create();
+        await service.GetReadinessAsync();
+        var changed = 0;
+        // Like the page: every change re-reads readiness.
+        service.ReadinessChanged += () => { changed++; service.GetReadinessAsync().GetAwaiter().GetResult(); };
+
+        foreach (var url in new[] { "https://a.example.org", "", "https://example-dev.local", "https://final.example.org" })
+        {
+            _environment!.TargetUrl = url;
+            TargetEnvironmentsSaved();
+        }
+        Source(detected: [Nuget]);
+        TargetEnvironmentsSaved();
+
+        changed.Should().Be(5, "one re-read per change, no re-entrant refresh loop");
+        var r = await service.GetReadinessAsync();
+        r.Inputs.Target.Facts.Should().Contain("final.example.org");
+        r.Inputs.Source.Status.Should().Be(ProjectInputStatus.Ready);
+    }
+
+    [Fact]
+    public async Task Disposed_ServicesStopListening()
+    {
+        Environment("https://m2lbdev.bufetat.no");
+        NoSourceYet();
+        var (service, applicability) = Create();
+        await service.GetReadinessAsync();
+        var changed = 0;
+        service.ReadinessChanged += () => changed++;
+
+        applicability.Dispose();
+        service.Dispose();
+        TargetEnvironmentsSaved();
+        _projection.Raise(p => p.Changed += null);
+
+        changed.Should().Be(0);
     }
 }

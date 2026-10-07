@@ -68,6 +68,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext());
         Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
     }
 

@@ -52,6 +52,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton<ITechnologyCoverageApiService>(new FakeCoverageApi(coverage));
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
     }
 
@@ -110,6 +111,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         var api = new Mock<ITechnologyCoverageApiService>(MockBehavior.Strict);
         Services.AddSingleton(api.Object);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
 
         var cut = Render<TechnologyCoverage>();

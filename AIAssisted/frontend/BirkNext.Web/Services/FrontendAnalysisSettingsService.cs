@@ -13,6 +13,10 @@ public interface IFrontendAnalysisSettingsService
     Task LoadAsync(IJSRuntime js);
     Task SaveAsync(IJSRuntime js);
 
+    /// <summary>Raised after the Target Environments were persisted (created, edited, deleted, active one switched, reset), so readers
+    /// such as project applicability and Recommended Workflow follow without polling or navigation.</summary>
+    event Action? Changed;
+
     // Detection snapshots: safe public discovery evidence, persisted separately from Target Environment configuration (a distinct
     // storage key/interop) so that running Detect never modifies or "saves" the saved profile. No credential is ever stored.
     Task LoadDetectionSnapshotsAsync(IJSRuntime js);
@@ -102,10 +106,13 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         IsLoaded  = true;
     }
 
+    public event Action? Changed;
+
     public async Task SaveAsync(IJSRuntime js)
     {
         var json = JsonSerializer.Serialize(_settings, JsonOptions);
         await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
+        Changed?.Invoke();
     }
 
     // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────

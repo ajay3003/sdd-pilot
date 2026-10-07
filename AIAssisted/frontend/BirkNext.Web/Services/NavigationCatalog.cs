@@ -28,8 +28,24 @@ public sealed record NavItem(
     /// <summary>Tooltip for the row: the full label (it may be truncated) plus a short purpose where the label alone is ambiguous.</summary>
     public string Title => Hint is null ? Label : $"{Label}: {Hint}";
 
+    /// <summary>A deep link (a route with a query, e.g. a System Settings section): current only on that page with that exact query.</summary>
+    public bool IsDeepLink => Route.Contains('?');
+
+    /// <summary>Current for a base-relative location including its query: a deep link needs its exact query; a page row is current
+    /// on its path unless a deep link in the catalog claims the location (then that shortcut is the one current row).</summary>
+    public bool IsCurrentLocation(string relativeLocation)
+    {
+        var (path, query) = NavigationCatalog.Split(relativeLocation);
+        if (IsDeepLink)
+        {
+            var (routePath, routeQuery) = NavigationCatalog.Split(Route);
+            return path.Equals(routePath, StringComparison.OrdinalIgnoreCase) && NavigationCatalog.SameQuery(query, routeQuery);
+        }
+        return IsCurrent(path) && !NavigationCatalog.Sections.SelectMany(s => s.Items).Any(i => i.IsDeepLink && i.IsCurrentLocation(relativeLocation));
+    }
+
     public bool IsCurrent(string relativePath) =>
-        Route.Contains('?') ? false
+        IsDeepLink ? false
         : Match == NavLinkMatch.All
             ? string.Equals(relativePath, Route, StringComparison.OrdinalIgnoreCase)
             : relativePath.Equals(Route, StringComparison.OrdinalIgnoreCase) || relativePath.StartsWith(Route + "/", StringComparison.OrdinalIgnoreCase);
@@ -131,6 +147,34 @@ public static class NavigationCatalog
     /// <summary>The section holding the row for <paramref name="relativePath"/> (base-relative, no query), if any.</summary>
     public static NavSection? SectionFor(string relativePath) =>
         Sections.FirstOrDefault(s => s.Items.Any(i => i.IsCurrent(relativePath)));
+
+    /// <summary>The section holding the current row for a location with its query (a deep link's section wins over its page's).</summary>
+    public static NavSection? SectionForLocation(string relativeLocation) =>
+        Sections.FirstOrDefault(s => s.Items.Any(i => i.IsCurrentLocation(relativeLocation)));
+
+    /// <summary>Base-relative location with its query (no fragment), for deep-link rows.</summary>
+    public static string RelativeLocation(NavigationManager navigation)
+    {
+        var location = navigation.ToBaseRelativePath(navigation.Uri);
+        var hash = location.IndexOf('#');
+        return hash >= 0 ? location[..hash] : location;
+    }
+
+    internal static (string Path, string Query) Split(string location)
+    {
+        var q = location.IndexOf('?');
+        return q < 0 ? (location.TrimEnd('/'), "") : (location[..q].TrimEnd('/'), location[(q + 1)..]);
+    }
+
+    /// <summary>Every parameter of the deep link's query is present with the same value (other parameters may follow).</summary>
+    internal static bool SameQuery(string actual, string expected)
+    {
+        static Dictionary<string, string> Parse(string query) => query.Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2)).GroupBy(p => Uri.UnescapeDataString(p[0]), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => Uri.UnescapeDataString(g.Last().ElementAtOrDefault(1) ?? ""), StringComparer.OrdinalIgnoreCase);
+        var a = Parse(actual);
+        return Parse(expected).All(e => a.TryGetValue(e.Key, out var v) && string.Equals(v, e.Value, StringComparison.OrdinalIgnoreCase));
+    }
 
     public static string RelativePath(NavigationManager navigation)
     {
