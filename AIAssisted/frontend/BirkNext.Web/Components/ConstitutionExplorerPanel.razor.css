@@ -13,6 +13,40 @@
     gap: 12px;
 }
 
+.ce-scope-value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+    font-weight: 600;
+}
+
+.ce-scope-source {
+    color: var(--clr-text-muted, #596579);
+    font-size: 0.82em;
+    font-weight: 400;
+}
+
+.ce-entry-origin {
+    display: inline-block;
+    margin-inline-start: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--clr-border, #cbd5e1);
+    border-radius: 999px;
+    color: var(--clr-text-muted, #596579);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.ce-entry-origin--authored {
+    background: var(--clr-surface-subtle, #eff6ff);
+}
+
+.ce-entry-origin--reference {
+    background: var(--clr-surface-muted, #f1f5f9);
+}
+
 .ce-health-link:hover,
 .ce-health-link:focus {
     background-color: rgba(0, 0, 0, 0.05);

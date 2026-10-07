@@ -59,7 +59,7 @@
                 {
                     <span class="ce-header-version">v@(_document.Version)</span>
                 }
-                <span class="ce-header-type ce-type-@_document.Type.ToString().ToLowerInvariant()">Inferred scope: @ScopeLabel</span>
+                <span class="ce-header-type ce-type-@_document.Type.ToString().ToLowerInvariant()">@ScopeBadge</span>
             </div>
             <div class="ce-header-right">
                 <div class="ce-view-toggle" role="group" aria-label="View mode">
@@ -183,14 +183,28 @@
                             {
                             <div class="ce-health-card ce-hcard-governance">
                                 <div class="ce-health-value">@_document.Health.TotalGovernanceItems</div>
-                                <div class="ce-health-label">Governance rules</div>
+                                <div class="ce-health-label">@GovernanceLabel</div>
                             </div>
                             }
-                            @if (_document.Health.TotalRules > 0)
+                            @if (_document.Health.AuthoredRuleCount > 0)
                             {
                             <div class="ce-health-card ce-hcard-rules">
-                                <div class="ce-health-value">@_document.Health.TotalRules</div>
-                                <div class="ce-health-label">Total Rules</div>
+                                <div class="ce-health-value">@_document.Health.AuthoredRuleCount</div>
+                                <div class="ce-health-label">Authored rules</div>
+                            </div>
+                            }
+                            @if (_document.Health.ReferenceOnlyEntryCount > 0)
+                            {
+                            <div class="ce-health-card ce-hcard-reference-only">
+                                <div class="ce-health-value">@_document.Health.ReferenceOnlyEntryCount</div>
+                                <div class="ce-health-label">Reference-only entries</div>
+                            </div>
+                            }
+                            @if (_document.Health.TotalCatalogEntries > 0)
+                            {
+                            <div class="ce-health-card ce-hcard-catalog">
+                                <div class="ce-health-value">@_document.Health.TotalCatalogEntries</div>
+                                <div class="ce-health-label">Catalog entries</div>
                             </div>
                             }
                         </div>
@@ -199,19 +213,27 @@
 
                     <section class="ce-overview-section ce-scope-summary" aria-labelledby="ce-scope-heading">
                         <h2 class="ce-overview-heading" id="ce-scope-heading">Scope</h2>
-                        <p>Inferred from the Constitution title: @ScopeLabel · @_document.Health.ModuleConstraints non-platform-scoped constraints (subset of Constraints)</p>
+                        <p class="ce-scope-value">@ScopeLabel <span class="ce-scope-source">@ScopeProvenance</span></p>
+                        @if (_document.Scope is null && _document.Type == ConstitutionType.Generic)
+                        {
+                            <p class="ce-scope-note">No explicit scope metadata was found, and the title did not identify a supported scope.</p>
+                        }
+                        @if (_document.Health.ModuleConstraints > 0)
+                        {
+                            <p>@_document.Health.ModuleConstraints non-platform-scoped constraints (subset of Constraints)</p>
+                        }
                     </section>
 
                     <section class="ce-overview-section ce-relationships" aria-labelledby="ce-relationships-heading">
                         <h2 class="ce-overview-heading" id="ce-relationships-heading">Rule relationships</h2>
-                        <p>@_document.Health.TotalReferences cross-rule references</p>
+                        <p>@_document.Health.TotalReferences cross-rule references across @_document.Health.RelationshipPopulationCount catalog entr@( _document.Health.RelationshipPopulationCount == 1 ? "y" : "ies")</p>
                         <div class="ce-indicator ce-indicator-info">
                             <span class="ce-indicator-icon" aria-hidden="true">ⓘ</span>
-                            <span class="ce-indicator-message">@_document.Health.OrphanRules rule@(_document.Health.OrphanRules == 1 ? "" : "s") have no incoming or outgoing cross-rule references.</span>
+                            <span class="ce-indicator-message">@_document.Health.OrphanRules of @_document.Health.RelationshipPopulationCount catalog entr@( _document.Health.RelationshipPopulationCount == 1 ? "y" : "ies") have no incoming or outgoing cross-rule references.</span>
                             @if (_document.Health.OrphanRules > 0)
                             {
-                                <button type="button" class="ce-indicator-action-button" @onclick="ViewOrphanRules" aria-label="View rules with no cross-rule references">
-                                    <span class="ce-indicator-action">View unconnected rules</span>
+                                <button type="button" class="ce-indicator-action-button" @onclick="ViewOrphanRules" aria-label="View catalog entries with no cross-rule references">
+                                    <span class="ce-indicator-action">View unconnected entries</span>
                                 </button>
                             }
                         </div>
@@ -535,6 +557,7 @@
                                         }
                                         <span class="ce-trace-title">@rule.Title</span>
                                         <span class="ce-trace-type-label">@rule.RuleType</span>
+                                        <span class="ce-entry-origin @(rule.IsReferenceOnly ? "ce-entry-origin--reference" : "ce-entry-origin--authored")">@(rule.IsReferenceOnly ? "Reference-only entry" : "Authored here")</span>
                                     </div>
                                     <div class="ce-trace-header-right">
                                         @if (rule.References.Count > 0)
@@ -653,7 +676,10 @@
                                             <td class="ce-catalog-td">
                                                 <span class="ce-catalog-type ce-catalog-type-@rule.RuleType.ToString().ToLowerInvariant()">@rule.RuleType</span>
                                             </td>
-                                            <td class="ce-catalog-td ce-catalog-title">@rule.Title</td>
+                                            <td class="ce-catalog-td ce-catalog-title">
+                                                @rule.Title
+                                                <span class="ce-entry-origin @(rule.IsReferenceOnly ? "ce-entry-origin--reference" : "ce-entry-origin--authored")">@(rule.IsReferenceOnly ? "Reference-only" : "Authored here")</span>
+                                            </td>
                                             <td class="ce-catalog-td ce-catalog-num">
                                                 @if (rule.References.Count > 0)
                                                 {
@@ -680,7 +706,7 @@
                             </table>
                         </div>
                         <div class="ce-catalog-footer">
-                            <span class="ce-catalog-count">@catalogRows.Count rule@(catalogRows.Count != 1 ? "s" : "") · click a row to view in Traceability</span>
+                            <span class="ce-catalog-count">@catalogRows.Count catalog entr@(catalogRows.Count == 1 ? "y" : "ies") · click a row to view in Rule Traceability</span>
                         </div>
                     }
                 </div>
@@ -870,18 +896,22 @@
     private string StandardBadge    => _document is null ? string.Empty : $"({_document.Standards.Count})";
     private string ConstraintBadge  => _document is null ? string.Empty : $"({_document.Constraints.Count})";
     private string GovernanceBadge  => _document is null ? string.Empty : $"({_document.GovernanceItems.Count})";
+    private string GovernanceLabel => $"Governance rule{(_document?.Health.TotalGovernanceItems == 1 ? string.Empty : "s")}";
     private string ChangelogBadge   => _document is null ? string.Empty : $"({_document.Changelog.Count})";
-    private string CatalogBadge     => _document?.RuleCatalog.Count  > 0 ? $"({_document.RuleCatalog.Count})"  : string.Empty;
-    private string TraceabilityBadge => _document?.RuleCatalog.Count > 0 ? $"({_document.RuleCatalog.Count} rules)" : string.Empty;
-    // ConstitutionType is currently inferred from title keywords by ConstitutionAnalysisService.
-    private string ScopeLabel => _document?.Type switch
+    private string CatalogBadge     => _document?.RuleCatalog.Count  > 0 ? $"({_document.RuleCatalog.Count} entries)"  : string.Empty;
+    private string TraceabilityBadge => _document?.RuleCatalog.Count > 0 ? $"({_document.RuleCatalog.Count} entries)" : string.Empty;
+    private string ScopeLabel => !string.IsNullOrWhiteSpace(_document?.Scope) ? _document.Scope : _document?.Type switch
     {
         ConstitutionType.Module => "Module",
         ConstitutionType.Platform => "Platform",
         ConstitutionType.Frontend => "Frontend",
         ConstitutionType.Service => "Service",
-        _ => "General",
+        _ => "Not declared",
     };
+    private string ScopeProvenance => !string.IsNullOrWhiteSpace(_document?.Scope)
+        ? "Explicit metadata"
+        : _document?.Type is ConstitutionType.Generic or null ? "Unspecified" : "Inferred from title";
+    private string ScopeBadge => $"Scope: {ScopeLabel} · {ScopeProvenance}";
 
     protected override void OnParametersSet()
     {
@@ -1246,11 +1276,16 @@
         __builder.AddContent(21, node.Rule.Title);
         __builder.CloseElement();
 
+        __builder.OpenElement(22, "span");
+        __builder.AddAttribute(23, "class", $"ce-entry-origin {(node.Rule.IsReferenceOnly ? "ce-entry-origin--reference" : "ce-entry-origin--authored")}");
+        __builder.AddContent(24, node.Rule.IsReferenceOnly ? "Reference-only" : "Authored here");
+        __builder.CloseElement();
+
         if (hasChildren)
         {
-            __builder.OpenElement(22, "span");
-            __builder.AddAttribute(23, "class", "ce-map-child-count");
-            __builder.AddContent(24, $"{node.Children.Count} linked rule{(node.Children.Count != 1 ? "s" : "")}");
+            __builder.OpenElement(25, "span");
+            __builder.AddAttribute(26, "class", "ce-map-child-count");
+            __builder.AddContent(27, $"{node.Children.Count} linked entr{(node.Children.Count != 1 ? "ies" : "y")}");
             __builder.CloseElement();
         }
 
@@ -1258,13 +1293,13 @@
 
         if (hasChildren && isExpanded)
         {
-            __builder.OpenElement(25, "div");
-            __builder.AddAttribute(26, "class", "ce-map-children");
+            __builder.OpenElement(28, "div");
+            __builder.AddAttribute(29, "class", "ce-map-children");
             var childIndex = 0;
             foreach (var child in node.Children)
             {
                 __builder.SetKey(child.NodeId);
-                __builder.AddContent(27 + childIndex, RenderMapNode(child, node.NodeId));
+                __builder.AddContent(30 + childIndex, RenderMapNode(child, node.NodeId));
                 childIndex++;
             }
             __builder.CloseElement(); // children

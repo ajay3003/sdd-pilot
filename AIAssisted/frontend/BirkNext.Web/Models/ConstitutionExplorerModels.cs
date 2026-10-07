@@ -79,6 +79,8 @@ public sealed class ConstitutionRule
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public ConstitutionRuleType RuleType { get; init; }
+    /// <summary>True when this catalog node was added only because another rule references its ID.</summary>
+    public bool IsReferenceOnly { get; init; }
 
     // Additional IDs found in the rule's heading (e.g. "(PP-02, PP-04)" → primary PP-02, alias PP-04)
     public List<string> Aliases { get; init; } = [];
@@ -166,7 +168,13 @@ public sealed class ConstitutionHealth
     // It is a scope subset of TotalConstraints, not an additional rule category.
     public int ModuleConstraints { get; init; }
 
-    // Rule catalog metrics (new)
+    // Authored section counts and catalog counts are distinct: reference-only nodes are not authored rules.
+    public int AuthoredRuleCount { get; init; }
+    public int ReferenceOnlyEntryCount { get; init; }
+    public int TotalCatalogEntries { get; init; }
+    // Relationship metrics are calculated across TotalCatalogEntries.
+    public int RelationshipPopulationCount { get; init; }
+    // Legacy property name retained for existing consumers; this is the catalog-entry count.
     public int TotalRules { get; init; }
     // Count of extracted forward references in the rule catalog (directed cross-rule references).
     public int TotalReferences { get; init; }

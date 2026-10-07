@@ -418,9 +418,9 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         List<ConstitutionConstraint> constraints,
         List<ConstitutionGovernanceItem> governance)
     {
-        // Tuple: (PrimaryId, Title, Desc, RuleType, RawText, TitleAliases)
+        // Tuple: (PrimaryId, Title, Desc, RuleType, RawText, TitleAliases, IsReferenceOnly)
         var mutableRules = new List<(string Id, string Title, string Desc,
-            ConstitutionRuleType Type, string Raw, List<string> Aliases)>();
+            ConstitutionRuleType Type, string Raw, List<string> Aliases, bool IsReferenceOnly)>();
 
         int principleSeq = 0, standardSeq = 0, constraintSeq = 0, govSeq = 0;
 
@@ -429,7 +429,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             var (primaryId, aliases) = ResolveItemId(p.Id, p.Title, "PP-",
                 ref principleSeq, "PRINCIPLE");
             mutableRules.Add((primaryId, p.Title, p.Description,
-                ConstitutionRuleType.Principle, p.RawText, aliases));
+                ConstitutionRuleType.Principle, p.RawText, aliases, false));
         }
 
         foreach (var s in standards)
@@ -437,7 +437,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             var (primaryId, aliases) = ResolveItemId(s.Id, s.Title, "PS-",
                 ref standardSeq, "STANDARD");
             mutableRules.Add((primaryId, s.Title, s.Description,
-                ConstitutionRuleType.Standard, s.RawText, aliases));
+                ConstitutionRuleType.Standard, s.RawText, aliases, false));
         }
 
         foreach (var c in constraints)
@@ -446,7 +446,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 ref constraintSeq);
             var ctype = InferConstraintRuleType(primaryId);
             mutableRules.Add((primaryId, c.Title, c.Description,
-                ctype, c.RawText, aliases));
+                ctype, c.RawText, aliases, false));
         }
 
         foreach (var g in governance)
@@ -458,7 +458,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 .Where(id => !id.Equals(govId, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             mutableRules.Add((govId, g.Title, g.Description,
-                ConstitutionRuleType.Governance, g.RawText, aliases));
+                ConstitutionRuleType.Governance, g.RawText, aliases, false));
         }
 
         // Build set of all explicitly known IDs (primaries + aliases)
@@ -468,7 +468,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         // Extract forward refs from BOTH title (contains embedded IDs) AND raw body
         var forwardRefs = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, title, _, _, raw, _) in mutableRules)
+        foreach (var (id, title, _, _, raw, _, _) in mutableRules)
         {
             forwardRefs[id] = ExtractRuleIds(title + "\n" + raw)
                 .Where(refId => !refId.Equals(id, StringComparison.OrdinalIgnoreCase))
@@ -486,7 +486,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             if (!knownIds.Contains(refId))
             {
                 var impliedType = InferRuleTypeFromId(refId);
-                mutableRules.Add((refId, refId, string.Empty, impliedType, string.Empty, []));
+                mutableRules.Add((refId, refId, string.Empty, impliedType, string.Empty, [], true));
                 knownIds.Add(refId);
             }
         }
@@ -497,7 +497,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         // Also register aliases in referencedBy for resolution
         var aliasToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, _, _, _, _, aliasList) in mutableRules)
+        foreach (var (id, _, _, _, _, aliasList, _) in mutableRules)
         {
             foreach (var alias in aliasList)
                 aliasToId.TryAdd(alias, id);
@@ -536,6 +536,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             Title = r.Title,
             Description = r.Desc,
             RuleType = r.Type,
+            IsReferenceOnly = r.IsReferenceOnly,
             Aliases = r.Aliases.Select(a => a.ToUpperInvariant()).ToList(),
             References = forwardRefs.TryGetValue(r.Id, out var fr)
                 ? fr.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
@@ -1037,17 +1038,15 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var indicators = new List<ConstitutionHealthIndicator>();
 
         var totalRulesForDisplay = catalog.Count > 0 ? catalog.Count : sectionTotal;
-        var breakdown = $"{principles.Count} principles, {standards.Count} standards, {constraints.Count} constraints, {governance.Count} governance rules";
-        var referenceOnlyEntries = Math.Max(0, totalRulesForDisplay - sectionTotal);
-        var referenceOnlySummary = referenceOnlyEntries > 0
-            ? $"; includes {referenceOnlyEntries} reference-only catalog entr{(referenceOnlyEntries == 1 ? "y" : "ies")}"
-            : string.Empty;
+        var breakdown = $"{principles.Count} principles, {standards.Count} standards, {constraints.Count} constraints, {governance.Count} governance rule{(governance.Count == 1 ? string.Empty : "s")}";
+        var referenceOnlyEntries = catalog.Count(r => r.IsReferenceOnly);
+        var authoredSummary = $"{sectionTotal} authored rule{(sectionTotal == 1 ? string.Empty : "s")} — {breakdown}.";
 
         indicators.Add(new ConstitutionHealthIndicator
         {
             Icon = totalRulesForDisplay > 0 ? "ⓘ" : "⚠",
             Message = totalRulesForDisplay > 0
-                ? $"{totalRulesForDisplay} rules in catalog — {breakdown}{referenceOnlySummary}"
+                ? $"{authoredSummary}{(referenceOnlyEntries > 0 ? $" {referenceOnlyEntries} reference-only catalog entr{(referenceOnlyEntries == 1 ? "y" : "ies")}; {totalRulesForDisplay} catalog entr{(totalRulesForDisplay == 1 ? "y" : "ies")} total." : $" {totalRulesForDisplay} catalog entr{(totalRulesForDisplay == 1 ? "y" : "ies")} total.")}"
                 : "No structured rules found. Ensure section headings follow PP-NN / PS-NN conventions.",
             Level = totalRulesForDisplay > 0 ? HealthIndicatorLevel.Info : HealthIndicatorLevel.Warning,
         });
@@ -1064,7 +1063,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var summary = totalRulesForDisplay == 0
             ? "No structured content detected. Ensure headings follow PP-NN / PS-NN conventions."
-            : $"{totalRulesForDisplay} rules in catalog: {breakdown}{referenceOnlySummary}.";
+            : $"{authoredSummary}{(referenceOnlyEntries > 0 ? $" {referenceOnlyEntries} reference-only catalog entr{(referenceOnlyEntries == 1 ? "y" : "ies")}." : string.Empty)} {totalRulesForDisplay} catalog entr{(totalRulesForDisplay == 1 ? "y" : "ies")} total.";
 
         return new ConstitutionHealth
         {
@@ -1075,6 +1074,10 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             TotalVersions     = changelog.Count,
             PlatformWideConstraints = platformWide,
             ModuleConstraints = moduleLevel,
+            AuthoredRuleCount = sectionTotal,
+            ReferenceOnlyEntryCount = referenceOnlyEntries,
+            TotalCatalogEntries = catalog.Count,
+            RelationshipPopulationCount = catalog.Count,
             TotalRules        = totalRulesForDisplay,
             TotalReferences   = totalRefs,
             OrphanRules       = orphans,

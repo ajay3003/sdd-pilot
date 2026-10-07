@@ -34,6 +34,8 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
             {
                 OrphanRules = 1,
                 TotalRules = 1,
+                TotalCatalogEntries = 1,
+                RelationshipPopulationCount = 1,
                 Indicators =
                 [
                     new ConstitutionHealthIndicator
@@ -51,7 +53,7 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
 
         var action = cut.Find("button.ce-indicator-action-button");
         action.GetAttribute("type").Should().Be("button");
-        action.TextContent.Trim().Should().Be("View unconnected rules");
+        action.TextContent.Trim().Should().Be("View unconnected entries");
 
         action.Click();
 
@@ -86,6 +88,9 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
                 TotalConstraints = 1,
                 TotalGovernanceItems = 1,
                 TotalRules = 4,
+                AuthoredRuleCount = 4,
+                TotalCatalogEntries = 4,
+                RelationshipPopulationCount = 4,
                 TotalReferences = 2,
                 OrphanRules = 2,
                 ModuleConstraints = 1,
@@ -95,17 +100,18 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
         var cut = Render<ConstitutionExplorerPanel>(parameters => parameters
             .Add(component => component.ParsedDocument, document));
 
-        cut.Markup.Should().Contain("Structure").And.Contain("Governance rules");
-        cut.Markup.Should().Contain("Inferred scope: Service");
+        cut.Markup.Should().Contain("Structure").And.Contain("Governance rule");
+        cut.Markup.Should().Contain("Scope: Service · Inferred from title");
         cut.Markup.Should().Contain("non-platform-scoped constraints (subset of Constraints)");
-        cut.Markup.Should().Contain("2 rules have no incoming or outgoing cross-rule references");
-        cut.Markup.Should().Contain("Rule Traceability (4 rules)");
+        cut.Markup.Should().Contain("2 of 4 catalog entries have no incoming or outgoing cross-rule references");
+        cut.Markup.Should().Contain("Authored rules").And.Contain("Catalog entries");
+        cut.Markup.Should().Contain("Rule Traceability (4 entries)");
         cut.Markup.Should().NotContain("ce-nav-cards");
         cut.Markup.Should().NotContain("HEALTHY");
 
         cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Traceability", StringComparison.Ordinal)).Click();
         cut.FindAll(".ce-trace-card").Should().HaveCount(4);
-        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Trim() == "Rule Catalog (4)").Click();
+        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Trim() == "Rule Catalog (4 entries)").Click();
         cut.FindAll(".ce-catalog-row").Should().HaveCount(4);
         cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Trim() == "Map").Click();
         cut.Find(".ce-map-tree").Should().NotBeNull();
@@ -121,5 +127,42 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
         cut.Markup.Should().Contain("No changelog entries");
         cut.Markup.Should().NotContain("No Changelog Found");
         cut.Markup.Should().NotContain("warning");
+    }
+
+    [Fact]
+    public void GenericTitle_DoesNotPresentFallbackAsInferredGeneralScope()
+    {
+        var cut = Render<ConstitutionExplorerPanel>(parameters => parameters
+            .Add(component => component.ParsedDocument, new ConstitutionAnalysisService().Parse("# Person-adapter Constitution\n\n## Principles\n\n### PP-01 — Local rule\n\nReferences PS-09.")));
+
+        cut.Markup.Should().Contain("Scope: Not declared · Unspecified");
+        cut.Markup.Should().Contain("No explicit scope metadata was found");
+        cut.Markup.Should().NotContain("General");
+    }
+
+    [Fact]
+    public void ExplicitScopeMetadata_IsLabeledExplicit()
+    {
+        var cut = Render<ConstitutionExplorerPanel>(parameters => parameters
+            .Add(component => component.ParsedDocument, new ConstitutionDocument { Title = "Custom Constitution", Scope = "Service" }));
+
+        cut.Markup.Should().Contain("Scope: Service · Explicit metadata");
+    }
+
+    [Fact]
+    public void PersonAdapterOverview_LabelsAuthoredReferenceOnlyAndRelationshipPopulations()
+    {
+        var text = File.ReadAllText(BirkNext.Web.Tests.TestDataHelper.ResolveSampleDataPath("person-adapter", "constitution.md"));
+        var document = new ConstitutionAnalysisService().Parse(text);
+        var cut = Render<ConstitutionExplorerPanel>(parameters => parameters.Add(component => component.ParsedDocument, document));
+
+        cut.Markup.Should().Contain("14").And.Contain("Authored rules")
+            .And.Contain("21").And.Contain("Reference-only entries")
+            .And.Contain("35").And.Contain("Catalog entries")
+            .And.Contain("2 of 35 catalog entries have no incoming or outgoing cross-rule references")
+            .And.Contain("Scope: Not declared · Unspecified");
+
+        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Traceability", StringComparison.Ordinal)).TextContent.Should().Contain("35 entries");
+        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Catalog", StringComparison.Ordinal)).TextContent.Should().Contain("35 entries");
     }
 }

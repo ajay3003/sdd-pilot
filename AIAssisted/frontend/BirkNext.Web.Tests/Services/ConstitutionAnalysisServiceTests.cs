@@ -247,6 +247,53 @@ public sealed class ConstitutionAnalysisServiceTests
         doc.Health.Indicators.Should().NotContain(i => i.Message.Contains("changelog", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void RuleCatalog_DistinguishesAuthoredRulesFromReferenceOnlyEntries()
+    {
+        var doc = _svc.Parse("""
+            # Generic Constitution
+
+            ## Core Principles
+
+            ### PP-01 Local principle
+            This authored principle refers to PS-09.
+            """);
+
+        doc.Health.AuthoredRuleCount.Should().Be(1);
+        doc.Health.ReferenceOnlyEntryCount.Should().Be(1);
+        doc.Health.TotalCatalogEntries.Should().Be(2);
+        doc.Health.RelationshipPopulationCount.Should().Be(2);
+        doc.Health.TotalRules.Should().Be(doc.Health.TotalCatalogEntries, "legacy TotalRules still means catalog entries");
+        doc.RuleCatalog.Should().ContainSingle(rule => rule.IsReferenceOnly && rule.RuleId == "PS-09");
+        doc.RuleCatalog.Should().ContainSingle(rule => !rule.IsReferenceOnly && rule.RuleId == "PP-01");
+        doc.Health.HealthSummary.Should().Contain("1 authored rule").And.Contain("1 reference-only catalog entry").And.Contain("2 catalog entries total");
+        doc.Type.Should().Be(ConstitutionType.Generic, "an unclassified title uses the Generic parser fallback, not a General scope inference");
+    }
+
+    [Fact]
+    public void PersonAdapterConstitution_ReportsAuthoredAndCatalogPopulationsSeparately()
+    {
+        var text = File.ReadAllText(BirkNext.Web.Tests.TestDataHelper.ResolveSampleDataPath("person-adapter", "constitution.md"));
+        var doc = _svc.Parse(text);
+
+        doc.Health.TotalPrinciples.Should().Be(7);
+        doc.Health.TotalStandards.Should().Be(6);
+        doc.Health.TotalConstraints.Should().Be(0);
+        doc.Health.TotalGovernanceItems.Should().Be(1);
+        doc.Health.AuthoredRuleCount.Should().Be(14);
+        doc.Health.ReferenceOnlyEntryCount.Should().Be(21);
+        doc.Health.TotalCatalogEntries.Should().Be(35);
+        doc.Health.TotalReferences.Should().Be(47);
+        doc.Health.OrphanRules.Should().Be(2);
+        doc.Health.AuthoredRuleCount.Should().Be(doc.Health.TotalPrinciples + doc.Health.TotalStandards + doc.Health.TotalConstraints + doc.Health.TotalGovernanceItems);
+        doc.Health.TotalCatalogEntries.Should().Be(doc.Health.AuthoredRuleCount + doc.Health.ReferenceOnlyEntryCount);
+        doc.Health.RelationshipPopulationCount.Should().Be(doc.RuleCatalog.Count);
+        doc.RuleCatalog.Count(rule => rule.IsReferenceOnly).Should().Be(doc.Health.ReferenceOnlyEntryCount);
+        doc.Health.HealthSummary.Should().Contain("authored rule").And.Contain("reference-only catalog entr").And.Contain("catalog entr");
+        doc.Type.Should().Be(ConstitutionType.Generic);
+        doc.Scope.Should().BeNull();
+    }
+
     // ── 3: Multi-ID title ("Zero-Trust Security (PP-02, PP-04)") ─────────
 
     [Fact]
