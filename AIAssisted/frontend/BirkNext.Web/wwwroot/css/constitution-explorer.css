@@ -317,6 +317,35 @@
     gap: 0.625rem;
 }
 
+.ce-overview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-top: 1rem;
+}
+
+.ce-overview-heading {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+}
+
+.ce-scope-summary p,
+.ce-relationships p {
+    margin: 0;
+    color: var(--clr-text-body);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.ce-structure-summary {
+    margin: 0;
+    color: var(--clr-text-muted);
+    font-size: 0.825rem;
+    line-height: 1.5;
+}
+
 .ce-health-card {
     display: flex;
     flex-direction: column;
@@ -970,10 +999,12 @@
 }
 
 .ce-indicator-good   .ce-indicator-icon { color: var(--clr-success); }
+.ce-indicator-info .ce-indicator-icon { color: var(--clr-primary); }
 .ce-indicator-warning .ce-indicator-icon { color: #92400e; }
 .ce-indicator-error  .ce-indicator-icon { color: var(--clr-danger); }
 
 .ce-indicator-good    .ce-indicator-message { color: var(--clr-text-body); }
+.ce-indicator-info .ce-indicator-message { color: var(--clr-text-body); }
 .ce-indicator-warning .ce-indicator-message { color: #78350f; }
 .ce-indicator-error   .ce-indicator-message { color: var(--clr-danger); }
 

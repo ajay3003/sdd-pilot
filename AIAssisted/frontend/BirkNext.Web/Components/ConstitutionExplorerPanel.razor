@@ -59,7 +59,7 @@
                 {
                     <span class="ce-header-version">v@(_document.Version)</span>
                 }
-                <span class="ce-header-type ce-type-@_document.Type.ToString().ToLowerInvariant()">@_document.Type</span>
+                <span class="ce-header-type ce-type-@_document.Type.ToString().ToLowerInvariant()">Inferred scope: @ScopeLabel</span>
             </div>
             <div class="ce-header-right">
                 <div class="ce-view-toggle" role="group" aria-label="View mode">
@@ -69,7 +69,7 @@
                     <button class='ce-view-btn @(_activeTab == "constraints"  ? "is-active" : "")' @onclick='() => SetTab("constraints")'>Constraints @ConstraintBadge</button>
                     <button class='ce-view-btn @(_activeTab == "governance"   ? "is-active" : "")' @onclick='() => SetTab("governance")'>Governance @GovernanceBadge</button>
                     <button class='ce-view-btn @(_activeTab == "changelog"    ? "is-active" : "")' @onclick='() => SetTab("changelog")'>Changelog @ChangelogBadge</button>
-                    <button class='ce-view-btn @(_activeTab == "traceability" ? "is-active" : "")' @onclick='() => SetTab("traceability")'>Traceability @CatalogBadge</button>
+                    <button class='ce-view-btn @(_activeTab == "traceability" ? "is-active" : "")' @onclick='() => SetTab("traceability")'>Rule Traceability @TraceabilityBadge</button>
                     <button class='ce-view-btn @(_activeTab == "catalog"      ? "is-active" : "")' @onclick='() => SetTab("catalog")'>Rule Catalog @CatalogBadge</button>
                     <button class='ce-view-btn @(_activeTab == "map"          ? "is-active" : "")' @onclick='() => SetTab("map")'>Map</button>
                 </div>
@@ -163,126 +163,66 @@
                         </div>
                     </div>
 
-                    <!-- Health cards -->
-                    <div class="ce-health-row">
-                        <div class="ce-health-card ce-hcard-principles">
-                            <div class="ce-health-value">@_document.Health.TotalPrinciples</div>
-                            <div class="ce-health-label">Principles</div>
-                        </div>
-                        <div class="ce-health-card ce-hcard-standards">
-                            <div class="ce-health-value">@_document.Health.TotalStandards</div>
-                            <div class="ce-health-label">Standards</div>
-                        </div>
-                        <div class="ce-health-card ce-hcard-constraints">
-                            <div class="ce-health-value">@_document.Health.TotalConstraints</div>
-                            <div class="ce-health-label">Constraints</div>
-                        </div>
-                        @if (_document.Health.TotalGovernanceItems > 0)
-                        {
+                    <section class="ce-overview-section" aria-labelledby="ce-structure-heading">
+                        <h2 class="ce-overview-heading" id="ce-structure-heading">Structure</h2>
+                        <!-- Scope counts below overlap these parsed category totals. -->
+                        <div class="ce-health-row">
+                            <div class="ce-health-card ce-hcard-principles">
+                                <div class="ce-health-value">@_document.Health.TotalPrinciples</div>
+                                <div class="ce-health-label">Principles</div>
+                            </div>
+                            <div class="ce-health-card ce-hcard-standards">
+                                <div class="ce-health-value">@_document.Health.TotalStandards</div>
+                                <div class="ce-health-label">Standards</div>
+                            </div>
+                            <div class="ce-health-card ce-hcard-constraints">
+                                <div class="ce-health-value">@_document.Health.TotalConstraints</div>
+                                <div class="ce-health-label">Constraints</div>
+                            </div>
+                            @if (_document.Health.TotalGovernanceItems > 0)
+                            {
                             <div class="ce-health-card ce-hcard-governance">
                                 <div class="ce-health-value">@_document.Health.TotalGovernanceItems</div>
-                                <div class="ce-health-label">Governance</div>
+                                <div class="ce-health-label">Governance rules</div>
                             </div>
-                        }
-                        @if (_document.Health.TotalVersions > 0)
-                        {
-                            <div class="ce-health-card ce-hcard-versions">
-                                <div class="ce-health-value">@_document.Health.TotalVersions</div>
-                                <div class="ce-health-label">Versions</div>
-                            </div>
-                        }
-                        @if (_document.Health.TotalRules > 0)
-                        {
+                            }
+                            @if (_document.Health.TotalRules > 0)
+                            {
                             <div class="ce-health-card ce-hcard-rules">
                                 <div class="ce-health-value">@_document.Health.TotalRules</div>
                                 <div class="ce-health-label">Total Rules</div>
                             </div>
-                        }
-                        @if (_document.Health.TotalReferences > 0)
-                        {
-                            <div class="ce-health-card ce-hcard-refs">
-                                <div class="ce-health-value">@_document.Health.TotalReferences</div>
-                                <div class="ce-health-label">References</div>
-                            </div>
-                        }
-                        @if (_document.Health.PlatformWideConstraints > 0)
-                        {
-                            <div class="ce-health-card ce-hcard-platform">
-                                <div class="ce-health-value">@_document.Health.PlatformWideConstraints</div>
-                                <div class="ce-health-label">Platform-Wide</div>
-                            </div>
-                        }
-                        @if (_document.Health.ModuleConstraints > 0)
-                        {
-                            <div class="ce-health-card ce-hcard-module">
-                                <div class="ce-health-value">@_document.Health.ModuleConstraints</div>
-                                <div class="ce-health-label">Module Rules</div>
-                            </div>
-                        }
-                    </div>
-
-                    <!-- Health indicators -->
-                    @if (_document.Health.Indicators.Count > 0)
-                    {
-                        <div class="ce-health-indicators">
-                            @foreach (var indicator in _document.Health.Indicators)
-                            {
-                                <div class="ce-indicator ce-indicator-@indicator.Level.ToString().ToLowerInvariant()">
-                                    @if (indicator.Message.Contains("unconnected rule"))
-                                    {
-                                        <div class="ce-indicator-row">
-                                            <span class="ce-indicator-icon" aria-hidden="true">@indicator.Icon</span>
-                                            <span class="ce-indicator-message">@indicator.Message</span>
-                                            <button type="button" class="ce-indicator-action-button" @onclick="ViewOrphanRules" title="Click to view unconnected rules in Rule Catalog">
-                                                <span class="ce-indicator-action">View rules</span>
-                                            </button>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <span class="ce-indicator-icon" aria-hidden="true">@indicator.Icon</span>
-                                        <span class="ce-indicator-message">@indicator.Message</span>
-                                    }
-                                </div>
                             }
                         </div>
-                    }
+                        <p class="ce-structure-summary">@_document.Health.HealthSummary</p>
+                    </section>
 
-                    <!-- Quick navigation cards -->
-                    <div class="ce-nav-cards">
-                        @if (_document.Principles.Count > 0)
+                    <section class="ce-overview-section ce-scope-summary" aria-labelledby="ce-scope-heading">
+                        <h2 class="ce-overview-heading" id="ce-scope-heading">Scope</h2>
+                        <p>Inferred from the Constitution title: @ScopeLabel · @_document.Health.ModuleConstraints non-platform-scoped constraints (subset of Constraints)</p>
+                    </section>
+
+                    <section class="ce-overview-section ce-relationships" aria-labelledby="ce-relationships-heading">
+                        <h2 class="ce-overview-heading" id="ce-relationships-heading">Rule relationships</h2>
+                        <p>@_document.Health.TotalReferences cross-rule references</p>
+                        <div class="ce-indicator ce-indicator-info">
+                            <span class="ce-indicator-icon" aria-hidden="true">ⓘ</span>
+                            <span class="ce-indicator-message">@_document.Health.OrphanRules rule@(_document.Health.OrphanRules == 1 ? "" : "s") have no incoming or outgoing cross-rule references.</span>
+                            @if (_document.Health.OrphanRules > 0)
+                            {
+                                <button type="button" class="ce-indicator-action-button" @onclick="ViewOrphanRules" aria-label="View rules with no cross-rule references">
+                                    <span class="ce-indicator-action">View unconnected rules</span>
+                                </button>
+                            }
+                        </div>
+                        @if (_document.Health.BrokenReferences > 0)
                         {
-                            <button class="ce-nav-card" @onclick='() => SetTab("principles")'>
-                                <div class="ce-nav-card-count">@_document.Principles.Count</div>
-                                <div class="ce-nav-card-label">Core Principles</div>
-                                <div class="ce-nav-card-arrow">→</div>
-                            </button>
+                            <div class="ce-indicator ce-indicator-warning" role="status">
+                                <span class="ce-indicator-icon" aria-hidden="true">⚠</span>
+                                <span class="ce-indicator-message">Review finding: @_document.Health.BrokenReferences cross-rule reference@(_document.Health.BrokenReferences == 1 ? "" : "s") point to rule IDs not present in the catalog.</span>
+                            </div>
                         }
-                        @if (_document.Standards.Count > 0)
-                        {
-                            <button class="ce-nav-card" @onclick='() => SetTab("standards")'>
-                                <div class="ce-nav-card-count">@_document.Standards.Count</div>
-                                <div class="ce-nav-card-label">Standards</div>
-                                <div class="ce-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_document.Constraints.Count > 0)
-                        {
-                            <button class="ce-nav-card" @onclick='() => SetTab("constraints")'>
-                                <div class="ce-nav-card-count">@_document.Constraints.Count</div>
-                                <div class="ce-nav-card-label">Constraints</div>
-                                <div class="ce-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_document.RuleCatalog.Count > 0)
-                        {
-                            <button class="ce-nav-card" @onclick='() => SetTab("traceability")'>
-                                <div class="ce-nav-card-count">@_document.RuleCatalog.Count</div>
-                                <div class="ce-nav-card-label">Rule Catalog</div>
-                                <div class="ce-nav-card-arrow">→</div>
-                            </button>
-                        }
-                    </div>
+                    </section>
 
                 </div>
             }
@@ -504,24 +444,17 @@
                                 <span class="ce-governance-type-badge">Auto-Summary</span>
                                 <h3 class="ce-governance-title">Constitution Structure</h3>
                             </div>
-                            <p class="ce-governance-desc">No explicit Governance section was found. The following is an auto-generated summary of this constitution's rule structure.</p>
+                            <p class="ce-governance-desc">No Governance items were parsed. The following is an auto-generated summary of this Constitution's structure.</p>
                             <ul class="ce-governance-points">
                                 <li>@_document.Health.TotalPrinciples principle@(_document.Health.TotalPrinciples != 1 ? "s" : "") defined</li>
                                 <li>@_document.Health.TotalStandards standard@(_document.Health.TotalStandards != 1 ? "s" : "") defined</li>
-                                <li>@_document.Health.TotalConstraints constraint@(_document.Health.TotalConstraints != 1 ? "s" : "") defined (@_document.Health.PlatformWideConstraints platform-wide, @_document.Health.ModuleConstraints module-level)</li>
-                                <li>@_document.Health.TotalReferences cross-reference@(_document.Health.TotalReferences != 1 ? "s" : "") between rules</li>
+                                <li>@_document.Health.TotalConstraints constraint@(_document.Health.TotalConstraints != 1 ? "s" : "") defined (@_document.Health.PlatformWideConstraints platform-wide, @_document.Health.ModuleConstraints non-platform-scoped)</li>
+                                <li>@_document.Health.TotalReferences cross-rule reference@(_document.Health.TotalReferences != 1 ? "s" : "") extracted</li>
                                 @if (_document.Health.BrokenReferences > 0)
                                 {
                                     <li>⚠ @_document.Health.BrokenReferences broken reference@(_document.Health.BrokenReferences != 1 ? "s" : "") — target rule IDs not found in catalog</li>
                                 }
                             </ul>
-                        </div>
-                        <div class="ce-governance-card ce-gov-type-other">
-                            <div class="ce-governance-header">
-                                <span class="ce-governance-type-badge">Recommendation</span>
-                                <h3 class="ce-governance-title">Adding Governance</h3>
-                            </div>
-                            <p class="ce-governance-desc">To add a formal governance section, include a <code>## Governance</code> heading with sub-sections for Amendment Process, Compliance Rules, and Versioning Policy.</p>
                         </div>
                     }
                 </div>
@@ -536,13 +469,9 @@
                         <div class="ce-governance-card ce-gov-type-other" style="max-width:600px;">
                             <div class="ce-governance-header">
                                 <span class="ce-governance-type-badge">No Data</span>
-                                <h3 class="ce-governance-title">No Changelog Found</h3>
+                                <h3 class="ce-governance-title">No changelog entries</h3>
                             </div>
-                            <p class="ce-governance-desc">No changelog section was found in this constitution. To add version history, include a <code>## Changelog</code> section with entries like:</p>
-                            <ul class="ce-governance-points">
-                                <li><code>### 1.0.0 - 2024-01-01</code></li>
-                                <li><code>- Initial ratification</code></li>
-                            </ul>
+                            <p class="ce-governance-desc">This Constitution does not contain a changelog section.</p>
                         </div>
                     }
                     else
@@ -943,6 +872,16 @@
     private string GovernanceBadge  => _document is null ? string.Empty : $"({_document.GovernanceItems.Count})";
     private string ChangelogBadge   => _document is null ? string.Empty : $"({_document.Changelog.Count})";
     private string CatalogBadge     => _document?.RuleCatalog.Count  > 0 ? $"({_document.RuleCatalog.Count})"  : string.Empty;
+    private string TraceabilityBadge => _document?.RuleCatalog.Count > 0 ? $"({_document.RuleCatalog.Count} rules)" : string.Empty;
+    // ConstitutionType is currently inferred from title keywords by ConstitutionAnalysisService.
+    private string ScopeLabel => _document?.Type switch
+    {
+        ConstitutionType.Module => "Module",
+        ConstitutionType.Platform => "Platform",
+        ConstitutionType.Frontend => "Frontend",
+        ConstitutionType.Service => "Service",
+        _ => "General",
+    };
 
     protected override void OnParametersSet()
     {

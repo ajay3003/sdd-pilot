@@ -41,6 +41,7 @@ public enum ConstitutionRuleType
 public enum HealthIndicatorLevel
 {
     Good,
+    Info,
     Warning,
     Error,
 }
@@ -161,11 +162,15 @@ public sealed class ConstitutionHealth
     public int TotalGovernanceItems { get; init; }
     public int TotalVersions { get; init; }
     public int PlatformWideConstraints { get; init; }
+    // Legacy property name: this is the count of constraints not classified as platform-wide.
+    // It is a scope subset of TotalConstraints, not an additional rule category.
     public int ModuleConstraints { get; init; }
 
     // Rule catalog metrics (new)
     public int TotalRules { get; init; }
+    // Count of extracted forward references in the rule catalog (directed cross-rule references).
     public int TotalReferences { get; init; }
+    // Rules with neither an outgoing References entry nor an incoming ReferencedBy entry.
     public int OrphanRules { get; init; }
     public int RulesWithoutReferences { get; init; }
     public int BrokenReferences { get; init; }

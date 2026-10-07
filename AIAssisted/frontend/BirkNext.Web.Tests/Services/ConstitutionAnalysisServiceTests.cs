@@ -170,7 +170,7 @@ public sealed class ConstitutionAnalysisServiceTests
     {
         var doc = _svc.Parse(AuthConstitution());
         var firstIndicator = doc.Health.Indicators.First();
-        firstIndicator.Level.Should().Be(HealthIndicatorLevel.Good);
+        firstIndicator.Level.Should().Be(HealthIndicatorLevel.Info);
         firstIndicator.Message.Should().Contain("principles");
         firstIndicator.Message.Should().Contain("standards");
         firstIndicator.Message.Should().Contain("constraints");
@@ -219,13 +219,32 @@ public sealed class ConstitutionAnalysisServiceTests
     }
 
     [Fact]
-    public void NoChangelog_ChangelogIndicatorIsWarning()
+    public void NoChangelog_IsNotReportedAsAHealthWarning()
     {
         var doc = _svc.Parse(NoChangelogConstitution());
-        var indicator = doc.Health.Indicators
-            .FirstOrDefault(i => i.Message.Contains("changelog", StringComparison.OrdinalIgnoreCase));
-        indicator.Should().NotBeNull("a changelog warning indicator should be present");
-        indicator!.Level.Should().Be(HealthIndicatorLevel.Warning);
+        doc.Health.Indicators.Should().NotContain(i => i.Message.Contains("changelog", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void PersonModuleConstitution_StructureAndRelationshipCountsUseTheirOwnSemantics()
+    {
+        var text = File.ReadAllText(BirkNext.Web.Tests.TestDataHelper.ResolveSampleDataPath("person-module", "constitution.md"));
+        var doc = _svc.Parse(text);
+
+        doc.Principles.Should().HaveCount(9);
+        doc.Standards.Should().HaveCount(9);
+        doc.Constraints.Should().HaveCount(8);
+        doc.GovernanceItems.Should().HaveCount(8);
+        doc.Type.Should().Be(ConstitutionType.Service, "scope is inferred from the Constitution title keywords by the current parser");
+        doc.Health.TotalRules.Should().Be(34);
+        doc.Health.TotalRules.Should().Be(
+            doc.Health.TotalPrinciples + doc.Health.TotalStandards + doc.Health.TotalConstraints + doc.Health.TotalGovernanceItems);
+        doc.Health.ModuleConstraints.Should().Be(8).And.Be(doc.Health.TotalConstraints);
+        doc.Health.TotalReferences.Should().Be(7);
+        doc.Health.OrphanRules.Should().Be(23);
+        doc.Changelog.Should().BeEmpty();
+        doc.Health.Indicators.Should().NotContain(i => i.Message.Contains("unconnected rule", StringComparison.OrdinalIgnoreCase));
+        doc.Health.Indicators.Should().NotContain(i => i.Message.Contains("changelog", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── 3: Multi-ID title ("Zero-Trust Security (PP-02, PP-04)") ─────────

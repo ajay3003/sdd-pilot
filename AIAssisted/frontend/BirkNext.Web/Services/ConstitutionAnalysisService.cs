@@ -1036,36 +1036,23 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         var indicators = new List<ConstitutionHealthIndicator>();
 
-        var parseTotal = catalog.Count(r => !r.RuleId.StartsWith("PRINCIPLE-", StringComparison.Ordinal)
-            && !r.RuleId.StartsWith("STANDARD-", StringComparison.Ordinal)
-            && !r.RuleId.StartsWith("CONSTRAINT-", StringComparison.Ordinal)
-            && !r.RuleId.StartsWith("GOV-", StringComparison.Ordinal));
-
         var totalRulesForDisplay = catalog.Count > 0 ? catalog.Count : sectionTotal;
+        var breakdown = $"{principles.Count} principles, {standards.Count} standards, {constraints.Count} constraints, {governance.Count} governance rules";
+        var referenceOnlyEntries = Math.Max(0, totalRulesForDisplay - sectionTotal);
+        var referenceOnlySummary = referenceOnlyEntries > 0
+            ? $"; includes {referenceOnlyEntries} reference-only catalog entr{(referenceOnlyEntries == 1 ? "y" : "ies")}"
+            : string.Empty;
 
         indicators.Add(new ConstitutionHealthIndicator
         {
-            Icon = totalRulesForDisplay > 0 ? "✓" : "⚠",
+            Icon = totalRulesForDisplay > 0 ? "ⓘ" : "⚠",
             Message = totalRulesForDisplay > 0
-                ? $"{totalRulesForDisplay} rules parsed — {principles.Count} principles, {standards.Count} standards, {constraints.Count} constraints"
+                ? $"{totalRulesForDisplay} rules in catalog — {breakdown}{referenceOnlySummary}"
                 : "No structured rules found. Ensure section headings follow PP-NN / PS-NN conventions.",
-            Level = totalRulesForDisplay > 0 ? HealthIndicatorLevel.Good : HealthIndicatorLevel.Warning,
+            Level = totalRulesForDisplay > 0 ? HealthIndicatorLevel.Info : HealthIndicatorLevel.Warning,
         });
 
-        if (totalRefs > 0)
-            indicators.Add(new ConstitutionHealthIndicator
-            {
-                Icon = "✓", Message = $"{totalRefs} cross-references extracted",
-                Level = HealthIndicatorLevel.Good,
-            });
-
-        if (orphans > 0)
-            indicators.Add(new ConstitutionHealthIndicator
-            {
-                Icon = "ⓘ",
-                Message = $"{orphans} unconnected rule{(orphans != 1 ? "s" : "")} — with no connections to other rules",
-                Level = HealthIndicatorLevel.Good,
-            });
+        // Relationship counts are topology observations, not parser health verdicts.
 
         if (broken > 0)
             indicators.Add(new ConstitutionHealthIndicator
@@ -1075,25 +1062,9 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 Level = HealthIndicatorLevel.Warning,
             });
 
-        // Only warn if governance section is truly missing (not just if items are unparsed)
-        if (governance.Count == 0 && standards.Count > 2) // Only warn if we have substantial other sections
-            indicators.Add(new ConstitutionHealthIndicator
-            {
-                Icon = "⚠", Message = "No governance section found",
-                Level = HealthIndicatorLevel.Warning,
-            });
-
-        // Warn about missing changelog unless explicitly found
-        if (changelog.Count == 0)
-            indicators.Add(new ConstitutionHealthIndicator
-            {
-                Icon = "⚠", Message = "No changelog found",
-                Level = HealthIndicatorLevel.Warning,
-            });
-
         var summary = totalRulesForDisplay == 0
             ? "No structured content detected. Ensure headings follow PP-NN / PS-NN conventions."
-            : $"{totalRulesForDisplay} rules, {totalRefs} references across {principles.Count} principles, {standards.Count} standards, {constraints.Count} constraints.";
+            : $"{totalRulesForDisplay} rules in catalog: {breakdown}{referenceOnlySummary}.";
 
         return new ConstitutionHealth
         {
