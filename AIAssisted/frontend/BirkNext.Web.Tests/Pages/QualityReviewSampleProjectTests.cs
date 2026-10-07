@@ -70,7 +70,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Run Quality Review");
-            cut.Markup.Should().Contain("Review Packs");
+            cut.Markup.Should().Contain("Review packs");
             cut.Markup.Should().NotContain("SpecificationImport");
             cut.FindAll("input[type=file]").Should().BeEmpty();
             cut.FindAll("textarea").Should().BeEmpty();
@@ -94,7 +94,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Current Workspace Artifacts");
+            cut.Markup.Should().Contain("Current workspace artifacts");
             cut.Markup.Should().NotContain("No Sample Project selected");
             cut.Markup.Should().NotContain("No review artifacts available");
             FindPackLabel(cut, "QA Auditor").ClassList.Should().NotContain("is-disabled");
@@ -644,7 +644,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     [Fact]
     public void ReviewSummaryStep_HasExplicitHeading()
     {
-        // Step 3 should have an explicit "REVIEW SUMMARY" heading
+        // Step 3 should have an explicit "Review readiness" heading
         SeedProjectA();
         _resolver.SetSelectedProject("project-a");
 
@@ -655,8 +655,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var runBar = cut.Find(".qr-run-bar");
             var title = runBar.QuerySelector(".qr-run-title");
 
-            title.Should().NotBeNull("Step 3 should have a summary title");
-            title.TextContent.Should().Contain("Review Summary");
+            title.Should().NotBeNull("Step 3 should have a readiness title");
+            title.TextContent.Should().Contain("Review readiness");
         });
     }
 
@@ -993,6 +993,207 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             cut.Markup.Should().Contain("QA-008");
         });
     }
+
+    // ── Pre-run redesign: aggregated shared SDD evidence, presence styling and pack readiness ─────────
+
+    private void AddSharedEvidenceGraph(int requirements)
+    {
+        var context = new ReviewContext();
+        for (var i = 1; i <= requirements; i++)
+            context.Specification.Requirements.Add(new SemanticRequirement { Id = $"FR-{i:000}", Text = $"Requirement {i}" });
+        var provider = new Mock<IReviewContextProvider>();
+        provider.Setup(x => x.GetCurrent()).Returns(context);
+        Services.AddSingleton(new SddEvidenceGraphService(provider.Object));
+    }
+
+    private IRenderedComponent<QualityReview> RenderSpecificationOnly()
+    {
+        _resolver.SetSelectedProject(null);
+        _artifactContext.Import(new ArtifactImportRequest(
+            WorkspaceArtifactType.Specification, "# Requirements\n\n## FR-001: Imported\nThe system MUST work.", "spec.md", "File"));
+        return Render<QualityReview>();
+    }
+
+    [Fact]
+    public void PreRun_SharedEvidence_IsAggregatedByUniqueRequirement_NotDumpedAsRawRows()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        AddSharedEvidenceGraph(21);
+
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var section = cut.Find("[data-testid=qr-shared-evidence]");
+            cut.Find("[data-testid=qr-requirements-evaluated]").TextContent.Should().Be("21");
+            var categories = cut.FindAll("[data-testid=qr-evidence-category]");
+            categories.Should().HaveCount(2);
+            categories.Select(c => c.QuerySelector(".qr-evidence-number")!.TextContent).Should().Equal("21", "21");
+            section.TextContent.Should().Contain("Implementation evidence").And.Contain("Test execution evidence");
+            cut.FindAll("[data-testid=qr-evidence-requirement]").Should().BeEmpty("per-requirement rows are only rendered on demand");
+            section.QuerySelectorAll("li").Should().BeEmpty("no raw observation list is rendered by default");
+            cut.Markup.Should().NotContain("Review evidence<", "the repeated per-row link is replaced by one aggregate link");
+            cut.Find(".qr-evidence-link").TextContent.Should().Be("Review evidence gaps");
+        });
+    }
+
+    [Fact]
+    public void PreRun_InternalRuleIds_AreHiddenUntilTechnicalDetailsAreExpanded()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        AddSharedEvidenceGraph(3);
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-shared-evidence]"));
+        cut.Markup.Should().NotContain("RequirementWithoutCurrentImplementationEvidence").And.NotContain("RequirementWithoutCurrentExecutionEvidence");
+
+        cut.Find("[data-testid=qr-evidence-details-toggle]").Click();
+        cut.FindAll("[data-testid=qr-evidence-group]").Should().HaveCount(2);
+        cut.Markup.Should().NotContain("RequirementWithoutCurrentImplementationEvidence");
+
+        cut.FindAll(".qr-evidence-group-head")[0].Click();
+        cut.FindAll("[data-testid=qr-evidence-requirement]").Select(b => b.TextContent.Trim()).Should().Equal("FR-001", "FR-002", "FR-003");
+        cut.FindAll("[data-testid=qr-evidence-requirement]")[0].Click();
+        var detail = cut.Find("[data-testid=qr-evidence-requirement-detail]");
+        detail.TextContent.Should().Contain("FR-001").And.Contain("No current source-backed implementation evidence is linked.").And.Contain("Not assessed");
+        detail.QuerySelector("a")!.GetAttribute("href").Should().Be("/implementation-review");
+        cut.Markup.Should().NotContain("RequirementWithoutCurrentImplementationEvidence");
+
+        cut.Find("[data-testid=qr-evidence-technical-toggle]").Click();
+        cut.Find("[data-testid=qr-evidence-technical]").TextContent.Should().Contain("RequirementWithoutCurrentImplementationEvidence");
+    }
+
+    [Fact]
+    public void PreRun_NotAssessedEvidence_IsNeutral_NeverFailedOrZero()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        AddSharedEvidenceGraph(4);
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var section = cut.Find("[data-testid=qr-shared-evidence]");
+            var states = section.QuerySelectorAll(".qr-state");
+            states.Should().NotBeEmpty();
+            states.Should().OnlyContain(s => s.ClassList.Contains("is-neutral") && s.TextContent == "Not assessed");
+            section.QuerySelectorAll(".is-failed, .is-review").Should().BeEmpty();
+            section.TextContent.Should().NotContain("Failed").And.NotContain("Missing");
+            section.QuerySelectorAll(".qr-evidence-number").Select(n => n.TextContent).Should().NotContain("0");
+            cut.Find("[data-testid=qr-policy-significance]").TextContent.Should().Contain("Informational");
+        });
+    }
+
+    [Fact]
+    public void PreRun_ArtifactAvailability_IsPresence_NotPassOrApproval()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var statuses = cut.FindAll(".artifact-status");
+            statuses.Should().HaveCount(5).And.OnlyContain(s => s.TextContent.Trim() == "Available");
+            cut.Find(".qr-input-panel").TextContent.Should().Contain("It is not a review, an approval or a pass.");
+            cut.FindAll(".qr-artifact-grid").Single().TextContent.Should().NotContain("Approved").And.NotContain("Passed");
+            cut.FindAll(".artifact-icon").Should().BeEmpty("the coloured emoji icons implied state; cards use text labels");
+        });
+    }
+
+    [Fact]
+    public void PreRun_AllInputsPresent_PacksAreReady_AndSummaryCountsThem()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[data-testid=qr-pack-readiness]").Should().HaveCount(5).And.OnlyContain(c => c.TextContent == "Ready");
+            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Be("5 artifacts available · 5 packs selected · 5 ready · 0 partial · 0 blocked");
+            cut.Find("[data-testid=qr-expected-limitations]").TextContent.Should().Contain("None from missing inputs");
+            cut.Find(".qr-readiness-note").TextContent.Should().Contain("not that it will pass");
+        });
+    }
+
+    [Fact]
+    public void PreRun_PartialAndBlockedPacks_AreExplained_PartialRuns_BlockedCannotBeSelected()
+    {
+        var cut = RenderSpecificationOnly();
+
+        cut.WaitForAssertion(() =>
+        {
+            ReadinessOf(cut, "QA Auditor").Should().Be("Partial");
+            ReadinessOf(cut, "QA Readiness").Should().Be("Partial");
+            ReadinessOf(cut, "Constitution Compliance").Should().Be("Blocked");
+            ReadinessOf(cut, "Delivery Readiness").Should().Be("Blocked");
+            ReadinessOf(cut, "Data Model Quality").Should().Be("Blocked");
+            FindPackLabel(cut, "Constitution Compliance").QuerySelector("input")!.HasAttribute("disabled").Should().BeTrue();
+            FindPackLabel(cut, "Constitution Compliance").TextContent.Should().Contain("Needs a Constitution artifact.");
+            FindPackLabel(cut, "QA Auditor").TextContent.Should().Contain("Runs without Constitution, Plan or Tasks");
+            cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeFalse("a Partial pack can run");
+        });
+
+        cut.Find("[data-testid=qr-pack-readiness-toggle]").Click();
+        cut.Find("[data-testid=qr-pack-readiness-list]").TextContent.Should().Contain("No Plan: structural checks that need it have no input.");
+    }
+
+    [Fact]
+    public void PreRun_ExpectedLimitations_OnlyCoverSelectedPacks()
+    {
+        var cut = RenderSpecificationOnly();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-expected-limitations]").TextContent.Should().Contain("QA Auditor:").And.Contain("QA Readiness:"));
+
+        FindPackLabel(cut, "QA Auditor").QuerySelector("input")!.Change(false);
+
+        cut.WaitForAssertion(() =>
+        {
+            var limitations = cut.Find("[data-testid=qr-expected-limitations]").TextContent;
+            limitations.Should().Contain("QA Readiness:").And.NotContain("QA Auditor:");
+            cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 pack selected · 0 ready · 1 partial · 0 blocked");
+        });
+    }
+
+    [Fact]
+    public void PreRun_RunButton_IsDisabledWithAnExplanation_WhenNoSelectedPackCanRun()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+        cut.WaitForAssertion(() => cut.FindAll(".qr-shortcut-btn").Should().NotBeEmpty());
+
+        cut.FindAll(".qr-shortcut-btn").Single(b => b.TextContent == "Clear").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeTrue();
+            cut.Find("[data-testid=qr-run-disabled-reason]").TextContent.Should().Be("Select at least one review pack.");
+        });
+    }
+
+    [Fact]
+    public void PreRun_SelectAll_AndCategoryShortcuts_NeverSelectBlockedPacks_AndRunSendsOnlyRunnablePacks()
+    {
+        var cut = RenderSpecificationOnly();
+        cut.WaitForAssertion(() => cut.FindAll(".qr-shortcut-btn").Should().NotBeEmpty());
+
+        cut.FindAll(".qr-shortcut-btn").Single(b => b.TextContent == "Select All").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("2 packs selected · 0 ready · 2 partial · 0 blocked"));
+
+        var readiness = cut.FindAll(".qr-shortcut-btn").Single(b => b.TextContent == "Only Readiness");
+        readiness.GetAttribute("title").Should().Contain("replaces the current selection");
+        readiness.Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Contain("1 pack selected"));
+
+        ClickRun(cut);
+        cut.WaitForAssertion(() => _qualityReview.Calls.Single().SelectedPackIds.Should().Equal("qa-readiness"));
+    }
+
+    private static string ReadinessOf(IRenderedComponent<QualityReview> cut, string packName) =>
+        FindPackLabel(cut, packName).QuerySelector("[data-testid=qr-pack-readiness]")!.TextContent;
 
     private static IElement FindArtifactCard(IRenderedComponent<QualityReview> cut, string artifactName) =>
         cut.FindAll(".artifact-card").Single(card => card.TextContent.Contains(artifactName, StringComparison.Ordinal));
@@ -2197,7 +2398,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
             var header = inputPanel.QuerySelector(".qr-input-panel-header");
             header.Should().NotBeNull();
-            header.TextContent.Should().Contain("Current Workspace Artifacts");
+            header.TextContent.Should().Contain("Current workspace artifacts");
 
             var toggle = header.QuerySelector(".qr-input-panel-toggle");
             toggle.Should().NotBeNull("toggle button should exist in input panel header");

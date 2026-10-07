@@ -17,36 +17,166 @@
 
 <div class="qr-page">
 
-    @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
+    <PageHeader Title="Quality Review"
+                Description="Run deterministic quality, governance, standards and readiness packs against evidence available in the current workspace." />
+
+    @{ var sharedEvidence = SharedEvidence; }
+
+    @if (!string.IsNullOrWhiteSpace(_selectedProjectName) || HasWorkspaceArtifacts)
     {
-        <div style="padding: 8px 16px; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; font-size: 0.875rem; color: #666;">
-            Sample Project: <strong>@_selectedProjectName</strong>
+        <div class="qr-context-strip" data-testid="qr-context">
+            <span class="qr-context-item">
+                <span class="qr-context-label">Workspace</span>
+                @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
+                {
+                    <span>Sample Project: <strong>@_selectedProjectName</strong></span>
+                }
+                else
+                {
+                    <span>Imported artifacts</span>
+                }
+            </span>
+            <span class="qr-context-item"><span class="qr-context-label">Artifacts</span> <span>@AvailableArtifactCount available</span></span>
+            <span class="qr-context-item">
+                <span class="qr-context-label">Shared SDD evidence</span>
+                <span>@(sharedEvidence is null ? "No requirements in the lifecycle graph" : $"{sharedEvidence.RequirementsEvaluated} requirement{(sharedEvidence.RequirementsEvaluated == 1 ? "" : "s")} evaluated")</span>
+            </span>
         </div>
     }
 
-    <PageHeader Title="Quality Review"
-                Description="Run deterministic quality, compliance, and readiness reviews against artifacts in the current workspace. Choose eligible review packs and generate a report." />
-
-    @if (SddRows.Count > 0)
+    @if (sharedEvidence is not null)
     {
-        <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title">
-            <h2 id="sdd-evidence-title">Shared SDD evidence</h2>
-            <p>These deterministic evidence observations come from the same lifecycle graph as Requirements Traceability. They are informational unless project policy assigns release significance.</p>
-            @if (SddFindings.Count == 0) { <p role="status">No lifecycle evidence gaps were identified.</p> }
-            else
+        <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title" data-testid="qr-shared-evidence">
+            <div class="qr-section-head">
+                <h2 id="sdd-evidence-title" class="qr-section-title">Shared SDD evidence</h2>
+                <span class="qr-policy-chip" data-testid="qr-policy-significance"><span class="qr-policy-chip-label">Policy significance</span> @sharedEvidence.PolicySignificance</span>
+            </div>
+            <p class="qr-section-desc">Lifecycle evidence reused from <a href="/traceability">Requirements Traceability</a>. <em>Not assessed</em> means no current evidence is linked; it is not a failure or a quality finding.</p>
+
+            <dl class="qr-evidence-metrics">
+                <div class="qr-evidence-metric">
+                    <dt>Requirements evaluated</dt>
+                    <dd><strong class="qr-evidence-number" data-testid="qr-requirements-evaluated">@sharedEvidence.RequirementsEvaluated</strong></dd>
+                </div>
+                @foreach (var category in sharedEvidence.Categories)
+                {
+                    <div class="qr-evidence-metric" data-testid="qr-evidence-category" data-category="@category.Category">
+                        <dt>@category.Title</dt>
+                        @foreach (var group in category.Groups)
+                        {
+                            <dd class="qr-evidence-line">
+                                <strong class="qr-evidence-number">@group.RequirementCount</strong>
+                                <span>requirement@(group.RequirementCount == 1 ? "" : "s")</span>
+                                <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
+                                @if (category.Groups.Count > 1)
+                                {
+                                    <span class="qr-evidence-line-title">@group.Title</span>
+                                }
+                            </dd>
+                        }
+                    </div>
+                }
+            </dl>
+
+            @if (!sharedEvidence.HasObservations)
             {
-                <ul>
-                    @foreach (var finding in SddFindings)
-                    {
-                        <li><strong>@finding.Code</strong> · @finding.RequirementId · @finding.Severity — @finding.Message <a href="@SddFindingHref(finding)">Review evidence</a></li>
-                    }
-                </ul>
+                <p role="status" class="qr-section-desc">No lifecycle evidence gaps were identified.</p>
             }
-            @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
+            <p class="qr-policy-note">@sharedEvidence.PolicySignificanceExplanation</p>
+
+            <div class="qr-evidence-actions">
+                <button type="button" class="qr-disclosure" aria-expanded="@(_evidenceDetailsOpen ? "true" : "false")" aria-controls="qr-evidence-details"
+                        data-testid="qr-evidence-details-toggle" @onclick="() => _evidenceDetailsOpen = !_evidenceDetailsOpen">
+                    @(_evidenceDetailsOpen ? "Hide evidence details" : "Review evidence details")
+                </button>
+                <a class="qr-evidence-link" href="/implementation-review">Review evidence gaps</a>
+            </div>
+
+            @if (_evidenceDetailsOpen)
             {
-                var runMode = Enum.TryParse<LifecycleProjectionMode>(run.ProjectionMode, out var parsedMode) ? parsedMode : LifecycleProjectionMode.ActiveWorkspace;
-                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace, runMode, run.BaselineId);
-                <p>SDD evidence review @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") · @run.Findings.Count observation(s)</p>
+                <div id="qr-evidence-details" class="qr-evidence-details" data-testid="qr-evidence-details">
+                    @{ var groupIndex = 0; }
+                    @foreach (var category in sharedEvidence.Categories)
+                    {
+                        @foreach (var group in category.Groups)
+                        {
+                            var groupKey = $"g{groupIndex++}";
+                            var groupOpen = _openEvidenceGroups.Contains(groupKey);
+                            <div class="qr-evidence-group" data-testid="qr-evidence-group">
+                                <button type="button" class="qr-evidence-group-head" aria-expanded="@(groupOpen ? "true" : "false")" aria-controls="qr-evidence-@groupKey"
+                                        @onclick="() => Toggle(_openEvidenceGroups, groupKey)">
+                                    <span class="qr-evidence-group-title">@group.Title</span>
+                                    <span class="qr-evidence-group-count">@group.RequirementCount requirement@(group.RequirementCount == 1 ? "" : "s")</span>
+                                    <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
+                                </button>
+                                @if (groupOpen)
+                                {
+                                    <div id="qr-evidence-@groupKey" class="qr-evidence-group-body">
+                                        <p class="qr-evidence-group-expl">@group.Explanation</p>
+                                        <ul class="qr-evidence-reqs" aria-label="@group.Title: requirements">
+                                            @foreach (var requirement in group.Requirements)
+                                            {
+                                                var reqKey = $"{groupKey}:{requirement.RequirementId}";
+                                                var reqOpen = _openEvidenceRequirements.Contains(reqKey);
+                                                <li>
+                                                    <button type="button" class="qr-req-chip @(reqOpen ? "is-open" : "")" aria-expanded="@(reqOpen ? "true" : "false")"
+                                                            data-testid="qr-evidence-requirement" @onclick="() => Toggle(_openEvidenceRequirements, reqKey)">
+                                                        @requirement.RequirementId
+                                                    </button>
+                                                </li>
+                                            }
+                                        </ul>
+                                        @foreach (var requirement in group.Requirements.Where(r => _openEvidenceRequirements.Contains($"{groupKey}:{r.RequirementId}")))
+                                        {
+                                            var techKey = $"{groupKey}:{requirement.RequirementId}";
+                                            var techOpen = _openEvidenceTechnical.Contains(techKey);
+                                            <div class="qr-evidence-req-detail" data-testid="qr-evidence-requirement-detail">
+                                                <div class="qr-evidence-req-head"><strong>@requirement.RequirementId</strong> <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span></div>
+                                                @foreach (var observation in requirement.Observations)
+                                                {
+                                                    <p class="qr-evidence-req-message">@observation.Message <a href="@SddFindingHref(observation)">Review evidence</a></p>
+                                                }
+                                                <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(techOpen ? "true" : "false")"
+                                                        data-testid="qr-evidence-technical-toggle" @onclick="() => Toggle(_openEvidenceTechnical, techKey)">
+                                                    @(techOpen ? "Hide technical details" : "Technical details")
+                                                </button>
+                                                @if (techOpen)
+                                                {
+                                                    <dl class="qr-tech-details" data-testid="qr-evidence-technical">
+                                                        @foreach (var observation in requirement.Observations)
+                                                        {
+                                                            <div><dt>Rule ID</dt><dd><code>@observation.Code</code></dd></div>
+                                                            <div><dt>Evidence reference</dt><dd><code>@observation.EvidenceReference</code></dd></div>
+                                                        }
+                                                    </dl>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    <div class="qr-evidence-technical-summary">
+                        <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_evidenceTechnicalOpen ? "true" : "false")"
+                                @onclick="() => _evidenceTechnicalOpen = !_evidenceTechnicalOpen">
+                            @(_evidenceTechnicalOpen ? "Hide technical details" : "Technical details")
+                        </button>
+                        @if (_evidenceTechnicalOpen)
+                        {
+                            <dl class="qr-tech-details">
+                                <div><dt>Evidence observations</dt><dd>@sharedEvidence.ObservationCount</dd></div>
+                                <div><dt>Projection</dt><dd>@SddProjectionMode</dd></div>
+                            </dl>
+                            @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
+                            {
+                                var runMode = Enum.TryParse<LifecycleProjectionMode>(run.ProjectionMode, out var parsedMode) ? parsedMode : LifecycleProjectionMode.ActiveWorkspace;
+                                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace, runMode, run.BaselineId);
+                                <p class="qr-tech-run">SDD evidence snapshot @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") · @run.Findings.Count observation(s)</p>
+                            }
+                        }
+                    </div>
+                </div>
             }
         </section>
     }
@@ -54,9 +184,9 @@
     <!-- ── No project selected state ────────────────────────────────────── -->
     @if (!HasWorkspaceArtifacts)
     {
-        <div style="padding: 64px 32px; text-align: center; color: #999;">
-            <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No review artifacts available.</p>
-            <p style="font-size: 0.95rem;">Select a Sample Project or import artifacts into the current workspace.</p>
+        <div class="qr-empty-state">
+            <p class="qr-empty-title">No review artifacts available.</p>
+            <p>Select a Sample Project or import artifacts into the current workspace.</p>
         </div>
     }
     else
@@ -64,10 +194,10 @@
         <!-- ── Input panel ────────────────────────────────────────────────────── -->
         <div class="qr-input-panel">
             <div class="qr-input-panel-header">
-                <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Current Workspace Artifacts</span>
+                <h2 class="qr-input-panel-title"><span class="qr-step-badge">1</span> Current workspace artifacts</h2>
                 @if (_report is not null)
                 {
-                    <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
+                    <button class="qr-input-panel-toggle" aria-expanded="@(_inputExpanded ? "true" : "false")" @onclick="() => _inputExpanded = !_inputExpanded">
                         @(_inputExpanded ? "▾ Collapse" : "▸ Expand")
                     </button>
                 }
@@ -75,114 +205,44 @@
 
         @if (_inputExpanded)
         {
+            <p class="qr-section-desc">Available means the artifact is present in the current workspace. It is not a review, an approval or a pass.</p>
             @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
             {
-                <p role="status">Some roles have multiple artifacts. Select one in its Explorer before running Quality Review.</p>
+                <p role="status" class="qr-inline-note">Some roles have multiple artifacts. Select one in its Explorer before running Quality Review.</p>
             }
             <!-- ── Artifact cards ───────────────────────────────────────── -->
             <div class="qr-artifact-grid">
-
-                <div class="artifact-card @(!string.IsNullOrEmpty(_constitutionText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📜</span>
-                        <span class="artifact-name">Constitution</span>
-                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Constitution) == "Available" ? "is-loaded" : "")">
-                            @ArtifactStatusLabel(WorkspaceArtifactType.Constitution)
-                        </span>
-                    </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Constitution, "constitution.md")</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Constitution)</div>
-                    @if (!string.IsNullOrEmpty(_constitutionText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_constitutionText.Split('\n').Length lines</span>
+                @foreach (var (role, label, fallback) in ArtifactRoles)
+                {
+                    var text = ArtifactText(role);
+                    var statusLabel = ArtifactStatusLabel(role);
+                    <div class="artifact-card @(!string.IsNullOrEmpty(text) ? "is-loaded" : "")">
+                        <div class="artifact-card-header">
+                            <span class="artifact-name">@label</span>
+                            <span class="artifact-status @(statusLabel == "Available" ? "is-loaded" : "")">@statusLabel</span>
                         </div>
-                    }
-                </div>
-
-                <div class="artifact-card @(!string.IsNullOrEmpty(_specText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📋</span>
-                        <span class="artifact-name">Specification</span>
-                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Specification) == "Available" ? "is-loaded" : "")">
-                            @ArtifactStatusLabel(WorkspaceArtifactType.Specification)
-                        </span>
+                        <div class="qr-artifact-file">@ArtifactFileName(role, fallback)</div>
+                        <div class="qr-artifact-source">@ArtifactSource(role)</div>
+                        @if (!string.IsNullOrEmpty(text))
+                        {
+                            <div class="artifact-footer">
+                                <span>@text.Split('\n').Length lines</span>
+                            </div>
+                        }
                     </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Specification, "spec.md")</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Specification)</div>
-                    @if (!string.IsNullOrEmpty(_specText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_specText.Split('\n').Length lines</span>
-                        </div>
-                    }
-                </div>
-
-                <div class="artifact-card @(!string.IsNullOrEmpty(_planText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">📐</span>
-                        <span class="artifact-name">Plan</span>
-                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Plan) == "Available" ? "is-loaded" : "")">
-                            @ArtifactStatusLabel(WorkspaceArtifactType.Plan)
-                        </span>
-                    </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Plan, "plan.md")</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Plan)</div>
-                    @if (!string.IsNullOrEmpty(_planText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_planText.Split('\n').Length lines</span>
-                        </div>
-                    }
-                </div>
-
-                <div class="artifact-card @(!string.IsNullOrEmpty(_taskText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">✅</span>
-                        <span class="artifact-name">Tasks</span>
-                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.Tasks) == "Available" ? "is-loaded" : "")">
-                            @ArtifactStatusLabel(WorkspaceArtifactType.Tasks)
-                        </span>
-                    </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.Tasks, "tasks.md")</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.Tasks)</div>
-                    @if (!string.IsNullOrEmpty(_taskText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_taskText.Split('\n').Length lines</span>
-                        </div>
-                    }
-                </div>
-
-                <div class="artifact-card @(!string.IsNullOrEmpty(_dataModelText) ? "is-loaded" : "")">
-                    <div class="artifact-card-header">
-                        <span class="artifact-icon" aria-hidden="true">🗄️</span>
-                        <span class="artifact-name">Data Model</span>
-                        <span class="artifact-status @(ArtifactStatusLabel(WorkspaceArtifactType.DataModel) == "Available" ? "is-loaded" : "")">
-                            @ArtifactStatusLabel(WorkspaceArtifactType.DataModel)
-                        </span>
-                    </div>
-                    <div style="padding: 8px 0; font-size: 0.85rem; color: #666;">@ArtifactFileName(WorkspaceArtifactType.DataModel, "data-model.md")</div>
-                    <div style="padding: 4px 0; font-size: 0.8rem; color: #999;">@ArtifactSource(WorkspaceArtifactType.DataModel)</div>
-                    @if (!string.IsNullOrEmpty(_dataModelText))
-                    {
-                        <div class="artifact-footer">
-                            <span>@_dataModelText.Split('\n').Length lines</span>
-                        </div>
-                    }
-                </div>
-
+                }
             </div>
 
             <!-- ── Review pack selector ─────────────────────────────────── -->
             <div class="qr-packs-section">
-                <div class="qr-packs-title"><span class="qr-step-badge">2</span> Review Packs</div>
-                <div class="qr-shortcut-bar">
-                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks" title="Select all available packs">Select All</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Quality")' title="Select all Quality packs">Quality</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Governance")' title="Select all Governance packs">Governance</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Standards")' title="Select all Standards packs">Standards</button>
-                    <button class="qr-shortcut-btn" @onclick='() => SelectPackGroup("Readiness")' title="Select all Readiness packs">Readiness</button>
+                <h2 class="qr-packs-title"><span class="qr-step-badge">2</span> Review packs</h2>
+                <div class="qr-shortcut-bar" role="group" aria-label="Quick pack selection">
+                    <span class="qr-shortcut-label" aria-hidden="true">Select</span>
+                    <button class="qr-shortcut-btn" @onclick="SelectAllPacks" title="Select every pack that can run with the current artifacts">Select All</button>
+                    @foreach (var group in PackGroups)
+                    {
+                        <button class="qr-shortcut-btn" @onclick="() => SelectPackGroup(group)" title="Select only the @group packs that can run (replaces the current selection)">Only @group</button>
+                    }
                     <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()" title="Clear all selections">Clear</button>
                 </div>
                 <div class="qr-packs-grid">
@@ -190,46 +250,104 @@
                         .GroupBy(p => p.PackGroup)
                         .OrderBy(g => _groupOrder.GetValueOrDefault(g.Key, 99)))
                     {
-                        <div class="qr-pack-group">
-                            <div class="qr-pack-group-title">@group.Key</div>
+                        <fieldset class="qr-pack-group">
+                            <legend class="qr-pack-group-title">@group.Key</legend>
                             @foreach (var pack in group)
                             {
-                                var isAvailable = IsPackAvailable(pack);
-                                var requirementText = GetPackRequirementText(pack);
-                                <label class="qr-pack-option @(!isAvailable ? "is-disabled" : "")">
+                                var readiness = Readiness(pack);
+                                var isAvailable = readiness.IsRunnable;
+                                var isSelected = _selectedPacks.Contains(pack.PackId) && isAvailable;
+                                <label class="qr-pack-option @(!isAvailable ? "is-disabled" : "") @(isSelected ? "is-selected" : "")" data-pack="@pack.PackId">
                                     <input type="checkbox"
-                                           checked="@(_selectedPacks.Contains(pack.PackId) && isAvailable)"
+                                           checked="@isSelected"
                                            disabled="@(!isAvailable)"
                                            @onchange="e => TogglePack(pack.PackId, (bool)e.Value!)" />
                                     <span class="qr-pack-label">
-                                        <span class="qr-pack-name">@pack.PackName</span>
+                                        <span class="qr-pack-name-row">
+                                            <span class="qr-pack-name">@pack.PackName</span>
+                                            <span class="qr-readiness-chip is-@ReadinessClass(readiness.State)" data-testid="qr-pack-readiness">@QualityReviewPackReadiness.StateLabel(readiness.State)</span>
+                                        </span>
                                         <span class="qr-pack-desc">@pack.PackDescription</span>
-                                        @if (!isAvailable && requirementText is not null)
+                                        @if (readiness.State != PackReadinessState.Ready)
                                         {
-                                            <span class="qr-prereq-warn" title="@requirementText">⊘ @requirementText</span>
-                                        }
-                                        else if (isAvailable && PackPrerequisiteWarning(pack) is string warn)
-                                        {
-                                            <span class="qr-prereq-warn">⚠ @warn</span>
+                                            <span class="qr-pack-readiness-reason">@readiness.Summary</span>
                                         }
                                     </span>
                                 </label>
                             }
-                        </div>
+                        </fieldset>
                     }
                 </div>
             </div>
 
-            <!-- ── Run bar ──────────────────────────────────────────────── -->
-            <div class="qr-run-bar">
+            var selectedReadiness = SelectedReadiness;
+            var readinessSummary = QualityReviewPackReadiness.Summarize(selectedReadiness);
+            <!-- ── Readiness + run bar ──────────────────────────────────── -->
+            <section class="qr-run-bar" aria-labelledby="qr-readiness-title" data-testid="qr-readiness-card">
                 <div class="qr-run-summary-section">
-                    <span class="qr-run-title"><span class="qr-step-badge">3</span> Review Summary</span>
-                    <span class="qr-run-details">@RunSummaryText</span>
+                    <h2 class="qr-run-title" id="qr-readiness-title"><span class="qr-step-badge">3</span> Review readiness</h2>
+                    <span class="qr-run-details" data-testid="qr-run-summary">@RunSummaryText</span>
+                    @if (readinessSummary.Selected > 0)
+                    {
+                        <ul class="qr-readiness-counts" aria-label="Selected pack readiness" data-testid="qr-readiness-counts">
+                            <li class="qr-readiness-chip is-ready"><strong>@readinessSummary.Ready</strong> ready</li>
+                            <li class="qr-readiness-chip is-partial"><strong>@readinessSummary.Partial</strong> partial</li>
+                            <li class="qr-readiness-chip is-blocked"><strong>@readinessSummary.Blocked</strong> blocked</li>
+                            @if (readinessSummary.NotApplicable > 0)
+                            {
+                                <li class="qr-readiness-chip is-na"><strong>@readinessSummary.NotApplicable</strong> not applicable</li>
+                            }
+                        </ul>
+                        <div class="qr-limitations" data-testid="qr-expected-limitations">
+                            <span class="qr-limitations-title">Expected limitations</span>
+                            @if (readinessSummary.ExpectedLimitations.Count == 0)
+                            {
+                                <span class="qr-limitations-none">None from missing inputs. Every selected pack has the artifacts it reads.</span>
+                            }
+                            else
+                            {
+                                <ul>
+                                    @foreach (var limitation in readinessSummary.ExpectedLimitations)
+                                    {
+                                        <li>@limitation</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                        <p class="qr-readiness-note">Ready means a pack's inputs are available, not that it will pass. Selected packs read document artifacts only; shared SDD evidence is not one of their inputs and is not reported as a Quality Review finding.</p>
+                        <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_packReadinessOpen ? "true" : "false")" aria-controls="qr-pack-readiness-list"
+                                data-testid="qr-pack-readiness-toggle" @onclick="() => _packReadinessOpen = !_packReadinessOpen">
+                            @(_packReadinessOpen ? "Hide pack readiness" : "View pack readiness")
+                        </button>
+                        @if (_packReadinessOpen)
+                        {
+                            <ul id="qr-pack-readiness-list" class="qr-pack-readiness-list" data-testid="qr-pack-readiness-list">
+                                @foreach (var item in selectedReadiness)
+                                {
+                                    <li>
+                                        <span class="qr-pack-readiness-name">@item.PackName</span>
+                                        <span class="qr-readiness-chip is-@ReadinessClass(item.State)">@QualityReviewPackReadiness.StateLabel(item.State)</span>
+                                        <span class="qr-pack-readiness-summary">@item.Summary</span>
+                                        @foreach (var limitation in item.Limitations)
+                                        {
+                                            <span class="qr-pack-readiness-limit">@limitation</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
                 </div>
-                <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
-                    @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
-                </PrimaryButton>
-            </div>
+                <div class="qr-run-action">
+                    <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
+                        @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
+                    </PrimaryButton>
+                    @if (CannotRun && !_running)
+                    {
+                        <span class="qr-run-blocked" role="status" data-testid="qr-run-disabled-reason">@RunDisabledReason</span>
+                    }
+                </div>
+            </section>
         }
     </div>
 
@@ -496,9 +614,76 @@
     private bool _inputExpanded = true;
     private IWorkspaceSessionService? SddWorkspace => Services.GetService<IWorkspaceSessionService>();
     private SddEvidenceGraphService? SddGraph => Services.GetService<SddEvidenceGraphService>();
-    private IReadOnlyList<SddRequirementGraphRow> SddRows => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.Build(workspace) : [];
     private LifecycleProjectionMode SddProjectionMode => SddWorkspace?.SddLifecycle.Baselines.Any(x => x.Status == "Current") == true ? LifecycleProjectionMode.AuthoritativeBaseline : LifecycleProjectionMode.ActiveWorkspace;
-    private IReadOnlyList<SddQualityReviewFinding> SddFindings => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.QualityFindings(workspace, SddProjectionMode) : [];
+
+    /// <summary>Aggregated shared lifecycle evidence from the same projection Requirements Traceability uses; null when the graph has no requirements.</summary>
+    private SharedSddEvidenceSummary? SharedEvidence
+    {
+        get
+        {
+            if (SddWorkspace is not { } workspace || SddGraph is not { } graph) return null;
+            var rows = graph.Project(workspace, SddProjectionMode).Rows;
+            return rows.Count == 0 ? null : SharedSddEvidenceSummary.Build(rows, graph.QualityFindings(workspace, SddProjectionMode));
+        }
+    }
+
+    private bool _evidenceDetailsOpen;
+    private bool _evidenceTechnicalOpen;
+    private bool _packReadinessOpen;
+    private readonly HashSet<string> _openEvidenceGroups = [];
+    private readonly HashSet<string> _openEvidenceRequirements = [];
+    private readonly HashSet<string> _openEvidenceTechnical = [];
+
+    private static void Toggle(HashSet<string> set, string key)
+    {
+        if (!set.Remove(key)) set.Add(key);
+    }
+
+    private static string ToneClass(SddObservationTone tone) => tone switch
+    {
+        SddObservationTone.Failed => "failed",
+        SddObservationTone.NeedsReview => "review",
+        _ => "neutral",
+    };
+
+    private static string ReadinessClass(PackReadinessState state) => state switch
+    {
+        PackReadinessState.Ready => "ready",
+        PackReadinessState.Partial => "partial",
+        PackReadinessState.Blocked => "blocked",
+        _ => "na",
+    };
+
+    private static readonly (WorkspaceArtifactType Role, string Label, string Fallback)[] ArtifactRoles =
+    [
+        (WorkspaceArtifactType.Constitution, "Constitution", "constitution.md"),
+        (WorkspaceArtifactType.Specification, "Specification", "spec.md"),
+        (WorkspaceArtifactType.Plan, "Plan", "plan.md"),
+        (WorkspaceArtifactType.Tasks, "Tasks", "tasks.md"),
+        (WorkspaceArtifactType.DataModel, "Data Model", "data-model.md"),
+    ];
+
+    private string ArtifactText(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Constitution => _constitutionText,
+        WorkspaceArtifactType.Specification => _specText,
+        WorkspaceArtifactType.Plan => _planText,
+        WorkspaceArtifactType.Tasks => _taskText,
+        WorkspaceArtifactType.DataModel => _dataModelText,
+        _ => string.Empty,
+    };
+
+    private int AvailableArtifactCount => ArtifactRoles.Count(r => !string.IsNullOrWhiteSpace(ArtifactText(r.Role)));
+
+    private IEnumerable<string> PackGroups => QrService.AvailablePacks.Select(p => p.PackGroup).Distinct()
+        .OrderBy(g => _groupOrder.GetValueOrDefault(g, 99));
+
+    private ReviewArtifactPresence Presence => new(HasConstitution, HasSpec, HasPlan, HasTasks, HasDataModel);
+
+    private PackReadiness Readiness(QualityReviewPackDescriptor pack) => QualityReviewPackReadiness.Evaluate(pack, Presence);
+
+    private IReadOnlyList<PackReadiness> SelectedReadiness => QrService.AvailablePacks
+        .Where(p => _selectedPacks.Contains(p.PackId)).Select(Readiness).ToList();
 
     private static readonly Dictionary<string, int> _groupOrder = new()
     {
@@ -682,7 +867,21 @@
     private string ArtifactSource(WorkspaceArtifactType role) => _roleStates.TryGetValue(role, out var state) && state.Selected is { } artifact
         ? $"Source: {(artifact.Source == BirkNext.Web.Services.Explorers.ExplorerArtifactSource.SampleProject ? "Sample Project" : "Workspace import")}" : "Source: Current workspace";
 
-    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded || _roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired);
+    private bool SelectionRequired => _roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired);
+
+    /// <summary>Run needs at least one selected pack whose inputs let it run (Ready or Partial); Blocked packs never run.</summary>
+    private bool CannotRun => _running || !AnyArtifactLoaded || SelectionRequired || !SelectedReadiness.Any(r => r.IsRunnable);
+
+    private string RunDisabledReason
+    {
+        get
+        {
+            if (!AnyArtifactLoaded) return "Add artifacts to the current workspace to run a review.";
+            if (SelectionRequired) return "Choose one artifact per role in its Explorer before running.";
+            if (_selectedPacks.Count == 0) return "Select at least one review pack.";
+            return "None of the selected packs can run: their required inputs are absent.";
+        }
+    }
 
     private DeliveryReadinessReport? DeliveryReadinessResult => _report?.PackResults
         .Select(r => r.DeliveryReadiness)
@@ -695,35 +894,14 @@
             if (!AnyArtifactLoaded) return "Add artifacts to the current workspace";
             if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired)) return "Choose artifacts in their Explorers before reviewing";
             if (_selectedPacks.Count == 0) return "Select at least one review pack";
-            int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
-                            .Count(t => !string.IsNullOrWhiteSpace(t));
-            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} available · {_selectedPacks.Count} pack{(_selectedPacks.Count != 1 ? "s" : "")} selected";
+            int loaded = AvailableArtifactCount;
+            var summary = QualityReviewPackReadiness.Summarize(SelectedReadiness);
+            return $"{loaded} artifact{(loaded != 1 ? "s" : "")} available · {summary.Selected} pack{(summary.Selected != 1 ? "s" : "")} selected · {summary.Ready} ready · {summary.Partial} partial · {summary.Blocked} blocked";
         }
     }
 
-    private bool IsPackAvailable(QualityReviewPackDescriptor pack) =>
-        pack.PackId switch
-        {
-            "qa-auditor" => HasSpec || HasPlan || HasTasks,
-            "constitution-compliance" => HasConstitution,
-            "data-model-quality" => HasDataModel,
-            _ when pack.PackGroup == "Standards" => HasStandardsText,
-            "qa-readiness" => HasSpec || HasTasks,
-            "delivery-readiness" => HasPlan || HasTasks,
-            _ => true, // Default to available if pack ID not recognized
-        };
-
-    private string? GetPackRequirementText(QualityReviewPackDescriptor pack) =>
-        pack.PackId switch
-        {
-            "qa-auditor" => "Requires specification, plan, or tasks",
-            "constitution-compliance" => "Requires constitution.md",
-            "data-model-quality" => "Requires data-model.md",
-            _ when pack.PackGroup == "Standards" => "Requires Constitution, Specification, Plan or Tasks",
-            "qa-readiness" => "Requires specification or tasks",
-            "delivery-readiness" => "Requires plan or tasks",
-            _ => null,
-        };
+    /// <summary>A pack can be selected and run when its readiness is Ready or Partial.</summary>
+    private bool IsPackAvailable(QualityReviewPackDescriptor pack) => Readiness(pack).IsRunnable;
 
     private HashSet<string> GetDefaultSelectedPacks()
     {
@@ -754,19 +932,6 @@
                 _selectedPacks.Add(pack.PackId);
         }
     }
-
-    private string? PackPrerequisiteWarning(QualityReviewPackDescriptor pack) =>
-        pack.PackId == "constitution-compliance" && string.IsNullOrWhiteSpace(_constitutionText)
-            ? "Requires constitution"
-        : pack.PackGroup == "Standards" && !HasStandardsText
-            ? "Requires document text"
-        : pack.PackId == "qa-readiness" && string.IsNullOrWhiteSpace(_specText)
-            ? "Requires specification"
-        : pack.PackId == "delivery-readiness" && !AnyArtifactLoaded
-            ? "Requires artifacts"
-        : pack.PackId == "data-model-quality" && string.IsNullOrWhiteSpace(_dataModelText)
-            ? "Requires data-model.md"
-        : null;
 
     // ── Artifact presence helpers ─────────────────────────────────────────────
     private bool HasConstitution => !string.IsNullOrWhiteSpace(_constitutionText);
@@ -836,7 +1001,7 @@
         try
         {
             var artifactSnapshot = BuildArtifactSnapshot();
-            var selectedPackIds = _selectedPacks.ToArray();
+            var selectedPackIds = QrService.AvailablePacks.Where(p => _selectedPacks.Contains(p.PackId) && IsPackAvailable(p)).Select(p => p.PackId).ToArray();
             QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
 
             _report = await QrService.RunAsync(
@@ -948,16 +1113,18 @@
         _drBlockerShowAll = false;
     }
 
+    /// <summary>Adds every pack that can run; Blocked packs stay unselected.</summary>
     private void SelectAllPacks()
     {
-        foreach (var p in QrService.AvailablePacks)
+        foreach (var p in QrService.AvailablePacks.Where(IsPackAvailable))
             _selectedPacks.Add(p.PackId);
     }
 
+    /// <summary>Replaces the selection with the runnable packs of one category ("Only Quality").</summary>
     private void SelectPackGroup(string group)
     {
         _selectedPacks.Clear();
-        foreach (var p in QrService.AvailablePacks.Where(p => p.PackGroup == group))
+        foreach (var p in QrService.AvailablePacks.Where(p => p.PackGroup == group && IsPackAvailable(p)))
             _selectedPacks.Add(p.PackId);
     }
 
