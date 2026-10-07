@@ -10,6 +10,7 @@
 @inject ISampleProjectDocumentResolver DocumentResolver
 @inject IJSRuntime JS
 @inject IServiceProvider Services
+@inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
 
 <PageTitle>Quality Review</PageTitle>
 
@@ -50,11 +51,11 @@
     }
 
     <!-- ── No project selected state ────────────────────────────────────── -->
-    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    @if (!HasWorkspaceArtifacts)
     {
         <div style="padding: 64px 32px; text-align: center; color: #999;">
-            <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No Sample Project selected.</p>
-            <p style="font-size: 0.95rem;">Select a Sample Project from the sidebar to run a quality review.</p>
+            <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No review artifacts available.</p>
+            <p style="font-size: 0.95rem;">Select a Sample Project or import artifacts into the current workspace.</p>
         </div>
     }
     else
@@ -62,7 +63,7 @@
         <!-- ── Input panel ────────────────────────────────────────────────────── -->
         <div class="qr-input-panel">
             <div class="qr-input-panel-header">
-                <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Sample Project Artifacts</span>
+                <span class="qr-input-panel-title"><span class="qr-step-badge">1</span> Current Workspace Artifacts</span>
                 @if (_report is not null)
                 {
                     <button class="qr-input-panel-toggle" @onclick="() => _inputExpanded = !_inputExpanded">
@@ -73,6 +74,10 @@
 
         @if (_inputExpanded)
         {
+            @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
+            {
+                <p role="status">Some roles have multiple artifacts. Select one in its Explorer before running Quality Review.</p>
+            }
             <!-- ── Artifact cards ───────────────────────────────────────── -->
             <div class="qr-artifact-grid">
 
@@ -477,6 +482,7 @@
     private string? _selectedProject;
     private string? _selectedProjectName;
     private string? _previousProject;
+    private IReadOnlyDictionary<WorkspaceArtifactType, BirkNext.Web.Services.Explorers.ArtifactExplorerState> _roleStates = new Dictionary<WorkspaceArtifactType, BirkNext.Web.Services.Explorers.ArtifactExplorerState>();
 
     private readonly HashSet<string> _selectedPacks = [];
     private readonly HashSet<string> _expanded      = [];
@@ -525,20 +531,7 @@
         {
             await QrService.InitializeAsync();
 
-            // POLICY: Quality Review loads from selected Sample Project only
-            var selected = DocumentResolver.GetSelectedProject();
-            if (!string.IsNullOrWhiteSpace(selected))
-            {
-                await LoadFromSampleProject(selected);
-                _previousProject = selected;
-            }
-            else
-            {
-                // No Sample Project selected
-                _selectedProject = null;
-                _selectedProjectName = null;
-                ClearAllArtifacts();
-            }
+            await LoadCurrentWorkspaceArtifacts();
 
             // Check if there's a prior session with selected packs
             if (QualitySession.SelectedPackIds.Count > 0)
@@ -561,15 +554,7 @@
             if (QualitySession.HasResult && IsSessionForCurrentProject())
                 RestoreReport(QualitySession.Report!);
 
-            // Keep Quality Review on the same persisted lifecycle projection even when it is the
-            // first SDD view opened in this workspace. Synchronization is idempotent and does not
-            // revalidate stale links merely because a page was visited.
-            if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph)
-            {
-                sddGraph.SynchronizeCurrentArtifacts(sddWorkspace);
-                if (Services.GetService<IWorkspaceAutoSaveService>() is { } autoSave)
-                    await autoSave.SaveNowAsync();
-            }
+            // Opening this page only resolves inputs. Analysis and persisted review runs are user initiated.
         }
         catch (Exception ex)
         {
@@ -582,14 +567,14 @@
         if (!firstRender)
         {
             // Detect project changes at runtime
-            var currentProject = DocumentResolver.GetSelectedProject();
+            var currentProject = ArtifactContext.CurrentScope;
             if (currentProject != _previousProject)
             {
                 _previousProject = currentProject;
 
                 if (!string.IsNullOrWhiteSpace(currentProject))
                 {
-                    await LoadFromSampleProject(currentProject);
+                    await LoadCurrentWorkspaceArtifacts();
                     // Clear report when project changes
                     _report = null;
                     _diagnosticSnapshot = null;
@@ -610,23 +595,21 @@
         }
     }
 
-    private async Task LoadFromSampleProject(string projectSlug)
+    private async Task LoadCurrentWorkspaceArtifacts()
     {
-        // Load all five documents from Sample Project
-        var constitution = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Constitution);
-        var specification = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Specification);
-        var plan = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Plan);
-        var tasks = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Tasks);
-        var dataModel = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.DataModel);
-
-        _constitutionText = constitution.IsSuccess && !string.IsNullOrEmpty(constitution.Content) ? constitution.Content : string.Empty;
-        _specText = specification.IsSuccess && !string.IsNullOrEmpty(specification.Content) ? specification.Content : string.Empty;
-        _planText = plan.IsSuccess && !string.IsNullOrEmpty(plan.Content) ? plan.Content : string.Empty;
-        _taskText = tasks.IsSuccess && !string.IsNullOrEmpty(tasks.Content) ? tasks.Content : string.Empty;
-        _dataModelText = dataModel.IsSuccess && !string.IsNullOrEmpty(dataModel.Content) ? dataModel.Content : string.Empty;
-
-        _selectedProject = projectSlug;
-        await UpdateSelectedProjectName();
+        var roles = CurrentWorkspaceSnapshot.WorkflowRoles;
+        var states = await Task.WhenAll(roles.Select(role => ArtifactContext.GetStateAsync(role)));
+        _roleStates = states.ToDictionary(state => state.Role);
+        string Content(WorkspaceArtifactType role) => _roleStates.TryGetValue(role, out var state) && state.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.Loaded ? state.Content ?? string.Empty : string.Empty;
+        _constitutionText = Content(WorkspaceArtifactType.Constitution);
+        _specText = Content(WorkspaceArtifactType.Specification);
+        _planText = Content(WorkspaceArtifactType.Plan);
+        _taskText = Content(WorkspaceArtifactType.Tasks);
+        _dataModelText = Content(WorkspaceArtifactType.DataModel);
+        _selectedProject = ArtifactContext.CurrentScope;
+        _previousProject = _selectedProject;
+        _selectedProjectName = _selectedProject;
+        if (!string.IsNullOrWhiteSpace(_selectedProject)) await UpdateSelectedProjectName();
         ApplyDefaultPackSelections();
     }
 
@@ -661,7 +644,9 @@
         !string.IsNullOrWhiteSpace(_taskText)         ||
         !string.IsNullOrWhiteSpace(_dataModelText);
 
-    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded || string.IsNullOrWhiteSpace(_selectedProject);
+    private bool HasWorkspaceArtifacts => AnyArtifactLoaded || _roleStates.Values.Any(s => s.Artifacts.Count > 0);
+
+    private bool CannotRun => _running || _selectedPacks.Count == 0 || !AnyArtifactLoaded || _roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired);
 
     private DeliveryReadinessReport? DeliveryReadinessResult => _report?.PackResults
         .Select(r => r.DeliveryReadiness)
@@ -671,8 +656,8 @@
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(_selectedProject)) return "Select a Sample Project to run a review";
-            if (!AnyArtifactLoaded) return "Sample Project is missing required artifacts";
+            if (!AnyArtifactLoaded) return "Add artifacts to the current workspace";
+            if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired)) return "Choose artifacts in their Explorers before reviewing";
             if (_selectedPacks.Count == 0) return "Select at least one review pack";
             int loaded = new[] { _constitutionText, _specText, _planText, _taskText, _dataModelText }
                             .Count(t => !string.IsNullOrWhiteSpace(t));

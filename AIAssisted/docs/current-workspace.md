@@ -76,10 +76,36 @@ There is no polling. Concurrent readers share one computation, and a snapshot co
 - **Sidebar applicability.** `ProjectApplicabilityState` takes `HasRequirements` and `HasDocumentation` from the snapshot.
   NavMenu refreshes on `Changed`.
 
+## Requirements Traceability and Quality Review
+
+Sample Projects are one source of artifacts, not the definition of a workspace. Requirements Traceability and Quality
+Review resolve their inputs from the current workspace through the same artifact repository and role resolver used by the
+Explorers. They work with either discovered Sample Project documents or imported artifacts, including a valid workspace
+whose project is *Not assigned*. Research is discoverable as a role but is not consumed by the current traceability or
+Quality Review packs.
+
+Artifact availability, selection, and analysis/review state are separate. Multiple artifacts without a chosen or uniquely
+authoritative artifact put that role in *Selection required*. Availability never means that traceability was recomputed
+or a Quality Review was run. Opening either page only resolves inputs and displays existing results; analysis and review
+remain explicit user actions. Traceability keeps its existing report state and is not automatically recomputed when
+artifacts become available.
+
+Quality Review pack inputs are deterministic:
+
+| Review Pack | Artifact roles consumed |
+| --- | --- |
+| QA Auditor | Specification, Plan, Tasks |
+| Constitution Compliance | Constitution |
+| Data Model Quality | Data Model |
+| WCAG 2.2 | Specification |
+| OWASP ASVS | Specification |
+| GDPR | Specification, Data Model |
+| ISO 25010 | Specification, Plan |
+| QA Readiness | Specification, Tasks |
+| Delivery Readiness | Plan, Tasks |
+
 ## Known limits
 
-- Requirements Traceability and Quality Review still read only the selected Sample Project's documents. In a manual
-  workspace they say *No Sample Project selected*. That is true, but they do not read imported artifacts yet.
 - Auto-save raises no completion event. The save state shown may lag until the next workspace change or explicit save.
   Existence never lags.
 - A restored generic workspace whose project name is not a Sample Project slug shows the project as unavailable, and its

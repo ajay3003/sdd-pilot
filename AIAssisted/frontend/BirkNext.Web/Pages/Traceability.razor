@@ -5,10 +5,18 @@
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceAutoSaveService AutoSave
 @inject SddEvidenceGraphService Graph
+@inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
+@inject ICurrentWorkspaceProjection CurrentWorkspace
 
 <PageTitle>Requirements Traceability</PageTitle>
 <main class="requirements-traceability">
     <PageHeader Title="Requirements Traceability" Description="One shared evidence graph for current requirements, acceptance criteria, plan, tasks, implementation references and test executions." />
+    @if (_snapshot is null) { <p role="status">Loading workspace artifacts…</p> }
+    else if (_snapshot.State == CurrentWorkspaceState.Error) { <p role="alert">Unable to load workspace artifacts.</p> }
+    else if (_selectionRequired.Count > 0) { <section role="status"><h2>Selection required</h2><p>Choose the artifact to use in its Explorer before viewing traceability.</p>@foreach (var role in _selectionRequired) { <p>@role.Label has multiple artifacts. <a href="/explorers">Choose artifact</a></p> }</section> }
+    else if (!_snapshot.Has(WorkspaceArtifactType.Specification)) { <section role="status"><h2>Specification unavailable</h2><p>Add a Specification artifact to the current workspace to build requirements traceability.</p></section> }
+    else
+    {
     <SddTraceabilityMatrix />
     <SddRequirementTestEvidence Title="Test evidence dimensions" />
     @if (OrphanTasks.Count > 0)
@@ -35,10 +43,13 @@
         <li>Imported results whose source version is unknown are historical evidence, not verification of the current source.</li>
         <li>Missing evidence is a traceability gap, not an automatic failure.</li>
     </ul></section>
+    }
 </main>
 
 @code {
     private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
+    private CurrentWorkspaceSnapshot? _snapshot;
+    private IReadOnlyList<ArtifactRoleStatus> _selectionRequired = [];
     private HashSet<string> RequirementIds => Rows.Select(x => x.Requirement.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string> OrphanTasks => Workspace.SddLifecycle.Links
         .Where(x => x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current" && !RequirementIds.Contains(x.FromId))
@@ -56,8 +67,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Graph.SynchronizeCurrentArtifacts(Workspace);
-        await AutoSave.SaveNowAsync();
+        _snapshot = await CurrentWorkspace.GetAsync();
+        var states = await Task.WhenAll(CurrentWorkspaceSnapshot.WorkflowRoles.Select(role => ArtifactContext.GetStateAsync(role)));
+        _selectionRequired = states.Where(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired)
+            .Select(s => _snapshot.Role(s.Role)).ToArray();
     }
 }
 <style>.requirements-traceability{max-width:1600px;margin:auto;padding:0 20px}.requirements-traceability section{margin:20px 0;padding:16px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.requirements-traceability li{margin:.45rem 0}</style>
