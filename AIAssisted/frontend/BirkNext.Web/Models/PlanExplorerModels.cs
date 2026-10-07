@@ -20,6 +20,8 @@ public enum PlanSectionType
 
 public enum RiskSeverity
 {
+    /// <summary>The Plan artifact names the risk but states no severity. Never shown as Medium.</summary>
+    Unrated = -1,
     Low,
     Medium,
     High,
@@ -95,6 +97,11 @@ public sealed class PlanDocument
     public List<PlanConstraint> Constraints { get; init; } = [];
     public List<PlanArchitectureDecision> ArchitectureDecisions { get; init; } = [];
     public List<PlanComplexityItem> ComplexityItems { get; init; } = [];
+    /// <summary>
+    /// The complexity items were derived by plan analysis (heuristics over constraints, dependencies, risks and section
+    /// keywords) because the plan lists none itself — even when it has a Complexity section (e.g. "no violations to justify").
+    /// </summary>
+    public bool ComplexityDerived { get; init; }
     public List<PlanDependency> Dependencies { get; init; } = [];
     public List<PlanMilestone> Milestones { get; init; } = [];
     public List<PlanConstitutionCheckItem> ConstitutionCheckItems { get; init; } = [];
@@ -136,7 +143,7 @@ public sealed class PlanRisk
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
-    public RiskSeverity Severity { get; init; } = RiskSeverity.Medium;
+    public RiskSeverity Severity { get; init; } = RiskSeverity.Unrated;
     public string? Mitigation { get; init; }
     public string? Area { get; init; }
     public string RawText { get; init; } = string.Empty;
@@ -187,7 +194,15 @@ public sealed class PlanDependency
     public string Name { get; init; } = string.Empty;
     public string? Version { get; init; }
     public string? Description { get; init; }
+    /// <summary>
+    /// External to the project (not built by it). Used by complexity heuristics; shown to people only when
+    /// <see cref="ScopeStated"/> — otherwise the plan never said whether the dependency is internal or external.
+    /// </summary>
     public bool IsExternal { get; init; }
+    /// <summary>The plan states the scope (an External/Internal heading in its Dependencies section).</summary>
+    public bool ScopeStated { get; init; }
+    /// <summary>Where the plan declares it: "Dependencies section" or "Technical Context".</summary>
+    public string? DeclaredIn { get; init; }
 }
 
 // ── Milestone ─────────────────────────────────────────────────────────────────
@@ -301,6 +316,8 @@ public sealed class PlanHealthIndicator
     public string Icon { get; init; } = "✓";
     public string Message { get; init; } = string.Empty;
     public PlanHealthLevel Level { get; init; } = PlanHealthLevel.Good;
+    /// <summary>What the indicator is about: risks, complexity, constitution, structure or context.</summary>
+    public string Topic { get; init; } = "";
 }
 
 public sealed class PlanHealth
@@ -311,6 +328,8 @@ public sealed class PlanHealth
     public int HighRisks { get; init; }
     public int MediumRisks { get; init; }
     public int LowRisks { get; init; }
+    /// <summary>Risks whose severity the plan does not state.</summary>
+    public int UnratedRisks { get; init; }
 
     // Architecture
     public int TotalArchitectureDecisions { get; init; }

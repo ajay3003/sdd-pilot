@@ -58,16 +58,14 @@
                 }
             </div>
             <div class="pe-header-right">
-                <div class="pe-view-toggle" role="group" aria-label="View mode">
-                    <button class='pe-view-btn @(_tab == "overview"       ? "is-active" : "")' @onclick='() => SetTab("overview")'>Overview</button>
-                    <button class='pe-view-btn @(_tab == "architecture"   ? "is-active" : "")' @onclick='() => SetTab("architecture")'>Architecture @AdrBadge</button>
-                    <button class='pe-view-btn @(_tab == "tech-context"   ? "is-active" : "")' @onclick='() => SetTab("tech-context")'>Technical Context</button>
-                    <button class='pe-view-btn @(_tab == "structure"      ? "is-active" : "")' @onclick='() => SetTab("structure")'>Project Structure</button>
-                    <button class='pe-view-btn @(_tab == "risks"          ? "is-active" : "")' @onclick='() => SetTab("risks")'>Risks & Constraints @RiskBadge</button>
-                    <button class='pe-view-btn @(_tab == "complexity"     ? "is-active" : "")' @onclick='() => SetTab("complexity")'>Complexity @ComplexityBadge</button>
-                    <button class='pe-view-btn @(_tab == "phases"         ? "is-active" : "")' @onclick='() => SetTab("phases")'>Phases @PhasesBadge</button>
-                    <button class='pe-view-btn @(_tab == "testing"        ? "is-active" : "")' @onclick='() => SetTab("testing")'>Testing @TestingBadge</button>
-                    <button class='pe-view-btn @(_tab == "constitution"   ? "is-active" : "")' @onclick='() => SetTab("constitution")'>Constitution @ConstitutionBadge</button>
+                @* The tabs are the one way to move through the plan; Overview cards are information, not shortcuts. *@
+                <div class="pe-view-toggle" role="tablist" aria-label="Plan sections">
+                    @foreach (var (key, label) in Tabs)
+                    {
+                        <button type="button" role="tab" id="pe-tab-@key" class='pe-view-btn @(_tab == key ? "is-active" : "")'
+                                aria-selected="@(_tab == key ? "true" : "false")" aria-controls="pe-tabpanel"
+                                data-testid="pe-tab" data-tab="@key" @onclick='() => SetTab(key)'>@label</button>
+                    }
                 </div>
             </div>
         </div>
@@ -112,6 +110,10 @@
                 {
                     <button class='pe-filter-chip pe-fc-low @(_riskFilter == RiskSeverity.Low ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Low)'>Low (@_plan.Health.LowRisks)</button>
                 }
+                @if (_plan.Health.UnratedRisks > 0)
+                {
+                    <button class='pe-filter-chip @(_riskFilter == RiskSeverity.Unrated ? "is-active" : "")' @onclick='() => SetRiskFilter(RiskSeverity.Unrated)'>Severity not stated (@_plan.Health.UnratedRisks)</button>
+                }
             </div>
         }
 
@@ -120,10 +122,10 @@
         {
             <div class="pe-filter-strip" role="group" aria-label="Filter by complexity">
                 <button class='pe-filter-chip @(_complexityFilter is null ? "is-active" : "")' @onclick='() => SetComplexityFilter(null)'>All</button>
-                <button class='pe-filter-chip pe-fc-critical @(_complexityFilter == ComplexityLevel.VeryHigh ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.VeryHigh)'>Very High</button>
-                <button class='pe-filter-chip pe-fc-high @(_complexityFilter == ComplexityLevel.High ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.High)'>High</button>
-                <button class='pe-filter-chip pe-fc-medium @(_complexityFilter == ComplexityLevel.Medium ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Medium)'>Medium</button>
-                <button class='pe-filter-chip pe-fc-low @(_complexityFilter == ComplexityLevel.Low ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Low)'>Low</button>
+                <button class='pe-filter-chip pe-fc-cx @(_complexityFilter == ComplexityLevel.VeryHigh ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.VeryHigh)'>Very High</button>
+                <button class='pe-filter-chip pe-fc-cx @(_complexityFilter == ComplexityLevel.High ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.High)'>High</button>
+                <button class='pe-filter-chip pe-fc-cx @(_complexityFilter == ComplexityLevel.Medium ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Medium)'>Medium</button>
+                <button class='pe-filter-chip pe-fc-cx @(_complexityFilter == ComplexityLevel.Low ? "is-active" : "")' @onclick='() => SetComplexityFilter(ComplexityLevel.Low)'>Low</button>
             </div>
         }
 
@@ -171,7 +173,7 @@
         }
 
         <!-- Tab content -->
-        <div class="pe-tab-body">
+        <div class="pe-tab-body" role="tabpanel" id="pe-tabpanel" aria-labelledby="pe-tab-@_tab">
 
             @if (_tab == "overview")
             {
@@ -187,8 +189,8 @@
                         </div>
                     }
 
-                    <!-- Metadata card -->
-                    <div class="pe-meta-card">
+                    <!-- Plan metadata and provenance (as written in the plan) -->
+                    <div class="pe-meta-card" data-testid="pe-metadata">
                         <div class="pe-meta-grid">
                             @if (!string.IsNullOrEmpty(_plan.FeatureName))
                             {
@@ -200,7 +202,7 @@
                             @if (!string.IsNullOrEmpty(_plan.Status))
                             {
                                 <div class="pe-meta-item">
-                                    <div class="pe-meta-label">Status</div>
+                                    <div class="pe-meta-label">Status (stated in plan)</div>
                                     <div class="pe-meta-value">@_plan.Status</div>
                                 </div>
                             }
@@ -239,202 +241,153 @@
                                     <div class="pe-meta-value">@_plan.LastUpdated</div>
                                 </div>
                             }
-                            @if (!string.IsNullOrEmpty(_plan.SpecLink))
+                            @if (Provenance is { } provenance)
                             {
-                                <div class="pe-meta-item">
-                                    <div class="pe-meta-label">Spec</div>
-                                    <div class="pe-meta-value">@_plan.SpecLink</div>
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(_plan.InputSource))
-                            {
-                                <div class="pe-meta-item">
-                                    <div class="pe-meta-label">Input Source</div>
-                                    <div class="pe-meta-value">@_plan.InputSource</div>
+                                <div class="pe-meta-item pe-meta-provenance" data-testid="pe-provenance">
+                                    <div class="pe-meta-label">@provenance.Label</div>
+                                    <div class="pe-meta-value">@provenance.Value</div>
+                                    @if (provenance.Detail is not null)
+                                    {
+                                        <div class="pe-meta-detail" data-testid="pe-provenance-detail">@provenance.Detail</div>
+                                    }
+                                    <div class="pe-meta-detail">Named in the plan; not a resolved traceability link.</div>
                                 </div>
                             }
                         </div>
                     </div>
 
-                    <!-- Health cards -->
-                    <div class="pe-health-row">
-                        @if (_plan.Health.TotalRisks > 0)
-                        {
-                            <div class="pe-health-card @(_plan.Health.CriticalRisks > 0 ? "pe-hcard-critical" : _plan.Health.HighRisks > 0 ? "pe-hcard-high" : "pe-hcard-medium")">
-                                <div class="pe-health-value">@_plan.Health.TotalRisks</div>
-                                <div class="pe-health-label">Risks</div>
+                    <!-- Plan analysis: findings derived from the plan. Facts, not a score or a verdict. -->
+                    <section class="pe-ov-group" aria-labelledby="pe-ov-analysis" data-testid="pe-analysis">
+                        <h3 class="pe-ov-heading" id="pe-ov-analysis">Plan analysis</h3>
+                        <div class="pe-ov-cards">
+                            <div class="pe-ov-card @RiskCardClass" data-testid="pe-risk-summary">
+                                <div class="pe-ov-value">@_plan.Health.TotalRisks</div>
+                                <div class="pe-ov-label">@(_plan.Health.TotalRisks == 1 ? "Risk" : "Risks")</div>
+                                <div class="pe-ov-detail" data-testid="pe-risk-distribution">@RiskDistribution</div>
                             </div>
-                        }
-                        @if (_plan.Health.CriticalRisks > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-critical">
-                                <div class="pe-health-value">@_plan.Health.CriticalRisks</div>
-                                <div class="pe-health-label">Critical</div>
+                            <div class="pe-ov-card @(_plan.Health.HighComplexityItems > 0 ? "pe-ov-attention" : "")" data-testid="pe-complexity-summary">
+                                <div class="pe-ov-value">@_plan.Health.TotalComplexityItems</div>
+                                <div class="pe-ov-label">Complexity @(_plan.Health.TotalComplexityItems == 1 ? "item" : "items")</div>
+                                <div class="pe-ov-detail" data-testid="pe-complexity-high">@_plan.Health.HighComplexityItems of @_plan.Health.TotalComplexityItems rated high or very high</div>
+                                @if (_plan.ComplexityDerived)
+                                {
+                                    <div class="pe-ov-detail">Derived by plan analysis; the plan lists none itself</div>
+                                }
                             </div>
-                        }
-                        @if (_plan.Health.HighRisks > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-high">
-                                <div class="pe-health-value">@_plan.Health.HighRisks</div>
-                                <div class="pe-health-label">High Risk</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalArchitectureDecisions > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-adr">
-                                <div class="pe-health-value">@_plan.Health.TotalArchitectureDecisions</div>
-                                <div class="pe-health-label">ADRs</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalComplexityItems > 0)
-                        {
-                            <div class="pe-health-card @(_plan.Health.HighComplexityItems > 0 ? "pe-hcard-high" : "pe-hcard-medium")">
-                                <div class="pe-health-value">@_plan.Health.TotalComplexityItems</div>
-                                <div class="pe-health-label">Complexity</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalPhases > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-adr">
-                                <div class="pe-health-value">@_plan.Health.TotalPhases</div>
-                                <div class="pe-health-label">Phases</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalConstitutionGates > 0)
-                        {
-                            <div class="pe-health-card @(_plan.Health.FailedGates > 0 ? "pe-hcard-critical" : _plan.Health.WarningGates > 0 ? "pe-hcard-medium" : "pe-hcard-ok")">
-                                <div class="pe-health-value">@_plan.Health.TotalConstitutionGates</div>
-                                <div class="pe-health-label">Gates</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalDependencies > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-dep">
-                                <div class="pe-health-value">@_plan.Health.TotalDependencies</div>
-                                <div class="pe-health-label">Dependencies</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalMilestones > 0)
-                        {
-                            <div class="pe-health-card pe-hcard-milestone">
-                                <div class="pe-health-value">@_plan.Health.TotalMilestones</div>
-                                <div class="pe-health-label">Milestones</div>
-                            </div>
-                        }
-                        @if (_plan.Health.TotalConstitutionCheckItems > 0)
-                        {
-                            <div class="pe-health-card @(_plan.Health.NonCompliantItems > 0 ? "pe-hcard-critical" : _plan.Health.NeedsReviewItems > 0 ? "pe-hcard-medium" : "pe-hcard-ok")">
-                                <div class="pe-health-value">@_plan.Health.TotalConstitutionCheckItems</div>
-                                <div class="pe-health-label">Constitution</div>
-                            </div>
-                        }
-                    </div>
-
-                    <!-- Health indicators -->
-                    @if (_plan.Health.Indicators.Count > 0)
-                    {
-                        <div class="pe-health-indicators">
-                            @foreach (var ind in _plan.Health.Indicators)
-                            {
-                                <div class="pe-indicator pe-indicator-@ind.Level.ToString().ToLowerInvariant()">
-                                    <span class="pe-indicator-icon" aria-hidden="true">@ind.Icon</span>
-                                    <span class="pe-indicator-message">@ind.Message</span>
-                                </div>
-                            }
                         </div>
+                    </section>
+
+                    <!-- Plan structure: what the plan contains. Counts of content, not progress. -->
+                    @if (_plan.ArchitectureDecisions.Count > 0 || _plan.Phases.Count > 0 || _plan.Milestones.Count > 0 || _plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
+                    {
+                        <section class="pe-ov-group" aria-labelledby="pe-ov-structure" data-testid="pe-structure-summary">
+                            <h3 class="pe-ov-heading" id="pe-ov-structure">Plan structure</h3>
+                            <div class="pe-ov-cards">
+                                @if (_plan.ArchitectureDecisions.Count > 0)
+                                {
+                                    <div class="pe-ov-card"><div class="pe-ov-value">@_plan.ArchitectureDecisions.Count</div><div class="pe-ov-label">Architecture decisions</div></div>
+                                }
+                                @if (_plan.Phases.Count > 0)
+                                {
+                                    <div class="pe-ov-card"><div class="pe-ov-value">@_plan.Phases.Count</div><div class="pe-ov-label">Implementation phases</div><div class="pe-ov-detail">Planned, not delivery progress</div></div>
+                                }
+                                @if (_plan.Milestones.Count > 0)
+                                {
+                                    <div class="pe-ov-card"><div class="pe-ov-value">@_plan.Milestones.Count</div><div class="pe-ov-label">Milestones</div></div>
+                                }
+                                @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
+                                {
+                                    <div class="pe-ov-card" data-testid="pe-constitution-summary">
+                                        <div class="pe-ov-value">@(_plan.Gates.Count + _plan.ConstitutionCheckItems.Count)</div>
+                                        <div class="pe-ov-label">Constitution checks in the plan</div>
+                                        <div class="pe-ov-detail">@ConstitutionStated — as stated in the plan, not assessed here</div>
+                                    </div>
+                                }
+                            </div>
+                        </section>
                     }
 
-                    <!-- Dependencies & Milestones summary -->
-                    @if (_plan.Dependencies.Count > 0 || _plan.Milestones.Count > 0)
+                    @foreach (var note in _plan.Health.Indicators.Where(i => i.Topic == "context"))
                     {
-                        <div class="pe-overview-secondary">
-                            @if (_plan.Dependencies.Count > 0)
-                            {
-                                <div class="pe-overview-card">
-                                    <div class="pe-overview-card-header">
-                                        <span class="pe-overview-card-title">Dependencies</span>
-                                        <span class="pe-overview-card-count">@_plan.Dependencies.Count</span>
-                                    </div>
-                                    <ul class="pe-overview-list">
-                                        @foreach (var dep in _plan.Dependencies.Take(6))
-                                        {
-                                            <li>
-                                                <span class="pe-dep-name">@dep.Name</span>
-                                                @if (!string.IsNullOrEmpty(dep.Version))
-                                                { <span class="pe-dep-version">@dep.Version</span> }
-                                                @if (dep.IsExternal)
-                                                { <span class="pe-dep-badge">External</span> }
-                                            </li>
-                                        }
-                                        @if (_plan.Dependencies.Count > 6)
-                                        { <li class="pe-overview-more">+@(_plan.Dependencies.Count - 6) more</li> }
-                                    </ul>
-                                </div>
-                            }
-                            @if (_plan.Milestones.Count > 0)
-                            {
-                                <div class="pe-overview-card">
-                                    <div class="pe-overview-card-header">
-                                        <span class="pe-overview-card-title">Milestones</span>
-                                        <span class="pe-overview-card-count">@_plan.Milestones.Count</span>
-                                    </div>
-                                    <ul class="pe-overview-list">
-                                        @foreach (var ms in _plan.Milestones)
-                                        {
-                                            <li>
-                                                <span class="pe-ms-title">@ms.Title</span>
-                                                @if (!string.IsNullOrEmpty(ms.TargetDate))
-                                                { <span class="pe-ms-date">@ms.TargetDate</span> }
-                                            </li>
-                                        }
-                                    </ul>
-                                </div>
-                            }
-                        </div>
+                        <p class="pe-indicator pe-indicator-@note.Level.ToString().ToLowerInvariant()">
+                            <span class="pe-indicator-icon" aria-hidden="true">@note.Icon</span>
+                            <span class="pe-indicator-message">@note.Message</span>
+                        </p>
                     }
 
-                    <!-- Nav cards -->
-                    <div class="pe-nav-cards">
-                        @if (_plan.ArchitectureDecisions.Count > 0)
+                    <div class="pe-overview-secondary">
+                        <!-- Declared dependencies: what the plan lists, not what the code or runtime uses -->
+                        <section class="pe-overview-card" aria-labelledby="pe-ov-deps" data-testid="pe-dependencies">
+                            <div class="pe-overview-card-header">
+                                <h3 class="pe-overview-card-title" id="pe-ov-deps">Declared dependencies</h3>
+                                <span class="pe-overview-card-count" data-testid="pe-dependency-count">@_plan.Dependencies.Count</span>
+                            </div>
+                            @if (_plan.Dependencies.Count == 0)
+                            {
+                                <p class="pe-ov-help">The plan declares no dependencies.</p>
+                            }
+                            else
+                            {
+                                <p class="pe-ov-help" data-testid="pe-dependency-help">Declared in the plan (@DependencySources). Use in code or at runtime is not verified here.@(_plan.Dependencies.Any(d => d.ScopeStated) ? "" : " The plan does not say which are internal or external.")</p>
+                                <ul class="pe-overview-list pe-dep-list">
+                                    @foreach (var dep in _showAllDependencies ? _plan.Dependencies : _plan.Dependencies.Take(DependencyPreview).ToList())
+                                    {
+                                        <li data-testid="pe-dependency">
+                                            <span class="pe-dep-name">@dep.Name</span>
+                                            @if (!string.IsNullOrEmpty(dep.Version))
+                                            { <span class="pe-dep-version">@dep.Version</span> }
+                                            @if (dep.ScopeStated)
+                                            { <span class="pe-dep-badge" data-testid="pe-dependency-scope">@(dep.IsExternal ? "External to project" : "Internal to project")</span> }
+                                            @if (!string.IsNullOrEmpty(dep.Description))
+                                            { <span class="pe-dep-purpose">@dep.Description</span> }
+                                        </li>
+                                    }
+                                </ul>
+                                @if (_plan.Dependencies.Count > DependencyPreview)
+                                {
+                                    <button type="button" class="pe-ov-more" data-testid="pe-dependency-more" aria-expanded="@(_showAllDependencies ? "true" : "false")"
+                                            @onclick="() => _showAllDependencies = !_showAllDependencies">
+                                        @(_showAllDependencies ? $"Show first {DependencyPreview}" : $"Show all {_plan.Dependencies.Count} declared dependencies")
+                                    </button>
+                                }
+                            }
+                        </section>
+
+                        <!-- Testing plan: what the plan says about testing; no test is run or read here -->
+                        <section class="pe-overview-card" aria-labelledby="pe-ov-testing" data-testid="pe-testing-summary">
+                            <div class="pe-overview-card-header">
+                                <h3 class="pe-overview-card-title" id="pe-ov-testing">Testing plan</h3>
+                                <span class="pe-overview-card-count">@(_plan.TestingInfo is null ? "Not in plan" : "In plan")</span>
+                            </div>
+                            @if (_plan.TestingInfo is { } testingPlan)
+                            {
+                                <p class="pe-ov-help">Testing approach declared in the plan@(testingPlan.Frameworks.Count > 0 ? $": {string.Join(", ", testingPlan.Frameworks)}" : "").</p>
+                                <p class="pe-ov-help">No tests are run or read here; executed results come from imported test evidence.</p>
+                            }
+                            else
+                            {
+                                <p class="pe-ov-help">The plan has no testing section.</p>
+                            }
+                        </section>
+
+                        @if (_plan.Milestones.Count > 0)
                         {
-                            <button class="pe-nav-card" @onclick='() => SetTab("architecture")'>
-                                <div class="pe-nav-card-count">@_plan.ArchitectureDecisions.Count</div>
-                                <div class="pe-nav-card-label">Architecture Decisions</div>
-                                <div class="pe-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_plan.Phases.Count > 0)
-                        {
-                            <button class="pe-nav-card" @onclick='() => SetTab("phases")'>
-                                <div class="pe-nav-card-count">@_plan.Phases.Count</div>
-                                <div class="pe-nav-card-label">Implementation Phases</div>
-                                <div class="pe-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_plan.Risks.Count > 0)
-                        {
-                            <button class="pe-nav-card @(_plan.Health.CriticalRisks > 0 || _plan.Health.HighRisks > 0 ? "pe-nav-card-risk" : "")" @onclick='() => SetTab("risks")'>
-                                <div class="pe-nav-card-count">@_plan.Risks.Count</div>
-                                <div class="pe-nav-card-label">Risks</div>
-                                <div class="pe-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_plan.ComplexityItems.Count > 0)
-                        {
-                            <button class="pe-nav-card" @onclick='() => SetTab("complexity")'>
-                                <div class="pe-nav-card-count">@_plan.ComplexityItems.Count</div>
-                                <div class="pe-nav-card-label">Complexity Items</div>
-                                <div class="pe-nav-card-arrow">→</div>
-                            </button>
-                        }
-                        @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
-                        {
-                            var constitutionCount = _plan.Gates.Count + _plan.ConstitutionCheckItems.Count;
-                            <button class="pe-nav-card" @onclick='() => SetTab("constitution")'>
-                                <div class="pe-nav-card-count">@constitutionCount</div>
-                                <div class="pe-nav-card-label">Constitution Gates</div>
-                                <div class="pe-nav-card-arrow">→</div>
-                            </button>
+                            <div class="pe-overview-card">
+                                <div class="pe-overview-card-header">
+                                    <span class="pe-overview-card-title">Milestones</span>
+                                    <span class="pe-overview-card-count">@_plan.Milestones.Count</span>
+                                </div>
+                                <ul class="pe-overview-list">
+                                    @foreach (var ms in _plan.Milestones)
+                                    {
+                                        <li>
+                                            <span class="pe-ms-title">@ms.Title</span>
+                                            @if (!string.IsNullOrEmpty(ms.TargetDate))
+                                            { <span class="pe-ms-date">@ms.TargetDate</span> }
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
                         }
                     </div>
 
@@ -628,7 +581,7 @@
                             <div class="pe-risk-group">
                                 <div class="pe-risk-group-header pe-severity-header-@group.Key.ToString().ToLowerInvariant()">
                                     <span class="pe-severity-dot pe-dot-@group.Key.ToString().ToLowerInvariant()" aria-hidden="true"></span>
-                                    @group.Key Risk (@group.Count())
+                                    @SeverityGroupLabel(group.Key) (@group.Count())
                                 </div>
                                 @foreach (var risk in group)
                                 {
@@ -636,7 +589,7 @@
                                     <div class="pe-risk-card pe-risk-@risk.Severity.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")">
                                         <button class="pe-risk-header" @onclick="() => Toggle(risk.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="pe-risk-header-left">
-                                                <span class="pe-severity-badge pe-badge-@risk.Severity.ToString().ToLowerInvariant()">@risk.Severity</span>
+                                                <span class="pe-severity-badge pe-badge-@risk.Severity.ToString().ToLowerInvariant()">@SeverityLabel(risk.Severity)</span>
                                                 <span class="pe-risk-title">@risk.Title</span>
                                                 @if (!string.IsNullOrEmpty(risk.Area))
                                                 { <span class="pe-risk-area">@risk.Area</span> }
@@ -711,11 +664,11 @@
                     }
                     else
                     {
-                        @if (!_plan.Sections.Any(s => s.SectionType == PlanSectionType.Complexity))
+                        @if (_plan.ComplexityDerived)
                         {
-                            <div class="pe-auto-generated-notice">
+                            <div class="pe-auto-generated-notice" data-testid="pe-complexity-derived">
                                 <span class="pe-auto-generated-icon" aria-hidden="true">✦</span>
-                                Auto-generated from plan analysis — no dedicated Complexity section found.
+                                Derived by plan analysis from constraints, declared dependencies, risks and section keywords — the plan lists no complexity items itself.
                             </div>
                         }
                         @foreach (var group in VisibleComplexity.GroupBy(c => c.Level).OrderByDescending(g => g.Key))
@@ -881,6 +834,7 @@
                     }
                     else
                     {
+                        <p class="pe-tab-note" data-testid="pe-testing-note">Testing approach as declared in the Plan artifact. No tests are run or read here; executed test results come from imported test evidence.</p>
                         <!-- Frameworks -->
                         @if (testing.Frameworks.Count > 0)
                         {
@@ -911,7 +865,7 @@
                         @if (testing.TestFolders.Count > 0)
                         {
                             <div class="pe-testing-section">
-                                <div class="pe-testing-section-title">Test Paths</div>
+                                <div class="pe-testing-section-title">Test paths named in the plan</div>
                                 <div class="pe-testing-folders">
                                     @foreach (var folder in testing.TestFolders)
                                     {
@@ -925,7 +879,7 @@
                         @if (testing.TestClasses.Count > 0)
                         {
                             <div class="pe-testing-section">
-                                <div class="pe-testing-section-title">Test Classes Detected</div>
+                                <div class="pe-testing-section-title">Test classes named in the plan</div>
                                 <div class="pe-testing-folders">
                                     @foreach (var cls in testing.TestClasses)
                                     {
@@ -968,6 +922,10 @@
             {
                 <!-- ── Constitution Check Tab ─────────────────────────────── -->
                 <div class="pe-constitution-check">
+                    @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
+                    {
+                        <p class="pe-tab-note" data-testid="pe-constitution-note">Statuses as stated in the plan's own Constitution Check. They are not assessed here against the Constitution artifact; Constitution Compliance does that.</p>
+                    }
 
                     <!-- Gate table (table-based, rendered first) -->
                     @{
@@ -1159,8 +1117,81 @@
     };
 
     private string AdrBadge         => _plan?.ArchitectureDecisions.Count > 0 ? $"({_plan.ArchitectureDecisions.Count})" : string.Empty;
-    private string RiskBadge         => _plan?.Risks.Count > 0 ? $"({_plan.Risks.Count})" : string.Empty;
     private string ComplexityBadge   => _plan?.ComplexityItems.Count > 0 ? $"({_plan.ComplexityItems.Count})" : string.Empty;
+
+    /// <summary>The tab holds risks and constraints; each gets its own count so neither is mistaken for the other.</summary>
+    private string RisksTabLabel => _plan is null ? "Risks & Constraints"
+        : $"Risks{(_plan.Risks.Count > 0 ? $" ({_plan.Risks.Count})" : "")} & Constraints{(_plan.Constraints.Count > 0 ? $" ({_plan.Constraints.Count})" : "")}";
+
+    private IEnumerable<(string Key, string Label)> Tabs =>
+    [
+        ("overview", "Overview"),
+        ("architecture", $"Architecture {AdrBadge}".Trim()),
+        ("tech-context", "Technical Context"),
+        ("structure", "Project Structure"),
+        ("risks", RisksTabLabel),
+        ("complexity", $"Complexity {ComplexityBadge}".Trim()),
+        ("phases", $"Phases {PhasesBadge}".Trim()),
+        ("testing", $"Testing {TestingBadge}".Trim()),
+        ("constitution", $"Constitution {ConstitutionBadge}".Trim()),
+    ];
+
+    private const int DependencyPreview = 6;
+    private bool _showAllDependencies;
+
+    private string RiskCardClass => _plan is null ? "" : _plan.Health.CriticalRisks > 0 ? "pe-ov-critical" : _plan.Health.HighRisks > 0 ? "pe-ov-high" : "";
+
+    /// <summary>The severity distribution as the plan states it; severities it does not state are named, never guessed.</summary>
+    private string RiskDistribution
+    {
+        get
+        {
+            if (_plan is null || _plan.Health.TotalRisks == 0) return "No risks listed in the plan";
+            var h = _plan.Health;
+            var parts = new List<string> { $"{h.CriticalRisks} critical", $"{h.HighRisks} high" };
+            if (h.MediumRisks > 0) parts.Add($"{h.MediumRisks} medium");
+            if (h.LowRisks > 0) parts.Add($"{h.LowRisks} low");
+            if (h.UnratedRisks > 0) parts.Add($"{h.UnratedRisks} severity not stated");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private string ConstitutionStated
+    {
+        get
+        {
+            if (_plan is null) return "";
+            var met = _plan.Health.PassedGates + _plan.Health.CompliantItems;
+            var total = _plan.Gates.Count + _plan.ConstitutionCheckItems.Count;
+            return $"{met} of {total} marked met";
+        }
+    }
+
+    private string DependencySources => _plan is null ? "" :
+        string.Join(", ", _plan.Dependencies.Select(d => d.DeclaredIn ?? "Plan").Distinct());
+
+    /// <summary>The source specification once: the linked file, with the plan's input path beneath it when that adds a path.</summary>
+    private (string Label, string Value, string? Detail)? Provenance
+    {
+        get
+        {
+            if (_plan is null) return null;
+            var spec = _plan.SpecLink?.Trim();
+            var input = _plan.InputSource?.Trim();
+            var path = string.IsNullOrEmpty(input) ? null
+                : System.Text.RegularExpressions.Regex.Match(input, @"[`'""]?([\w.\-]+(?:[/\\][\w.\-]+)+)[`'""]?") is { Success: true } m ? m.Groups[1].Value : null;
+            if (!string.IsNullOrEmpty(spec))
+                return ("Source specification", spec,
+                    path is not null && !string.Equals(path, spec, StringComparison.OrdinalIgnoreCase) ? path
+                    : path is null && !string.IsNullOrEmpty(input) ? input : null);
+            if (!string.IsNullOrEmpty(input)) return ("Plan input", input, null);
+            return null;
+        }
+    }
+
+    private static string SeverityLabel(RiskSeverity severity) => severity == RiskSeverity.Unrated ? "Severity not stated" : severity.ToString();
+
+    private static string SeverityGroupLabel(RiskSeverity severity) => severity == RiskSeverity.Unrated ? "Severity not stated" : $"{severity} Risk";
     // Several source headings mapping to one phase key is allowed; surface it neutrally.
     private IEnumerable<IGrouping<string, PlanImplementationPhase>> SharedPhaseKeys =>
         _plan is null ? [] : _plan.Phases.GroupBy(p => p.PhaseKey, StringComparer.Ordinal).Where(g => g.Count() > 1);
@@ -1175,7 +1206,8 @@
     };
 
     private string PhasesBadge       => _plan?.Phases.Count > 0 ? $"({_plan.Phases.Count})" : string.Empty;
-    private string TestingBadge      => _plan?.TestingInfo is not null ? "(✓)" : string.Empty;
+    /// <summary>The plan has a testing approach. Not a check result: nothing is tested here.</summary>
+    private string TestingBadge      => _plan?.TestingInfo is not null ? "(in plan)" : string.Empty;
     private string ConstitutionBadge
     {
         get

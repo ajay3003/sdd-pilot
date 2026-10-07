@@ -156,6 +156,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "xunit", "nunit", "mstest", "moq", "nsubstitute", "shouldly", "fluentassertions",
         "testcontainers", "specflow", "playwright", "selenium", "bunit",
         "bogus", "autofixture", "faker",
+        // Other ecosystems: the explorer is not .NET-specific.
+        "pytest", "unittest", "hypothesis", "jest", "vitest", "mocha", "jasmine", "cypress", "karma",
+        "junit", "testng", "mockito", "rspec", "testify", "cucumber", "phpunit",
     };
 
     // ── Inline Metadata Parsing ─────────────────────────────────────────────
@@ -443,7 +446,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             constraints.AddRange(ExtractConstraintsFromTechnicalContext(sections));
 
         // Auto-generate complexity items when no dedicated Complexity section exists
-        if (complexityItems.Count == 0)
+        var complexityDerived = complexityItems.Count == 0;
+        if (complexityDerived)
             complexityItems.AddRange(AutoGenerateComplexity(constraints, dependencies, sections, risks));
 
         var health = BuildHealth(
@@ -469,6 +473,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             Constraints = constraints,
             ArchitectureDecisions = decisions,
             ComplexityItems = complexityItems,
+            ComplexityDerived = complexityDerived && complexityItems.Count > 0,
             Dependencies = dependencies,
             Milestones = milestones,
             ConstitutionCheckItems = checkItems,
@@ -787,6 +792,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
         var itemLines = new List<string>();
+        var risksBefore = risks.Count; // another section (Risks, Open Items) may already have added risks
 
         void Flush()
         {
@@ -820,7 +826,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         }
         Flush();
 
-        if (risks.Count == 0) ParseRisksTable(raw, risks);
+        if (risks.Count == risksBefore) ParseRisksTable(raw, risks);
     }
 
     private static void ParseConstraintsSection(string raw, List<PlanConstraint> constraints)
@@ -1001,17 +1007,32 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
             if (headers.Count < 2) continue;
 
-            var titleIdx = 0;
+            // A struck-through or closed/resolved row is history, not a current risk.
+            if (cells[0].TrimStart().StartsWith("~~", StringComparison.Ordinal)
+                || cells.Any(c => StripMarkdown(c).Trim() is var v && (v.Equals("closed", StringComparison.OrdinalIgnoreCase)
+                    || v.Equals("resolved", StringComparison.OrdinalIgnoreCase) || v.Equals("done", StringComparison.OrdinalIgnoreCase))))
+                continue;
+
+            var idIdx    = headers.FindIndex(h => h.Trim().Equals("id", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("#", StringComparison.Ordinal));
+            var itemIdx  = headers.FindIndex(h => Regex.IsMatch(h, @"\b(item|risk|title|issue|name)\b", RegexOptions.IgnoreCase));
+            var titleIdx = itemIdx >= 0 ? itemIdx : 0;
             var sevIdx  = headers.FindIndex(h => h.Contains("sever", StringComparison.OrdinalIgnoreCase) || h.Contains("level", StringComparison.OrdinalIgnoreCase));
             var descIdx = headers.FindIndex(h => h.Contains("desc", StringComparison.OrdinalIgnoreCase));
-            var mitIdx  = headers.FindIndex(h => h.Contains("mitig", StringComparison.OrdinalIgnoreCase));
+            var mitIdx  = headers.FindIndex(h => h.Contains("mitig", StringComparison.OrdinalIgnoreCase) || h.Contains("resolution", StringComparison.OrdinalIgnoreCase));
 
             if (cells.Count <= titleIdx) continue;
+            var id = idIdx >= 0 && idIdx != titleIdx && idIdx < cells.Count ? StripMarkdown(cells[idIdx]).Trim() : null;
+            var title = StripMarkdown(cells[titleIdx]).Trim();
+            // Other columns (e.g. "Blocking implementation?") stay readable as "Header: value" when there is no description column.
+            var description = descIdx >= 0 && descIdx < cells.Count ? StripMarkdown(cells[descIdx])
+                : string.Join("\n", cells.Select((c, i) => (c, i))
+                    .Where(x => x.i != titleIdx && x.i != idIdx && x.i != sevIdx && x.i != mitIdx && x.i < headers.Count && !string.IsNullOrWhiteSpace(x.c))
+                    .Select(x => $"{StripMarkdown(headers[x.i]).Trim()}: {StripMarkdown(x.c).Trim()}"));
             risks.Add(new PlanRisk
             {
-                Title       = StripMarkdown(cells[titleIdx]),
-                Description = descIdx >= 0 && descIdx < cells.Count ? StripMarkdown(cells[descIdx]) : string.Empty,
-                Severity    = sevIdx >= 0 && sevIdx < cells.Count ? ParseSeverityFromText(cells[sevIdx]) : RiskSeverity.Medium,
+                Title       = string.IsNullOrEmpty(id) ? title : $"{id}: {title}",
+                Description = description,
+                Severity    = sevIdx >= 0 && sevIdx < cells.Count ? ParseSeverityFromText(cells[sevIdx]) : RiskSeverity.Unrated,
                 Mitigation  = mitIdx >= 0 && mitIdx < cells.Count ? StripMarkdown(cells[mitIdx]) : null,
             });
         }
@@ -1332,20 +1353,26 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static void ParseDependenciesSection(string raw, List<PlanDependency> deps)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
-        bool extCtx = false;
+        bool extCtx = false, intCtx = false;
 
         foreach (var tok in tokens)
         {
             if (tok.Kind == MarkdownTokenKind.Heading)
-            { extCtx = tok.Content.ToLowerInvariant().Contains("external"); continue; }
+            {
+                var heading = tok.Content.ToLowerInvariant();
+                extCtx = heading.Contains("external");
+                intCtx = heading.Contains("internal");
+                continue;
+            }
 
             if (tok.Kind != MarkdownTokenKind.BulletItem) continue;
-            var dep = ParseDependencyLine(tok.Content, extCtx || !raw.Contains("Internal", StringComparison.OrdinalIgnoreCase));
+            var dep = ParseDependencyLine(tok.Content, extCtx || !raw.Contains("Internal", StringComparison.OrdinalIgnoreCase),
+                scopeStated: extCtx || intCtx, declaredIn: "Dependencies section");
             if (dep is not null) deps.Add(dep);
         }
     }
 
-    private static PlanDependency? ParseDependencyLine(string content, bool isExternal)
+    private static PlanDependency? ParseDependencyLine(string content, bool isExternal, bool scopeStated = false, string? declaredIn = null)
     {
         if (string.IsNullOrWhiteSpace(content)) return null;
         string name = content, version = null!, description = null!;
@@ -1365,6 +1392,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             Version = version,
             Description = description,
             IsExternal = isExternal,
+            ScopeStated = scopeStated,
+            DeclaredIn = declaredIn,
         };
     }
 
@@ -1396,8 +1425,13 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             var value = match.Groups[1].Value.Trim();
             if (string.IsNullOrWhiteSpace(value)) continue;
 
-            // Split by comma or newline
-            var items = value.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            // A bulleted value declares one dependency per bullet ("- Name — purpose"); an inline value is a comma list.
+            // Commas inside parentheses never split ("Metrics (Meter, Counter, Gauge)" is one dependency).
+            var lines = value.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+            var bulleted = lines.Count > 0 && lines.All(l => BulletRe.IsMatch(l));
+            var items = bulleted
+                ? lines.Select(l => BulletRe.Match(l).Groups[1].Value.Trim()).ToList()
+                : lines.SelectMany(SplitTopLevelCommas).ToList();
 
             foreach (var item in items)
             {
@@ -1424,6 +1458,17 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var trimmed = StripMarkdown(content.Trim());
         if (string.IsNullOrWhiteSpace(trimmed)) return null;
 
+        // "Name — purpose" / "Name: purpose": the name is the dependency, the rest is why the plan needs it.
+        string? description = null;
+        var purpose = Regex.Match(trimmed, @"^(.+?)\s+[—–-]\s+(.+)$|^([^:]+?):\s+(.+)$");
+        if (purpose.Success)
+        {
+            var nameGroup = purpose.Groups[1].Success ? purpose.Groups[1] : purpose.Groups[3];
+            var descGroup = purpose.Groups[2].Success ? purpose.Groups[2] : purpose.Groups[4];
+            trimmed = nameGroup.Value.Trim();
+            description = descGroup.Value.Trim();
+        }
+
         string name = trimmed;
         string? version = null;
 
@@ -1442,9 +1487,32 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             Name = name,
             Version = version,
-            Description = null,
-            IsExternal = true, // Dependencies in Technical Context are typically external
+            Description = description,
+            // Assumed for complexity heuristics only: the plan does not say internal or external here (ScopeStated = false).
+            IsExternal = true,
+            ScopeStated = false,
+            DeclaredIn = "Technical Context",
         };
+    }
+
+    /// <summary>Splits on commas that are not inside parentheses or brackets.</summary>
+    private static IEnumerable<string> SplitTopLevelCommas(string text)
+    {
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            switch (text[i])
+            {
+                case '(' or '[' or '<': depth++; break;
+                case ')' or ']' or '>': depth = Math.Max(0, depth - 1); break;
+                case ',' when depth == 0:
+                    yield return text[start..i];
+                    start = i + 1;
+                    break;
+            }
+        }
+        yield return text[start..];
     }
 
     // ── Constraint extraction from Technical Context ────────────────────────────
@@ -1646,6 +1714,23 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
             { Flush(); currentH3 = tok.Content; continue; }
+            if (currentH3 is null && tok.Kind == MarkdownTokenKind.BulletItem
+                && Regex.Match(tok.Content, @"^\[([ xX])\]\s*(.+)$") is { Success: true } check)
+            {
+                // A checklist item as the plan states it: [x] = marked as met, [ ] = open.
+                var text = check.Groups[2].Value.Trim();
+                var colon = StripMarkdown(text).IndexOf(':');
+                var plain = StripMarkdown(text);
+                checkItems.Add(new PlanConstitutionCheckItem
+                {
+                    RuleId = ExtractRuleId(colon > 0 ? plain[..colon] : plain) ?? string.Empty,
+                    Title = colon > 0 ? plain[..colon].Trim() : plain,
+                    Notes = colon > 0 ? plain[(colon + 1)..].Trim() : null,
+                    Status = check.Groups[1].Value.Trim().Length > 0 ? ConstitutionCheckStatus.Compliant : ConstitutionCheckStatus.NeedsReview,
+                    RawText = tok.RawLine,
+                });
+                continue;
+            }
             if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
@@ -2389,12 +2474,23 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var indicators = new List<PlanHealthIndicator>();
 
         if (risks.Count > 0)
+        {
+            // The distribution as the plan states it. No critical or high risk is a fact, not a pass.
+            var medium = risks.Count(r => r.Severity == RiskSeverity.Medium);
+            var low = risks.Count(r => r.Severity == RiskSeverity.Low);
+            var unrated = risks.Count(r => r.Severity == RiskSeverity.Unrated);
+            var distribution = new List<string> { $"{critical} critical", $"{high} high" };
+            if (medium > 0) distribution.Add($"{medium} medium");
+            if (low > 0) distribution.Add($"{low} low");
+            if (unrated > 0) distribution.Add($"{unrated} severity not stated");
             indicators.Add(new PlanHealthIndicator
             {
-                Icon    = critical > 0 || high > 0 ? "⚠" : "✓",
-                Message = $"{risks.Count} risks — {critical} critical, {high} high",
-                Level   = critical > 0 ? PlanHealthLevel.Error : high > 0 ? PlanHealthLevel.Warning : PlanHealthLevel.Good,
+                Icon    = critical > 0 || high > 0 ? "⚠" : "ⓘ",
+                Message = $"{risks.Count} risk{(risks.Count != 1 ? "s" : "")} — {string.Join(", ", distribution)}",
+                Level   = critical > 0 ? PlanHealthLevel.Error : high > 0 ? PlanHealthLevel.Warning : PlanHealthLevel.Info,
+                Topic   = "risks",
             });
+        }
 
         if (gates.Count > 0)
         {
@@ -2411,51 +2507,58 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             indicators.Add(new PlanHealthIndicator
             {
                 Icon    = failG > 0 ? "✗" : genuineWarnings > 0 ? "⚠" : hasOnlyJustifiedDeviations ? "ⓘ" : "✓",
-                Message = $"{gates.Count} constitution gates — {string.Join(", ", messageParts)}",
-                Level   = failG > 0 ? PlanHealthLevel.Error : genuineWarnings > 0 ? PlanHealthLevel.Warning : hasOnlyJustifiedDeviations ? PlanHealthLevel.Info : PlanHealthLevel.Good,
+                Message = $"{gates.Count} constitution gates as stated in the plan — {string.Join(", ", messageParts)}",
+                Level   = failG > 0 ? PlanHealthLevel.Error : genuineWarnings > 0 ? PlanHealthLevel.Warning : PlanHealthLevel.Info,
+                Topic   = "constitution",
             });
         }
 
         if (decisions.Count > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "✓",
+                Icon = "ⓘ",
                 Message = $"{decisions.Count} architecture decision{(decisions.Count != 1 ? "s" : "")} documented",
-                Level = PlanHealthLevel.Good,
+                Level = PlanHealthLevel.Info,
+                Topic = "structure",
             });
 
         if (phases.Count > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "✓",
+                Icon = "ⓘ",
                 Message = $"{phases.Count} implementation phase{(phases.Count != 1 ? "s" : "")} planned",
-                Level = PlanHealthLevel.Good,
+                Level = PlanHealthLevel.Info,
+                Topic = "structure",
             });
 
         if (highC > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "⚠", Message = $"{highC} high-complexity area{(highC != 1 ? "s" : "")} identified",
+                Icon = "⚠", Message = $"{highC} of {complexity.Count} complexity item{(complexity.Count != 1 ? "s" : "")} rated high or very high",
                 Level = PlanHealthLevel.Warning,
+                Topic = "complexity",
             });
 
         if (nonComp > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "✗", Message = $"{nonComp} constitution rule{(nonComp != 1 ? "s" : "")} non-compliant",
+                Icon = "✗", Message = $"{nonComp} constitution rule{(nonComp != 1 ? "s" : "")} marked non-compliant in the plan",
                 Level = PlanHealthLevel.Error,
+                Topic = "constitution",
             });
         else if (needsRev > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "⚠", Message = $"{needsRev} constitution rule{(needsRev != 1 ? "s" : "")} need review",
+                Icon = "⚠", Message = $"{needsRev} constitution rule{(needsRev != 1 ? "s" : "")} marked for review in the plan",
                 Level = PlanHealthLevel.Warning,
+                Topic = "constitution",
             });
         else if (checkItems.Count > 0)
             indicators.Add(new PlanHealthIndicator
             {
-                Icon = "✓", Message = $"All {compliant} checked constitution rules are compliant",
-                Level = PlanHealthLevel.Good,
+                Icon = "ⓘ", Message = $"All {compliant} constitution checks are marked met in the plan",
+                Level = PlanHealthLevel.Info,
+                Topic = "constitution",
             });
 
         // Detect stateless/frontend-only/no-storage cases for smarter findings
@@ -2468,6 +2571,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             {
                 Icon = "⚠", Message = "No Technical Context section found",
                 Level = PlanHealthLevel.Warning,
+                Topic = "context",
             });
 
         var parts = new List<string>();
@@ -2484,6 +2588,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             HighRisks = high,
             MediumRisks = risks.Count(r => r.Severity == RiskSeverity.Medium),
             LowRisks = risks.Count(r => r.Severity == RiskSeverity.Low),
+            UnratedRisks = risks.Count(r => r.Severity == RiskSeverity.Unrated),
             TotalArchitectureDecisions = decisions.Count,
             TotalComplexityItems = complexity.Count,
             HighComplexityItems = highC,
@@ -2607,7 +2712,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         var m = Regex.Match(body, @"\*\*[Ss]everity\*\*\s*:?\s*([^\n*]+)", RegexOptions.IgnoreCase);
         if (m.Success) return ParseSeverityFromText(m.Groups[1].Value.Trim());
-        return RiskSeverity.Medium;
+        return RiskSeverity.Unrated;
     }
 
     private static ConstitutionCheckStatus DetectCheckStatus(string heading, string body)
@@ -2649,7 +2754,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (t.Contains("crit")) return RiskSeverity.Critical;
         if (t.Contains("high")) return RiskSeverity.High;
         if (t.Contains("low"))  return RiskSeverity.Low;
-        return RiskSeverity.Medium;
+        if (t.Contains("med") || t.Contains("moderate")) return RiskSeverity.Medium;
+        return RiskSeverity.Unrated;
     }
 
     private static ComplexityLevel ParseComplexityLevel(string text)

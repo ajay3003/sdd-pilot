@@ -367,26 +367,8 @@
 
 /* ── Nav cards ──────────────────────────────────────── */
 
-.pe-nav-cards { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 
-.pe-nav-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: var(--clr-surface-white);
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-lg);
-    cursor: pointer;
-    transition: border-color var(--transition), box-shadow var(--transition);
-    min-width: 150px;
-}
-.pe-nav-card:hover { border-color: var(--clr-primary); box-shadow: 0 2px 8px rgba(37,99,235,0.08); }
-.pe-nav-card-risk  { border-left: 3px solid #ea580c; }
 
-.pe-nav-card-count { font-size: 1.35rem; font-weight: 700; color: var(--clr-primary); line-height: 1; }
-.pe-nav-card-label { font-size: 0.8rem; font-weight: 600; color: var(--clr-text-muted); flex: 1; }
-.pe-nav-card-arrow { font-size: 1rem; color: var(--clr-text-subtle); }
 
 /* ── Section content (tech context / project structure) */
 
@@ -705,10 +687,10 @@
     border-bottom: 1px solid var(--clr-border-subtle);
     color: var(--clr-text-subtle);
 }
-.pe-complexity-header-veryhigh { color: #dc2626; border-bottom-color: #fecaca; }
-.pe-complexity-header-high     { color: #ea580c; border-bottom-color: #fed7aa; }
-.pe-complexity-header-medium   { color: #d97706; border-bottom-color: #fde68a; }
-.pe-complexity-header-low      { color: #16a34a; border-bottom-color: #bbf7d0; }
+.pe-complexity-header-veryhigh { color: #9a3412; border-bottom-color: #fed7aa; }
+.pe-complexity-header-high     { color: #92400e; border-bottom-color: #fde68a; }
+.pe-complexity-header-medium   { color: #475569; border-bottom-color: #e2e8f0; }
+.pe-complexity-header-low      { color: #475569; border-bottom-color: #e2e8f0; }
 
 .pe-complexity-card {
     background: var(--clr-surface-white);
@@ -717,10 +699,10 @@
     overflow: hidden;
     border-left: 4px solid var(--clr-border);
 }
-.pe-complexity-veryhigh { border-left-color: #dc2626; }
-.pe-complexity-high     { border-left-color: #ea580c; }
-.pe-complexity-medium   { border-left-color: #d97706; }
-.pe-complexity-low      { border-left-color: #16a34a; }
+.pe-complexity-veryhigh { border-left-color: #c2410c; }
+.pe-complexity-high     { border-left-color: #d97706; }
+.pe-complexity-medium   { border-left-color: #94a3b8; }
+.pe-complexity-low      { border-left-color: #cbd5e1; }
 
 .pe-complexity-header {
     display: flex;
@@ -747,10 +729,10 @@
     white-space: nowrap;
     flex-shrink: 0;
 }
-.pe-cbadge-veryhigh { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.pe-cbadge-high     { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
-.pe-cbadge-medium   { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
-.pe-cbadge-low      { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
+.pe-cbadge-veryhigh { background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; }
+.pe-cbadge-high     { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.pe-cbadge-medium   { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; }
+.pe-cbadge-low      { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
 
 .pe-complexity-area { font-size: 0.9rem; font-weight: 600; color: var(--clr-text-heading); flex: 1; }
 
@@ -1211,7 +1193,7 @@
     padding: 0.3rem 0.75rem;
     font-size: 0.82rem;
     font-weight: 600;
-    color: var(--clr-primary);
+    color: #1d4ed8; /* 4.5:1 on the light blue chip; --clr-primary gave 4.2:1 */
     background: var(--clr-badge-req-bg);
     border: 1px solid #bfdbfe;
     border-radius: var(--radius-pill);
@@ -1299,3 +1281,48 @@
     font-size: 0.85rem;
 }
 
+
+/* ── Overview: grouped by meaning (analysis · structure · declared dependencies · testing plan) ──────────────── */
+
+.pe-ov-group { display: grid; gap: 0.5rem; }
+.pe-ov-heading { margin: 0; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #475569; }
+.pe-ov-cards { display: flex; flex-wrap: wrap; gap: 0.625rem; }
+.pe-ov-card {
+    flex: 1 1 12rem;
+    min-width: 0;
+    padding: 0.75rem 0.9rem;
+    background: var(--clr-surface-white, #fff);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-top: 3px solid #cbd5e1;
+    border-radius: var(--radius-md, 8px);
+}
+.pe-ov-card.pe-ov-critical { border-top-color: #dc2626; }
+.pe-ov-card.pe-ov-high { border-top-color: #ea580c; }
+.pe-ov-card.pe-ov-attention { border-top-color: #d97706; }
+.pe-ov-value { font-size: 1.5rem; font-weight: 700; line-height: 1.1; color: var(--clr-text-heading, #0f172a); }
+.pe-ov-label { font-size: 0.82rem; font-weight: 600; color: #334155; }
+.pe-ov-detail { margin-top: 0.2rem; font-size: 0.8rem; color: #475569; overflow-wrap: anywhere; }
+.pe-ov-help { margin: 0 0 0.5rem; font-size: 0.8rem; line-height: 1.45; color: #475569; }
+.pe-ov-more {
+    padding: 0; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 0.82rem; font-weight: 600; color: var(--clr-info, #1d4ed8); text-decoration: underline;
+    min-height: 24px;
+}
+.pe-ov-more:focus-visible { outline: 2px solid var(--clr-info, #1d4ed8); outline-offset: 2px; }
+.pe-overview-card h3.pe-overview-card-title { margin: 0; }
+.pe-dep-list li { flex-wrap: wrap; }
+.pe-dep-name { overflow-wrap: anywhere; }
+.pe-dep-purpose { flex-basis: 100%; font-size: 0.78rem; color: #475569; overflow-wrap: anywhere; }
+.pe-meta-provenance { min-width: 0; }
+.pe-meta-detail { font-size: 0.78rem; color: #475569; overflow-wrap: anywhere; }
+.pe-meta-value { overflow-wrap: anywhere; }
+.pe-tab-note { margin: 0 0 0.75rem; font-size: 0.82rem; line-height: 1.45; color: #475569; }
+
+/* Severity the plan does not state: neutral, named in text. */
+.pe-severity-header-unrated { color: #475569; border-bottom-color: #e2e8f0; }
+.pe-dot-unrated { background: #94a3b8; }
+.pe-risk-unrated { border-left-color: #94a3b8; }
+.pe-badge-unrated { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; }
+
+/* Complexity filter: one neutral active style; the level is in the text. */
+.pe-fc-cx.is-active { background: #334155; border-color: #334155; }
