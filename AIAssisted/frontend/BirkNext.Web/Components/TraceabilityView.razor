@@ -101,20 +101,11 @@ else
                         {
                             var reqCap = req;
                             <li role="option" aria-selected="@(_selectedReqId == req.CandidateId)">
-                                <button type="button"
-                                        class="tv-req-item-btn @(_selectedReqId == req.CandidateId ? "is-selected" : "")"
-                                        @onclick="() => _selectedReqId = reqCap.CandidateId">
-                                    <span class="tv-status-dot tv-dot-@req.Status.ToString().ToLowerInvariant()"></span>
-                                    @if (req.FrId is not null)
-                                    {
-                                        <span class="tv-fr-badge tv-fr-sm">@req.FrId</span>
-                                    }
-                                    <span class="tv-req-item-title">@TruncateTitle(req.Title, 70)</span>
-                                    @if (req.LinkedTests.Count > 0)
-                                    {
-                                        <span class="tv-item-test-count">@req.LinkedTests.Count</span>
-                                    }
-                                </button>
+                                <span class="tv-status-dot tv-dot-@req.Status.ToString().ToLowerInvariant()"></span>
+                                <TraceabilityItemText @key="req.CandidateId" ItemType="Requirement" ItemId="@req.FrId" Text="@req.Title"
+                                    ActionClass="@( "tv-req-item-btn " + (_selectedReqId == req.CandidateId ? "is-selected" : "") )"
+                                    OnActivate="() => _selectedReqId = reqCap.CandidateId" />
+                                @if (req.LinkedTests.Count > 0) { <span class="tv-item-test-count">@req.LinkedTests.Count</span> }
                             </li>
                         }
                     </ul>
@@ -149,7 +140,7 @@ else
 
                         <div class="tv-det-section">
                             <div class="tv-det-label">Full FR Text</div>
-                            <div class="tv-det-full-content" data-testid="tv-detail-full-content">@(sel.FullContent ?? sel.Title)</div>
+                            <div data-testid="tv-detail-full-content"><TraceabilityItemText ItemType="Requirement full text" Text="@(sel.FullContent ?? sel.Title)" /></div>
                         </div>
 
                         <div class="tv-det-section">
@@ -176,9 +167,7 @@ else
                                 <ul class="tv-det-list">
                                     @foreach (var t in sel.LinkedTests)
                                     {
-                                        <li class="tv-test-item">
-                                            <span class="tv-test-dot"></span>@t.Title
-                                        </li>
+                                            <li class="tv-test-item"><span class="tv-test-dot"></span><TraceabilityItemText @key="t.CandidateId" ItemType="Test" Text="@t.Title" /></li>
                                     }
                                 </ul>
                             </div>
@@ -322,10 +311,7 @@ else
                                 @foreach (var req in reqsNoTests)
                                 {
                                     var reqCap = req;
-                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
-                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
-                                        @TruncateTitle(req.Title, 80)
-                                    </button></li>
+                                    <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing tests" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
                         }
@@ -348,10 +334,7 @@ else
                                 @foreach (var req in reqsNoUserStory)
                                 {
                                     var reqCap = req;
-                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
-                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
-                                        @TruncateTitle(req.Title, 80)
-                                    </button></li>
+                                    <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing a user story" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
                         }
@@ -374,10 +357,7 @@ else
                                 @foreach (var req in reqsNoSc)
                                 {
                                     var reqCap = req;
-                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirement(reqCap)">
-                                        @if (req.FrId is not null) { <span class="tv-fr-badge tv-fr-sm">@req.FrId</span> }
-                                        @TruncateTitle(req.Title, 80)
-                                    </button></li>
+                                    <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing success criteria" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
                         }
@@ -387,7 +367,7 @@ else
                 @* Orphaned tests *@
                 @if (orphanTests.Count > 0 && (_gapFocus == null || _gapFocus == "orphan-tests"))
                 {
-                    <div class="tv-gap-section @(_gapExpanded["orphan-tests"] ? "is-open" : "")">
+                    <div class="tv-gap-section @(_gapExpanded["orphan-tests"] ? "is-open" : "")" data-testid="gap-orphan-tests">
                         <button type="button" class="tv-gap-header" @onclick='() => ToggleGap("orphan-tests")'>
                             <span class="tv-gap-chevron">@(_gapExpanded["orphan-tests"] ? "▾" : "▸")</span>
                             <span class="tv-gap-icon">🔶</span>
@@ -399,7 +379,7 @@ else
                             <ul class="tv-gap-items">
                                 @foreach (var t in orphanTests)
                                 {
-                                    <li><span class="tv-gap-item-plain">@TruncateTitle(t.Title, 90)</span></li>
+                                    <li><TraceabilityItemText @key="t.CandidateId" ItemType="Orphaned test" Text="@t.Title" /></li>
                                 }
                             </ul>
                         }
@@ -422,9 +402,7 @@ else
                                 @foreach (var sc in scNoFr)
                                 {
                                     var scCap = sc.SpecItemId;
-                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirementBySc(scCap)">
-                                        <span class="tv-sc-id-sm">@sc.SpecItemId</span> @TruncateTitle(sc.Title, 70)
-                                    </button></li>
+                                    <li><TraceabilityItemText @key="sc.SpecItemId" ItemType="Success criterion" ItemId="@sc.SpecItemId" Text="@sc.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirementBySc(scCap)" /></li>
                                 }
                             </ul>
                         }
@@ -447,9 +425,7 @@ else
                                 @foreach (var sc in scNoTests)
                                 {
                                     var scCap = sc.SpecItemId;
-                                    <li><button type="button" class="tv-gap-item-btn" @onclick="() => NavigateToRequirementBySc(scCap)">
-                                        <span class="tv-sc-id-sm">@sc.SpecItemId</span> @TruncateTitle(sc.Title, 70)
-                                    </button></li>
+                                    <li><TraceabilityItemText @key="sc.SpecItemId" ItemType="Success criterion" ItemId="@sc.SpecItemId" Text="@sc.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirementBySc(scCap)" /></li>
                                 }
                             </ul>
                         }
@@ -519,39 +495,28 @@ else
         _model = TraceabilityModelBuilder.Build(SpecMarkdown, Candidates, Links);
     }
 
-    // Metrics from ReviewContext (canonical source) or SemanticModel (fallback)
-    private int GetRequirementCount() =>
-        ReviewContext?.Specification.TotalRequirements ?? SemanticModel?.TotalRequirements ?? _model?.EligibleCount ?? 0;
+    // All summary and group counts use the same current render model and logical item identity.
+    private int GetRequirementCount() => _model?.EligibleCount ?? 0;
 
     private int GetCoveredCount() =>
-        ReviewContext?.RequirementsWithTests ?? SemanticModel?.RequirementsWithTests ?? _model?.CoveredCount ?? 0;
+        _model?.CoveredCount ?? 0;
 
     private int GetMissingTestsCount() =>
-        ReviewContext?.MissingTests ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithTests : _model?.MissingTestsCount ?? 0);
+        _model?.MissingTestsCount ?? 0;
 
     private int GetMissingUserStoriesCount() =>
-        ReviewContext != null ? (ReviewContext.Specification.UserStoriesWithRequirements > 0 ? 0 : ReviewContext.Specification.TotalRequirements) :
-        (SemanticModel != null ? (SemanticModel.UserStoriesWithRequirements > 0 ? 0 : SemanticModel.TotalRequirements) : _model?.MissingUserStoryCount ?? 0);
+        _model?.MissingUserStoryCount ?? 0;
 
     private int GetMissingScCount() =>
-        ReviewContext?.MissingSuccessCriteria ?? (SemanticModel != null ? SemanticModel.TotalRequirements - SemanticModel.RequirementsWithSuccessCriteria : _model?.MissingSuccessCriteriaCount ?? 0);
+        _model?.MissingSuccessCriteriaCount ?? 0;
 
     private int GetCoveragePercent()
     {
-        if (ReviewContext != null)
-        {
-            if (ReviewContext.Specification.TotalRequirements == 0) return 0;
-            return ReviewContext.Coverage.SpecificationCompleteness;
-        }
-
-        if (SemanticModel != null && SemanticModel.TotalRequirements > 0)
-            return (SemanticModel.RequirementsWithTests * 100) / SemanticModel.TotalRequirements;
-
         return _model?.CoveragePercent ?? 0;
     }
 
     private int GetOrphanTestsCount() =>
-        ReviewContext?.Specification.TotalAcceptanceScenarios ?? SemanticModel?.TotalAcceptanceScenarios ?? _model?.OrphanTestCount ?? 0;
+        _model?.OrphanTestCount ?? 0;
 
     // ── Computed properties ─────────────────────────────────────────────────
 
@@ -631,10 +596,4 @@ else
         _                                => s.ToString(),
     };
 
-    private static string TruncateTitle(string s, int max)
-    {
-        if (s.Length <= max) return s;
-        var wb = s.LastIndexOf(' ', max - 2);
-        return (wb > max / 2 ? s[..wb] : s[..max]) + "…";
-    }
 }

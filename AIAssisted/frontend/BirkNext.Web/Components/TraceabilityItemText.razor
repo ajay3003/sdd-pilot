@@ -1,0 +1,35 @@
+<div class="traceability-item @(Expanded ? "is-expanded" : "")">
+    @if (OnActivate.HasDelegate)
+    {
+        <button type="button" class="traceability-item__activate @ActionClass" @onclick="Activate" aria-label="@ActivateLabel">
+            @if (!string.IsNullOrWhiteSpace(ItemId)) { <span class="traceability-item__id">@ItemId</span> }
+            <span class="visually-hidden">@ItemType: </span><span class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@Text</span>
+        </button>
+    }
+    else
+    {
+        <div class="traceability-item__content">
+            @if (!string.IsNullOrWhiteSpace(ItemId)) { <span class="traceability-item__id">@ItemId</span> }
+            <span class="visually-hidden">@ItemType: </span><span class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@Text</span>
+        </div>
+    }
+    @if (CanExpand)
+    {
+        <button type="button" class="traceability-item__toggle" aria-expanded="@(Expanded ? "true" : "false")"
+                aria-label="@(Expanded ? $"Show less for {ItemType} {ItemId}" : $"Show full text for {ItemType} {ItemId}")"
+                @onclick="Toggle">@(Expanded ? "Show less" : "Show more")</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public string ItemType { get; set; } = "Traceability item";
+    [Parameter] public string? ItemId { get; set; }
+    [Parameter] public string ActionClass { get; set; } = "";
+    [Parameter] public EventCallback OnActivate { get; set; }
+    private bool Expanded { get; set; }
+    private bool CanExpand => Text.Length > 180;
+    private string ActivateLabel => $"{ItemType}{(string.IsNullOrWhiteSpace(ItemId) ? "" : $" {ItemId}")}: {Text}";
+    private Task Activate() => OnActivate.InvokeAsync();
+    private void Toggle() => Expanded = !Expanded;
+}

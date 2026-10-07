@@ -1,0 +1,11 @@
+.traceability-item { min-width: 0; width: 100%; }
+.traceability-item__activate, .traceability-item__content { display: flex; align-items: flex-start; gap: .4rem; width: 100%; min-width: 0; }
+.traceability-item__activate { padding: .3rem .65rem; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.traceability-item__activate:hover { background: var(--clr-surface-1, #1e293b); }
+.traceability-item__content { padding: .3rem .9rem; }
+.traceability-item__id { flex: 0 0 auto; max-width: 12rem; overflow-wrap: anywhere; font-weight: 700; }
+.traceability-item__text { display: block; flex: 1 1 auto; min-width: 0; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.traceability-item__text.is-collapsed { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.traceability-item__toggle { margin: 0 .65rem .35rem; padding: 0; border: 0; background: transparent; color: var(--clr-primary, #60a5fa); font: inherit; font-size: .75rem; text-decoration: underline; cursor: pointer; }
+.traceability-item__toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.traceability-item.is-expanded .traceability-item__activate, .traceability-item.is-expanded .traceability-item__content { align-items: flex-start; }

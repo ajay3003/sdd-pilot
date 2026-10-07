@@ -366,6 +366,34 @@ public class ViewBehaviorTests : BunitContext
         dashboard.Should().Contain("Orphan Tests",       "health dashboard must show orphan tests");
     }
 
+    [Fact]
+    public void TraceabilitySummaryAndOrphanGroupUseTheSameCurrentLogicalItems()
+    {
+        IReadOnlyList<ExtractionCandidate> candidates =
+        [
+            MakeCandidate("FR-900: A requirement", ScenarioKind.Requirement, "Requirements"),
+            MakeCandidate("Orphan test one", ScenarioKind.Test, "Service A"),
+            MakeCandidate("Orphan test two", ScenarioKind.Test, "Service B"),
+        ];
+        var staleAggregate = new ReviewContext
+        {
+            Specification = new SpecificationSemanticModel
+            {
+                AcceptanceScenarios = Enumerable.Range(1, 28).Select(i => new SemanticAcceptanceScenario { Id = $"SC-{i}" }).ToList(),
+            },
+        };
+
+        var cut = Render<TraceabilityView>(p => p
+            .Add(x => x.Candidates, candidates)
+            .Add(x => x.Links, Array.Empty<CandidateLinkEntry>())
+            .Add(x => x.ReviewContext, staleAggregate));
+
+        cut.Find("[data-testid='health-orphan-tests']").TextContent.Should().Contain("2");
+        cut.FindAll("button").First(x => x.TextContent.Contains("Gaps")).Click();
+        cut.FindAll("[data-testid='gap-orphan-tests'] .tv-gap-count").Should().ContainSingle()
+            .Which.TextContent.Should().Be("2");
+    }
+
 
     // =========================================================================
     // Traceability — UX improvements regression suite
@@ -1904,5 +1932,4 @@ public class ViewBehaviorTests : BunitContext
         return (specMarkdown, result.Candidates);
     }
 }
-
 

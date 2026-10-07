@@ -421,8 +421,6 @@
 .tv-req-item-btn:hover     { background: var(--clr-surface-1, #1e293b); }
 .tv-req-item-btn.is-selected { background: var(--clr-accent-dim, #1e3a5f); }
 
-.tv-req-item-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 .tv-item-test-count {
     font-size: 0.62rem;
     padding: 0.08rem 0.35rem;
@@ -885,13 +883,6 @@
 
 .tv-breakdown-chip:hover {
     filter: brightness(0.97);
-}
-
-.tv-det-full-content {
-    white-space: pre-wrap;
-    color: #334155;
-    font-size: 0.875rem;
-    line-height: 1.45;
 }
 
 .tv-breakdown-req          { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
