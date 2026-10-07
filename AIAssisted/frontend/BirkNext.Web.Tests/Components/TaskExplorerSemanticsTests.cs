@@ -127,6 +127,88 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         cut.Markup.Should().Contain("Partly marked done").And.NotContain("In Progress", "a checkbox share is not implementation progress");
     }
 
+    // ── Phases nested under a document title (e.g. "# Tasks: X" → "## Phase 1") ─────────────────────────────────────────
+
+    private const string TitledFixture = """
+        # Tasks: Adapter
+
+        ## Format
+
+        Notes.
+
+        ## Phase 1: Setup
+
+        - [x] T001 Create
+        - [ ] T002 Configure
+
+        ## Phase 2: Core
+
+        ### User Story 1
+
+        - [x] T003 [US1] Sync
+
+        ## Phase 10: Polish
+
+        - [x] T004 Docs
+
+        ## Dependencies
+
+        ### Phase Dependencies
+
+        Text.
+        """;
+
+    [Fact]
+    public void PhaseNodes_FindsPhasesUnderADocumentTitle_InDocumentOrder()
+    {
+        var tree = TaskExplorerService.Parse(TitledFixture);
+
+        TaskExplorerService.PhaseNodes(tree.Roots).Select(p => p.Title).Should().Equal("Phase 1: Setup", "Phase 2: Core", "Phase 10: Polish");
+        TaskExplorerService.PhaseNodes(TaskExplorerService.Parse(Fixture).Roots).Should().HaveCount(2, "flat layouts keep working");
+        var model = TaskExplorerService.BuildSemanticModel(tree);
+        model.Phases.Select(p => (p.Title, p.CompletedCount, p.TotalCount))
+            .Should().Equal(("Phase 1: Setup", 1, 2), ("Phase 2: Core", 1, 1), ("Phase 10: Polish", 1, 1));
+        model.PhaseProgress.Values.Sum(p => p.TotalTasks).Should().Be(4);
+    }
+
+    [Fact]
+    public void PhaseProgress_RendersForPhasesUnderADocumentTitle()
+    {
+        var cut = Render(TitledFixture);
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Impact").Click();
+
+        var bars = cut.FindAll("[data-testid=te-phase-progress]");
+        bars.Select(b => b.GetAttribute("aria-label")).Should().Equal(
+            "Phase 1: Setup: 1 of 2 tasks marked done in Task artifact",
+            "Phase 2: Core: 1 of 1 task marked done in Task artifact",
+            "Phase 10: Polish: 1 of 1 task marked done in Task artifact");
+    }
+
+    // ── Map view accessibility ─────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MapView_IsAFocusableNamedRegionOfListsOfButtons_NotOrphanTreeItems()
+    {
+        var cut = Render(TitledFixture);
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Map").Click();
+
+        var map = cut.Find("[data-testid=te-map]");
+        map.GetAttribute("tabindex").Should().Be("0", "the scroll region must be reachable by keyboard");
+        map.GetAttribute("role").Should().Be("region");
+        map.GetAttribute("aria-label").Should().NotBeNullOrWhiteSpace();
+        map.QuerySelectorAll("[role=treeitem]").Should().BeEmpty("the Map is not an ARIA tree");
+        map.QuerySelectorAll(".te-map-phase-title").Select(h => h.TextContent).Should().Equal("Phase 1: Setup", "Phase 2: Core", "Phase 10: Polish");
+
+        var items = map.QuerySelectorAll(".te-map-task");
+        items.Should().HaveCount(4);
+        items.Should().OnlyContain(b => b.TagName == "BUTTON" && b.GetAttribute("type") == "button"
+            && b.ParentElement!.TagName == "LI" && b.ParentElement.ParentElement!.TagName == "UL");
+
+        cut.Find(".te-map-task[data-task-id=T003]").Click();
+        cut.Find(".te-map-task[data-task-id=T003]").GetAttribute("aria-current").Should().Be("true");
+        cut.FindAll(".te-map-task[aria-current]").Should().ContainSingle();
+    }
+
     // ── Planning ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -215,6 +297,8 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
 
         Item(cut, "implementation").Should().Contain("Not assessed").And.Contain("no current Source Analysis").And.NotContain("0 ");
         cut.Find("[data-testid=te-summary-implementation] a").GetAttribute("href").Should().Be("implementation-review");
+        cut.Find("[data-testid=te-summary-implementation] a").TextContent.Should().Be("Implementation Evidence Review",
+            "/implementation-review is Implementation Evidence Review; \"Implementation Review\" is the task-alignment page");
         cut.Find("[data-testid=te-implementation-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-impl-chip]").Should().BeEmpty();
         TaskExplorerService.MatchesFilter(TaskExplorerService.ParallelizableTasks(TaskExplorerService.Parse(Fixture).Roots)[0],
@@ -269,7 +353,8 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         var cut = Render(evidence: Index(AnalysedSource(), GraphRow("FR-001")));
 
         Item(cut, "tests").Should().Contain("Not assessed").And.Contain("no designed tests or test executions recorded").And.NotContain("0 ");
-        cut.Find("[data-testid=te-summary-tests] a").GetAttribute("href").Should().Be("implementation-review", "test results are imported in Implementation Review");
+        cut.Find("[data-testid=te-summary-tests] a").GetAttribute("href").Should().Be("implementation-review", "test results are imported in Implementation Evidence Review");
+        cut.Find("[data-testid=te-summary-tests] a").TextContent.Should().Be("Import test results in Implementation Evidence Review");
         cut.Find("[data-testid=te-tests-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-test-chip]").Should().BeEmpty();
     }
@@ -361,8 +446,11 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
             .And.NotContain("Linked Architecture Notes").And.NotContain(" 0 ");
         cut.Find("[data-testid=te-detail-tests]").TextContent.Should().StartWith("Not assessed: no designed tests or test executions are recorded");
         cut.Find("[data-testid=te-detail-tests-cta]").GetAttribute("href").Should().Be("implementation-review");
+        cut.Find("[data-testid=te-detail-tests-cta]").TextContent.Should().Be("Import test results in Implementation Evidence Review");
         cut.Find("[data-testid=te-detail-implementation]").TextContent.Should().StartWith("Not");
         cut.Find("[data-testid=te-detail-implementation-cta]").GetAttribute("href").Should().Be("implementation-review");
+        cut.Find("[data-testid=te-detail-implementation-cta]").TextContent.Should().Be("Open Implementation Evidence Review");
+        cut.Markup.Replace("Implementation Evidence Review", "").Should().NotContain("Implementation Review");
     }
 
     [Fact]

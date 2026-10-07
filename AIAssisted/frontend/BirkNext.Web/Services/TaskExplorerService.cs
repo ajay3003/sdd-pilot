@@ -1014,27 +1014,43 @@ public static class TaskExplorerService
         return tasks;
     }
 
+    /// <summary>
+    /// Phase headings in document order. Phases may sit at the top level or under a non-phase heading such as the
+    /// document title ("# Tasks: X" → "## Phase 1: …"); the walk descends through task groups but never into a phase.
+    /// </summary>
+    public static IReadOnlyList<TaskNode> PhaseNodes(IEnumerable<TaskNode> roots)
+    {
+        var phases = new List<TaskNode>();
+        void Walk(IEnumerable<TaskNode> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.NodeType == TaskNodeType.Phase) phases.Add(node);
+                else if (node.NodeType == TaskNodeType.TaskGroup) Walk(node.Children);
+            }
+        }
+        Walk(roots);
+        return phases;
+    }
+
     private static List<TaskPhase> ExtractPhases(List<TaskNode> roots, List<TaskNode> allTasks)
     {
         var phases = new List<TaskPhase>();
         var phaseNumber = 1;
 
-        foreach (var node in roots)
+        foreach (var node in PhaseNodes(roots))
         {
-            if (node.NodeType == TaskNodeType.Phase)
+            var phaseTasks = ExtractPhaseTaskIds(node);
+            phases.Add(new TaskPhase
             {
-                var phaseTasks = ExtractPhaseTaskIds(node);
-                phases.Add(new TaskPhase
-                {
-                    Id = node.Id,
-                    Title = node.Title,
-                    PhaseNumber = phaseNumber++,
-                    Description = null,
-                    TaskIds = phaseTasks,
-                    CompletedCount = allTasks.Count(t => phaseTasks.Contains(t.TaskId ?? "") && t.IsCompleted),
-                    TotalCount = phaseTasks.Count,
-                });
-            }
+                Id = node.Id,
+                Title = node.Title,
+                PhaseNumber = phaseNumber++,
+                Description = null,
+                TaskIds = phaseTasks,
+                CompletedCount = allTasks.Count(t => phaseTasks.Contains(t.TaskId ?? "") && t.IsCompleted),
+                TotalCount = phaseTasks.Count,
+            });
         }
 
         return phases;

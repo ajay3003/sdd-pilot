@@ -639,9 +639,35 @@ button.te-ref-chip:hover {
     white-space: nowrap;
 }
 
-/* Task Rows */
+/* Task Rows: lists of buttons under phase/group headings (not an ARIA tree) */
+
+.te-map:focus-visible {
+    outline: 2px solid var(--clr-primary);
+    outline-offset: -2px;
+}
+
+.te-map-task-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.te-map-task-list-direct {
+    padding: 0.45rem 0.75rem 0.55rem 1rem;
+}
+
+.te-map-task-item {
+    min-width: 0;
+}
 
 .te-map-task {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    text-align: left;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
@@ -1641,18 +1667,17 @@ button.te-ref-chip:hover {
 }
 
 .te-phase-status {
-    font-size: 0.65rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    padding: 0.15rem 0.35rem;
+    padding: 0.15rem 0.4rem;
     border-radius: 0.2rem;
     white-space: nowrap;
-    text-transform: uppercase;
     margin-left: 0.4rem;
 }
 
 .te-phase-status-complete {
-    background: rgba(74, 222, 128, 0.15);
-    color: #4ade80;
+    background: var(--clr-success-bg);
+    color: var(--clr-success);
 }
 
 .te-phase-status-in-progress {
@@ -1661,8 +1686,8 @@ button.te-ref-chip:hover {
 }
 
 .te-phase-status-not-started {
-    background: rgba(148, 163, 184, 0.15);
-    color: #94a3b8;
+    background: var(--clr-surface);
+    color: var(--clr-text-muted);
 }
 
 /* ── Dependencies View ──────────────────────────────────────────── */

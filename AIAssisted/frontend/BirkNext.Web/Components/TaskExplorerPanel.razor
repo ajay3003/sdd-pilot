@@ -136,7 +136,7 @@
                         <div class="te-filter-row">
                             @if (Evidence.ImplementationAssessed)
                             {
-                                @Chip("ImplCurrent", "Current evidence", "A linked requirement has current implementation evidence (Implementation Review)")
+                                @Chip("ImplCurrent", "Current evidence", "A linked requirement has current implementation evidence (Implementation Evidence Review)")
                                 @Chip("ImplStale", "Stale evidence", "Only potentially stale or historical implementation evidence for the linked requirements")
                                 @Chip("ImplNone", "No evidence", "Linked requirements were assessed and have no implementation evidence", "te-fc-review")
                             }
@@ -489,12 +489,12 @@
                     }
 
                     <!-- Phase Progress -->
-                    @if (_tree is not null && _tree.Roots.Any(r => r.NodeType == TaskNodeType.Phase))
+                    @if (_tree is not null && TaskExplorerService.PhaseNodes(_tree.Roots).Count > 0)
                     {
                         <div class="te-phase-dashboard">
                             <div class="te-phase-dashboard-header">Phase progress <span class="te-phase-dashboard-sub">tasks marked done in Task artifact</span></div>
                             <div class="te-phase-cards">
-                                @foreach (var phase in _tree.Roots.Where(r => r.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title))
+                                @foreach (var phase in TaskExplorerService.PhaseNodes(_tree.Roots))
                                 {
                                     var phasePct = phase.TaskCount == 0 ? 0 : (int)Math.Round((double)phase.CompletedCount / phase.TaskCount * 100);
                                     var phaseStatus = PhaseMarkedDoneLabel(phase.CompletedCount, phase.TaskCount);
@@ -551,9 +551,7 @@
             else if (_isMapView)
             {
                 var rootNode = _tree?.Roots.FirstOrDefault();
-                var phasesContainer = rootNode?.NodeType == TaskNodeType.TaskGroup ? rootNode : null;
-                var phasesSource = phasesContainer?.Children ?? _tree?.Roots ?? new List<TaskNode>();
-                var phases = phasesSource.Where(n => n.NodeType == TaskNodeType.Phase).ToList();
+                var phases = _tree is null ? new List<TaskNode>() : TaskExplorerService.PhaseNodes(_tree.Roots).ToList();
                 var allTasks = _tree is null ? new List<TaskNode>() : phases
                     .SelectMany(p => AllNodes(p.Children))
                     .Where(n => n.NodeType == TaskNodeType.Task)
@@ -561,13 +559,13 @@
 
                 @if (_tree is null)
                 {
-                    <div class="te-map" @ref="_mapContainer">
+                    <div class="te-map" @ref="_mapContainer" role="region" tabindex="0" aria-label="Execution map">
                         <div>No execution structure available.</div>
                     </div>
                 }
                 else
                 {
-                    <div class="te-map" @ref="_mapContainer">
+                    <div class="te-map" @ref="_mapContainer" role="region" tabindex="0" aria-label="Execution map: tasks by phase" data-testid="te-map">
                         <div class="te-map-header pe-section-block">
                             @if (rootNode is not null && rootNode.NodeType == TaskNodeType.TaskGroup)
                             {
@@ -612,63 +610,24 @@
                                                 <span class="te-map-group-count">@groupTasks.Count task@(groupTasks.Count != 1 ? "s" : "")</span>
                                             </div>
 
-                                            @foreach (var task in groupTasks)
-                                            {
-                                                var isSelected = _selectedNodeId == task.Id;
-
-                                                <div class="te-map-task @(isSelected ? "is-selected" : "")" role="treeitem" aria-selected="@isSelected.ToString().ToLower()" @onclick="@(() => HandleNodeClick(task))">
-                                                    <span class="te-map-task-id">@(task.TaskId ?? "")</span>
-
-                                                    <div class="te-map-task-content">
-                                                        <span class="te-map-task-title">@(task.ShortTitle ?? task.Title)</span>
-                                                    </div>
-
-                                                    <span class="te-map-task-chips">
-                                                        @if (task.UserStoryTag is not null)
-                                                        {
-                                                            <span class="te-chip te-chip-us" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
-                                                        }
-                                                        @if (task.IsCompleted)
-                                                        {
-                                                            <span class="te-map-status-badge" title="Marked done in Task artifact">Marked done</span>
-                                                        }
-                                                        @if (task.IsParallel)
-                                                        {
-                                                            <span class="te-map-parallel-badge">Parallelizable</span>
-                                                        }
-                                                    </span>
-                                                </div>
-                                            }
+                                            <ul class="te-map-task-list" aria-label="@group.Title">
+                                                @foreach (var task in groupTasks)
+                                                {
+                                                    @MapTaskItem(task)
+                                                }
+                                            </ul>
                                         </div>
                                     }
 
                                     <!-- Direct task children -->
-                                    @foreach (var task in directTasks)
+                                    @if (directTasks.Count > 0)
                                     {
-                                        var isSelected = _selectedNodeId == task.Id;
-
-                                        <div class="te-map-task @(isSelected ? "is-selected" : "")" role="treeitem" aria-selected="@isSelected.ToString().ToLower()" @onclick="@(() => HandleNodeClick(task))">
-                                            <span class="te-map-task-id">@(task.TaskId ?? "")</span>
-
-                                            <div class="te-map-task-content">
-                                                <span class="te-map-task-title">@(task.ShortTitle ?? task.Title)</span>
-                                            </div>
-
-                                            <span class="te-map-task-chips">
-                                                @if (task.UserStoryTag is not null)
-                                                {
-                                                    <span class="te-chip te-chip-us" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
-                                                }
-                                                @if (task.IsCompleted)
-                                                {
-                                                    <span class="te-map-status-badge" title="Marked done in Task artifact">Marked done</span>
-                                                }
-                                                @if (task.IsParallel)
-                                                {
-                                                    <span class="te-map-parallel-badge">Parallelizable</span>
-                                                }
-                                            </span>
-                                        </div>
+                                        <ul class="te-map-task-list te-map-task-list-direct" aria-label="@phase.Title">
+                                            @foreach (var task in directTasks)
+                                            {
+                                                @MapTaskItem(task)
+                                            }
+                                        </ul>
                                     }
                                 </div>
                             }
@@ -1032,7 +991,7 @@
                                     <p class="@(taskEvidence.Tests.Any ? "te-detail-value" : "te-detail-empty")" data-testid="te-detail-tests">@TestText(taskEvidence)</p>
                                     @if (!taskEvidence.TestsAssessed)
                                     {
-                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-tests-cta">Import test results in Implementation Review</a>
+                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-tests-cta">Import test results in Implementation Evidence Review</a>
                                     }
                                 </section>
 
@@ -1041,7 +1000,7 @@
                                     <p class="@(taskEvidence.Implementation is ImplementationEvidenceState.NotAssessed or ImplementationEvidenceState.NoLinkedRequirement ? "te-detail-empty" : "te-detail-value")" data-testid="te-detail-implementation">@ImplementationText(taskEvidence)</p>
                                     @if (!Evidence.ImplementationAssessed)
                                     {
-                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-implementation-cta">Open Implementation Review</a>
+                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-implementation-cta">Open Implementation Evidence Review</a>
                                     }
                                 </section>
                             </div>
@@ -1336,6 +1295,38 @@
     private int FilteredTaskCount => _activeFilter is null ? _health.TotalTasks
         : AllTasks.Count(t => TaskExplorerService.MatchesFilter(t, _activeFilter, _tableLinkedTaskIds, Evidence));
 
+    /// <summary>
+    /// One Map task: a list item holding a button (keyboard-reachable, announced as current when selected). The Map is a
+    /// set of lists under phase headings, not an ARIA tree; the hierarchical Tree view owns the tree pattern.
+    /// </summary>
+    private RenderFragment MapTaskItem(TaskNode task) => __builder =>
+    {
+        var isSelected = _selectedNodeId == task.Id;
+        <li class="te-map-task-item">
+            <button type="button" class="te-map-task @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)"
+                    title="@task.Title" data-task-id="@task.TaskId" @onclick="@(() => HandleNodeClick(task))">
+                <span class="te-map-task-id">@(task.TaskId ?? "")</span>
+                <span class="te-map-task-content">
+                    <span class="te-map-task-title">@(task.ShortTitle ?? task.Title)</span>
+                </span>
+                <span class="te-map-task-chips">
+                    @if (task.UserStoryTag is not null)
+                    {
+                        <span class="te-chip te-chip-us" title="@GetUserStoryTitle(task)">@UserStoryDisplay(task)</span>
+                    }
+                    @if (task.IsCompleted)
+                    {
+                        <span class="te-map-status-badge" title="Marked done in Task artifact">Marked done</span>
+                    }
+                    @if (task.IsParallel)
+                    {
+                        <span class="te-map-parallel-badge">Parallelizable</span>
+                    }
+                </span>
+            </button>
+        </li>
+    };
+
     private RenderFragment Chip(string? key, string label, string title, string extraClass = "") => __builder =>
     {
         var active = _activeFilter == key;
@@ -1375,7 +1366,7 @@
                 <dt>Implementation evidence</dt>
                 @if (!Evidence.ImplementationAssessed)
                 {
-                    <dd>Not assessed <span class="te-summary-sub">· no current Source Analysis or implementation evidence</span> <a class="te-summary-link" href="implementation-review">Implementation Review</a></dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no current Source Analysis or implementation evidence</span> <a class="te-summary-link" href="implementation-review">Implementation Evidence Review</a></dd>
                 }
                 else
                 {
@@ -1386,7 +1377,7 @@
                 <dt>Test evidence</dt>
                 @if (!Evidence.TestsAssessed)
                 {
-                    <dd>Not assessed <span class="te-summary-sub">· no designed tests or test executions recorded</span> <a class="te-summary-link" href="implementation-review">Import test results</a></dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no designed tests or test executions recorded</span> <a class="te-summary-link" href="implementation-review">Import test results in Implementation Evidence Review</a></dd>
                 }
                 else
                 {
