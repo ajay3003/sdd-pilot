@@ -77,6 +77,6 @@ public sealed class SourceAnalysisProjectImportTests : BunitContext
         cut.Find("[data-testid=sa-empty-import-project]").ClassList.Should().Contain("sa-file-primary");
         cut.Find("[data-testid=sa-empty-import-project]").GetAttribute("href").Should().Be("project-import");
         cut.Find("[data-testid=sa-empty-upload]").GetAttribute("aria-label").Should().Contain("Upload source only");
-        cut.Find("[data-testid=sa-upload]");
+        cut.FindAll("[data-testid=sa-upload]").Should().BeEmpty("the source-only upload is offered once, in the empty state");
     }
 }

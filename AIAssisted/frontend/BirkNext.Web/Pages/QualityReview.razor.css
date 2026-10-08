@@ -1168,3 +1168,6 @@
     font-weight: 700;
     color: var(--clr-primary, #6366f1);
 }
+
+.qr-empty-state .qr-empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 0.75rem; }
+.qr-empty-actions a { text-decoration: none; }

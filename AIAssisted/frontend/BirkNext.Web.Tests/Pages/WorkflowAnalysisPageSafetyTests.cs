@@ -12,6 +12,7 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
 {
     private readonly WorkspaceSessionService _workspace = new();
     private readonly TaskAlignmentSessionService _alignmentSession = new();
+    private readonly BirkNext.Web.Services.Explorers.ArtifactExplorerContext _explorers;
 
     public WorkflowAnalysisPageSafetyTests()
     {
@@ -26,7 +27,8 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         Services.AddSingleton(new Mock<IReportExportService>().Object);
         Services.AddSingleton(new Mock<ISampleProjectDocumentResolver>().Object);
         var samples = new MockSampleProjectDocumentResolver();
-        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, samples, samples));
+        _explorers = new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, samples, samples);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(_explorers);
         Services.AddSingleton(_alignmentSession);
         Services.AddSingleton<TaskSpecAlignmentService>();
     }
@@ -61,7 +63,9 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("No Sample Project selected");
+        cut.WaitForAssertion(() => cut.Find("[data-testid='ir-no-project']").TextContent.Should().Contain("No project is currently loaded"));
+        cut.Find("[data-testid='ir-import-project']").GetAttribute("href").Should().Be("project-import");
+        cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
@@ -73,7 +77,8 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("No Sample Project selected");
+        cut.WaitForAssertion(() => cut.Find("[data-testid='ir-status']").GetAttribute("data-state").Should().Be("Current"));
+        cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
@@ -82,25 +87,26 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
     {
         var spec = MinimalSpecification();
         var tasks = MinimalTasks();
-        _workspace.Set(WorkspaceArtifactKind.Specification, spec);
-        _workspace.Set(WorkspaceArtifactKind.Tasks, tasks);
+        _explorers.Import(new(WorkspaceArtifactType.Specification, spec, "spec.md", "File"));
+        _explorers.Import(new(WorkspaceArtifactType.Tasks, tasks, "tasks.md", "File"));
         _alignmentSession.SaveResult(
             new AlignmentReport { TotalTasks = 1, Findings = null! },
-            _workspace.ProjectName,
+            "manual-workspace",
             spec,
             tasks);
 
         var cut = Render<TaskToSpecAlignment>();
 
         cut.Markup.Should().Contain("Implementation Review");
-        cut.Markup.Should().Contain("No Sample Project selected");
+        cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='implementation-review-error']").Should().BeEmpty();
     }
 
     private void LoadSpecAndTasks()
     {
-        _workspace.Set(WorkspaceArtifactKind.Specification, MinimalSpecification());
-        _workspace.Set(WorkspaceArtifactKind.Tasks, MinimalTasks());
+        // A manual workspace: documents imported in the explorers, no Sample Project.
+        _explorers.Import(new(WorkspaceArtifactType.Specification, MinimalSpecification(), "spec.md", "File"));
+        _explorers.Import(new(WorkspaceArtifactType.Tasks, MinimalTasks(), "tasks.md", "File"));
     }
 
     private static string MinimalSpecification() => """

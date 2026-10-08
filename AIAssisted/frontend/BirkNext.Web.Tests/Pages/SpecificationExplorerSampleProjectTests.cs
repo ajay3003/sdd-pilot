@@ -480,9 +480,10 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Find("[data-testid='artifact-explorer-empty'] h2").TextContent.Should().Be("No Specification artifact is loaded");
-            cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import specification");
-            cut.Find("[data-testid='artifact-explorer-empty'] a[href='sample-projects']").TextContent.Should().Be("Open Sample Projects");
+            cut.Find("[data-testid='artifact-explorer-empty'] h2").TextContent.Should().Be("No project is currently loaded");
+            cut.Find("[data-testid='artifact-explorer-import-project']").GetAttribute("href").Should().Be("project-import");
+            cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import specification only");
+            cut.Find("[data-testid='artifact-explorer-empty'] a[href='sample-projects']").TextContent.Should().Be("Load Sample Project");
             cut.Markup.Should().NotContain("No Sample Project selected");
             cut.Markup.Should().NotContain("specification.md files");
         });

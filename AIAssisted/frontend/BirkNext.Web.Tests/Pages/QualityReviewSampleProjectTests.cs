@@ -143,6 +143,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("No document artifacts are available for review.");
+            cut.Find("[data-testid=qr-import-project]").GetAttribute("href").Should().Be("project-import");
+            cut.Markup.Should().NotContain("Select a Sample Project");
             cut.Markup.Should().NotContain("Run Document Quality Review");
             cut.Markup.Should().NotContain("Sample Project Artifacts");
             cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");

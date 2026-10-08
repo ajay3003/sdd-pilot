@@ -67,8 +67,12 @@
 
 .sp-empty-icon { font-size: 2.5rem; }
 .sp-empty-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary, #111); }
-.sp-empty-hint  { font-size: 0.85rem; color: var(--text-muted, #777); max-width: 480px; line-height: 1.5; margin: 0; }
+.sp-empty-hint  { font-size: 0.85rem; color: var(--clr-text-muted, #475569); max-width: 480px; line-height: 1.5; margin: 0; }
 .sp-empty-hint code { background: var(--surface-alt, #f0f0f0); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; }
+.sp-empty-action { text-decoration: none; font-size: 0.9rem; padding: 0.5rem 1rem; }
+.sp-empty-details { max-width: 480px; font-size: 0.8rem; color: var(--clr-text-muted, #475569); text-align: left; }
+.sp-empty-details summary { cursor: pointer; }
+.sp-empty-details code { background: var(--surface-alt, #f0f0f0); padding: 0.1rem 0.3rem; border-radius: 3px; overflow-wrap: anywhere; }
 
 /* ── Project card ────────────────────────────────────────────────────────────── */
 

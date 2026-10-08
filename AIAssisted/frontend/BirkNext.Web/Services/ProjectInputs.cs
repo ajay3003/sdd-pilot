@@ -79,9 +79,12 @@ public static class ProjectInputPresentation
         return workspace.IsImportedProject
             ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
                 $"{workspace.RoleSummary} in the imported project {workspace.ProjectDisplay}.", "Open Import Project", ProjectImportRoute, facts)
+            : workspace.ProjectLoaded
+            ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
+                $"{workspace.RoleSummary} in {workspace.ProjectDisplay}.", "Open Sample Projects", SampleProjectsRoute, facts)
+            // The manual workspace has no project to open: importing the project ZIP is the way to a full project.
             : new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
-                $"{workspace.RoleSummary} in {workspace.ProjectDisplay switch { "Not assigned" => "the manual workspace", var p => p }}.",
-                "Open Sample Projects", SampleProjectsRoute, facts);
+                $"{workspace.RoleSummary} in the manual workspace.", "Import Project", ProjectImportRoute, facts);
     }
 
     /// <summary>The source input. <paramref name="sourceKnown"/> is false when the source state could not be read; a missing coverage

@@ -75,17 +75,17 @@ public static class NavigationCatalog
             new("user-guide", "User Guide", "nav-icon-user-guide", f => f.UserGuide),
             new("dashboard", "Dashboard", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix),
         ]),
-        // The three inputs: project documents (Sample Projects is the easiest start; explorers also import), source, target.
+        // Inputs: Import Project is the primary path (one ZIP → project artifacts + source snapshot); Sample Projects are optional examples;
+        // Target Environments is runtime/deployed-system configuration, not a project document input. Source Analysis inspects the source
+        // snapshot and sits with the other source reviews.
         new("project-inputs", "Project Inputs",
         [
-            new("project-import", "Import Project", "nav-icon-sample-projects", f => f.SampleProjects || f.SourceAnalysis,
-                Hint: "one project ZIP: documents become project artifacts and source becomes a Source Analysis snapshot"),
+            new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
+                Hint: "primary input: one project ZIP becomes project artifacts and a Source Analysis snapshot"),
             new("sample-projects", "Sample Projects", "nav-icon-sample-projects", f => f.SampleProjects,
-                Hint: "ready-made example projects; documents can also be imported in any explorer"),
-            new("source-analysis", "Source Analysis", "nav-icon-source-analysis", f => f.SourceAnalysis,
-                Hint: "source input: the current source snapshot (from Import Project or a source-only upload)"),
+                Hint: "optional example projects"),
             new(TargetEnvironmentsRoute, "Target Environments", "nav-icon-target", f => f.AdminSystemSettings,
-                Hint: "runtime input: application, API and integration targets (opens System Settings)", FeatureId: "target-environments"),
+                Hint: "runtime configuration of the deployed system, used by runtime reviews (opens System Settings)", FeatureId: "target-environments"),
         ]),
         new("document-review", "Document Review",
         [
@@ -113,6 +113,8 @@ public static class NavigationCatalog
         // Consumers of the source snapshot (SBOM import also feeds Dependency Review; Environment Analysis adds a cloud provider).
         new("source-review", "Source Review",
         [
+            new("source-analysis", "Source Analysis", "nav-icon-source-analysis", f => f.SourceAnalysis,
+                Hint: "inspect the current source snapshot (from Import Project or a source-only upload)"),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),

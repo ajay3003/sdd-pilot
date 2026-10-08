@@ -89,7 +89,7 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
 
         var cut = Render<SourceAnalysis>();
 
-        cut.WaitForElement("[data-testid=sa-upload]");
+        cut.WaitForElement("[data-testid=sa-empty-upload]");
         _api.Verify(a => a.ListSourceSnapshotsAsync("dev", It.IsAny<CancellationToken>()), Times.Once);
     }
 

@@ -380,3 +380,8 @@ button.ir-card:hover { border-color: var(--clr-border-hover); background: var(--
     .ir-row-meta { grid-column: 1 / 2; grid-row: 3; }
     .ir-chevron { grid-column: 2; grid-row: 1; }
 }
+
+.ir-empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.ir-empty-actions a { text-decoration: none; }
+.ir-artifact-action { font-size: 0.85rem; font-weight: 600; }
+.ir-artifact[data-state="selection-required"] .ir-artifact-state { color: var(--clr-text-heading); }

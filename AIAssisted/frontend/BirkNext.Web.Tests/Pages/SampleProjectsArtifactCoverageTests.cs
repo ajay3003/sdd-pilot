@@ -43,6 +43,21 @@ public sealed class SampleProjectsArtifactCoverageTests : BunitContext
     }
 
     [Fact]
+    public void NoSampleProjects_IsAnOptionalDemoState_WithImportProjectFirst()
+    {
+        var cut = Render<SampleProjects>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sp-empty]"));
+        cut.Find("#sp-empty-title").TextContent.Should().Be("No sample projects are configured");
+        cut.Find("[data-testid=sp-empty]").TextContent.Should().Contain("Sample Projects are optional examples").And.Contain("use Import Project");
+        cut.Find("[data-testid=sp-empty-import]").GetAttribute("href").Should().Be("project-import");
+        // The configuration key is a technical detail for administrators, not the message.
+        cut.Find("[data-testid=sp-empty-details]").TextContent.Should().Contain("SampleProjects:BaseDirectory");
+        cut.Find("[data-testid=sp-empty-details]").HasAttribute("open").Should().BeFalse();
+        cut.Markup.Should().NotContain("No sample projects found");
+    }
+
+    [Fact]
     public void NestedSpecKitProject_ShowsDetectedRolesAndNeutralNotFound_NoMissingExpected()
     {
         _backend.Add("skole", new()

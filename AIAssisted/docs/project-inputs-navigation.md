@@ -70,10 +70,10 @@ Section IDs are stable, and order is deterministic:
 | Section (id) | Rows |
 |---|---|
 | Getting Started (`getting-started`) | Recommended Workflow, User Guide, Dashboard (cross-cutting, so it sits here rather than under document review) |
-| Project Inputs (`project-inputs`) | Sample Projects, Source Analysis, Target Environments |
+| Project Inputs (`project-inputs`) | Import Project (primary: one ZIP → project artifacts + source snapshot), Sample Projects (optional examples), Target Environments (runtime configuration of the deployed system, not a document input) |
 | Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review |
 | Traceability (`traceability`) | Requirements Traceability, Implementation Review, Implementation Traceability, Spec Drift, Impact Analysis (+ legacy rows behind the legacy flag) |
-| Source Review (`source-review`) | Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
+| Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
 | Quality & Testing (`quality-testing`) | Frontend, API, Integration Quality Review, Performance Test Review, Critical E2E Regression |
 | Extensions (`extensions`) | Security Classification (badge *Extension* when enabled, otherwise *N/A*) |
 | AI Review (`ai-review`) | AI Change Review (off by default) |
@@ -81,6 +81,11 @@ Section IDs are stable, and order is deterministic:
 
 Rules:
 
+- **Source Analysis** is a source-evidence inspection page, not a primary input: it sits first under Source Review (route
+  `source-analysis` unchanged). Import Project creates the snapshot; a source-only upload stays available there as an advanced path.
+- **Empty states** come from one model, `WorkspaceArtifactState` (`NoWorkspace`, `RoleUnavailable`, `RoleAmbiguous`,
+  `RoleSelected`, `Unsupported`), derived from the explorers' role authority: no project → Import Project first; several
+  candidates → selection required (never "no artifact"); no candidate → not detected (neutral).
 - **Target Environments** is a deep link (`admin/system-settings?section=target-environments`). System Settings sections
   are URL state: choosing a section navigates to `?section=<id>`, and the page parses `section=` on in-place navigation.
   The existing page and state are reused, and Back/Forward restore the section.

@@ -29,23 +29,29 @@
     }
     else
     {
+        @* Three separate facts: the source snapshot belongs to the workspace; the Target Environment is runtime context only. *@
         <dl class="sa-target-context" data-testid="sa-target-context">
+            <div><dt>Source snapshot</dt><dd data-testid="sa-source-state">@(NoSnapshotSelected ? "None" : "Current")</dd></div>
             <div><dt>Target Environment</dt><dd data-testid="sa-target-state">@(_profile is null ? "Not selected" : "Selected")</dd></div>
             <div><dt>Runtime-dependent evidence</dt><dd>@(_profile is null ? "Not available — select a Target Environment for runtime reviews" : "Available to runtime reviews")</dd></div>
         </dl>
         <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
             <h2 id="sa-snapshot-heading">Source snapshot</h2>
             <div class="sa-controls">
-                <div class="sa-upload-group">
-                    @* Import Project is the recommended path: one archive feeds project documents and this snapshot. A source-only upload stays
-                       available for archives that are source only, or to analyze the same source again. *@
-                    <a class="sa-file-button@(_snapshots.Count == 0 ? " sa-file-primary" : "")" href="project-import" data-testid="sa-import-project">Import Project</a>
-                    <label class="sa-file-button">
-                        <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (.zip, maximum 50 MB)" data-testid="sa-upload" />
-                        <span aria-hidden="true">Upload source only</span>
-                    </label>
-                    <span class="sa-muted">ZIP · maximum 50 MB</span>
-                </div>
+                @* Import Project is the recommended path: one archive feeds project documents and this snapshot. A source-only upload stays
+                   available for archives that are source only, or to analyze the same source again. Without a snapshot these actions are
+                   offered once, in the empty state below, so they are not repeated here. *@
+                @if (!NoSnapshotSelected)
+                {
+                    <div class="sa-upload-group">
+                        <a class="sa-file-button" href="project-import" data-testid="sa-import-project">Import Project</a>
+                        <label class="sa-file-button">
+                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (.zip, maximum 50 MB)" data-testid="sa-upload" />
+                            <span aria-hidden="true">Upload source only</span>
+                        </label>
+                        <span class="sa-muted">ZIP · maximum 50 MB</span>
+                    </div>
+                }
                 <label class="sa-field">Existing snapshot
                     <select id="sa-snapshot-select" class="form-control" @bind="_selected" @bind:after="SnapshotChanged" data-testid="source-snapshot" disabled="@(_busy || _snapshots.Count == 0)">
                         <option value="">@(_snapshots.Count == 0 ? "No stored snapshot yet" : "Select a source snapshot")</option>
@@ -112,15 +118,29 @@
                         <li><strong>Source evidence</strong> — infrastructure as code, configuration, CI/CD pipelines and contracts, reusable by every review.</li>
                         <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
                     </ul>
-                    <div class="sa-actions">
-                        <a class="sa-file-button sa-file-primary" href="project-import" data-testid="sa-empty-import-project">Import Project</a>
-                        <label class="sa-file-button">
-                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (ZIP, maximum 50 MB)" data-testid="sa-empty-upload" />
-                            <span aria-hidden="true">Upload source only</span>
-                        </label>
-                        <button type="button" class="btn-secondary" data-testid="sa-choose-existing" disabled="@(_snapshots.Count == 0)" aria-describedby="@(_snapshots.Count == 0 ? "sa-no-snapshots" : null)" @onclick="FocusSelectorAsync">Choose existing snapshot</button>
-                        @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet.</span> }
-                    </div>
+                    <dl class="sa-actions sa-action-list" data-testid="sa-empty-actions">
+                        <div>
+                            <dt>Recommended</dt>
+                            <dd><a class="sa-file-button sa-file-primary" href="project-import" data-testid="sa-empty-import-project">Import Project</a> <span class="sa-muted">one ZIP for project documents and source</span></dd>
+                        </div>
+                        <div>
+                            <dt>Advanced</dt>
+                            <dd>
+                                <label class="sa-file-button">
+                                    <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (ZIP, maximum 50 MB)" data-testid="sa-empty-upload" />
+                                    <span aria-hidden="true">Upload source only</span>
+                                </label>
+                                <span class="sa-muted">ZIP · maximum 50 MB</span>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Existing</dt>
+                            <dd>
+                                <button type="button" class="btn-secondary" data-testid="sa-choose-existing" disabled="@(_snapshots.Count == 0)" aria-describedby="@(_snapshots.Count == 0 ? "sa-no-snapshots" : null)" @onclick="FocusSelectorAsync">Choose existing snapshot</button>
+                                @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet.</span> }
+                            </dd>
+                        </div>
+                    </dl>
                 </div>
             </section>
         }
@@ -331,6 +351,8 @@
         _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.Observability is not null && SameRepository(s, current)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.Observability;
     private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
         a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
+    /// <summary>No snapshot is shown (none stored, or none chosen) and no upload is running: the empty state offers the actions once.</summary>
+    private bool NoSnapshotSelected => !_busy && _snapshots.All(s => s.Id.ToString() != _selected);
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
     protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; await Load(); _loaded = true; }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile?.Id ?? ""); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }

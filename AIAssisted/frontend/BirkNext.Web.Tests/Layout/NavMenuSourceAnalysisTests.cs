@@ -25,9 +25,9 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
-        entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Sample Projects", "Source Analysis", "Target Environments");
+        entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Sample Projects", "Target Environments");
         entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "Implementation Review", "Implementation Traceability");
-        entries.Should().ContainInConsecutiveOrder("§Source Review", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }
@@ -62,7 +62,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
     }
 
     [Fact]
-    public void TheProjectInputsHeadingShowsWhenSourceAnalysisIsItsOnlyVisibleItem()
+    public void ImportProjectStaysInProjectInputs_WhenSourceAnalysisIsTheOnlyVisibleSourceInput()
     {
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
         {
@@ -70,8 +70,9 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         });
         var cut = Render<NavMenu>();
 
-        // Import Project feeds Source Analysis too, so it stays visible with it.
-        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Source Analysis", "§Document Review");
+        // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
+        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "§Document Review");
+        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Technology Coverage");
     }
 
     [Fact]

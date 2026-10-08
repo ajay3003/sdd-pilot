@@ -83,10 +83,15 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
+            // No project and no document: the project ZIP is the primary way in; a single-role import is the advanced path.
             var empty = cut.Find("[data-testid='artifact-explorer-empty']");
-            empty.QuerySelector("h2")!.TextContent.Should().Be($"No {label} artifact is loaded");
-            empty.QuerySelector("[data-testid='artifact-explorer-import-toggle']")!.TextContent.Trim().Should().Be($"Import {label.ToLowerInvariant()}");
-            empty.QuerySelector("a[href='sample-projects']")!.TextContent.Should().Be("Open Sample Projects");
+            empty.GetAttribute("data-state").Should().Be("NoWorkspace");
+            empty.QuerySelector("h2")!.TextContent.Should().Be("No project is currently loaded");
+            empty.QuerySelector("a.btn-primary")!.GetAttribute("href").Should().Be("project-import");
+            empty.QuerySelector("a.btn-primary")!.TextContent.Should().Be("Import Project");
+            empty.QuerySelector("a[href='sample-projects']")!.TextContent.Should().Be("Load Sample Project");
+            empty.QuerySelector("[data-testid='artifact-explorer-import-toggle']")!.TextContent.Trim().Should().Be($"Import {label.ToLowerInvariant()} only");
+            cut.Markup.Should().NotContain($"No {label} artifact is loaded");
             cut.Markup.Should().NotContain("No Sample Project selected");
             cut.Markup.Should().NotContain(ArtifactExplorerRoles.CommonFileName(role) + " files");
         });
@@ -301,5 +306,69 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
         cut.WaitForAssertion(() =>
             cut.Find("[data-testid='artifact-explorer-role-warning']").TextContent.Should().Contain("looks like a Task artifact"));
         _workspace.SddLifecycle.Revisions.Single().Role.Should().Be("Constitution");
+    }
+
+    private void ImportProject(string sha, params (string Path, string Content)[] documents)
+    {
+        var preview = BirkNext.Web.Tests.Services.ProjectImportActivationTests.Preview(sha, false, documents);
+        new BirkNext.Web.Services.ProjectImport.ProjectImportActivation(_workspace).Activate(preview,
+            BirkNext.Web.Services.ProjectImport.ProjectImportArtifactDiscovery.From(preview),
+            BirkNext.Web.Tests.Services.ProjectImportActivationTests.Commit(preview, BirkNext.ProjectImport.ProjectImportSourceState.NotDetected));
+    }
+
+    [Fact]
+    public void ImportedProject_WithoutTheRole_SaysNotDetected_AndPointsToTheImport_NotSampleProjects()
+    {
+        ImportProject(new string('a', 64), ("shop/specs/001/spec.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Spec));
+
+        var cut = RenderExplorer(WorkspaceArtifactType.Constitution);
+
+        cut.WaitForAssertion(() =>
+        {
+            var empty = cut.Find("[data-testid='artifact-explorer-empty']");
+            empty.GetAttribute("data-state").Should().Be("RoleUnavailable");
+            empty.QuerySelector("h2")!.TextContent.Should().Be("No Constitution artifact was detected in shop");
+            cut.Find("[data-testid='artifact-explorer-review-artifacts']").GetAttribute("href").Should().Be("project-import");
+            empty.QuerySelectorAll("a[href='sample-projects']").Should().BeEmpty();
+            cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import constitution only");
+            cut.Markup.Should().NotContain("No project is currently loaded");
+        });
+    }
+
+    [Fact]
+    public void ImportedProject_WithSeveralCandidates_RequiresSelection_NeverSaysNotLoaded()
+    {
+        ImportProject(new string('b', 64),
+            ("a/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution),
+            ("b/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution.Replace("Test first", "Review first")));
+
+        var cut = RenderExplorer(WorkspaceArtifactType.Constitution);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer-choose'] h2").TextContent.Should().Be("Choose a Constitution artifact");
+            cut.Find("[data-testid='artifact-explorer-candidates']").TextContent.Should().Contain("2 candidate Constitution artifacts were discovered")
+                .And.Contain("No current Constitution artifact is selected");
+            cut.FindAll("[data-testid='artifact-explorer-choice']").Should().HaveCount(2);
+            cut.FindAll("[data-testid='artifact-explorer-empty']").Should().BeEmpty();
+            cut.Markup.Should().NotContain("is loaded").And.NotContain("No project is currently loaded");
+        });
+    }
+
+    [Fact]
+    public void ManualWorkspace_WithOtherRoles_IsAWorkspace_NotNoProject()
+    {
+        Services.GetRequiredService<IArtifactExplorerContext>().Import(new(WorkspaceArtifactType.Specification,
+            BirkNext.Web.Tests.Services.ProjectImportActivationTests.Spec, "requirements.md", "File"));
+
+        var cut = RenderExplorer(WorkspaceArtifactType.Plan);
+
+        cut.WaitForAssertion(() =>
+        {
+            var empty = cut.Find("[data-testid='artifact-explorer-empty']");
+            empty.GetAttribute("data-state").Should().Be("RoleUnavailable");
+            empty.QuerySelector("h2")!.TextContent.Should().Be("No Plan artifact was detected in the current workspace");
+            cut.FindAll("[data-testid='artifact-explorer-review-artifacts']").Should().BeEmpty("a manual workspace has no project page to review");
+        });
     }
 }

@@ -31,11 +31,11 @@
                 <span class="qr-context-label">Workspace</span>
                 @if (!string.IsNullOrWhiteSpace(_selectedProjectName))
                 {
-                    <span>Sample Project: <strong>@_selectedProjectName</strong></span>
+                    <span>@(ProjectImportScope.IsImport(_selectedProject) ? "Imported project" : "Sample Project"): <strong>@_selectedProjectName</strong></span>
                 }
                 else
                 {
-                    <span>Imported artifacts</span>
+                    <span>Manual workspace</span>
                 }
             </span>
             <span class="qr-context-item"><span class="qr-context-label">Artifacts</span> <span>@AvailableArtifactCount available</span></span>
@@ -186,9 +186,20 @@
     <!-- ── No project selected state ────────────────────────────────────── -->
     @if (!HasWorkspaceArtifacts)
     {
-        <div class="qr-empty-state">
+        <div class="qr-empty-state" role="status" data-testid="qr-no-workspace">
             <p class="qr-empty-title">No document artifacts are available for review.</p>
-            <p>Select a Sample Project or import artifacts into the current workspace.</p>
+            @if (string.IsNullOrWhiteSpace(_selectedProject))
+            {
+                <p>No project is currently loaded. Import a project ZIP to discover its project artifacts and source evidence automatically.</p>
+                <p class="qr-empty-actions">
+                    <a class="btn-primary" href="project-import" data-testid="qr-import-project">Import Project</a>
+                    <a class="btn-secondary" href="sample-projects">Load Sample Project</a>
+                </p>
+            }
+            else
+            {
+                <p>The current project has no Constitution, Specification, Plan, Task or Data Model artifact. Every role is optional; import a document in its explorer to add one.</p>
+            }
         </div>
     }
     else

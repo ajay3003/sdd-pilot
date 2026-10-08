@@ -79,3 +79,8 @@ a.sa-file-button:focus-visible { outline: 2px solid var(--clr-link, #2563eb); ou
 .sa-target-context div { display: flex; gap: .4rem; min-width: 0; }
 .sa-target-context dt { color: var(--clr-text-muted); font-weight: 600; }
 .sa-target-context dd { margin: 0; overflow-wrap: anywhere; }
+.sa-action-list { display: grid; gap: .6rem; margin: .75rem 0 0; }
+.sa-action-list > div { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); align-items: center; gap: .5rem; }
+.sa-action-list dt { font-size: .8rem; font-weight: 600; color: var(--clr-text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.sa-action-list dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; min-width: 0; }
+@media (max-width: 600px) { .sa-action-list > div { grid-template-columns: minmax(0, 1fr); } }

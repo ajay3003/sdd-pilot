@@ -37,22 +37,23 @@ public sealed class ImplementationReviewPageTests : BunitContext
         """;
 
     private readonly TaskAlignmentSessionService _session = new();
-    private readonly Mock<ISampleProjectDocumentResolver> _resolver = new();
+    // The page reads the current workspace through the explorers' role authority; here the workspace is a Sample Project.
+    private const string Project = "sample-project";
+    private readonly WorkspaceArtifactRepository _workspace = new();
+    private readonly MockSampleProjectDocumentResolver _samples = new();
     private readonly Mock<IReportExportService> _export = new();
-    private string _tasks = Tasks;
+
+    private void SetTasks(string tasks) => _samples.SetProjectTasks(Project, tasks);
 
     public ImplementationReviewPageTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _resolver.Setup(r => r.GetSelectedProject()).Returns("sample");
-        _resolver.Setup(r => r.GetAvailableProjectsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new SampleProjectDto("sample", "Sample Project", "test", "", "", false, [])]);
-        _resolver.Setup(r => r.ResolveAsync("sample", ExplorerDocumentType.Specification, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => SampleProjectDocumentResult.Success("sample", ExplorerDocumentType.Specification, "spec.md", Spec));
-        _resolver.Setup(r => r.ResolveAsync("sample", ExplorerDocumentType.Tasks, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => SampleProjectDocumentResult.Success("sample", ExplorerDocumentType.Tasks, "tasks.md", _tasks));
+        _samples.Repository = _workspace;
+        _samples.SetProjectSpecification(Project, Spec);
+        SetTasks(Tasks);
+        _workspace.CurrentProject = Project;
 
-        Services.AddSingleton(_resolver.Object);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _samples, _samples));
         Services.AddSingleton(_session);
         Services.AddSingleton<IConstitutionAnalysisService, ConstitutionAnalysisService>();
         Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
@@ -142,7 +143,7 @@ public sealed class ImplementationReviewPageTests : BunitContext
     {
         Render<TaskToSpecAlignment>().Dispose();
         var firstHash = _session.Snapshot!.TasksHash;
-        _tasks = Tasks + "\n- [ ] T005 Implement sign-out for FR-001\n";
+        SetTasks(Tasks + "\n- [ ] T005 Implement sign-out for FR-001\n");
 
         var cut = Render<TaskToSpecAlignment>();
 
@@ -174,12 +175,12 @@ public sealed class ImplementationReviewPageTests : BunitContext
     [Fact]
     public void ZeroFindings_ShowsNoFindingsState()
     {
-        _tasks = """
+        SetTasks("""
             # Tasks
 
             - [ ] T001 Create Sample.sln and the Api.csproj project skeleton
             - [ ] T002 Implement sign-in flow for FR-001
-            """;
+            """);
 
         var cut = Render<TaskToSpecAlignment>();
 
@@ -197,7 +198,7 @@ public sealed class ImplementationReviewPageTests : BunitContext
         cut.Find("[data-testid=ir-export]").Click();
 
         _export.Verify(e => e.ExportImplementationReview(
-            It.IsAny<AlignmentReport>(), "Sample Project", _session.Snapshot, TaskAlignmentCurrentness.Current), Times.Once);
+            It.IsAny<AlignmentReport>(), "sample project", _session.Snapshot, TaskAlignmentCurrentness.Current), Times.Once);
     }
 
     [Fact]

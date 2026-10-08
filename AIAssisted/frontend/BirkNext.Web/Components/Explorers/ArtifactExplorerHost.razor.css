@@ -155,7 +155,8 @@
 .axh-choice-meta {
     font-size: 0.78rem;
     font-family: var(--font-mono);
-    color: var(--clr-text-subtle);
+    /* Muted, not subtle: the path stays readable on the hover/selected background (WCAG AA). */
+    color: var(--clr-text-muted);
     overflow-wrap: anywhere;
 }
 
@@ -313,3 +314,15 @@
         max-width: 100%;
     }
 }
+
+/* Advanced path (single-role import) in the no-project state: a quiet text button after the primary actions. */
+.axh-advanced {
+    background: none;
+    border: none;
+    padding: 0.35rem 0.25rem;
+    color: var(--clr-primary, #1d4ed8);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: 0.875rem;
+}
+.axh-advanced:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }

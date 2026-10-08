@@ -71,20 +71,24 @@
     }
     else if (_projects.Count == 0)
     {
-        <div class="sp-empty">
+        @* Sample Projects are optional demo content: an instance without them is not misconfigured. The configuration key is a technical detail. *@
+        <section class="sp-empty" aria-labelledby="sp-empty-title" data-testid="sp-empty">
             <div class="sp-empty-icon" aria-hidden="true">📂</div>
-            <div class="sp-empty-title">No sample projects found</div>
-            <p class="sp-empty-hint">
+            <h2 class="sp-empty-title" id="sp-empty-title">No sample projects are configured</h2>
+            <p class="sp-empty-hint">Sample Projects are optional examples. For your own project, use Import Project: one ZIP provides the project documents and the source.</p>
+            <a class="sp-btn sp-btn-primary sp-empty-action" href="project-import" data-testid="sp-empty-import">Import Project</a>
+            <details class="sp-empty-details" data-testid="sp-empty-details">
+                <summary>Technical details for administrators</summary>
                 @if (_meta?.Source == "config")
                 {
-                    <span>The configured path was not found. Check <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
+                    <p>The configured sample-project folder was not found. Check <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</p>
                 }
                 else
                 {
-                    <span>No sample-project directory is configured. Set <code>SampleProjects:BaseDirectory</code> in the application configuration, or import a project ZIP.</span>
+                    <p>No sample-project folder is configured. To offer examples, set <code>SampleProjects:BaseDirectory</code> in the application configuration.</p>
                 }
-            </p>
-        </div>
+            </details>
+        </section>
     }
     else
     {

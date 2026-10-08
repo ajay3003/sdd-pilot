@@ -2,12 +2,14 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
-@inject ISampleProjectDocumentResolver DocumentResolver
+@using BirkNext.Web.Services.Explorers
+@inject IArtifactExplorerContext ArtifactContext
 @inject TaskAlignmentSessionService AlignmentSession
 @inject IArtifactParserService MarkdownEngine
 @inject TaskSpecAlignmentService ImplementationReview
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Implementation Review</PageTitle>
 
@@ -22,11 +24,20 @@
         }
     </PageHeader>
 
-    @if (string.IsNullOrWhiteSpace(_selectedProject))
+    @if (!_loaded)
     {
+        <p class="ir-muted" role="status">Loading current workspace artifacts…</p>
+    }
+    else if (NoWorkspace)
+    {
+        @* No imported project, no Sample Project and no document in the manual workspace. *@
         <section class="ir-empty" data-testid="ir-no-project">
-            <p class="ir-empty-title">No Sample Project selected.</p>
-            <p>Select a Sample Project with a Specification and a Task artifact to review its tasks.</p>
+            <p class="ir-empty-title">No project is currently loaded.</p>
+            <p>Import a project ZIP to discover its Specification and Task artifacts automatically.</p>
+            <p class="ir-empty-actions">
+                <a class="btn-primary" href="project-import" data-testid="ir-import-project">Import Project</a>
+                <a class="btn-secondary" href="sample-projects">Load Sample Project</a>
+            </p>
         </section>
     }
     else if (_analysisError is not null)
@@ -44,26 +55,30 @@
         </div>
     }
 
-    @if (!string.IsNullOrWhiteSpace(_selectedProject) && _report is null)
+    @if (_loaded && !NoWorkspace && _report is null)
     {
         <section class="ir-prerun" aria-labelledby="ir-prerun-title" data-testid="ir-prerun">
             <h2 id="ir-prerun-title" class="ir-section-title">Not run</h2>
-            <p class="ir-muted">The review needs both artifacts of <strong>@(_selectedProjectName ?? _selectedProject)</strong>.</p>
+            <p class="ir-muted">The review needs the Specification and the Task artifact of <strong>@ProjectDisplay</strong> (@OriginLabel).</p>
             <ul class="ir-artifacts">
-                <li class="ir-artifact" data-state="@(_specLoaded ? "loaded" : "missing")" data-testid="ir-artifact-spec">
-                    <span class="ir-artifact-name">Specification</span>
-                    <span class="ir-artifact-state">@(_specLoaded ? "Loaded" : "Missing")</span>
-                </li>
-                <li class="ir-artifact" data-state="@(_tasksLoaded ? "loaded" : "missing")" data-testid="ir-artifact-tasks">
-                    <span class="ir-artifact-name">Task artifact</span>
-                    <span class="ir-artifact-state">@(_tasksLoaded ? "Loaded" : "Missing")</span>
-                </li>
+                @foreach (var (role, testId, label) in new[] { (WorkspaceArtifactType.Specification, "ir-artifact-spec", "Specification"), (WorkspaceArtifactType.Tasks, "ir-artifact-tasks", "Task artifact") })
+                {
+                    var state = RoleState(role);
+                    <li class="ir-artifact" data-state="@RoleDataState(state)" data-testid="@testId">
+                        <span class="ir-artifact-name">@label</span>
+                        <span class="ir-artifact-state">@RoleStateLabel(state)</span>
+                        @if (state == WorkspaceArtifactState.RoleAmbiguous)
+                        {
+                            <a class="ir-artifact-action" href="@ProjectInputPresentation.ExplorerRoute(role)" data-testid="@($"{testId}-choose")">Open @(role == WorkspaceArtifactType.Tasks ? "Task" : "Specification") Explorer</a>
+                        }
+                    </li>
+                }
             </ul>
             <div class="ir-prerun-actions">
                 <PrimaryButton OnClick="RunAnalysis" Disabled="@(!_specLoaded || !_tasksLoaded)">Run analysis</PrimaryButton>
                 @if (!_specLoaded || !_tasksLoaded)
                 {
-                    <span class="ir-muted" aria-live="polite">Both the Specification and the Task artifact must be loaded.</span>
+                    <span class="ir-muted" aria-live="polite" data-testid="ir-needs">@NeedsMessage</span>
                 }
             </div>
         </section>
@@ -76,7 +91,7 @@
         <section class="ir-status" aria-label="Analysis status" data-testid="ir-status" data-state="@_currentness">
             <span class="ir-currentness" data-testid="ir-currentness">@CurrentnessLabel(_currentness)</span>
             <dl class="ir-provenance">
-                <div><dt>Project</dt><dd>@(_selectedProjectName ?? _selectedProject)</dd></div>
+                <div><dt>Project</dt><dd>@ProjectDisplay <span class="ir-muted">(@OriginLabel)</span></dd></div>
                 @if (snapshot is not null)
                 {
                     <div><dt>Specification</dt><dd><code title="SHA-256 of the Specification the result was produced from">@TaskAlignmentSessionService.ShortHash(snapshot.SpecificationHash)</code></dd></div>
@@ -374,9 +389,12 @@
     private bool _specLoaded;
     private bool _tasksLoaded;
 
-    private string? _selectedProject;
-    private string? _selectedProjectName;
-    private string? _previousProject;
+    private bool _loaded;
+    private string? _scope;
+    private string? _projectName;
+    private bool _workspaceHasArtifacts;
+    private ArtifactExplorerState? _specState;
+    private ArtifactExplorerState? _tasksState;
 
     private AlignmentReport? _report;
     private TaskAlignmentCurrentness _currentness = TaskAlignmentCurrentness.NotRun;
@@ -389,61 +407,54 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var selected = DocumentResolver.GetSelectedProject();
-        if (!string.IsNullOrWhiteSpace(selected))
-        {
-            await LoadFromSampleProject(selected);
-            _previousProject = selected;
-        }
-        else
-        {
-            _selectedProject = null;
-            _selectedProjectName = null;
-            ClearAllArtifacts();
-        }
+        ArtifactContext.Changed += OnArtifactContextChanged;
+        await LoadCurrentWorkspaceAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender)
+        // A project switch can happen without an artifact event (for example a restored selection); re-read on render when the scope differs.
+        if (!firstRender && _loaded && !string.Equals(ArtifactContext.CurrentScope, _scope, StringComparison.Ordinal))
         {
-            var currentProject = DocumentResolver.GetSelectedProject();
-            if (currentProject != _previousProject)
-            {
-                _previousProject = currentProject;
-
-                if (!string.IsNullOrWhiteSpace(currentProject))
-                {
-                    await LoadFromSampleProject(currentProject);
-                }
-                else
-                {
-                    _selectedProject = null;
-                    _selectedProjectName = null;
-                    ClearAllArtifacts();
-                }
-                StateHasChanged();
-            }
+            await LoadCurrentWorkspaceAsync();
+            StateHasChanged();
         }
     }
 
-    private async Task LoadFromSampleProject(string projectSlug)
+    private void OnArtifactContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
+    {
+        await LoadCurrentWorkspaceAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => ArtifactContext.Changed -= OnArtifactContextChanged;
+
+    /// <summary>
+    /// Reads the Specification and Task artifacts of the current workspace through the explorers' role authority: an imported project,
+    /// a Sample Project or the manual workspace. A role with several candidates is never picked here; the user chooses in its explorer.
+    /// </summary>
+    private async Task LoadCurrentWorkspaceAsync()
     {
         try
         {
             _analysisError = null;
-            _selectedProject = projectSlug;
+            var scope = ArtifactContext.CurrentScope;
+            var spec = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Specification);
+            var tasks = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Tasks);
+            var hasArtifacts = await WorkspaceArtifactStates.ManualWorkspaceHasArtifactsAsync(ArtifactContext);
+            var projectChanged = _loaded && !string.Equals(scope, _scope, StringComparison.Ordinal);
 
-            var spec = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Specification);
-            var tasks = await DocumentResolver.ResolveAsync(projectSlug, ExplorerDocumentType.Tasks);
-
-            _specText = spec.IsSuccess && !string.IsNullOrEmpty(spec.Content) ? spec.Content : string.Empty;
-            _tasksText = tasks.IsSuccess && !string.IsNullOrEmpty(tasks.Content) ? tasks.Content : string.Empty;
-
+            _scope = scope;
+            _specState = spec;
+            _tasksState = tasks;
+            _workspaceHasArtifacts = hasArtifacts;
+            _projectName = spec.ProjectName ?? tasks.ProjectName;
+            _specText = spec.Status == ExplorerArtifactStatus.Loaded ? spec.Content ?? string.Empty : string.Empty;
+            _tasksText = tasks.Status == ExplorerArtifactStatus.Loaded ? tasks.Content ?? string.Empty : string.Empty;
             _specLoaded = !string.IsNullOrEmpty(_specText);
             _tasksLoaded = !string.IsNullOrEmpty(_tasksText);
-
-            await UpdateSelectedProjectName();
+            _loaded = true;
+            if (projectChanged) AlignmentSession.Clear();
 
             if (_specLoaded && _tasksLoaded)
             {
@@ -459,27 +470,58 @@
         {
             _analysisError = ex;
             _report = null;
+            _loaded = true;
             ClearAllArtifacts();
         }
     }
 
-    private async Task UpdateSelectedProjectName()
-    {
-        if (string.IsNullOrWhiteSpace(_selectedProject))
-        {
-            _selectedProjectName = null;
-            return;
-        }
+    /// <summary>The identity a result is bound to (with the two fingerprints): the workspace scope, never a display name.</summary>
+    private string SessionKey => _scope ?? "manual-workspace";
 
-        try
+    private bool NoWorkspace => _specState is { } spec && _tasksState is { } tasks
+        && RoleState(WorkspaceArtifactType.Specification) == WorkspaceArtifactState.NoWorkspace
+        && RoleState(WorkspaceArtifactType.Tasks) == WorkspaceArtifactState.NoWorkspace;
+
+    private WorkspaceArtifactState RoleState(WorkspaceArtifactType role) =>
+        (role == WorkspaceArtifactType.Tasks ? _tasksState : _specState) is { } state
+            ? WorkspaceArtifactStates.Of(state, _workspaceHasArtifacts)
+            : WorkspaceArtifactState.NoWorkspace;
+
+    private WorkspaceArtifactOrigin Origin => WorkspaceArtifactStates.OriginOf(_scope, _workspaceHasArtifacts);
+
+    private string ProjectDisplay => _projectName ?? (_scope is null || ProjectImportScope.IsImport(_scope) ? "the current workspace" : _scope);
+
+    private string OriginLabel => Origin switch
+    {
+        WorkspaceArtifactOrigin.ProjectImport => "imported project",
+        WorkspaceArtifactOrigin.SampleProject => "Sample Project",
+        _ => "manual workspace",
+    };
+
+    private static string RoleStateLabel(WorkspaceArtifactState state) => state switch
+    {
+        WorkspaceArtifactState.RoleSelected => "Selected",
+        WorkspaceArtifactState.RoleAmbiguous => "Needs selection",
+        WorkspaceArtifactState.Unsupported => "Unable to read",
+        _ => "Not available",
+    };
+
+    private static string RoleDataState(WorkspaceArtifactState state) => state switch
+    {
+        WorkspaceArtifactState.RoleSelected => "loaded",
+        WorkspaceArtifactState.RoleAmbiguous => "selection-required",
+        _ => "missing",
+    };
+
+    private string NeedsMessage
+    {
+        get
         {
-            var projects = await DocumentResolver.GetAvailableProjectsAsync();
-            var project = projects.FirstOrDefault(p => p.Slug == _selectedProject);
-            _selectedProjectName = project?.Name ?? _selectedProject;
-        }
-        catch
-        {
-            _selectedProjectName = _selectedProject;
+            var needs = new[] { (WorkspaceArtifactType.Specification, "Specification"), (WorkspaceArtifactType.Tasks, "Tasks") }
+                .Where(r => RoleState(r.Item1) == WorkspaceArtifactState.RoleAmbiguous).Select(r => r.Item2).ToList();
+            return needs.Count > 0
+                ? $"{string.Join(" and ", needs)} {(needs.Count > 1 ? "need" : "needs")} selection: choose one artifact in its explorer. Nothing is picked automatically."
+                : "Both the Specification and the Task artifact must be available.";
         }
     }
 
@@ -509,7 +551,7 @@
             return;
         }
 
-        var currentness = AlignmentSession.GetCurrentness(_selectedProjectName ?? string.Empty, _specText, _tasksText);
+        var currentness = AlignmentSession.GetCurrentness(SessionKey, _specText, _tasksText);
         if (currentness != TaskAlignmentCurrentness.NotRun)
         {
             if (TryNormalizeReport(AlignmentSession.Report, out var cachedReport))
@@ -535,7 +577,7 @@
 
             var reviewContext = BuildReviewContext();
             _report = NormalizeReport(ImplementationReview.Analyse(reviewContext));
-            AlignmentSession.SaveResult(_report, _selectedProjectName ?? string.Empty, _specText, _tasksText);
+            AlignmentSession.SaveResult(_report, SessionKey, _specText, _tasksText);
             _currentness = TaskAlignmentCurrentness.Current;
             _expandedFindings.Clear();
         }
@@ -551,7 +593,7 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportImplementationReview(_report, _selectedProjectName ?? string.Empty, AlignmentSession.Snapshot, _currentness);
+        var html = ExportService.ExportImplementationReview(_report, ProjectDisplay, AlignmentSession.Snapshot, _currentness);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"implementation-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
