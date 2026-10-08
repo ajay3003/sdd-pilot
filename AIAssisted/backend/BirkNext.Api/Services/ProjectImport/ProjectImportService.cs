@@ -29,12 +29,21 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
 
     public ProjectImportPreviewResult Preview(string fileName, byte[] bytes, CancellationToken ct = default)
     {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var validation = IqrSourceArchiveReader.ReadDetailed(fileName, bytes, captureDocuments: true, ct);
         if (!validation.IsValid) return new(null, validation.Failure);
+        var validationMs = clock.ElapsedMilliseconds;
         var workspace = validation.Workspace!;
         var source = DetectSource(workspace);
+        var sourceMs = clock.ElapsedMilliseconds - validationMs;
+        // Document roles: the shared artifact classifier (the browser's own source, compiled here too) over the captured documents. It never
+        // picks among several candidates of a role; the user chooses after the import, exactly as with browser classification.
+        var discovery = BirkNext.Web.Services.SampleProjects.ArtifactDocumentDiscovery.Classify((workspace.DocumentFiles ?? [])
+            .Select(d => new BirkNext.Web.Services.SampleProjects.ArtifactDocumentDiscovery.Candidate(d.Path, Path.GetFileName(d.Path), d.Content)));
+        var classificationMs = clock.ElapsedMilliseconds - validationMs - sourceMs;
         var importId = ImportIdFor(workspace.Archive.Sha256);
         var staged = staging.Add(importId, fileName, bytes, workspace, source);
+        var stagingMs = clock.ElapsedMilliseconds - validationMs - sourceMs - classificationMs;
         var (projectName, basis) = ProjectName(fileName, workspace);
         var documents = (workspace.DocumentFiles ?? [])
             .OrderBy(d => d.Path, StringComparer.Ordinal)
@@ -43,8 +52,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         var skipped = (workspace.SkippedDocuments ?? []).Select(d => new ProjectImportSkippedDocument(d.Path, d.Reason)).ToList();
         var other = Math.Max(0, (workspace.AllPaths?.Count ?? 0) - documents.Count - skipped.Count - workspace.Files.Count
             - (workspace.ConfigurationFiles?.Count ?? 0) - (workspace.EvidenceFiles?.Count ?? 0) - source.UnsupportedSourceFiles);
-        logger.LogInformation("Project import staged. Archive size {ArchiveBytes}; entries {EntryCount}; documents {Documents}; source detected {SourceDetected}",
-            bytes.Length, workspace.EntryCount, documents.Count, source.Detected);
+        logger.LogInformation("Project import staged. Archive size {ArchiveBytes}; entries {EntryCount}; documents {Documents}; source detected {SourceDetected}; "
+            + "validation {ValidationMs} ms; source detection {SourceMs} ms; classification {ClassificationMs} ms; staging {StagingMs} ms",
+            bytes.Length, workspace.EntryCount, documents.Count, source.Detected, validationMs, sourceMs, classificationMs, stagingMs);
         return new(new ProjectImportPreview
         {
             StagingId = staged.StagingId,
@@ -58,14 +68,17 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             OtherFiles = other,
             StagedAt = staged.StagedAt,
             ExpiresAt = staged.ExpiresAt,
+            Discovery = discovery,
+            Timings = new(validationMs, sourceMs, classificationMs, stagingMs),
         }, null);
     }
 
     /// <summary>
     /// Creates (or reuses) the Source Analysis snapshot of a staged archive. Null when the staging expired or is unknown.
     /// A source snapshot needs no Target Environment: source evidence is not runtime evidence, and a target added, switched or deleted later
-    /// uses the same snapshot. The staging is released once its source part is settled (created, reused, no source or Source Analysis turned
-    /// off); it is kept only while a genuine failure (analysis or save) can be retried without choosing the archive again.
+    /// uses the same snapshot. Once the source part is settled (created, reused, no source or Source Analysis turned off) the archive bytes are
+    /// released and only the result is kept until expiry, so a repeated commit returns it; a genuine failure (analysis or save) keeps the bytes
+    /// so the source part can be retried without choosing the archive again. Stages survive a backend restart (see ProjectImportStagingStore).
     /// </summary>
     public async Task<ProjectImportCommitResult?> CommitAsync(Guid stagingId, CancellationToken ct = default)
     {
@@ -74,6 +87,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         await staged.Gate.WaitAsync(ct);
         try
         {
+            // Idempotent: a repeated commit of a settled stage (double click, client retry after a lost response, after a restart) returns the
+            // same result and never analyses the archive again.
+            if (staged.Committed is { } settledBefore) return settledBefore;
             var provenance = new ProjectImportProvenance
             {
                 ImportId = staged.ImportId, ArchiveFileName = staged.Workspace.Archive.FileName, ArchiveSha256 = staged.Workspace.Archive.Sha256,
@@ -81,8 +97,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             };
             var source = await SourceAsync(staged, provenance, ct);
             var settled = !source.CanRetry;
-            if (settled) staging.Remove(stagingId);
-            return new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
+            var result = new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
+            if (settled) staging.MarkCommitted(staged, result);
+            return result;
         }
         finally { staged.Gate.Release(); }
     }

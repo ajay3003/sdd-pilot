@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.RegularExpressions;
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
 using BirkNext.Web.GraphQL;
+#endif
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -1116,6 +1118,7 @@ public static class SpecExplorerService
 
     // ── Candidate-based tree (fallback when markdown has no headings) ─────────
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     public static SpecTree BuildFromCandidates(IReadOnlyList<ExtractionCandidate> candidates)
     {
         if (candidates.Count == 0) return new SpecTree();
@@ -1200,7 +1203,9 @@ public static class SpecExplorerService
             },
         };
     }
+#endif
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     private static void AddKindSubGroups(
         List<SpecNode> target,
         List<ExtractionCandidate> candidates,
@@ -1253,6 +1258,7 @@ public static class SpecExplorerService
             if (group.Children.Count > 0) target.Add(group);
         }
     }
+#endif
 
     // ── Semantic Model Building ─────────────────────────────────────────────────
 

@@ -86,7 +86,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         stored!.ProjectImport!.ImportId.Should().Be(preview.ImportId, "Source Analysis shows which import created the snapshot");
         stored.Archive.Sha256.Should().Be(Sha(bytes), "artifacts and source come from the same accepted bytes");
         stored.IntegrationId.Should().Be(IqrSourceStore.SourceAnalysisOwner, "it is an ordinary Source Analysis snapshot every review can read");
-        _staging.Find(preview.StagingId).Should().BeNull("a settled import releases its staged archive");
+        _staging.Find(preview.StagingId)!.Committed.Should().NotBeNull("a settled import keeps only its result, so a repeated commit returns it");
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         commit.Source.Code.Should().BeNull();
         commit.Source.CanRetry.Should().BeFalse("no retry is needed merely because no target is selected");
         commit.StagedUntil.Should().BeNull();
-        _staging.Find(preview.StagingId).Should().BeNull("a settled import releases its staged archive");
+        _staging.Find(preview.StagingId)!.Committed.Should().NotBeNull("a settled import keeps only its result, so a repeated commit returns it");
         var record = await _db.IqrSourceSnapshots.SingleAsync();
         record.Id.Should().Be(commit.Source.SnapshotId!.Value);
         record.EnvironmentId.Should().Be(IqrSourceStore.NoEnvironment, "the snapshot is not bound to any target");

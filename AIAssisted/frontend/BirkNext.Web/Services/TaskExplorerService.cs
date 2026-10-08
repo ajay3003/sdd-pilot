@@ -284,6 +284,7 @@ public static class TaskExplorerService
         return null;
     }
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     public static List<(TaskNode Node, int Depth, bool IsMatch)> GetFlatVisible(
         IEnumerable<TaskNode> roots,
         HashSet<string> expandedIds,
@@ -309,6 +310,7 @@ public static class TaskExplorerService
 
         return result;
     }
+#endif
 
     public static HashSet<string> GetDefaultExpanded(IEnumerable<TaskNode> roots)
     {
@@ -682,6 +684,7 @@ public static class TaskExplorerService
                 FlattenNode(child, depth + 1, result, expanded, matchIds, ancestorIds);
     }
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     private static bool CollectMatches(
         IEnumerable<TaskNode> nodes,
         string searchQuery,
@@ -710,7 +713,9 @@ public static class TaskExplorerService
         }
         return anyMatch;
     }
+#endif
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     private static bool MatchesSearchAndFilter(
         TaskNode node,
         string searchQuery,
@@ -726,6 +731,7 @@ public static class TaskExplorerService
 
         return searchMatch && filterMatch;
     }
+#endif
 
     private static bool NodeMatchesSearch(TaskNode node, string q)
     {
@@ -774,10 +780,13 @@ public static class TaskExplorerService
         return all.Where(n => n.NodeType == TaskNodeType.Task && n.IsParallel).ToList();
     }
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     /// <summary>Whether one node matches a filter key (the same predicate the tree uses), for counts such as "Showing 12 of 65 tasks".</summary>
     public static bool MatchesFilter(TaskNode node, string filter, HashSet<string>? tableLinkedIds, TaskEvidenceIndex? evidence = null) =>
         NodeMatchesFilter(node, filter, tableLinkedIds, evidence);
+#endif
 
+#if !BIRKNEXT_SERVER // UI-only: not part of document classification, which the backend compiles too
     private static bool NodeMatchesFilter(TaskNode node, string filter, HashSet<string>? tableLinkedIds, TaskEvidenceIndex? evidence)
     {
         // Implementation/test filters read lifecycle evidence; without an assessment they match nothing (never "all missing").
@@ -824,6 +833,7 @@ public static class TaskExplorerService
             _ => true,
         };
     }
+#endif
 
     private static TaskTableType ClassifyTableKind(List<string> headers)
     {

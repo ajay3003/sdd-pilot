@@ -116,7 +116,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Critical E2E flows and run history (App_Data/critical-e2e)",
         "BirkNext-owned authenticated browser sessions, the running local HTTPS proxy session (and the dedicated browser it opened), Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
         "Diagnostic, reachability and review caches",
-        "Project Import archives staged in memory and not yet committed",
+        "Project Import archives staged for commit (memory and staging directory)",
     ];
 
     public static readonly IReadOnlyList<string> Preserved =

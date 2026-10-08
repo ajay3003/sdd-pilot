@@ -69,7 +69,7 @@
             <p class="pi-status" role="status" data-testid="pi-status">
                 @(_phase switch
                 {
-                    Phase.Validating => $"Validating {_fileName} and finding project documents and source…",
+                    Phase.Validating => $"Uploading and validating {_fileName}, then detecting document roles and source…",
                     Phase.Classifying => $"Archive accepted. Detecting document roles: {_classified} of {_classifyTotal} Markdown documents…",
                     _ => _preview?.Source.Detected == true ? "Activating project documents and analyzing source… Source analysis can take up to a minute for a large project." : "Activating project documents…",
                 })

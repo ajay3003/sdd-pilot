@@ -210,7 +210,7 @@ public static class IqrSourceArchiveReader
         }
         if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return new(new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
+        return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
             captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0), null);
     }
 
@@ -240,6 +240,23 @@ public static class IqrSourceArchiveReader
         new(null, new SourceArchiveValidationFailure(code, "validation", message, entryPath is null ? null : SafeLabel(entryPath), actual, limit), entryCount);
 
     private static string FormatBytes(long value) => value >= 1024 * 1024 ? $"{value / (1024d * 1024):0.#} MB" : $"{value / 1024d:0.#} KB";
+
+    /// <summary>
+    /// The archive's human-readable display name: the last segment of the uploaded file name (never a client path), with secrets redacted
+    /// and control, path and markup characters replaced. Unlike <see cref="SafeLabel"/> it keeps the punctuation people use in file names
+    /// (parentheses, spaces, &amp;, ', #), so "M2LB (2).zip" stays "M2LB (2).zip". Display metadata only: the archive fingerprint is the
+    /// identity, staged files are named by id, and archive entry paths keep their own validation.
+    /// </summary>
+    public static string ArchiveDisplayName(string fileName)
+    {
+        var name = (fileName ?? "").Replace('\\', '/');
+        name = name[(name.LastIndexOf('/') + 1)..];
+        var safe = LocalHttpsProxy.SensitiveDataRedactor.RedactText(DependencyEvidenceRedaction.Redact(name));
+        safe = Regex.Replace(safe, @"(?i)(SECRET_SENTINEL\w*|(?:password|clientsecret|accesskey|sharedaccesskey|token)[_=][^/\s]+)", "[redacted]");
+        safe = Regex.Replace(safe, @"[^\p{L}\p{N}_ .,()\[\]{}+&'#@!=~\-]", "_").Trim();
+        if (safe.Length == 0) safe = "archive.zip";
+        return safe.Length > 200 ? safe[..200] : safe;
+    }
 
     public static string SafeLabel(string value)
     {

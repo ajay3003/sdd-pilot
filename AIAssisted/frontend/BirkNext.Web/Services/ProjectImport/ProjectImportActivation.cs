@@ -22,14 +22,24 @@ public sealed record ProjectImportArtifactDiscovery(
     public static ProjectImportArtifactDiscovery From(ProjectImportPreview preview) =>
         FromAsync(preview, progress: null, yieldEvery: 0).GetAwaiter().GetResult();
 
-    /// <summary>Classifies the preview's documents, reporting progress (a large project has hundreds of Markdown documents).</summary>
+    /// <summary>
+    /// The preview's document roles. The backend classifies with the same classifier (its source is compiled into both projects), so its
+    /// result is used as is; only a preview without it (an older backend) is classified here, reporting progress.
+    /// </summary>
     public static async Task<ProjectImportArtifactDiscovery> FromAsync(ProjectImportPreview preview, IProgress<(int Done, int Total)>? progress,
         int yieldEvery = 8, CancellationToken cancellationToken = default)
     {
-        var documents = await ArtifactDocumentDiscovery.ClassifyAsync(preview.Documents.Select(d =>
+        var documents = ServerDiscovery(preview) ?? await ArtifactDocumentDiscovery.ClassifyAsync(preview.Documents.Select(d =>
             new ArtifactDocumentDiscovery.Candidate(d.RelativePath, d.FileName, d.Content)), progress, yieldEvery, cancellationToken);
         return new(documents, ArtifactDocumentDiscovery.Roles(documents, _ => null), preview.SkippedDocuments);
     }
+
+    /// <summary>The backend's classification when it covers exactly the preview's documents; otherwise null (classify here instead).</summary>
+    public static List<DiscoveredDocument>? ServerDiscovery(ProjectImportPreview preview) =>
+        preview.Discovery is { } server && server.Select(d => d.RelativePath).Order(StringComparer.Ordinal)
+            .SequenceEqual(preview.Documents.Select(d => d.RelativePath).Order(StringComparer.Ordinal), StringComparer.Ordinal)
+            ? server.OrderBy(d => d.RelativePath, StringComparer.Ordinal).ToList()
+            : null;
 }
 
 /// <summary>

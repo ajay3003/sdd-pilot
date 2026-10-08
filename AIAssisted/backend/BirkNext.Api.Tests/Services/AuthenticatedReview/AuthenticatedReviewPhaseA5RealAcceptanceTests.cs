@@ -2,7 +2,7 @@ extern alias WebProject;
 
 using ApiAccessibility = BirkNext.Api.Services.FrontendAccessibility;
 using ApiRuntime = BirkNext.Api.Services.FrontendBrowserRuntime;
-using Web = WebProject::BirkNext.Web.Models;
+using WebModels = WebProject::BirkNext.Web.Models;
 using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Tests.TestInfrastructure;
 using WebProject::BirkNext.Web.Services;
@@ -35,10 +35,10 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
 
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
 
-        result.BrowserRuntimeReport!.Status.Should().Be(Web.BrowserRuntimeEngineStatusDto.Assessed);
-        result.BrowserRuntimeReport.OutcomeReason.Should().Be(Web.BrowserRuntimeOutcomeReasonDto.None);
-        result.AccessibilityReport!.ExecutionStatus.Should().Be(Web.AccessibilityExecutionStatusDto.Assessed);
-        result.AccessibilityReport.OutcomeReason.Should().Be(Web.AccessibilityOutcomeReasonDto.None);
+        result.BrowserRuntimeReport!.Status.Should().Be(WebModels.BrowserRuntimeEngineStatusDto.Assessed);
+        result.BrowserRuntimeReport.OutcomeReason.Should().Be(WebModels.BrowserRuntimeOutcomeReasonDto.None);
+        result.AccessibilityReport!.ExecutionStatus.Should().Be(WebModels.AccessibilityExecutionStatusDto.Assessed);
+        result.AccessibilityReport.OutcomeReason.Should().Be(WebModels.AccessibilityOutcomeReasonDto.None);
         result.BrowserRuntimeReport.Findings.Should().NotBeEmpty();
         result.AccessibilityReport.Findings.Should().Contain(x => x.RuleId == "button-name");
         harness.Runtime.ObservedPage.Should().BeSameAs(page);
@@ -71,10 +71,10 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
 
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
 
-        result.BrowserRuntimeReport!.Status.Should().Be(Web.BrowserRuntimeEngineStatusDto.Assessed);
+        result.BrowserRuntimeReport!.Status.Should().Be(WebModels.BrowserRuntimeEngineStatusDto.Assessed);
         harness.Accessibility.Calls.Should().Be(0);
-        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == Web.FrontendQualityEngineId.Accessibility)
-            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.UnexpectedOrigin);
+        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == WebModels.FrontendQualityEngineId.Accessibility)
+            .OutcomeReason.Should().Be(WebModels.FrontendQualityEngineOutcomeReason.UnexpectedOrigin);
         result.AccessibilityReport!.Findings.Should().BeEmpty();
         lease.Context.Pages.Should().ContainSingle();
     }
@@ -99,8 +99,8 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
 
         harness.Accessibility.Calls.Should().Be(0);
-        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == Web.FrontendQualityEngineId.Accessibility)
-            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.AuthenticationExpired);
+        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == WebModels.FrontendQualityEngineId.Accessibility)
+            .OutcomeReason.Should().Be(WebModels.FrontendQualityEngineOutcomeReason.AuthenticationExpired);
         result.BrowserRuntimeReport!.Findings.Should().NotBeEmpty();
     }
 
@@ -123,8 +123,8 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
 
         harness.Accessibility.Calls.Should().Be(0);
         result.BrowserRuntimeReport!.Findings.Should().NotBeEmpty();
-        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == Web.FrontendQualityEngineId.Accessibility)
-            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.AuthenticationExpired);
+        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == WebModels.FrontendQualityEngineId.Accessibility)
+            .OutcomeReason.Should().Be(WebModels.FrontendQualityEngineOutcomeReason.AuthenticationExpired);
     }
 
     [Fact]
@@ -141,10 +141,10 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
 
         harness.Accessibility.Calls.Should().Be(0, "A6 resource liveness hardening prevents Accessibility invocation when page closes");
-        result.AccessibilityReport!.ExecutionStatus.Should().Be(Web.AccessibilityExecutionStatusDto.Skipped);
+        result.AccessibilityReport!.ExecutionStatus.Should().Be(WebModels.AccessibilityExecutionStatusDto.Skipped);
         result.AccessibilityReport.Findings.Should().BeEmpty();
-        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == Web.FrontendQualityEngineId.Accessibility)
-            .OutcomeReason.Should().Be(Web.FrontendQualityEngineOutcomeReason.ResourceUnavailable);
+        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == WebModels.FrontendQualityEngineId.Accessibility)
+            .OutcomeReason.Should().Be(WebModels.FrontendQualityEngineOutcomeReason.ResourceUnavailable);
         lease.Context.Browser!.IsConnected.Should().BeTrue();
         lease.Context.Pages.Should().BeEmpty();
     }
@@ -159,8 +159,8 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         var harness = CreateHarness(manager, session.SessionId, fixture.TargetUrl);
 
         var result = await harness.Orchestrator.RunAsync(fixture.TargetUrl, harness.Context, harness.Snapshot);
-        result.BrowserRuntimeReport!.Status.Should().Be(Web.BrowserRuntimeEngineStatusDto.Assessed);
-        result.AccessibilityReport!.ExecutionStatus.Should().Be(Web.AccessibilityExecutionStatusDto.Assessed);
+        result.BrowserRuntimeReport!.Status.Should().Be(WebModels.BrowserRuntimeEngineStatusDto.Assessed);
+        result.AccessibilityReport!.ExecutionStatus.Should().Be(WebModels.AccessibilityExecutionStatusDto.Assessed);
         result.AccessibilityReport.Findings.Should().NotBeEmpty();
         result.AccessibilityReport.Findings.Should().OnlyContain(x => x.Selectors.Count == 0 && x.HtmlSnippets.Count == 0 && x.FailureSummaries.Count == 0);
         var serialized = JsonSerializer.Serialize(result.QualityReport);
@@ -189,18 +189,18 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         var orchestrator = new FrontendQualityReviewOrchestrator(
             new NeverSecurity(), new NeverPerformance(), new ReadyPreflight(), new EmptyQuality(),
             runtime, accessibility, new NeverLighthouse(), new NeverPassiveSecurity(), sessions, new AlwaysReady());
-        var context = new Web.FrontendAnalysisContext
+        var context = new WebModels.FrontendAnalysisContext
         {
             TargetUrl = targetUrl, RequiresAuthentication = true, IsAuthenticatedSessionAvailable = true,
             ActiveProfile = new() { Id = Profile, TargetUrl = targetUrl, Performance = new() },
             FeatureToggles = new() { EnableBrowserRuntimeEngine = true, EnableAccessibilityEngine = true, EnableLighthouseEngine = true, EnablePassiveSecurityEngine = true },
             AllowedBackendDomains = [], AllowedRestHosts = [], AllowedGraphQlEndpoints = [], AllowedCdnHosts = [], SecuritySettings = new()
         };
-        var snapshot = new Web.FrontendQualityEngineExecutionSnapshot { AuthMode = Web.ReviewAuthenticationModeDto.Authenticated };
-        foreach (var engine in Enum.GetValues<Web.FrontendQualityEngineIdDto>())
+        var snapshot = new WebModels.FrontendQualityEngineExecutionSnapshot { AuthMode = WebModels.ReviewAuthenticationModeDto.Authenticated };
+        foreach (var engine in Enum.GetValues<WebModels.FrontendQualityEngineIdDto>())
         {
             snapshot.Layer1Allowed[engine] = true; snapshot.Layer2Enabled[engine] = true; snapshot.SelectedEngines[engine] = true;
-            snapshot.AuthModeSupported[engine] = engine is Web.FrontendQualityEngineIdDto.BrowserRuntime or Web.FrontendQualityEngineIdDto.Accessibility;
+            snapshot.AuthModeSupported[engine] = engine is WebModels.FrontendQualityEngineIdDto.BrowserRuntime or WebModels.FrontendQualityEngineIdDto.Accessibility;
         }
         return new(orchestrator, runtime, accessibility, context, snapshot);
     }
@@ -234,14 +234,14 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
         throw new Xunit.Sdk.XunitException($"Expected authenticated status {expected}.");
     }
 
-    private sealed record Harness(FrontendQualityReviewOrchestrator Orchestrator, RuntimeAdapter Runtime, AccessibilityAdapter Accessibility, Web.FrontendAnalysisContext Context, Web.FrontendQualityEngineExecutionSnapshot Snapshot);
+    private sealed record Harness(FrontendQualityReviewOrchestrator Orchestrator, RuntimeAdapter Runtime, AccessibilityAdapter Accessibility, WebModels.FrontendAnalysisContext Context, WebModels.FrontendQualityEngineExecutionSnapshot Snapshot);
 
     private sealed class RuntimeAdapter(ApiRuntime.FrontendBrowserRuntimeReviewService inner, AuthenticatedBrowserSessionManager manager) : IFrontendBrowserRuntimeReviewApiService
     {
         public IPage? ObservedPage { get; private set; } public IBrowserContext? ObservedContext { get; private set; }
         public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
-        public Task<Web.BrowserRuntimeResultDto> ReviewAsync(string targetUrl, int timeout = 30000, int shutdownTimeout = 5000, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Anonymous fallback forbidden.");
-        public async Task<Web.BrowserRuntimeResultDto> ReviewAsync(BrowserRuntimeApiExecutionRequest request, CancellationToken cancellationToken = default)
+        public Task<WebModels.BrowserRuntimeResultDto> ReviewAsync(string targetUrl, int timeout = 30000, int shutdownTimeout = 5000, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Anonymous fallback forbidden.");
+        public async Task<WebModels.BrowserRuntimeResultDto> ReviewAsync(BrowserRuntimeApiExecutionRequest request, CancellationToken cancellationToken = default)
         {
             await using (var lease = await manager.AcquireAuthenticationPageLeaseAsync(request.AuthenticatedSessionId!, request.ReviewSessionId!, request.ProfileId!, request.TargetUrl, cancellationToken)) { ObservedPage = lease.Page; ObservedContext = lease.Context; }
             // Startup events precede attachment in the single-navigation lifecycle.
@@ -258,49 +258,49 @@ public sealed class AuthenticatedReviewPhaseA5RealAcceptanceTests
             }
             value.ConsoleErrorCount.Should().BeGreaterThan(0, "live fixture errors must be observed without re-navigation");
             value.Findings.Should().Contain(x => x.Category == "ConsoleError");
-            return new((Web.BrowserRuntimeEngineStatusDto)value.Status, value.EngineName, value.BrowserName, value.BrowserVersion, value.RequestedUrl, value.FinalUrl, value.StartedAt, value.CompletedAt, value.DurationMs,
-                (Web.BrowserStartupStateDto)value.StartupState, value.ConsoleErrorCount, value.PageErrorCount, value.CriticalResourceFailureCount,
-                (value.Findings ?? []).Select(x => new Web.BrowserRuntimeFindingDto(x.Id, x.Title, (Web.BrowserRuntimeFindingSeverityDto)x.Severity, x.Category, x.Description, x.Recommendation, x.Evidence ?? [])).ToList(),
-                value.EngineError, value.Limitations, Web.BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage, (Web.BrowserRuntimeOutcomeReasonDto)value.OutcomeReason, value.DeliveryContext);
+            return new((WebModels.BrowserRuntimeEngineStatusDto)value.Status, value.EngineName, value.BrowserName, value.BrowserVersion, value.RequestedUrl, value.FinalUrl, value.StartedAt, value.CompletedAt, value.DurationMs,
+                (WebModels.BrowserStartupStateDto)value.StartupState, value.ConsoleErrorCount, value.PageErrorCount, value.CriticalResourceFailureCount,
+                (value.Findings ?? []).Select(x => new WebModels.BrowserRuntimeFindingDto(x.Id, x.Title, (WebModels.BrowserRuntimeFindingSeverityDto)x.Severity, x.Category, x.Description, x.Recommendation, x.Evidence ?? [])).ToList(),
+                value.EngineError, value.Limitations, WebModels.BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage, (WebModels.BrowserRuntimeOutcomeReasonDto)value.OutcomeReason, value.DeliveryContext);
         }
     }
 
     private sealed class AccessibilityAdapter(ApiAccessibility.FrontendAccessibilityReviewService inner, AuthenticatedBrowserSessionManager manager) : IFrontendAccessibilityReviewApiService
     {
         public int Calls { get; private set; } public IPage? ObservedPage { get; private set; } public IBrowserContext? ObservedContext { get; private set; }
-        public Task<Web.AccessibilityResultDto> ReviewAsync(string targetUrl, string environmentType, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Anonymous fallback forbidden.");
-        public async Task<Web.AccessibilityResultDto> ReviewAsync(AccessibilityApiExecutionRequest request, CancellationToken cancellationToken = default)
+        public Task<WebModels.AccessibilityResultDto> ReviewAsync(string targetUrl, string environmentType, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Anonymous fallback forbidden.");
+        public async Task<WebModels.AccessibilityResultDto> ReviewAsync(AccessibilityApiExecutionRequest request, CancellationToken cancellationToken = default)
         {
             Calls++;
             await using (var lease = await manager.AcquireAuthenticationPageLeaseAsync(request.SessionId!, request.ReviewSessionId!, request.ProfileId!, request.TargetUrl, cancellationToken)) { ObservedPage = lease.Page; ObservedContext = lease.Context; }
             var value = await inner.ReviewAsync(new(request.TargetUrl, ApiAccessibility.AccessibilityExecutionMode.AuthenticatedSessionPage, request.ReviewSessionId, request.ProfileId, request.SessionId), cancellationToken);
-            return new((Web.AccessibilityExecutionStatusDto)value.ExecutionStatus, value.EngineName, value.AxeVersion, value.BrowserName, value.BrowserVersion, value.RequestedUrl, value.FinalUrl, value.StartedAt, value.CompletedAt, value.DurationMs, value.RuleTags,
+            return new((WebModels.AccessibilityExecutionStatusDto)value.ExecutionStatus, value.EngineName, value.AxeVersion, value.BrowserName, value.BrowserVersion, value.RequestedUrl, value.FinalUrl, value.StartedAt, value.CompletedAt, value.DurationMs, value.RuleTags,
                 value.ViolationCount, value.IncompleteCount, value.PassCount, value.InapplicableCount,
-                value.Findings.Select(x => new Web.AccessibilityFindingDto(x.RuleId, (Web.AccessibilityFindingKindDto)x.Kind, (Web.FrontendQualitySeverity)x.Severity, x.Impact, x.Title, x.Description, x.WcagTags, x.AffectedNodeCount, x.Selectors, x.HtmlSnippets, x.FailureSummaries, x.HelpUrl, x.Recommendation)).ToList(),
-                value.Limitations, value.EngineError, Web.AccessibilityExecutionModeDto.AuthenticatedSessionPage, (Web.AccessibilityOutcomeReasonDto)value.OutcomeReason);
+                value.Findings.Select(x => new WebModels.AccessibilityFindingDto(x.RuleId, (WebModels.AccessibilityFindingKindDto)x.Kind, (WebModels.FrontendQualitySeverity)x.Severity, x.Impact, x.Title, x.Description, x.WcagTags, x.AffectedNodeCount, x.Selectors, x.HtmlSnippets, x.FailureSummaries, x.HelpUrl, x.Recommendation)).ToList(),
+                value.Limitations, value.EngineError, WebModels.AccessibilityExecutionModeDto.AuthenticatedSessionPage, (WebModels.AccessibilityOutcomeReasonDto)value.OutcomeReason);
         }
     }
 
     private sealed class SessionAdapter(AuthenticatedBrowserSessionManager manager, AuthenticatedBrowserExecutionReference reference) : IAuthenticatedBrowserSessionService
     {
-        public Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(Web.FrontendAnalysisContext context) => Task.FromResult<AuthenticatedBrowserExecutionReference?>(reference);
-        public async Task<Web.AuthenticatedBrowserSessionStatus> GetStatusAsync(AuthenticatedBrowserExecutionReference value, CancellationToken cancellationToken = default) =>
-            (Web.AuthenticatedBrowserSessionStatus)((await manager.GetStatusAsync(value.SessionId, value.ReviewSessionId, value.ProfileId, cancellationToken))?.Status ?? AuthenticatedBrowserSessionStatus.Disposed);
-        public Task<Web.AuthenticatedBrowserSessionStatus> GetStatusAsync() => GetStatusAsync(reference);
-        public Task<Web.AuthenticatedBrowserSession> GetOrCreateSessionAsync(Web.FrontendAnalysisContext context) => throw new NotSupportedException();
-        public Task<Web.AuthenticatedBrowserSession?> GetCurrentSessionAsync() => throw new NotSupportedException();
-        public Task<Web.AuthenticatedBrowserSession> BeginAuthenticationAsync(Web.FrontendAnalysisContext context) => throw new NotSupportedException();
+        public Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(WebModels.FrontendAnalysisContext context) => Task.FromResult<AuthenticatedBrowserExecutionReference?>(reference);
+        public async Task<WebModels.AuthenticatedBrowserSessionStatus> GetStatusAsync(AuthenticatedBrowserExecutionReference value, CancellationToken cancellationToken = default) =>
+            (WebModels.AuthenticatedBrowserSessionStatus)((await manager.GetStatusAsync(value.SessionId, value.ReviewSessionId, value.ProfileId, cancellationToken))?.Status ?? AuthenticatedBrowserSessionStatus.Disposed);
+        public Task<WebModels.AuthenticatedBrowserSessionStatus> GetStatusAsync() => GetStatusAsync(reference);
+        public Task<WebModels.AuthenticatedBrowserSession> GetOrCreateSessionAsync(WebModels.FrontendAnalysisContext context) => throw new NotSupportedException();
+        public Task<WebModels.AuthenticatedBrowserSession?> GetCurrentSessionAsync() => throw new NotSupportedException();
+        public Task<WebModels.AuthenticatedBrowserSession> BeginAuthenticationAsync(WebModels.FrontendAnalysisContext context) => throw new NotSupportedException();
         public Task ClearSessionAsync() => Task.CompletedTask;
     }
 
-    private sealed class CallbackObserver(Func<Task> callback) : IAuthenticatedReviewOrchestrationObserver { public Task BetweenEnginesAsync(Web.FrontendQualityEngineId completed, Web.FrontendQualityEngineId next) => callback(); }
+    private sealed class CallbackObserver(Func<Task> callback) : IAuthenticatedReviewOrchestrationObserver { public Task BetweenEnginesAsync(WebModels.FrontendQualityEngineId completed, WebModels.FrontendQualityEngineId next) => callback(); }
     private sealed class MutableTimeProvider : TimeProvider { private DateTimeOffset _now = DateTimeOffset.Parse("2026-01-01T00:00:00Z"); public override DateTimeOffset GetUtcNow() => _now; public void Advance(TimeSpan value) => _now += value; }
     private sealed class RealAxeScriptProvider : IAxeScriptProvider { public string GetScript() => (string)(Activator.CreateInstance(typeof(IAxeScriptProvider).Assembly.GetType("Deque.AxeCore.Commons.BundledAxeScriptProvider")!)!.GetType().GetMethod("GetScript")!.Invoke(Activator.CreateInstance(typeof(IAxeScriptProvider).Assembly.GetType("Deque.AxeCore.Commons.BundledAxeScriptProvider")!)!, null)!); }
-    private sealed class AlwaysReady : IFrontendQualityEngineStatusApiService { public Task<Web.FrontendQualityEngineStatusReportDto?> GetStatusAsync(Web.ReviewAuthenticationModeDto authMode, Web.ReviewEngineSelectionDto? selection = null, CancellationToken cancellationToken = default) => throw new NotSupportedException(); public Task<Web.FrontendQualityEngineReadinessReportDto?> RevalidateEngineReadinessAsync(Web.FrontendQualityEngineIdDto engineId, CancellationToken cancellationToken = default) => Task.FromResult<Web.FrontendQualityEngineReadinessReportDto?>(new() { EngineId = engineId, IsAvailable = true, CheckedAtUtc = DateTime.UtcNow }); }
-    private sealed class ReadyPreflight : ITargetPreflightService { public Task<TargetPreflightResult> CheckTargetAsync(string targetUrl) => Task.FromResult(new TargetPreflightResult { Status = Web.PreflightStatus.Ready }); }
-    private sealed class EmptyQuality : IFrontendQualityReviewService { public Web.FrontendQualityReviewReport BuildReport(string targetUrl, Web.WasmSecurityReviewReport? security, Web.WasmPerformanceReviewReport? performance) => new() { TargetUrl = targetUrl, GeneratedAt = DateTime.UtcNow }; }
-    private sealed class NeverSecurity : ISecurityScanner { public Task<(Web.WasmSecurityReviewReport?, string?)> ScanAsync(Web.WasmScanRequest request) => throw new InvalidOperationException("Static Security must not execute for authenticated review."); }
-    private sealed class NeverPerformance : IBlazorWasmPerformanceReviewService { public Task<Web.WasmPerformanceReviewReport> RunReviewAsync(string targetUrl, Web.FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException(); public Task<Web.WasmAssetDiscoveryResult> DiscoverAssetsAsync(string targetUrl, Web.FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException(); public Web.WasmPerformanceReviewReport? GetCached() => null; public void ClearCache() { } }
-    private sealed class NeverLighthouse : IFrontendLighthouseReviewApiService { public Task<Web.LighthouseResultDto> ReviewAsync(string targetUrl, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Authenticated Lighthouse forbidden."); }
-    private sealed class NeverPassiveSecurity : IFrontendPassiveSecurityApiService { public Task<Web.PassiveSecurityResultDto> ReviewAsync(string targetUrl, string profileId, string configuredBaseUrl, string environmentType, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Authenticated ZAP forbidden."); }
+    private sealed class AlwaysReady : IFrontendQualityEngineStatusApiService { public Task<WebModels.FrontendQualityEngineStatusReportDto?> GetStatusAsync(WebModels.ReviewAuthenticationModeDto authMode, WebModels.ReviewEngineSelectionDto? selection = null, CancellationToken cancellationToken = default) => throw new NotSupportedException(); public Task<WebModels.FrontendQualityEngineReadinessReportDto?> RevalidateEngineReadinessAsync(WebModels.FrontendQualityEngineIdDto engineId, CancellationToken cancellationToken = default) => Task.FromResult<WebModels.FrontendQualityEngineReadinessReportDto?>(new() { EngineId = engineId, IsAvailable = true, CheckedAtUtc = DateTime.UtcNow }); }
+    private sealed class ReadyPreflight : ITargetPreflightService { public Task<TargetPreflightResult> CheckTargetAsync(string targetUrl) => Task.FromResult(new TargetPreflightResult { Status = WebModels.PreflightStatus.Ready }); }
+    private sealed class EmptyQuality : IFrontendQualityReviewService { public WebModels.FrontendQualityReviewReport BuildReport(string targetUrl, WebModels.WasmSecurityReviewReport? security, WebModels.WasmPerformanceReviewReport? performance) => new() { TargetUrl = targetUrl, GeneratedAt = DateTime.UtcNow }; }
+    private sealed class NeverSecurity : ISecurityScanner { public Task<(WebModels.WasmSecurityReviewReport?, string?)> ScanAsync(WebModels.WasmScanRequest request) => throw new InvalidOperationException("Static Security must not execute for authenticated review."); }
+    private sealed class NeverPerformance : IBlazorWasmPerformanceReviewService { public Task<WebModels.WasmPerformanceReviewReport> RunReviewAsync(string targetUrl, WebModels.FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException(); public Task<WebModels.WasmAssetDiscoveryResult> DiscoverAssetsAsync(string targetUrl, WebModels.FrontendPerformanceThresholds? thresholds = null, CancellationToken cancellationToken = default) => throw new InvalidOperationException(); public WebModels.WasmPerformanceReviewReport? GetCached() => null; public void ClearCache() { } }
+    private sealed class NeverLighthouse : IFrontendLighthouseReviewApiService { public Task<WebModels.LighthouseResultDto> ReviewAsync(string targetUrl, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Authenticated Lighthouse forbidden."); }
+    private sealed class NeverPassiveSecurity : IFrontendPassiveSecurityApiService { public Task<WebModels.PassiveSecurityResultDto> ReviewAsync(string targetUrl, string profileId, string configuredBaseUrl, string environmentType, bool requiresAuthentication, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Authenticated ZAP forbidden."); }
 }

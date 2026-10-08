@@ -2,16 +2,6 @@ using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
-public enum WorkspaceArtifactType
-{
-    Constitution,
-    Specification,
-    Plan,
-    Tasks,
-    DataModel,
-    Research
-}
-
 public interface IWorkspaceArtifactRepository
 {
     string? ProjectName { get; set; }

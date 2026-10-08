@@ -104,4 +104,39 @@
   <ItemGroup>
     <Using Include="BirkNext.SourceEvidence" />
   </ItemGroup>
+  <!-- Project Import document-role discovery runs here, on the same source as the browser (Sample Projects and explorer uploads still classify
+       in the browser): the artifact classifier and its Markdown extractors are compiled into both projects, never copied. BIRKNEXT_SERVER
+       leaves out the few UI-only members (GraphQL candidates, task evidence filtering). -->
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);BIRKNEXT_SERVER</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/SampleArtifactClassifier.cs" Link="DocumentClassification/SampleArtifactClassifier.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/ArtifactDocumentDiscovery.cs" Link="DocumentClassification/ArtifactDocumentDiscovery.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/SampleProjects/DiscoveredDocument.cs" Link="DocumentClassification/DiscoveredDocument.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/WorkspaceArtifactType.cs" Link="DocumentClassification/WorkspaceArtifactType.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/ArtifactFingerprint.cs" Link="DocumentClassification/ArtifactFingerprint.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/MarkdownTokenizer.cs" Link="DocumentClassification/MarkdownTokenizer.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/MarkdownHelpers.cs" Link="DocumentClassification/MarkdownHelpers.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/SpecExplorerService.cs" Link="DocumentClassification/SpecExplorerService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/TaskExplorerService.cs" Link="DocumentClassification/TaskExplorerService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/DataModelAnalysisService.cs" Link="DocumentClassification/DataModelAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/ConstitutionAnalysisService.cs" Link="DocumentClassification/ConstitutionAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/PlanAnalysisService.cs" Link="DocumentClassification/PlanAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/IDataModelAnalysisService.cs" Link="DocumentClassification/IDataModelAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/IConstitutionAnalysisService.cs" Link="DocumentClassification/IConstitutionAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Services/IPlanAnalysisService.cs" Link="DocumentClassification/IPlanAnalysisService.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/MarkdownToken.cs" Link="DocumentClassification/MarkdownToken.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/SpecExplorerModels.cs" Link="DocumentClassification/SpecExplorerModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/SpecificationSemanticModel.cs" Link="DocumentClassification/SpecificationSemanticModel.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/TaskExplorerModels.cs" Link="DocumentClassification/TaskExplorerModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/TaskSemanticModel.cs" Link="DocumentClassification/TaskSemanticModel.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/TaskAlignmentModels.cs" Link="DocumentClassification/TaskAlignmentModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/PlanExplorerModels.cs" Link="DocumentClassification/PlanExplorerModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/PlanSemanticModel.cs" Link="DocumentClassification/PlanSemanticModel.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/ConstitutionExplorerModels.cs" Link="DocumentClassification/ConstitutionExplorerModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/ConstitutionSemanticModel.cs" Link="DocumentClassification/ConstitutionSemanticModel.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/DataModelModels.cs" Link="DocumentClassification/DataModelModels.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/DataModelSemanticModel.cs" Link="DocumentClassification/DataModelSemanticModel.cs" />
+  </ItemGroup>
 </Project>

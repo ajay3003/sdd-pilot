@@ -25,7 +25,7 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
         "SOURCE_ANALYSIS_FAILED" => "The archive passed validation. Retry the analysis or reduce the archive if it contains many large files.",
         "SOURCE_SNAPSHOT_SAVE_FAILED" => "The archive passed validation, but the snapshot was not saved. Retry the upload later.",
         "UPLOAD_INVALID_FORM" or "UPLOAD_MULTIPART_REQUIRED" or "UPLOAD_FILE_COUNT_INVALID" => "Choose one ZIP file and retry the upload.",
-        "IMPORT_STAGING_EXPIRED" => "Choose the project ZIP again. Nothing from the expired upload was activated.",
+        "IMPORT_STAGING_EXPIRED" => "Preview expired. Re-import the project: choose the ZIP again. Nothing from the expired upload was activated.",
         "ARCHIVE_UNSUPPORTED_FORMAT" => "Choose a .zip archive of the project folder.",
         _ => "Review the reason above, correct the archive or environment, and retry. Existing snapshots are unchanged.",
     };

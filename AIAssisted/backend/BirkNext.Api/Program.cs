@@ -408,8 +408,11 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
-// Project Import: one archive feeds the artifact repository (frontend) and Source Analysis; staged in memory, bounded, per-upload ids.
-builder.Services.AddSingleton<BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore>();
+// Project Import: one archive feeds the artifact repository (frontend) and Source Analysis. Stages are bounded, per-upload ids, and durable
+// across restarts in ProjectImport:StagingDirectory (default: a BirkNext folder under the system temp directory).
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore(null,
+    sp.GetRequiredService<IConfiguration>()["ProjectImport:StagingDirectory"] is { Length: > 0 } dir ? dir : BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore.DefaultDirectory,
+    sp.GetRequiredService<ILogger<BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore>>()));
 builder.Services.AddScoped<BirkNext.Api.Services.ProjectImport.ProjectImportService>();
 // Test evidence: execution-result providers (TRX first) and stateless preview/correlation against Source Analysis test discovery.
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.TestEvidence.TestEvidenceOptions.From(sp.GetRequiredService<IConfiguration>()));

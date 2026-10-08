@@ -49,7 +49,10 @@ public sealed record ProjectImportSourceDetection
     public List<string> Limitations { get; init; } = [];
 }
 
-/// <summary>The staged, validated archive and what it contains. Nothing is activated or persisted by a preview.</summary>
+/// <summary>Elapsed time of the preview's phases on the backend, in milliseconds (measured, never estimated).</summary>
+public sealed record ProjectImportTimings(long ValidationMs, long SourceDetectionMs, long ClassificationMs, long StagingMs);
+
+/// <summary>The staged, validated archive and what it contains. Nothing is activated by a preview; it only stages the archive for the commit.</summary>
 public sealed record ProjectImportPreview
 {
     /// <summary>Identity of this staging (one upload). Commit and retry reference it; it expires with the staged archive.</summary>
@@ -65,6 +68,13 @@ public sealed record ProjectImportPreview
     public int OtherFiles { get; init; }
     public DateTimeOffset StagedAt { get; init; }
     public DateTimeOffset ExpiresAt { get; init; }
+    /// <summary>
+    /// Document roles classified on the backend by the same artifact classifier the browser uses (its source is compiled into both), one
+    /// entry per document in <see cref="Documents"/>. Null from a backend that does not classify: the browser then classifies itself.
+    /// Classification never selects among several candidates of a role.
+    /// </summary>
+    public List<BirkNext.Web.Services.SampleProjects.DiscoveredDocument>? Discovery { get; init; }
+    public ProjectImportTimings? Timings { get; init; }
 }
 
 /// <summary>What happened to the source part of an import. Each value is a distinct fact; none is a review result.</summary>

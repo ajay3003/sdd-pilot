@@ -32,7 +32,8 @@ duplicated — the duplication was the user's second upload.
   (`IqrSourceSnapshot.ProjectImport`, null for a standalone upload) and recorded on the frontend
   (`SddProjectImportRecord`, `SddArtifactRevision.ProjectImportId`).
 - `ProjectImportPreview` — staging id, archive (name, sha, size, entries), project name + basis, readable Markdown documents with
-  content, skipped documents with reason, source detection, other-file count, expiry. A preview persists nothing.
+  content, skipped documents with reason, source detection, other-file count, expiry. A preview activates nothing; it only
+  stages the accepted archive for the commit (below).
 - `ProjectImportCommitResult.Source.State` — `NotDetected` · `Created` · `Reused` · `NotCreated` (Source Analysis turned off) ·
   `Failed`. `CanRetry` says the staging was kept so a genuine failure can be retried without a new upload. The result carries no
   environment: a source snapshot does not belong to a Target Environment.
@@ -48,9 +49,19 @@ duplicated — the duplication was the user's second upload.
 - **Source detection** (preview) — `TechnologyInventory.Detect(workspace)` on the path inventory and in-memory project files:
   source = C#/project/SQL/Dockerfile files, IaC/contracts evidence files, or any Language / Dependency / Pipeline / Contract
   technology. JSON/YAML configuration alone, scripts and documents are not source.
-- **Staging** — `ProjectImportStagingStore` (singleton): in memory only, a random `StagingId` per upload (concurrent imports of
-  the same archive never share state), at most 4 entries (oldest evicted), 30-minute expiry, a per-staging gate so double commits
-  cannot create two snapshots, cleared by Local Data Reset.
+- **Staging** — `ProjectImportStagingStore` (singleton): a random `StagingId` per upload (an unguessable capability; concurrent
+  imports of the same archive never share state), at most 4 stages (oldest evicted), 30-minute expiry, a per-staging gate so
+  double commits cannot create two snapshots, cleared by Local Data Reset.
+  - **Durable across restarts.** Stages are written to `ProjectImport:StagingDirectory` (default: `birknext/project-import-staging`
+    under the system temp directory): `{id}.zip` holds the exact accepted bytes, `{id}.json` the import id, archive fingerprint,
+    display name, times, source detection and — once settled — the commit result. File names come only from the staging id, never
+    from the client name or path; no source text or secret is in the record. After a restart the bytes are validated again by the
+    same reader and must match the recorded SHA-256, otherwise the stage is discarded.
+  - **Idempotent commit.** A settled commit keeps only its result (the archive is deleted) until expiry, so a repeated commit
+    (double click, client retry after a lost response, after a restart) returns the same result instead of analysing again.
+  - **Cleanup.** Expired, unreadable and orphaned files are deleted at startup and whenever the store is used; temp files only
+    after a minute (another BirkNext process may be writing). Expired or unknown stages answer 404 `IMPORT_STAGING_EXPIRED`, shown
+    as *Preview expired. Re-import the project.*
 - **Commit** — uses the staged bytes and validated workspace (never a second copy):
   - no source → `NotDetected`, staging released;
   - Source Analysis turned off → `NotCreated` (`SOURCE_ANALYSIS_DISABLED`);
@@ -153,7 +164,11 @@ or trim extractor work).
 ## Limits and follow-ups
 
 - Staging and the 30-minute retry remain only for genuine source failures (analysis or save); a missing target is not one.
-- Staging is in memory: a backend restart between preview and commit loses it (the page asks for the ZIP again).
+- Staging survives a backend restart for its 30 minutes; it is bound to the unguessable staging id, not to a user (BirkNext
+  is a local single-user tool without authentication).
+- **Archive display name.** `IqrSourceArchiveReader.ArchiveDisplayName` keeps the readable file name (`M2LB (2).zip`, formerly
+  shown as `M2LB _2_.zip` because `SafeLabel` replaced parentheses). It is display metadata only; snapshots stored with the
+  old label still group with new ones (`ArchiveRepositoryName` strips both ` (n)` and `_n_`).
 - Requirements Traceability (`/artifact-traceability`) reads the current workspace through the explorers' role authority
   (`TraceabilityInputs` over `IArtifactExplorerContext`): Sample Project, imported project and manual workspace alike. A role with
   several candidates is shown as *Needs selection* with a link to its explorer and is never picked; no documents is a neutral

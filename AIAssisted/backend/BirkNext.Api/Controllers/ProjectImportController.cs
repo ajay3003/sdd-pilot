@@ -33,7 +33,7 @@ public sealed class ProjectImportController(ProjectImportService imports, ILogge
     {
         var result = await imports.CommitAsync(stagingId, ct);
         return result is null
-            ? Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "The staged archive is no longer available (it expired or was already imported). Choose the ZIP again."))
+            ? Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Re-import the project: the staged archive is no longer available (it expired after 30 minutes or was discarded). Choose the ZIP again."))
             : Ok(result);
     }
 
