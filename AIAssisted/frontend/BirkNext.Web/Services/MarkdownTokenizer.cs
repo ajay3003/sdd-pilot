@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -127,46 +126,54 @@ public static class MarkdownTokenizer
     }
 
     /// <summary>
-    /// Preserves authored blocks that the structured Explorer projection did not consume. These blocks are rendered verbatim in the
-    /// Explorer's Source Notes region; this is a deterministic exact-content check, not fuzzy text matching.
+    /// Preserves source blocks that have no explicit construction-time projection range. These blocks are rendered verbatim in the
+    /// Explorer's Source Notes region. Projection accounting is based only on provenance ranges, never serialized model text.
     /// </summary>
-    public static List<MarkdownSourceNote> FindUnrepresentedBlocks(string markdown, object parsedProjection, bool preserveFreeTextForRender = false)
+    public static List<MarkdownSourceNote> FindUnrepresentedBlocks(string markdown, object parsedProjection)
     {
-        var projection = JsonSerializer.Serialize(parsedProjection);
         var documentFingerprint = DocumentFingerprint(markdown);
-        var claimed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var sourceRanges = GetProjectionSources(parsedProjection);
         var notes = new List<MarkdownSourceNote>();
         foreach (var token in Tokenize(markdown).Where(t => t.Kind is not (MarkdownTokenKind.Blank or MarkdownTokenKind.HorizontalRule or MarkdownTokenKind.TableSeparator)))
         {
-            // Parser models may retain free-form prose/code/quotes in internal fields without the Explorer rendering those fields.
-            // Keep these blocks in the shared full-text region so parser serialization cannot be mistaken for rendered evidence.
-            var requiresDirectTextAccess = preserveFreeTextForRender && token.Kind is
-                (MarkdownTokenKind.Text or MarkdownTokenKind.BlockQuote or MarkdownTokenKind.FencedCodeStart or MarkdownTokenKind.FencedCodeLine or MarkdownTokenKind.FencedCodeEnd);
-            var values = token.Kind == MarkdownTokenKind.TableRow && token.TableCells is { Count: > 0 }
-                ? token.TableCells.Where(c => !string.IsNullOrWhiteSpace(c)).Select(NormalizeInlineMarkup).ToArray()
-                : [NormalizeInlineMarkup(token.Content.Trim())];
-            var matches = !requiresDirectTextAccess && values.Length > 0 && values.All(value => Consume(value));
-            if (matches) continue;
+            // Direct source notes are the full-text destination for any token that is not linked to an explicit projection.
+            // This keeps repeated strings distinct by source line and avoids using JSON/display text as coverage evidence.
+            if (sourceRanges.Any(source => token.LineIndex + 1 >= source.StartLine && token.LineIndex + 1 <= source.EndLine)) continue;
             var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token.RawLine.Trim())));
             notes.Add(new MarkdownSourceNote(CreateSourceBlockId(documentFingerprint, token.LineIndex, token.RawLine), token.LineIndex + 1, token.LineIndex + 1,
                 token.Kind.ToString(), fingerprint, token.RawLine));
         }
         return notes;
+    }
 
-        bool Consume(string value)
+    private static IReadOnlyList<SourceRangeProvenance> GetProjectionSources(object root)
+    {
+        var sources = new Dictionary<string, SourceRangeProvenance>(StringComparer.Ordinal);
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        Visit(root);
+        return sources.Values.ToArray();
+
+        void Visit(object? value)
         {
-            if (string.IsNullOrWhiteSpace(value)) return true;
-            var count = 0;
-            var offset = 0;
-            while ((offset = projection.IndexOf(value, offset, StringComparison.OrdinalIgnoreCase)) >= 0)
+            if (value is null || value is string || !visited.Add(value)) return;
+            if (value is ProjectionProvenance projection)
             {
-                count++;
-                offset += value.Length;
+                foreach (var source in projection.Sources) sources.TryAdd(source.SourceBlockId, source);
+                return;
             }
-            var used = claimed.GetValueOrDefault(value);
-            if (count <= used) return false;
-            claimed[value] = used + 1;
-            return true;
+            if (value is System.Collections.IEnumerable sequence)
+            {
+                foreach (var item in sequence) Visit(item);
+                return;
+            }
+            var type = value.GetType();
+            if (type.IsPrimitive || type.IsEnum || type == typeof(decimal)) return;
+            foreach (var property in type.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
+            {
+                if (property.GetIndexParameters().Length != 0 || property.Name is "NodeId") continue;
+                try { Visit(property.GetValue(value)); }
+                catch (System.Reflection.TargetInvocationException) { }
+            }
         }
     }
 

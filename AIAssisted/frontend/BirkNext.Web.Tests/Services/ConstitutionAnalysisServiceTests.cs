@@ -8,6 +8,23 @@ public sealed class ConstitutionAnalysisServiceTests
 {
     private readonly ConstitutionAnalysisService _svc = new();
 
+    [Fact]
+    public void Parse_AttachesConstructionTimeProvenanceToStructuredRules()
+    {
+        var markdown = "# Constitution\n\n## Core Principles\n\n### PP-01 Safety\nEvery action is authorized.\n\n## Platform Standards\n\n### PS-01 Validation\nInputs are validated.\n";
+        var first = _svc.Parse(markdown);
+        var second = _svc.Parse(markdown);
+
+        var principle = Assert.Single(first.Principles);
+        var standard = Assert.Single(first.Standards);
+        Assert.NotNull(principle.Provenance);
+        Assert.NotNull(standard.Provenance);
+        Assert.Equal(5, principle.Provenance!.Sources[0].StartLine);
+        Assert.Equal(6, principle.Provenance.Sources[0].EndLine);
+        Assert.Equal(principle.Provenance.ProjectionId, second.Principles[0].Provenance!.ProjectionId);
+        Assert.Equal(standard.Provenance.ProjectionId, second.Standards[0].Provenance!.ProjectionId);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private static string AuthConstitution() => """

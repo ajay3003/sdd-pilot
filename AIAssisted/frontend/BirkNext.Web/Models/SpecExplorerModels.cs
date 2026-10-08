@@ -62,6 +62,7 @@ public enum CoverageState { Unknown, Covered, Partial, Missing }
 
 public sealed class SpecNode
 {
+    public ProjectionProvenance? Provenance { get; set; }
     public string Id { get; } = Guid.NewGuid().ToString("N")[..10];
     public required string Title { get; init; }
     public required SpecNodeType NodeType { get; init; }

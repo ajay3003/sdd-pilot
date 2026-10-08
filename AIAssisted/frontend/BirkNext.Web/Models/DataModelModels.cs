@@ -61,6 +61,7 @@ public sealed class DataModelEvidenceGap
 
 public sealed class DataEntity
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string  Name        { get; init; } = string.Empty;
     public bool    IsTable     { get; init; }
     public DataStructureKind Kind { get; init; } = DataStructureKind.Unclassified;
@@ -72,6 +73,7 @@ public sealed class DataEntity
 
 public sealed class DataColumn
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string  Name         { get; init; } = string.Empty;
     public string? Type         { get; init; }
     public bool?   Nullable     { get; init; }
@@ -83,6 +85,7 @@ public sealed class DataColumn
 
 public sealed class DataRelationship
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string  Source           { get; init; } = string.Empty;
     public string  Target           { get; init; } = string.Empty;
     public string? RelationshipType { get; init; }
@@ -95,6 +98,7 @@ public sealed class DataRelationship
 
 public sealed class DataIndex
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string       Name       { get; init; } = string.Empty;
     public string       EntityName { get; init; } = string.Empty;
     public List<string> Columns    { get; init; } = [];
@@ -103,6 +107,7 @@ public sealed class DataIndex
 
 public sealed class DataConstraint
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string  Name           { get; init; } = string.Empty;
     public string  EntityName     { get; init; } = string.Empty;
     public string  ConstraintType { get; init; } = string.Empty;
@@ -111,6 +116,7 @@ public sealed class DataConstraint
 
 public sealed class DataEnum
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string       Name        { get; init; } = string.Empty;
     public List<string> Values      { get; init; } = [];
     public string?      Description { get; init; }

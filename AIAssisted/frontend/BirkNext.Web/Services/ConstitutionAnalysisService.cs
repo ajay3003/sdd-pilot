@@ -97,6 +97,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     public ConstitutionDocument Parse(string markdown)
     {
         var tokens = MarkdownTokenizer.Tokenize(markdown);
+        var documentFingerprint = MarkdownTokenizer.DocumentFingerprint(markdown);
 
         string title = string.Empty;
         string version = string.Empty;
@@ -112,31 +113,35 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         ConstitutionSectionType currentSection = ConstitutionSectionType.Other;
         var itemLines = new List<string>();
         string? currentItemHeading = null;
+        var currentItemStartLine = 0;
+        var currentItemEndLine = 0;
         string? implicitSectionHeading = null; // For sections with content but no level-3 headings
 
         void FlushItem()
         {
             if (currentItemHeading is null || itemLines.Count == 0) return;
             var raw = string.Join("\n", itemLines);
+            var source = ProjectionProvenance.Source(documentFingerprint, currentItemStartLine + 1, currentItemEndLine + 1,
+                "ConstitutionItem", raw);
 
             switch (currentSection)
             {
                 case ConstitutionSectionType.CorePrinciples:
-                    var p = ParsePrinciple(currentItemHeading, raw);
+                    var p = ParsePrinciple(currentItemHeading, raw, source);
                     if (p is not null) principles.Add(p);
                     break;
                 case ConstitutionSectionType.PlatformStandards:
                 case ConstitutionSectionType.DevelopmentStandards:
-                    var s = ParseStandard(currentItemHeading, raw, currentSection);
+                    var s = ParseStandard(currentItemHeading, raw, currentSection, source);
                     if (s is not null) standards.Add(s);
                     break;
                 case ConstitutionSectionType.ModuleConstraints:
                 case ConstitutionSectionType.SecurityCompliance:
-                    var c = ParseConstraint(currentItemHeading, raw, currentSection);
+                    var c = ParseConstraint(currentItemHeading, raw, currentSection, source);
                     if (c is not null) constraints.Add(c);
                     break;
                 case ConstitutionSectionType.Governance:
-                    var g = ParseGovernanceItem(currentItemHeading, raw);
+                    var g = ParseGovernanceItem(currentItemHeading, raw, source);
                     if (g is not null) governanceItems.Add(g);
                     break;
                 case ConstitutionSectionType.Changelog:
@@ -183,6 +188,8 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 {
                     FlushItem();
                     currentItemHeading = rawTitle;
+                    currentItemStartLine = tok.LineIndex;
+                    currentItemEndLine = tok.LineIndex;
                     implicitSectionHeading = null; // We have explicit level-3 heading, don't use implicit
                     continue;
                 }
@@ -224,11 +231,16 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                  (tok.Kind != MarkdownTokenKind.Blank && tok.Kind != MarkdownTokenKind.Heading)))
             {
                 currentItemHeading = implicitSectionHeading;
+                currentItemStartLine = tok.LineIndex;
                 implicitSectionHeading = null;
             }
 
             if (currentItemHeading is not null)
+            {
                 itemLines.Add(line);
+                if (tok.Kind != MarkdownTokenKind.Blank)
+                    currentItemEndLine = tok.LineIndex;
+            }
         }
 
         FlushItem();
@@ -640,7 +652,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
     // ── Private: section parsers ──────────────────────────────────────────
 
-    private static ConstitutionPrinciple? ParsePrinciple(string heading, string body)
+    private static ConstitutionPrinciple? ParsePrinciple(string heading, string body, SourceRangeProvenance source)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -723,6 +735,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         return new ConstitutionPrinciple
         {
+            Provenance = ProjectionProvenance.Create("Constitution", "Principle", id.Length > 0 ? id : heading, source),
             Id = id,
             Title = string.IsNullOrEmpty(title) ? StripMarkdown(heading) : title,
             Description = description.ToString().Trim(),
@@ -732,7 +745,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         };
     }
 
-    private static ConstitutionStandard? ParseStandard(string heading, string body, ConstitutionSectionType section)
+    private static ConstitutionStandard? ParseStandard(string heading, string body, ConstitutionSectionType section, SourceRangeProvenance source)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -802,6 +815,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         return new ConstitutionStandard
         {
+            Provenance = ProjectionProvenance.Create("Constitution", "Standard", id.Length > 0 ? id : heading, source),
             Id = id,
             Title = string.IsNullOrEmpty(title) ? StripMarkdown(heading) : title,
             Category = category,
@@ -811,7 +825,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         };
     }
 
-    private static ConstitutionConstraint? ParseConstraint(string heading, string body, ConstitutionSectionType section)
+    private static ConstitutionConstraint? ParseConstraint(string heading, string body, ConstitutionSectionType section, SourceRangeProvenance source)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -887,6 +901,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         return new ConstitutionConstraint
         {
+            Provenance = ProjectionProvenance.Create("Constitution", "Constraint", id.Length > 0 ? id : heading, source),
             Id = id,
             Title = string.IsNullOrEmpty(title) ? StripMarkdown(heading) : title,
             Scope = scope,
@@ -897,7 +912,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         };
     }
 
-    private static ConstitutionGovernanceItem? ParseGovernanceItem(string heading, string body)
+    private static ConstitutionGovernanceItem? ParseGovernanceItem(string heading, string body, SourceRangeProvenance source)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -951,6 +966,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         return new ConstitutionGovernanceItem
         {
+            Provenance = ProjectionProvenance.Create("Constitution", "Governance", heading, source),
             Title = title,
             Description = description.ToString().Trim(),
             Type = type,

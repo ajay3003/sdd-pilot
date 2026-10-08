@@ -97,6 +97,7 @@ public sealed class ConstitutionRule
 
 public sealed class ConstitutionPrinciple
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Id { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -108,6 +109,7 @@ public sealed class ConstitutionPrinciple
 
 public sealed class ConstitutionStandard
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Id { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -119,6 +121,7 @@ public sealed class ConstitutionStandard
 
 public sealed class ConstitutionConstraint
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Id { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -131,6 +134,7 @@ public sealed class ConstitutionConstraint
 
 public sealed class ConstitutionGovernanceItem
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;

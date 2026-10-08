@@ -79,7 +79,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static readonly HashSet<string> ProjectStructureKeywords = new(StringComparer.OrdinalIgnoreCase)
     {
         "project structure", "file structure", "directory structure", "code structure",
-        "folder structure", "files", "structure", "codebase structure",
+        "folder structure", "file map", "file maps", "files", "structure", "codebase structure",
     };
 
     private static readonly HashSet<string> RiskKeywords = new(StringComparer.OrdinalIgnoreCase)
@@ -233,6 +233,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     public PlanDocument Parse(string markdown)
     {
         var tokens = MarkdownTokenizer.Tokenize(markdown);
+        var documentFingerprint = MarkdownTokenizer.DocumentFingerprint(markdown);
 
         string title = string.Empty;
         string? featureName = null;
@@ -272,41 +273,44 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             {
                 case PlanSectionType.TechnicalContext:
                 case PlanSectionType.ProjectStructure:
-                    var sec = ParseFreeFormSection(sectionHeading, raw, currentSection);
+                    var sec = ParseFreeFormSection(sectionHeading, raw, currentSection, documentFingerprint, sectionFirstLine ?? 0);
                     if (sec is not null) sections.Add(sec);
                     break;
                 case PlanSectionType.Architecture:
-                    ParseArchitectureSection(raw, decisions, sections, sectionHeading);
+                    ParseArchitectureSection(raw, decisions, sections, sectionHeading, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.Risks:
-                    ParseRisksSection(raw, risks, constraints);
+                    ParseRisksSection(raw, risks, constraints, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.Constraints:
-                    ParseConstraintsSection(raw, constraints);
+                    ParseConstraintsSection(raw, constraints, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.Complexity:
-                    ParseComplexitySection(raw, complexityItems);
+                    ParseComplexitySection(raw, complexityItems, documentFingerprint, sectionFirstLine ?? 0);
                     // Create a PlanSection to track that complexity content came from explicit source
-                    var complexitySec = ParseFreeFormSection(sectionHeading, raw, PlanSectionType.Complexity);
+                    var complexitySec = ParseFreeFormSection(sectionHeading, raw, PlanSectionType.Complexity, documentFingerprint, sectionFirstLine ?? 0);
                     if (complexitySec is not null) sections.Add(complexitySec);
                     break;
                 case PlanSectionType.Dependencies:
-                    ParseDependenciesSection(raw, dependencies);
+                    ParseDependenciesSection(raw, dependencies, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.Milestones:
-                    ParseMilestonesSection(raw, milestones);
+                    ParseMilestonesSection(raw, milestones, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.ConstitutionCheck:
-                    ParseConstitutionCheckSection(raw, checkItems, gates);
+                    ParseConstitutionCheckSection(raw, checkItems, gates, documentFingerprint, sectionFirstLine ?? 0);
                     break;
                 case PlanSectionType.ImplementationPhases:
-                    ParseImplementationPhasesSection(raw, phases, sectionHeading, sectionFirstLine);
+                    ParseImplementationPhasesSection(raw, phases, sectionHeading, sectionFirstLine, documentFingerprint);
                     break;
                 case PlanSectionType.Testing:
-                    testingInfo = ParseTestingSection(raw);
+                    var testStartLine = sectionFirstLine ?? 0;
+                    var testEndLine = testStartLine + Math.Max(0, MarkdownTokenizer.Tokenize(raw).LastOrDefault(t => t.Kind != MarkdownTokenKind.Blank)?.LineIndex ?? 0);
+                    var testSource = ProjectionProvenance.Source(documentFingerprint, testStartLine + 1, testEndLine + 1, "PlanTesting", raw);
+                    testingInfo = ParseTestingSection(raw, ProjectionProvenance.Create("Plan", "Testing", "Testing", testSource));
                     break;
                 case PlanSectionType.Other:
-                    var otherSec = ParseFreeFormSection(sectionHeading, raw, PlanSectionType.Other);
+                    var otherSec = ParseFreeFormSection(sectionHeading, raw, PlanSectionType.Other, documentFingerprint, sectionFirstLine ?? 0);
                     if (otherSec is not null) sections.Add(otherSec);
                     break;
             }
@@ -489,7 +493,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             TestingInfo = testingInfo,
             Health = health,
         };
-        document.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, document, preserveFreeTextForRender: true));
+        document.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, document));
         return document;
     }
 
@@ -582,7 +586,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     // ── Section parsers ──────────────────────────────────────────────────────
 
-    private static PlanSection? ParseFreeFormSection(string heading, string raw, PlanSectionType type)
+    private static PlanSection? ParseFreeFormSection(string heading, string raw, PlanSectionType type, string? documentFingerprint = null, int? sourceStartLine = null)
     {
         if (string.IsNullOrWhiteSpace(heading) && string.IsNullOrWhiteSpace(raw)) return null;
 
@@ -658,8 +662,19 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         if (codeSb.Length > 0) FlushCode(); else FlushBlock();
 
+        var lastContentLine = tokens.LastOrDefault(t => t.Kind != MarkdownTokenKind.Blank)?.LineIndex ?? 0;
+
         return new PlanSection
         {
+            SourceDocumentFingerprint = documentFingerprint,
+            SourceStartLine = sourceStartLine is int line ? line + raw.TakeWhile(c => c == '\n').Count() + 1 : null,
+            Provenance = documentFingerprint is not null && sourceStartLine is int firstLine &&
+                type is PlanSectionType.TechnicalContext or PlanSectionType.ProjectStructure or PlanSectionType.Architecture
+                ? ProjectionProvenance.Create("Plan", "DirectContent", $"{type}:{heading}:{firstLine}",
+                    ProjectionProvenance.Source(documentFingerprint, Math.Max(1, firstLine),
+                        Math.Max(Math.Max(1, firstLine), firstLine + lastContentLine + 1),
+                        "PlanFreeFormSection", $"{heading}\n{raw}"))
+                : null,
             Title = heading,
             SectionType = type,
             RawContent = raw.Trim(),
@@ -671,20 +686,29 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         string raw,
         List<PlanArchitectureDecision> decisions,
         List<PlanSection> sections,
-        string sectionHeading)
+        string sectionHeading,
+        string documentFingerprint,
+        int sectionStartLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
+        var itemStartLine = 0;
+        var itemEndLine = 0;
         var itemLines = new List<string>();
         var narrativeLines = new List<string>();
 
         void FlushItem()
         {
             if (currentH3 is null) return;
-            var dec = ParseDecision(currentH3, string.Join("\n", itemLines));
+            var body = string.Join("\n", itemLines);
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + itemStartLine + 1,
+                sectionStartLine + Math.Max(itemStartLine, itemEndLine) + 1, "PlanArchitectureDecision", currentH3 + "\n" + body);
+            var dec = ParseDecision(currentH3, body,
+                ProjectionProvenance.Create("Plan", "ArchitectureDecision", $"{currentH3}:{source.SourceBlockId}", source));
             if (dec is not null) decisions.Add(dec);
             itemLines.Clear();
             currentH3 = null;
+            itemEndLine = 0;
         }
 
         foreach (var tok in tokens)
@@ -693,9 +717,15 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             {
                 FlushItem();
                 currentH3 = tok.Content;
+                itemStartLine = tok.LineIndex;
+                itemEndLine = tok.LineIndex;
                 continue;
             }
-            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            if (currentH3 is not null)
+            {
+                itemLines.Add(tok.RawLine);
+                if (tok.Kind != MarkdownTokenKind.Blank) itemEndLine = tok.LineIndex;
+            }
             else narrativeLines.Add(tok.RawLine);
         }
         FlushItem();
@@ -703,13 +733,13 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         var narrative = string.Join("\n", narrativeLines).Trim();
         if (!string.IsNullOrEmpty(narrative))
         {
-            var sec = ParseFreeFormSection(sectionHeading, narrative, PlanSectionType.Architecture);
+            var sec = ParseFreeFormSection(sectionHeading, narrative, PlanSectionType.Architecture, documentFingerprint, sectionStartLine);
             if (sec is not null) sections.Add(sec);
         }
     }
 
     // Extracts a PlanArchitectureDecision from any H3 heading — ADR format optional.
-    private static PlanArchitectureDecision? ParseDecision(string heading, string body)
+    private static PlanArchitectureDecision? ParseDecision(string heading, string body, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -783,6 +813,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanArchitectureDecision
         {
+            Provenance   = provenance,
             Id           = id,
             Title        = title,
             Context      = contextText,
@@ -796,10 +827,14 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static void ParseRisksSection(
         string raw,
         List<PlanRisk> risks,
-        List<PlanConstraint> constraints)
+        List<PlanConstraint> constraints,
+        string documentFingerprint,
+        int sectionStartLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
+        var itemStartLine = 0;
+        var itemEndLine = 0;
         var itemLines = new List<string>();
         var risksBefore = risks.Count; // another section (Risks, Open Items) may already have added risks
 
@@ -807,64 +842,91 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             if (currentHeading is null) return;
             var body = string.Join("\n", itemLines);
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + itemStartLine + 1,
+                sectionStartLine + Math.Max(itemStartLine, itemEndLine) + 1, "PlanRisk", currentHeading + "\n" + body);
+            var projection = ProjectionProvenance.Create("Plan", IsConstraintHeading(currentHeading) ? "Constraint" : "Risk",
+                $"{currentHeading}:{source.SourceBlockId}", source);
             if (IsConstraintHeading(currentHeading))
-                ParseConstraintItem(currentHeading, body, constraints);
+                ParseConstraintItem(currentHeading, body, constraints, projection);
             else
             {
-                var risk = ParseRisk(currentHeading, body);
+                var risk = ParseRisk(currentHeading, body, projection);
                 if (risk is not null) risks.Add(risk);
             }
             itemLines.Clear();
             currentHeading = null;
+            itemEndLine = 0;
         }
 
         foreach (var tok in tokens)
         {
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
-            { Flush(); currentHeading = tok.Content; continue; }
+            { Flush(); currentHeading = tok.Content; itemStartLine = tok.LineIndex; itemEndLine = tok.LineIndex; continue; }
 
             if (tok.Kind == MarkdownTokenKind.BulletItem && currentHeading is null)
             {
                 var content = tok.Content;
-                if (IsConstraintLine(content)) ParseInlineConstraint(content, constraints);
-                else { var r = ParseInlineRisk(content); if (r is not null) risks.Add(r); }
+                var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + tok.LineIndex + 1,
+                    sectionStartLine + tok.LineIndex + 1, "PlanRisk", tok.RawLine);
+                var projection = ProjectionProvenance.Create("Plan", IsConstraintLine(content) ? "Constraint" : "Risk", content, source);
+                if (IsConstraintLine(content)) ParseInlineConstraint(content, constraints, projection);
+                else { var r = ParseInlineRisk(content, projection); if (r is not null) risks.Add(r); }
                 continue;
             }
 
-            if (currentHeading is not null) itemLines.Add(tok.RawLine);
+            if (currentHeading is not null)
+            {
+                itemLines.Add(tok.RawLine);
+                if (tok.Kind != MarkdownTokenKind.Blank) itemEndLine = tok.LineIndex;
+            }
         }
         Flush();
 
-        if (risks.Count == risksBefore) ParseRisksTable(raw, risks);
+        if (risks.Count == risksBefore) ParseRisksTable(raw, risks, documentFingerprint, sectionStartLine);
     }
 
-    private static void ParseConstraintsSection(string raw, List<PlanConstraint> constraints)
+    private static void ParseConstraintsSection(string raw, List<PlanConstraint> constraints, string documentFingerprint, int sectionStartLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentHeading = null;
+        var itemStartLine = 0;
+        var itemEndLine = 0;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentHeading is null) return;
-            ParseConstraintItem(currentHeading, string.Join("\n", itemLines), constraints);
-            itemLines.Clear(); currentHeading = null;
+            var body = string.Join("\n", itemLines);
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + itemStartLine + 1,
+                sectionStartLine + Math.Max(itemStartLine, itemEndLine) + 1, "PlanConstraint", currentHeading + "\n" + body);
+            ParseConstraintItem(currentHeading, body, constraints,
+                ProjectionProvenance.Create("Plan", "Constraint", $"{currentHeading}:{source.SourceBlockId}", source));
+            itemLines.Clear(); currentHeading = null; itemEndLine = 0;
         }
 
         foreach (var tok in tokens)
         {
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
-            { Flush(); currentHeading = tok.Content; continue; }
+            { Flush(); currentHeading = tok.Content; itemStartLine = tok.LineIndex; itemEndLine = tok.LineIndex; continue; }
 
             if (tok.Kind == MarkdownTokenKind.BulletItem && currentHeading is null)
-            { ParseInlineConstraint(tok.Content, constraints); continue; }
+            {
+                var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + tok.LineIndex + 1,
+                    sectionStartLine + tok.LineIndex + 1, "PlanConstraint", tok.RawLine);
+                ParseInlineConstraint(tok.Content, constraints, ProjectionProvenance.Create("Plan", "Constraint", tok.Content, source));
+                continue;
+            }
 
-            if (currentHeading is not null) itemLines.Add(tok.RawLine);
+            if (currentHeading is not null)
+            {
+                itemLines.Add(tok.RawLine);
+                if (tok.Kind != MarkdownTokenKind.Blank) itemEndLine = tok.LineIndex;
+            }
         }
         Flush();
     }
 
-    private static void ParseConstraintItem(string heading, string body, List<PlanConstraint> constraints)
+    private static void ParseConstraintItem(string heading, string body, List<PlanConstraint> constraints, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return;
         var title = StripMarkdown(Regex.Replace(heading,
@@ -883,6 +945,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         constraints.Add(new PlanConstraint
         {
+            Provenance = provenance,
             Title = title,
             Description = descSb.ToString().Trim(),
             ConstraintType = InferConstraintType(heading),
@@ -890,11 +953,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         });
     }
 
-    private static void ParseInlineConstraint(string content, List<PlanConstraint> constraints)
+    private static void ParseInlineConstraint(string content, List<PlanConstraint> constraints, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(content)) return;
         constraints.Add(new PlanConstraint
         {
+            Provenance = provenance,
             Title = StripMarkdown(content),
             ConstraintType = InferConstraintType(content),
         });
@@ -925,7 +989,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             || lower.Contains("no violation");
     }
 
-    private static PlanRisk? ParseRisk(string heading, string body)
+    private static PlanRisk? ParseRisk(string heading, string body, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
         var title = StripMarkdown(heading);
@@ -973,6 +1037,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanRisk
         {
+            Provenance = provenance,
             Title = string.IsNullOrEmpty(title) ? "Unnamed Risk" : title,
             Description = descSb.ToString().Trim(),
             Severity = severity,
@@ -982,7 +1047,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         };
     }
 
-    private static PlanRisk? ParseInlineRisk(string content)
+    private static PlanRisk? ParseInlineRisk(string content, ProjectionProvenance provenance)
     {
         var m = Regex.Match(content,
             @"^\*?\*?(Critical|High|Medium|Low)\*?\*?\s*[:\-–]?\s*(.+)$",
@@ -996,19 +1061,21 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanRisk
         {
+            Provenance = provenance,
             Title = StripMarkdown(titleText),
             Description = StripMarkdown(desc),
             Severity = ParseSeverityFromText(m.Groups[1].Value),
         };
     }
 
-    private static void ParseRisksTable(string raw, List<PlanRisk> risks)
+    private static void ParseRisksTable(string raw, List<PlanRisk> risks, string documentFingerprint, int sectionStartLine)
     {
         var lines = raw.Split('\n');
         List<string>? headers = null;
 
-        foreach (var line in lines)
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
+            var line = lines[lineIndex];
             if (!TableRowRe.IsMatch(line)) continue;
             var cells = SplitCells(line);
             if (cells.Count == 0) continue;
@@ -1039,6 +1106,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     .Select(x => $"{StripMarkdown(headers[x.i]).Trim()}: {StripMarkdown(x.c).Trim()}"));
             risks.Add(new PlanRisk
             {
+                Provenance = ProjectionProvenance.Create("Plan", "Risk", $"{title}:{sectionStartLine + lineIndex + 1}",
+                    ProjectionProvenance.Source(documentFingerprint, sectionStartLine + lineIndex + 1, sectionStartLine + lineIndex + 1, "PlanRiskTableRow", line)),
                 Title       = string.IsNullOrEmpty(id) ? title : $"{id}: {title}",
                 Description = description,
                 Severity    = sevIdx >= 0 && sevIdx < cells.Count ? ParseSeverityFromText(cells[sevIdx]) : RiskSeverity.Unrated,
@@ -1047,41 +1116,52 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         }
     }
 
-    private static void ParseComplexitySection(string raw, List<PlanComplexityItem> items)
+    private static void ParseComplexitySection(string raw, List<PlanComplexityItem> items, string documentFingerprint, int sectionStartLine)
     {
-        if (TryParseComplexityTable(raw, items)) return;
+        if (TryParseComplexityTable(raw, items, documentFingerprint, sectionStartLine)) return;
 
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
+        int? currentStartLine = null;
+        int? currentEndLine = null;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentH3 is null) return;
-            var item = ParseComplexityItem(currentH3, string.Join("\n", itemLines));
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + currentStartLine!.Value + 1,
+                sectionStartLine + currentEndLine!.Value + 1, "PlanComplexityItem", currentH3 + "\n" + string.Join("\n", itemLines));
+            var item = ParseComplexityItem(currentH3, string.Join("\n", itemLines),
+                ProjectionProvenance.Create("Plan", "Complexity", $"{currentH3}:{source.SourceBlockId}", source));
             if (item is not null) items.Add(item);
-            itemLines.Clear(); currentH3 = null;
+            itemLines.Clear(); currentH3 = null; currentStartLine = null; currentEndLine = null;
         }
 
         foreach (var tok in tokens)
         {
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
-            { Flush(); currentH3 = tok.Content; continue; }
+            { Flush(); currentH3 = tok.Content; currentStartLine = tok.LineIndex; currentEndLine = tok.LineIndex; continue; }
 
             if (tok.Kind == MarkdownTokenKind.BulletItem && currentH3 is null)
-            { var item = ParseInlineComplexity(tok.Content); if (item is not null) items.Add(item); continue; }
+            {
+                var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + tok.LineIndex + 1,
+                    sectionStartLine + tok.LineIndex + 1, "PlanComplexityItem", tok.RawLine);
+                var item = ParseInlineComplexity(tok.Content, ProjectionProvenance.Create("Plan", "Complexity", tok.Content, source));
+                if (item is not null) items.Add(item);
+                continue;
+            }
 
-            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            if (currentH3 is not null) { itemLines.Add(tok.RawLine); currentEndLine = tok.LineIndex; }
         }
         Flush();
     }
 
-    private static bool TryParseComplexityTable(string raw, List<PlanComplexityItem> items)
+    private static bool TryParseComplexityTable(string raw, List<PlanComplexityItem> items, string documentFingerprint, int sectionStartLine)
     {
-        var lines = raw.Split('\n').Where(l => TableRowRe.IsMatch(l)).ToList();
+        var lines = raw.Split('\n').Select((text, lineIndex) => (text, lineIndex)).Where(l => TableRowRe.IsMatch(l.text)).ToList();
         if (lines.Count < 2) return false;
 
-        var headers = SplitCells(lines[0]);
+        var headers = SplitCells(lines[0].text);
 
         // Try standard complexity table (Area/Component + Level/Complexity)
         var areaIdx  = headers.FindIndex(h => h.Contains("area", StringComparison.OrdinalIgnoreCase) || h.Contains("component", StringComparison.OrdinalIgnoreCase));
@@ -1092,19 +1172,25 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             // Standard complexity table format
             var notesIdx = headers.FindIndex(h => h.Contains("note", StringComparison.OrdinalIgnoreCase) || h.Contains("reason", StringComparison.OrdinalIgnoreCase));
 
-            foreach (var line in lines.Skip(1))
+            foreach (var row in lines.Skip(1))
             {
+                var line = row.text;
                 var cells = SplitCells(line);
                 if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
                 if (areaIdx >= cells.Count || levelIdx >= cells.Count) continue;
                 var area = StripMarkdown(cells[areaIdx]);
                 if (!string.IsNullOrWhiteSpace(area))
+                {
+                    var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + row.lineIndex + 1,
+                        sectionStartLine + row.lineIndex + 1, "PlanComplexityTableRow", line);
                     items.Add(new PlanComplexityItem
                     {
+                        Provenance = ProjectionProvenance.Create("Plan", "Complexity", $"{area}:{source.SourceBlockId}", source),
                         Area  = area,
                         Level = ParseComplexityLevel(cells[levelIdx]),
                         Notes = notesIdx >= 0 && notesIdx < cells.Count ? StripMarkdown(cells[notesIdx]) : null,
                     });
+                }
             }
             return items.Count > 0;
         }
@@ -1117,8 +1203,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (violationIdx >= 0 && whyIdx >= 0)
         {
             // Deviation/violation table (documented deviations with justifications)
-            foreach (var line in lines.Skip(1))
+            foreach (var row in lines.Skip(1))
             {
+                var line = row.text;
                 var cells = SplitCells(line);
                 if (cells.All(c => Regex.IsMatch(c, @"^[-:\s]+$"))) continue;
                 if (violationIdx >= cells.Count) continue;
@@ -1132,8 +1219,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 var factors = new List<string>();
                 if (!string.IsNullOrEmpty(alt)) factors.Add(alt);
 
+                var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + row.lineIndex + 1,
+                    sectionStartLine + row.lineIndex + 1, "PlanComplexityTableRow", line);
+
                 items.Add(new PlanComplexityItem
                 {
+                    Provenance = ProjectionProvenance.Create("Plan", "Complexity", $"{violation}:{source.SourceBlockId}", source),
                     Area  = violation,
                     Level = ComplexityLevel.Medium,  // Deviations are typically medium complexity (explicitly justified)
                     Notes = why,
@@ -1146,7 +1237,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         return false;
     }
 
-    private static PlanComplexityItem? ParseComplexityItem(string heading, string body)
+    private static PlanComplexityItem? ParseComplexityItem(string heading, string body, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
         var area  = StripMarkdown(heading);
@@ -1185,6 +1276,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanComplexityItem
         {
+            Provenance = provenance,
             Area    = string.IsNullOrEmpty(area) ? "General" : area,
             Level   = level,
             Notes   = notesSb.Length > 0 ? notesSb.ToString().Trim() : null,
@@ -1193,7 +1285,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         };
     }
 
-    private static PlanComplexityItem? ParseInlineComplexity(string content)
+    private static PlanComplexityItem? ParseInlineComplexity(string content, ProjectionProvenance provenance)
     {
         var m = Regex.Match(content,
             @"^(.+?)\s*[:\-–—]\s*(Very High|High|Medium|Low)(?:\s*[:\-–—]\s*(.+))?$",
@@ -1201,6 +1293,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (!m.Success) return null;
         return new PlanComplexityItem
         {
+            Provenance = provenance,
             Area  = StripMarkdown(m.Groups[1].Value.Trim()),
             Level = ParseComplexityLevel(m.Groups[2].Value.Trim()),
             Notes = m.Groups[3].Success ? StripMarkdown(m.Groups[3].Value.Trim()) : null,
@@ -1222,6 +1315,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Complexity", pg.Title, pg.Provenance),
                 Area    = pg.Title,
                 Level   = InferComplexityLevelFromText(pg.Title + " " + pg.Description),
                 Notes   = string.IsNullOrEmpty(pg.Description) ? null : pg.Description,
@@ -1234,6 +1328,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Complexity", si.Title, si.Provenance),
                 Area    = si.Title,
                 Level   = InferComplexityLevelFromText(si.Title + " " + si.Description),
                 Notes   = string.IsNullOrEmpty(si.Description) ? null : si.Description,
@@ -1247,6 +1342,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Complexity", "External Integrations", externalDeps.Select(d => d.Provenance).ToArray()),
                 Area    = "External Integrations",
                 Level   = externalDeps.Count > 4 ? ComplexityLevel.High : ComplexityLevel.Medium,
                 Notes   = $"{externalDeps.Count} external integration{(externalDeps.Count != 1 ? "s" : "")}",
@@ -1260,6 +1356,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Complexity", "Risk Surface", highRisks.Select(r => r.Provenance).ToArray()),
                 Area    = "Risk Surface",
                 Level   = highRisks.Any(r => r.Severity == RiskSeverity.Critical)
                             ? ComplexityLevel.VeryHigh : ComplexityLevel.High,
@@ -1276,6 +1373,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Distributed Systems", SourceEvidence(sections, distributedKeywords)),
                 Area    = "Distributed Systems",
                 Level   = ComplexityLevel.High,
                 Notes   = "Plan involves distributed system design patterns",
@@ -1288,6 +1386,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Message Processing & Streaming", SourceEvidence(sections, messagingKeywords)),
                 Area    = "Message Processing & Streaming",
                 Level   = ComplexityLevel.High,
                 Notes   = "Plan uses message queuing or event streaming",
@@ -1300,6 +1399,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Data Storage & Persistence", SourceEvidence(sections, storageKeywords)),
                 Area    = "Data Storage & Persistence",
                 Level   = ComplexityLevel.Medium,
                 Notes   = "Plan includes data storage strategy",
@@ -1312,6 +1412,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Authentication & Authorization", SourceEvidence(sections, "managed identity", "azure ad", "oauth", "authentication")),
                 Area    = "Authentication & Authorization",
                 Level   = ComplexityLevel.Medium,
                 Notes   = "Plan includes identity and authentication strategy",
@@ -1324,6 +1425,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Checkpointing & State Management", SourceEvidence(sections, "checkpoint", "state", "resumable")),
                 Area    = "Checkpointing & State Management",
                 Level   = ComplexityLevel.High,
                 Notes   = "Plan requires checkpoint/state recovery logic",
@@ -1337,6 +1439,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             items.Add(new PlanComplexityItem
             {
+                Provenance = DerivedProjection("Data Migration / Schema Evolution", SourceEvidence(sections, migrationKeywords)),
                 Area    = "Data Migration / Schema Evolution",
                 Level   = ComplexityLevel.High,
                 Notes   = "Plan involves migration or schema evolution work",
@@ -1359,7 +1462,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         return ComplexityLevel.Low;
     }
 
-    private static void ParseDependenciesSection(string raw, List<PlanDependency> deps)
+    private static void ParseDependenciesSection(string raw, List<PlanDependency> deps, string documentFingerprint, int sectionStartLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         bool extCtx = false, intCtx = false;
@@ -1375,13 +1478,16 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             }
 
             if (tok.Kind != MarkdownTokenKind.BulletItem) continue;
+            var line = sectionStartLine + tok.LineIndex + 1;
+            var source = ProjectionProvenance.Source(documentFingerprint, line, line, "PlanDependency", tok.RawLine);
+            var provenance = ProjectionProvenance.Create("Plan", "Dependency", $"{tok.Content}:{line}", source);
             var dep = ParseDependencyLine(tok.Content, extCtx || !raw.Contains("Internal", StringComparison.OrdinalIgnoreCase),
-                scopeStated: extCtx || intCtx, declaredIn: "Dependencies section");
+                scopeStated: extCtx || intCtx, declaredIn: "Dependencies section", provenance: provenance);
             if (dep is not null) deps.Add(dep);
         }
     }
 
-    private static PlanDependency? ParseDependencyLine(string content, bool isExternal, bool scopeStated = false, string? declaredIn = null)
+    private static PlanDependency? ParseDependencyLine(string content, bool isExternal, bool scopeStated = false, string? declaredIn = null, ProjectionProvenance? provenance = null)
     {
         if (string.IsNullOrWhiteSpace(content)) return null;
         string name = content, version = null!, description = null!;
@@ -1397,6 +1503,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanDependency
         {
+            Provenance = provenance,
             Name = StripMarkdown(name),
             Version = version,
             Description = description,
@@ -1433,6 +1540,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
             var value = match.Groups[1].Value.Trim();
             if (string.IsNullOrWhiteSpace(value)) continue;
+            var sourceOffset = match.Groups[1].Index + match.Groups[1].Value.IndexOf(value, StringComparison.Ordinal);
+            var sourceLine = techContext.SourceStartLine is int firstLine ? firstLine + CountLineBreaks(raw, sourceOffset) : (int?)null;
+            var endLine = sourceLine is int start ? start + CountLineBreaks(value, value.Length) : (int?)null;
+            var source = techContext.SourceDocumentFingerprint is { } fingerprint && sourceLine is int line
+                ? ProjectionProvenance.Source(fingerprint, line, Math.Max(line, endLine ?? line), "PlanTechnicalContextDependencies", value)
+                : null;
 
             // A bulleted value declares one dependency per bullet ("- Name — purpose"); an inline value is a comma list.
             // Commas inside parentheses never split ("Metrics (Meter, Counter, Gauge)" is one dependency).
@@ -1447,12 +1560,28 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 var trimmed = item.Trim();
                 if (string.IsNullOrWhiteSpace(trimmed)) continue;
 
-                var dep = ParseDependencyFromTechnicalContextLine(trimmed);
+                var projection = source is null ? null : ProjectionProvenance.Create("Plan", "Dependency", $"{trimmed}:{source.SourceBlockId}", source);
+                var dep = ParseDependencyFromTechnicalContextLine(trimmed, projection);
                 if (dep is not null)
                 {
                     // Avoid duplicates (case-insensitive name match)
-                    if (!deps.Any(d => d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase)))
+                    var existingIndex = deps.FindIndex(d => d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase));
+                    if (existingIndex < 0)
                         deps.Add(dep);
+                    else if (deps[existingIndex].Provenance is { } existingProvenance && dep.Provenance is { } nextProvenance)
+                    {
+                        var existing = deps[existingIndex];
+                        deps[existingIndex] = new PlanDependency
+                        {
+                            Provenance = MergeProvenance("Plan", "Dependency", existing.Name, existingProvenance, nextProvenance),
+                            Name = existing.Name,
+                            Version = existing.Version,
+                            Description = existing.Description,
+                            IsExternal = existing.IsExternal,
+                            ScopeStated = existing.ScopeStated,
+                            DeclaredIn = existing.DeclaredIn,
+                        };
+                    }
                 }
             }
         }
@@ -1460,7 +1589,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         return deps;
     }
 
-    private static PlanDependency? ParseDependencyFromTechnicalContextLine(string content)
+    private static PlanDependency? ParseDependencyFromTechnicalContextLine(string content, ProjectionProvenance? provenance)
     {
         if (string.IsNullOrWhiteSpace(content)) return null;
 
@@ -1494,6 +1623,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanDependency
         {
+            Provenance = provenance,
             Name = name,
             Version = version,
             Description = description,
@@ -1540,17 +1670,18 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         // **Constraints**: ...
         // **Scale/Scope**: ...
 
-        ExtractConstraintField(raw, "Performance Goal", ConstraintType.PerformanceGoal, constraints);
-        ExtractConstraintField(raw, "Constraint", ConstraintType.Constraint, constraints);
-        ExtractConstraintField(raw, "Scale/Scope", ConstraintType.ScaleScope, constraints);
-        ExtractConstraintField(raw, "Scale", ConstraintType.ScaleScope, constraints);
-        ExtractConstraintField(raw, "Scope", ConstraintType.ScaleScope, constraints);
+        ExtractConstraintField(techSection, "Performance Goal", ConstraintType.PerformanceGoal, constraints);
+        ExtractConstraintField(techSection, "Constraint", ConstraintType.Constraint, constraints);
+        ExtractConstraintField(techSection, "Scale/Scope", ConstraintType.ScaleScope, constraints);
+        ExtractConstraintField(techSection, "Scale", ConstraintType.ScaleScope, constraints);
+        ExtractConstraintField(techSection, "Scope", ConstraintType.ScaleScope, constraints);
 
         return constraints;
     }
 
-    private static void ExtractConstraintField(string raw, string fieldKeyword, ConstraintType type, List<PlanConstraint> constraints)
+    private static void ExtractConstraintField(PlanSection section, string fieldKeyword, ConstraintType type, List<PlanConstraint> constraints)
     {
+        var raw = section.RawContent;
         // Match **fieldKeyword**: value pattern
         var pattern = $@"\*\*{Regex.Escape(fieldKeyword)}s?\*\*\s*:\s*(.+?)(?=\n\*\*|$)";
         var match = Regex.Match(raw, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -1559,6 +1690,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         var value = match.Groups[1].Value.Trim();
         if (string.IsNullOrWhiteSpace(value)) return;
+        var sourceOffset = match.Groups[1].Index + match.Groups[1].Value.IndexOf(value, StringComparison.Ordinal);
+        var sourceLine = section.SourceStartLine is int firstLine ? firstLine + CountLineBreaks(raw, sourceOffset) : (int?)null;
+        var endLine = sourceLine is int start ? start + CountLineBreaks(value, value.Length) : (int?)null;
+        var source = section.SourceDocumentFingerprint is { } fingerprint && sourceLine is int line
+            ? ProjectionProvenance.Source(fingerprint, line, Math.Max(line, endLine ?? line), "PlanTechnicalContextConstraint", value)
+            : null;
 
         // Split by semicolon for explicit items (e.g., "Item 1; Item 2")
         // but be careful to preserve content inside parentheses (references)
@@ -1569,12 +1706,26 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             var trimmed = item.Trim();
             if (string.IsNullOrEmpty(trimmed)) continue;
 
-            var constraint = ParseConstraintFromTechnicalContextField(trimmed, type);
+            var projection = source is null ? null : ProjectionProvenance.Create("Plan", "Constraint", $"{trimmed}:{source.SourceBlockId}", source);
+            var constraint = ParseConstraintFromTechnicalContextField(trimmed, type, projection);
             if (constraint is not null)
             {
                 // Avoid duplicates (case-insensitive title match)
-                if (!constraints.Any(c => c.Title.Equals(constraint.Title, StringComparison.OrdinalIgnoreCase)))
+                var existingIndex = constraints.FindIndex(c => c.Title.Equals(constraint.Title, StringComparison.OrdinalIgnoreCase));
+                if (existingIndex < 0)
                     constraints.Add(constraint);
+                else if (constraints[existingIndex].Provenance is { } existingProvenance && constraint.Provenance is { } nextProvenance)
+                {
+                    var existing = constraints[existingIndex];
+                    constraints[existingIndex] = new PlanConstraint
+                    {
+                        Provenance = MergeProvenance("Plan", "Constraint", existing.Title, existingProvenance, nextProvenance),
+                        Title = existing.Title,
+                        Description = existing.Description,
+                        ConstraintType = existing.ConstraintType,
+                        RawText = existing.RawText,
+                    };
+                }
             }
         }
     }
@@ -1605,7 +1756,43 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         return items;
     }
 
-    private static PlanConstraint? ParseConstraintFromTechnicalContextField(string content, ConstraintType type)
+    private static ProjectionProvenance MergeProvenance(string role, string kind, string key, params ProjectionProvenance[] projections)
+    {
+        var sources = projections.SelectMany(p => p.Sources).DistinctBy(s => s.SourceBlockId).ToArray();
+        return ProjectionProvenance.Create(role, kind, key, sources);
+    }
+
+    private static int CountLineBreaks(string value, int endExclusive)
+    {
+        var count = 0;
+        for (var index = 0; index < Math.Min(Math.Max(endExclusive, 0), value.Length); index++)
+            if (value[index] == '\n') count++;
+        return count;
+    }
+
+    private static ProjectionProvenance DerivedProjection(string category, string key, params ProjectionProvenance?[] contributors) =>
+        ProjectionProvenance.Create("Plan", $"Derived{category}", key,
+            contributors.Where(p => p is not null).SelectMany(p => p!.Sources).DistinctBy(s => s.SourceBlockId).ToArray());
+
+    private static ProjectionProvenance DerivedProjection(string key, IEnumerable<SourceRangeProvenance> sources) =>
+        ProjectionProvenance.Create("Plan", "DerivedComplexity", key, sources.DistinctBy(s => s.SourceBlockId).ToArray());
+
+    private static IReadOnlyList<SourceRangeProvenance> SourceEvidence(IEnumerable<PlanSection> sections, params string[] terms)
+    {
+        var evidence = new List<SourceRangeProvenance>();
+        foreach (var section in sections)
+        {
+            if (section.SourceDocumentFingerprint is not { } fingerprint || section.SourceStartLine is not int firstLine) continue;
+            foreach (var token in MarkdownTokenizer.Tokenize(section.RawContent)
+                .Where(t => t.Kind != MarkdownTokenKind.Blank && terms.Any(term =>
+                    t.RawLine.Contains(term, StringComparison.OrdinalIgnoreCase))))
+                evidence.Add(ProjectionProvenance.Source(fingerprint, firstLine + token.LineIndex,
+                    firstLine + token.LineIndex, "PlanDerivedComplexityEvidence", token.RawLine));
+        }
+        return evidence;
+    }
+
+    private static PlanConstraint? ParseConstraintFromTechnicalContextField(string content, ConstraintType type, ProjectionProvenance? provenance)
     {
         if (string.IsNullOrWhiteSpace(content)) return null;
 
@@ -1619,6 +1806,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanConstraint
         {
+            Provenance = provenance,
             Title = title,
             Description = description,
             ConstraintType = type,
@@ -1626,30 +1814,40 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         };
     }
 
-    private static void ParseMilestonesSection(string raw, List<PlanMilestone> milestones)
+    private static void ParseMilestonesSection(string raw, List<PlanMilestone> milestones, string documentFingerprint, int sectionStartLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
+        var itemStartLine = 0;
+        var itemEndLine = 0;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentH3 is null) return;
-            var ms = ParseMilestone(currentH3, string.Join("\n", itemLines));
+            var body = string.Join("\n", itemLines);
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + itemStartLine + 1,
+                sectionStartLine + Math.Max(itemStartLine, itemEndLine) + 1, "PlanMilestone", currentH3 + "\n" + body);
+            var ms = ParseMilestone(currentH3, body,
+                ProjectionProvenance.Create("Plan", "Milestone", $"{currentH3}:{source.SourceBlockId}", source));
             if (ms is not null) milestones.Add(ms);
-            itemLines.Clear(); currentH3 = null;
+            itemLines.Clear(); currentH3 = null; itemEndLine = 0;
         }
 
         foreach (var tok in tokens)
         {
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
-            { Flush(); currentH3 = tok.Content; continue; }
-            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            { Flush(); currentH3 = tok.Content; itemStartLine = tok.LineIndex; itemEndLine = tok.LineIndex; continue; }
+            if (currentH3 is not null)
+            {
+                itemLines.Add(tok.RawLine);
+                if (tok.Kind != MarkdownTokenKind.Blank) itemEndLine = tok.LineIndex;
+            }
         }
         Flush();
     }
 
-    private static PlanMilestone? ParseMilestone(string heading, string body)
+    private static PlanMilestone? ParseMilestone(string heading, string body, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
         string? targetDate = null;
@@ -1683,6 +1881,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanMilestone
         {
+            Provenance = provenance,
             Title = StripMarkdown(heading),
             TargetDate = targetDate,
             Description = descSb.Length > 0 ? descSb.ToString().Trim() : null,
@@ -1695,21 +1894,28 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static void ParseConstitutionCheckSection(
         string raw,
         List<PlanConstitutionCheckItem> checkItems,
-        List<PlanGate> gates)
+        List<PlanGate> gates,
+        string documentFingerprint,
+        int sectionStartLine)
     {
-        ParseGatesTable(raw, gates);
+        ParseGatesTable(raw, gates, documentFingerprint, sectionStartLine);
 
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
+        int? currentStartLine = null;
+        int? currentEndLine = null;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentH3 is null) return;
-            var item = ParseConstitutionCheckItem(currentH3, string.Join("\n", itemLines));
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + currentStartLine!.Value + 1,
+                sectionStartLine + currentEndLine!.Value + 1, "PlanConstitutionCheck", currentH3 + "\n" + string.Join("\n", itemLines));
+            var item = ParseConstitutionCheckItem(currentH3, string.Join("\n", itemLines),
+                ProjectionProvenance.Create("Plan", "ConstitutionCheck", $"{currentH3}:{source.SourceBlockId}", source));
             if (item is not null) checkItems.Add(item);
             itemLines.Clear();
-            currentH3 = null;
+            currentH3 = null; currentStartLine = null; currentEndLine = null;
         }
 
         bool inTable = false;
@@ -1722,7 +1928,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             if (inTable) continue;
 
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel >= 3)
-            { Flush(); currentH3 = tok.Content; continue; }
+            { Flush(); currentH3 = tok.Content; currentStartLine = tok.LineIndex; currentEndLine = tok.LineIndex; continue; }
             if (currentH3 is null && tok.Kind == MarkdownTokenKind.BulletItem
                 && Regex.Match(tok.Content, @"^\[([ xX])\]\s*(.+)$") is { Success: true } check)
             {
@@ -1730,8 +1936,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 var text = check.Groups[2].Value.Trim();
                 var colon = StripMarkdown(text).IndexOf(':');
                 var plain = StripMarkdown(text);
+                var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + tok.LineIndex + 1,
+                    sectionStartLine + tok.LineIndex + 1, "PlanConstitutionCheck", tok.RawLine);
                 checkItems.Add(new PlanConstitutionCheckItem
                 {
+                    Provenance = ProjectionProvenance.Create("Plan", "ConstitutionCheck", $"{plain}:{source.SourceBlockId}", source),
                     RuleId = ExtractRuleId(colon > 0 ? plain[..colon] : plain) ?? string.Empty,
                     Title = colon > 0 ? plain[..colon].Trim() : plain,
                     Notes = colon > 0 ? plain[(colon + 1)..].Trim() : null,
@@ -1740,12 +1949,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 });
                 continue;
             }
-            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            if (currentH3 is not null) { itemLines.Add(tok.RawLine); currentEndLine = tok.LineIndex; }
         }
         Flush();
     }
 
-    private static void ParseGatesTable(string raw, List<PlanGate> gates)
+    private static void ParseGatesTable(string raw, List<PlanGate> gates, string documentFingerprint, int sectionStartLine)
     {
         var lines = raw.Split('\n');
         List<string>? headers = null;
@@ -1753,8 +1962,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         // Column indices
         int gateIdx = -1, ruleIdx = -1, statusIdx = -1, evidenceIdx = -1, notesIdx = -1;
 
-        foreach (var line in lines)
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
+            var line = lines[lineIndex];
             if (!TableRowRe.IsMatch(line)) continue;
             var cells = SplitCells(line);
             if (cells.Count == 0) continue;
@@ -1793,9 +2003,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
             var status = ParseGateStatus(statusText);
             var isJustifiedDeviation = status == PlanGateStatus.Warning && statusText.ToUpperInvariant().Contains("JUSTIFIED");
+            var source = ProjectionProvenance.Source(documentFingerprint, sectionStartLine + lineIndex + 1,
+                sectionStartLine + lineIndex + 1, "PlanGateTableRow", line);
 
             gates.Add(new PlanGate
             {
+                Provenance = ProjectionProvenance.Create("Plan", "Gate", $"{gateText}:{source.SourceBlockId}", source),
                 Gate      = gateText,
                 RuleId    = ruleId,
                 Principle = StripMarkdown(ruleText),
@@ -1860,7 +2073,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         }
     }
 
-    private static PlanConstitutionCheckItem? ParseConstitutionCheckItem(string heading, string body)
+    private static PlanConstitutionCheckItem? ParseConstitutionCheckItem(string heading, string body, ProjectionProvenance provenance)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
@@ -1886,6 +2099,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanConstitutionCheckItem
         {
+            Provenance = provenance,
             RuleId  = ruleId,
             Title   = string.IsNullOrEmpty(title) ? ruleId : title,
             Status  = status,
@@ -1897,11 +2111,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     // ── Implementation Phases ────────────────────────────────────────────────
 
     private static void ParseImplementationPhasesSection(
-        string raw, List<PlanImplementationPhase> phases, string sectionHeading, int? sectionFirstLine)
+        string raw, List<PlanImplementationPhase> phases, string sectionHeading, int? sectionFirstLine, string documentFingerprint)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
         int? currentLine = null;
+        int? currentEndLine = null;
         var itemLines = new List<string>();
 
         void Flush()
@@ -1909,9 +2124,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             if (currentH3 is null) return;
             var unnumbered = phases.Count(p => p.IdentityKind == PlanPhaseIdentityKind.Unnumbered);
             var phase = ParsePhase(currentH3, string.Join("\n", itemLines),
-                new PhaseSource(sectionHeading, phases.Count, currentLine, unnumbered + 1));
+                new PhaseSource(sectionHeading, phases.Count, currentLine, currentEndLine, unnumbered + 1, documentFingerprint));
             if (phase is not null) phases.Add(phase);
-            itemLines.Clear(); currentH3 = null;
+            itemLines.Clear(); currentH3 = null; currentEndLine = null;
         }
 
         foreach (var tok in tokens)
@@ -1922,15 +2137,21 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 Flush();
                 currentH3 = tok.Content;
                 currentLine = sectionFirstLine is int first ? first + tok.LineIndex + 1 : null;
+                currentEndLine = currentLine;
                 continue;
             }
-            if (currentH3 is not null) itemLines.Add(tok.RawLine);
+            if (currentH3 is not null)
+            {
+                itemLines.Add(tok.RawLine);
+                if (tok.Kind != MarkdownTokenKind.Blank)
+                    currentEndLine = sectionFirstLine is int first ? first + tok.LineIndex + 1 : currentEndLine;
+            }
         }
         Flush();
         SortPhases(phases);
     }
 
-    private readonly record struct PhaseSource(string? Section, int Order, int? Line, int UnnumberedOrdinal);
+    private readonly record struct PhaseSource(string? Section, int Order, int? Line, int? EndLine, int UnnumberedOrdinal, string DocumentFingerprint);
 
     /// <summary>
     /// Deterministic, stable phase order: numbered phases by number (1, 2, 10 — never lexical),
@@ -2093,6 +2314,10 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanImplementationPhase
         {
+            Provenance = source.Line is int startLine && source.EndLine is int endLine
+                ? ProjectionProvenance.Create("Plan", "Phase", $"{source.Order}:{heading}",
+                    ProjectionProvenance.Source(source.DocumentFingerprint, startLine, Math.Max(startLine, endLine), "PlanPhase", heading + "\n" + body))
+                : null,
             PhaseNumber   = phaseNum,
             IdentityKind  = kind,
             PhaseLabel    = phaseLabel,
@@ -2133,8 +2358,12 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                             var title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', '—', ' ').Trim());
                             if (string.IsNullOrEmpty(title)) title = $"Phase {phaseNum}";
 
+                            var source = section.SourceDocumentFingerprint is { } fingerprint && section.SourceStartLine is int firstLine
+                                ? ProjectionProvenance.Source(fingerprint, firstLine + tok.LineIndex, firstLine + tok.LineIndex, "PlanFallbackPhase", tok.RawLine)
+                                : null;
                             phases.Add(new PlanImplementationPhase
                             {
+                                Provenance = source is null ? null : ProjectionProvenance.Create("Plan", "Phase", $"{phaseNum}:{source.SourceBlockId}", source),
                                 PhaseNumber = phaseNum,
                                 IdentityKind = PlanPhaseIdentityKind.Numbered,
                                 PhaseKey = $"Phase{phaseNum}",
@@ -2157,7 +2386,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     // ── Testing ──────────────────────────────────────────────────────────────
 
-    private static PlanTestingInfo ParseTestingSection(string raw)
+    private static PlanTestingInfo ParseTestingSection(string raw, ProjectionProvenance provenance)
     {
         var frameworks  = new List<string>();
         var testFolders = new List<string>();
@@ -2226,6 +2455,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanTestingInfo
         {
+            Provenance = provenance,
             Frameworks  = frameworks,
             TestFolders = testFolders.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             TestClasses = testClasses.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
@@ -2238,6 +2468,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     {
         var frameworks  = new List<string>();
         var blocks      = new List<PlanSectionBlock>();
+        var contributingSources = new List<SourceRangeProvenance>();
 
         // Extract frameworks from Technical Context "**Testing**:" field
         var techContext = sections.FirstOrDefault(s => s.SectionType == PlanSectionType.TechnicalContext);
@@ -2249,6 +2480,15 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 var para = block.Paragraph ?? "";
                 AddTestingFrameworksFromText(para, frameworks);
             }
+            if (techContext.SourceDocumentFingerprint is { } fingerprint && techContext.SourceStartLine is int firstLine)
+            {
+                contributingSources.AddRange(MarkdownTokenizer.Tokenize(techContext.RawContent)
+                    .Where(t => t.Kind != MarkdownTokenKind.Blank &&
+                        (t.RawLine.Contains("test", StringComparison.OrdinalIgnoreCase) ||
+                         TestingFrameworkPatterns.Any(p => p.Pattern.IsMatch(t.RawLine))))
+                    .Select(t => ProjectionProvenance.Source(fingerprint, firstLine + t.LineIndex,
+                        firstLine + t.LineIndex, "PlanTestingEvidence", t.RawLine)));
+            }
         }
 
         // Also extract from implementation steps 8 and 9
@@ -2257,6 +2497,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         if (unitTestPhase is not null)
         {
+            if (unitTestPhase.Provenance is not null) contributingSources.AddRange(unitTestPhase.Provenance.Sources);
             foreach (var block in unitTestPhase.Blocks)
             {
                 var text = block.Paragraph ?? "";
@@ -2278,6 +2519,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         if (integrationTestPhase is not null)
         {
+            if (integrationTestPhase.Provenance is not null) contributingSources.AddRange(integrationTestPhase.Provenance.Sources);
             foreach (var block in integrationTestPhase.Blocks)
             {
                 var text = block.Paragraph ?? "";
@@ -2301,8 +2543,11 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         if (frameworks.Count == 0 && blocks.Count == 0)
             return null;
 
+        var sources = contributingSources.DistinctBy(s => s.SourceBlockId).ToArray();
+
         return new PlanTestingInfo
         {
+            Provenance = ProjectionProvenance.Create("Plan", "DerivedTestingStrategy", "FallbackTesting", sources),
             Frameworks  = frameworks,
             TestFolders = [],
             TestClasses = [],

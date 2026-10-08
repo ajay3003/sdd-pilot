@@ -131,6 +131,7 @@
     <Compile Include="../../frontend/BirkNext.Web/Services/IPlanAnalysisService.cs" Link="DocumentClassification/IPlanAnalysisService.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/MarkdownToken.cs" Link="DocumentClassification/MarkdownToken.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/MarkdownSourceNote.cs" Link="DocumentClassification/MarkdownSourceNote.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/SourceProjectionProvenance.cs" Link="DocumentClassification/SourceProjectionProvenance.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/SpecExplorerModels.cs" Link="DocumentClassification/SpecExplorerModels.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/SpecificationSemanticModel.cs" Link="DocumentClassification/SpecificationSemanticModel.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/TaskExplorerModels.cs" Link="DocumentClassification/TaskExplorerModels.cs" />

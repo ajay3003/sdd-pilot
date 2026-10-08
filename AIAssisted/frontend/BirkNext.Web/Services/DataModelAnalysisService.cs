@@ -34,6 +34,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var             currentEntityConstraints  = new List<DataConstraint>();
         var             currentTraceIds           = new List<string>();
         string?         currentEnumName           = null;
+        var             currentEnumStartLine       = 0;
+        var             currentEnumEndLine         = 0;
         string?         currentEnumDesc           = null;
         var             currentEnumValues         = new List<string>();
         var             currentSection            = string.Empty;
@@ -49,12 +51,19 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var             unsupportedRelationshipNotation = false;
         var             unsupportedConstraintNotation = false;
         var             currentEntityKind           = DataStructureKind.Unclassified;
+        var documentFingerprint = MarkdownTokenizer.DocumentFingerprint(markdown);
+        var currentSourceLine = 0;
+        var currentEntityStartLine = 0;
+        var currentEntityEndLine = 0;
 
         void FlushEntity()
         {
             if (currentEntityName is null) return;
+            var source = ProjectionProvenance.Source(documentFingerprint, currentEntityStartLine + 1,
+                Math.Max(currentEntityStartLine, currentEntityEndLine) + 1, "DataEntity", currentEntityName);
             entities.Add(new DataEntity
             {
+                Provenance      = ProjectionProvenance.Create("Data Model", "Entity", currentEntityName, source),
                 Name            = currentEntityName,
                 IsTable         = currentEntityIsTable,
                 Kind            = currentEntityIsTable ? DataStructureKind.Table :
@@ -68,6 +77,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             globalIndexes.AddRange(currentEntityIndexes);
             globalConstraints.AddRange(currentEntityConstraints);
             currentEntityName       = null;
+            currentEntityEndLine    = 0;
             currentEntityIsTable    = false;
             currentEntityDesc       = null;
             currentColumns.Clear();
@@ -82,13 +92,17 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         void FlushEnum()
         {
             if (currentEnumName is null) return;
+            var source = ProjectionProvenance.Source(documentFingerprint, currentEnumStartLine + 1,
+                Math.Max(currentEnumStartLine, currentEnumEndLine) + 1, "DataEnum", currentEnumName);
             enums.Add(new DataEnum
             {
+                Provenance  = ProjectionProvenance.Create("Data Model", "Enum", currentEnumName, source),
                 Name        = currentEnumName,
                 Values      = currentEnumValues.Select(v => NormalizeStructuredName(v)).ToList(),
                 Description = string.IsNullOrWhiteSpace(currentEnumDesc) ? null : currentEnumDesc.Trim(),
             });
             currentEnumName   = null;
+            currentEnumEndLine = 0;
             currentEnumDesc   = null;
             currentEnumValues.Clear();
             currentSection = string.Empty;
@@ -98,6 +112,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         foreach (var token in tokens)
         {
+            currentSourceLine = token.LineIndex;
             // ── Skip blank lines ───────────────────────────────────────────────
 
             if (token.Kind == MarkdownTokenKind.Blank)
@@ -123,6 +138,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     if (h2.StartsWith("Entity:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEntityName    = NormalizeStructuredName(h2[7..].Trim());
+                        currentEntityStartLine = token.LineIndex;
+                        currentEntityEndLine = token.LineIndex;
                         currentEntityIsTable = false;
                         currentEntityKind   = DataStructureKind.Unclassified;
                         currentSection       = string.Empty;
@@ -131,6 +148,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     else if (h2.StartsWith("Table:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEntityName    = NormalizeStructuredName(h2[6..].Trim());
+                        currentEntityStartLine = token.LineIndex;
+                        currentEntityEndLine = token.LineIndex;
                         currentEntityIsTable = true;
                         currentEntityKind   = DataStructureKind.Table;
                         currentSection       = string.Empty;
@@ -139,6 +158,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     else if (h2.StartsWith("Enum:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEnumName = NormalizeStructuredName(h2[5..].Trim());
+                        currentEnumStartLine = token.LineIndex;
+                        currentEnumEndLine = token.LineIndex;
                         currentSection  = "enum";
                         currentEntitySectionKind = string.Empty;
                     }
@@ -232,6 +253,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
                         var (entityName, tableName) = ExtractEntityAndTableName(h3);
                         currentEntityName    = NormalizeStructuredName(entityName);
+                        currentEntityStartLine = token.LineIndex;
+                        currentEntityEndLine = token.LineIndex;
                         currentEntityIsTable = !string.IsNullOrEmpty(tableName);
                         currentEntityKind   = currentEntityIsTable ? DataStructureKind.Table : InferDataStructureKind(entityName);
 
@@ -274,6 +297,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         FlushEntity();
                         FlushEnum();
                         currentEntityName    = NormalizeStructuredName(StripNumericPrefix(h3));
+                        currentEntityStartLine = token.LineIndex;
+                        currentEntityEndLine = token.LineIndex;
                         currentEntityIsTable = false;
                         currentEntityKind   = DataStructureKind.Unclassified;
                         currentSection       = string.Empty;
@@ -287,6 +312,9 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 // h4+ — silently ignored (original does the same)
                 continue;
             }
+
+            if (currentEntityName is not null) currentEntityEndLine = token.LineIndex;
+            if (currentEnumName is not null) currentEnumEndLine = token.LineIndex;
 
             // ── Bold property labels (**Table**: Name, **Indexes**:, etc.) ──────
             //    Intercept before section dispatch so labels work in any context.
@@ -325,7 +353,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                 // If there's inline content after the label, parse it immediately
                                 if (!string.IsNullOrWhiteSpace(val))
                                 {
-                                    ParseInlineIndexSyntax(val, currentEntityName, currentEntityIndexes);
+                                    var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataIndex", token.RawLine);
+                                    ParseInlineIndexSyntax(val, currentEntityName, source, currentEntityIndexes);
                                 }
                             }
                             continue;
@@ -408,7 +437,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     if (token.Kind == MarkdownTokenKind.TableRow &&
                         !IsColumnHeaderRow(token.TableCells!))
                     {
-                        var col = ParseColumnRow(token.TableCells!);
+                        var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataColumn", token.RawLine);
+                        var col = ParseColumnRow(token.TableCells!, source);
                         if (col is not null)
                         {
                             currentColumns.Add(col);
@@ -420,6 +450,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                 if (fkM.Success)
                                     currentEntityRelations.Add(new DataRelationship
                                     {
+                                        Provenance = ProjectionProvenance.Create("Data Model", "Relationship", $"{currentEntityName}.{col.Name}->{fkM.Groups[1].Value.Trim()}", source),
                                         Source           = $"{currentEntityName}.{col.Name}",
                                         Target           = NormalizeStructuredName(fkM.Groups[1].Value.Trim()),
                                         RelationshipType = "FK",
@@ -444,7 +475,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 case "relationships":
                     if (token.Kind == MarkdownTokenKind.BulletItem)
                     {
-                        var rel = ParseRelationshipLine(token.Content, currentEntityName);
+                        var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataRelationship", token.RawLine);
+                        var rel = ParseRelationshipLine(token.Content, currentEntityName, source);
                         if (rel is not null)
                         {
                             if (currentEntityName is not null)
@@ -462,7 +494,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 case "indexes":
                     if (token.Kind == MarkdownTokenKind.BulletItem)
                     {
-                        var idx = ParseIndexLine(token.Content, currentEntityName ?? string.Empty);
+                        var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataIndex", token.RawLine);
+                        var idx = ParseIndexLine(token.Content, currentEntityName ?? string.Empty, source);
                         if (idx is not null)
                         {
                             if (currentEntityName is not null)
@@ -479,7 +512,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     {
                         // Support inline semicolon-separated index syntax
                         // Example: "IndexName (unique, ...); AnotherIndex (...); ..."
-                        ParseInlineIndexSyntax(token.Content, currentEntityName ?? string.Empty,
+                        var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataIndex", token.RawLine);
+                        ParseInlineIndexSyntax(token.Content, currentEntityName ?? string.Empty, source,
                             currentEntityName is not null ? currentEntityIndexes : globalIndexes);
                     }
                     break;
@@ -487,7 +521,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 case "constraints":
                     if (token.Kind == MarkdownTokenKind.BulletItem)
                     {
-                        var con = ParseConstraintLine(token.Content, currentEntityName ?? string.Empty);
+                        var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataConstraint", token.RawLine);
+                        var con = ParseConstraintLine(token.Content, currentEntityName ?? string.Empty, source);
                         if (con is not null)
                         {
                             if (currentEntityName is not null)
@@ -594,7 +629,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         return hasNameCol && (hasTypeCol || hasDescCol);
     }
 
-    private static DataColumn? ParseColumnRow(IReadOnlyList<string> cells)
+    private static DataColumn? ParseColumnRow(IReadOnlyList<string> cells, SourceRangeProvenance source)
     {
         if (cells.Count < 2) return null;
 
@@ -622,6 +657,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         return new DataColumn
         {
+            Provenance   = ProjectionProvenance.Create("Data Model", "Field", name, source),
             Name         = name,
             Type         = type,
             Nullable     = nullable,
@@ -632,7 +668,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         };
     }
 
-    private static DataRelationship? ParseRelationshipLine(string text, string? defaultEntity)
+    private static DataRelationship? ParseRelationshipLine(string text, string? defaultEntity, SourceRangeProvenance provenance)
     {
         var arrowIdx = text.IndexOf("->", StringComparison.Ordinal);
         if (arrowIdx < 0) return null;
@@ -661,13 +697,14 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         return new DataRelationship
         {
+            Provenance       = ProjectionProvenance.Create("Data Model", "Relationship", $"{provenance.SourceBlockId}", provenance),
             Source           = source,
             Target           = target,
             RelationshipType = relType,
         };
     }
 
-    private static DataIndex? ParseIndexLine(string text, string entityName)
+    private static DataIndex? ParseIndexLine(string text, string entityName, SourceRangeProvenance source)
     {
         // Strip backtick quoting from index names like `IX_Person_EksternId`
         text = NormalizeStructuredName(text).Trim();
@@ -721,6 +758,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         return new DataIndex
         {
+            Provenance = ProjectionProvenance.Create("Data Model", "Index", $"{entityName}:{name}", source),
             Name       = name,
             EntityName = entityName,
             Columns    = cols,
@@ -728,7 +766,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         };
     }
 
-    private static void ParseInlineIndexSyntax(string text, string entityName, List<DataIndex> indexList)
+    private static void ParseInlineIndexSyntax(string text, string entityName, SourceRangeProvenance source, List<DataIndex> indexList)
     {
         // Parse semicolon-separated inline index definitions
         // Example: "`BirkHendelsesId` (unique, for idempotency); `BarnId` (for timeline queries); ..."
@@ -743,7 +781,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
             // Each segment should contain an index name (possibly in backticks)
             // Try to parse as a complete index definition
-            var idx = ParseIndexLine(segment, entityName);
+            var idx = ParseIndexLine(segment, entityName, source);
             if (idx is not null)
             {
                 indexList.Add(idx);
@@ -817,12 +855,12 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         return candidates.Count > 0 ? candidates.Min() : -1;
     }
 
-    private static DataConstraint? ParseConstraintLine(string text, string entityName)
+    private static DataConstraint? ParseConstraintLine(string text, string entityName, SourceRangeProvenance source)
     {
         // "FK_name: definition" or "PK_name: definition"
         var colonIdx = text.IndexOf(':');
         if (colonIdx < 0)
-            return new DataConstraint { Name = NormalizeStructuredName(text), EntityName = entityName, ConstraintType = "CK" };
+            return new DataConstraint { Provenance = ProjectionProvenance.Create("Data Model", "Constraint", $"{entityName}:{text}", source), Name = NormalizeStructuredName(text), EntityName = entityName, ConstraintType = "CK" };
 
         var name       = NormalizeStructuredName(text[..colonIdx].Trim());
         var definition = text[(colonIdx + 1)..].Trim();
@@ -836,6 +874,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         return new DataConstraint
         {
+            Provenance       = ProjectionProvenance.Create("Data Model", "Constraint", $"{entityName}:{name}", source),
             Name           = name,
             EntityName     = entityName,
             ConstraintType = constraintType,

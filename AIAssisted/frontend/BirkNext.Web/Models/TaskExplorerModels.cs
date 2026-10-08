@@ -25,6 +25,7 @@ public enum TaskTableType
 
 public sealed class TaskNode
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string Id { get; } = Guid.NewGuid().ToString("N")[..10];
     public required string Title { get; init; }
     public required TaskNodeType NodeType { get; init; }

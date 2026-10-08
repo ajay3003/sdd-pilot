@@ -13,6 +13,51 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class SpecExplorerServiceTests
 {
     [Fact]
+    public void UnmappedListAndTableBlocksRemainAvailableAsFullTextSourceNotes()
+    {
+        const string markdown = "# Spec\n\n## Notes\n- prose item\n1. ordered prose\n| Column | Value |\n| --- | --- |\n| A | B |\n";
+        var notes = MarkdownTokenizer.FindUnrepresentedBlocks(markdown, new object());
+
+        notes.Select(note => note.Text).Should().Contain(["- prose item", "1. ordered prose", "| Column | Value |", "| A | B |"]);
+        notes.Should().OnlyContain(note => note.StartLine == note.EndLine && note.StartLine > 0);
+    }
+
+    [Fact]
+    public void StructuredItems_RetainDeterministicConstructionTimeProvenance()
+    {
+        const string markdown = "# Spec\n## Requirements\n- FR-001: same text\n- FR-001: same text\n## Acceptance Scenarios\n1. Given input When handled Then result\n## Clarifications\n- Q: Why? -> A: Because.\n## Requirements\n- FR-999: final item\n";
+        var first = SpecExplorerService.Parse(markdown);
+        var second = SpecExplorerService.Parse(markdown);
+        var firstNodes = AllDescendants(first).Where(n => n.Provenance is not null).ToList();
+        var secondById = AllDescendants(second).Where(n => n.Provenance is not null)
+            .ToDictionary(n => n.Provenance!.ProjectionId);
+
+        var requirements = firstNodes.Where(n => n.NodeType == SpecNodeType.Requirement).ToList();
+        requirements.Should().HaveCount(3);
+        requirements.Select(n => n.Provenance!.Sources.Single().SourceBlockId).Should().OnlyHaveUniqueItems();
+        requirements[0].Provenance!.Sources.Single().StartLine.Should().Be(3);
+        requirements[1].Provenance!.Sources.Single().StartLine.Should().Be(4);
+        requirements[2].Provenance!.Sources.Single().StartLine.Should().Be(10);
+        requirements[0].Provenance.ProjectionId.Should().NotBe(requirements[1].Provenance.ProjectionId);
+        firstNodes.Where(n => n.NodeType is SpecNodeType.BddScenario or SpecNodeType.QaPair or SpecNodeType.Clarification)
+            .Should().NotBeEmpty().And.OnlyContain(n => n.Provenance!.Sources.Count > 0);
+        firstNodes.Should().OnlyContain(n => secondById.ContainsKey(n.Provenance!.ProjectionId),
+            "ProjectionIds must survive the Explorer tree construction deterministically");
+    }
+
+    [Fact]
+    public void RequirementAfterAcceptanceScenarios_IsNotSwallowedByScenarioProse()
+    {
+        const string markdown = "## Acceptance Scenarios\n- Scenario: the scenario text\n  Given an input\n  When processed\n  Then it succeeds\n- REQ-999: final structured requirement\n";
+
+        var requirement = AllDescendants(SpecExplorerService.Parse(markdown))
+            .Single(n => n.NodeType == SpecNodeType.Requirement && n.SpecItemId == "REQ-999");
+
+        requirement.Provenance.Should().NotBeNull();
+        requirement.Provenance!.Sources.Should().ContainSingle().Which.StartLine.Should().Be(6);
+    }
+
+    [Fact]
     public void FunctionalRequirements_ExtractsExactly33ExplicitFrs()
     {
         var tree = SpecExplorerService.Parse(ReadPersonSpec());

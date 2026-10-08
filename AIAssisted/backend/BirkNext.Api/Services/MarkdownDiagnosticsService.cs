@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using System.Reflection;
 using BirkNext.MarkdownDiagnostics;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
@@ -174,49 +174,51 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
     private static ExplorerCoverageDocument AnalyzeCoverage(string role, string displayName, string text, bool includePreview = true)
     {
         var parsed = ParseWithProductionExplorer(role, text);
-        var projection = JsonSerializer.Serialize(parsed);
+        var projections = CollectProjectionProvenance(parsed);
         var sourceNotes = parsed.GetType().GetProperty("UnmappedSourceBlocks")?.GetValue(parsed) as IEnumerable<MarkdownSourceNote>
             ?? [];
         var noteLines = sourceNotes.ToDictionary(note => (note.StartLine, note.Text.Trim()));
         var tokens = MarkdownTokenizer.Tokenize(text);
         var artifactFingerprint = MarkdownTokenizer.DocumentFingerprint(text);
         var blocks = new List<ExplorerCoverageBlock>();
-        var serializedOccurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var token in tokens.Where(t => t.Kind != MarkdownTokenKind.Blank))
         {
+            var isFenceDelimiter = token.Kind is MarkdownTokenKind.FencedCodeStart or MarkdownTokenKind.FencedCodeEnd;
+            var isUnmodeledFenceBody = token.Kind == MarkdownTokenKind.FencedCodeLine &&
+                role is "Tasks" or "Data Model";
             var fingerprint = Hash(Encoding.UTF8.GetBytes(token.RawLine.Trim()));
             var blockId = MarkdownTokenizer.CreateSourceBlockId(artifactFingerprint, token.LineIndex, token.RawLine);
-            var normalized = MarkdownTokenizer.NormalizeInlineMarkup(token.Content.Trim());
-            bool Consume(string value)
-            {
-                if (value.Length == 0) return true;
-                var availableOccurrences = CountOccurrences(projection, value);
-                var claimed = serializedOccurrences.GetValueOrDefault(value);
-                if (availableOccurrences <= claimed) return false;
-                serializedOccurrences[value] = claimed + 1;
-                return true;
-            }
             var decorative = token.Kind is MarkdownTokenKind.HorizontalRule or MarkdownTokenKind.TableSeparator;
             var representedBySourceNotes = !decorative && noteLines.ContainsKey((token.LineIndex + 1, token.RawLine.Trim()));
-            var found = decorative || representedBySourceNotes || (token.Kind == MarkdownTokenKind.TableRow && token.TableCells is { Count: > 0 }
-                ? token.TableCells.Select(MarkdownTokenizer.NormalizeInlineMarkup).All(Consume)
-                : Consume(normalized));
-            var classification = decorative ? CoverageClassification.IntentionallyIgnored : found ?
-                representedBySourceNotes ? CoverageClassification.RepresentedDirectly : CoverageClassification.RepresentedStructurally : CoverageClassification.Missing;
-            var projectionEvidence = found && !decorative;
+            var destinations = projections.Where(p => p.Sources.Any(s =>
+                token.LineIndex + 1 >= s.StartLine && token.LineIndex + 1 <= s.EndLine)).ToList();
+            var representedByDirectProjection = destinations.Any(p => p.ProjectionKind == "DirectContent");
+            var found = decorative || representedBySourceNotes || destinations.Count > 0;
+            var ignoredFenceDelimiter = !found && isFenceDelimiter;
+            var unsupportedFenceBody = !found && isUnmodeledFenceBody;
+            var classification = decorative || ignoredFenceDelimiter ? CoverageClassification.IntentionallyIgnored :
+                unsupportedFenceBody ? CoverageClassification.Unsupported : found ?
+                    representedBySourceNotes || representedByDirectProjection ? CoverageClassification.RepresentedDirectly : CoverageClassification.RepresentedStructurally : CoverageClassification.Missing;
+            // Tokenization and the production role parser completed before this block is classified.
+            // A missing projection is therefore an extractor/page-model gap, not parser absence.
+            var parserEvidence = true;
+            var projectionIds = destinations.Select(p => p.ProjectionId).Distinct(StringComparer.Ordinal).ToArray();
             blocks.Add(new(blockId, token.LineIndex + 1, token.LineIndex + 1, token.Kind.ToString(), fingerprint,
-                includePreview ? Preview(token.RawLine) : "Preview suppressed for configured local archive.", classification, decorative ? null : found ? representedBySourceNotes ? "Explorer source notes (full source text)" : $"{role} parsed model" : null,
-                decorative ? "Decorative table and horizontal separators do not carry domain content." : found ? representedBySourceNotes ? "The production extractor preserved this authored block in its source-notes output." : "Source content is present in the serialized result of the production Explorer parser." :
-                    "The production Explorer parser output does not contain this source block; no ignore or unsupported rule applies.",
-                decorative ? "markdown.decorative-separator" : null,
+                includePreview ? Preview(token.RawLine) : "Preview suppressed for configured local archive.", classification, decorative ? null : found ? representedBySourceNotes ? "Explorer source notes (full source text)" : string.Join(", ", projectionIds) : null,
+                decorative ? "Decorative table and horizontal separators do not carry domain content." : ignoredFenceDelimiter ? "Fence delimiters are Markdown presentation syntax; the fenced content is classified separately." :
+                    unsupportedFenceBody ? role == "Tasks" ? "Task Explorer does not parse fenced code as task evidence." : "Data Model Explorer does not parse fenced code as entity, field, relationship, or constraint evidence." :
+                    found ? representedBySourceNotes ? "The production extractor preserved this authored block in its source-notes output." : representedByDirectProjection ? "The Explorer page model preserves this source block in a rendered free-form section." : "Construction-time source ranges link this block to explicit structured projection provenance." :
+                    "No construction-time structured projection provenance or direct source-note destination accounts for this block.",
+                decorative ? "markdown.decorative-separator" : ignoredFenceDelimiter ? "markdown.fenced-code-delimiter" : unsupportedFenceBody ? role == "Tasks" ? "tasks.fenced-code-not-modeled" : "data-model.fenced-code-not-modeled" : null,
                 CoverageEvidenceStatus.Present,
-                decorative ? CoverageEvidenceStatus.NotApplicable : projectionEvidence ? CoverageEvidenceStatus.Present : CoverageEvidenceStatus.Absent,
-                decorative ? CoverageEvidenceStatus.NotApplicable : projectionEvidence ? CoverageEvidenceStatus.Present : CoverageEvidenceStatus.Absent,
-                decorative ? CoverageEvidenceStatus.NotApplicable : projectionEvidence ? CoverageEvidenceStatus.Present : CoverageEvidenceStatus.Absent,
-                decorative ? CoverageEvidenceStatus.NotApplicable : representedBySourceNotes ? CoverageEvidenceStatus.Present :
-                    classification == CoverageClassification.Missing ? CoverageEvidenceStatus.Absent : CoverageEvidenceStatus.NotVerified,
-                classification == CoverageClassification.Missing ? "ProjectionEvidenceMissing" :
-                    classification == CoverageClassification.RepresentedStructurally ? "RenderedComponentEvidenceNotExercised" : null));
+                decorative ? CoverageEvidenceStatus.NotApplicable : parserEvidence ? CoverageEvidenceStatus.Present : CoverageEvidenceStatus.Absent,
+                decorative || ignoredFenceDelimiter || unsupportedFenceBody ? CoverageEvidenceStatus.NotApplicable : found ? CoverageEvidenceStatus.Present : CoverageEvidenceStatus.Absent,
+                decorative || ignoredFenceDelimiter || unsupportedFenceBody ? CoverageEvidenceStatus.NotApplicable : representedBySourceNotes || projectionIds.Length > 0 ? CoverageEvidenceStatus.Present :
+                    CoverageEvidenceStatus.Absent,
+                decorative || ignoredFenceDelimiter || unsupportedFenceBody ? CoverageEvidenceStatus.NotApplicable : CoverageEvidenceStatus.NotVerified,
+                classification == CoverageClassification.Missing ? "ProjectionEvidenceMissing" : classification == CoverageClassification.Unsupported ? "UnsupportedConstruct" :
+                    classification is CoverageClassification.RepresentedStructurally or CoverageClassification.RepresentedDirectly
+                        ? "RenderedComponentEvidenceNotExercised" : null));
         }
         var direct = blocks.Count(b => b.Classification == CoverageClassification.RepresentedDirectly);
         var structural = blocks.Count(b => b.Classification == CoverageClassification.RepresentedStructurally);
@@ -239,6 +241,38 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
         _ => throw new InvalidOperationException("Unsupported diagnostic fixture role.")
     };
 
+    private static IReadOnlyList<ProjectionProvenance> CollectProjectionProvenance(object root)
+    {
+        var found = new Dictionary<string, ProjectionProvenance>(StringComparer.Ordinal);
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        Visit(root);
+        return found.Values.ToArray();
+
+        void Visit(object? value)
+        {
+            if (value is null || value is string || value.GetType().IsPrimitive || value.GetType().IsEnum) return;
+            if (!value.GetType().IsValueType && !visited.Add(value)) return;
+            if (value is ProjectionProvenance provenance)
+            {
+                found.TryAdd(provenance.ProjectionId, provenance);
+                return;
+            }
+            if (value is System.Collections.IEnumerable enumerable)
+            {
+                foreach (var item in enumerable) Visit(item);
+                return;
+            }
+            foreach (var property in value.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
+                object? child;
+                try { child = property.GetValue(value); }
+                catch { continue; }
+                Visit(child);
+            }
+        }
+    }
+
     private static bool TryRunRoleExtractor(string role, string text, List<string> warnings)
     {
         if (role is not ("Specification" or "Constitution" or "Plan" or "Tasks" or "Data Model"))
@@ -253,18 +287,6 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
             warnings.Add($"{role} Explorer extractor stopped with {exception.GetType().Name}.");
             return false;
         }
-    }
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        var offset = 0;
-        while ((offset = text.IndexOf(value, offset, StringComparison.OrdinalIgnoreCase)) >= 0)
-        {
-            count++;
-            offset += value.Length;
-        }
-        return count;
     }
 
     private static (string Role, string Name, string Text)[] BuildFixtures()

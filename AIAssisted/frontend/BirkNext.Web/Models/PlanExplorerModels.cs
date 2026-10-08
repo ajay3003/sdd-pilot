@@ -118,7 +118,10 @@ public sealed class PlanDocument
 
 public sealed class PlanSection
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
+    public string? SourceDocumentFingerprint { get; init; }
+    public int? SourceStartLine { get; init; }
     public string Title { get; init; } = string.Empty;
     public PlanSectionType SectionType { get; init; }
     public string RawContent { get; init; } = string.Empty;
@@ -142,6 +145,7 @@ public sealed class PlanSectionBlock
 
 public sealed class PlanRisk
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
@@ -155,6 +159,7 @@ public sealed class PlanRisk
 
 public sealed class PlanConstraint
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
@@ -166,6 +171,7 @@ public sealed class PlanConstraint
 
 public sealed class PlanArchitectureDecision
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Id { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -180,6 +186,7 @@ public sealed class PlanArchitectureDecision
 
 public sealed class PlanComplexityItem
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Area { get; init; } = string.Empty;
     public ComplexityLevel Level { get; init; } = ComplexityLevel.Medium;
@@ -192,6 +199,7 @@ public sealed class PlanComplexityItem
 
 public sealed class PlanDependency
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Name { get; init; } = string.Empty;
     public string? Version { get; init; }
@@ -211,6 +219,7 @@ public sealed class PlanDependency
 
 public sealed class PlanMilestone
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Title { get; init; } = string.Empty;
     public string? TargetDate { get; init; }
@@ -222,6 +231,7 @@ public sealed class PlanMilestone
 
 public sealed class PlanConstitutionCheckItem
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string RuleId { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -234,6 +244,7 @@ public sealed class PlanConstitutionCheckItem
 
 public sealed class PlanGate
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string Gate { get; init; } = string.Empty;      // full gate label
     public string RuleId { get; init; } = string.Empty;    // PP-01, GL-24, etc.
@@ -261,6 +272,7 @@ public enum PlanPhaseIdentityKind
 
 public sealed class PlanImplementationPhase
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
 
     /// <summary>Numeric phase identity; null when the heading carries no number. 0 = pre, 99 = post.</summary>
@@ -304,6 +316,7 @@ public sealed class PlanImplementationPhase
 
 public sealed class PlanTestingInfo
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public List<string> Frameworks { get; init; } = [];
     public List<string> TestFolders { get; init; } = [];
     public List<string> TestClasses { get; init; } = [];

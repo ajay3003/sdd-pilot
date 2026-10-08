@@ -92,6 +92,7 @@ public static class TaskExplorerService
     public static TaskTree Parse(string markdown)
     {
         var tokens = MarkdownTokenizer.Tokenize(markdown);
+        var documentFingerprint = MarkdownTokenizer.DocumentFingerprint(markdown);
         var roots = new List<TaskNode>();
         var headingStack = new List<(int Level, TaskNode Node)>();
 
@@ -99,12 +100,12 @@ public static class TaskExplorerService
         var hTables = 0; var hRows = 0;
         var hCritical = 0; var hFrontend = 0; var hWorker = 0; var hProxy = 0; var hNoSql = 0; var hParallel = 0;
 
-        var tableBuffer = new List<string>();
+        var tableBuffer = new List<MarkdownToken>();
 
         void FlushTable()
         {
             if (tableBuffer.Count == 0) return;
-            var tableNode = ParseTable(tableBuffer, ref hRows);
+            var tableNode = ParseTable(tableBuffer, documentFingerprint, ref hRows);
             if (tableNode is not null) { hTables++; AddToParent(roots, headingStack, tableNode); }
             tableBuffer.Clear();
         }
@@ -118,7 +119,7 @@ public static class TaskExplorerService
             // Table rows accumulate; flush when a non-table token arrives
             if (tok.Kind is MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator)
             {
-                tableBuffer.Add(tok.RawLine);
+                tableBuffer.Add(tok);
                 continue;
             }
             FlushTable();
@@ -134,7 +135,9 @@ public static class TaskExplorerService
                 if (nodeType == TaskNodeType.Phase) hPhases++;
                 if (nodeType == TaskNodeType.UserStoryGroup) hUserStories++;
 
-                var node = new TaskNode { Title = title, NodeType = nodeType, HeadingLevel = level };
+                var source = ProjectionProvenance.Source(documentFingerprint, tok.LineIndex + 1, tok.LineIndex + 1, tok.Kind.ToString(), tok.RawLine);
+                var node = new TaskNode { Title = title, NodeType = nodeType, HeadingLevel = level,
+                    Provenance = ProjectionProvenance.Create("Tasks", nodeType.ToString(), $"{title}:{tok.LineIndex + 1}", source) };
 
                 while (headingStack.Count > 0 && headingStack[^1].Level >= level)
                     headingStack.RemoveAt(headingStack.Count - 1);
@@ -152,7 +155,7 @@ public static class TaskExplorerService
             {
                 var completed = cm.Groups[1].Value is "x" or "X";
                 var body = cm.Groups[2].Value.Trim();
-                var task = BuildTaskNode(body, completed, tok.RawLine);
+                var task = BuildTaskNode(body, completed, tok.RawLine, documentFingerprint, tok.LineIndex);
                 if (task is not null)
                 {
                     hTasks++;
@@ -174,7 +177,7 @@ public static class TaskExplorerService
             if (bm.Success && headingStack.Count > 0)
             {
                 var body = $"T{bm.Groups[1].Value} {bm.Groups[2].Value}".Trim();
-                var task = BuildTaskNode(body, false, tok.RawLine);
+                var task = BuildTaskNode(body, false, tok.RawLine, documentFingerprint, tok.LineIndex);
                 if (task is not null)
                 {
                     hTasks++;
@@ -420,7 +423,7 @@ public static class TaskExplorerService
         return TaskNodeType.DeepGroup;
     }
 
-    private static TaskNode? BuildTaskNode(string body, bool completed, string rawLine)
+    private static TaskNode? BuildTaskNode(string body, bool completed, string rawLine, string documentFingerprint, int zeroBasedLine)
     {
         if (string.IsNullOrWhiteSpace(body)) return null;
 
@@ -470,6 +473,7 @@ public static class TaskExplorerService
         var shortTitle = DeriveShortTitle(title);
         var relatedFiles = FilePathRe.Matches(rawLine).Select(m => m.Value).Distinct().ToList();
 
+        var source = ProjectionProvenance.Source(documentFingerprint, zeroBasedLine + 1, zeroBasedLine + 1, "Task", rawLine);
         return new TaskNode
         {
             Title = title,
@@ -483,6 +487,7 @@ public static class TaskExplorerService
             ReferencedFrIds = frIds,
             ReferencedScIds = scIds,
             RawText = rawLine.Trim(),
+            Provenance = ProjectionProvenance.Create("Tasks", "Task", taskId ?? $"{title}:{zeroBasedLine + 1}", source),
             RelatedFiles = relatedFiles,
             IsTestingTask = TestKeywordRe.IsMatch(rawLine),
             IsSecurityTask = SecurityKeywordRe.IsMatch(rawLine),
@@ -494,12 +499,12 @@ public static class TaskExplorerService
         };
     }
 
-    private static TaskNode? ParseTable(List<string> lines, ref int rowCount)
+    private static TaskNode? ParseTable(List<MarkdownToken> lines, string documentFingerprint, ref int rowCount)
     {
         if (lines.Count < 2) return null;
 
         // Parse header row
-        var headers = SplitCells(lines[0]);
+        var headers = SplitCells(lines[0].RawLine);
         if (headers.Count == 0) return null;
 
         var tableNode = new TaskNode
@@ -509,17 +514,20 @@ public static class TaskExplorerService
             HeadingLevel = 0,
             TableHeaders = headers,
             TableKind = ClassifyTableKind(headers),
+            Provenance = ProjectionProvenance.Create("Tasks", "TableSection", $"{headers[0]}:{lines[0].LineIndex + 1}",
+                ProjectionProvenance.Source(documentFingerprint, lines[0].LineIndex + 1, lines[^1].LineIndex + 1,
+                    "TaskTable", string.Join("\n", lines.Select(line => line.RawLine)))),
         };
 
         // Find separator row index
         int dataStart = 1;
-        if (dataStart < lines.Count && TableSepRe.IsMatch(lines[dataStart]))
+        if (dataStart < lines.Count && TableSepRe.IsMatch(lines[dataStart].RawLine))
             dataStart++;
 
         // Parse data rows
         for (int i = dataStart; i < lines.Count; i++)
         {
-            var cells = SplitCells(lines[i]);
+            var cells = SplitCells(lines[i].RawLine);
             if (cells.Count == 0) continue;
 
             var rowTitle = cells.Count > 0 ? cells[0].Trim() : string.Empty;
@@ -540,6 +548,9 @@ public static class TaskExplorerService
                     .Select(m => $"SC-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList(),
                 ReferencedFrIds = FrRefRe.Matches(allCellText)
                     .Select(m => $"FR-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList(),
+                Provenance = ProjectionProvenance.Create("Tasks", "TableRow", $"{rowTitle}:{lines[i].LineIndex + 1}",
+                    ProjectionProvenance.Source(documentFingerprint, lines[i].LineIndex + 1, lines[i].LineIndex + 1,
+                        "TaskTableRow", lines[i].RawLine)),
             };
 
             // Add TableTaskRef children for each linked task ID

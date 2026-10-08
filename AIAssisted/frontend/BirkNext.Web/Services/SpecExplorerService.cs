@@ -104,6 +104,7 @@ public static class SpecExplorerService
     public static SpecTree Parse(string markdown)
     {
         var tokens = MarkdownTokenizer.Tokenize(markdown);
+        var documentFingerprint = MarkdownTokenizer.DocumentFingerprint(markdown);
         var roots = new List<SpecNode>();
         var headingStack = new List<(int Level, SpecNode Node, SectionSemantics Semantics)>();
 
@@ -114,6 +115,7 @@ public static class SpecExplorerService
 
         // Table buffer
         var tableBuffer = new List<string>();
+        int? tableStartLine = null;
 
         // Heading-level prose accumulator
         var contentLines = new List<string>();
@@ -124,12 +126,17 @@ public static class SpecExplorerService
         // FullContent and Excerpt are set when the item is committed.
         SpecNode? pendingItem = null;
         var pendingLines = new List<string>();
+        var pendingStartLine = 0;
+        var pendingEndLine = 0;
+        var currentLineIndex = 0;
 
         // ── Inline BDD accumulator ───────────────────────────────────────────
         // For numbered "1. **Given** ... **When** ... **Then** ..." items.
         // BddGiven/BddWhen/BddThen are init-only, so the node is created at commit.
         bool inInlineBdd = false;
         var inlineBddLines = new List<string>();
+        var inlineBddStartLine = 0;
+        var inlineBddEndLine = 0;
 
         // ── Traditional BDD state ────────────────────────────────────────────
         string? bddTitle = null;
@@ -137,11 +144,15 @@ public static class SpecExplorerService
         var bddWhen = new List<string>();
         var bddThen = new List<string>();
         int bddPhase = 0; // 1=given, 2=when, 3=then
+        var bddStartLine = 0;
+        var bddEndLine = 0;
 
         // ── Multi-line Q/A state ─────────────────────────────────────────────
         string? qaQuestion = null;
         var qaAnswerLines = new List<string>();
         bool qaInAnswer = false;
+        var qaStartLine = 0;
+        var qaEndLine = 0;
 
         // ── Context helpers ───────────────────────────────────────────────────
         SectionSemantics ActiveSemantics() =>
@@ -152,6 +163,10 @@ public static class SpecExplorerService
 
         SpecNode? ActiveParent() =>
             headingStack.Count > 0 ? headingStack[^1].Node : null;
+
+        ProjectionProvenance MakeProvenance(string kind, string key, int startLine, int endLine, string sourceText) =>
+            ProjectionProvenance.Create("Specification", kind, key,
+                ProjectionProvenance.Source(documentFingerprint, startLine + 1, Math.Max(startLine, endLine) + 1, kind, sourceText));
 
         bool InClarificationsContext() => InAnyContext(SectionSemantics.Clarifications);
         bool IsInDecisionSession() => headingStack.Any(h => DateHeadingRe.IsMatch(h.Node.Title));
@@ -173,6 +188,11 @@ public static class SpecExplorerService
                 if (relevant.Count > 0)
                 {
                     pendingItem.FullContent = string.Join("\n", pendingLines).Trim();
+                    var sourceText = string.Join("\n", pendingLines).Trim();
+                    var source = ProjectionProvenance.Source(documentFingerprint, pendingStartLine + 1,
+                        Math.Max(pendingStartLine, pendingEndLine) + 1, pendingItem.NodeType.ToString(), sourceText);
+                    pendingItem.Provenance = ProjectionProvenance.Create("Specification", pendingItem.NodeType.ToString(),
+                        pendingItem.SpecItemId ?? pendingItem.Title, source);
                     var excerptRaw = StripMarkdown(relevant[0]);
                     pendingItem.Excerpt = excerptRaw.Length > 200 ? excerptRaw[..200] : excerptRaw;
                     par.Children.Add(pendingItem);
@@ -217,12 +237,15 @@ public static class SpecExplorerService
                     BddWhen = when,
                     BddThen = then,
                     FullContent = fullText,
+                    Provenance = MakeProvenance("BddScenario", title, inlineBddStartLine, inlineBddEndLine, string.Join("\n", inlineBddLines)),
                 });
                 hBdd++;
                 hTest++;
             }
             inInlineBdd = false;
             inlineBddLines.Clear();
+            inlineBddStartLine = 0;
+            inlineBddEndLine = 0;
         }
 
         void FlushQaPair()
@@ -246,12 +269,15 @@ public static class SpecExplorerService
                     QuestionText = qaQuestion,
                     AnswerText = answer.Length > 0 ? answer : null,
                     FullContent = content,
+                    Provenance = MakeProvenance(isDecision ? "DecisionNode" : "Clarification", titleText, qaStartLine, qaEndLine, content),
                 });
                 if (isDecision) hDecision++; else hClr++;
             }
             qaQuestion = null;
             qaAnswerLines.Clear();
             qaInAnswer = false;
+            qaStartLine = 0;
+            qaEndLine = 0;
         }
 
         void FlushBddScenario()
@@ -279,6 +305,7 @@ public static class SpecExplorerService
                     BddWhen  = when.Length > 0  ? when  : null,
                     BddThen  = then.Length > 0  ? then  : null,
                     FullContent = sb.ToString().Trim(),
+                    Provenance = MakeProvenance("BddScenario", title, bddStartLine, bddEndLine, sb.ToString().Trim()),
                 });
                 hBdd++;
                 hTest++;
@@ -288,6 +315,8 @@ public static class SpecExplorerService
             bddWhen.Clear();
             bddThen.Clear();
             bddPhase = 0;
+            bddStartLine = 0;
+            bddEndLine = 0;
         }
 
         void FlushContent()
@@ -306,7 +335,8 @@ public static class SpecExplorerService
 
         void FlushAll()
         {
-            FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
+            FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables, documentFingerprint, tableStartLine ?? 0);
+            tableStartLine = null;
             CommitPending();
             CommitInlineBdd();
             FlushQaPair();
@@ -318,6 +348,7 @@ public static class SpecExplorerService
 
         foreach (var tok in tokens)
         {
+            currentLineIndex = tok.LineIndex;
             var line = tok.RawLine;
 
             // ── Heading ───────────────────────────────────────────────────────
@@ -341,6 +372,7 @@ public static class SpecExplorerService
                     NodeType = nodeType,
                     HeadingLevel = level,
                     Semantics = semantics,
+                    Provenance = MakeProvenance(nodeType.ToString(), title, tok.LineIndex, tok.LineIndex, tok.RawLine),
                 };
                 while (headingStack.Count > 0 && headingStack[^1].Level >= level)
                     headingStack.RemoveAt(headingStack.Count - 1);
@@ -358,10 +390,14 @@ public static class SpecExplorerService
                 FlushQaPair();
                 FlushBddScenario();
                 tableBuffer.Add(tok.RawLine);
+                tableStartLine ??= tok.LineIndex;
                 continue;
             }
             if (tableBuffer.Count > 0)
-                FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables);
+            {
+                FlushTableBuffer(tableBuffer, headingStack, roots, ref hTables, documentFingerprint, tableStartLine ?? tok.LineIndex);
+                tableStartLine = null;
+            }
 
             // ── Blank line ────────────────────────────────────────────────────
             if (tok.Kind == MarkdownTokenKind.Blank)
@@ -410,6 +446,7 @@ public static class SpecExplorerService
                         NodeType = SpecNodeType.Metadata,
                         HeadingLevel = 0,
                         FullContent = line.Trim(),
+                        Provenance = MakeProvenance("Metadata", key, tok.LineIndex, tok.LineIndex, line),
                     });
                     continue;
                 }
@@ -437,6 +474,7 @@ public static class SpecExplorerService
                         QuestionText = q,
                         AnswerText = a,
                         FullContent = $"Q: {q}\nA: {a}",
+                        Provenance = MakeProvenance(isDecision ? "DecisionNode" : "Clarification", titleText, tok.LineIndex, tok.LineIndex, line),
                     });
                     if (isDecision) hDecision++; else hClr++;
                     continue;
@@ -450,6 +488,8 @@ public static class SpecExplorerService
                     FlushQaPair();
                     qaQuestion = qm.Groups[1].Value.Trim();
                     qaInAnswer = false;
+                    qaStartLine = tok.LineIndex;
+                    qaEndLine = tok.LineIndex;
                     continue;
                 }
 
@@ -459,6 +499,7 @@ public static class SpecExplorerService
                 {
                     qaAnswerLines.Add(am.Groups[1].Value.Trim());
                     qaInAnswer = true;
+                    qaEndLine = tok.LineIndex;
                     continue;
                 }
 
@@ -466,6 +507,7 @@ public static class SpecExplorerService
                 if (qaQuestion != null && !qaInAnswer)
                 {
                     qaQuestion += " " + line.Trim();
+                    qaEndLine = tok.LineIndex;
                     continue;
                 }
 
@@ -473,6 +515,7 @@ public static class SpecExplorerService
                 if (qaInAnswer)
                 {
                     qaAnswerLines.Add(line.Trim());
+                    qaEndLine = tok.LineIndex;
                     continue;
                 }
 
@@ -482,7 +525,9 @@ public static class SpecExplorerService
             }
 
             // ── BDD context: acceptance scenario handling ──────────────────────
-            if (InBddContext())
+            // A structured requirement may follow the final scenario without a new section heading.
+            // Let explicit spec-item identifiers leave the BDD prose branch so they retain their own node/provenance.
+            if (InBddContext() && !SpecItemStartRe.IsMatch(line))
             {
                 // Numbered inline BDD: "1. **Given** ..."
                 if (NumberedBddStartRe.IsMatch(line))
@@ -492,6 +537,8 @@ public static class SpecExplorerService
                     FlushBddScenario();
                     inInlineBdd = true;
                     inlineBddLines.Clear();
+                    inlineBddStartLine = tok.LineIndex;
+                    inlineBddEndLine = tok.LineIndex;
                     inlineBddLines.Add(line.Trim());
                     continue;
                 }
@@ -502,6 +549,7 @@ public static class SpecExplorerService
                     if (ContinuationRe.IsMatch(line))
                     {
                         inlineBddLines.Add(line.Trim());
+                        inlineBddEndLine = tok.LineIndex;
                         continue;
                     }
                     // Non-indented line ends the inline BDD; fall through
@@ -521,6 +569,8 @@ public static class SpecExplorerService
                         bddTitle = string.IsNullOrEmpty(rawT)
                             ? ExtractScenarioTitle(line)
                             : StripMarkdown(rawT);
+                        bddStartLine = tok.LineIndex;
+                        bddEndLine = tok.LineIndex;
                         bddPhase = 0;
                         continue;
                     }
@@ -529,9 +579,11 @@ public static class SpecExplorerService
                 // Traditional BDD step keywords
                 if (bddTitle != null)
                 {
+                    bddEndLine = tok.LineIndex;
                     var km = BddKeywordRe.Match(line);
                     if (km.Success)
                     {
+                        bddEndLine = tok.LineIndex;
                         var keyword = km.Groups[1].Value.ToLowerInvariant();
                         var stepText = km.Groups[2].Value.Trim();
                         switch (keyword)
@@ -582,6 +634,8 @@ public static class SpecExplorerService
                         HeadingLevel = 0,
                         SpecItemId = entityName,
                     };
+                    pendingStartLine = tok.LineIndex;
+                    pendingEndLine = tok.LineIndex;
                     pendingLines.Clear();
                     pendingLines.Add(line.Trim());
                     continue;
@@ -590,6 +644,7 @@ public static class SpecExplorerService
                 if (pendingItem?.NodeType == SpecNodeType.Entity)
                 {
                     pendingLines.Add(line.TrimStart());
+                    pendingEndLine = tok.LineIndex;
                     continue;
                 }
                 contentLines.Add(line);
@@ -611,6 +666,8 @@ public static class SpecExplorerService
                         NodeType = SpecNodeType.Assumption,
                         HeadingLevel = 0,
                     };
+                    pendingStartLine = tok.LineIndex;
+                    pendingEndLine = tok.LineIndex;
                     pendingLines.Clear();
                     pendingLines.Add(bulletText);
                     continue;
@@ -618,6 +675,7 @@ public static class SpecExplorerService
                 if (pendingItem?.NodeType == SpecNodeType.Assumption)
                 {
                     pendingLines.Add(line.TrimStart());
+                    pendingEndLine = tok.LineIndex;
                     continue;
                 }
                 contentLines.Add(line);
@@ -639,6 +697,8 @@ public static class SpecExplorerService
                         NodeType = SpecNodeType.EdgeCase,
                         HeadingLevel = 0,
                     };
+                    pendingStartLine = tok.LineIndex;
+                    pendingEndLine = tok.LineIndex;
                     pendingLines.Clear();
                     pendingLines.Add(bulletText);
                     continue;
@@ -646,6 +706,7 @@ public static class SpecExplorerService
                 if (pendingItem?.NodeType == SpecNodeType.EdgeCase)
                 {
                     pendingLines.Add(line.TrimStart());
+                    pendingEndLine = tok.LineIndex;
                     continue;
                 }
                 contentLines.Add(line);
@@ -667,6 +728,8 @@ public static class SpecExplorerService
                         NodeType = SpecNodeType.ApiSurfaceItem,
                         HeadingLevel = 0,
                     };
+                    pendingStartLine = tok.LineIndex;
+                    pendingEndLine = tok.LineIndex;
                     pendingLines.Clear();
                     pendingLines.Add(bulletText);
                     continue;
@@ -676,6 +739,7 @@ public static class SpecExplorerService
                     if (ContinuationRe.IsMatch(line))
                     {
                         pendingLines.Add(line.TrimStart());
+                        pendingEndLine = tok.LineIndex;
                         continue;
                     }
                     // Non-indented line ends the API Surface bullet
@@ -702,6 +766,8 @@ public static class SpecExplorerService
                         HeadingLevel = 0,
                         SpecItemId = itemId,
                     };
+                    pendingStartLine = tok.LineIndex;
+                    pendingEndLine = tok.LineIndex;
                     pendingLines.Clear();
                     pendingLines.Add(line.Trim());
                     continue;
@@ -715,6 +781,7 @@ public static class SpecExplorerService
                                     or SpecNodeType.AcceptanceTest)
             {
                 pendingLines.Add(line);
+                pendingEndLine = tok.LineIndex;
                 continue;
             }
 
@@ -729,6 +796,8 @@ public static class SpecExplorerService
                     Title = title,
                     NodeType = SpecNodeType.UserStory,
                     HeadingLevel = 0,
+                    Provenance = ProjectionProvenance.Create("Specification", "UserStory", title,
+                        ProjectionProvenance.Source(documentFingerprint, tok.LineIndex + 1, tok.LineIndex + 1, "UserStory", tok.RawLine)),
                 });
                 hUs++;
                 continue;
@@ -745,6 +814,8 @@ public static class SpecExplorerService
                     Title = title,
                     NodeType = SpecNodeType.Clarification,
                     HeadingLevel = 0,
+                    Provenance = ProjectionProvenance.Create("Specification", "Clarification", title,
+                        ProjectionProvenance.Source(documentFingerprint, tok.LineIndex + 1, tok.LineIndex + 1, "Clarification", tok.RawLine)),
                 });
                 hClr++;
                 continue;
@@ -780,7 +851,7 @@ public static class SpecExplorerService
                 EdgeCases      = hEdgeCases,
             },
         };
-        parsedTree.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, parsedTree, preserveFreeTextForRender: true));
+        parsedTree.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, parsedTree));
         return parsedTree;
     }
 
@@ -857,10 +928,12 @@ public static class SpecExplorerService
         List<string> buffer,
         List<(int Level, SpecNode Node, SectionSemantics Semantics)> stack,
         List<SpecNode> roots,
-        ref int hTables)
+        ref int hTables,
+        string documentFingerprint,
+        int startLine)
     {
         if (buffer.Count < 2) { buffer.Clear(); return; }
-        var tableNode = ParseTable(buffer, ref hTables);
+        var tableNode = ParseTable(buffer, ref hTables, documentFingerprint, startLine);
         if (tableNode is not null)
         {
             if (stack.Count > 0) stack[^1].Node.Children.Add(tableNode);
@@ -869,7 +942,7 @@ public static class SpecExplorerService
         buffer.Clear();
     }
 
-    private static SpecNode? ParseTable(List<string> lines, ref int tableCount)
+    private static SpecNode? ParseTable(List<string> lines, ref int tableCount, string documentFingerprint, int startLine)
     {
         if (lines.Count < 2) return null;
         var headers = SplitCells(lines[0]);
@@ -886,6 +959,8 @@ public static class SpecExplorerService
             HeadingLevel = 0,
             TableKind = tableKind,
             ColumnHeaders = headers,
+            Provenance = ProjectionProvenance.Create("Specification", "TableSection", title,
+                ProjectionProvenance.Source(documentFingerprint, startLine + 1, startLine + lines.Count, "Table", string.Join("\n", lines))),
         };
 
         for (var i = dataStart; i < lines.Count; i++)
@@ -905,6 +980,8 @@ public static class SpecExplorerService
                 HeadingLevel = 0,
                 CellValues = cells,
                 LinkedSpecItemIds = specRefs,
+                Provenance = ProjectionProvenance.Create("Specification", "TableRow", $"{title}:{i}",
+                    ProjectionProvenance.Source(documentFingerprint, startLine + i + 1, startLine + i + 1, "TableRow", lines[i])),
             });
         }
 

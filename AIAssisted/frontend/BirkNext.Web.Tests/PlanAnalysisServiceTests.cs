@@ -6,7 +6,151 @@ namespace BirkNext.Web.Tests;
 
 public class PlanAnalysisServiceTests
 {
+    [Fact]
+    public void Parse_FileMapSectionIsRenderedProjectStructureWithDirectSourceProvenance()
+    {
+        const string markdown = "# Plan\n\n## File Map\n\n| Action | Path |\n| --- | --- |\n| Create | src/Feature.cs |\n";
+        var service = new PlanAnalysisService();
+        var first = service.Parse(markdown);
+        var second = service.Parse(markdown);
+        var section = Assert.Single(first.Sections);
+
+        Assert.Equal(PlanSectionType.ProjectStructure, section.SectionType);
+        Assert.NotNull(section.Provenance);
+        Assert.Equal("DirectContent", section.Provenance!.ProjectionKind);
+        Assert.Equal(3, section.Provenance.Sources.Single().StartLine);
+        Assert.Equal(7, section.Provenance.Sources.Single().EndLine);
+        Assert.Equal(section.Provenance.ProjectionId, second.Sections.Single().Provenance!.ProjectionId);
+    }
+
     private readonly PlanAnalysisService _service = new();
+
+    [Fact]
+    public void Parse_ImplementationPhaseRetainsConstructionTimeSourceProvenance()
+    {
+        const string markdown = "# Plan\n\n## Implementation Phases\n\n### Phase 1: Build\n- Build the service\n";
+
+        var first = _service.Parse(markdown).Phases.Single();
+        var second = _service.Parse(markdown).Phases.Single();
+
+        Assert.NotNull(first.Provenance);
+        Assert.Equal(first.Provenance!.ProjectionId, second.Provenance!.ProjectionId);
+        var source = Assert.Single(first.Provenance.Sources);
+        Assert.Equal(5, source.StartLine);
+        Assert.Equal(6, source.EndLine);
+        Assert.Equal("PlanPhase", source.BlockType);
+    }
+
+    [Fact]
+    public void Parse_ExplicitComplexityAndConstitutionGateRetainSourceProvenance()
+    {
+        const string markdown = """
+            # Plan
+
+            ## Complexity Tracking
+
+            ### Queue processing - High
+            Backpressure and retry behavior.
+
+            ## Constitution Check
+
+            | Gate | Status | Evidence |
+            |---|---|---|
+            | PP-01 | PASS | Automated check |
+            """;
+
+        var document = _service.Parse(markdown);
+        var complexity = Assert.Single(document.ComplexityItems);
+        var gate = Assert.Single(document.Gates);
+
+        Assert.NotNull(complexity.Provenance);
+        Assert.Equal("PlanComplexityItem", Assert.Single(complexity.Provenance!.Sources).BlockType);
+        Assert.Equal("Queue processing", complexity.Area);
+        Assert.NotNull(gate.Provenance);
+        Assert.Equal("PlanGateTableRow", Assert.Single(gate.Provenance!.Sources).BlockType);
+        Assert.Equal(12, Assert.Single(gate.Provenance.Sources).StartLine);
+        Assert.Equal(gate.Provenance.ProjectionId, Assert.Single(_service.Parse(markdown).Gates).Provenance!.ProjectionId);
+    }
+
+    [Fact]
+    public void Parse_TechnicalContextFallbackItemsRetainExactSourceProvenance()
+    {
+        const string markdown = """
+            # Plan
+
+            ## Technical Context
+
+            **Primary Dependencies**: Service A, Service B
+            **Dependencies**: Service A
+            **Performance Goals**: Respond under 500ms
+
+            ## Project Structure
+
+            ### Phase 4: Release
+            Deploy the service.
+            """;
+
+        var first = _service.Parse(markdown);
+        var second = _service.Parse(markdown);
+
+        Assert.Equal(2, first.Dependencies.Count);
+        var serviceA = Assert.Single(first.Dependencies.Where(d => d.Name == "Service A"));
+        Assert.NotNull(serviceA.Provenance);
+        Assert.Equal(2, serviceA.Provenance!.Sources.Count);
+        Assert.Equal(2, serviceA.Provenance.Sources.Select(s => s.SourceBlockId).Distinct().Count());
+        Assert.All(first.Dependencies, d => Assert.NotNull(d.Provenance));
+        Assert.All(first.Constraints, c => Assert.NotNull(c.Provenance));
+        Assert.Equal(first.Dependencies.Select(d => d.Provenance!.ProjectionId), second.Dependencies.Select(d => d.Provenance!.ProjectionId));
+
+        var fallbackPhase = Assert.Single(first.Phases);
+        Assert.NotNull(fallbackPhase.Provenance);
+        var phaseSource = Assert.Single(fallbackPhase.Provenance!.Sources);
+        Assert.Equal(11, phaseSource.StartLine);
+        Assert.Equal(11, phaseSource.EndLine);
+    }
+
+    [Fact]
+    public void Parse_TechnicalContextTestingFallbackIsExplicitlyDerivedFromSourceEvidence()
+    {
+        const string markdown = """
+            # Plan
+
+            ## Technical Context
+
+            **Testing**: xUnit
+            """;
+
+        var testing = _service.Parse(markdown).TestingInfo;
+
+        Assert.NotNull(testing);
+        Assert.NotNull(testing!.Provenance);
+        Assert.Equal("DerivedTestingStrategy", testing.Provenance!.ProjectionKind);
+        var source = Assert.Single(testing.Provenance.Sources);
+        Assert.Equal(5, source.StartLine);
+        Assert.Equal(5, source.EndLine);
+    }
+
+    [Fact]
+    public void Parse_AutoGeneratedComplexityIsExplicitlyDerivedFromContributingSource()
+    {
+        const string markdown = """
+            # Plan
+
+            ## Technical Context
+
+            **Storage**: database persistence
+            """;
+
+        var document = _service.Parse(markdown);
+        var item = Assert.Single(document.ComplexityItems);
+
+        Assert.True(document.ComplexityDerived);
+        Assert.NotNull(item.Provenance);
+        Assert.Equal("DerivedComplexity", item.Provenance!.ProjectionKind);
+        var source = Assert.Single(item.Provenance.Sources);
+        Assert.Equal(5, source.StartLine);
+        Assert.Equal(5, source.EndLine);
+    }
 
     [Fact]
     public void Parse_WithBasicPlan_ExtractsSummaryAndMetadata()

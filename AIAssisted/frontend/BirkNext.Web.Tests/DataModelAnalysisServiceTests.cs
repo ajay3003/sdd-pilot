@@ -9,6 +9,25 @@ public class DataModelAnalysisServiceTests
     private readonly DataModelAnalysisService _service = new();
 
     [Fact]
+    public void StructuredSchemaItems_RetainConstructionTimeProvenanceAcrossRepeatedNames()
+    {
+        var markdown = "# Data Model\n## Entity: Alpha\n### Fields\n| Field | Type | Nullable |\n| --- | --- | --- |\n| Id | UUID | No |\n## Entity: Beta\n### Fields\n| Field | Type | Nullable |\n| --- | --- | --- |\n| Id | UUID | No |\n## Relationships\n- Alpha.Id -> Beta.Id\n## Enum: State\n- Open\n- Closed\n";
+
+        var first = _service.Parse(markdown);
+        var second = _service.Parse(markdown);
+        var fields = first.Entities.SelectMany(e => e.Columns).Where(c => c.Name == "Id").ToList();
+
+        Assert.Equal(2, fields.Count);
+        Assert.All(first.Entities, entity => Assert.NotNull(entity.Provenance));
+        Assert.All(fields, field => Assert.NotNull(field.Provenance));
+        Assert.NotEqual(fields[0].Provenance!.ProjectionId, fields[1].Provenance!.ProjectionId);
+        Assert.Equal(fields[0].Provenance.ProjectionId,
+            second.Entities.SelectMany(e => e.Columns).First(c => c.Provenance!.ProjectionId == fields[0].Provenance.ProjectionId).Provenance!.ProjectionId);
+        Assert.Contains(first.Relationships, relationship => relationship.Provenance is not null);
+        Assert.Contains(first.Enums, value => value.Name == "State" && value.Provenance is not null);
+    }
+
+    [Fact]
     public void Parse_WithLegacyEntityFormat_ParsesCorrectly()
     {
         var markdown = """

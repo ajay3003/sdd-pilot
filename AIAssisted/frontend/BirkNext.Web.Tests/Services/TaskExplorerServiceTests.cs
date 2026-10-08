@@ -7,6 +7,50 @@ namespace BirkNext.Web.Tests.Services;
 public class TaskExplorerServiceTests
 {
     [Fact]
+    public void Parse_AttachesDeterministicSourceAndProjectionProvenanceToTasks()
+    {
+        const string markdown = "# Tasks\n\n## Phase 1\n\n- [ ] T001 Repeat\n- [ ] T002 Repeat\n";
+        var first = TaskExplorerService.Parse(markdown);
+        var second = TaskExplorerService.Parse(markdown);
+        var firstTasks = first.Roots.SelectMany(r => r.Children).SelectMany(p => p.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+        var secondTasks = second.Roots.SelectMany(r => r.Children).SelectMany(p => p.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
+        Assert.Equal(2, firstTasks.Count);
+        Assert.All(firstTasks, task => Assert.NotNull(task.Provenance));
+        Assert.NotEqual(firstTasks[0].Provenance!.Sources[0].SourceBlockId, firstTasks[1].Provenance!.Sources[0].SourceBlockId);
+        Assert.Equal(firstTasks.Select(t => t.Provenance!.ProjectionId), secondTasks.Select(t => t.Provenance!.ProjectionId));
+        Assert.Equal(new[] { 5, 6 }, firstTasks.Select(t => t.Provenance!.Sources[0].StartLine));
+    }
+
+    [Fact]
+    public void Parse_AttachesSourceProvenanceToTableRowsAndPreservesTheirExactLineIdentity()
+    {
+        const string markdown = "# Tasks\n\n## Dependency table\n\n| Task | Depends on |\n| --- | --- |\n| T001 | T000 |\n| T002 | T000 |\n";
+        var first = TaskExplorerService.Parse(markdown);
+        var second = TaskExplorerService.Parse(markdown);
+        var firstTable = Descendants(first.Roots).Single(n => n.NodeType == TaskNodeType.TableSection);
+        var secondTable = Descendants(second.Roots).Single(n => n.NodeType == TaskNodeType.TableSection);
+        var firstRows = firstTable.Children.Where(n => n.NodeType == TaskNodeType.TableRow).ToArray();
+        var secondRows = secondTable.Children.Where(n => n.NodeType == TaskNodeType.TableRow).ToArray();
+
+        Assert.NotNull(firstTable.Provenance);
+        Assert.Equal(new[] { 7, 8 }, firstRows.Select(row => row.Provenance!.Sources.Single().StartLine));
+        Assert.Equal(Enumerable.Range(0, firstRows.Length).Select(i => firstRows[i].Provenance!.ProjectionId),
+            Enumerable.Range(0, secondRows.Length).Select(i => secondRows[i].Provenance!.ProjectionId));
+        Assert.NotEqual(firstRows[0].Provenance!.Sources.Single().SourceBlockId,
+            firstRows[1].Provenance!.Sources.Single().SourceBlockId);
+    }
+
+    private static IEnumerable<TaskNode> Descendants(IEnumerable<TaskNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var descendant in Descendants(node.Children)) yield return descendant;
+        }
+    }
+
+    [Fact]
     public void Parse_WithTaskIdSuffixes_ParsesCorrectly()
     {
         var markdown = """

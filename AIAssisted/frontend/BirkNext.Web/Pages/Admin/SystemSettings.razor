@@ -900,7 +900,7 @@ else if (_settings is not null)
             {
                 <section class="settings-card settings-card-full-width" aria-labelledby="explorer-coverage-title">
                     <div class="settings-card-title" id="explorer-coverage-title">Explorer Text Coverage</div>
-                    <p class="settings-card-note">Tracks source blocks through the production role parser/extractor and the page model. Direct source-note blocks include render hooks. Structured blocks are marked render-unverified until the corresponding Explorer DOM is exercised; parser serialization alone is not presented as end-to-end proof. Missing blocks are defects. This diagnostic does not change workspace selections.</p>
+                    <p class="settings-card-note">Compares source blocks with the production role parser output. Direct source-note blocks include render hooks. For structured blocks, parser output does not yet prove extractor, page-model, or rendered-component provenance, so those stages remain NotVerified until the mapping is carried through and exercised in the Explorer DOM. Missing blocks are defects. This diagnostic does not change workspace selections.</p>
                     <button class="btn-edit-settings" @onclick="RunExplorerCoverageAsync" disabled="@_coverageRunning">@(_coverageRunning ? "Running Explorer coverage diagnostics…" : "Run Explorer coverage diagnostics")</button>
                     @if (_coverageError is not null) { <p role="alert" class="settings-card-note">@_coverageError</p> }
                     @if (_coverageRun is { } coverage)
