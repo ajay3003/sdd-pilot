@@ -227,7 +227,9 @@ public sealed class ProjectImportServiceTests : IDisposable
     public async Task NewVersion_CreatesANewCurrentSnapshot_AndKeepsTheOldOneAsHistory()
     {
         var service = Service();
-        var v1 = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId))!;
+        // Built once: ZipArchive stamps entry times, so zipping the same files again a few seconds later gives different bytes.
+        var v1Bytes = Zip([.. Documents, .. Source]);
+        var v1 = (await service.CommitAsync(service.Preview("shop-v1.zip", v1Bytes).Preview!.StagingId))!;
         var v2Source = Source.Select(s => s.Item1.EndsWith("Program.cs") ? (s.Item1, s.Item2 + " // v2") : s).ToArray();
         var v2 = (await service.CommitAsync(service.Preview("shop-v2.zip", Zip([.. Documents, .. v2Source])).Preview!.StagingId))!;
 
@@ -239,7 +241,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         snapshots[1].ProjectImport!.ImportId.Should().Be(v1.Provenance.ImportId, "earlier snapshots stay immutable history");
 
         // Importing v1 again after v2: v1 is not current, so a new snapshot is created rather than silently reviving the old one.
-        var v1Again = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId))!;
+        var v1Again = (await service.CommitAsync(service.Preview("shop-v1.zip", v1Bytes).Preview!.StagingId))!;
         v1Again.Source.State.Should().Be(ProjectImportSourceState.Created);
         (await new IqrSourceStore(_db).ListSourceAnalysisAsync())[0].ProjectImport!.ImportId.Should().Be(v1.Provenance.ImportId);
     }
