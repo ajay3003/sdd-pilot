@@ -39,6 +39,13 @@ public class AdminApiService
         }
     }
 
+    public async Task<BirkNext.ProjectImport.ProjectCompatibilityRun?> RunProjectCompatibilityDiagnosticsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _client.PostAsync("api/system-diagnostics/project-compatibility/run", content: null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BirkNext.ProjectImport.ProjectCompatibilityRun>(cancellationToken);
+    }
+
     public async Task<FeatureVisibilityDto?> GetFeatureVisibilityAsync()
     {
         try

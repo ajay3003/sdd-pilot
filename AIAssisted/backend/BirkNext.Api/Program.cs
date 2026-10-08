@@ -414,6 +414,7 @@ builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ProjectImport.Proj
     sp.GetRequiredService<IConfiguration>()["ProjectImport:StagingDirectory"] is { Length: > 0 } dir ? dir : BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore.DefaultDirectory,
     sp.GetRequiredService<ILogger<BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore>>()));
 builder.Services.AddScoped<BirkNext.Api.Services.ProjectImport.ProjectImportService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ProjectImport.ProjectCompatibilityDiagnosticService>();
 // Test evidence: execution-result providers (TRX first) and stateless preview/correlation against Source Analysis test discovery.
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.TestEvidence.TestEvidenceOptions.From(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestEvidence.ITestExecutionEvidenceProvider, BirkNext.Api.Services.TestEvidence.TrxTestExecutionEvidenceProvider>();

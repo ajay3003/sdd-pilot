@@ -1164,3 +1164,26 @@
     color: var(--clr-text-body);
     overflow-wrap: anywhere;
 }
+.compatibility-status {
+    display: inline-block;
+    border: 1px solid var(--clr-border, #cbd5e1);
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    color: var(--clr-text, #1f2937);
+    background: var(--clr-surface-muted, #f8fafc);
+    font-size: 0.78rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.project-compatibility-card .settings-table td,
+.project-compatibility-card .settings-table th {
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .project-compatibility-card .table-responsive {
+        overflow-x: auto;
+        max-width: 100%;
+    }
+}

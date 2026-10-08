@@ -843,6 +843,41 @@ else if (_settings is not null)
                     Summary="@SystemDiagnosticSummary"
                     Sections="@SystemDiagnosticSections" />
             }
+            @if (_activeSection == "project-compatibility")
+            {
+                <section class="settings-card settings-card-full-width project-compatibility-card" aria-labelledby="project-compatibility-title">
+                    <div class="settings-card-title" id="project-compatibility-title">Project Compatibility</div>
+                    <p class="settings-card-note">Checks whether supported project artifacts and source evidence can be discovered across varied names and layouts. It uses isolated in-memory archives and does not change the current workspace, artifact choices, Source Analysis snapshot, Target Environment, or saved reviews. A pass measures discovery portability; it is not a project quality result.</p>
+                    <button class="btn-edit-settings" @onclick="RunProjectCompatibilityAsync" disabled="@_projectCompatibilityRunning">
+                        @(_projectCompatibilityRunning ? "Running compatibility diagnostics…" : "Run compatibility diagnostics")
+                    </button>
+                    @if (_projectCompatibilityError is not null)
+                    {
+                        <p role="alert" class="settings-card-note">@_projectCompatibilityError</p>
+                    }
+                    @if (_projectCompatibilityRun is { } compatibilityRun)
+                    {
+                        <p class="settings-card-note" role="status">Completed @compatibilityRun.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") — @compatibilityRun.OverallStatus</p>
+                        <div class="table-responsive">
+                            <table class="settings-table">
+                                <thead><tr><th>Scenario</th><th>Status</th><th>Expected</th><th>Observed</th><th>Duration</th></tr></thead>
+                                <tbody>
+                                    @foreach (var scenario in compatibilityRun.Scenarios)
+                                    {
+                                        <tr>
+                                            <th scope="row">@scenario.Name</th>
+                                            <td><span class="compatibility-status">@scenario.Status</span></td>
+                                            <td>@scenario.ExpectedBehavior</td>
+                                            <td>@scenario.ObservedBehavior@if (!string.IsNullOrWhiteSpace(scenario.Notes)) { <span> (@scenario.Notes)</span> }</td>
+                                            <td>@scenario.DurationMilliseconds ms</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+            }
             @if (_activeSection == "diagnostics-legacy")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1393,6 +1428,29 @@ else if (_settings is not null)
     private bool    _resetSuccess;
 
     private bool _copiedDiag;
+    private bool _projectCompatibilityRunning;
+    private string? _projectCompatibilityError;
+    private BirkNext.ProjectImport.ProjectCompatibilityRun? _projectCompatibilityRun;
+
+    private async Task RunProjectCompatibilityAsync()
+    {
+        if (_projectCompatibilityRunning) return;
+        _projectCompatibilityRunning = true;
+        _projectCompatibilityError = null;
+        try
+        {
+            _projectCompatibilityRun = await AdminApi.RunProjectCompatibilityDiagnosticsAsync();
+            if (_projectCompatibilityRun is null) _projectCompatibilityError = "The diagnostic returned no result.";
+        }
+        catch (HttpRequestException)
+        {
+            _projectCompatibilityError = "The compatibility diagnostic is unavailable because the local API could not be reached.";
+        }
+        finally
+        {
+            _projectCompatibilityRunning = false;
+        }
+    }
 
     // Project Documents diagnostics (lazy-loaded when diagnostics section is opened)
     private IReadOnlyList<DocumentSummaryDto> _diagDocSummary = [];

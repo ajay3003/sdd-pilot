@@ -103,6 +103,25 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     }
 
     [Fact]
+    public void ProjectCompatibilityRunsFromSystemSettingsAndShowsScenarioStates()
+    {
+        _handler.ProjectCompatibilityJson = """
+            {"runId":"00000000-0000-0000-0000-000000000001","startedAt":"2026-10-08T12:00:00Z","completedAt":"2026-10-08T12:00:01Z","overallStatus":0,"scenarios":[{"name":"Renamed Markdown documents","status":0,"expectedBehavior":"Roles remain discoverable.","observedBehavior":"Role and fingerprint set unchanged.","durationMilliseconds":2}]}
+            """;
+        var cut = Render<SystemSettings>();
+
+        cut.WaitForAssertion(() => FindButton(cut, "Project Compatibility").Should().NotBeNull());
+        FindButton(cut, "Project Compatibility")!.Click();
+        cut.Markup.Should().Contain("isolated in-memory archives");
+        cut.Markup.Should().Contain("does not change the current workspace");
+        FindButton(cut, "Run compatibility diagnostics")!.Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Renamed Markdown documents"));
+        cut.Markup.Should().Contain("Role and fingerprint set unchanged.");
+        cut.Markup.Should().Contain("Pass");
+    }
+
+    [Fact]
     public void TimestampFormatting_UsesFormattedLocalTimestamp()
     {
         var timestamp = new DateTime(2026, 7, 3, 12, 34, 56, DateTimeKind.Utc);
@@ -385,6 +404,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     private sealed class AdminApiHandler : HttpMessageHandler
     {
         public string EnvironmentDiagnosticsJson { get; set; } = SuccessfulDiagnosticsJson;
+        public string ProjectCompatibilityJson { get; set; } = "{}";
         public string? LastSaveBody { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -407,6 +427,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
                 "/api/admin/editable-settings" => EditableSettingsJson,
                 "/api/frontend-quality-engines/status" => FrontendQualityStatusJson,
                 "/api/admin/environment-diagnostics" => EnvironmentDiagnosticsJson,
+                "/api/system-diagnostics/project-compatibility/run" => ProjectCompatibilityJson,
                 _ => "[]"
             };
 
