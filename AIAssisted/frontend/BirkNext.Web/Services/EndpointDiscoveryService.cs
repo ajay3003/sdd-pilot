@@ -155,6 +155,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     {
         var page = s.Pages.FirstOrDefault(p => p.Identity == pageIdentity);
         if (page is null) return false;   // the page entry is never deleted/recreated by a refresh
+        page.NetworkHistory.Add(new(page.AnalysisGeneration, page.FirstObservedAt, page.LastObservedAt, page.DisplayName, page.Endpoints.ToList(), page.BrowserEvidence));
         page.AnalysisGeneration++;
         page.RefreshedAtUtc = DateTimeOffset.UtcNow;
         page.Endpoints.Clear();
@@ -165,7 +166,8 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 
     public Task DeleteAllAsync(IJSRuntime js, string profileId) => MutateAsync(js, profileId, s =>
     {
-        var had = s.Pages.Count > 0 || s.Shared.Count > 0;
+        var had = s.Pages.Count > 0 || s.Shared.Count > 0 || s.ExcludedPageHistory.Count > 0;
+        s.ExcludedPageHistory.Clear();
         s.Pages.Clear();
         s.Shared.Clear();
         return had;
@@ -229,21 +231,41 @@ public static class EndpointDiscoveryMerge
 {
     public static void Reclassify(EndpointDiscoverySnapshot snapshot)
     {
-        foreach (var page in snapshot.Pages.Where(p => !ApplicationPagePolicy.IsApplicationOrigin(p.PageOrigin, snapshot.ApplicationOrigins)).ToList())
+        foreach (var page in snapshot.Pages.Where(p => !ApplicationPagePolicy.IsApplicationOrigin(p.PageOrigin, snapshot.ApplicationOrigins) || !NetworkEvidencePolicy.IsApplicationPage(p.PagePath)).ToList())
         {
             foreach (var endpoint in page.Endpoints) Upsert(snapshot.Shared, endpoint with { PageOrigin = null, PagePath = null });
             snapshot.ExcludedPageHistory.Add(page);
             snapshot.Pages.Remove(page);
         }
-        snapshot.SchemaVersion = 2;
+        foreach (var page in snapshot.Pages)
+        {
+            foreach (var endpoint in page.Endpoints.Where(e => NetworkEvidencePolicy.ResourceOf(e) != NetworkResourceKind.Unknown).ToList())
+            {
+                Upsert(snapshot.Shared, endpoint);
+                page.Endpoints.Remove(endpoint);
+            }
+        }
+        foreach (var group in snapshot.Pages.GroupBy(p => p.Identity).Where(g => g.Count() > 1).ToList())
+        {
+            var current = group.OrderByDescending(p => p.LastObservedAt).First();
+            foreach (var duplicate in group.Where(p => !ReferenceEquals(p, current)).ToList())
+            {
+                current.NetworkHistory.AddRange(duplicate.NetworkHistory);
+                current.NetworkHistory.Add(new(duplicate.AnalysisGeneration, duplicate.FirstObservedAt, duplicate.LastObservedAt, duplicate.DisplayName, duplicate.Endpoints.ToList(), duplicate.BrowserEvidence));
+                foreach (var endpoint in duplicate.Endpoints) Upsert(current.Endpoints, endpoint);
+                snapshot.Pages.Remove(duplicate);
+            }
+        }
+        snapshot.SchemaVersion = 3;
     }
 
     public static bool Merge(EndpointDiscoverySnapshot snapshot, IReadOnlyList<ObservedNetworkEndpoint> observed, DateTimeOffset now)
     {
         var changed = false;
-        foreach (var endpoint in observed)
+        foreach (var original in observed)
         {
-            if (endpoint.PageOrigin is null || endpoint.PagePath is null || !ApplicationPagePolicy.IsApplicationOrigin(endpoint.PageOrigin, snapshot.ApplicationOrigins))
+            var endpoint = original with { Provenance = NetworkEvidencePolicy.ProvenanceOf(original) };
+            if (NetworkEvidencePolicy.ResourceOf(endpoint) != NetworkResourceKind.Unknown || !NetworkEvidencePolicy.IsApplicationPage(endpoint.PagePath) || endpoint.PageOrigin is null || endpoint.PagePath is null || !ApplicationPagePolicy.IsApplicationOrigin(endpoint.PageOrigin, snapshot.ApplicationOrigins))
             {
                 changed |= Upsert(snapshot.Shared, endpoint with { PageOrigin = null, PagePath = null });
                 continue;
@@ -300,7 +322,7 @@ public static class EndpointDiscoveryMerge
         var changed = false;
         foreach (var evidence in pages)
         {
-            if (!ApplicationPagePolicy.IsApplicationOrigin(evidence.PageOrigin, snapshot.ApplicationOrigins) || string.IsNullOrWhiteSpace(evidence.PageOrigin) || string.IsNullOrWhiteSpace(evidence.PagePath) || evidence.VisitStartedAt == default) continue;
+            if (!NetworkEvidencePolicy.IsApplicationPage(evidence.PagePath) || !ApplicationPagePolicy.IsApplicationOrigin(evidence.PageOrigin, snapshot.ApplicationOrigins) || string.IsNullOrWhiteSpace(evidence.PageOrigin) || string.IsNullOrWhiteSpace(evidence.PagePath) || evidence.VisitStartedAt == default) continue;
             var identity = evidence.Identity;
             var page = snapshot.Pages.FirstOrDefault(p => p.Identity == identity);
             if (page is null)
@@ -331,8 +353,8 @@ public static class EndpointDiscoveryMerge
     /// distinct operations to one endpoint (GetChildren, GetRoles) are separate rows with their own counts and latency samples.
     /// </summary>
     public static string Key(ObservedNetworkEndpoint e) => e.Category == ObservedTrafficCategory.GraphQl
-        ? $"{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}|{e.OperationType}|{e.OperationName}"
-        : $"{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}";
+        ? $"{NetworkEvidencePolicy.ProvenanceOf(e)}|{e.Source}|{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}|{e.OperationType}|{e.OperationName}"
+        : $"{NetworkEvidencePolicy.ProvenanceOf(e)}|{e.Source}|{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}";
 
     private static bool Upsert(List<ObservedNetworkEndpoint> list, ObservedNetworkEndpoint incoming)
     {

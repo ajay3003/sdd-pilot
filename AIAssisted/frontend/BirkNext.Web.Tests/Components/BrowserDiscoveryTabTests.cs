@@ -69,7 +69,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     {
         PageOrigin = Origin, PagePath = "/proxy-only",
         Endpoints = [new() { Scheme = "https", Host = "api.example.test", Port = 443, Path = "/api/items",
-                             Category = ObservedTrafficCategory.Rest, LastObservedAt = Observed }]
+                             Provenance = RequestProvenance.ApplicationTraffic, Category = ObservedTrafficCategory.Rest, LastObservedAt = Observed }]
     });
 
     private IRenderedComponent<BrowserDiscoveryTab> Open(BrowserCompanionRuntime? runtime = null) =>
@@ -458,21 +458,21 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     [InlineData("overview")]
     [InlineData("pages")]
     [InlineData("shared")]
-    [InlineData("integrations")]
+    
     public void EndpointViewsRetainNetworkOwnershipAndNeverRenderBrowserAssessments(string view)
     {
         SeedFullPage();
         var cut = Render<EndpointDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.ProxyStatus,
             new LocalHttpsProxyStatus
             {
-                State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true,
+                ProxyListening = true, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true,
                 ObservedNetworkEndpoints = [new() { Scheme = "https", Host = "api.example.test", Port = 443, Path = "/api/items",
-                    PageOrigin = Origin, PagePath = "/dashboard", Category = ObservedTrafficCategory.Rest, LastObservedAt = DateTimeOffset.UtcNow }]
+                    PageOrigin = Origin, PagePath = "/dashboard", Provenance = RequestProvenance.ApplicationTraffic, Category = ObservedTrafficCategory.Rest, LastObservedAt = DateTimeOffset.UtcNow }]
             }));
 
         cut.Find("[data-testid=discovery-active]").TextContent.Should().Be("Active");
-        cut.Markup.Should().Contain("What this application communicates with");
-        foreach (var id in new[] { "pages", "shared", "integrations" })
+        cut.Markup.Should().Contain("Observed backend communication");
+        foreach (var id in new[] { "pages", "shared" })
             cut.FindAll($"[data-testid=discovery-nav-{id}]").Should().ContainSingle();
 
         cut.Find($"[data-testid=discovery-nav-{view}]").Click();

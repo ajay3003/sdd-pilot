@@ -16,12 +16,36 @@ namespace BirkNext.Web.Tests.Services;
 /// </summary>
 public sealed class ApiReviewTargetResolverTests
 {
+    [Theory]
+    [InlineData("/appsettings.json")]
+    [InlineData("/appsettings.Dev.json")]
+    [InlineData("/_framework/app.js")]
+    [InlineData("/_content/app.css")]
+    [InlineData("/authentication/login-callback")]
+    [InlineData("/swagger.json")]
+    [InlineData("/openapi.json")]
+    [InlineData("/birknext-unknown-route-probe-old")]
+    public void TechnicalResourcesAreNeverDefaultApiTargets(string path)
+    {
+        var endpoint = Ep(ObservedTrafficCategory.Rest, path);
+        Assert.Empty(ApiReviewTargetResolver.Resolve(Context(), Discovery(endpoint)));
+        Assert.Empty(ApiReviewTargetResolver.Resolve(Context(rest: Origin + path), new()));
+    }
+
+    [Fact]
+    public void ProvenanceGuardRejectsProbesAndUnknownButRetainsRealGraphQl()
+    {
+        var endpoint = Ep(ObservedTrafficCategory.GraphQl, "/api/autorisasjon/graphql");
+        Assert.Single(ApiReviewTargetResolver.Resolve(Context(), Discovery(endpoint)));
+        Assert.Empty(ApiReviewTargetResolver.Resolve(Context(), Discovery(endpoint with { Provenance = RequestProvenance.DiscoveryProbe })));
+        Assert.Empty(ApiReviewTargetResolver.Resolve(Context(), Discovery(endpoint with { Provenance = RequestProvenance.Unknown })));
+    }
     private const string Origin = "https://m2lbdev.bufetat.no";
     private static readonly DateTimeOffset T0 = new(2026, 9, 16, 10, 0, 0, TimeSpan.Zero);
 
     private static ObservedNetworkEndpoint Ep(ObservedTrafficCategory cat, string path, string method = "GET", int count = 3, bool auth = true, GraphQlOperationType op = GraphQlOperationType.None, string? opName = null, ObservedEndpointConfidence confidence = ObservedEndpointConfidence.Verified, string host = "api-dev.bufetat.no", string pagePath = "/barn/1") => new()
     {
-        Category = cat, Scheme = "https", Host = host, Port = 443, Path = path, Method = method, AuthObserved = auth, LastStatus = 200, Count = count, FirstObservedAt = T0, LastObservedAt = T0.AddMinutes(1),
+        Provenance = RequestProvenance.ApplicationTraffic, Category = cat, Scheme = "https", Host = host, Port = 443, Path = path, Method = method, AuthObserved = auth, LastStatus = 200, Count = count, FirstObservedAt = T0, LastObservedAt = T0.AddMinutes(1),
         OperationType = op, OperationName = opName, Confidence = confidence, PageOrigin = Origin, PagePath = pagePath,
     };
 

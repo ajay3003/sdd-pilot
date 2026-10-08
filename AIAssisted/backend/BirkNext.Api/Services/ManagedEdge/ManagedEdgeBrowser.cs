@@ -156,7 +156,8 @@ public sealed class ManagedEdgeConnector : IManagedEdgeConnector
                 const start = performance.now();
                 const response = await fetch(target.href, {
                     method: query === null ? 'GET' : 'POST',
-                    ...(query === null ? {} : {headers: {'Content-Type':'application/json'}, body: JSON.stringify({query})}),
+                    headers: {'X-BirkNext-Request-Provenance': 'BirkNextDiagnostic', ...(query === null ? {} : {'Content-Type':'application/json'})},
+                    ...(query === null ? {} : {body: JSON.stringify({query})}),
                     credentials: 'same-origin', mode: 'same-origin', redirect: 'error', cache: 'no-store',
                     referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(5000)
                 });

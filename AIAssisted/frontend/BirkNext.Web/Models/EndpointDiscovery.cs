@@ -11,7 +11,7 @@ namespace BirkNext.Web.Models;
 /// </summary>
 public sealed class EndpointDiscoverySnapshot
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public List<string>? ApplicationOrigins { get; set; }
     public BrowserQualityState Quality { get; set; } = new();
     // Quarantined legacy non-application records retain review/evidence provenance, never participate in assessment.
@@ -34,6 +34,7 @@ public sealed class BrowserQualityState
 /// <summary>One analyzed application page and the endpoints it was observed to communicate with. Relationship-oriented: an endpoint used by two pages is a separate row under each page, so deleting one page never removes the other page's evidence.</summary>
 public sealed class PageAnalysis
 {
+    public List<NetworkAnalysisCapture> NetworkHistory { get; set; } = [];
     public List<WcagManualReview> WcagReviews { get; set; } = [];
     [JsonPropertyName("origin")] public string PageOrigin { get; set; } = "";
     [JsonPropertyName("path")] public string PagePath { get; set; } = "";
@@ -72,3 +73,7 @@ public sealed class PageAnalysis
     [JsonIgnore] public bool IsWaitingForFreshTraffic => RefreshedAtUtc is not null && Endpoints.Count == 0 && BrowserEvidence is null;
     [JsonIgnore] public bool HasBrowserEvidence => BrowserEvidence is not null;
 }
+
+/// <summary>Preserves the network evidence replaced by a refresh or duplicate legacy page record.</summary>
+public sealed record NetworkAnalysisCapture(int Generation, DateTimeOffset FirstObservedAt, DateTimeOffset LastObservedAt,
+    string? DisplayName, List<ObservedNetworkEndpoint> Endpoints, BrowserPageEvidence? BrowserEvidence);

@@ -235,6 +235,7 @@ internal static class ObservedTrafficClassifier
 /// <summary>Non-secret metadata of one intercepted exchange for page-oriented network discovery, including the safe page-correlation Referer.</summary>
 internal sealed record NetworkRequestMetadata
 {
+    public RequestProvenance Provenance { get; init; } = RequestProvenance.Unknown;
     public required string Host { get; init; }
     public required int Port { get; init; }
     public required string Method { get; init; }
@@ -315,6 +316,7 @@ internal static class NetworkTrafficClassifier
 
         return new ObservedNetworkEndpoint
         {
+            Provenance = metadata.Provenance,
             Category = category,
             Scheme = metadata.IsWebSocket ? "wss" : "https",
             Host = metadata.Host,
@@ -473,7 +475,7 @@ internal sealed class ObservedNetworkRegistry(int capacity = 400)
     {
         // GraphQL operations to one endpoint are collapsed per operation (type + name), so GetChildren ×7 and GetRoles ×5 stay distinct rows.
         var operation = endpoint.Category == ObservedTrafficCategory.GraphQl ? $"|{endpoint.OperationType}|{endpoint.OperationName}" : "";
-        var key = $"{endpoint.PageOrigin}{endpoint.PagePath}|{endpoint.Category}|{endpoint.Scheme}|{endpoint.Host}|{endpoint.Port}|{endpoint.Path}|{endpoint.Method}{operation}";
+        var key = $"{endpoint.Provenance}|{endpoint.Source}|{endpoint.PageOrigin}{endpoint.PagePath}|{endpoint.Category}|{endpoint.Scheme}|{endpoint.Host}|{endpoint.Port}|{endpoint.Path}|{endpoint.Method}{operation}";
         lock (_lock)
         {
             if (_endpoints.TryGetValue(key, out var existing))

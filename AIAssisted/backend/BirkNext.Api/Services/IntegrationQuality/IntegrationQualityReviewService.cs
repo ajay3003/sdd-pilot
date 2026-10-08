@@ -39,6 +39,7 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         IIntegrationQualitySnapshotRepository? snapshotRepository = null)
     {
         _client = client;
+        _client.DefaultRequestHeaders.TryAddWithoutValidation(NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
         _logger = logger;
         _authenticatedReview = authenticatedReview;
         _relationshipPopulation = relationshipPopulation;

@@ -27,6 +27,7 @@ public sealed class WasmAssetDiscoveryService : IWasmAssetDiscoveryService
     public WasmAssetDiscoveryService(HttpClient client, ILogger<WasmAssetDiscoveryService> logger)
     {
         _client = client;
+        _client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
         _logger = logger;
     }
 

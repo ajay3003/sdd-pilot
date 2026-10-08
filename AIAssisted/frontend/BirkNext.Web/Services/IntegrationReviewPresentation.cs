@@ -146,7 +146,7 @@ public static class IntegrationReviewPresentation
     {
         if (string.IsNullOrWhiteSpace(integration.Endpoint)) return false;
         return Uri.TryCreate(integration.Endpoint, UriKind.Absolute, out var uri)
-            && observations.Any(o => string.Equals(o.Host, uri.Host, StringComparison.OrdinalIgnoreCase));
+            && observations.Where(NetworkEvidencePolicy.IsApiCandidate).Any(o => string.Equals(o.Host, uri.Host, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

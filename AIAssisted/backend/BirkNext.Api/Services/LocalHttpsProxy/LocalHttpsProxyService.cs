@@ -541,6 +541,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             if (!Hosts.Contains(exchange.Host, exchange.Port)) return;
             _networkEndpoints.Record(NetworkTrafficClassifier.Classify(new NetworkRequestMetadata
             {
+                Provenance = exchange.Provenance,
                 Host = exchange.Host,
                 Port = exchange.Port,
                 Method = exchange.Method,
@@ -564,7 +565,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         /// <summary>Classifies an observed authenticated request into a safe endpoint record. No token, header value or body is retained.</summary>
         private void RecordObservedEndpoint(ProxyExchange exchange)
         {
-            if (!Hosts.Contains(exchange.Host, exchange.Port)) return;
+            if (!Hosts.Contains(exchange.Host, exchange.Port) || exchange.Provenance is RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic
+                || NetworkEvidencePolicy.Classify(exchange.Path) != NetworkResourceKind.Unknown) return;
             var endpoint = ObservedTrafficClassifier.Classify(new ObservedRequestMetadata
             {
                 Host = exchange.Host,

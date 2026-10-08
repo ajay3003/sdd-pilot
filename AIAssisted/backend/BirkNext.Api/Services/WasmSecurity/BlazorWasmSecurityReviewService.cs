@@ -35,6 +35,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         ILogger<BlazorWasmSecurityReviewService> logger)
     {
         _http   = http;
+        _http.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "DiscoveryProbe");
         _logger = logger;
     }
 

@@ -41,6 +41,7 @@ public sealed class WasmApiAnalysisService : IWasmApiAnalysisService
         ILogger<WasmApiAnalysisService> logger)
     {
         _client = client;
+        _client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "DiscoveryProbe");
         _logger = logger;
     }
 

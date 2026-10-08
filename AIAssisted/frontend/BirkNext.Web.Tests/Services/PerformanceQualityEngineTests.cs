@@ -37,7 +37,7 @@ public sealed class PerformanceQualityEngineTests : BunitContext
 
     private static ObservedNetworkEndpoint Endpoint(string pagePath, string apiPath, int count, DateTimeOffset at, double ms = 300, string? gql = null) => new()
     {
-        Category = gql is null ? ObservedTrafficCategory.Rest : ObservedTrafficCategory.GraphQl, Scheme = "https", Host = "api-dev.bufetat.no", Port = 443, Path = apiPath, Method = gql is null ? "GET" : "POST",
+        Provenance = RequestProvenance.ApplicationTraffic, Category = gql is null ? ObservedTrafficCategory.Rest : ObservedTrafficCategory.GraphQl, Scheme = "https", Host = "api-dev.bufetat.no", Port = 443, Path = apiPath, Method = gql is null ? "GET" : "POST",
         AuthObserved = true, LastStatus = 200, Count = count, FirstObservedAt = at, LastObservedAt = at.AddSeconds(count), PageOrigin = Origin, PagePath = pagePath, Confidence = ObservedEndpointConfidence.Verified,
         OperationType = gql is null ? GraphQlOperationType.None : GraphQlOperationType.Query, OperationName = gql,
         Samples = Enumerable.Range(0, count).Select(i => new ObservedRequestSample(at.AddSeconds(count - i), ms, 200, 1024)).ToList(), TotalDurationMs = ms * count, MinDurationMs = ms, MaxDurationMs = ms, LastDurationMs = ms,

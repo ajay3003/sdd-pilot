@@ -73,6 +73,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         _detectionOptions = detectionOptions?.Value ?? new();
         _validator = validator;
         _httpClient = httpClient;
+        _httpClient.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "DiscoveryProbe");
         _resolver = resolver;
         _frameworkDetector = frameworkDetector;
         _logger = logger;

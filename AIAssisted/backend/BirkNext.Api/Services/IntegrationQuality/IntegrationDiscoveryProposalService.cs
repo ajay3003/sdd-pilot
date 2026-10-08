@@ -30,7 +30,7 @@ public sealed class IntegrationDiscoveryProposalService
 
         var proposals = new Dictionary<string, IntegrationConfigDto>(StringComparer.Ordinal);
 
-        foreach (var observation in observations)
+        foreach (var observation in observations.Where(NetworkEvidencePolicy.IsApiCandidate))
         {
             var type = observation.Category switch
             {

@@ -27,7 +27,7 @@ public class PerformanceSnapshotHistoryTests
     private static ObservedNetworkEndpoint Traffic(params ObservedRequestSample[] samples) => new()
     {
         Scheme = "https", Host = "api.example.test", Port = 443, Path = "/orders", Method = "GET",
-        Category = ObservedTrafficCategory.Rest,
+        Provenance = RequestProvenance.ApplicationTraffic, Category = ObservedTrafficCategory.Rest,
         Source = EndpointDiscoverySource.AuthenticatedProxyTraffic,
         FirstObservedAt = T0, LastObservedAt = T0.AddSeconds(10),
         Samples = samples.ToList()
