@@ -1,0 +1,15 @@
+.markdown-source-notes {
+    margin-block: 1rem;
+}
+
+.markdown-source-note {
+    margin-block: 0.75rem;
+    border-inline-start: 3px solid var(--bs-border-color, #6c757d);
+    padding-inline-start: 0.75rem;
+}
+
+.markdown-source-note pre {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}

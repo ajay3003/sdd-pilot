@@ -462,7 +462,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             dependencies, milestones, checkItems, gates, phases, testingInfo, sections,
             !string.IsNullOrEmpty(branch) || !string.IsNullOrEmpty(author));
 
-        return new PlanDocument
+        var document = new PlanDocument
         {
             Title = string.IsNullOrEmpty(title) ? "Plan" : title,
             FeatureName = featureName,
@@ -489,6 +489,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             TestingInfo = testingInfo,
             Health = health,
         };
+        document.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, document, preserveFreeTextForRender: true));
+        return document;
     }
 
     // ── Search & filter ──────────────────────────────────────────────────────

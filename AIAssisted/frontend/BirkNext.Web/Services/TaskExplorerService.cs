@@ -270,7 +270,9 @@ public static class TaskExplorerService
             ParallelTasks = hParallel,
         };
 
-        return new TaskTree { Roots = roots, Health = health, ExplicitDependencies = dependencies };
+        var tree = new TaskTree { Roots = roots, Health = health, ExplicitDependencies = dependencies };
+        tree.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, tree));
+        return tree;
     }
 
     public static TaskNode? FindNode(IEnumerable<TaskNode> nodes, string id)

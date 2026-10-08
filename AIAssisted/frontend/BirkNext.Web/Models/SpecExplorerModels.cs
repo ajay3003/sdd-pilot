@@ -121,4 +121,5 @@ public sealed class SpecTree
 {
     public List<SpecNode> Roots { get; init; } = [];
     public SpecHealth Health { get; init; } = new();
+    public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
 }

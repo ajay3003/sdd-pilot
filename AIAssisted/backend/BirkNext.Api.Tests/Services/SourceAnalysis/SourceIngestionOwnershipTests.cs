@@ -44,6 +44,8 @@ public sealed class SourceIngestionOwnershipTests
             ["Services/Integrations/Scim/ScimSourceReader.cs"] = "SCIM and Security Classification Roslyn analyzers (incl. docs/specs .md); inside ingestion on validated bytes",
             ["Services/DependencyReview/SourceDependencyEvidenceExtractor.cs"] = "package-manager manifests and Renovate configs for Dependency Review; inside ingestion",
             ["Services/DependencyReview/DependencyReviewService.cs"] = "test-only RunAsync(archives) harness through the same evidence bridge; not exposed over HTTP",
+            ["Services/ProjectImport/ProjectCompatibilityDiagnosticService.cs"] = "creates synthetic in-memory ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
+            ["Services/MarkdownDiagnosticsService.cs"] = "creates synthetic in-memory Markdown ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
         };
         Sources().Where(f => f.Text.Contains("new ZipArchive(", StringComparison.Ordinal)).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "source bytes come from Source Analysis; no review opens archives of its own");

@@ -247,7 +247,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
         var catalog = BuildRuleCatalog(principles, standards, constraints, governanceItems);
         var health = BuildHealth(principles, standards, constraints, governanceItems, changelog, catalog);
 
-        return new ConstitutionDocument
+        var document = new ConstitutionDocument
         {
             Title = string.IsNullOrEmpty(title) ? "Constitution" : title,
             Version = version,
@@ -262,6 +262,8 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             RuleCatalog = catalog,
             Health = health,
         };
+        document.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, document));
+        return document;
     }
 
     // ── Search & filter ────────────────────────────────────────────────────

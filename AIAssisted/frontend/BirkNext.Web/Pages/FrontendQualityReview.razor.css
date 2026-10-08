@@ -228,7 +228,16 @@
 ::deep .fqr-readiness-action {
     justify-self: start;
     align-self: start;
-    text-decoration: none;
+    color: var(--clr-primary-hover);
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
+
+::deep .fqr-readiness-action:hover:not(:disabled),
+::deep .fqr-readiness-action:focus-visible {
+    color: var(--clr-primary-hover);
+    background-color: transparent;
+    text-decoration-thickness: 0.12em;
 }
 
 /* ── Review details: one collapsed row per concept, restrained and uniform ── */

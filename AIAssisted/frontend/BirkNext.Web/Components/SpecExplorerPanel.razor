@@ -513,6 +513,8 @@
     }
 </div>
 
+<MarkdownSourceNotesPanel Blocks="@(_tree?.UnmappedSourceBlocks)" />
+
 @code {
     [Parameter] public IReadOnlyList<ExtractionCandidate>? Candidates { get; set; }
     [Parameter] public string InitialSpecMarkdown { get; set; } = string.Empty;

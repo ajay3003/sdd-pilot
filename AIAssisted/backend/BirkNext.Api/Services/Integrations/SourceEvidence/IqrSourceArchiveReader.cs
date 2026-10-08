@@ -23,6 +23,8 @@ public sealed record SourceArchiveReadResult(IqrSourceArchiveReader.Workspace? W
     }
 }
 
+public sealed record RawDocumentFile(string Path, byte[] Bytes);
+
 /// <summary>Bounded virtual workspace. Never writes archive entries or the upload to disk.</summary>
 public static class IqrSourceArchiveReader
 {
@@ -43,7 +45,8 @@ public static class IqrSourceArchiveReader
     /// <param name="EntryCount">Every entry of the archive (files and directories), as validated.</param>
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
         List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null,
-        List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0);
+        List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0,
+        List<RawDocumentFile>? RawDocumentFiles = null);
 
     public sealed record ArchiveDocumentSkip(string Path, string Reason);
 
@@ -75,7 +78,11 @@ public static class IqrSourceArchiveReader
     /// The one validation path for uploaded archives (Source Analysis and Project Import). With <paramref name="captureDocuments"/>, readable
     /// Markdown documents are also captured in the same pass, under the same entry, path, size and expanded-read limits.
     /// </summary>
-    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, bool captureDocuments, CancellationToken ct = default)
+    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, bool captureDocuments, CancellationToken ct = default) =>
+        ReadDetailed(name, bytes, captureDocuments, captureRawDocuments: false, ct);
+
+    /// <summary>Optional raw Markdown byte capture is reserved for isolated integrity diagnostics; standard imports retain decoded text only.</summary>
+    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, bool captureDocuments, bool captureRawDocuments, CancellationToken ct = default)
     {
         if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return Reject("ARCHIVE_UNSUPPORTED_FORMAT", "Only ZIP source archives are supported.");
         if (bytes.Length == 0) return Reject("ARCHIVE_EMPTY_UPLOAD", "The uploaded file is empty.", actual: 0, limit: 1);
@@ -88,6 +95,7 @@ public static class IqrSourceArchiveReader
         var evidenceFiles = new List<SourceFile>();
         var allPaths = new List<string>();
         var documentFiles = new List<SourceFile>();
+        var rawDocumentFiles = captureRawDocuments ? new List<RawDocumentFile>() : null;
         var skippedDocuments = new List<ArchiveDocumentSkip>();
         var fileEntryCount = 0;
         long? entryCount = null;
@@ -99,7 +107,7 @@ public static class IqrSourceArchiveReader
             long total = 0;
             long actualRead = 0;
             // Reads one entry under the expanded-read and per-file limits; a length that does not match the header is an invalid archive.
-            (string? Content, SourceArchiveReadResult? Rejection) ReadEntry(ZipArchiveEntry entry, string path)
+            (string? Content, byte[]? RawBytes, SourceArchiveReadResult? Rejection) ReadEntry(ZipArchiveEntry entry, string path)
             {
                 using var input = entry.Open();
                 using var buffer = new MemoryStream();
@@ -108,14 +116,15 @@ public static class IqrSourceArchiveReader
                 while ((count = input.Read(chunk, 0, chunk.Length)) > 0)
                 {
                     actualRead += count;
-                    if (actualRead > MaxExpandedBytes) return (null, Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive data exceeds the {FormatBytes(MaxExpandedBytes)} expanded read limit.", path, actualRead, MaxExpandedBytes, entryCount));
-                    if (buffer.Length + count > MaxFileBytes) return (null, Reject("ARCHIVE_ENTRY_TOO_LARGE", $"Archive entry exceeds the {FormatBytes(MaxFileBytes)} analysis read limit.", path, buffer.Length + count, MaxFileBytes, entryCount));
+                    if (actualRead > MaxExpandedBytes) return (null, null, Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive data exceeds the {FormatBytes(MaxExpandedBytes)} expanded read limit.", path, actualRead, MaxExpandedBytes, entryCount));
+                    if (buffer.Length + count > MaxFileBytes) return (null, null, Reject("ARCHIVE_ENTRY_TOO_LARGE", $"Archive entry exceeds the {FormatBytes(MaxFileBytes)} analysis read limit.", path, buffer.Length + count, MaxFileBytes, entryCount));
                     buffer.Write(chunk, 0, count);
                 }
-                if (buffer.Length != entry.Length) return (null, Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount));
+                if (buffer.Length != entry.Length) return (null, null, Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount));
+                var rawBytes = captureRawDocuments ? buffer.ToArray() : null;
                 buffer.Position = 0;
                 using var textReader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-                return (textReader.ReadToEnd(), null);
+                return (textReader.ReadToEnd(), rawBytes, null);
             }
             foreach (var entry in zip.Entries)
             {
@@ -146,10 +155,11 @@ public static class IqrSourceArchiveReader
                     if (path.Split('/').Any(BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.IgnoredDirectories.Contains)) continue;
                     if (documentFiles.Count >= MaxDocuments) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.DocumentLimit)); continue; }
                     if (entry.Length > MaxDocumentBytes) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.TooLarge)); continue; }
-                    var (document, documentRejection) = ReadEntry(entry, path);
+                    var (document, rawDocument, documentRejection) = ReadEntry(entry, path);
                     if (documentRejection is not null) return documentRejection;
                     if (document!.Contains('\0')) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.Binary)); continue; }
                     documentFiles.Add(new SourceFile(path, document));
+                    if (rawDocument is not null) rawDocumentFiles!.Add(new RawDocumentFile(path, rawDocument));
                     continue;
                 }
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
@@ -161,7 +171,7 @@ public static class IqrSourceArchiveReader
                 if (!evidence && extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql" or ".xsd")
                     && !Path.GetFileName(path).Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
-                var (read, rejection) = ReadEntry(entry, path);
+                var (read, _, rejection) = ReadEntry(entry, path);
                 if (rejection is not null) return rejection;
                 var content = read!;
                 if (extension is ".json" or ".yaml" or ".yml")
@@ -211,7 +221,7 @@ public static class IqrSourceArchiveReader
         if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
-            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0), null);
+            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles), null);
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);

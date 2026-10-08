@@ -760,7 +760,7 @@ public static class SpecExplorerService
         foreach (var root in roots)
             PropagateStats(root);
 
-        return new SpecTree
+        var parsedTree = new SpecTree
         {
             Roots = roots,
             Health = new SpecHealth
@@ -780,6 +780,8 @@ public static class SpecExplorerService
                 EdgeCases      = hEdgeCases,
             },
         };
+        parsedTree.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, parsedTree, preserveFreeTextForRender: true));
+        return parsedTree;
     }
 
     // ── Inline BDD splitter ───────────────────────────────────────────────────

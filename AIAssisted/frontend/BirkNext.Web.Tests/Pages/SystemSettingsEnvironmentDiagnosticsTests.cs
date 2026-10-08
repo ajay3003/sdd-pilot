@@ -122,6 +122,55 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     }
 
     [Fact]
+    public void MarkdownDiagnostics_AreSeparateSystemSettingsEntriesAndExplainTheirScopes()
+    {
+        var cut = Render<SystemSettings>();
+        FindButton(cut, "Content Integrity")!.Click();
+        cut.Markup.Should().Contain("Run content integrity diagnostics");
+        cut.Markup.Should().Contain("does not read or change the current workspace");
+        FindButton(cut, "Explorer Text Coverage")!.Click();
+        cut.Markup.Should().Contain("Run Explorer coverage diagnostics");
+        cut.Markup.Should().Contain("Missing blocks are defects");
+        DocumentationCatalog.SettingsGroups.Single(g => g.Label == "Developer").Items.Select(i => i.Label)
+            .Should().ContainInOrder("Project Compatibility", "Content Integrity", "Explorer Text Coverage");
+    }
+
+    [Fact]
+    public void ContentIntegrity_RendersRawCanonicalAndParserEvidence()
+    {
+        _handler.ContentIntegrityJson = """
+            {"runId":"00000000-0000-0000-0000-000000000001","startedAt":"2026-10-08T12:00:00Z","completedAt":"2026-10-08T12:00:01Z","overallStatus":0,"documents":[{"displayName":"generated.md","artifactRole":"Plan","safeRelativePath":"docs/generated.md","archiveBytes":120,"archiveChars":120,"archiveLines":6,"archiveSha256":"abcdef1234567890","archiveCanonicalSha256":"abcdef1234567890","storedBytes":120,"storedChars":120,"storedLines":6,"storedSha256":"abcdef1234567890","storedCanonicalSha256":"abcdef1234567890","exactMatch":true,"canonicalMatch":true,"rawImportStatus":"Exact","parserReachedEof":true,"parserConsumedChars":120,"parserConsumedLines":6,"lastProcessedLine":6,"lastProcessedHeading":"Rollback","parserWarnings":[],"startMarkerPreserved":true,"middleMarkerPreserved":true,"endMarkerPreserved":true,"potentialTruncation":false,"status":0}]}
+            """;
+        var cut = Render<SystemSettings>();
+        FindButton(cut, "Content Integrity")!.Click();
+        FindButton(cut, "Run content integrity diagnostics")!.Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("generated.md"));
+        cut.Markup.Should().Contain("Exact");
+        cut.Markup.Should().Contain("Reached EOF at line 6");
+        cut.Markup.Should().Contain("START yes");
+        cut.Markup.Should().Contain("potential truncations: 0");
+    }
+
+    [Fact]
+    public void ExplorerCoverage_RendersMissingRangesAndCanFilterSourceBlocks()
+    {
+        _handler.ExplorerCoverageJson = """
+            {"runId":"00000000-0000-0000-0000-000000000001","startedAt":"2026-10-08T12:00:00Z","completedAt":"2026-10-08T12:00:01Z","overallStatus":3,"documents":[{"artifactRole":"Plan","displayName":"delivery-plan.md","sourceBlockCount":2,"representedDirectlyCount":1,"representedStructurallyCount":0,"intentionallyIgnoredCount":0,"unsupportedCount":0,"missingCount":1,"status":3,"blocks":[{"blockId":"Plan:0:a","startLine":4,"endLine":4,"blockType":"Text","sourceFingerprint":"a","preview":"Rollback procedure","classification":4,"destination":null,"reason":"No model or source-note destination exists.","ruleId":null},{"blockId":"Plan:1:b","startLine":5,"endLine":5,"blockType":"Text","sourceFingerprint":"b","preview":"Operations note","classification":0,"destination":"Explorer source notes (full source text)","reason":"Source note","ruleId":null}]}]}
+            """;
+        var cut = Render<SystemSettings>();
+        FindButton(cut, "Explorer Text Coverage")!.Click();
+        FindButton(cut, "Run Explorer coverage diagnostics")!.Click();
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Rollback procedure"));
+        cut.Markup.Should().Contain("Lines");
+        cut.Markup.Should().Contain("No model or source-note destination exists.");
+        cut.Find("#coverage-classification-filter").Change("Direct");
+        cut.Markup.Should().Contain("Operations note");
+        cut.Markup.Should().NotContain("Rollback procedure");
+    }
+
+    [Fact]
     public void TimestampFormatting_UsesFormattedLocalTimestamp()
     {
         var timestamp = new DateTime(2026, 7, 3, 12, 34, 56, DateTimeKind.Utc);
@@ -405,6 +454,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     {
         public string EnvironmentDiagnosticsJson { get; set; } = SuccessfulDiagnosticsJson;
         public string ProjectCompatibilityJson { get; set; } = "{}";
+        public string ContentIntegrityJson { get; set; } = "{}";
+        public string ExplorerCoverageJson { get; set; } = "{}";
         public string? LastSaveBody { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -428,6 +479,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
                 "/api/frontend-quality-engines/status" => FrontendQualityStatusJson,
                 "/api/admin/environment-diagnostics" => EnvironmentDiagnosticsJson,
                 "/api/system-diagnostics/project-compatibility/run" => ProjectCompatibilityJson,
+                "/api/system-diagnostics/markdown/content-integrity/run" => ContentIntegrityJson,
+                "/api/system-diagnostics/markdown/explorer-coverage/run" => ExplorerCoverageJson,
                 _ => "[]"
             };
 

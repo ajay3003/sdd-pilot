@@ -1,0 +1,22 @@
+@using BirkNext.Web.Models
+
+@if (Blocks is { Count: > 0 })
+{
+    <section class="markdown-source-notes" aria-label="Source text not mapped to structured fields" data-testid="markdown-source-notes">
+        <details>
+            <summary>Source notes and unmapped text (@Blocks.Count blocks)</summary>
+            <p>These authored blocks are retained verbatim because they were not mapped to a structured Explorer field.</p>
+            @foreach (var block in Blocks)
+            {
+                <article class="markdown-source-note" data-source-block-id="@block.BlockId" data-source-start-line="@block.StartLine" data-source-end-line="@block.EndLine">
+                    <h4>Lines @block.StartLine–@block.EndLine · @block.BlockType</h4>
+                    <pre>@block.Text</pre>
+                </article>
+            }
+        </details>
+    </section>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<MarkdownSourceNote>? Blocks { get; set; }
+}

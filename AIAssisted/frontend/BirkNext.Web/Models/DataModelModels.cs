@@ -14,6 +14,7 @@ public sealed class DataModelDocument
     public List<DataEnum>         Enums         { get; init; } = [];
     public List<DataModelFinding> Findings      { get; init; } = [];
     public List<DataModelEvidenceGap> EvidenceGaps { get; init; } = [];
+    public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
     public DataModelEvidenceState ColumnEvidence { get; init; } = DataModelEvidenceState.NotExtracted;
     public DataModelEvidenceState RelationshipEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
     public DataModelEvidenceState IndexEvidence { get; init; } = DataModelEvidenceState.NotRepresented;

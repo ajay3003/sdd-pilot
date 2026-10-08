@@ -63,6 +63,7 @@
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/ProjectImportContracts.cs" Link="Models/ProjectImportContracts.cs" />
     <Compile Include="../../shared/ProjectCompatibilityContracts.cs" Link="Models/ProjectCompatibilityContracts.cs" />
+    <Compile Include="../../shared/MarkdownDiagnosticsContracts.cs" Link="Models/MarkdownDiagnosticsContracts.cs" />
     <Compile Include="../../shared/SourceIntegrationContracts.cs" Link="Models/SourceIntegrationContracts.cs" />
     <Compile Include="../../shared/DatabaseArchitectureContracts.cs" Link="Models/DatabaseArchitectureContracts.cs" />
 
@@ -128,6 +129,7 @@
     <Compile Include="../../frontend/BirkNext.Web/Services/IConstitutionAnalysisService.cs" Link="DocumentClassification/IConstitutionAnalysisService.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Services/IPlanAnalysisService.cs" Link="DocumentClassification/IPlanAnalysisService.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/MarkdownToken.cs" Link="DocumentClassification/MarkdownToken.cs" />
+    <Compile Include="../../frontend/BirkNext.Web/Models/MarkdownSourceNote.cs" Link="DocumentClassification/MarkdownSourceNote.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/SpecExplorerModels.cs" Link="DocumentClassification/SpecExplorerModels.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/SpecificationSemanticModel.cs" Link="DocumentClassification/SpecificationSemanticModel.cs" />
     <Compile Include="../../frontend/BirkNext.Web/Models/TaskExplorerModels.cs" Link="DocumentClassification/TaskExplorerModels.cs" />

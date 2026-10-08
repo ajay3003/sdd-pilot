@@ -1284,6 +1284,8 @@
 
 @inject IJSRuntime JS
 
+<MarkdownSourceNotesPanel Blocks="@(_tree?.UnmappedSourceBlocks)" />
+
 @code {
     [Parameter] public string TasksText { get; set; } = string.Empty;
     [Parameter] public TaskTree? ParsedTasks { get; set; }

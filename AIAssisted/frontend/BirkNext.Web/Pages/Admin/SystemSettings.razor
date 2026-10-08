@@ -878,6 +878,51 @@ else if (_settings is not null)
                     }
                 </section>
             }
+            @if (_activeSection == "content-integrity")
+            {
+                <section class="settings-card settings-card-full-width" aria-labelledby="content-integrity-title">
+                    <div class="settings-card-title" id="content-integrity-title">Content Integrity</div>
+                    <p class="settings-card-note">Checks generated Markdown through ZIP extraction, the temporary decoded artifact representation, and the shared tokenizer and Explorer parser. This isolated diagnostic does not read or change the current workspace.</p>
+                    <button class="btn-edit-settings" @onclick="RunContentIntegrityAsync" disabled="@_contentIntegrityRunning">@(_contentIntegrityRunning ? "Running content integrity diagnostics…" : "Run content integrity diagnostics")</button>
+                    @if (_contentIntegrityError is not null) { <p role="alert" class="settings-card-note">@_contentIntegrityError</p> }
+                    @if (_contentIntegrityRun is { } integrity)
+                    {
+                        <p role="status" class="settings-card-note">@integrity.Documents.Count Markdown files checked — @integrity.OverallStatus. Raw archive bytes, canonical content, and parser EOF are reported separately.</p>
+                        <p class="settings-card-note">Exact import matches: @integrity.ExactImportMatches · canonical matches: @integrity.CanonicalMatches · parser EOF: @integrity.ParserEofReached · warnings: @integrity.ParserWarnings · potential truncations: @integrity.PotentialTruncations</p>
+                        <p class="settings-card-note">Real-project acceptance: @integrity.RealFixtureStatus. @integrity.RealFixtureNote</p>
+                        <div class="table-responsive"><table class="settings-table"><thead><tr><th>Document</th><th>Role</th><th>Archive / extracted</th><th>Fingerprint</th><th>Parser EOF</th><th>Markers / warnings</th><th>Status</th></tr></thead><tbody>
+                        @foreach (var doc in integrity.Documents) { <tr><th scope="row">@doc.DisplayName</th><td>@doc.ArtifactRole</td><td>@doc.ArchiveBytes / @doc.StoredBytes bytes · @doc.ArchiveChars / @doc.StoredChars chars · @doc.ArchiveLines / @doc.StoredLines lines</td><td>@doc.RawImportStatus<br />SHA-256 @doc.ArchiveSha256[..12] / @doc.StoredSha256[..12]<br />Canonical @(doc.CanonicalMatch ? "match" : "mismatch")</td><td>@(doc.ParserReachedEof ? $"Reached EOF at line {doc.LastProcessedLine}" : $"Stopped at line {doc.LastProcessedLine}")<br />@doc.ParserConsumedChars chars / @doc.ParserConsumedLines lines</td><td>START @(doc.StartMarkerPreserved ? "yes" : "no") · MIDDLE @(doc.MiddleMarkerPreserved ? "yes" : "no") · END @(doc.EndMarkerPreserved ? "yes" : "no")<br />@string.Join("; ", doc.ParserWarnings)</td><td><span class="compatibility-status">@doc.Status</span></td></tr> }
+                        </tbody></table></div>
+                    }
+                </section>
+            }
+            @if (_activeSection == "explorer-text-coverage")
+            {
+                <section class="settings-card settings-card-full-width" aria-labelledby="explorer-coverage-title">
+                    <div class="settings-card-title" id="explorer-coverage-title">Explorer Text Coverage</div>
+                    <p class="settings-card-note">Tracks source blocks through the production role parser/extractor and the page model. Direct source-note blocks include render hooks. Structured blocks are marked render-unverified until the corresponding Explorer DOM is exercised; parser serialization alone is not presented as end-to-end proof. Missing blocks are defects. This diagnostic does not change workspace selections.</p>
+                    <button class="btn-edit-settings" @onclick="RunExplorerCoverageAsync" disabled="@_coverageRunning">@(_coverageRunning ? "Running Explorer coverage diagnostics…" : "Run Explorer coverage diagnostics")</button>
+                    @if (_coverageError is not null) { <p role="alert" class="settings-card-note">@_coverageError</p> }
+                    @if (_coverageRun is { } coverage)
+                    {
+                        <p role="status" class="settings-card-note">@coverage.OverallStatus — source block coverage across @coverage.Documents.Count Explorer roles.</p>
+                        <p class="settings-card-note">Real-project candidate coverage: @coverage.RealFixtureStatus. @coverage.RealFixtureNote</p>
+                        <label for="coverage-classification-filter">Filter source blocks</label>
+                        <select id="coverage-classification-filter" @bind="_coverageFilter">
+                            <option>All</option><option>Missing</option><option>Unsupported</option><option>Ignored</option><option>Direct</option><option>Structured</option>
+                        </select>
+                        @foreach (var doc in coverage.Documents)
+                        {
+                            <details class="settings-card-note"><summary>@doc.DisplayName — @doc.Status · @doc.SourceBlockCount blocks · @doc.MissingCount missing</summary>
+                                <p>Direct @doc.RepresentedDirectlyCount · Structured @doc.RepresentedStructurallyCount · Ignored @doc.IntentionallyIgnoredCount · Unsupported @doc.UnsupportedCount · Missing @doc.MissingCount</p>
+                                <div class="table-responsive"><table class="settings-table"><thead><tr><th>Lines</th><th>Type</th><th>Preview</th><th>Classification</th><th>Evidence stages</th><th>Rule</th><th>Reason / destination</th></tr></thead><tbody>
+                                @foreach (var block in VisibleCoverageBlocks(doc)) { <tr data-source-block-id="@block.BlockId"><td>@block.StartLine–@block.EndLine</td><td>@block.BlockType</td><td>@block.Preview</td><td>@block.Classification</td><td>Source @block.SourceEvidence · Parser @block.ParserEvidence · Extractor @block.ExtractorEvidence · Page model @block.PageModelEvidence · Render @block.RenderEvidence</td><td>@block.RuleId</td><td>@block.Reason@if (block.Destination is not null) { <span> · @block.Destination</span> }</td></tr> }
+                                </tbody></table></div>
+                            </details>
+                        }
+                    }
+                </section>
+            }
             @if (_activeSection == "diagnostics-legacy")
             {
                 <div class="settings-card settings-card-full-width">
@@ -1431,6 +1476,23 @@ else if (_settings is not null)
     private bool _projectCompatibilityRunning;
     private string? _projectCompatibilityError;
     private BirkNext.ProjectImport.ProjectCompatibilityRun? _projectCompatibilityRun;
+    private bool _contentIntegrityRunning;
+    private string? _contentIntegrityError;
+    private BirkNext.MarkdownDiagnostics.ContentIntegrityRun? _contentIntegrityRun;
+    private bool _coverageRunning;
+    private string? _coverageError;
+    private BirkNext.MarkdownDiagnostics.ExplorerCoverageRun? _coverageRun;
+    private string _coverageFilter = "Missing";
+
+    private IEnumerable<BirkNext.MarkdownDiagnostics.ExplorerCoverageBlock> VisibleCoverageBlocks(BirkNext.MarkdownDiagnostics.ExplorerCoverageDocument document) => _coverageFilter switch
+    {
+        "Missing" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.Missing),
+        "Unsupported" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.Unsupported),
+        "Ignored" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.IntentionallyIgnored),
+        "Direct" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.RepresentedDirectly),
+        "Structured" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.RepresentedStructurally),
+        _ => document.Blocks
+    };
 
     private async Task RunProjectCompatibilityAsync()
     {
@@ -1450,6 +1512,24 @@ else if (_settings is not null)
         {
             _projectCompatibilityRunning = false;
         }
+    }
+
+    private async Task RunContentIntegrityAsync()
+    {
+        if (_contentIntegrityRunning) return;
+        _contentIntegrityRunning = true; _contentIntegrityError = null;
+        try { _contentIntegrityRun = await AdminApi.RunContentIntegrityDiagnosticsAsync(); if (_contentIntegrityRun is null) _contentIntegrityError = "The diagnostic returned no result."; }
+        catch (HttpRequestException) { _contentIntegrityError = "The content integrity diagnostic is unavailable because the local API could not be reached."; }
+        finally { _contentIntegrityRunning = false; }
+    }
+
+    private async Task RunExplorerCoverageAsync()
+    {
+        if (_coverageRunning) return;
+        _coverageRunning = true; _coverageError = null;
+        try { _coverageRun = await AdminApi.RunExplorerCoverageDiagnosticsAsync(); if (_coverageRun is null) _coverageError = "The diagnostic returned no result."; }
+        catch (HttpRequestException) { _coverageError = "The Explorer coverage diagnostic is unavailable because the local API could not be reached."; }
+        finally { _coverageRunning = false; }
     }
 
     // Project Documents diagnostics (lazy-loaded when diagnostics section is opened)

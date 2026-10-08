@@ -111,6 +111,7 @@ public sealed class PlanDocument
     public PlanTestingInfo? TestingInfo { get; init; }
 
     public PlanHealth Health { get; init; } = new();
+    public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
 }
 
 // ── Free-form section ─────────────────────────────────────────────────────────

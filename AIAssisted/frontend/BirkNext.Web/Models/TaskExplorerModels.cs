@@ -129,4 +129,5 @@ public sealed class TaskTree
     public List<TaskNode> Roots { get; init; } = [];
     public TaskHealth Health { get; init; } = new();
     public List<TaskDependency> ExplicitDependencies { get; init; } = [];
+    public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
 }

@@ -1045,6 +1045,8 @@
 
 </div>
 
+<MarkdownSourceNotesPanel Blocks="@(_plan?.UnmappedSourceBlocks)" />
+
 @code {
     [Parameter] public string PlanText { get; set; } = string.Empty;
     [Parameter] public PlanDocument? ParsedPlan { get; set; }

@@ -553,7 +553,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             : EvidenceState(constraints.Count, false, DataModelEvidenceState.NotRepresented);
         var evidenceGaps = BuildEvidenceGaps(entities, columnEvidence, relationshipEvidenceFinal, indexEvidence, constraintEvidence);
 
-        return new DataModelDocument
+        var document = new DataModelDocument
         {
             Title           = title,
             Overview        = overviewLines.Count > 0 ? string.Join(Environment.NewLine, overviewLines) : null,
@@ -571,6 +571,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             IndexEvidence = indexEvidence,
             ConstraintEvidence = constraintEvidence,
         };
+        document.UnmappedSourceBlocks.AddRange(MarkdownTokenizer.FindUnrepresentedBlocks(markdown, document));
+        return document;
     }
 
     // ── Parsing helpers ────────────────────────────────────────────────────────

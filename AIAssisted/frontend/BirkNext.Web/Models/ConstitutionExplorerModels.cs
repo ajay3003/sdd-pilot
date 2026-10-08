@@ -66,6 +66,7 @@ public sealed class ConstitutionDocument
 
     // Unified rule catalog — populated after parsing all sections
     public List<ConstitutionRule> RuleCatalog { get; init; } = [];
+    public List<MarkdownSourceNote> UnmappedSourceBlocks { get; init; } = [];
 
     public ConstitutionHealth Health { get; init; } = new();
 }

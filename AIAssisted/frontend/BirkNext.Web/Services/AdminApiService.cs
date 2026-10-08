@@ -46,6 +46,20 @@ public class AdminApiService
         return await response.Content.ReadFromJsonAsync<BirkNext.ProjectImport.ProjectCompatibilityRun>(cancellationToken);
     }
 
+    public async Task<BirkNext.MarkdownDiagnostics.ContentIntegrityRun?> RunContentIntegrityDiagnosticsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _client.PostAsync("api/system-diagnostics/markdown/content-integrity/run", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BirkNext.MarkdownDiagnostics.ContentIntegrityRun>(cancellationToken);
+    }
+
+    public async Task<BirkNext.MarkdownDiagnostics.ExplorerCoverageRun?> RunExplorerCoverageDiagnosticsAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await _client.PostAsync("api/system-diagnostics/markdown/explorer-coverage/run", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BirkNext.MarkdownDiagnostics.ExplorerCoverageRun>(cancellationToken);
+    }
+
     public async Task<FeatureVisibilityDto?> GetFeatureVisibilityAsync()
     {
         try
