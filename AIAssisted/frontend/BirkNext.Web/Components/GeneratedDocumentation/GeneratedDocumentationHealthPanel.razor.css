@@ -1,0 +1,94 @@
+/* Generated Documentation Health (System Settings → Developer). Rules use ::deep so the drift child component shares them.
+   Status is always text; amber = needs review, red = deterministic structural failure only. */
+.gdh {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    background: var(--clr-surface-white, #fff);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 10px;
+    padding: 1.25rem;
+    color: var(--clr-text-body, #1e293b);
+}
+
+.gdh ::deep .gdh-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 .35rem; color: var(--clr-text-heading, #0f172a); }
+.gdh ::deep .gdh-description { margin: 0 0 .35rem; }
+.gdh ::deep .gdh-boundary,
+.gdh ::deep .gdh-note { margin: .35rem 0; color: var(--clr-text-muted, #475569); font-size: .875rem; }
+.gdh ::deep .gdh-run { margin-top: .5rem; }
+.gdh ::deep .gdh-error { color: #991b1b; background: var(--clr-danger-bg, #fef2f2); border: 1px solid var(--clr-danger-border, #fecaca); border-radius: 6px; padding: .5rem .75rem; }
+.gdh ::deep .gdh-status { margin: 1rem 0 .5rem; font-weight: 600; }
+.gdh ::deep .gdh-h3 { font-size: 1.05rem; font-weight: 700; margin: 1.25rem 0 .5rem; color: var(--clr-text-heading, #0f172a); }
+.gdh ::deep .gdh-h5 { font-size: .95rem; font-weight: 700; margin: 1rem 0 .4rem; }
+.gdh ::deep h6 { font-size: .85rem; font-weight: 700; margin: 0 0 .35rem; }
+
+.gdh ::deep .gdh-wrap { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.gdh ::deep code { color: #1e293b; background: #f1f5f9; border-radius: 4px; padding: 0 .2rem; }
+
+.gdh ::deep .gdh-binding,
+.gdh ::deep .gdh-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; margin: .5rem 0; }
+.gdh ::deep .gdh-binding > div,
+.gdh ::deep .gdh-facts > div { display: grid; grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr); gap: .75rem; }
+.gdh ::deep .gdh-binding dt,
+.gdh ::deep .gdh-facts dt { font-weight: 600; color: var(--clr-text-muted, #475569); }
+.gdh ::deep .gdh-binding dd,
+.gdh ::deep .gdh-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.gdh ::deep .gdh-state { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .75rem 1rem; background: var(--clr-surface, #f8fafc); margin-top: .75rem; }
+.gdh ::deep .gdh-state h3 { font-size: 1rem; margin: 0 0 .25rem; }
+
+.gdh ::deep .gdh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); gap: .6rem; margin: 0; }
+.gdh ::deep .gdh-card { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .6rem .75rem; background: var(--clr-surface, #f8fafc); min-width: 0; }
+.gdh ::deep .gdh-card dt { font-size: .8rem; font-weight: 600; color: var(--clr-text-muted, #475569); overflow-wrap: anywhere; }
+.gdh ::deep .gdh-card dd { margin: .2rem 0 0; font-size: 1.4rem; font-weight: 700; color: var(--clr-text-heading, #0f172a); }
+
+.gdh ::deep .gdh-filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .75rem; }
+.gdh ::deep .gdh-filter {
+    border: 1px solid #94a3b8; background: #fff; color: #1e293b; border-radius: 999px; padding: .3rem .75rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.gdh ::deep .gdh-filter.is-active { background: #1e3a8a; border-color: #1e3a8a; color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.gdh ::deep .gdh-count { font-weight: 500; }
+
+.gdh ::deep .gdh-module-list,
+.gdh ::deep .gdh-drift-list,
+.gdh ::deep .gdh-plain { list-style: none; margin: 0; padding: 0; }
+.gdh ::deep .gdh-plain li { margin: .15rem 0; }
+.gdh ::deep .gdh-module { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .75rem 1rem; margin: 0 0 .6rem; min-width: 0; }
+.gdh ::deep .gdh-module-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.gdh ::deep .gdh-module-name { font-size: 1rem; font-weight: 700; margin: 0; min-width: 0; }
+.gdh ::deep .gdh-module-reason,
+.gdh ::deep .gdh-module-meta { margin: .35rem 0; font-size: .875rem; }
+.gdh ::deep .gdh-module-meta { color: var(--clr-text-muted, #475569); }
+.gdh ::deep .gdh-module-details { margin-top: .5rem; border-top: 1px solid var(--clr-border, #e2e8f0); padding-top: .5rem; min-width: 0; }
+
+.gdh ::deep .gdh-toggle {
+    border: 1px solid #475569; background: #fff; color: #1e293b; border-radius: 6px; padding: .25rem .65rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+
+.gdh ::deep .gdh-filter:focus-visible,
+.gdh ::deep .gdh-toggle:focus-visible,
+.gdh ::deep .gdh-run:focus-visible,
+.gdh ::deep .gdh-scroll:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+
+.gdh ::deep .gdh-scroll { position: relative; overflow-x: auto; max-width: 100%; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; }
+.gdh ::deep .gdh-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.gdh ::deep .gdh-table th,
+.gdh ::deep .gdh-table td { text-align: left; vertical-align: top; padding: .4rem .55rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); overflow-wrap: anywhere; min-width: 6rem; }
+.gdh ::deep .gdh-table thead th { background: var(--clr-surface, #f8fafc); font-weight: 700; }
+.gdh ::deep .gdh-sub { display: block; color: var(--clr-text-muted, #475569); font-size: .78rem; }
+.gdh ::deep .gdh-inline { margin-left: .35rem; }
+
+.gdh ::deep .gdh-drift { border-left: 4px solid #b45309; background: #fffbeb; border-radius: 6px; padding: .55rem .75rem; margin: 0 0 .5rem; min-width: 0; }
+.gdh ::deep .gdh-drift-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.gdh ::deep .gdh-drift-type { font-weight: 600; font-size: .85rem; overflow-wrap: anywhere; }
+.gdh ::deep .gdh-drift-key,
+.gdh ::deep .gdh-drift-text { margin: .3rem 0; font-size: .875rem; }
+.gdh ::deep .gdh-evidence { margin-top: .5rem; background: #fff; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; padding: .6rem .75rem; min-width: 0; }
+.gdh ::deep .gdh-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .75rem; }
+.gdh ::deep .gdh-side { min-width: 0; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; padding: .5rem .6rem; }
+
+@media (max-width: 600px) {
+    .gdh { padding: .85rem; }
+    .gdh ::deep .gdh-binding > div,
+    .gdh ::deep .gdh-facts > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+}

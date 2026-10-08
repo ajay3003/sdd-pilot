@@ -1316,6 +1316,10 @@ else if (_settings is not null)
                 </DiagnosticPageRenderer>
             }
             @* â•â• Environment Diagnostics â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
+            @if (_activeSection == "generated-docs-health")
+            {
+                <BirkNext.Web.Components.GeneratedDocumentation.GeneratedDocumentationHealthPanel />
+            }
             @if (_activeSection == "environment-diagnostics")
             {
                 <DiagnosticPageRenderer

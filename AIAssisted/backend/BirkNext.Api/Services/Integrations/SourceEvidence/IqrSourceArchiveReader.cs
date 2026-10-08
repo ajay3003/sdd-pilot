@@ -43,10 +43,34 @@ public static class IqrSourceArchiveReader
     /// artifact-role classification; Source Analysis never reads them and they never enter a source snapshot.</param>
     /// <param name="SkippedDocuments">Markdown documents that were not read (too large, binary, over the document limit), with the reason.</param>
     /// <param name="EntryCount">Every entry of the archive (files and directories), as validated.</param>
+    /// <param name="DocumentationCandidates">Markdown documents and documentation-workflow files (agent skills/hooks, documentation scripts), held in
+    /// memory for the generated-documentation evidence only. Never stored; only paths, fingerprints, declared dates and structured keys leave it.</param>
+    /// <param name="EntryModified">The archive's own modification time per file path. Archive times are often uniform (downloaded or exported
+    /// archives) and are trusted only when the generated-documentation analysis finds them varied.</param>
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
         List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null,
         List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0,
-        List<RawDocumentFile>? RawDocumentFiles = null);
+        List<RawDocumentFile>? RawDocumentFiles = null, List<SourceFile>? DocumentationCandidates = null, IReadOnlyDictionary<string, DateTimeOffset>? EntryModified = null);
+
+    public const int MaxDocumentationCandidates = 2_000;
+    public const long MaxDocumentationBytes = 24L * 1024 * 1024;
+    public const long MaxWorkflowFileBytes = 256 * 1024;
+
+    /// <summary>Non-Markdown files that may define or trigger a documentation generator: agent workflow folders (skills, hooks, commands, rules)
+    /// and scripts named for documentation. JSON/YAML workflow files are already read as configuration and are not read twice.</summary>
+    public static bool IsDocumentationWorkflowCandidate(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        if (extension is ".json" or ".yaml" or ".yml" or ".cs" or ".csproj" or ".props" or ".sln" or ".slnx" or ".sql" or ".xsd") return false;
+        if (extension is ".zip" or ".tar" or ".gz" or ".7z" or ".png" or ".jpg" or ".jpeg" or ".gif" or ".ico" or ".dll" or ".exe" or ".pdf" or ".woff" or ".woff2") return false;
+        var segments = path.Split('/');
+        if (segments.Any(s => s is ".claude" or ".cursor" or ".windsurf" or ".continue" or ".aider" || s.Equals(".github", StringComparison.OrdinalIgnoreCase) && segments.Contains("prompts")))
+            return true;
+        var file = Path.GetFileName(path);
+        if (file.Equals("Doxyfile", StringComparison.OrdinalIgnoreCase)) return true;
+        return extension is ".sh" or ".ps1" or ".py" or ".cmd" or ".bat" or ".mjs" or ".js" or ".toml" or ""
+            && Regex.IsMatch(file, @"(?i)(^|[-_.])(auto)?docs?([-_.]|$)|documentation|docgen|gendoc");
+    }
 
     public sealed record ArchiveDocumentSkip(string Path, string Reason);
 
@@ -97,6 +121,10 @@ public static class IqrSourceArchiveReader
         var documentFiles = new List<SourceFile>();
         var rawDocumentFiles = captureRawDocuments ? new List<RawDocumentFile>() : null;
         var skippedDocuments = new List<ArchiveDocumentSkip>();
+        var documentationCandidates = new List<SourceFile>();
+        var documentationCandidatesSkipped = 0;
+        long documentationBytes = 0;
+        var entryModified = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         var fileEntryCount = 0;
         long? entryCount = null;
         try
@@ -148,20 +176,43 @@ public static class IqrSourceArchiveReader
                 fileEntryCount++;
                 if (path.Split('/').Any(Ignored.Contains)) continue;
                 allPaths.Add(path);
+                entryModified[path] = entry.LastWriteTime;
                 var extension = Path.GetExtension(path).ToLowerInvariant();
-                if (captureDocuments && BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.DocumentExtensions.Contains(extension))
+                var markdown = BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.DocumentExtensions.Contains(extension);
+                // Generated-documentation candidates (documentation files and documentation-workflow files) are read for the generated-documentation
+                // evidence only, under the same expanded-read limit. Only derived evidence (paths, fingerprints, declared dates, structured keys) leaves it.
+                SourceArchiveReadResult? CaptureDocumentationCandidate(long limit)
                 {
-                    // Documents are never source: they are captured for artifact discovery only, with the Sample Project document rules.
-                    if (path.Split('/').Any(BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.IgnoredDirectories.Contains)) continue;
-                    if (documentFiles.Count >= MaxDocuments) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.DocumentLimit)); continue; }
-                    if (entry.Length > MaxDocumentBytes) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.TooLarge)); continue; }
-                    var (document, rawDocument, documentRejection) = ReadEntry(entry, path);
-                    if (documentRejection is not null) return documentRejection;
-                    if (document!.Contains('\0')) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.Binary)); continue; }
-                    documentFiles.Add(new SourceFile(path, document));
-                    if (rawDocument is not null) rawDocumentFiles!.Add(new RawDocumentFile(path, rawDocument));
+                    // Never let documentation reads reject an archive that source analysis alone would accept: bounded by count, size, a total
+                    // budget and the remaining expanded-read allowance.
+                    if (documentationCandidates.Count >= MaxDocumentationCandidates || entry.Length > limit || documentationBytes + entry.Length > MaxDocumentationBytes
+                        || actualRead + entry.Length > MaxExpandedBytes) { documentationCandidatesSkipped++; return null; }
+                    var (text, _, rejection) = ReadEntry(entry, path);
+                    if (rejection is not null) return rejection;
+                    if (text!.Contains('\0')) { documentationCandidatesSkipped++; return null; }
+                    documentationBytes += entry.Length;
+                    documentationCandidates.Add(new SourceFile(path, text));
+                    return null;
+                }
+                if (markdown && (!captureDocuments || path.Split('/').Any(BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.IgnoredDirectories.Contains)))
+                {
+                    if (CaptureDocumentationCandidate(MaxDocumentBytes) is { } candidateRejection) return candidateRejection;
                     continue;
                 }
+                if (captureDocuments && markdown)
+                {
+                    // Documents are never source: they are captured for artifact discovery only, with the Sample Project document rules.
+                    if (documentFiles.Count >= MaxDocuments) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.DocumentLimit)); if (CaptureDocumentationCandidate(MaxDocumentBytes) is { } limitRejection) return limitRejection; continue; }
+                    if (entry.Length > MaxDocumentBytes) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.TooLarge)); documentationCandidatesSkipped++; continue; }
+                    var (document, rawDocument, documentRejection) = ReadEntry(entry, path);
+                    if (documentRejection is not null) return documentRejection;
+                    if (document!.Contains('\0')) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.Binary)); documentationCandidatesSkipped++; continue; }
+                    documentFiles.Add(new SourceFile(path, document));
+                    if (rawDocument is not null) rawDocumentFiles!.Add(new RawDocumentFile(path, rawDocument));
+                    if (documentationCandidates.Count < MaxDocumentationCandidates) documentationCandidates.Add(new SourceFile(path, document));
+                    continue;
+                }
+                if (IsDocumentationWorkflowCandidate(path) && CaptureDocumentationCandidate(MaxWorkflowFileBytes) is { } workflowRejection) return workflowRejection;
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
                 { limitations.Add("Terraform state file present but not read: state can hold secrets and is runtime state, not source."); continue; }
@@ -220,8 +271,10 @@ public static class IqrSourceArchiveReader
         }
         if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (documentationCandidatesSkipped > 0)
+            limitations.Add($"{documentationCandidatesSkipped:N0} documentation file(s) were not read for generated-documentation evidence (size, binary content or the {MaxDocumentationCandidates:N0}-file limit).");
         return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
-            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles), null);
+            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified), null);
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);

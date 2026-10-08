@@ -1,0 +1,58 @@
+@using BirkNext.GeneratedDocumentation
+@using BirkNext.Web.Services
+
+@* One potential drift: what differs, both sides with their evidence, and why review is needed. Never a verdict on which side is wrong. *@
+<li class="gdh-drift" data-testid="gdh-drift" data-type="@Candidate.DriftType" data-kind="@Candidate.DifferenceKind">
+    <div class="gdh-drift-head">
+        <span class="sd-pill sd-pill-partial">@GeneratedDocumentationText.ReviewStatus</span>
+        <span class="gdh-drift-type">@GeneratedDocumentationText.Label(Candidate.DriftType) · @Candidate.Family</span>
+    </div>
+    <p class="gdh-drift-key"><code class="gdh-wrap">@Candidate.StructuredKey</code> — @GeneratedDocumentationText.Label(Candidate.DifferenceKind)</p>
+    <p class="gdh-wrap gdh-drift-text">@Candidate.Explanation</p>
+    <button type="button" class="btn-secondary gdh-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_panelId" data-testid="gdh-drift-toggle" @onclick="() => _open = !_open">
+        @(_open ? "Hide evidence" : "View evidence")<span class="visually-hidden"> for @Candidate.StructuredKey</span>
+    </button>
+    @if (_open)
+    {
+        <div id="@_panelId" class="gdh-evidence" data-testid="gdh-evidence">
+            <div class="gdh-sides">
+                <section class="gdh-side" aria-label="@($"Left side: {GeneratedDocumentationPresentation.Side(Candidate, true)}")">
+                    <h6>Left · @GeneratedDocumentationPresentation.Side(Candidate, true)</h6>
+                    <ul class="gdh-plain">@foreach (var e in Candidate.LeftEvidence) { <li>@Evidence(e)</li> }</ul>
+                </section>
+                <section class="gdh-side" aria-label="@($"Right side: {GeneratedDocumentationPresentation.Side(Candidate, false)}")">
+                    <h6>Right · @GeneratedDocumentationPresentation.Side(Candidate, false)</h6>
+                    <ul class="gdh-plain">@foreach (var e in Candidate.RightEvidence) { <li>@Evidence(e)</li> }</ul>
+                </section>
+            </div>
+            <dl class="gdh-facts">
+                <div><dt>Difference</dt><dd>@GeneratedDocumentationText.Label(Candidate.DifferenceKind)</dd></div>
+                <div><dt>Evidence confidence</dt><dd>@Candidate.Confidence</dd></div>
+                @if (Candidate.GeneratedFreshness is { } freshness)
+                {
+                    <div><dt>Generated documentation freshness</dt><dd>@GeneratedDocumentationText.Label(freshness)</dd></div>
+                }
+                <div><dt>Source snapshot</dt><dd><code class="gdh-wrap">@Candidate.SourceSnapshotId</code>@(Snapshot is { } s ? $" ({s.ArchiveName})" : "")</dd></div>
+                @if (Candidate.ArtifactFingerprint is { } fingerprint)
+                {
+                    <div><dt>Artifact version</dt><dd><code class="gdh-wrap">@GeneratedDocumentationPresentation.ShortId(fingerprint)</code></dd></div>
+                }
+                <div><dt>Why review is needed</dt><dd class="gdh-wrap">@Candidate.WhyReview</dd></div>
+                @if (Candidate.RelatedFindings.Count > 0)
+                {
+                    <div><dt>Related</dt><dd class="gdh-wrap">@string.Join("; ", Candidate.RelatedFindings)</dd></div>
+                }
+            </dl>
+        </div>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public CrossArtifactDriftCandidate Candidate { get; set; } = default!;
+    [Parameter] public GeneratedDocumentationSnapshotBinding? Snapshot { get; set; }
+
+    private bool _open;
+    private string _panelId => "gdh-ev-" + Candidate.Id.Replace(":", "-");
+
+    private static RenderFragment Evidence(DriftEvidenceRef e) => @<span class="gdh-wrap"><strong>@e.Kind</strong>: @e.Label@(string.IsNullOrEmpty(e.Path) ? "" : " — ")<code class="gdh-wrap">@e.Path</code>@(e.Line > 0 ? $" (line {e.Line})" : "")@(e.Value is { Length: > 0 } v && v != e.Label ? $" · {v}" : "")@(e.Fingerprint is { Length: > 0 } f ? $" · version {GeneratedDocumentationPresentation.ShortId(f)}" : "")</span>;
+}

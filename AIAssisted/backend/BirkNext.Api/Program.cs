@@ -416,6 +416,8 @@ builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ProjectImport.Proj
 builder.Services.AddScoped<BirkNext.Api.Services.ProjectImport.ProjectImportService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ProjectImport.ProjectCompatibilityDiagnosticService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.MarkdownDiagnosticsService>();
+// Generated Documentation Health: reads generated-documentation evidence stored on Source Analysis snapshots (no archive access).
+builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationDiagnosticService>();
 // Test evidence: execution-result providers (TRX first) and stateless preview/correlation against Source Analysis test discovery.
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.TestEvidence.TestEvidenceOptions.From(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestEvidence.ITestExecutionEvidenceProvider, BirkNext.Api.Services.TestEvidence.TrxTestExecutionEvidenceProvider>();

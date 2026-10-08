@@ -68,6 +68,7 @@
     <Compile Include="../../shared/DatabaseArchitectureContracts.cs" Link="Models/DatabaseArchitectureContracts.cs" />
 
     <Compile Include="../../shared/SourceArchitectureContracts.cs" Link="Models/SourceArchitectureContracts.cs" />
+    <Compile Include="../../shared/GeneratedDocumentationContracts.cs" Link="Models/GeneratedDocumentationContracts.cs" />
     <Compile Include="../../shared/SecurityExpectationContracts.cs" Link="Models/SecurityExpectationContracts.cs" />
     <Compile Include="../../shared/SecurityConfigurationReview.cs" Link="Models/SecurityConfigurationReview.cs" />
     <Compile Include="../../shared/ActiveCdcTestContracts.cs" Link="Models/ActiveCdcTestContracts.cs" />
