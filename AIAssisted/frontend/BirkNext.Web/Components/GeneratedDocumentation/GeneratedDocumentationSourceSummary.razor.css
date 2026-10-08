@@ -1,0 +1,9 @@
+.gds { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .75rem 1rem; margin-top: .75rem; background: var(--clr-surface-white, #fff); min-width: 0; }
+.gds-title { font-size: 1rem; font-weight: 700; margin: 0 0 .4rem; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.gds-muted { color: var(--clr-text-muted, #475569); font-size: .875rem; margin: .35rem 0; }
+.gds-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: .5rem; margin: .25rem 0; }
+.gds-metrics div { min-width: 0; }
+.gds-metrics dt { font-size: .78rem; font-weight: 600; color: var(--clr-text-muted, #475569); overflow-wrap: anywhere; }
+.gds-metrics dd { margin: 0; font-weight: 700; font-size: 1.1rem; }
+.gds-link { font-weight: 600; color: #1d4ed8; text-decoration: underline; }
+.gds-link:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }

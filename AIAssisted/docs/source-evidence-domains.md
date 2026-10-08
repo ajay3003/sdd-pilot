@@ -8,8 +8,14 @@ upload (POST api/source-analysis/snapshots)
   → Architecture → Database → Observability
   → SourceEvidenceAnalyzer: Infrastructure · CI/CD · Configuration · Contracts → cross-domain links
   → Security Expectations, Classification, Dependency, messaging and SCIM capture
+  → Generated documentation (snapshot.GeneratedDocumentation — its own evidence type, see generated-documentation-evidence.md)
   → one immutable IqrSourceSnapshot (snapshot.EvidenceDomains)
 ```
+
+Generated documentation (e.g. `autodoc/` folders written by an agent workflow) is not a source-evidence domain: it is analysed in the same pass and
+stored next to the domains as `snapshot.GeneratedDocumentation`, compared with them, and never used as source evidence. A generated OpenAPI/GraphQL file
+still appears in the Contracts domain as a contract file; its generated origin is recorded only in the generated-documentation evidence. See
+[generated-documentation-evidence.md](generated-documentation-evidence.md).
 
 ## Domains
 

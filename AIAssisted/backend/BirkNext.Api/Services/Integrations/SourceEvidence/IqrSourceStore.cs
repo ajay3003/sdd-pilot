@@ -128,6 +128,9 @@ public sealed class IqrSourceStore(AppDbContext db)
             ScimEvidence = Scim.ScimEvidenceService.ExtractSnapshotEvidence(environmentId, name, bytes),
         };
         snapshot = snapshot with { ProjectImport = projectImport };
+        // Generated documentation (its own evidence type): detection, provenance, module-scoped freshness and generated-vs-source comparisons over
+        // the same workspace and the models above. A failure never fails the snapshot; it is recorded as a limitation.
+        snapshot = snapshot with { GeneratedDocumentation = AnalyzeGeneratedDocumentation(snapshot, workspace, architectureInput, architectureResults.SelectMany(r => r.Facts).ToList(), ct) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
@@ -135,6 +138,21 @@ public sealed class IqrSourceStore(AppDbContext db)
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new SourceSnapshotPersistenceException(); }
         return snapshot;
+    }
+
+    internal static BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot AnalyzeGeneratedDocumentation(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace,
+        SourceArchitecture.ArchitectureInput? input, IReadOnlyList<SourceArchitecture.ArchitectureFact> facts, CancellationToken ct)
+    {
+        try { return SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationAnalyzer.Analyze(snapshot, workspace, input, facts, ct); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot
+            {
+                SourceSnapshotId = snapshot.Id, SourceFingerprint = snapshot.Archive.Sha256, AnalyzerVersion = SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationAnalyzer.Version,
+                AnalyzedAt = snapshot.AnalyzedAt, Limitations = [$"Generated-documentation analysis stopped on an unsupported pattern ({ex.GetType().Name}); no generated-documentation evidence was recorded."],
+            };
+        }
     }
 
     private static string? FingerprintFile(IqrSourceArchiveReader.Workspace workspace, string path)

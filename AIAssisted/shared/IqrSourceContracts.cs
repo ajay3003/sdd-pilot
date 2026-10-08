@@ -65,6 +65,9 @@ public sealed record IqrSourceSnapshot
     /// <summary>Set when Project Import created this snapshot: the import identity and archive fingerprint it shares with the imported document artifacts.
     /// Null for a standalone Source Analysis upload and for older snapshots.</summary>
     public BirkNext.ProjectImport.ProjectImportProvenance? ProjectImport { get; init; }
+    /// <summary>Generated documentation of the same archive (autodoc-style folders, workflow provenance, freshness, generated-vs-source drift
+    /// candidates). Its own evidence type: never authored documentation, never source evidence. Null in snapshots analyzed before it existed.</summary>
+    public BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot? GeneratedDocumentation { get; init; }
 }
 
 public sealed record SourceTargetIndex

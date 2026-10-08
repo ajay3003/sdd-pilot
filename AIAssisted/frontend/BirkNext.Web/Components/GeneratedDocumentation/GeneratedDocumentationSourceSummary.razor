@@ -1,0 +1,42 @@
+@using BirkNext.GeneratedDocumentation
+@using BirkNext.Integrations
+
+@* Source Analysis → compact Generated Documentation row for the selected snapshot. Details and drift review live in the diagnostic. *@
+<section class="gds" aria-labelledby="gds-heading" data-testid="sa-generated-docs">
+    <h3 id="gds-heading" class="gds-title">Generated documentation <span class="sd-pill sd-pill-@Tone" data-testid="sa-generated-docs-status">@Status</span></h3>
+    @if (Snapshot.GeneratedDocumentation is not { } g)
+    {
+        <p class="gds-muted" data-testid="sa-generated-docs-missing">This snapshot predates generated-documentation evidence. Analyze the same source again to include it.</p>
+    }
+    else if (g.Documents.Count == 0)
+    {
+        <p class="gds-muted" data-testid="sa-generated-docs-empty">@GeneratedDocumentationText.EmptyState</p>
+    }
+    else
+    {
+        <dl class="gds-metrics">
+            <div><dt>Modules</dt><dd>@g.Modules.Count</dd></div>
+            <div><dt>Generated documents</dt><dd>@g.Documents.Count(d => d.Origin == DocumentationOrigin.Generated)</dd></div>
+            <div><dt>Generator traced</dt><dd>@g.Modules.Count(m => m.GeneratorIds.Count > 0) of @g.Modules.Count</dd></div>
+            <div><dt>Potentially stale</dt><dd>@g.Modules.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale)</dd></div>
+            <div><dt>Source/doc discrepancies</dt><dd>@g.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift)</dd></div>
+        </dl>
+        <p class="gds-muted">Generated documentation is its own evidence type — never authored documentation, never source evidence. Discrepancies are candidates for review.</p>
+    }
+    <a class="gds-link" href="admin/system-settings?section=generated-docs-health" data-testid="sa-generated-docs-link">Open Generated Documentation Health</a>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = default!;
+
+    private string Status => Snapshot.GeneratedDocumentation switch
+    {
+        null => "Not available",
+        { Documents.Count: 0 } => "None detected",
+        var g when g.Documents.Any(d => d.StructurallyInvalid) => "Structural failure",
+        var g when g.Modules.Any(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) || g.Drift.Count > 0 => "Needs review",
+        _ => "Detected",
+    };
+
+    private string Tone => Status switch { "Structural failure" => "attention", "Needs review" => "partial", "Detected" => "complete", _ => "muted" };
+}

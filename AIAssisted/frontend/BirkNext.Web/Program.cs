@@ -224,6 +224,9 @@ builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiS
 // Technology & Analysis Coverage: source technology inventory + configured integrations (GET only); applicability is evaluated in the browser.
 builder.Services.AddHttpClient<ITechnologyCoverageApiService, TechnologyCoverageApiService>(client =>
     client.BaseAddress = backendBase);
+// Generated Documentation Health (System Settings → Developer): reads generated-documentation evidence of a stored Source Analysis snapshot.
+builder.Services.AddHttpClient<IGeneratedDocumentationApiService, GeneratedDocumentationApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddScoped<ProjectApplicabilityState>();
 builder.Services.AddScoped<NavigationSectionState>();
 // Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).
