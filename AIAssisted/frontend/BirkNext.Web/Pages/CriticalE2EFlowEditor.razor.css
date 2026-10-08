@@ -68,3 +68,19 @@
 .e2e-step-remove { border: 0; background: transparent; padding: .2rem .4rem; font-size: .82rem; color: var(--clr-text-muted, #555); text-decoration: none; }
 .e2e-step-remove:hover, .e2e-step-remove:focus-visible { color: #b42318; text-decoration: underline; }
 .e2e-editor .btn-link { border: 0; background: transparent; }
+
+.e2e-step-actions { display: flex; flex-wrap: wrap; gap: .25rem .5rem; margin-left: auto; }
+.e2e-step-actions button { min-height: 2.25rem; padding: .25rem .4rem; font-size: .8rem; }
+.e2e-step-actions button:disabled { opacity: .5; cursor: default; }
+.e2e-step-actions button:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }
+.e2e-drag-handle { cursor: grab; padding: .3rem; font-size: 1.25rem; user-select: none; }
+.e2e-drag-handle[draggable="false"] { cursor: default; opacity: .5; }
+.e2e-drop-target { box-shadow: 0 -3px 0 var(--clr-primary, #1d4ed8); }
+.e2e-drop-end { min-height: .75rem; font-size: .8rem; color: var(--clr-text-muted, #555); }
+.e2e-order-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 760px) {
+    .e2e-step-actions { width: 100%; margin-left: 0; }
+    .e2e-step-actions button { min-height: 2.75rem; }
+    .e2e-step-head { justify-content: flex-start; }
+    .e2e-editor-grid { grid-template-columns: minmax(0, 1fr); }
+}

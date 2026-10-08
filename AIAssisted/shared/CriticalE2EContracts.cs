@@ -409,6 +409,7 @@ public sealed record CriticalE2EFlowDefinition
     public CriticalE2EAuthenticationRequirement AuthenticationRequirement { get; init; }
     public int TimeoutMs { get; init; } = 120_000;
     public int PollingIntervalMs { get; init; } = 1_000;
+    /// <summary>Persisted execution sequence: array position is the order, independent of StepId. Never sort by ID.</summary>
     public List<CriticalE2EStepDefinition> Steps { get; init; } = [];
     /// <summary>How the flow obtains and disposes of test data. Synthetic only.</summary>
     public string TestDataPolicy { get; init; } = "";

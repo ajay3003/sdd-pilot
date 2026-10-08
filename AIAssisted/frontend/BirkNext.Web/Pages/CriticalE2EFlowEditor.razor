@@ -21,7 +21,7 @@
             </select>
         </label>
         <label>Execution
-            <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged" aria-describedby="e2e-editor-mode-help">
+            <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged" disabled="@(_picking is not null)" aria-describedby="e2e-editor-mode-help">
                 @foreach (var mode in new[] { CriticalE2EExecutionMode.CompanionBrowser, CriticalE2EExecutionMode.AutomatedIntegration })
                 {
                     <option value="@mode">@CriticalE2EPresentation.ExecutionLabel(mode)</option>
@@ -75,17 +75,27 @@
         {
             var i = index;
             var step = _draft.Steps[i];
-            <li class="e2e-step" data-testid="e2e-step-@i" aria-labelledby="@($"e2e-step-title-{i}")">
+            @* Native dragover cancellation enables drop without dispatching every pointer movement through Blazor. *@
+            <li @key="step.StepId" class="e2e-step @(_dragged is not null && _dropBefore == step.StepId ? "e2e-drop-target" : "")" data-testid="e2e-step-@i" data-step-id="@step.StepId" aria-labelledby="@($"e2e-step-title-{i}")"
+                ondragover="event.preventDefault()" @ondragenter="() => _dropBefore = step.StepId" @ondrop="() => DropBefore(step.StepId)" @ondrop:stopPropagation>
                 @* A step card: what it is in one line, then what it acts on, then how it is judged. *@
                 <div class="e2e-step-head">
+                    <span class="e2e-drag-handle" data-testid="e2e-step-drag-@i" draggable="@(_picking is null ? "true" : "false")" title="Drag to reorder" aria-hidden="true"
+                          @ondragstart="() => StartDrag(step.StepId)" @ondragend="EndDrag">⋮⋮</span>
                     <h4 class="e2e-step-title" id="@($"e2e-step-title-{i}")" data-testid="e2e-step-title-@i">Step @(i + 1) · @StepActionLabel(step)</h4>
-                    <button type="button" class="btn-link e2e-step-remove" data-testid="e2e-step-remove-@i" aria-label="@($"Remove step {i + 1}")" @onclick="() => RemoveStep(i)">Remove step</button>
+                    <div class="e2e-step-actions" role="group" aria-label="@($"Step {i + 1} actions")">
+                        <button type="button" class="btn-link" data-testid="e2e-step-up-@i" title="Move step up" aria-label="@($"Move step {i + 1} up")" disabled="@(i == 0 || _picking is not null)" @ref="_upButtons[step.StepId]" @onclick="() => MoveStep(step.StepId, i - 1, true)">↑ Move up</button>
+                        <button type="button" class="btn-link" data-testid="e2e-step-down-@i" title="Move step down" aria-label="@($"Move step {i + 1} down")" disabled="@(i == _draft.Steps.Count - 1 || _picking is not null)" @ref="_downButtons[step.StepId]" @onclick="() => MoveStep(step.StepId, i + 1, false)">↓ Move down</button>
+                        <button type="button" class="btn-link" data-testid="e2e-step-before-@i" aria-label="@($"Insert step before step {i + 1}")" disabled="@(_picking is not null)" @onclick="() => InsertStep(i)">Insert before</button>
+                        <button type="button" class="btn-link" data-testid="e2e-step-after-@i" aria-label="@($"Insert step after step {i + 1}")" disabled="@(_picking is not null)" @onclick="() => InsertStep(i + 1)">Insert after</button>
+                        <button type="button" class="btn-link e2e-step-remove" data-testid="e2e-step-remove-@i" aria-label="@($"Remove step {i + 1}")" disabled="@(_picking is not null)" @onclick="() => RemoveStep(step.StepId)">Remove step</button>
+                    </div>
                 </div>
                 <div class="e2e-step-fields">
                     <label>Action
                         @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
                         {
-                            <select data-testid="e2e-step-action-@i" value="@step.BrowserAction" aria-label="@($"Step {i + 1} action")"
+                            <select @ref="_actionFields[step.StepId]" data-testid="e2e-step-action-@i" value="@step.BrowserAction" aria-label="@($"Step {i + 1} action")"
                                     @onchange="e => ActionChanged(i, Enum.Parse<CompanionActionKind>(e.Value!.ToString()!))">
                                 @* Picking is how a step is authored, not something a step does. *@
                                 @foreach (var action in Enum.GetValues<CompanionActionKind>().Where(a => a != CompanionActionKind.PickElement))
@@ -96,7 +106,7 @@
                         }
                         else
                         {
-                            <select data-testid="e2e-step-action-@i" value="@step.IntegrationAction" aria-label="@($"Step {i + 1} action")"
+                            <select @ref="_actionFields[step.StepId]" data-testid="e2e-step-action-@i" value="@step.IntegrationAction" aria-label="@($"Step {i + 1} action")"
                                     @onchange="e => Replace(i, step with { IntegrationAction = Enum.Parse<CriticalE2EIntegrationKind>(e.Value!.ToString()!) })">
                                 @foreach (var action in Enum.GetValues<CriticalE2EIntegrationKind>())
                                 {
@@ -129,7 +139,7 @@
                     @if (TargetsElement(step))
                     {
                         var target = CriticalE2EPresentation.Target(step.Selector);
-                        _picks.TryGetValue(i, out var pick);
+                        _picks.TryGetValue(step.StepId, out var pick);
                         <div class="e2e-target" data-testid="e2e-step-target-summary-@i">
                             @* Identity first, as a person reads it; the strategy that finds it second; raw selector internals are
                                one disclosure further down. Unique and Captured on are shown only when a pick just proved them. *@
@@ -149,14 +159,14 @@
                             {
                                 <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">Selector may be fragile. No stronger unique selector was available.</p>
                             }
-                            <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i" @ref="_pickButtons[i]"
+                            <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i" @ref="_pickButtons[step.StepId]"
                                     disabled="@(!PickReady || _picking is not null)"
                                     aria-describedby="@(PickReady ? null : "e2e-pick-unavailable")"
                                     @onclick="() => PickAsync(i)">
-                                @(_picking == i ? "Waiting for selection in the browser…" : target.Strategy.Length > 0 ? "Change selection" : "Select from browser")
+                                @(_picking == step.StepId ? "Waiting for selection in the browser…" : target.Strategy.Length > 0 ? "Change selection" : "Select from browser")
                             </button>
                         </div>
-                        @if (_picking == i)
+                        @if (_picking == step.StepId)
                         {
                             <p class="e2e-pick-note" role="status" data-testid="e2e-step-pick-selecting-@i">Selecting: click the element in the application page. Esc cancels.</p>
                         }
@@ -240,7 +250,10 @@
             </li>
         }
     </ol>
-    <button type="button" class="btn-secondary" data-testid="e2e-step-add" @onclick="AddStep">Add step</button>
+    <div class="e2e-drop-end @(_dragged is not null && _dropBefore == "" ? "e2e-drop-target" : "")" data-testid="e2e-drop-end"
+         ondragover="event.preventDefault()" @ondragenter='() => _dropBefore = ""' @ondrop='() => DropBefore("")'>@(_dragged is not null ? "Drop here to move to the end" : "")</div>
+    <p class="e2e-order-status" role="status" aria-live="polite" data-testid="e2e-order-status">@_orderStatus</p>
+    <button type="button" class="btn-secondary" data-testid="e2e-step-add" @ref="_addButton" disabled="@(_picking is not null)" @onclick="AddStep">Add step</button>
 
     @* Say it before the run does. A flow with no final assertion can never pass, and finding that out at run time wastes
        a signed-in browser session. *@
@@ -270,10 +283,19 @@
 
     private CriticalE2EFlowDraft _draft = new();
     private CriticalE2EFlowDefinition? _source;
-    private int? _picking;
-    private int? _focusAfterPick;
-    private readonly Dictionary<int, CriticalE2EElementPickResult> _picks = [];
-    private readonly Dictionary<int, ElementReference> _pickButtons = [];
+    private string? _picking;
+    private string? _focusAfterPick;
+    private readonly Dictionary<string, CriticalE2EElementPickResult> _picks = [];
+    private readonly Dictionary<string, ElementReference> _pickButtons = [];
+    private readonly Dictionary<string, ElementReference> _actionFields = [];
+    private readonly Dictionary<string, ElementReference> _upButtons = [];
+    private readonly Dictionary<string, ElementReference> _downButtons = [];
+    private string? _focusStep;
+    private string _focusControl = "action";
+    private ElementReference _addButton;
+    private string? _dragged;
+    private string? _dropBefore;
+    private string _orderStatus = "";
     private ElementReference _heading;
 
     /// <summary>
@@ -286,10 +308,25 @@
         _source = Flow;
         _draft = CriticalE2EFlowDraft.From(Flow);
         _picks.Clear();
+        _pickButtons.Clear();
+        _actionFields.Clear();
+        _upButtons.Clear();
+        _downButtons.Clear();
+        _focusAfterPick = null;
+        _focusStep = null;
+        _orderStatus = "";
+        EndDrag();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusStep is { } id)
+        {
+            _focusStep = null;
+            var controls = _focusControl == "up" ? _upButtons : _focusControl == "down" ? _downButtons : _actionFields;
+            var control = controls.GetValueOrDefault(id, _addButton);
+            try { await control.FocusAsync(); } catch (InvalidOperationException) { /* prerender */ }
+        }
         // Opening the editor moves focus to its heading, so a keyboard user lands in it rather than on the page's list.
         if (firstRender)
         {
@@ -349,27 +386,31 @@
     private async Task PickAsync(int index)
     {
         if (_picking is not null) return;
-        _picking = index;
-        _picks.Remove(index);
+        var id = _draft.Steps[index].StepId;
+        var draft = _draft;
+        _picking = id;
+        _picks.Remove(id);
         try
         {
             var result = await Api.PickElementAsync(new CriticalE2EElementPickRequest
             {
                 ProfileId = ProfileId, EnvironmentId = EnvironmentId, EnvironmentType = EnvironmentType,
             });
-            if (index >= _draft.Steps.Count) return;
+            if (!ReferenceEquals(draft, _draft)) return;
+            index = _draft.Steps.FindIndex(s => s.StepId == id);
+            if (index < 0) return;
             if (result is { Status: CriticalE2EStatus.Passed, Element: { Recommended: { } recommended } })
                 _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
-            _picks[index] = result;
+            _picks[id] = result;
         }
         catch
         {
-            _picks[index] = new CriticalE2EElementPickResult { Outcome = CriticalE2EPickOutcome.Failed, Message = "the local BirkNext backend did not answer." };
+            if (ReferenceEquals(draft, _draft)) _picks[id] = new CriticalE2EElementPickResult { Outcome = CriticalE2EPickOutcome.Failed, Message = "the local BirkNext backend did not answer." };
         }
         finally
         {
             _picking = null;
-            _focusAfterPick = index;
+            if (ReferenceEquals(draft, _draft)) _focusAfterPick = id;
         }
     }
 
@@ -384,10 +425,20 @@
         };
     }
 
-    private void RemoveStep(int index)
+    private void RemoveStep(string id)
     {
+        if (_picking is not null) return;
+        var index = _draft.Steps.FindIndex(s => s.StepId == id);
+        if (index < 0) return;
         _draft.Steps.RemoveAt(index);
-        _picks.Clear();
+        _picks.Remove(id);
+        _actionFields.Remove(id);
+        _upButtons.Remove(id);
+        _downButtons.Remove(id);
+        _pickButtons.Remove(id);
+        _focusStep = _draft.Steps.Count == 0 ? "" : _draft.Steps[Math.Min(index, _draft.Steps.Count - 1)].StepId;
+        _focusControl = "action";
+        _orderStatus = $"Step {index + 1} removed. {_draft.Steps.Count} steps.";
     }
 
     /// <summary>The same rule the backend applies, so the editor refuses what a run would refuse.</summary>
@@ -395,6 +446,7 @@
 
     private void ModeChanged(ChangeEventArgs e)
     {
+        if (_picking is not null) return;
         var mode = Enum.Parse<CriticalE2EExecutionMode>(e.Value!.ToString()!);
         // Steps do not survive a mode change: a browser step and an integration step share no fields, and silently
         // keeping half-populated rows is how a flow ends up unrunnable for reasons nobody can see.
@@ -405,9 +457,43 @@
 
     private void Replace(int index, CriticalE2EStepDefinition step) => _draft.Steps[index] = step;
 
-    private void AddStep() => _draft.Steps.Add(_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser
-        ? new CriticalE2EStepDefinition { StepId = $"s{_draft.Steps.Count + 1}-{Guid.NewGuid():N}"[..12], BrowserAction = CompanionActionKind.Click, Selector = new CompanionSelector() }
-        : new CriticalE2EStepDefinition { StepId = $"s{_draft.Steps.Count + 1}-{Guid.NewGuid():N}"[..12], IntegrationAction = CriticalE2EIntegrationKind.Http, Method = "GET", Expect = new CriticalE2EExpectation() });
+    private void AddStep() => InsertStep(_draft.Steps.Count);
+
+    private void InsertStep(int index)
+    {
+        if (_picking is not null) return;
+        _focusStep = _draft.InsertStep(index).StepId;
+        _focusControl = "action";
+        _orderStatus = $"Step {index + 1} inserted. Choose its action.";
+    }
+
+    private void MoveStep(string id, int destination, bool? up = null)
+    {
+        if (_picking is not null || !_draft.MoveStep(id, destination)) return;
+        _focusStep = id;
+        // At a boundary the initiating button becomes disabled; use the opposite move control on the same card.
+        _focusControl = up == true ? (destination == 0 ? "down" : "up")
+            : up == false ? (destination == _draft.Steps.Count - 1 ? "up" : "down") : "action";
+        _orderStatus = $"{StepActionLabel(_draft.Steps[destination])} moved to step {destination + 1} of {_draft.Steps.Count}.";
+    }
+
+    private void StartDrag(string id)
+    {
+        if (_picking is null) _dragged = id;
+    }
+
+    private void EndDrag() { _dragged = null; _dropBefore = null; }
+
+    private void DropBefore(string targetId)
+    {
+        if (_dragged is { } id && id != targetId)
+        {
+            var source = _draft.Steps.FindIndex(s => s.StepId == id);
+            var target = targetId == "" ? _draft.Steps.Count : _draft.Steps.FindIndex(s => s.StepId == targetId);
+            if (source >= 0 && target >= 0) MoveStep(id, target > source ? target - 1 : target);
+        }
+        EndDrag();
+    }
 
     private Task Save() => OnSave.InvokeAsync(_draft.ToDefinition(ProfileId, EnvironmentId));
 }
