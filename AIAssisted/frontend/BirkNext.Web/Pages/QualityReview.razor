@@ -824,6 +824,12 @@
             return;
         }
 
+        // An imported project is not in the Sample Projects catalog: its name comes from the import, as the explorers show it.
+        if (ProjectImportScope.IsImport(_selectedProject))
+        {
+            _selectedProjectName = _roleStates.Values.Select(s => s.ProjectName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)) ?? _selectedProject;
+            return;
+        }
         var projects = await DocumentResolver.GetAvailableProjectsAsync();
         var project = projects.FirstOrDefault(p => p.Slug == _selectedProject);
         _selectedProjectName = project?.Name ?? _selectedProject;

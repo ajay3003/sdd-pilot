@@ -1,0 +1,344 @@
+@page "/project-import"
+@using BirkNext.ProjectImport
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.ProjectImport
+@using BirkNext.Web.Services.SampleProjects
+@using BirkNext.Web.Models
+@using BirkNext.Web.Components.ProjectImport
+@using Microsoft.AspNetCore.Components.Forms
+@inject IProjectImportApiService Api
+@inject ProjectImportActivation Activation
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject ProjectApplicabilityState Applicability
+@inject IWorkspaceAutoSaveService AutoSave
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* Project Import: one archive, uploaded once. Its documents become artifacts in the Shared Artifact Repository and its source becomes a
+   Source Analysis snapshot. The two stay separate evidence domains; they share only the import identity and the archive fingerprint. *@
+<PageTitle>Import Project</PageTitle>
+<div class="pi-page">
+    <PageHeader Title="Import Project" Description="Choose one project archive to populate project documents and source evidence. Both keep their own owner: documents go to the artifact repository, source to Source Analysis." />
+
+    @if (_phase == Phase.Choose)
+    {
+        @if (Activation.Current is { } current)
+        {
+            <section class="pi-card pi-current" aria-labelledby="pi-current-heading" data-testid="pi-current">
+                <h2 id="pi-current-heading">Current imported project</h2>
+                <p class="pi-current-title"><strong data-testid="pi-current-name">@current.ProjectName</strong> <span class="pi-muted">Imported project archive</span></p>
+                <dl class="pi-facts">
+                    <div><dt>Archive</dt><dd data-testid="pi-current-archive">@current.ArchiveFileName</dd></div>
+                    <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
+                    <div><dt>Imported</dt><dd>@current.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                    <div><dt>Project documents</dt><dd data-testid="pi-current-documents">@DocumentsFact(current)</dd></div>
+                    <div><dt>Source</dt><dd data-testid="pi-current-source">@SourceFact(current)</dd></div>
+                </dl>
+                <div class="pi-actions">
+                    <a class="btn-secondary" href="source-analysis" data-testid="pi-current-open-source">Open Source Analysis</a>
+                    @if (FirstExplorer(current) is { } explorer) { <a class="btn-secondary" href="@explorer.Route" data-testid="pi-current-open-documents">Open @explorer.Label</a> }
+                    <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
+                </div>
+                <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history.</p>
+            </section>
+        }
+
+        <section class="pi-card pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
+            <h2 id="pi-choose-heading">@(Activation.Current is null ? "Choose a project archive" : "Import another project")</h2>
+            <p>One ZIP of the project folder. BirkNext finds what it contains and shows it before anything is imported.</p>
+            <ul class="pi-outcomes" data-testid="pi-outcomes">
+                <li><strong>Project documents</strong> — constitution, specification, plan, tasks, data model and research, detected by content and file name.</li>
+                <li><strong>Source</strong> — code, project files, dependencies, pipelines, infrastructure and contracts, analyzed once into a Source Analysis snapshot.</li>
+                <li><strong>Both</strong> — from the same archive, without uploading it twice. Documents only or source only is fine too.</li>
+            </ul>
+            <div class="pi-actions">
+                <label class="pi-file-button">
+                    <InputFile class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" />
+                    <span aria-hidden="true">Choose project ZIP</span>
+                </label>
+                <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
+            </div>
+            <p class="pi-muted">Sample Projects remain available as ready-made examples. Source-only archives can still be added directly in <a href="source-analysis">Source Analysis</a>.</p>
+        </section>
+        @if (_failure is { } failure) { <ProjectImportFailure Failure="failure" /> }
+    }
+    else if (_phase is Phase.Validating or Phase.Classifying or Phase.Importing)
+    {
+        <section class="pi-card" aria-labelledby="pi-progress-heading" data-testid="pi-progress" aria-busy="true">
+            <h2 id="pi-progress-heading">@(_phase == Phase.Importing ? "Importing the project" : "Checking the archive")</h2>
+            <p class="pi-status" role="status" data-testid="pi-status">
+                @(_phase switch
+                {
+                    Phase.Validating => $"Validating {_fileName} and finding project documents and source…",
+                    Phase.Classifying => $"Archive accepted. Detecting document roles: {_classified} of {_classifyTotal} Markdown documents…",
+                    _ => _preview?.Source.Detected == true && _hasTarget ? "Activating project documents and analyzing source… Source analysis can take up to a minute for a large project." : "Activating project documents…",
+                })
+            </p>
+            @if (_phase == Phase.Classifying && _classifyTotal > 0)
+            {
+                <progress class="pi-progress" max="@_classifyTotal" value="@_classified" aria-label="Documents classified">@_classified of @_classifyTotal</progress>
+            }
+        </section>
+    }
+    else if (_phase == Phase.Preview && _preview is { } preview && _discovery is { } discovery)
+    {
+        <section class="pi-card pi-archive" aria-labelledby="pi-archive-heading" data-testid="pi-preview">
+            <h2 id="pi-archive-heading" tabindex="-1">@preview.Archive.FileName</h2>
+            <dl class="pi-facts">
+                <div><dt>Project name</dt><dd data-testid="pi-project-name">@preview.ProjectName <span class="pi-muted">(@ProjectImportPresentation.NameBasis(preview.ProjectNameBasis))</span></dd></div>
+                <div><dt>Size</dt><dd>@ProjectImportPresentation.Size(preview.Archive.SizeBytes) · @preview.Archive.EntryCount.ToString("N0") entries</dd></div>
+                <div><dt>Fingerprint</dt><dd><code title="@preview.Archive.Sha256" data-testid="pi-fingerprint">@ProjectImportPresentation.ShortFingerprint(preview.Archive.Sha256)</code></dd></div>
+            </dl>
+            <p class="pi-muted">Archive accepted. Nothing is imported until you choose Import project.</p>
+        </section>
+
+        <div class="pi-columns">
+            <ProjectImportArtifacts Discovery="discovery" />
+            <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source, _hasTarget)" />
+        </div>
+
+        @if (Warnings(preview, discovery) is { Count: > 0 } warnings)
+        {
+            <section class="pi-card" aria-labelledby="pi-warnings-heading" data-testid="pi-warnings">
+                <h2 id="pi-warnings-heading">Also in the archive</h2>
+                <ul class="pi-list">@foreach (var w in warnings) { <li>@w</li> }</ul>
+            </section>
+        }
+
+        @if (!ProjectImportPresentation.HasImportableContent(preview, discovery))
+        {
+            <section class="pi-card pi-tone-neutral" role="status" data-testid="pi-nothing">
+                <h2>@ProjectImportPresentation.OutcomeTitle(ProjectImportOutcome.NothingToImport)</h2>
+                <p>The archive is valid, but it has no supported project documents and no source. Nothing was activated.</p>
+            </section>
+        }
+        <div class="pi-actions">
+            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery))" @onclick="ImportAsync">Import project</button>
+            <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
+            @if (preview.Source.Detected && !_hasTarget) { <a href="@NavigationCatalog.TargetEnvironmentsRoute" data-testid="pi-select-target">Select a Target Environment</a> }
+        </div>
+    }
+    else if (_phase == Phase.Result && _preview is { } done && _discovery is { } doneDiscovery)
+    {
+        var outcome = ProjectImportPresentation.Outcome(done, doneDiscovery, _commit?.Source);
+        var tone = ProjectImportPresentation.ToneClass(ProjectImportPresentation.OutcomeTone(outcome));
+        <section class="pi-card pi-outcome pi-tone-@tone" aria-labelledby="pi-outcome-heading" data-testid="pi-result" data-outcome="@outcome">
+            <h2 id="pi-outcome-heading" tabindex="-1"><span class="pi-badge pi-badge-@tone">@(outcome == ProjectImportOutcome.Imported ? "Imported" : "Imported with notes")</span> @ProjectImportPresentation.OutcomeTitle(outcome)</h2>
+            <p><strong>@done.ProjectName</strong> is now the current project. Imported is not reviewed or approved: review the documents and run the source-based reviews next.</p>
+            @if (ProjectImportPresentation.Notes(done, doneDiscovery, _commit?.Source) is { Count: > 0 } notes)
+            {
+                <ul class="pi-list" data-testid="pi-notes">@foreach (var note in notes) { <li>@note</li> }</ul>
+            }
+            @if (_saveWarning) { <p class="pi-warning" role="alert" data-testid="pi-save-warning">The import is active in this browser session, but the workspace could not be saved. It may not survive a reload.</p> }
+            <dl class="pi-facts" data-testid="pi-provenance">
+                <div><dt>Import</dt><dd><code data-testid="pi-import-id">@done.ImportId</code></dd></div>
+                <div><dt>Archive</dt><dd>@done.Archive.FileName</dd></div>
+                <div><dt>Fingerprint</dt><dd><code title="@done.Archive.Sha256">@ProjectImportPresentation.ShortFingerprint(done.Archive.Sha256)</code></dd></div>
+            </dl>
+        </section>
+
+        <div class="pi-columns">
+            <ProjectImportArtifacts Discovery="doneDiscovery" Imported="true" />
+            @if (_commit?.Source is { } source)
+            {
+                <ProjectImportSource Detection="done.Source" Row="ProjectImportPresentation.SourceResult(source)" Result="source">
+                    @if (source.CanRetry)
+                    {
+                        <div class="pi-actions">
+                            <button type="button" class="btn-secondary" data-testid="pi-retry-source" disabled="@_retrying" @onclick="RetrySourceAsync">Create source snapshot</button>
+                            @if (source.Code == "NO_ACTIVE_ENVIRONMENT") { <a href="@NavigationCatalog.TargetEnvironmentsRoute">Select a Target Environment</a> }
+                        </div>
+                        <p class="pi-muted">The archive stays staged until @(_commit.StagedUntil?.ToLocalTime().ToString("HH:mm") ?? "it expires"), so no new upload is needed.</p>
+                    }
+                </ProjectImportSource>
+            }
+        </div>
+
+        <div class="pi-actions" data-testid="pi-next">
+            @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
+            <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="source-analysis" data-testid="pi-open-source">Open Source Analysis</a>
+            <a class="btn-secondary" href="getting-started" data-testid="pi-open-workflow">Recommended Workflow</a>
+            <button type="button" class="btn-secondary" data-testid="pi-import-another" @onclick="Reset">Import another project</button>
+        </div>
+    }
+</div>
+
+@code {
+    private enum Phase { Choose, Validating, Classifying, Preview, Importing, Result }
+    private int _classified;
+    private int _classifyTotal;
+    private Phase _phase = Phase.Choose;
+    private string? _fileName;
+    private ProjectImportPreview? _preview;
+    private ProjectImportArtifactDiscovery? _discovery;
+    private ProjectImportCommitResult? _commit;
+    private SourceUploadFailure? _failure;
+    private bool _hasTarget;
+    private string? _environmentId;
+    private bool _saveWarning;
+    private bool _retrying;
+    private string? _focusId;
+
+    protected override async Task OnInitializedAsync() => await LoadEnvironmentAsync();
+
+    private async Task LoadEnvironmentAsync()
+    {
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            _environmentId = context.ActiveProfileOrNull?.Id;
+        }
+        catch (Exception) { _environmentId = null; }
+        _hasTarget = !string.IsNullOrWhiteSpace(_environmentId);
+    }
+
+    private async Task ChooseAsync(InputFileChangeEventArgs args)
+    {
+        _failure = null;
+        _fileName = args.File.Name;
+        _phase = Phase.Validating;
+        try
+        {
+            await using var stream = args.File.OpenReadStream(50 * 1024 * 1024);
+            var (preview, error) = await Api.PreviewAsync(args.File.Name, stream);
+            if (preview is null) { _failure = error; _phase = Phase.Choose; return; }
+            _preview = preview;
+            _phase = Phase.Classifying;
+            _classified = 0;
+            _classifyTotal = preview.Documents.Count;
+            StateHasChanged();
+            _discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
+            {
+                _classified = p.Done;
+                _classifyTotal = p.Total;
+                StateHasChanged();
+            }));
+            await LoadEnvironmentAsync();
+            _phase = Phase.Preview;
+            _focusId = "pi-archive-heading";
+        }
+        catch (IOException) { Fail(new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024)); }
+        catch (HttpRequestException ex) { Fail(new("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was imported.")); }
+        catch (TaskCanceledException) { Fail(new("IMPORT_TIMEOUT", "upload", "The archive check did not finish before the request timed out. Nothing was imported; retry.")); }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_preview is not { } preview || _discovery is not { } discovery) return;
+        _phase = Phase.Importing;
+        await LoadEnvironmentAsync();
+        ProjectImportCommitResult? commit;
+        SourceUploadFailure? error;
+        try { (commit, error) = await Api.CommitAsync(preview.StagingId, _environmentId); }
+        catch (HttpRequestException ex) { (commit, error) = (null, new SourceUploadFailure("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was activated; retry.")); }
+        catch (TaskCanceledException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_TIMEOUT", "upload", "The import did not finish before the request timed out. Nothing was activated in this workspace; retry — the same archive reuses a snapshot that was already created.")); }
+        if (commit is null)
+        {
+            // Nothing is activated without a commit result: the workspace never holds half an import.
+            _failure = error;
+            _phase = error?.Code == "IMPORT_STAGING_EXPIRED" ? Phase.Choose : Phase.Preview;
+            if (_phase == Phase.Choose) { _preview = null; _discovery = null; }
+            return;
+        }
+        _commit = commit;
+        Activation.Activate(preview, discovery, commit);
+        _saveWarning = !await AutoSave.SaveNowAsync();
+        if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
+        _failure = null;
+        _phase = Phase.Result;
+        _focusId = "pi-outcome-heading";
+    }
+
+    private async Task RetrySourceAsync()
+    {
+        if (_preview is not { } preview || _commit is null) return;
+        _retrying = true;
+        await LoadEnvironmentAsync();
+        try
+        {
+            var (commit, error) = await Api.CommitAsync(preview.StagingId, _environmentId);
+            if (commit is not null)
+            {
+                _commit = commit;
+                Activation.UpdateSource(preview.ImportId, commit.Source);
+                _saveWarning = !await AutoSave.SaveNowAsync();
+                if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
+            }
+            else if (error is not null)
+            {
+                _commit = _commit with { Source = _commit.Source with { State = ProjectImportSourceState.Failed, CanRetry = error.Code != "IMPORT_STAGING_EXPIRED", Code = error.Code, Message = error.Message } };
+            }
+        }
+        catch (HttpRequestException ex) { _commit = _commit with { Source = _commit.Source with { Message = BackendRequestClassifier.FromException("Project import", ex).UserMessage } }; }
+        finally { _retrying = false; }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_preview is { } preview) await Api.DiscardAsync(preview.StagingId);
+        Reset();
+    }
+
+    private void Reset()
+    {
+        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false;
+        _phase = Phase.Choose;
+        _focusId = "pi-choose-heading";
+    }
+
+    private void CloseCurrent()
+    {
+        Activation.Close();
+        _ = AutoSave.SaveNowAsync();
+    }
+
+    private void Fail(SourceUploadFailure failure) { _failure = failure; _phase = Phase.Choose; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is not { } id) return;
+        _focusId = null;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
+    }
+
+    public void Dispose() { }
+
+    private static IReadOnlyList<string> Warnings(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery)
+    {
+        var list = new List<string>();
+        if (discovery.NeedsReview.Count > 0) list.Add($"{discovery.NeedsReview.Count} document(s) could fit more than one role; they are not imported as artifacts: {string.Join(", ", discovery.NeedsReview.Take(5).Select(d => d.RelativePath))}{(discovery.NeedsReview.Count > 5 ? ", …" : "")}");
+        if (discovery.Unclassified.Count > 0) list.Add($"{discovery.Unclassified.Count} other Markdown document(s) (README, checklists, notes, templates) are not project artifacts.");
+        if (discovery.Skipped.Count > 0) list.Add($"{discovery.Skipped.Count} document(s) could not be read: {string.Join(", ", discovery.Skipped.Take(5).Select(d => $"{d.RelativePath} ({d.Reason})"))}{(discovery.Skipped.Count > 5 ? ", …" : "")}");
+        if (preview.OtherFiles > 0) list.Add($"{preview.OtherFiles:N0} other file(s) — images, scripts, configuration and similar — are neither documents nor analyzed source.");
+        foreach (var limitation in preview.Source.Limitations) list.Add(limitation);
+        return list;
+    }
+
+    private static string DocumentsFact(SddProjectImportRecord record) =>
+        record.ArtifactDocumentCount == 0 ? "No supported project documents" :
+        string.Join(", ", record.DetectedRoles.Concat(record.AmbiguousRoles.Select(r => r + " (choose)")).Select(Label));
+
+    private static string SourceFact(SddProjectImportRecord record) => record.SourceState switch
+    {
+        nameof(ProjectImportSourceState.Created) or nameof(ProjectImportSourceState.Reused) => $"Snapshot {record.SourceSnapshotId?.ToString()[..8]}",
+        nameof(ProjectImportSourceState.NotDetected) => "No source detected",
+        _ => "Source detected, no snapshot yet",
+    };
+
+    private static string Label(string role) => Enum.TryParse<WorkspaceArtifactType>(role.Replace(" (choose)", ""), out var type)
+        ? BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(type) + (role.EndsWith(" (choose)") ? " (choose)" : "")
+        : role;
+
+    private static (string Route, string Label)? FirstExplorer(SddProjectImportRecord record)
+    {
+        foreach (var role in SampleArtifactClassifier.RoleOrder.Where(r => r != WorkspaceArtifactType.Research))
+            if (record.DetectedRoles.Contains(role.ToString()) || record.AmbiguousRoles.Contains(role.ToString()))
+                return (ProjectInputPresentation.ExplorerRoute(role), BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(role) + " Explorer");
+        return null;
+    }
+
+    private static (string Route, string Label)? FirstExplorerFor(ProjectImportArtifactDiscovery discovery) =>
+        discovery.DetectedRoles.Where(r => r.Role != WorkspaceArtifactType.Research).Select(r => r.Role).Cast<WorkspaceArtifactType?>().FirstOrDefault() is { } role
+            ? (ProjectInputPresentation.ExplorerRoute(role), BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(role) + " Explorer")
+            : null;
+}

@@ -115,7 +115,8 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
         workspace.Artifacts ??= new();
         var hasProjectIdentity = !string.IsNullOrWhiteSpace(workspace.ProjectName);
-        if (workspace.Artifacts.Count == 0 && !hasProjectIdentity)
+        // An imported project is identified by its lifecycle (current Project Import), not by a Sample Project name; a source-only import has no artifacts.
+        if (workspace.Artifacts.Count == 0 && !hasProjectIdentity && !ProjectImportScope.HasCurrentImport(workspace.SddLifecycleJson))
         {
             // Nothing to restore: no artifacts and no Sample Project identity. Never fall back to another project.
             _logger.LogInformation("Workspace {WorkspaceId} has no artifacts and no project identity; nothing restored", workspace.Id);

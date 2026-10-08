@@ -209,6 +209,14 @@ builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = backendBase);
+// Project Import: one archive → artifact repository (documents, activated here) + Source Analysis snapshot (created by the backend).
+builder.Services.AddHttpClient<BirkNext.Web.Services.ProjectImport.IProjectImportApiService, BirkNext.Web.Services.ProjectImport.ProjectImportApiService>(client =>
+{
+    client.BaseAddress = backendBase;
+    client.Timeout = TimeSpan.FromMinutes(5); // same budget as the Source Analysis upload: a large project's analysis runs inside the commit
+});
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportActivation>(sp => new BirkNext.Web.Services.ProjectImport.ProjectImportActivation(
+    sp.GetRequiredService<WorkspaceArtifactRepository>(), sp.GetRequiredService<IWorkspaceUpdateCoordinator>()));
 // Azure Environment Analysis: sign-in status, read-only analysis into snapshots, declared-vs-observed comparison (the backend only reads Azure).
 builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiService>(client =>
     client.BaseAddress = backendBase);

@@ -22,8 +22,20 @@
 <div class="sp-page">
     <div class="sp-page-header">
         <h1 class="sp-page-title">Sample Projects</h1>
-        <p class="sp-page-desc">Browse project folders. BirkNext scans each folder recursively and detects supported artifacts (constitution, specification, data model, plan, tasks, research) by their content — any filename or folder structure works, and every role is optional.</p>
+        <p class="sp-page-desc">Ready-made example projects. BirkNext scans each folder recursively and detects supported artifacts (constitution, specification, data model, plan, tasks, research) by their content — any filename or folder structure works, and every role is optional. For your own project, use <a href="project-import" data-testid="sp-import-project-link">Import Project</a>: one ZIP provides both the documents and the source.</p>
     </div>
+
+    @if (string.IsNullOrWhiteSpace(Workspace.CurrentProject)
+         && Workspace.SddLifecycle.CurrentProjectImportId is { } importId
+         && Workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is { } imported)
+    {
+        @* An imported project is the current project. Its artifacts come from the imported archive, not from this catalog. *@
+        <div class="sp-workspace-banner" role="status" data-testid="sp-imported-project">
+            Current project: <strong>@imported.ProjectName</strong> — artifact source: imported project archive <code>@imported.ArchiveFileName</code>.
+            Selecting a Sample Project below makes it the current project instead; the import stays available as history.
+            <a href="project-import" data-testid="sp-open-import">Open Import Project</a>
+        </div>
+    }
 
     @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
     {

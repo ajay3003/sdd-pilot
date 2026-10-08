@@ -65,7 +65,8 @@
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-empty">
-                    <p class="db-workspace-message">No workspace loaded. Load a sample project or import artifacts to populate dashboard metrics.</p>
+                    <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or load a sample project to populate dashboard metrics.</p>
+                    <a href="project-import" class="btn-secondary db-workspace-action" data-testid="db-import-project">Import Project →</a>
                     <a href="sample-projects" class="btn-secondary db-workspace-action">Open Sample Projects →</a>
                 </div>
             </div>
@@ -75,6 +76,7 @@
             <div class="db-workspace-content">
                 <div class="db-workspace-info">
                     <span class="db-workspace-project" data-testid="db-workspace-name">📁 @(_workspace.ProjectName ?? _workspace.WorkspaceName)</span>
+                    @if (_workspace.IsImportedProject) { <span class="db-workspace-count" data-testid="db-workspace-origin">Imported project archive</span> }
                     @if (_workspace.State == CurrentWorkspaceState.Error)
                     {
                         <span class="db-workspace-count" data-testid="db-workspace-roles">Unable to load workspace artifacts</span>
@@ -104,7 +106,7 @@
 
                 @if (_workspace.WorkspaceLoaded && _workspace.AvailableRoleCount == 0)
                 {
-                    <a href="sample-projects" class="btn-secondary db-workspace-action">Add artifacts →</a>
+                    <a href="@(_workspace.IsImportedProject ? "project-import" : "sample-projects")" class="btn-secondary db-workspace-action">@(_workspace.IsImportedProject ? "Open Import Project →" : "Add artifacts →")</a>
                 }
                 else if (_workspace.WorkspaceLoaded)
                 {

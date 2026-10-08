@@ -1,0 +1,35 @@
+@using BirkNext.ProjectImport
+@using BirkNext.Web.Services.ProjectImport
+@* The source part of a Project Import. No source is neutral; a snapshot that could not be created yet is partial and recoverable. *@
+<section class="pi-card pi-section" aria-labelledby="pi-source-heading" data-testid="pi-source" data-state="@(Result?.State.ToString() ?? (Detection.Detected ? "Detected" : "NotDetected"))">
+    @{ var tone = ProjectImportPresentation.ToneClass(Row.Tone); }
+    <h2 id="pi-source-heading">Source</h2>
+    <p class="pi-state" data-testid="pi-source-status"><span class="pi-badge pi-badge-@tone">@Row.Status</span> <span>@Row.Detail</span></p>
+    @if (Result is { SnapshotId: { } snapshotId } result)
+    {
+        <dl class="pi-facts">
+            <div><dt>Snapshot</dt><dd><code data-testid="pi-snapshot-id" title="@snapshotId">@snapshotId.ToString()[..8]</code></dd></div>
+            @if (result.FilesAnalyzed is { } files) { <div><dt>Files analyzed</dt><dd>@files.ToString("N0")</dd></div> }
+            @if (result.SnapshotStatus is { } status) { <div><dt>Source coverage</dt><dd>@(status == BirkNext.Integrations.SourceAnalysisStatus.Ready ? "Complete" : status.ToString())</dd></div> }
+        </dl>
+    }
+    @{ var technologies = Result?.Technologies is { Count: > 0 } analyzed ? analyzed : Detection.Technologies; }
+    @if (technologies.Count > 0)
+    {
+        <ul class="pi-tech" aria-label="Technologies detected" data-testid="pi-technologies">
+            @foreach (var t in technologies.Take(16))
+            {
+                <li class="pi-chip @(t.SourceAnalysisSupported ? "" : "pi-chip-unsupported")" data-testid="pi-technology" data-supported="@(t.SourceAnalysisSupported ? "true" : "false")">@t.DisplayName@(t.SourceAnalysisSupported ? "" : " · not analyzed")</li>
+            }
+            @if (technologies.Count > 16) { <li class="pi-chip pi-chip-more">+@(technologies.Count - 16) more</li> }
+        </ul>
+    }
+    @ChildContent
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ProjectImportSourceDetection Detection { get; set; } = default!;
+    [Parameter, EditorRequired] public ProjectImportSourceRow Row { get; set; } = default!;
+    [Parameter] public ProjectImportSourceResult? Result { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

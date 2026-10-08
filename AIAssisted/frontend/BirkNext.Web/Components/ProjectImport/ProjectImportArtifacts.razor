@@ -1,0 +1,31 @@
+@using BirkNext.Web.Services.ProjectImport
+@* The document part of a Project Import: one row per supported role. Not found is neutral (every role is optional); several candidates is
+   partial (the user chooses in the explorer). Status is text first; colour only reinforces it. *@
+<section class="pi-card pi-section" aria-labelledby="pi-artifacts-heading" data-testid="pi-artifacts" data-has-artifacts="@(Discovery.HasArtifacts ? "true" : "false")">
+    <h2 id="pi-artifacts-heading">Project documents</h2>
+    @if (!Discovery.HasArtifacts)
+    {
+        <p class="pi-state pi-tone-neutral" data-testid="pi-artifacts-none"><span class="pi-badge pi-badge-neutral">None</span> No supported project artifacts detected.@(Imported ? " Source can still be reviewed." : "")</p>
+    }
+    else
+    {
+        <p class="pi-muted">@(Imported ? "Imported into the artifact repository as this project's documents." : "Will be added to the artifact repository as this project's documents.")</p>
+    }
+    <ul class="pi-roles" data-testid="pi-roles">
+        @foreach (var row in ProjectImportPresentation.Roles(Discovery))
+        {
+            var tone = ProjectImportPresentation.ToneClass(row.Tone);
+            <li class="pi-role" data-testid="pi-role" data-role="@row.Role" data-state="@row.Status">
+                <span class="pi-role-mark pi-mark-@tone" aria-hidden="true"></span>
+                <span class="pi-role-name">@row.Label</span>
+                <span class="pi-badge pi-badge-@tone">@row.Status</span>
+                <span class="pi-role-detail">@row.Detail</span>
+            </li>
+        }
+    </ul>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ProjectImportArtifactDiscovery Discovery { get; set; } = default!;
+    [Parameter] public bool Imported { get; set; }
+}

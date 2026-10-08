@@ -16,6 +16,12 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
     public SddLifecycleState SddLifecycle { get; private set; } = new();
 
+    /// <summary>
+    /// The scope whose current revisions are this session's artifacts (<see cref="Get(WorkspaceArtifactType)"/>): the current imported
+    /// project (<c>import:{id}</c>) or, with none, the manual workspace (null). A selected Sample Project is resolved on demand and never copied.
+    /// </summary>
+    public string? SessionScope => ProjectImportScope.For(SddLifecycle.CurrentProjectImportId);
+
     public event EventHandler? ReviewContextRebuildNeeded;
     public event EventHandler? ProjectSelectionChanged;
 
@@ -33,6 +39,12 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             if (_projectName != value)
             {
                 _projectName = value;
+                // Selecting a Sample Project replaces an imported project as the current workspace (they are mutually exclusive).
+                if (!string.IsNullOrWhiteSpace(value) && SddLifecycle.CurrentProjectImportId is not null)
+                {
+                    SddLifecycle.CurrentProjectImportId = null;
+                    RefreshSessionArtifacts();
+                }
                 // Fire ProjectSelectionChanged so AutoSave persists the new project identity
                 ProjectSelectionChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -98,7 +110,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             throw new InvalidOperationException("Artifact revision has an unsupported role.");
         foreach (var item in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.WorkspaceScope == revision.WorkspaceScope))
             item.IsCurrentSelection = item.RevisionId == revisionId;
-        if (revision.WorkspaceScope is null)
+        if (revision.WorkspaceScope == SessionScope)
             _artifacts[role] = new WorkspaceArtifact(revision.Content, revision.CapturedAt.UtcDateTime, revision.FileName, revision.SourceReference);
         NotifyArtifactsChanged();
     }
@@ -109,7 +121,11 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     /// (scope, role and file name). Authority starts as Unknown: importing never approves or baselines anything.
     /// </summary>
     public SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
-        string? workspaceScope, string? origin, bool select)
+        string? workspaceScope, string? origin, bool select) =>
+        AddArtifactRevision(type, text, fileName, sourcePath, workspaceScope, origin, select, projectImportId: null);
+
+    public SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
+        string? workspaceScope, string? origin, bool select, string? projectImportId)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var role = type.ToString();
@@ -126,7 +142,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
                     .Where(x => x.Role == role && x.WorkspaceScope == workspaceScope && string.Equals(x.FileName, name, StringComparison.Ordinal))
                     .Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
                 Authority = "Unknown", CapturedAt = DateTimeOffset.UtcNow,
-                WorkspaceScope = workspaceScope, Origin = origin
+                WorkspaceScope = workspaceScope, Origin = origin, ProjectImportId = projectImportId
             };
             SddLifecycle.Revisions.Add(revision);
         }
@@ -139,8 +155,26 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public void Clear(WorkspaceArtifactType type)
     {
         _artifacts.Remove(type);
-        foreach (var revision in SddLifecycle.Revisions.Where(x => x.Role == type.ToString() && x.WorkspaceScope is null && x.IsCurrentSelection))
+        var scope = SessionScope;
+        foreach (var revision in SddLifecycle.Revisions.Where(x => x.Role == type.ToString() && x.WorkspaceScope == scope && x.IsCurrentSelection))
             revision.IsCurrentSelection = false;
+    }
+
+    /// <summary>
+    /// Re-derives this session's artifacts from the current revisions of <see cref="SessionScope"/>: a role without a current revision there
+    /// has no session artifact. Used when the current imported project changes, so documents of another import or of the manual workspace
+    /// never stay behind as session artifacts.
+    /// </summary>
+    public void RefreshSessionArtifacts()
+    {
+        var scope = SessionScope;
+        foreach (var role in Enum.GetValues<WorkspaceArtifactType>())
+        {
+            var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role.ToString() && x.WorkspaceScope == scope && x.IsCurrentSelection
+                && !string.IsNullOrWhiteSpace(x.Content));
+            if (current is null) _artifacts.Remove(role);
+            else _artifacts[role] = new WorkspaceArtifact(current.Content, current.CapturedAt.UtcDateTime, current.FileName, current.SourceReference);
+        }
     }
 
     public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
@@ -198,6 +232,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.RequirementChanges ??= [];
             SddLifecycle.Baselines ??= [];
             SddLifecycle.ExplorerSelections ??= [];
+            SddLifecycle.ProjectImports ??= [];
             foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
             foreach (var (type, artifact) in GetAllArtifacts())
                 CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
@@ -246,14 +281,15 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     {
         var fingerprint = ArtifactFingerprint.Compute(text);
         var role = type.ToString();
-        // Set() is the manual workspace's session artifact, so it captures into the unscoped (no project) revisions only.
-        var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope is null && x.IsCurrentSelection);
+        // Set() is the session artifact, so it captures into the session scope: the current imported project, else the manual workspace.
+        var scope = SessionScope;
+        var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope == scope && x.IsCurrentSelection);
         if (current?.Fingerprint == fingerprint) return;
 
         if (current is not null) current.IsCurrentSelection = false;
         // Content seen before (switching A → B → A) re-selects its existing revision instead of storing another full copy: revisions are captured
         // for new fingerprints only, so repeated workspace switching cannot grow the lifecycle (memory and persisted JSON) without bound.
-        var existing = SddLifecycle.Revisions.LastOrDefault(x => x.Role == role && x.WorkspaceScope is null && x.Fingerprint == fingerprint);
+        var existing = SddLifecycle.Revisions.LastOrDefault(x => x.Role == role && x.WorkspaceScope == scope && x.Fingerprint == fingerprint);
         if (existing is not null) { existing.IsCurrentSelection = true; return; }
         SddLifecycle.Revisions.Add(new SddArtifactRevision
         {
@@ -264,7 +300,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             Fingerprint = fingerprint,
             Revision = SddLifecycle.Revisions.Where(x => x.Role == role).Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
             IsCurrentSelection = true,
-            CapturedAt = DateTimeOffset.UtcNow
+            CapturedAt = DateTimeOffset.UtcNow,
+            WorkspaceScope = scope
         });
     }
 

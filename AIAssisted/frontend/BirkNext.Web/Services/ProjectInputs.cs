@@ -47,6 +47,8 @@ public static class ProjectInputPresentation
 {
     public const string SampleProjectsRoute = "sample-projects";
     public const string SourceAnalysisRoute = "source-analysis";
+    /// <summary>One project ZIP for both documents and source: the recommended way to provide your own project.</summary>
+    public const string ProjectImportRoute = "project-import";
 
     public static ProjectInputs Build(CurrentWorkspaceSnapshot workspace, FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage,
         bool environmentKnown = true) =>
@@ -61,20 +63,25 @@ public static class ProjectInputPresentation
                 "The workspace documents could not be read.", "Open Sample Projects", SampleProjectsRoute, []);
         if (workspace.AvailableRoleCount == 0)
         {
-            var detail = workspace.WorkspaceLoaded
-                ? $"Workspace {workspace.WorkspaceName} has no documents yet. Choose a Sample Project, or import a specification, plan or other document in an explorer."
-                : "Choose a Sample Project for the quickest start, or import your own documents in an explorer. Specification, Constitution, Plan, Tasks and Data Model are all optional.";
+            var detail = workspace.IsImportedProject
+                ? $"No supported project documents were detected in the imported project {workspace.ProjectDisplay}. Source can still be reviewed; documents can also be imported in an explorer."
+                : workspace.WorkspaceLoaded
+                ? $"Workspace {workspace.WorkspaceName} has no documents yet. Import the project ZIP, choose a Sample Project, or import a specification, plan or other document in an explorer."
+                : "Import your project ZIP — one upload provides documents and source — or choose a Sample Project for a quick start. Specification, Constitution, Plan, Tasks and Data Model are all optional.";
             return new(ProjectInputKind.Documents, ProjectInputStatus.Absent, title, requirement, "Not provided", detail,
-                "Choose Sample Project", SampleProjectsRoute, []);
+                "Import Project", ProjectImportRoute, []);
         }
 
         var facts = workspace.AvailableRoles.Select(r => r.ArtifactCount > 1 ? $"{r.Label} ({r.ArtifactCount})" : r.Label).ToList();
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
             return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Selection required",
                 $"{workspace.RoleSummary}. Several {unresolved.Label} documents and none is selected.", $"Choose {unresolved.Label}", ExplorerRoute(unresolved.Role), facts);
-        return new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
-            $"{workspace.RoleSummary} in {workspace.ProjectDisplay switch { "Not assigned" => "the manual workspace", var p => p }}.",
-            "Open Sample Projects", SampleProjectsRoute, facts);
+        return workspace.IsImportedProject
+            ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
+                $"{workspace.RoleSummary} in the imported project {workspace.ProjectDisplay}.", "Open Import Project", ProjectImportRoute, facts)
+            : new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
+                $"{workspace.RoleSummary} in {workspace.ProjectDisplay switch { "Not assigned" => "the manual workspace", var p => p }}.",
+                "Open Sample Projects", SampleProjectsRoute, facts);
     }
 
     public static ProjectInput Source(FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage, bool environmentKnown = true)
@@ -86,15 +93,15 @@ public static class ProjectInputPresentation
                 "Source state could not be read.", "Open Source Analysis", SourceAnalysisRoute, []);
         if (environment is null)
             return new(ProjectInputKind.Source, ProjectInputStatus.Absent, title, requirement, "Not added",
-                "Source snapshots are kept per Target Environment: select or create one (no application URL needed), then analyze a source archive.",
+                "Source snapshots are kept per Target Environment: select or create one (no application URL needed), then import the project ZIP — its source is analyzed in the same import.",
                 "Open Source Analysis", SourceAnalysisRoute, []);
         if (coverage is null)
             return new(ProjectInputKind.Source, ProjectInputStatus.Unknown, title, requirement, "Unknown",
                 $"The source snapshots of {environment.Name} could not be read.", "Open Source Analysis", SourceAnalysisRoute, []);
         if (coverage.SourceSnapshotId is null)
             return new(ProjectInputKind.Source, ProjectInputStatus.Absent, title, requirement, "Not added",
-                $"No source archive analyzed for {environment.Name}. Add one for Technology Coverage, Dependency and Pipeline Review.",
-                "Add Source Snapshot", SourceAnalysisRoute, []);
+                $"No source analyzed for {environment.Name}. Import the project ZIP (its source becomes a snapshot in the same import) for Technology Coverage, Dependency and Pipeline Review.",
+                "Import Project", ProjectImportRoute, []);
 
         var facts = new List<string>();
         if (coverage.SourceArchive is { Length: > 0 } archive) facts.Add(archive);

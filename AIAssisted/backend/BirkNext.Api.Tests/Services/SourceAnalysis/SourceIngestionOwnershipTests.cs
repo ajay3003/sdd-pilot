@@ -22,12 +22,16 @@ public sealed class SourceIngestionOwnershipTests
     {
         var allowed = new Dictionary<string, string>
         {
-            ["Controllers/IqrSourceEvidenceController.cs"] = "POST api/source-analysis/snapshots — the single source ingestion",
+            ["Controllers/IqrSourceEvidenceController.cs"] = "POST api/source-analysis/snapshots — the source ingestion",
+            ["Controllers/ProjectImportController.cs"] = "POST api/project-import/preview — one project ZIP through the same reader and the same Source Analysis snapshot creation (not a second source store)",
             ["Controllers/DependencyReviewController.cs"] = "SBOM / lock-file import: deployed-inventory evidence, not a source repository",
             ["Controllers/TestEvidenceController.cs"] = "one .trx test-result artifact: execution evidence, never source (source tests come from the Source Analysis snapshot)",
         };
-        Sources().Where(f => f.Rel.StartsWith("Controllers/") && Regex.IsMatch(f.Text, @"ReadFormAsync|IFormFile")).Select(f => f.Rel)
+        Sources().Where(f => f.Rel.StartsWith("Controllers/") && Regex.IsMatch(f.Text, @"ReadFormAsync|IFormFile|SourceArchiveUpload\.ReadAsync")).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "a new multipart endpoint must not become a second source upload");
+        // The archive upload itself is read in one place for both source endpoints.
+        Sources().Where(f => f.Rel.StartsWith("Services/") && f.Text.Contains("ReadFormAsync", StringComparison.Ordinal)).Select(f => f.Rel)
+            .Should().BeEquivalentTo(["Services/Integrations/SourceEvidence/SourceArchiveUpload.cs"]);
     }
 
     [Fact]

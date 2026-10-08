@@ -113,19 +113,8 @@ public sealed class SampleProjectArtifactDiscoveryService(SampleProjectsApiServi
             }
         }
 
-        var documents = new List<DiscoveredDocument>();
-        var seen = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var file in candidates.OrderBy(PathOf, StringComparer.Ordinal))
-        {
-            var path = PathOf(file);
-            contents.TryGetValue(path, out var text);
-            var classification = SampleArtifactClassifier.Classify(path, text);
-            var fingerprint = text is null ? null : ArtifactFingerprint.Compute(Normalize(text));
-            string? duplicateOf = null;
-            if (fingerprint is not null && !seen.TryAdd(fingerprint, path)) duplicateOf = seen[fingerprint];
-            documents.Add(new DiscoveredDocument(path, file.Filename, classification.Status, classification.Role, classification.Confidence,
-                classification.Reasons, classification.Candidates, fingerprint, duplicateOf));
-        }
+        var documents = ArtifactDocumentDiscovery.Classify(candidates.Select(file =>
+            new ArtifactDocumentDiscovery.Candidate(PathOf(file), file.Filename, contents.GetValueOrDefault(PathOf(file)))));
 
         var result = new SampleProjectDiscoveryResult(
             project.Slug,
@@ -163,10 +152,7 @@ public sealed class SampleProjectArtifactDiscoveryService(SampleProjectsApiServi
 
     private SampleProjectDiscoveryResult WithChoices(SampleProjectDiscoveryResult result) => result with
     {
-        Roles = SampleArtifactClassifier.RoleOrder.Select(role => new SampleRoleSummary(
-            role,
-            result.Documents.Where(d => d.Status == ArtifactDiscoveryStatus.Detected && d.Role == role).ToList(),
-            _choices.TryGetValue((result.ProjectSlug, role), out var chosen) ? chosen : null)).ToList(),
+        Roles = ArtifactDocumentDiscovery.Roles(result.Documents, role => _choices.TryGetValue((result.ProjectSlug, role), out var chosen) ? chosen : null),
     };
 
     private static string PathOf(SampleFileDto file) => (file.RelativePath ?? file.Filename).Replace('\\', '/');
@@ -177,9 +163,5 @@ public sealed class SampleProjectArtifactDiscoveryService(SampleProjectsApiServi
             .Select(f => $"{PathOf(f)}|{f.SizeBytes}|{f.LastModifiedUtc?.Ticks}|{f.Exists}|{f.IsSupported}")
             .Order(StringComparer.Ordinal)));
 
-    private static string Normalize(string text)
-    {
-        if (text.StartsWith('﻿')) text = text[1..];
-        return text.Replace("\r\n", "\n").Replace('\r', '\n');
-    }
+    private static string Normalize(string text) => ArtifactDocumentDiscovery.Normalize(text);
 }

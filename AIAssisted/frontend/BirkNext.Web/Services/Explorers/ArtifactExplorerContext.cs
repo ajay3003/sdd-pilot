@@ -9,7 +9,7 @@ public enum ExplorerArtifactSource
 {
     /// <summary>A document of the selected Sample Project, found by generic discovery and classified by role.</summary>
     SampleProject,
-    /// <summary>A document imported into the workspace (file, drop or paste) and kept as an artifact revision.</summary>
+    /// <summary>A document imported into the workspace (file, drop or paste, or a Project Import archive) and kept as an artifact revision.</summary>
     Workspace,
 }
 
@@ -88,7 +88,7 @@ public interface IArtifactExplorerContext
     /// <summary>Raised when artifacts, selection, authority or the selected project change, and after a reset.</summary>
     event EventHandler? Changed;
 
-    /// <summary>The workspace scope: the selected Sample Project slug, or null for the manual workspace.</summary>
+    /// <summary>The workspace scope: the selected Sample Project slug, the current imported project (<c>import:{id}</c>), or null for the manual workspace.</summary>
     string? CurrentScope { get; }
 
     Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default);
@@ -145,7 +145,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         if (_stateManager is not null) _stateManager.WorkspaceChanged += OnWorkspaceChanged;
     }
 
-    public string? CurrentScope => string.IsNullOrWhiteSpace(_resolver.GetSelectedProject()) ? null : _resolver.GetSelectedProject();
+    /// <summary>A selected Sample Project, else the current imported project, else the manual workspace (null). The two projects are mutually exclusive.</summary>
+    public string? CurrentScope => _resolver.GetSelectedProject() is { Length: > 0 } slug && !string.IsNullOrWhiteSpace(slug)
+        ? slug
+        : ProjectImportScope.For(_workspace.SddLifecycle.CurrentProjectImportId);
 
     public async Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default)
     {
@@ -155,7 +158,13 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         string? chosenSamplePath = null;
         string? projectName = null;
 
-        if (scope is not null)
+        if (ProjectImportScope.IsImport(scope))
+        {
+            // An imported project: its documents are revisions in its own scope (listed below); there is no catalog to discover.
+            var importId = ProjectImportScope.ImportIdOf(scope);
+            projectName = _workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId)?.ProjectName ?? importId;
+        }
+        else if (scope is not null)
         {
             var namesTask = ProjectNameAsync(scope, cancellationToken);
             SampleProjectDiscoveryResult? discovery;

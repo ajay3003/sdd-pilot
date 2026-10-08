@@ -270,11 +270,11 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         step.Title = "Load project artifacts";
         step.Description = state switch
         {
-            ArtifactLoadState.Required => "No project artifacts are available yet. Choose a Sample Project, or import your own documents in the explorers.",
+            ArtifactLoadState.Required => "No project artifacts are available yet. Import the project ZIP (documents and source in one upload), choose a Sample Project, or import documents in the explorers.",
             _ => $"{roles} project artifact role{(roles == 1 ? " is" : "s are")} available."
                  + (missing.Count == 0 ? "" : $" Reviews that read {missingText} do not apply until {(missing.Count == 1 ? "it is" : "they are")} added."),
         };
-        step.Route = ProjectInputPresentation.SampleProjectsRoute;
+        step.Route = ProjectInputPresentation.ProjectImportRoute;
         step.ActionLabel = LoadArtifactsLabel;
         step.CanOpen = state == ArtifactLoadState.Required;
         step.IsCurrent = state == ArtifactLoadState.Required;

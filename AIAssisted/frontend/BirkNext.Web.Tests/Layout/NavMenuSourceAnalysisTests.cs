@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Layout;
 
-/// <summary>Source Analysis is one optional Project Inputs item (after Sample Projects), controlled by Feature Visibility; its consumers are under Source Review.</summary>
+/// <summary>Source Analysis is one optional Project Inputs item (after Import Project and Sample Projects), controlled by Feature Visibility; its consumers are under Source Review.</summary>
 public sealed class NavMenuSourceAnalysisTests : BunitContext
 {
     public NavMenuSourceAnalysisTests() => Services.AddSingleton<FeatureVisibilityService>();
@@ -25,7 +25,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
-        entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Sample Projects", "Source Analysis", "Target Environments");
+        entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Sample Projects", "Source Analysis", "Target Environments");
         entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "Implementation Review", "Implementation Traceability");
         entries.Should().ContainInConsecutiveOrder("§Source Review", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
@@ -40,7 +40,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("a[href='source-analysis']").Should().BeEmpty();
-        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Sample Projects", "Target Environments");
+        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Sample Projects", "Target Environments");
 
         flags.ApplyLocalFlags(new FeatureVisibilityDto { SourceAnalysis = true });
         cut.Render();
@@ -70,7 +70,8 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         });
         var cut = Render<NavMenu>();
 
-        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Source Analysis", "§Document Review");
+        // Import Project feeds Source Analysis too, so it stays visible with it.
+        Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Source Analysis", "§Document Review");
     }
 
     [Fact]

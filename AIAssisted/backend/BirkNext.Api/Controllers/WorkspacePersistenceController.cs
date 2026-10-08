@@ -171,6 +171,20 @@ public class WorkspacePersistenceController : ControllerBase
         }
     }
 
+    /// <summary>Whether the lifecycle JSON names a current Project Import (CurrentProjectImportId). Malformed JSON counts as none.</summary>
+    internal static bool HasCurrentProjectImport(string? sddLifecycleJson)
+    {
+        if (string.IsNullOrWhiteSpace(sddLifecycleJson)) return false;
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(sddLifecycleJson);
+            return json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && json.RootElement.TryGetProperty("CurrentProjectImportId", out var id)
+                && id.ValueKind == System.Text.Json.JsonValueKind.String && !string.IsNullOrWhiteSpace(id.GetString());
+        }
+        catch (System.Text.Json.JsonException) { return false; }
+    }
+
     [HttpPost("auto-save")]
     public async Task<ActionResult<SavedWorkspaceDto>> AutoSave([FromBody] AutoSaveRequest? request = null)
     {
@@ -183,7 +197,9 @@ public class WorkspacePersistenceController : ControllerBase
 
             // Nothing to save and no workspace to update (e.g. right after a local data reset): creating an empty "Auto_…" workspace
             // would make the installation look like it has a project again.
+            // An active Project Import is a project even before any document role is selected (a source-only import has none).
             if ((request?.Artifacts?.Count ?? 0) == 0 && string.IsNullOrWhiteSpace(request?.ProjectName)
+                && !HasCurrentProjectImport(request?.SddLifecycleJson)
                 && await _service.GetCurrentWorkspaceIdAsync() is null)
                 return NoContent();
 

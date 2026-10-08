@@ -116,6 +116,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Critical E2E flows and run history (App_Data/critical-e2e)",
         "BirkNext-owned authenticated browser sessions, the running local HTTPS proxy session (and the dedicated browser it opened), Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
         "Diagnostic, reachability and review caches",
+        "Project Import archives staged in memory and not yet committed",
     ];
 
     public static readonly IReadOnlyList<string> Preserved =
@@ -158,6 +159,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "Browser Companion pairings", () => { services.GetService<BrowserCompanionService>()?.UnpairAll(); return Task.CompletedTask; });
             await Step(warnings, "captured API credentials", () => { services.GetService<TransientAuthenticatedApiContextStore>()?.InvalidateAll(); return Task.CompletedTask; });
             await Step(warnings, "security classification test contexts", () => { services.GetService<ClassificationTestContextStore>()?.ClearAll(); return Task.CompletedTask; });
+            await Step(warnings, "staged project imports", () => { services.GetService<BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore>()?.Clear(); return Task.CompletedTask; });
             await Step(warnings, "browser diagnostic results", () => { services.GetService<BrowserAutomationEvidenceStore>()?.Clear(); return Task.CompletedTask; });
             await Step(warnings, "performance reachability checks", () => { services.GetService<PerformanceTestProviderRegistry>()?.ClearReachability(); return Task.CompletedTask; });
             await Step(warnings, "review caches", () => { (services.GetService<IMemoryCache>() as MemoryCache)?.Compact(1.0); return Task.CompletedTask; });

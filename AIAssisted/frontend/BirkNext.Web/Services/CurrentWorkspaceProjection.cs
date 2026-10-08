@@ -112,6 +112,8 @@ public sealed record CurrentWorkspaceSnapshot(
         .ToList();
 
     public string ProjectDisplay => ProjectName ?? ProjectSlug ?? "Not assigned";
+    /// <summary>The current project came from a Project Import archive (scope <c>import:{id}</c>), not from the Sample Projects catalog.</summary>
+    public bool IsImportedProject => ProjectImportScope.IsImport(ProjectSlug);
 
     /// <summary>"5 artifact roles available", plus the artifact count when it differs ("· 7 artifacts").</summary>
     public string RoleSummary
@@ -294,8 +296,9 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint);
     }
 
+    /// <summary>An imported project is persisted without a Sample Project identity (its import is in the lifecycle), so it matches a blank project name.</summary>
     private static bool SameProject(string? persisted, string? scope) =>
-        string.Equals(string.IsNullOrWhiteSpace(persisted) ? null : persisted.Trim(), scope, StringComparison.Ordinal);
+        string.Equals(string.IsNullOrWhiteSpace(persisted) ? null : persisted.Trim(), ProjectImportScope.IsImport(scope) ? null : scope, StringComparison.Ordinal);
 
     private static string? FirstNonBlank(params string?[] values) => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 

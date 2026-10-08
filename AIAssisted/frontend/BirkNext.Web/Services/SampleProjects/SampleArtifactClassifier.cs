@@ -182,6 +182,18 @@ public static class SampleArtifactClassifier
     private static readonly ConstitutionAnalysisService ConstitutionExtractor = new();
     private static readonly PlanAnalysisService PlanExtractor = new();
 
+    /// <summary>
+    /// The parts of a path the classifier reads: the file name and the folders that are role hints or mark checklists/contracts. Two
+    /// documents with the same normalized text and the same key always get the same classification.
+    /// </summary>
+    public static string PathKey(string relativePath)
+    {
+        var parts = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var folders = parts.SkipLast(1).Where(f => FolderHints.ContainsKey(f) || f.Equals("checklists", StringComparison.OrdinalIgnoreCase)
+            || f.Equals("contracts", StringComparison.OrdinalIgnoreCase));
+        return string.Join('/', folders.Append(parts.Length == 0 ? "" : parts[^1]));
+    }
+
     public static ArtifactClassification Classify(string relativePath, string? content)
     {
         if (content is null)

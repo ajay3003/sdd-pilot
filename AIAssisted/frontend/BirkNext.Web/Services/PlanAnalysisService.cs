@@ -161,6 +161,14 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         "junit", "testng", "mockito", "rspec", "testify", "cucumber", "phpunit",
     };
 
+    /// <summary>One prebuilt pattern per testing framework, in the set's order. Built once: there are more frameworks than the static Regex
+    /// cache holds (15), so building them per call re-parsed every pattern on every document and evicted the other cached patterns.</summary>
+    private static readonly (string Name, Regex Pattern)[] TestingFrameworkPatterns = TestingFrameworks
+        .Select(fw => (fw, new Regex($@"(?<![\w.])(?<name>{Regex.Escape(fw)})(?![\w.])(?<version>\s+\d+(?:\.[0-9xX]+)*(?:[-+][A-Za-z0-9_.-]+)?)?", RegexOptions.IgnoreCase)))
+        .ToArray();
+
+    private static readonly Regex InlineFieldRe = new(@"\*\*([^\*]+?)\*\*\s*[:=]\s*([^|]+?)(?=\||$)", RegexOptions.Compiled);
+
     // ── Inline Metadata Parsing ─────────────────────────────────────────────
 
     private static Dictionary<string, string> ExtractInlineMetadata(string line)
@@ -173,8 +181,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             return result;
 
         // Use regex to find all **label**: value pairs
-        var fieldPattern = new Regex(@"\*\*([^\*]+?)\*\*\s*[:=]\s*([^|]+?)(?=\||$)", RegexOptions.Compiled);
-        var matches = fieldPattern.Matches(line);
+        var matches = InlineFieldRe.Matches(line);
 
         foreach (Match m in matches)
         {
@@ -2306,12 +2313,9 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     {
         if (string.IsNullOrWhiteSpace(text)) return;
 
-        foreach (var fw in TestingFrameworks)
+        foreach (var (fw, pattern) in TestingFrameworkPatterns)
         {
-            var matches = Regex.Matches(
-                text,
-                $@"(?<![\w.])(?<name>{Regex.Escape(fw)})(?![\w.])(?<version>\s+\d+(?:\.[0-9xX]+)*(?:[-+][A-Za-z0-9_.-]+)?)?",
-                RegexOptions.IgnoreCase);
+            var matches = pattern.Matches(text);
 
             foreach (Match match in matches)
             {

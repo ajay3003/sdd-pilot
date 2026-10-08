@@ -78,10 +78,12 @@ public static class NavigationCatalog
         // The three inputs: project documents (Sample Projects is the easiest start; explorers also import), source, target.
         new("project-inputs", "Project Inputs",
         [
+            new("project-import", "Import Project", "nav-icon-sample-projects", f => f.SampleProjects || f.SourceAnalysis,
+                Hint: "one project ZIP: documents become project artifacts and source becomes a Source Analysis snapshot"),
             new("sample-projects", "Sample Projects", "nav-icon-sample-projects", f => f.SampleProjects,
-                Hint: "project documents: the easiest start; documents can also be imported in any explorer"),
+                Hint: "ready-made example projects; documents can also be imported in any explorer"),
             new("source-analysis", "Source Analysis", "nav-icon-source-analysis", f => f.SourceAnalysis,
-                Hint: "source input: analyze a source snapshot for source-based reviews"),
+                Hint: "source input: the current source snapshot (from Import Project or a source-only upload)"),
             new(TargetEnvironmentsRoute, "Target Environments", "nav-icon-target", f => f.AdminSystemSettings,
                 Hint: "runtime input: application, API and integration targets (opens System Settings)", FeatureId: "target-environments"),
         ]),

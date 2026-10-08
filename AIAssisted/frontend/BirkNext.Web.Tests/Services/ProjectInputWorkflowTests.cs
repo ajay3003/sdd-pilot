@@ -101,7 +101,7 @@ public sealed class ProjectInputWorkflowTests
         r.IsOnboarding.Should().BeTrue();
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Absent);
         r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        r.NextRecommendedAction.Route.Should().Be("sample-projects");
+        r.NextRecommendedAction.Route.Should().Be("project-import");
         r.NextRecommendedAction.ActionLabel.Should().Be("Load artifacts");
         r.NextRecommendedAction.Description.Should().StartWith("No project artifacts are available yet.");
         r.AlternativeActions.Select(a => a.Route).Should().Equal("specification-explorer", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute);

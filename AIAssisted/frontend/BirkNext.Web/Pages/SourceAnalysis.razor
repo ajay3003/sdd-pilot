@@ -16,7 +16,7 @@
    never re-analyzes. Source only: nothing live is contacted. Hiding the feature (Feature Visibility) hides the menu entry only. *@
 <PageTitle>Source Analysis</PageTitle>
 <div class="sa-page">
-    <PageHeader Title="Source Analysis" Description="Architecture, database design, observability and reusable source evidence (infrastructure, configuration, CI/CD, contracts) derived from uploaded source snapshots." />
+    <PageHeader Title="Source Analysis" Description="Architecture, database design, observability and reusable source evidence (infrastructure, configuration, CI/CD, contracts) derived from source snapshots — created by Import Project or by a source-only upload." />
     @if (ReturnTarget is { } back)
     {
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
@@ -32,9 +32,12 @@
             <h2 id="sa-snapshot-heading">Source snapshot</h2>
             <div class="sa-controls">
                 <div class="sa-upload-group">
-                    <label class="sa-file-button sa-file-primary">
-                        <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source snapshot (.zip, maximum 50 MB)" data-testid="sa-upload" />
-                        <span aria-hidden="true">Upload source snapshot</span>
+                    @* Import Project is the recommended path: one archive feeds project documents and this snapshot. A source-only upload stays
+                       available for archives that are source only, or to analyze the same source again. *@
+                    <a class="sa-file-button@(_snapshots.Count == 0 ? " sa-file-primary" : "")" href="project-import" data-testid="sa-import-project">Import Project</a>
+                    <label class="sa-file-button">
+                        <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (.zip, maximum 50 MB)" data-testid="sa-upload" />
+                        <span aria-hidden="true">Upload source only</span>
                     </label>
                     <span class="sa-muted">ZIP · maximum 50 MB</span>
                 </div>
@@ -96,7 +99,7 @@
                 <span class="sa-empty-icon" aria-hidden="true"></span>
                 <div class="sa-empty-body">
                     <h2 id="sa-empty-heading">No source snapshot selected</h2>
-                    <p>Upload a source archive or choose an existing snapshot to explore:</p>
+                    <p>Import the project (one ZIP for documents and source), upload a source-only archive, or choose an existing snapshot to explore:</p>
                     <ul class="sa-preview" data-testid="sa-preview">
                         <li><strong>Architecture</strong> — components, dependencies, messaging channels, data stores and external systems found in source.</li>
                         <li><strong>Database structure</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
@@ -105,9 +108,10 @@
                         <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
                     </ul>
                     <div class="sa-actions">
-                        <label class="sa-file-button sa-file-primary">
-                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source ZIP (maximum 50 MB)" data-testid="sa-empty-upload" />
-                            <span aria-hidden="true">Upload source ZIP</span>
+                        <a class="sa-file-button sa-file-primary" href="project-import" data-testid="sa-empty-import-project">Import Project</a>
+                        <label class="sa-file-button">
+                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (ZIP, maximum 50 MB)" data-testid="sa-empty-upload" />
+                            <span aria-hidden="true">Upload source only</span>
                         </label>
                         <button type="button" class="btn-secondary" data-testid="sa-choose-existing" disabled="@(_snapshots.Count == 0)" aria-describedby="@(_snapshots.Count == 0 ? "sa-no-snapshots" : null)" @onclick="FocusSelectorAsync">Choose existing snapshot</button>
                         @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet for this target environment.</span> }
@@ -140,7 +144,15 @@
                         <div><dt>Analyzed</dt><dd data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</dd></div>
                         <div><dt>Files</dt><dd data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</dd></div>
                         <div><dt>Commit</dt><dd>@selected.Commit@(selected.Branch is { } branch ? $" · {branch}" : "")</dd></div>
+                        <div><dt>Created by</dt><dd data-testid="sa-current-origin">@(selected.ProjectImport is { } import ? $"Project Import · {SourceAnalysisOverview.Utc(import.ImportedAt)}" : "Source-only upload")</dd></div>
                     </dl>
+                    @if (selected.ProjectImport is { } provenance)
+                    {
+                        <p class="sa-muted" data-testid="sa-import-provenance" data-import="@provenance.ImportId">
+                            Created from Project Import <code class="sa-mono">@provenance.ImportId</code> — the same archive the project documents were imported from.
+                            <a href="project-import" data-testid="sa-import-link">View the imported project</a>
+                        </p>
+                    }
                     <div class="sa-actions">
                         <button type="button" class="btn-secondary" data-testid="sa-change-snapshot" @onclick="FocusSelectorAsync">Change snapshot</button>
                         <ReviewDisclosure Text="Full fingerprint" CollapseText="Hide full fingerprint" TestId="sa-fingerprint" Class="disclosure-inline">

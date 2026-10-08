@@ -272,8 +272,8 @@ public sealed class NavMenuLayoutTests : BunitContext
 
     [Theory]
     [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
-    [InlineData("project-inputs", new[] { "sample-projects", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer" })]
+    [InlineData("project-inputs", new[] { "project-import", "sample-projects", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("source-review", new[] { "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("quality-testing", new[] { "quality-review", "frontend-quality-review", "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review" })]

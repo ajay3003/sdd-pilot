@@ -112,7 +112,8 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=sa-safety]").TextContent.Should().Be("Source only: no live Azure, database, messaging or HTTP connection is used.");
         cut.Find("#sa-empty-heading").TextContent.Should().Be("No source snapshot selected");
         cut.FindAll("[data-testid=sa-preview] li strong").Select(s => s.TextContent).Should().Equal("Architecture", "Database structure", "Observability", "Source evidence", "Snapshot changes");
-        cut.Find("[data-testid=sa-empty-upload]").GetAttribute("aria-label").Should().Be("Upload source ZIP (maximum 50 MB)");
+        cut.Find("[data-testid=sa-empty-upload]").GetAttribute("aria-label").Should().Be("Upload source only (ZIP, maximum 50 MB)");
+        cut.Find("[data-testid=sa-empty-import-project]").GetAttribute("href").Should().Be("project-import");
         cut.Find("[data-testid=sa-upload]").GetAttribute("accept").Should().Be(".zip");
         cut.Find("[data-testid=sa-choose-existing]").HasAttribute("disabled").Should().BeTrue("there is no stored snapshot to choose");
         cut.Find("#sa-no-snapshots").TextContent.Should().Contain("No stored snapshot yet");
@@ -160,7 +161,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployment/runtime not verified");
         cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployed schema not verified");
         cut.Find("[data-testid=sa-current-evidence]").TextContent.Should().Be("Ready", "the source-evidence status sits next to the archive name");
-        cut.FindAll("[data-testid=sa-current] dt").Select(d => d.TextContent).Should().Equal("Fingerprint", "Analyzed", "Files", "Commit");
+        cut.FindAll("[data-testid=sa-current] dt").Select(d => d.TextContent).Should().Equal("Fingerprint", "Analyzed", "Files", "Commit", "Created by");
         (cut.Find("[data-testid=sa-open-architecture]").TextContent, cut.Find("[data-testid=sa-open-database]").TextContent).Should().Be(("Open Architecture", "Open Database Diagram"));
     }
 

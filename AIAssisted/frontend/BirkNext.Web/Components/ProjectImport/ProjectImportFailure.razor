@@ -1,0 +1,19 @@
+@* An archive rejection or an import that could not run. Nothing was staged or activated. *@
+<section class="pi-card pi-tone-rejected" role="alert" aria-labelledby="pi-failure-heading" data-testid="pi-failure" data-code="@Failure.Code">
+    <h2 id="pi-failure-heading"><span class="pi-badge pi-badge-rejected">@(Failure.Stage == "validation" ? "Rejected" : "Not imported")</span> @(Failure.Stage == "validation" ? "Archive rejected" : "The project could not be imported")</h2>
+    <p>@Failure.Message</p>
+    @if (!string.IsNullOrWhiteSpace(Failure.EntryPath)) { <p><strong>Archive entry:</strong> <code>@Failure.EntryPath</code></p> }
+    <p><strong>What to do:</strong> @Failure.Guidance</p>
+    <p class="pi-muted">Nothing was imported: no project documents were added and no source snapshot was created.</p>
+    <details class="pi-details">
+        <summary>Technical details</summary>
+        <dl class="pi-facts">
+            <div><dt>Error code</dt><dd><code>@Failure.Code</code></dd></div>
+            <div><dt>Stage</dt><dd>@Failure.StageLabel</dd></div>
+        </dl>
+    </details>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SourceUploadFailure Failure { get; set; } = default!;
+}

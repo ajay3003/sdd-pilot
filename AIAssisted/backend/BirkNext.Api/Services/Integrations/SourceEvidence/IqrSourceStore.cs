@@ -64,8 +64,10 @@ public sealed class IqrSourceStore(AppDbContext db)
         return (await AnalyzeValidatedAsync(environmentId, integrationId, name, bytes, result.Workspace!, ct), null);
     }
 
+    /// <summary>Analyzes a validated workspace into a new immutable snapshot. Project Import passes its provenance (import identity and archive
+    /// fingerprint shared with the imported artifacts); a standalone upload passes none.</summary>
     internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string environmentId, string integrationId, string name, byte[] bytes,
-        IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default)
+        IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default, BirkNext.ProjectImport.ProjectImportProvenance? projectImport = null)
     {
         ct.ThrowIfCancellationRequested();
         var snapshot = IqrSourceAnalyzer.Analyze(integrationId, workspace, DateTimeOffset.UtcNow, ct);
@@ -113,6 +115,7 @@ public sealed class IqrSourceStore(AppDbContext db)
             ApplicationMessagingEvidence = ApplicationMessaging.ApplicationMessagingStore.ExtractSnapshotEvidence(environmentId, name, bytes),
             ScimEvidence = Scim.ScimEvidenceService.ExtractSnapshotEvidence(environmentId, name, bytes),
         };
+        snapshot = snapshot with { ProjectImport = projectImport };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });

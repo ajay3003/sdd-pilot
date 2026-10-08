@@ -50,8 +50,8 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await store.ListAsync(environmentId, ct));
 
     [HttpPost("snapshots")]
-    [RequestSizeLimit(IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
-    [RequestFormLimits(MultipartBodyLengthLimit = IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
+    [RequestSizeLimit(SourceArchiveUpload.RequestLimit)]
+    [RequestFormLimits(MultipartBodyLengthLimit = SourceArchiveUpload.RequestLimit)]
     // environmentId is nullable on purpose: [ApiController] would otherwise reject a missing or empty value with a code-less
     // ProblemDetails before this action runs, and the client could only show a generic archive rejection.
     public Task<IActionResult> AnalyzeSourceSnapshot([FromQuery] string? environmentId, CancellationToken ct) =>
@@ -61,41 +61,16 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return Failure(StatusCodes.Status400BadRequest,
             new("NO_ACTIVE_ENVIRONMENT", "prerequisite", "Select or create a Target Environment before uploading source."));
-        if (!Request.HasFormContentType) return Failure(StatusCodes.Status400BadRequest,
-            new("UPLOAD_MULTIPART_REQUIRED", "upload", "Upload one ZIP file using multipart form data."));
-        IFormCollection form;
-        try { form = await Request.ReadFormAsync(ct); }
-        catch (InvalidDataException)
-        {
-            var tooLarge = Request.ContentLength > IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024;
-            var failure = tooLarge
-                ? new SourceArchiveValidationFailure("ARCHIVE_TOO_LARGE", "upload", "Upload exceeds the 50 MB compressed archive limit.", Actual: Request.ContentLength, Limit: IqrSourceArchiveReader.MaxArchiveBytes)
-                : new SourceArchiveValidationFailure("UPLOAD_INVALID_FORM", "upload", "The ZIP upload could not be read. Choose the file again and retry.");
-            return Failure(tooLarge ? StatusCodes.Status413PayloadTooLarge : StatusCodes.Status400BadRequest, failure);
-        }
-        if (form.Files.Count != 1) return Failure(StatusCodes.Status400BadRequest,
-            new("UPLOAD_FILE_COUNT_INVALID", "upload", "Choose exactly one ZIP archive to upload."));
-        var file = form.Files[0];
-        if (file.Length == 0) return Failure(StatusCodes.Status400BadRequest,
-            new("ARCHIVE_EMPTY_UPLOAD", "upload", "The uploaded file is empty."));
-        if (file.Length > IqrSourceArchiveReader.MaxArchiveBytes) return Failure(StatusCodes.Status413PayloadTooLarge,
-            new("ARCHIVE_TOO_LARGE", "upload", "Upload exceeds the 50 MB compressed archive limit.", Actual: file.Length, Limit: IqrSourceArchiveReader.MaxArchiveBytes));
-        using var stream = file.OpenReadStream();
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8192];
-        int count;
-        while ((count = await stream.ReadAsync(chunk, ct)) > 0)
-        {
-            if (buffer.Length + count > IqrSourceArchiveReader.MaxArchiveBytes) return Failure(StatusCodes.Status413PayloadTooLarge,
-                new("ARCHIVE_TOO_LARGE", "upload", "Upload exceeds the 50 MB compressed archive limit.", Actual: buffer.Length + count, Limit: IqrSourceArchiveReader.MaxArchiveBytes));
-            await buffer.WriteAsync(chunk.AsMemory(0, count), ct);
-        }
-        var bytes = buffer.ToArray();
-        var validation = IqrSourceArchiveReader.ReadDetailed(file.FileName, bytes, ct);
+        // One upload reader for Source Analysis and Project Import: bytes from the uploaded stream only, never the client path.
+        var upload = await SourceArchiveUpload.ReadAsync(Request, ct);
+        if (!upload.IsRead) return Failure(upload.StatusCode, upload.Failure!);
+        var bytes = upload.Bytes!;
+        var fileName = upload.FileName!;
+        var validation = IqrSourceArchiveReader.ReadDetailed(fileName, bytes, ct);
         if (!validation.IsValid) return Failure(StatusCodes.Status400BadRequest, validation.Failure!, bytes.Length, validation.EntryCount);
 
         IqrSourceSnapshot snapshot;
-        try { snapshot = await store.AnalyzeValidatedAsync(environmentId!, integrationId, file.FileName, bytes, validation.Workspace!, ct); }
+        try { snapshot = await store.AnalyzeValidatedAsync(environmentId!, integrationId, fileName, bytes, validation.Workspace!, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (SourceSnapshotPersistenceException)
         {

@@ -207,7 +207,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         stepOne.QuerySelector("[data-testid=rw-step-state]")!.TextContent.Should().Be("Action required").And.NotBe("Reviewed");
         var load = stepOne.QuerySelector("[data-testid=rw-load-artifacts]")!;
         load.TagName.Should().Be("A");
-        load.GetAttribute("href").Should().Be("sample-projects");
+        load.GetAttribute("href").Should().Be("project-import", "one project ZIP is the recommended way to load documents (and source)");
         load.TextContent.Trim().Should().Be("Load artifacts");
         stepOne.QuerySelector("[data-testid=rw-alternative-action]")!.TextContent.Should().Be("Import documents instead");
 

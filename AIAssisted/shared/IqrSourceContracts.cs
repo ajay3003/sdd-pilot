@@ -62,6 +62,9 @@ public sealed record IqrSourceSnapshot
     public BirkNext.Technology.SourceTechnologyCoverage? TechnologyCoverage { get; init; }
     /// <summary>Normalized source target inventory for deterministic reference validation. Contains paths and fingerprints only, never source content.</summary>
     public SourceTargetIndex? TargetIndex { get; init; }
+    /// <summary>Set when Project Import created this snapshot: the import identity and archive fingerprint it shares with the imported document artifacts.
+    /// Null for a standalone Source Analysis upload and for older snapshots.</summary>
+    public BirkNext.ProjectImport.ProjectImportProvenance? ProjectImport { get; init; }
 }
 
 public sealed record SourceTargetIndex

@@ -21,6 +21,36 @@ public sealed class SddLifecycleState
     public List<SddRequirementChange> RequirementChanges { get; set; } = [];
     public List<SddBaselineManifest> Baselines { get; set; } = [];
     public List<SddExplorerSelection> ExplorerSelections { get; set; } = [];
+    /// <summary>Project archives imported into this workspace (one record per import identity, i.e. per exact archive). History only.</summary>
+    public List<SddProjectImportRecord> ProjectImports { get; set; } = [];
+    /// <summary>The imported project the workspace currently shows (artifact scope <c>import:{id}</c>), or null. Mutually exclusive with a selected Sample Project.</summary>
+    public string? CurrentProjectImportId { get; set; }
+}
+
+/// <summary>
+/// One Project Import as the artifact repository records it: which archive, when, which documents became artifacts, and which Source Analysis
+/// snapshot the same import created. Provenance only — the snapshot itself is owned by Source Analysis, the artifacts by the revisions.
+/// </summary>
+public sealed class SddProjectImportRecord
+{
+    public string ImportId { get; set; } = "";
+    public string ProjectName { get; set; } = "";
+    /// <summary>ArchiveRoot or ArchiveFileName: how <see cref="ProjectName"/> was derived.</summary>
+    public string ProjectNameBasis { get; set; } = "";
+    public string ArchiveFileName { get; set; } = "";
+    public string ArchiveSha256 { get; set; } = "";
+    public long ArchiveSizeBytes { get; set; }
+    public DateTimeOffset ImportedAt { get; set; }
+    /// <summary>Roles with exactly one detected document (selected on import).</summary>
+    public List<string> DetectedRoles { get; set; } = [];
+    /// <summary>Roles with several detected documents: nothing is selected until the user chooses.</summary>
+    public List<string> AmbiguousRoles { get; set; } = [];
+    public int ArtifactDocumentCount { get; set; }
+    /// <summary>NotDetected, Created, Reused, NotCreated or Failed (ProjectImportSourceState).</summary>
+    public string SourceState { get; set; } = "";
+    public Guid? SourceSnapshotId { get; set; }
+    public string? SourceEnvironmentId { get; set; }
+    public DateTimeOffset? SourceAnalyzedAt { get; set; }
 }
 
 /// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>
@@ -119,8 +149,10 @@ public sealed class SddArtifactRevision
     public Guid? SupersededByRevisionId { get; set; }
     /// <summary>Project the revision belongs to: a Sample Project slug, or null for the manual workspace (no project selected).</summary>
     public string? WorkspaceScope { get; set; }
-    /// <summary>How the content arrived: File, Drop or Paste for explorer imports; null for older or programmatic captures.</summary>
+    /// <summary>How the content arrived: File, Drop or Paste for explorer imports, ProjectImport for a project archive; null for older or programmatic captures.</summary>
     public string? Origin { get; set; }
+    /// <summary>The Project Import that captured this revision (shared provenance with its source snapshot); null otherwise.</summary>
+    public string? ProjectImportId { get; set; }
 }
 
 /// <summary>

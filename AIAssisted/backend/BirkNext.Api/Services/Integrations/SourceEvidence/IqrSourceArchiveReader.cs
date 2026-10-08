@@ -37,8 +37,21 @@ public static class IqrSourceArchiveReader
     /// requirements.txt). Technology inventory uses it so unsupported technologies are reported, not silently dropped. In memory only.</param>
     /// <param name="EvidenceFiles">Infrastructure-as-code, schema/contract, properties/env and pipeline-script files (Terraform, Bicep, GraphQL SDL, protobuf,
     /// Jenkinsfile …) held in memory for the Source Analysis evidence domains only. Never stored; only redacted, typed evidence leaves the analysis.</param>
+    /// <param name="DocumentFiles">Readable Markdown documents, captured only when Project Import asks for them (null otherwise). Held in memory for
+    /// artifact-role classification; Source Analysis never reads them and they never enter a source snapshot.</param>
+    /// <param name="SkippedDocuments">Markdown documents that were not read (too large, binary, over the document limit), with the reason.</param>
+    /// <param name="EntryCount">Every entry of the archive (files and directories), as validated.</param>
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
-        List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null);
+        List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null,
+        List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0);
+
+    public sealed record ArchiveDocumentSkip(string Path, string Reason);
+
+    /// <summary>Document rules of Sample Project discovery (Markdown only, 1 MB per document, no NUL bytes, same ignored folders). The count cap is
+    /// higher than a sample folder's 500 because a project archive is often a monorepo of several Spec-Kit projects; every read still counts
+    /// against the archive's expanded-read limit.</summary>
+    public const int MaxDocuments = 2_000;
+    public const long MaxDocumentBytes = BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.MaxDocumentBytes;
 
     /// <summary>Files the evidence domains read beyond C#/project/JSON/YAML: IaC, schemas/contracts, properties/env files and pipeline scripts.</summary>
     public static bool IsEvidenceFile(string path)
@@ -56,7 +69,13 @@ public static class IqrSourceArchiveReader
         return (result.Workspace, result.Failure?.Message);
     }
 
-    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, CancellationToken ct = default)
+    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, CancellationToken ct = default) => ReadDetailed(name, bytes, captureDocuments: false, ct);
+
+    /// <summary>
+    /// The one validation path for uploaded archives (Source Analysis and Project Import). With <paramref name="captureDocuments"/>, readable
+    /// Markdown documents are also captured in the same pass, under the same entry, path, size and expanded-read limits.
+    /// </summary>
+    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, bool captureDocuments, CancellationToken ct = default)
     {
         if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return Reject("ARCHIVE_UNSUPPORTED_FORMAT", "Only ZIP source archives are supported.");
         if (bytes.Length == 0) return Reject("ARCHIVE_EMPTY_UPLOAD", "The uploaded file is empty.", actual: 0, limit: 1);
@@ -68,6 +87,8 @@ public static class IqrSourceArchiveReader
         var configurationFiles = new List<SourceFile>();
         var evidenceFiles = new List<SourceFile>();
         var allPaths = new List<string>();
+        var documentFiles = new List<SourceFile>();
+        var skippedDocuments = new List<ArchiveDocumentSkip>();
         var fileEntryCount = 0;
         long? entryCount = null;
         try
@@ -77,6 +98,25 @@ public static class IqrSourceArchiveReader
             if (zip.Entries.Count > 20_000) return Reject("ARCHIVE_TOO_MANY_ENTRIES", $"Archive contains {zip.Entries.Count:N0} entries; the maximum is 20,000.", actual: zip.Entries.Count, limit: 20_000, entryCount: entryCount);
             long total = 0;
             long actualRead = 0;
+            // Reads one entry under the expanded-read and per-file limits; a length that does not match the header is an invalid archive.
+            (string? Content, SourceArchiveReadResult? Rejection) ReadEntry(ZipArchiveEntry entry, string path)
+            {
+                using var input = entry.Open();
+                using var buffer = new MemoryStream();
+                var chunk = new byte[8192];
+                int count;
+                while ((count = input.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    actualRead += count;
+                    if (actualRead > MaxExpandedBytes) return (null, Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive data exceeds the {FormatBytes(MaxExpandedBytes)} expanded read limit.", path, actualRead, MaxExpandedBytes, entryCount));
+                    if (buffer.Length + count > MaxFileBytes) return (null, Reject("ARCHIVE_ENTRY_TOO_LARGE", $"Archive entry exceeds the {FormatBytes(MaxFileBytes)} analysis read limit.", path, buffer.Length + count, MaxFileBytes, entryCount));
+                    buffer.Write(chunk, 0, count);
+                }
+                if (buffer.Length != entry.Length) return (null, Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount));
+                buffer.Position = 0;
+                using var textReader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+                return (textReader.ReadToEnd(), null);
+            }
             foreach (var entry in zip.Entries)
             {
                 ct.ThrowIfCancellationRequested();
@@ -100,6 +140,18 @@ public static class IqrSourceArchiveReader
                 if (path.Split('/').Any(Ignored.Contains)) continue;
                 allPaths.Add(path);
                 var extension = Path.GetExtension(path).ToLowerInvariant();
+                if (captureDocuments && BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.DocumentExtensions.Contains(extension))
+                {
+                    // Documents are never source: they are captured for artifact discovery only, with the Sample Project document rules.
+                    if (path.Split('/').Any(BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.IgnoredDirectories.Contains)) continue;
+                    if (documentFiles.Count >= MaxDocuments) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.DocumentLimit)); continue; }
+                    if (entry.Length > MaxDocumentBytes) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.TooLarge)); continue; }
+                    var (document, documentRejection) = ReadEntry(entry, path);
+                    if (documentRejection is not null) return documentRejection;
+                    if (document!.Contains('\0')) { skippedDocuments.Add(new(SafeLabel(path), BirkNext.Api.Services.SampleProjects.SampleInventorySkipReason.Binary)); continue; }
+                    documentFiles.Add(new SourceFile(path, document));
+                    continue;
+                }
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
                 { limitations.Add("Terraform state file present but not read: state can hold secrets and is runtime state, not source."); continue; }
@@ -109,21 +161,9 @@ public static class IqrSourceArchiveReader
                 if (!evidence && extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql" or ".xsd")
                     && !Path.GetFileName(path).Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
-                using var input = entry.Open();
-                using var buffer = new MemoryStream();
-                var chunk = new byte[8192];
-                int count;
-                while ((count = input.Read(chunk, 0, chunk.Length)) > 0)
-                {
-                    actualRead += count;
-                    if (actualRead > MaxExpandedBytes) return Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive data exceeds the {FormatBytes(MaxExpandedBytes)} expanded read limit.", path, actualRead, MaxExpandedBytes, entryCount);
-                    if (buffer.Length + count > MaxFileBytes) return Reject("ARCHIVE_ENTRY_TOO_LARGE", $"Archive entry exceeds the {FormatBytes(MaxFileBytes)} analysis read limit.", path, buffer.Length + count, MaxFileBytes, entryCount);
-                    buffer.Write(chunk, 0, count);
-                }
-                if (buffer.Length != entry.Length) return Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount);
-                buffer.Position = 0;
-                using var textReader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-                var content = textReader.ReadToEnd();
+                var (read, rejection) = ReadEntry(entry, path);
+                if (rejection is not null) return rejection;
+                var content = read!;
                 if (extension is ".json" or ".yaml" or ".yml")
                 {
                     var keys = new List<string>();
@@ -170,7 +210,8 @@ public static class IqrSourceArchiveReader
         }
         if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return new(new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths), null);
+        return new(new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
+            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0), null);
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);
