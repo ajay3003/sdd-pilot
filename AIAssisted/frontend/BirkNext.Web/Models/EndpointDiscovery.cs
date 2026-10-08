@@ -11,7 +11,7 @@ namespace BirkNext.Web.Models;
 /// </summary>
 public sealed class EndpointDiscoverySnapshot
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public List<string>? ApplicationOrigins { get; set; }
     public BrowserQualityState Quality { get; set; } = new();
     // Quarantined legacy non-application records retain review/evidence provenance, never participate in assessment.
