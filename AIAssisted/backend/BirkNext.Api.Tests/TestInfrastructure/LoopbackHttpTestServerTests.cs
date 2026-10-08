@@ -22,6 +22,44 @@ public sealed class LoopbackHttpTestServerTests
     }
 
     [Fact]
+    public async Task StopAsync_CompletesEvenWhenTheListenerNeverEndsThePendingAccept()
+    {
+        // The managed listener (Linux CI) does not always complete a pending accept when it is stopped. Before this fix the stop
+        // then never completed, and an owner awaiting DisposeAsync without a bound (the Playwright integration tests) hung until
+        // the 5-minute blame-hang timeout aborted the test host. Here the accept never completes at all.
+        var neverAccepted = new TaskCompletionSource<HttpListenerContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new LoopbackHttpTestServer(Ok, _ => neverAccepted.Task);
+        server.Start();
+
+        await server.StopAsync().WaitAsync(Bound);
+    }
+
+    [Fact]
+    public async Task AnAcceptCompletingAfterTheStop_IsObserved_NotLeftUnobserved()
+    {
+        var late = new TaskCompletionSource<HttpListenerContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new LoopbackHttpTestServer(Ok, _ => late.Task);
+        server.Start();
+        await server.StopAsync().WaitAsync(Bound);
+
+        late.SetException(new ObjectDisposedException("listener"));
+
+        Assert.True(late.Task.IsFaulted);
+        Assert.NotNull(late.Task.Exception); // observed by the server's continuation as well; no UnobservedTaskException
+    }
+
+    [Fact]
+    public async Task RepeatedStartStop_WithPendingAccepts_AlwaysCompletes()
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            var server = new LoopbackHttpTestServer(Ok);
+            server.Start();
+            await server.StopAsync().WaitAsync(Bound);
+        }
+    }
+
+    [Fact]
     public async Task StopAsync_WhileAnAcceptIsPending_CompletesCleanly()
     {
         var server = new LoopbackHttpTestServer(Ok);

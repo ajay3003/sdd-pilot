@@ -4,15 +4,18 @@ using System.Net;
 namespace BirkNext.Api.Tests.TestInfrastructure;
 
 /// <summary>
-/// Test-only loopback HTTP server with a deterministic shutdown. <see cref="HttpListener"/> unblocks a pending
+/// Test-only loopback HTTP server with a deterministic shutdown. <see cref="HttpListener"/> ends a pending
 /// <c>GetContextAsync</c> differently per platform when it is stopped: http.sys (Windows) throws
 /// <see cref="HttpListenerException"/>, the managed listener (Linux, the CI agents) throws <see cref="ObjectDisposedException"/>
-/// for 'listener'. Both mean "stopped" only when this server asked to stop; at any other time they are real failures and are
-/// rethrown from <see cref="StopAsync"/> so the test that owns the server fails.
+/// for 'listener' — and under load the managed listener sometimes does not complete the pending accept at all. Shutdown
+/// therefore never depends on the listener: the accept is awaited together with this server's own stop token, so stopping
+/// always ends the accept loop. An accept that completes after the stop is observed and its connection aborted. Listener
+/// failures while not stopping are real failures and are rethrown from <see cref="StopAsync"/> so the owning test fails.
 /// </summary>
 public sealed class LoopbackHttpTestServer : IAsyncDisposable
 {
     private readonly Func<HttpListenerContext, Task> _handler;
+    private readonly Func<HttpListener, Task<HttpListenerContext>> _accept;
     private readonly CancellationTokenSource _stopping = new();
     private readonly ConcurrentDictionary<Task, byte> _inFlight = new();
     private readonly ConcurrentQueue<Exception> _faults = new();
@@ -21,7 +24,14 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
     private Task? _loop;
     private Task? _stop;
 
-    public LoopbackHttpTestServer(Func<HttpListenerContext, Task> handler) => _handler = handler;
+    public LoopbackHttpTestServer(Func<HttpListenerContext, Task> handler) : this(handler, listener => listener.GetContextAsync()) { }
+
+    /// <summary>For the shutdown tests: the accept can be replaced (for example by one the listener never completes).</summary>
+    internal LoopbackHttpTestServer(Func<HttpListenerContext, Task> handler, Func<HttpListener, Task<HttpListenerContext>> accept)
+    {
+        _handler = handler;
+        _accept = accept;
+    }
 
     public int Port { get; private set; }
 
@@ -60,9 +70,9 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
     }
 
     /// <summary>
-    /// Stops the server: signal stopping → stop accepting (unblocks the pending accept) → await the accept loop → await
-    /// in-flight requests → release the listener → dispose the token. Idempotent: every call returns the same stop.
-    /// Unexpected accept or handler failures are rethrown here.
+    /// Stops the server: signal stopping (ends the accept loop's wait, whatever the listener does) → stop accepting → await the
+    /// accept loop → await in-flight requests → release the listener → dispose the token. Idempotent: every call returns the
+    /// same stop. Unexpected accept or handler failures are rethrown here.
     /// </summary>
     public Task StopAsync()
     {
@@ -93,9 +103,17 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
         while (!_stopping.IsCancellationRequested)
         {
             HttpListenerContext context;
+            var accept = _accept(listener);
             try
             {
-                context = await listener.GetContextAsync();
+                // The stop token ends this wait deterministically; the listener's own way of ending a pending accept on stop
+                // differs per platform and does not always happen.
+                context = await accept.WaitAsync(_stopping.Token);
+            }
+            catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
+            {
+                ReleaseAbandoned(accept);
+                return;
             }
             catch (Exception ex) when (_stopping.IsCancellationRequested && IsStopSignal(ex))
             {
@@ -133,6 +151,17 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>
+    /// An accept abandoned at stop: its stop exception is observed (no unobserved task exception later), and a connection it
+    /// still accepts is aborted rather than left open.
+    /// </summary>
+    private static void ReleaseAbandoned(Task<HttpListenerContext> accept) =>
+        _ = accept.ContinueWith(static done =>
+        {
+            if (done.IsFaulted) _ = done.Exception;
+            else if (done.IsCompletedSuccessfully) done.Result.Response.Abort();
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
     /// <summary>What a stopped listener throws on each platform.</summary>
     private static bool IsStopSignal(Exception ex) =>
