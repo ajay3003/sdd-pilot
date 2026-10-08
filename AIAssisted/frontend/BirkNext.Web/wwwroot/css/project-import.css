@@ -66,3 +66,4 @@ p.pi-tone-neutral { border-left: 0; }
     .pi-actions > .btn-primary, .pi-actions > .btn-secondary, .pi-file-button { justify-content: center; }
 }
 .pi-progress { width: 100%; max-width: 32rem; height: .6rem; accent-color: #0f766e; }
+.pi-target { margin: 0 0 1rem; }

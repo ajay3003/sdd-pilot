@@ -49,7 +49,7 @@ public sealed class ProjectImportActivationTests
     {
         StagingId = preview.StagingId,
         Provenance = new ProjectImportProvenance { ImportId = preview.ImportId, ArchiveFileName = preview.Archive.FileName, ArchiveSha256 = preview.Archive.Sha256, ImportedAt = DateTimeOffset.UtcNow },
-        Source = new ProjectImportSourceResult { State = state, SnapshotId = snapshot, EnvironmentId = snapshot is null ? null : "dev", SnapshotStatus = snapshot is null ? null : SourceAnalysisStatus.Ready },
+        Source = new ProjectImportSourceResult { State = state, SnapshotId = snapshot, SnapshotStatus = snapshot is null ? null : SourceAnalysisStatus.Ready },
     };
 
     private SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportSourceState state = ProjectImportSourceState.NotDetected, Guid? snapshot = null) =>
@@ -208,7 +208,7 @@ public sealed class ProjectImportActivationTests
         var record = Activate(preview, ProjectImportSourceState.NotCreated);
         var snapshot = Guid.NewGuid();
 
-        _activation.UpdateSource(preview.ImportId, new ProjectImportSourceResult { State = ProjectImportSourceState.Created, SnapshotId = snapshot, EnvironmentId = "dev" });
+        _activation.UpdateSource(preview.ImportId, new ProjectImportSourceResult { State = ProjectImportSourceState.Created, SnapshotId = snapshot });
 
         record.SourceState.Should().Be("Created");
         record.SourceSnapshotId.Should().Be(snapshot);

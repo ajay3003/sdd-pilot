@@ -244,7 +244,7 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
 
         var now = _clock.GetUtcNow();
         Guid? sourceSnapshot = null;
-        try { sourceSnapshot = (await scope.ServiceProvider.GetRequiredService<Integrations.SourceEvidence.IqrSourceStore>().ListSourceAnalysisAsync(environmentId, 1, ct)).FirstOrDefault()?.Id; }
+        try { sourceSnapshot = (await scope.ServiceProvider.GetRequiredService<Integrations.SourceEvidence.IqrSourceStore>().ListSourceAnalysisAsync(1, ct)).FirstOrDefault()?.Id; }
         catch (InvalidOperationException) { }
         var run = new PerformanceTestRun
         {

@@ -77,12 +77,12 @@ public sealed class ProjectImportServiceTests : IDisposable
         preview.ProjectNameBasis.Should().Be(ProjectNameBasis.ArchiveRoot);
         (await _db.IqrSourceSnapshots.CountAsync()).Should().Be(0, "a preview never persists anything");
 
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.Created);
         commit.Provenance.ImportId.Should().Be(preview.ImportId);
         commit.Provenance.ArchiveSha256.Should().Be(Sha(bytes));
-        var stored = await new IqrSourceStore(_db).FindSourceAnalysisAsync("dev", commit.Source.SnapshotId!.Value);
+        var stored = await new IqrSourceStore(_db).FindSourceAnalysisAsync(commit.Source.SnapshotId!.Value);
         stored!.ProjectImport!.ImportId.Should().Be(preview.ImportId, "Source Analysis shows which import created the snapshot");
         stored.Archive.Sha256.Should().Be(Sha(bytes), "artifacts and source come from the same accepted bytes");
         stored.IntegrationId.Should().Be(IqrSourceStore.SourceAnalysisOwner, "it is an ordinary Source Analysis snapshot every review can read");
@@ -97,7 +97,7 @@ public sealed class ProjectImportServiceTests : IDisposable
 
         preview.Source.Detected.Should().BeFalse();
         preview.Documents.Should().HaveCount(5);
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.NotDetected, "no source is a neutral outcome, not a failure");
         commit.Source.CanRetry.Should().BeFalse();
@@ -112,7 +112,7 @@ public sealed class ProjectImportServiceTests : IDisposable
 
         preview.Documents.Should().BeEmpty();
         preview.Source.Detected.Should().BeTrue();
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.Created);
         (await _db.IqrSourceSnapshots.CountAsync()).Should().Be(1);
@@ -127,7 +127,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         preview.Source.Detected.Should().BeTrue("Java is source even though Source Analysis does not analyze it");
         preview.Source.UnsupportedSourceFiles.Should().BeGreaterThan(0);
         preview.Source.Technologies.Should().Contain(t => t.TechnologyId == "lang.java" && !t.SourceAnalysisSupported);
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.Created);
         commit.Source.SnapshotStatus.Should().NotBe(BirkNext.Integrations.SourceAnalysisStatus.Ready, "unsupported technology is never a fake complete");
@@ -174,23 +174,22 @@ public sealed class ProjectImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task WithoutTargetEnvironment_DocumentsStillImport_AndTheSourceIsRetryableWithoutReupload()
+    public async Task WithoutTargetEnvironment_TheSourceSnapshotIsCreated_AndNothingStaysStaged()
     {
         var service = Service();
         var preview = service.Preview("shop.zip", Zip([.. Documents, .. Source])).Preview!;
 
-        var first = (await service.CommitAsync(preview.StagingId, environmentId: null))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
-        first.Source.State.Should().Be(ProjectImportSourceState.NotCreated);
-        first.Source.Code.Should().Be("NO_ACTIVE_ENVIRONMENT");
-        first.Source.CanRetry.Should().BeTrue();
-        first.StagedUntil.Should().NotBeNull();
-        _staging.Find(preview.StagingId).Should().NotBeNull("the staged archive is kept for the retry");
-
-        var retry = (await service.CommitAsync(preview.StagingId, "dev"))!;
-
-        retry.Source.State.Should().Be(ProjectImportSourceState.Created);
-        retry.Provenance.ImportId.Should().Be(first.Provenance.ImportId);
+        commit.Source.State.Should().Be(ProjectImportSourceState.Created, "a source snapshot needs no Target Environment");
+        commit.Source.Code.Should().BeNull();
+        commit.Source.CanRetry.Should().BeFalse("no retry is needed merely because no target is selected");
+        commit.StagedUntil.Should().BeNull();
+        _staging.Find(preview.StagingId).Should().BeNull("a settled import releases its staged archive");
+        var record = await _db.IqrSourceSnapshots.SingleAsync();
+        record.Id.Should().Be(commit.Source.SnapshotId!.Value);
+        record.EnvironmentId.Should().Be(IqrSourceStore.NoEnvironment, "the snapshot is not bound to any target");
+        (await new IqrSourceStore(_db).FindSourceAnalysisAsync(record.Id))!.ProjectImport!.ImportId.Should().Be(commit.Provenance.ImportId);
     }
 
     [Fact]
@@ -200,7 +199,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         var service = Service(db: failing);
         var preview = service.Preview("shop.zip", Zip([.. Documents, .. Source])).Preview!;
 
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.Failed);
         commit.Source.Code.Should().Be("SOURCE_SNAPSHOT_SAVE_FAILED");
@@ -214,9 +213,9 @@ public sealed class ProjectImportServiceTests : IDisposable
     {
         var bytes = Zip([.. Documents, .. Source]);
         var service = Service();
-        var first = (await service.CommitAsync(service.Preview("shop.zip", bytes).Preview!.StagingId, "dev"))!;
+        var first = (await service.CommitAsync(service.Preview("shop.zip", bytes).Preview!.StagingId))!;
 
-        var again = (await service.CommitAsync(service.Preview("shop (2).zip", bytes).Preview!.StagingId, "dev"))!;
+        var again = (await service.CommitAsync(service.Preview("shop (2).zip", bytes).Preview!.StagingId))!;
 
         again.Source.State.Should().Be(ProjectImportSourceState.Reused);
         again.Source.SnapshotId.Should().Be(first.Source.SnapshotId);
@@ -228,21 +227,21 @@ public sealed class ProjectImportServiceTests : IDisposable
     public async Task NewVersion_CreatesANewCurrentSnapshot_AndKeepsTheOldOneAsHistory()
     {
         var service = Service();
-        var v1 = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId, "dev"))!;
+        var v1 = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId))!;
         var v2Source = Source.Select(s => s.Item1.EndsWith("Program.cs") ? (s.Item1, s.Item2 + " // v2") : s).ToArray();
-        var v2 = (await service.CommitAsync(service.Preview("shop-v2.zip", Zip([.. Documents, .. v2Source])).Preview!.StagingId, "dev"))!;
+        var v2 = (await service.CommitAsync(service.Preview("shop-v2.zip", Zip([.. Documents, .. v2Source])).Preview!.StagingId))!;
 
         v2.Provenance.ImportId.Should().NotBe(v1.Provenance.ImportId);
         v2.Source.State.Should().Be(ProjectImportSourceState.Created);
-        var snapshots = await new IqrSourceStore(_db).ListSourceAnalysisAsync("dev");
+        var snapshots = await new IqrSourceStore(_db).ListSourceAnalysisAsync();
         snapshots.Should().HaveCount(2);
         snapshots[0].ProjectImport!.ImportId.Should().Be(v2.Provenance.ImportId, "the newest snapshot is current");
         snapshots[1].ProjectImport!.ImportId.Should().Be(v1.Provenance.ImportId, "earlier snapshots stay immutable history");
 
         // Importing v1 again after v2: v1 is not current, so a new snapshot is created rather than silently reviving the old one.
-        var v1Again = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId, "dev"))!;
+        var v1Again = (await service.CommitAsync(service.Preview("shop-v1.zip", Zip([.. Documents, .. Source])).Preview!.StagingId))!;
         v1Again.Source.State.Should().Be(ProjectImportSourceState.Created);
-        (await new IqrSourceStore(_db).ListSourceAnalysisAsync("dev"))[0].ProjectImport!.ImportId.Should().Be(v1.Provenance.ImportId);
+        (await new IqrSourceStore(_db).ListSourceAnalysisAsync())[0].ProjectImport!.ImportId.Should().Be(v1.Provenance.ImportId);
     }
 
     [Fact]
@@ -282,7 +281,7 @@ public sealed class ProjectImportServiceTests : IDisposable
         var service = Service(sourceAnalysisEnabled: false);
         var preview = service.Preview("shop.zip", Zip([.. Documents, .. Source])).Preview!;
 
-        var commit = (await service.CommitAsync(preview.StagingId, "dev"))!;
+        var commit = (await service.CommitAsync(preview.StagingId))!;
 
         commit.Source.State.Should().Be(ProjectImportSourceState.NotCreated);
         commit.Source.Code.Should().Be("SOURCE_ANALYSIS_DISABLED");
@@ -305,7 +304,7 @@ public sealed class ProjectImportServiceTests : IDisposable
     [Fact]
     public async Task UnknownOrExpiredStaging_ReturnsNull()
     {
-        (await Service().CommitAsync(Guid.NewGuid(), "dev")).Should().BeNull();
+        (await Service().CommitAsync(Guid.NewGuid())).Should().BeNull();
     }
 
     private sealed class FailingDbContext(DbContextOptions<AppDbContext> options) : AppDbContext(options)

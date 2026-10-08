@@ -33,8 +33,9 @@ duplicated — the duplication was the user's second upload.
   (`SddProjectImportRecord`, `SddArtifactRevision.ProjectImportId`).
 - `ProjectImportPreview` — staging id, archive (name, sha, size, entries), project name + basis, readable Markdown documents with
   content, skipped documents with reason, source detection, other-file count, expiry. A preview persists nothing.
-- `ProjectImportCommitResult.Source.State` — `NotDetected` · `Created` · `Reused` · `NotCreated` · `Failed`. `CanRetry` says the
-  staging was kept so the source part can be retried without a new upload.
+- `ProjectImportCommitResult.Source.State` — `NotDetected` · `Created` · `Reused` · `NotCreated` (Source Analysis turned off) ·
+  `Failed`. `CanRetry` says the staging was kept so a genuine failure can be retried without a new upload. The result carries no
+  environment: a source snapshot does not belong to a Target Environment.
 
 ## Backend
 
@@ -53,11 +54,13 @@ duplicated — the duplication was the user's second upload.
 - **Commit** — uses the staged bytes and validated workspace (never a second copy):
   - no source → `NotDetected`, staging released;
   - Source Analysis turned off → `NotCreated` (`SOURCE_ANALYSIS_DISABLED`);
-  - no `environmentId` → `NotCreated` (`NO_ACTIVE_ENVIRONMENT`), staging kept, retryable;
-  - environment's current (newest) snapshot has the same `ImportId` and sha → `Reused` (no duplicate analysis);
+  - the workspace's current (newest) Source Analysis snapshot has the same `ImportId` and sha → `Reused` (no duplicate analysis);
+    whether a Target Environment is selected changes neither the import identity nor this decision;
   - otherwise `IqrSourceStore.AnalyzeValidatedAsync(..., projectImport)` inserts a new immutable snapshot → `Created`;
   - analysis or save failure → `Failed` with the Source Analysis code, no snapshot, staging kept, retryable.
-- Endpoints: `POST api/project-import/preview`, `POST api/project-import/{stagingId}/commit?environmentId=`,
+- No Target Environment is needed (see *Source snapshots and Target Environments* below).
+- Endpoints: `POST api/project-import/preview`, `POST api/project-import/{stagingId}/commit` (an `environmentId` sent by an older
+  client is ignored),
   `DELETE api/project-import/{stagingId}`. Failures use the Source Analysis upload body `{ code, stage, message, entryPath,
   actual, limit }`; an expired staging is 404 `IMPORT_STAGING_EXPIRED`.
 - Auto-save no longer answers 204 for a workspace whose lifecycle has `CurrentProjectImportId` (a source-only import has no
@@ -94,11 +97,33 @@ duplicated — the duplication was the user's second upload.
 | source only | No supported project artifacts detected (neutral) | snapshot created | Imported |
 | two candidate specs | both imported, choose one | unaffected | Imported with notes |
 | unsupported language | — | snapshot created, `Partial`/`Failed` coverage, technology marked "not analyzed" | Imported with notes |
-| no Target Environment | imported | NotCreated, retry without re-upload | Imported with notes |
+| no Target Environment | imported | snapshot created (target shown as *Not configured — required only for runtime reviews*) | Imported |
 | nothing supported | — | — | Nothing to import (neutral, Import disabled) |
 | unsafe / invalid | — | — | Archive rejected (nothing staged or activated) |
 
 Imported never means reviewed, approved or passed.
+
+## Source snapshots and Target Environments
+
+Source evidence is not runtime evidence. Before this change Source Analysis snapshots were stored and listed per Target
+Environment (`iqr_source_snapshots.EnvironmentId`, filtered by `IqrSourceStore.ListSourceAnalysisAsync/FindSourceAnalysisAsync`),
+so the upload endpoint and Project Import refused source without an active target (`NO_ACTIVE_ENVIRONMENT`) and every
+source-only page (Source Analysis, Technology Coverage, Pipeline Review, Dependency Review) hid behind a "select a target" state.
+There was no foreign key and no analyzer that needed the target; it was only the storage key.
+
+- **Ownership.** Source Analysis owns immutable source snapshots; Project Import may trigger one; a Target Environment never owns,
+  scopes or selects one.
+- **Current snapshot.** `ListSourceAnalysisAsync()` / `FindSourceAnalysisAsync(id)` read the workspace's Source Analysis snapshots
+  whatever target is selected; the newest is current (per repository where reviews group by repository).
+- **`EnvironmentId`.** New Source Analysis snapshots are stored with an empty `EnvironmentId` (`IqrSourceStore.NoEnvironment`).
+  Rows stored by earlier versions keep the target id they had; it no longer scopes anything, so they stay readable and in
+  history. No schema change and no migration. Legacy per-integration IQR snapshots keep their environment scope.
+- **Target later / switch / delete.** Configuring a target later, switching targets or deleting one (a client-side profile)
+  never re-creates, hides or changes the current snapshot; runtime reviews then use the same snapshot and the target.
+- **Endpoints.** `api/source-analysis` (list, upload, scope, infrastructure suggestions), `api/technology-coverage`,
+  `api/pipeline-review/*` and `api/dependency-review/source-scope` accept a blank `environmentId`. Runtime endpoints keep
+  requiring a target. Azure Environment Analysis (observed runtime evidence) and Security Classification review runs and test
+  context stay per target; their source evidence is on the snapshot without one.
 
 ## Real-archive pilot (M2LB, 4.7 MB, 2,165 entries)
 
@@ -127,9 +152,11 @@ or trim extractor work).
 
 ## Limits and follow-ups
 
-- Source snapshots stay keyed by Target Environment (unchanged domain rule), so a source import needs an active environment;
-  without one the source part is retryable for 30 minutes from the staged archive, after that the ZIP must be chosen again.
+- Staging and the 30-minute retry remain only for genuine source failures (analysis or save); a missing target is not one.
 - Staging is in memory: a backend restart between preview and commit loses it (the page asks for the ZIP again).
-- Requirements Traceability (`/artifact-traceability`) still reads Sample Project documents only (pre-existing gap); it shows no
-  documents for an imported project, exactly as for the manual workspace.
+- Requirements Traceability (`/artifact-traceability`) reads the current workspace through the explorers' role authority
+  (`TraceabilityInputs` over `IArtifactExplorerContext`): Sample Project, imported project and manual workspace alike. A role with
+  several candidates is shown as *Needs selection* with a link to its explorer and is never picked; no documents is a neutral
+  *not assessed* state; a result is bound to the scope and the selected artifacts' ids and content fingerprints and is rebuilt
+  when any of them changes.
 - There is no import history page; the lifecycle keeps one record per import identity.

@@ -11,7 +11,7 @@ public interface IProjectImportApiService
     Task<(ProjectImportPreview? Preview, SourceUploadFailure? Error)> PreviewAsync(string fileName, Stream content, CancellationToken ct = default);
 
     /// <summary>Creates (or reuses) the Source Analysis snapshot from the staged archive. Can be called again to retry the source part.</summary>
-    Task<(ProjectImportCommitResult? Result, SourceUploadFailure? Error)> CommitAsync(Guid stagingId, string? environmentId, CancellationToken ct = default);
+    Task<(ProjectImportCommitResult? Result, SourceUploadFailure? Error)> CommitAsync(Guid stagingId, CancellationToken ct = default);
 
     /// <summary>Releases a staged archive that will not be imported.</summary>
     Task DiscardAsync(Guid stagingId, CancellationToken ct = default);
@@ -31,10 +31,10 @@ public sealed class ProjectImportApiService(HttpClient http) : IProjectImportApi
         return preview is null ? (null, new("IMPORT_RESPONSE_INVALID", "upload", "The archive was uploaded, but no import preview was returned.")) : (preview, null);
     }
 
-    public async Task<(ProjectImportCommitResult? Result, SourceUploadFailure? Error)> CommitAsync(Guid stagingId, string? environmentId, CancellationToken ct = default)
+    public async Task<(ProjectImportCommitResult? Result, SourceUploadFailure? Error)> CommitAsync(Guid stagingId, CancellationToken ct = default)
     {
-        var query = string.IsNullOrWhiteSpace(environmentId) ? "" : $"?environmentId={Uri.EscapeDataString(environmentId)}";
-        using var response = await http.PostAsync($"api/project-import/{stagingId}/commit{query}", content: null, ct);
+        // No Target Environment is sent: a source snapshot does not belong to one.
+        using var response = await http.PostAsync($"api/project-import/{stagingId}/commit", content: null, ct);
         if (!response.IsSuccessStatusCode) return (null, await IntegrationCatalogApiService.ReadSourceUploadFailure(response, ct));
         var result = await response.Content.ReadFromJsonAsync<ProjectImportCommitResult>(Json, ct);
         return result is null ? (null, new("IMPORT_RESPONSE_INVALID", "persistence", "The import completed, but no result was returned.")) : (result, null);

@@ -63,10 +63,11 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
 
     /// <summary>
     /// Creates (or reuses) the Source Analysis snapshot of a staged archive. Null when the staging expired or is unknown.
-    /// The staging is released once its source part is settled (created, reused or no source); it is kept while the source part
-    /// can still be retried (no Target Environment, analysis or save failure).
+    /// A source snapshot needs no Target Environment: source evidence is not runtime evidence, and a target added, switched or deleted later
+    /// uses the same snapshot. The staging is released once its source part is settled (created, reused, no source or Source Analysis turned
+    /// off); it is kept only while a genuine failure (analysis or save) can be retried without choosing the archive again.
     /// </summary>
-    public async Task<ProjectImportCommitResult?> CommitAsync(Guid stagingId, string? environmentId, CancellationToken ct = default)
+    public async Task<ProjectImportCommitResult?> CommitAsync(Guid stagingId, CancellationToken ct = default)
     {
         var staged = staging.Find(stagingId);
         if (staged is null) return null;
@@ -78,7 +79,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
                 ImportId = staged.ImportId, ArchiveFileName = staged.Workspace.Archive.FileName, ArchiveSha256 = staged.Workspace.Archive.Sha256,
                 ImportedAt = staging.Now,
             };
-            var source = await SourceAsync(staged, environmentId, provenance, ct);
+            var source = await SourceAsync(staged, provenance, ct);
             var settled = !source.CanRetry;
             if (settled) staging.Remove(stagingId);
             return new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
@@ -88,43 +89,41 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
 
     public bool Discard(Guid stagingId) => staging.Remove(stagingId);
 
-    private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, string? environmentId, ProjectImportProvenance provenance, CancellationToken ct)
+    private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, ProjectImportProvenance provenance, CancellationToken ct)
     {
         var detection = staged.Source;
         if (!detection.Detected)
             return new ProjectImportSourceResult { State = ProjectImportSourceState.NotDetected, Technologies = detection.Technologies };
         if (!sources.SourceAnalysisEnabled)
             return NotCreated(detection, "SOURCE_ANALYSIS_DISABLED", "Source Analysis is turned off in Feature Visibility, so no source snapshot was created.", canRetry: false);
-        if (string.IsNullOrWhiteSpace(environmentId))
-            return NotCreated(detection, "NO_ACTIVE_ENVIRONMENT", "Source snapshots belong to a Target Environment. Select or create one, then create the source snapshot from this import.", canRetry: true);
-
-        // Idempotent re-import: the same archive bytes that are already the environment's current Source Analysis snapshot are reused, not
-        // analysed again. Any other case inserts a new immutable snapshot, which becomes current (history is never rewritten).
-        var current = (await store.ListSourceAnalysisAsync(environmentId, 1, ct)).FirstOrDefault();
+        // Idempotent re-import: the same archive bytes that are already the workspace's current Source Analysis snapshot are reused, not
+        // analysed again. Any other case inserts a new immutable snapshot, which becomes current (history is never rewritten). Whether a
+        // Target Environment is selected changes neither the archive identity nor this decision.
+        var current = (await store.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
         if (current?.ProjectImport is { } previous && previous.ImportId == staged.ImportId && current.Archive.Sha256 == staged.Workspace.Archive.Sha256)
-            return Snapshot(ProjectImportSourceState.Reused, current, environmentId);
+            return Snapshot(ProjectImportSourceState.Reused, current);
 
         try
         {
-            var snapshot = await store.AnalyzeValidatedAsync(environmentId, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance);
-            return Snapshot(ProjectImportSourceState.Created, snapshot, environmentId);
+            var snapshot = await store.AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance);
+            return Snapshot(ProjectImportSourceState.Created, snapshot);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (SourceSnapshotPersistenceException)
         {
-            return Failed(detection, environmentId, "SOURCE_SNAPSHOT_SAVE_FAILED", "The source snapshot could not be saved. No new snapshot is available; retry without choosing the archive again.");
+            return Failed(detection, "SOURCE_SNAPSHOT_SAVE_FAILED", "The source snapshot could not be saved. No new snapshot is available; retry without choosing the archive again.");
         }
         catch (Exception ex)
         {
             logger.LogError("Project import source analysis failed. Code {Code}; archive size {ArchiveBytes}; exception type {ExceptionType}",
                 "SOURCE_ANALYSIS_FAILED", staged.Bytes.Length, ex.GetType().Name);
-            return Failed(detection, environmentId, "SOURCE_ANALYSIS_FAILED", "The archive passed validation, but source analysis could not complete. No snapshot was created; retry without choosing the archive again.");
+            return Failed(detection, "SOURCE_ANALYSIS_FAILED", "The archive passed validation, but source analysis could not complete. No snapshot was created; retry without choosing the archive again.");
         }
     }
 
-    private static ProjectImportSourceResult Snapshot(ProjectImportSourceState state, IqrSourceSnapshot snapshot, string environmentId) => new()
+    private static ProjectImportSourceResult Snapshot(ProjectImportSourceState state, IqrSourceSnapshot snapshot) => new()
     {
-        State = state, SnapshotId = snapshot.Id, EnvironmentId = environmentId, SnapshotStatus = snapshot.Status, AnalyzedAt = snapshot.AnalyzedAt,
+        State = state, SnapshotId = snapshot.Id, SnapshotStatus = snapshot.Status, AnalyzedAt = snapshot.AnalyzedAt,
         FilesAnalyzed = snapshot.Archive.FilesAnalyzed,
         Technologies = snapshot.TechnologyCoverage is { } coverage ? Technologies(coverage) : [],
         Limitations = snapshot.TechnologyCoverage?.Limitations.Take(10).ToList() ?? [],
@@ -135,9 +134,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         State = ProjectImportSourceState.NotCreated, Technologies = detection.Technologies, Code = code, Message = message, CanRetry = canRetry,
     };
 
-    private static ProjectImportSourceResult Failed(ProjectImportSourceDetection detection, string environmentId, string code, string message) => new()
+    private static ProjectImportSourceResult Failed(ProjectImportSourceDetection detection, string code, string message) => new()
     {
-        State = ProjectImportSourceState.Failed, EnvironmentId = environmentId, Technologies = detection.Technologies, Code = code, Message = message, CanRetry = true,
+        State = ProjectImportSourceState.Failed, Technologies = detection.Technologies, Code = code, Message = message, CanRetry = true,
     };
 
     /// <summary>

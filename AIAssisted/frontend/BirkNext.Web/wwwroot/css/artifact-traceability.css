@@ -600,3 +600,44 @@
     font-weight: 700;
     color: var(--clr-text);
 }
+
+/* ── Current workspace inputs (shared explorer role authority) ───────────── */
+
+.at-workspace-context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem 1.5rem;
+    margin: 0 0 1rem;
+    font-size: .875rem;
+}
+.at-workspace-context div { display: flex; gap: .4rem; min-width: 0; }
+.at-workspace-context dt { color: var(--clr-text-muted); font-weight: 600; }
+.at-workspace-context dd { margin: 0; color: var(--clr-text); overflow-wrap: anywhere; }
+
+.at-state {
+    background: var(--clr-bg-card);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+.at-state h2 { font-size: 1rem; margin: 0 0 .5rem; color: var(--clr-text); }
+.at-state p { margin: .35rem 0; color: var(--clr-text-muted); }
+
+.at-selection-note {
+    margin: 0 0 1rem;
+    padding: .55rem .75rem;
+    border-left: 3px solid var(--border-strong, #94a3b8);
+    background: var(--surface-subtle, #f8fafc);
+    border-radius: 4px;
+    font-size: .875rem;
+    color: var(--clr-text);
+}
+
+.at-artifact-detail { padding: 8px 12px; font-size: .85rem; color: var(--clr-text-muted); min-width: 0; }
+.at-artifact-file { overflow-wrap: anywhere; }
+.at-artifact-source { margin-top: 4px; font-size: .75rem; }
+.at-artifact-action { display: inline-block; margin-top: 6px; font-weight: 600; }
+
+/* Bootstrap's .text-warning (#ffc107, !important) fails contrast on white; the report's metric cards use the design-token warning text. */
+.at-page .metric-value.text-warning { color: var(--clr-warning) !important; }

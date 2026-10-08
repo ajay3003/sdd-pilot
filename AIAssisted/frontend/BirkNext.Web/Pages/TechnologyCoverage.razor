@@ -18,12 +18,12 @@
     {
         <p class="sd-muted" role="status">Loading…</p>
     }
-    else if (State.Profile is null)
-    {
-        <p class="sd-empty" data-testid="tc-no-target">Select a Target Environment to see the technology coverage of its project.</p>
-    }
     else
     {
+        @if (State.Profile is null)
+        {
+            <p class="sd-muted" data-testid="tc-no-target">No Target Environment selected. Source technology comes from the current source snapshot; runtime reviews and configured integrations need a target.</p>
+        }
         var coverage = State.Coverage;
         var source = coverage?.Source;
         @foreach (var notice in coverage?.Notices ?? [])

@@ -37,13 +37,6 @@
             <span></span><span></span><span></span>
         </div>
     }
-    else if (_profile is null)
-    {
-        <div class="prv-empty" data-testid="pr-no-target">
-            <span class="prv-empty-icon" aria-hidden="true">⌁</span>
-            <div><h2>No Target Environment selected</h2><p>Select a Target Environment to review the pipelines of its Source Analysis snapshots.</p></div>
-        </div>
-    }
     else if (!_sources.SourceAnalysisEnabled)
     {
         <div class="prv-empty" data-testid="pr-source-disabled">
@@ -261,6 +254,8 @@
     }
 
     private FrontendAnalysisProfile? _profile;
+    /// <summary>The runtime context sent with requests; blank without a Target Environment (source snapshots are not scoped by it).</summary>
+    private string EnvironmentId => _profile?.Id ?? "";
     private PipelineReviewSourceList _sources = new(true, [], null);
     private Guid? _snapshotId;
     private bool _metadata, _loaded;
@@ -278,21 +273,18 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // No active Target Environment is the "No Target Environment selected" state, never an empty environment id.
+        // Pipelines are source evidence: they are reviewed from the current source snapshot with or without a Target Environment.
         _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
-        if (_profile is not null)
-        {
-            _sources = await Api.SourcesAsync(_profile.Id);
-            _snapshotId = _sources.DefaultSnapshotId ?? _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
-            if (_snapshotId is not null) await Load();
-        }
+        _sources = await Api.SourcesAsync(EnvironmentId);
+        _snapshotId = _sources.DefaultSnapshotId ?? _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+        if (_snapshotId is not null) await Load();
         _loaded = true;
     }
 
     private async Task Load()
     {
-        if (_profile is null || _snapshotId is null) return;
-        (_result, _error) = await Api.ReviewAsync(_profile.Id, _snapshotId, _metadata);
+        if (_snapshotId is null) return;
+        (_result, _error) = await Api.ReviewAsync(EnvironmentId, _snapshotId, _metadata);
         _probe = null; _comparison = null; _open.Clear();
         _previousId = _sources.Snapshots.Where(s => s.Id != _snapshotId && s.AnalyzedAt <= (_sources.Snapshots.FirstOrDefault(x => x.Id == _snapshotId)?.AnalyzedAt ?? DateTimeOffset.MaxValue))
             .OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
@@ -306,17 +298,17 @@
 
     private async Task Probe()
     {
-        if (_profile is null || _snapshotId is null || string.IsNullOrWhiteSpace(_probePath)) return;
+        if (_snapshotId is null || string.IsNullOrWhiteSpace(_probePath)) return;
         _probing = true;
-        try { _probe = await Api.ProbeAsync(_profile.Id, _snapshotId.Value, _probePath.Trim()); }
+        try { _probe = await Api.ProbeAsync(EnvironmentId, _snapshotId.Value, _probePath.Trim()); }
         finally { _probing = false; }
     }
 
     private async Task Compare()
     {
-        if (_profile is null || _snapshotId is null || _previousId is null) return;
+        if (_snapshotId is null || _previousId is null) return;
         _comparing = true;
-        try { _comparison = await Api.CompareAsync(_profile.Id, _previousId.Value, _snapshotId.Value); }
+        try { _comparison = await Api.CompareAsync(EnvironmentId, _previousId.Value, _snapshotId.Value); }
         finally { _comparing = false; }
     }
 

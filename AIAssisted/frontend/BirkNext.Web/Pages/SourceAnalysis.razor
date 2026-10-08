@@ -22,12 +22,17 @@
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
     }
     <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
-    @if (_profile is null)
+    @* Source snapshots need no Target Environment: a target is runtime context, so it is shown here, never required. *@
+    @if (!_loaded)
     {
-        @if (_loaded) { <p class="sa-card sa-muted" data-testid="sa-no-target">Select a target environment to access its source snapshots.</p> }
+        <p class="sa-muted" role="status">Loading source snapshots…</p>
     }
     else
     {
+        <dl class="sa-target-context" data-testid="sa-target-context">
+            <div><dt>Target Environment</dt><dd data-testid="sa-target-state">@(_profile is null ? "Not selected" : "Selected")</dd></div>
+            <div><dt>Runtime-dependent evidence</dt><dd>@(_profile is null ? "Not available — select a Target Environment for runtime reviews" : "Available to runtime reviews")</dd></div>
+        </dl>
         <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
             <h2 id="sa-snapshot-heading">Source snapshot</h2>
             <div class="sa-controls">
@@ -114,7 +119,7 @@
                             <span aria-hidden="true">Upload source only</span>
                         </label>
                         <button type="button" class="btn-secondary" data-testid="sa-choose-existing" disabled="@(_snapshots.Count == 0)" aria-describedby="@(_snapshots.Count == 0 ? "sa-no-snapshots" : null)" @onclick="FocusSelectorAsync">Choose existing snapshot</button>
-                        @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet for this target environment.</span> }
+                        @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet.</span> }
                     </div>
                 </div>
             </section>
@@ -327,12 +332,12 @@
     private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
         a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
-    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; if (_profile is not null) await Load(); _loaded = true; }
-    private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
+    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; await Load(); _loaded = true; }
+    private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile?.Id ?? ""); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null; _pendingArchive = args.File.Name;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
         catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
         catch (HttpRequestException ex) when (BackendRequestClassifier.FromException("Source upload", ex).IsTransportFailure) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
         catch (HttpRequestException ex) { _error = new("SOURCE_UPLOAD_FAILED", "upload", $"{BackendRequestClassifier.FromException("Source upload", ex).UserMessage} Existing snapshots are unchanged."); }

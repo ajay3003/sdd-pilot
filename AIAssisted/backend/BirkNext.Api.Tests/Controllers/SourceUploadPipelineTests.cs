@@ -68,15 +68,17 @@ public sealed class SourceUploadPipelineTests : IAsyncLifetime
     [InlineData("")]
     [InlineData("?environmentId=")]
     [InlineData("?environmentId=%20")]
-    public async Task MissingEnvironment_ReturnsTheStructuredPrerequisiteFailure_NotACodelessProblemDetails(string query)
+    public async Task NoTargetEnvironment_StillCreatesTheSourceSnapshot(string query)
     {
         using var response = await Upload(query, Zip(("repo/Program.cs", "class P {}")));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json", "not application/problem+json from request validation");
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("code").GetString().Should().Be("NO_ACTIVE_ENVIRONMENT");
-        json.RootElement.GetProperty("stage").GetString().Should().Be("prerequisite");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().NotContain("NO_ACTIVE_ENVIRONMENT");
+        using var json = JsonDocument.Parse(body);
+        var id = json.RootElement.GetProperty("id").GetString();
+        using var list = await _client.GetAsync("/api/source-analysis");
+        (await list.Content.ReadAsStringAsync()).Should().Contain(id!, "the snapshot is current without a Target Environment");
     }
 
     [Fact]
@@ -98,11 +100,11 @@ public sealed class SourceUploadPipelineTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListWithoutEnvironment_IsAPlainRequestError_NotProblemDetailsValidation()
+    public async Task ListWithoutEnvironment_ListsTheWorkspaceSnapshots()
     {
         using var response = await _client.GetAsync("/api/source-analysis?environmentId=");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("environmentId is required");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.ValueKind.Should().Be(JsonValueKind.Array);
     }
 }

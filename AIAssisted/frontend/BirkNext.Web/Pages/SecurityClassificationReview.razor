@@ -33,7 +33,7 @@
         else if (_noTarget)
         {
             @* A configuration state, not a backend failure: nothing is requested without an environment. *@
-            <p class="sc-muted" role="status" data-testid="sc-no-target">No Target Environment is selected. Choose one in <a href="@NavigationCatalog.TargetEnvironmentsRoute">Target Environments</a> to load reviews, source evidence and the test context.</p>
+            <p class="sc-muted" role="status" data-testid="sc-no-target">No Target Environment is selected. Classification source evidence is already captured on the source snapshot in <a href="source-analysis">Source Analysis</a> without one; reviews and the test context belong to a Target Environment — choose one in <a href="@NavigationCatalog.TargetEnvironmentsRoute">Target Environments</a>.</p>
         }
         else
         {

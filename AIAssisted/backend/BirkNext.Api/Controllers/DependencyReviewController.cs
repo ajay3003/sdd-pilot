@@ -16,12 +16,12 @@ public sealed class DependencyReviewController(IDependencyReviewService reviews,
 {
     // Source ingestion belongs to Source Analysis: the source review reads its immutable snapshots; there is no archive upload here.
 
-    /// <summary>Source Analysis snapshots of the environment (per repository) and, for a chosen primary, its related-source candidates.</summary>
+    /// <summary>The workspace's Source Analysis snapshots (per repository) and, for a chosen primary, its related-source candidates. No Target
+    /// Environment is needed: environmentId is optional and does not scope source snapshots.</summary>
     [HttpGet("source-scope")]
-    public async Task<ActionResult<ReviewSourceOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
+    public async Task<ActionResult<ReviewSourceOptions>> SourceScope([FromQuery] string? environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
         [FromQuery] string[]? excluded, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
-            : Ok(await sourceScope.OptionsAsync(environmentId, primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
+        Ok(await sourceScope.OptionsAsync(environmentId ?? "", primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
 
     /// <summary>Reviews exactly the selected snapshots (one primary, zero or more related); the run stores the scope with fingerprints.</summary>
     [HttpPost("source-runs")]

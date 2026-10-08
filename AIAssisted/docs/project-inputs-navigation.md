@@ -8,15 +8,15 @@ sidebar and Recommended Workflow both teach this flow: inputs first, then the pa
 | Input | Owner (state comes from) | States | Needed for |
 |---|---|---|---|
 | Project documents | Current workspace: `ICurrentWorkspaceProjection` (shared artifact repository: Sample Project discovery and imported revisions). See [current-workspace.md](current-workspace.md). | Not provided · Available · Selection required · Unavailable | Document review, traceability, Quality Review |
-| Source | Latest Source Analysis snapshot of the **active Target Environment** (`api/technology-coverage`, held by `ProjectApplicabilityState.Coverage`) | Not added · Analyzed · Needs refresh · Unknown | Technology Coverage, Dependency, Pipeline and Environment Analysis |
+| Source | Latest Source Analysis snapshot of the **workspace** (no Target Environment needed) (`api/technology-coverage`, held by `ProjectApplicabilityState.Coverage`) | Not added · Analyzed · Needs refresh · Unknown | Technology Coverage, Dependency, Pipeline and Environment Analysis |
 | Target Environment | Active Target Environment profile (`ProjectApplicabilityState.Profile`) | Not configured · Partial (no application URL, or the seed's `example*.local` URL) · Configured · Unknown | Frontend, API, Integration and Performance reviews, Critical E2E |
 
 `ProjectInputPresentation.Build` (`Services/ProjectInputs.cs`) derives the three inputs from these owners. It is a pure
 function: there is no new store. Notes on each:
 
 - Sample Project selection is one way to provide documents. A manual import is the other, and it counts the same.
-- Source snapshots are stored per Target Environment. Analyzing source therefore needs an active environment, though not an
-  application URL. A source-only project is an environment without a URL plus a snapshot, so its target shows *Partial*.
+- Source snapshots belong to the workspace, not to a Target Environment. Analyzing source needs no target; a source-only
+  project is a snapshot with the target input *Not configured* (required only for runtime reviews).
 - Unsupported source technologies are a tool limitation. The source is still provided.
 - Authentication verification and runtime evidence are not target existence. Each review checks those for itself.
 - Input completeness is never a score.
@@ -98,7 +98,5 @@ Rules:
 
 ## Known limits
 
-- Without an active Target Environment there is nowhere to store a source snapshot. This is the current Source Analysis
-  model, and it was not changed here.
 - The workflow does not track whether a source or runtime review has already been run. It recommends the first applicable
   one in sidebar order, and the *Applicable reviews* list shows them all.

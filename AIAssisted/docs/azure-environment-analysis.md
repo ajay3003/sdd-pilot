@@ -115,7 +115,7 @@ A diagnostic setting is only reported as absent when it was actually read.
 
 ## Snapshots and the shared provider (`AzureEnvironmentEvidence.cs`)
 
-- **Storage.** Snapshots go in the `azure_environment_snapshots` table, one JSON document each. They are immutable and scoped to a BirkNext Target Environment, the same way Source Analysis snapshots are.
+- **Storage.** Snapshots go in the `azure_environment_snapshots` table, one JSON document each. They are immutable and scoped to a BirkNext Target Environment, because they are observed runtime evidence of one deployed environment. Source Analysis snapshots (declared evidence) are not scoped by a target.
 - **Provider.** `IAzureEnvironmentEvidenceProvider` is the read side for consumers:
   - `ResolveAsync` returns the exact snapshot, or the newest one; it never substitutes.
   - `LookupAsync` takes a kind plus a name or host. Its result is Observed / NotObserved / MultipleObserved / UnableToVerify / NoSnapshot / Disabled.
