@@ -5,6 +5,7 @@ using System.Text.Json;
 using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.ApiReview;
+using BirkNext.Standards;
 using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.ApiQuality;
@@ -119,7 +120,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         return new ApiReviewReport
         {
             Environment = request.Environment, Policy = request.Policy, StartedAt = startedAt, GeneratedAt = DateTimeOffset.UtcNow, Access = capabilities,
-            Targets = results, Findings = findings.OrderBy(f => f.Severity).ThenBy(f => f.Type).ThenBy(f => f.Endpoint).ToList(),
+            Targets = results, Findings = findings.OrderBy(f => f.Severity).ThenBy(f => f.Type).ThenBy(f => f.Endpoint)
+                .Select(f => f with { StandardsReferences = StandardsReferenceMappings.ForApiRule(f.RuleId).ToList() }).ToList(),
             Coverage = Coverage(results, request), ManualReviewItems = manual, Limitations = limitations,
         };
     }

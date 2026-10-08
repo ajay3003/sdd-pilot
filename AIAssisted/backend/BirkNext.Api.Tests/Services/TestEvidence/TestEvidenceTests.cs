@@ -225,7 +225,7 @@ public sealed class TestEvidenceTests
         snapshot!.TestInventory.Should().NotBeNull();
         snapshot.TestInventory!.SnapshotId.Should().Be(snapshot.Id);
         snapshot.TestInventory.SnapshotFingerprint.Should().Be(snapshot.Archive.Sha256);
-        var stored = await store.FindSourceAnalysisAsync("dev", snapshot.Id);
+        var stored = await store.FindSourceAnalysisAsync(snapshot.Id);
         stored!.TestInventory!.Definitions.Should().HaveCount(snapshot.TestInventory.Definitions.Count);
         snapshot.TechnologyCoverage!.Technologies.Select(t => t.TechnologyId).Should().Contain(["test.xunit", "test.nunit", "test.trx"]);
     }

@@ -7,7 +7,7 @@ namespace BirkNext.Web.Services;
 /// Central resolver for Sample Project document sources.
 ///
 /// Enforces the production policy:
-/// Automatic Explorer content comes exclusively from SampleData/{project}/
+/// Automatic Explorer content comes exclusively from the configured sample-project catalog.
 ///
 /// Documents are resolved by artifact ROLE, not by filename: the project's documents are discovered recursively and
 /// classified by <see cref="ISampleProjectArtifactDiscovery"/> (front matter, canonical filenames as strong hints,
@@ -88,7 +88,7 @@ public sealed class SampleProjectDocumentResolver : ISampleProjectDocumentResolv
 
     /// <summary>
     /// Get all available Sample Projects.
-    /// Returns only valid, discovered projects from SampleData.
+    /// Returns only valid projects from the configured catalog.
     /// </summary>
     public async Task<IReadOnlyList<SampleProjectDto>> GetAvailableProjectsAsync(
         CancellationToken cancellationToken = default)

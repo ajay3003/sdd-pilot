@@ -106,7 +106,6 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     {
         record.SourceState = (source?.State ?? (sourceDetected ? ProjectImportSourceState.NotCreated : ProjectImportSourceState.NotDetected)).ToString();
         record.SourceSnapshotId = source?.SnapshotId;
-        record.SourceEnvironmentId = source?.EnvironmentId;
         record.SourceAnalyzedAt = source?.AnalyzedAt;
     }
 }

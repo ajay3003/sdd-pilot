@@ -26,12 +26,12 @@ public sealed class ProjectImportController(ProjectImportService imports, ILogge
         return Ok(result.Preview);
     }
 
-    /// <summary>The environment id is the active Target Environment, which owns source snapshots. It is optional: without it the documents
-    /// still import and the source part is reported as not created (retryable while staged).</summary>
+    /// <summary>Creates (or reuses) the source snapshot of a staged archive. No Target Environment is needed: a target is runtime context and
+    /// never owns source snapshots. An environmentId query value sent by an older client is ignored.</summary>
     [HttpPost("{stagingId:guid}/commit")]
-    public async Task<ActionResult<ProjectImportCommitResult>> Commit(Guid stagingId, [FromQuery] string? environmentId, CancellationToken ct)
+    public async Task<ActionResult<ProjectImportCommitResult>> Commit(Guid stagingId, CancellationToken ct)
     {
-        var result = await imports.CommitAsync(stagingId, environmentId, ct);
+        var result = await imports.CommitAsync(stagingId, ct);
         return result is null
             ? Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "The staged archive is no longer available (it expired or was already imported). Choose the ZIP again."))
             : Ok(result);

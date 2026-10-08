@@ -25,6 +25,8 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         Services.AddSingleton(new Mock<IDashboardSnapshotService>().Object);
         Services.AddSingleton(new Mock<IReportExportService>().Object);
         Services.AddSingleton(new Mock<ISampleProjectDocumentResolver>().Object);
+        var samples = new MockSampleProjectDocumentResolver();
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, samples, samples));
         Services.AddSingleton(_alignmentSession);
         Services.AddSingleton<TaskSpecAlignmentService>();
     }
@@ -35,7 +37,8 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<ArtifactTraceability>();
 
         cut.Markup.Should().Contain("Requirements Traceability");
-        cut.Markup.Should().Contain("No Sample Project selected");
+        cut.WaitForAssertion(() => cut.Find("[data-testid='at-no-documents']"));
+        cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='artifact-traceability-error']").Should().BeEmpty();
     }
 
@@ -47,7 +50,8 @@ public sealed class WorkflowAnalysisPageSafetyTests : BunitContext
         var cut = Render<ArtifactTraceability>();
 
         cut.Markup.Should().Contain("Requirements Traceability");
-        cut.Markup.Should().Contain("No Sample Project selected");
+        cut.WaitForAssertion(() => cut.Find("[data-testid='at-workspace-context']"));
+        cut.Markup.Should().NotContain("No Sample Project selected");
         cut.FindAll("[data-testid='artifact-traceability-error']").Should().BeEmpty();
     }
 

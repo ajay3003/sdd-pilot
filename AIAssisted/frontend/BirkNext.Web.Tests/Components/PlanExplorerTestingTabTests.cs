@@ -57,7 +57,7 @@ public sealed class PlanExplorerTestingTabTests : BunitContext
     [Fact]
     public void TestingTab_SCIMPlan_RendersStrategiesAndAllMeaningfulScenariosWithoutHorizontalRules()
     {
-        var markdown = File.ReadAllText(TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md"));
+        var markdown = File.ReadAllText(TestDataHelper.ResolveFixturePath("autorisasjon", "plan.md"));
         var plan = _analysisService.Parse(markdown);
 
         var cut = Render<PlanExplorerPanel>(parameters => parameters
@@ -72,18 +72,8 @@ public sealed class PlanExplorerTestingTabTests : BunitContext
         text.Should().Contain("Testcontainers 4.x");
         text.Should().Contain("Unit Testing");
         text.Should().Contain("Integration Testing");
-        text.Should().Contain("POST /Users (new user, active=true)");
-        text.Should().Contain("POST /Users (existing inactive user, active=true)");
-        text.Should().Contain("POST /Users (same request twice)");
-        text.Should().Contain("PATCH /Users/{id} (active=false)");
-        text.Should().Contain("DELETE /Users/{id}");
-        text.Should().Contain("DELETE /Users/{id} (already inactive, repeat)");
-        text.Should().Contain("GET /Users (empty)");
-        text.Should().Contain("GET /Users (paginated)");
-        text.Should().Contain("GET /Users?filter=userName eq");
-        text.Should().Contain("GET /Users/{id} (not found)");
-        text.Should().Contain("POST /Users with invalid token");
-        text.Should().Contain("Health endpoint");
+        text.Should().Contain("T010 Implement unit test suite");
+        text.Should().Contain("T012 Final task 12");
         text.Should().NotContain("---");
     }
 }

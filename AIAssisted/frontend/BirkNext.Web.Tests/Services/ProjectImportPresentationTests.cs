@@ -72,13 +72,16 @@ public sealed class ProjectImportPresentationTests
     }
 
     [Fact]
-    public void SourcePreview_ExplainsTheTargetEnvironmentPrerequisite()
+    public void SourcePreview_NeedsNoTargetEnvironment_AndTheTargetIsNeutralRuntimeContext()
     {
         var detected = new ProjectImportSourceDetection { Detected = true, SourceFiles = 3 };
 
-        ProjectImportPresentation.SourcePreview(detected, hasTargetEnvironment: false).Status.Should().Contain("Target Environment needed");
-        ProjectImportPresentation.SourcePreview(detected, hasTargetEnvironment: true).Tone.Should().Be(ProjectImportTone.Available);
-        ProjectImportPresentation.SourcePreview(new ProjectImportSourceDetection(), hasTargetEnvironment: false).Tone.Should().Be(ProjectImportTone.Neutral);
+        ProjectImportPresentation.SourcePreview(detected).Tone.Should().Be(ProjectImportTone.Available);
+        ProjectImportPresentation.SourcePreview(detected).Status.Should().NotContain("Target");
+        ProjectImportPresentation.SourcePreview(new ProjectImportSourceDetection()).Tone.Should().Be(ProjectImportTone.Neutral);
+        ProjectImportPresentation.TargetEnvironment(configured: false).Should().Match<ProjectImportSourceRow>(r =>
+            r.Tone == ProjectImportTone.Neutral && r.Status == "Not configured" && r.Detail.Contains("Required only for runtime reviews"));
+        ProjectImportPresentation.TargetEnvironment(configured: true).Tone.Should().Be(ProjectImportTone.Neutral);
     }
 
     [Fact]

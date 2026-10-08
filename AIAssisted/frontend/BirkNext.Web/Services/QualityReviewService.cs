@@ -3,7 +3,7 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Orchestrates the unified Quality Review experience.
+/// Orchestrates Document Quality Review.
 /// Discovers available review packs and runs any selected combination against
 /// shared parsed artifacts — artifacts are parsed exactly once regardless of
 /// how many packs are selected.
@@ -15,7 +15,7 @@ namespace BirkNext.Web.Services;
 ///   Readiness     — QA Readiness, Delivery Readiness (code-driven)
 ///
 /// Adding a new industry standard requires only a JSON file and an index.json
-/// entry — no changes to this service or the Quality Review page.
+/// entry — no changes to this service or the Document Quality Review page.
 /// Adding a new code-driven pack requires implementing the internal adapter
 /// interface and registering it in the constructor.
 /// </summary>
@@ -218,7 +218,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "qa-auditor",
             PackGroup:       "Quality",
             PackName:        "QA Auditor",
-            PackDescription: "Structural consistency checks",
+            PackDescription: "Reviews structure, consistency and traceability across project documents. It does not inspect source implementation or runtime behavior.",
             IsDefault:       true);
 
         public QaAuditorAdapter(IQaAuditorService auditor) => _auditor = auditor;
@@ -252,7 +252,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "constitution-compliance",
             PackGroup:       "Governance",
             PackName:        "Constitution Compliance",
-            PackDescription: "Governance rule validation",
+            PackDescription: "Checks documented project artifacts against Constitution rules; it does not verify implementation enforcement.",
             IsDefault:       true);
 
         public ConstitutionComplianceAdapter(IConstitutionComplianceService compliance) =>
@@ -312,7 +312,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "qa-readiness",
             PackGroup:       "Readiness",
             PackName:        "QA Readiness",
-            PackDescription: "Testing readiness assessment",
+            PackDescription: "Assesses documented test planning, acceptance criteria and QA readiness without requiring a source snapshot.",
             IsDefault:       false);
 
         public QaReadinessAdapter(IQAReadinessService qaReadiness) => _qaReadiness = qaReadiness;
@@ -351,7 +351,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "delivery-readiness",
             PackGroup:       "Readiness",
             PackName:        "Delivery Readiness",
-            PackDescription: "Release readiness assessment",
+            PackDescription: "Assesses documented planning and task readiness; it does not establish deployment or runtime readiness.",
             IsDefault:       false);
 
         public DeliveryReadinessAdapter(IDeliveryReadinessAssessmentService delivery) =>
@@ -396,7 +396,7 @@ public sealed class QualityReviewService : IQualityReviewService
             _entry     = entry;
             Descriptor = new QualityReviewPackDescriptor(
                 PackId:          entry.StandardId,
-                PackGroup:       "Standards",
+                PackGroup:       "Standards Documentation",
                 PackName:        entry.Label,
                 PackDescription: entry.Description,
                 IsDefault:       entry.StandardId is "WCAG22" or "OWASP");
@@ -455,7 +455,7 @@ public sealed class QualityReviewService : IQualityReviewService
             PackId:          "data-model-quality",
             PackGroup:       "Quality",
             PackName:        "Data Model Quality",
-            PackDescription: "Schema structure, relationships, and traceability checks",
+            PackDescription: "Reviews the declared Data Model artifact structure and documented relationships; it does not verify an ORM model or deployed database schema.",
             IsDefault:       false);
 
         public DataModelQualityAdapter(IDataModelAnalysisService dataModel) => _dataModel = dataModel;

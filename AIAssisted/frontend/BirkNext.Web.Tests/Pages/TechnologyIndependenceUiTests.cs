@@ -110,15 +110,16 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         var api = new Mock<ITechnologyCoverageApiService>(MockBehavior.Strict);
+        api.Setup(a => a.GetAsync("", It.IsAny<CancellationToken>())).ReturnsAsync(new BirkNext.Technology.ProjectTechnologyCoverage());
         Services.AddSingleton(api.Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
 
         var cut = Render<TechnologyCoverage>();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-target]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-target]").TextContent.Should().Contain("Source technology comes from the current source snapshot"));
         cut.FindAll("[data-testid=tc-unavailable]").Should().BeEmpty();
-        api.VerifyNoOtherCalls();
+        api.Verify(a => a.GetAsync("", It.IsAny<CancellationToken>()), Times.Once, "source technology is read without a target");
     }
 
     [Fact]

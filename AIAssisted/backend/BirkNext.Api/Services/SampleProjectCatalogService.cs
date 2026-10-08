@@ -9,7 +9,7 @@ namespace BirkNext.Api.Services;
 /// Canonical Sample Project catalog discovery and metadata service.
 ///
 /// Single source of truth for:
-/// - SampleData directory resolution
+/// - Configured sample-project directory resolution
 /// - Project enumeration
 /// - Bounded recursive document inventory (role classification is the frontend classifier's job)
 /// - README metadata extraction
@@ -69,28 +69,16 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
     }
 
     /// <summary>
-    /// Resolve the SampleData base directory.
-    /// Config override takes precedence; falls back to walking up the directory tree.
+    /// Resolve the configured sample-project base directory.
+    /// Sample Projects are an optional product feature and never depend on a checkout-relative folder.
     /// </summary>
     public (string? Path, string Source) ResolveBaseDirectory()
     {
         var configured = _config["SampleProjects:BaseDirectory"];
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            var full = SysPath.GetFullPath(configured, AppContext.BaseDirectory);
-            return (SysDir.Exists(full) ? full : null, "config");
-        }
+        if (string.IsNullOrWhiteSpace(configured)) return (null, "unconfigured");
 
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            var candidate = SysPath.Combine(dir.FullName, "SampleData");
-            if (SysDir.Exists(candidate))
-                return (candidate, "auto");
-            dir = dir.Parent;
-        }
-
-        return (null, "auto");
+        var full = SysPath.GetFullPath(configured, AppContext.BaseDirectory);
+        return (SysDir.Exists(full) ? full : null, "config");
     }
 
     private SampleProjectInfo? BuildProjectInfo(string projectDir)

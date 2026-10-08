@@ -55,8 +55,8 @@ public sealed class QualityReviewPageModelBuilder : IQualityReviewPageModelBuild
 
         var model = new QualityReviewPageModel
         {
-            Title = "Quality Review",
-            Description = "Run one or more deterministic quality, compliance, and readiness reviews in a single execution.",
+            Title = "Document Quality Review",
+            Description = "Review project documentation and SDD artifacts for quality, governance and readiness. Source code is not required.",
             Target = "Workspace: " + workspaceId.ToString().Substring(0, 8),
             ReadinessStatus = canRun ? QualityReviewStatus.Available : QualityReviewStatus.Blocked,
             ReviewPacks = packs,
@@ -322,7 +322,7 @@ public sealed class QualityReviewPageModelBuilder : IQualityReviewPageModelBuild
     {
         return new QualityReviewPageModel
         {
-            Title = "Quality Review",
+            Title = "Document Quality Review",
             Description = reason,
             ReadinessStatus = QualityReviewStatus.Blocked,
             Summary = new QualityReviewSummary { CanRun = false, ReadinessMessage = reason }

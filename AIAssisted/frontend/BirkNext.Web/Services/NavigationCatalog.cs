@@ -94,6 +94,7 @@ public static class NavigationCatalog
             new("data-model-explorer", "Data Model Explorer", "nav-icon-data-model-explorer", f => f.DataModelExplorer),
             new("plan-explorer", "Plan Explorer", "nav-icon-plan-explorer", f => f.PlanExplorer),
             new("task-explorer", "Task Explorer", "nav-icon-task-explorer", f => f.TaskExplorer),
+            new("quality/document", "Document Quality Review", "nav-icon-qa-auditor", f => f.QualityReview, ReviewId: "quality-review"),
         ]),
         // Documents linked to each other and to implementation evidence.
         new("traceability", "Traceability",
@@ -120,10 +121,9 @@ public static class NavigationCatalog
             new("azure-environment", "Environment Analysis", "nav-icon-source-analysis", f => f.AzureEnvironmentAnalysis,
                 ReviewId: "azure-environment", Hint: "read-only cloud environment inventory (provider: Azure)", ProviderWhenApplicable: "Azure", FeatureId: "environment-analysis"),
         ]),
-        // Quality Review is cross-cutting (documents); the rest test a configured target or integrations at runtime.
+        // Runtime/deployed-system quality reviews remain target-bound.
         new("quality-testing", "Quality & Testing",
         [
-            new("quality-review", "Quality Review", "nav-icon-qa-auditor", f => f.QualityReview, ReviewId: "quality-review"),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review"),
             new("api-quality-review", "API Quality Review", "nav-icon-constitution-compliance", f => f.ApiQualityReview, ReviewId: "api-quality-review"),
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review"),

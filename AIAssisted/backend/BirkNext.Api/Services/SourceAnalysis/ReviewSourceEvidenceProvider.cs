@@ -20,9 +20,10 @@ public interface IReviewSourceEvidenceProvider
 {
     /// <summary>False when Source Analysis is disabled in Feature Visibility: source evidence cannot be selected (no data is deleted).</summary>
     bool SourceAnalysisEnabled { get; }
-    /// <summary>The Source Analysis snapshots of the Target Environment, newest first (deterministic).</summary>
+    /// <summary>The workspace's Source Analysis snapshots, newest first (deterministic). <paramref name="environmentId"/> is the caller's runtime
+    /// context (blank when no Target Environment is selected); it does not scope source snapshots.</summary>
     Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default);
-    /// <summary>Exactly this snapshot, or null — never the latest one instead.</summary>
+    /// <summary>Exactly this snapshot, or null — never the latest one instead. The target does not scope it either.</summary>
     Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default);
 }
 
@@ -35,9 +36,9 @@ public sealed class ReviewSourceEvidenceProvider(IqrSourceStore store, bool sour
 
     public bool SourceAnalysisEnabled => sourceAnalysisEnabled;
 
-    public Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default) => store.ListSourceAnalysisAsync(environmentId, ct: ct);
+    public Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default) => store.ListSourceAnalysisAsync(ct: ct);
 
-    public Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => store.FindSourceAnalysisAsync(environmentId, snapshotId, ct);
+    public Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => store.FindSourceAnalysisAsync(snapshotId, ct);
 
     // ── Metadata and provenance ────────────────────────────────────────────────────────────────────────────────────────────
 

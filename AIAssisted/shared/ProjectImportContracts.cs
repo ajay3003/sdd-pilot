@@ -75,9 +75,9 @@ public enum ProjectImportSourceState
     NotDetected,
     /// <summary>A new immutable source snapshot was created from the staged archive.</summary>
     Created,
-    /// <summary>The same archive (same fingerprint) is already the current Source Analysis snapshot of the environment: it is reused, not duplicated.</summary>
+    /// <summary>The same archive (same fingerprint) is already the workspace's current Source Analysis snapshot: it is reused, not duplicated.</summary>
     Reused,
-    /// <summary>Source was detected but no snapshot was created (for example, no active Target Environment). Recoverable without re-upload while staged.</summary>
+    /// <summary>Source was detected but no snapshot was created because Source Analysis is turned off. A Target Environment is never required.</summary>
     NotCreated,
     /// <summary>Source analysis or the snapshot save failed. Recoverable without re-upload while staged; no snapshot exists.</summary>
     Failed,
@@ -88,7 +88,6 @@ public sealed record ProjectImportSourceResult
 {
     public ProjectImportSourceState State { get; init; }
     public Guid? SnapshotId { get; init; }
-    public string? EnvironmentId { get; init; }
     public BirkNext.Integrations.SourceAnalysisStatus? SnapshotStatus { get; init; }
     public DateTimeOffset? AnalyzedAt { get; init; }
     public int? FilesAnalyzed { get; init; }

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.Standards;
 
 namespace BirkNext.Web.Models;
 
@@ -72,6 +73,7 @@ public sealed class FrontendQualityFinding
     [JsonPropertyName("status")]         public CheckExecutionStatus     Status         { get; init; } = CheckExecutionStatus.Passed;
     /// <summary>Source by default: everything an engine observed directly. Only derived conclusions say otherwise.</summary>
     [JsonPropertyName("origin")]         public FrontendQualityFindingOrigin Origin      { get; init; } = FrontendQualityFindingOrigin.Source;
+    [JsonPropertyName("standardsReferences")] public List<StandardReference> StandardsReferences { get; init; } = [];
 }
 
 public sealed class FrontendQualityCategoryScore

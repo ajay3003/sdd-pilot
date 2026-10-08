@@ -100,21 +100,21 @@ A review decision (*Mark Reviewed*, *Approve*, *Needs Changes*) is about exact a
 - **Sidebar applicability.** `ProjectApplicabilityState` takes `HasRequirements` and `HasDocumentation` from the snapshot.
   NavMenu refreshes on `Changed`.
 
-## Requirements Traceability and Quality Review
+## Requirements Traceability and Document Quality Review
 
 Sample Projects are one source of artifacts, not the definition of a workspace. Requirements Traceability and Quality
 Review resolve their inputs from the current workspace through the same artifact repository and role resolver used by the
 Explorers. They work with either discovered Sample Project documents or imported artifacts, including a valid workspace
 whose project is *Not assigned*. Research is discoverable as a role but is not consumed by the current traceability or
-Quality Review packs.
+Document Quality Review packs.
 
 Artifact availability, selection, and analysis/review state are separate. Multiple artifacts without a chosen or uniquely
 authoritative artifact put that role in *Selection required*. Availability never means that traceability was recomputed
-or a Quality Review was run. Opening either page only resolves inputs and displays existing results; analysis and review
+or a Document Quality Review was run. Opening either page only resolves inputs and displays existing results; analysis and review
 remain explicit user actions. Traceability keeps its existing report state and is not automatically recomputed when
 artifacts become available.
 
-Quality Review selects each pack independently. The roles in the table describe its minimum eligibility and the additional
+Document Quality Review selects each document pack independently. The roles in the table describe its minimum eligibility and the additional
 optional context the engine receives. Missing unrelated roles do not disable a pack.
 
 | Review Pack | Artifact roles consumed |
@@ -122,7 +122,7 @@ optional context the engine receives. Missing unrelated roles do not disable a p
 | QA Auditor | Eligible with Specification, Plan or Tasks; the engine also accepts Constitution as context. |
 | Constitution Compliance | Constitution; Specification, Plan and Tasks are optional coverage context. |
 | Data Model Quality | Data Model. |
-| WCAG 2.2, OWASP ASVS / Top 10, GDPR, ISO 25010 | Any of Constitution, Specification, Plan or Tasks enables the pack; all available text from those roles is evaluated together. Data Model is not passed to these packs. |
+| WCAG 2.2 — Documentation, OWASP Security Documentation Coverage, GDPR Documentation Coverage, ISO 25010 — Documented Quality Characteristics | Any of Constitution, Specification, Plan or Tasks enables the pack; all available text from those roles is evaluated together. Data Model is not passed to these packs. Results measure document coverage only, not conformance, source implementation, legal compliance or runtime behavior. |
 | QA Readiness | Eligible with Specification or Tasks; Constitution and Plan are optional context. |
 | Delivery Readiness | Eligible with Plan or Tasks; Constitution and Specification are optional context. |
 

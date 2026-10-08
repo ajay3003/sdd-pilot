@@ -40,14 +40,15 @@ public sealed class ReviewSourceEvidenceProviderTests
         var a = await Insert(db, Snapshot("AppRepo.zip", T0));
         var b = await Insert(db, Snapshot("AppRepo.zip", T0.AddHours(1), fill: 'b'));
         var legacy = await Insert(db, Snapshot("AppRepo.zip", T0.AddHours(2), owner: "person-adapter", fill: 'c'));
-        await Insert(db, Snapshot("Other.zip", T0, fill: 'd'), env: "qa");
+        var otherTarget = await Insert(db, Snapshot("Other.zip", T0.AddMinutes(30), fill: 'd'), env: "qa");
         var provider = new ReviewSourceEvidenceProvider(new IqrSourceStore(db));
 
-        (await provider.ListAsync("dev")).Select(s => s.Id).Should().Equal(b.Id, a.Id);
+        (await provider.ListAsync("dev")).Select(s => s.Id).Should().Equal(b.Id, otherTarget.Id, a.Id);
         (await provider.ResolveAsync("dev", a.Id))!.Archive.Sha256.Should().Be(a.Archive.Sha256, "the exact snapshot, although a newer one exists");
         (await provider.ResolveAsync("dev", Guid.NewGuid())).Should().BeNull("an unknown id is never substituted");
         (await provider.ResolveAsync("dev", legacy.Id)).Should().BeNull("a snapshot an earlier version uploaded per integration is not offered for new scopes");
-        (await provider.ResolveAsync("qa", a.Id)).Should().BeNull("snapshots belong to their Target Environment");
+        (await provider.ResolveAsync("qa", a.Id))!.Id.Should().Be(a.Id, "a Target Environment never scopes source snapshots");
+        (await provider.ListAsync("")).Select(s => s.Id).Should().Equal(new[] { b.Id, otherTarget.Id, a.Id }, "no target selected lists the same history");
     }
 
     [Fact]

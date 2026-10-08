@@ -1,0 +1,22 @@
+@using BirkNext.Standards
+
+@if (References is { Count: > 0 })
+{
+    <div class="standard-references" aria-label="Standards references">
+        @foreach (var reference in References)
+        {
+            <span class="standard-reference">
+                @if (!string.IsNullOrWhiteSpace(reference.Url))
+                {
+                    <a href="@reference.Url" target="_blank" rel="noopener noreferrer">@reference.StandardName @reference.ReferenceId</a>
+                }
+                else { <span>@reference.StandardName · @reference.ReferenceId</span> }
+                <span>· @reference.MappingType · @reference.EvidenceScope</span>
+            </span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<StandardReference> References { get; set; } = [];
+}

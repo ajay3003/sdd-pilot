@@ -1,4 +1,5 @@
 using BirkNext.Web.Models;
+using BirkNext.Standards;
 
 namespace BirkNext.Web.Services;
 
@@ -237,8 +238,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
     private static IEnumerable<FrontendQualityFinding> DeriveStandardsFindings(
         IReadOnlyList<SecurityHeaderResult> headers)
     {
-        // Critical headers → derive additional standards findings where the security scan
-        // may not have generated a finding with the right category.
+        // Standards-area findings summarize observed response headers only. They do not certify OWASP coverage or runtime protection.
         var csp  = headers.FirstOrDefault(h => h.Header.Equals("Content-Security-Policy", StringComparison.OrdinalIgnoreCase));
         var hsts = headers.FirstOrDefault(h => h.Header.Equals("Strict-Transport-Security", StringComparison.OrdinalIgnoreCase));
 
@@ -250,11 +250,12 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Title          = "Content-Security-Policy header missing",
                 Severity       = FrontendQualitySeverity.Critical,
                 Category       = FrontendQualityCategory.Standards,
-                Description    = "No CSP header was returned. Without CSP, the browser cannot enforce restrictions on script execution, blocking XSS attacks.",
+                Description    = "No Content-Security-Policy header was observed in the reviewed response. This is a browser-facing security configuration gap; it does not establish that the application is exploitable or that no other controls exist.",
                 Recommendation = "Define a strict Content-Security-Policy. Start with 'default-src self' and expand as needed. Use nonces or hashes for inline scripts.",
                 SourceSystem   = "Standards",
                 EngineId       = FrontendQualityEngineId.StaticSecurity,
                 SourceRuleId   = "std-csp-missing",
+                StandardsReferences = StandardsReferenceMappings.ForFrontendRule("std-csp-missing").ToList(),
             };
         }
 
@@ -266,15 +267,16 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Title          = "Strict-Transport-Security (HSTS) header missing",
                 Severity       = FrontendQualitySeverity.High,
                 Category       = FrontendQualityCategory.Standards,
-                Description    = "HSTS is absent. Browsers cannot enforce HTTPS-only connections, leaving users vulnerable to SSL-stripping attacks.",
+                Description    = "No Strict-Transport-Security header was observed in the reviewed response. This means this response did not provide an HSTS policy; it does not by itself establish exploitability.",
                 Recommendation = "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
                 SourceSystem   = "Standards",
                 EngineId       = FrontendQualityEngineId.StaticSecurity,
                 SourceRuleId   = "std-hsts-missing",
+                StandardsReferences = StandardsReferenceMappings.ForFrontendRule("std-hsts-missing").ToList(),
             };
         }
 
-        // OWASP ASVS / Top 10 frontend indicators from header presence
+        // Browser-facing privacy/security-header indicators from the observed response.
         var privacyHeaders = new[]
         {
             ("Referrer-Policy",    FrontendQualitySeverity.Low,    "Controls how much referrer information is sent. Without it, full URLs including query strings may be leaked to third parties."),

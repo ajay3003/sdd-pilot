@@ -95,7 +95,7 @@ public sealed class QualityReviewSummary
     public string ReadinessMessage { get; init; } = string.Empty;
 }
 
-/// <summary>The complete structured model for a Quality Review page</summary>
+/// <summary>The complete structured model for a Document Quality Review page</summary>
 public sealed class QualityReviewPageModel
 {
     [JsonPropertyName("title")]

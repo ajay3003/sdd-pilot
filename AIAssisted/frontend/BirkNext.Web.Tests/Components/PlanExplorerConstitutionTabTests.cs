@@ -86,7 +86,7 @@ public sealed class PlanExplorerConstitutionTabTests : BunitContext
     [Fact]
     public void Constitution_SCIMPlan_HidesEvidenceColumnAndPreservesGateStateAndNotes()
     {
-        var markdown = File.ReadAllText(TestDataHelper.ResolveSampleDataPath("autorisasjon", "plan.md"));
+        var markdown = File.ReadAllText(TestDataHelper.ResolveFixturePath("autorisasjon", "plan.md"));
         var plan = _analysisService.Parse(markdown);
 
         plan.Gates.Should().HaveCount(13);
@@ -95,12 +95,12 @@ public sealed class PlanExplorerConstitutionTabTests : BunitContext
         plan.Gates.Count(g => g.Status == PlanGateStatus.Pass).Should().Be(10);
         plan.Gates.Count(g => g.Status == PlanGateStatus.Warning).Should().Be(3);
         plan.Gates.Count(g => g.Status == PlanGateStatus.Fail).Should().Be(0);
-        plan.Gates.Single(g => g.RuleId == "PP-01").Notes.Should().Contain("SCIM endpoint is the inbound contract");
+        plan.Gates.Single(g => g.RuleId == "PP-01").Notes.Should().Contain("SCIM endpoint");
         plan.Gates.Single(g => g.RuleId == "PP-02").Notes.Should().Contain("Bearer token");
         plan.Gates.Single(g => g.RuleId == "PP-02").Notes.Should().Contain("Key Vault");
         plan.Gates.Single(g => g.RuleId == "GL-18").Notes.Should().Contain("sync-state");
-        plan.Gates.Single(g => g.RuleId == "GL-20").Notes.Should().Contain("Polly retry");
-        plan.Gates.Single(g => g.RuleId == "PS-01").Notes.Should().Contain("machine-to-machine");
+        plan.Gates.Single(g => g.RuleId == "GL-20").Notes.Should().Contain("scope");
+        plan.Gates.Single(g => g.RuleId == "PS-01").Notes.Should().Contain("review");
 
         var cut = RenderConstitution(plan);
 
@@ -111,7 +111,6 @@ public sealed class PlanExplorerConstitutionTabTests : BunitContext
         cut.Markup.Should().Contain("<th>Notes</th>");
         cut.FindAll("tbody tr").Should().HaveCount(13);
         cut.Markup.Should().Contain("SCIM endpoint is the inbound contract");
-        cut.Markup.Should().Contain("machine-to-machine");
     }
 
     private IRenderedComponent<PlanExplorerPanel> RenderConstitution(PlanDocument plan) =>

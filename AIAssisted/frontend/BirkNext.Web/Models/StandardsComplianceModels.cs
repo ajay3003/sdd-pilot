@@ -25,6 +25,8 @@ public sealed class RulePackIndexEntry
     public string Label       { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Path        { get; set; } = string.Empty;
+    public List<string> EvidenceDomains { get; set; } = [];
+    public List<string> EvidenceTypes { get; set; } = [];
 }
 
 public sealed class StandardRulePack
@@ -35,6 +37,8 @@ public sealed class StandardRulePack
     public string             RulePackVersion { get; set; } = string.Empty;
     public string             LastUpdated     { get; set; } = string.Empty;
     public string             Description     { get; set; } = string.Empty;
+    public List<string>       EvidenceDomains { get; set; } = [];
+    public List<string>       EvidenceTypes   { get; set; } = [];
     public List<StandardRule> Rules           { get; set; } = [];
 }
 

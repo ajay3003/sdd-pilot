@@ -69,7 +69,7 @@ public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
             // 2. Use client-side navigation so the selected project remains in
             // the current WASM application session.
             await page.GetByRole(AriaRole.Navigation)
-                .GetByRole(AriaRole.Link, new() { Name = "Quality Review", Exact = true })
+                .GetByRole(AriaRole.Link, new() { Name = "Document Quality Review", Exact = true })
                 .ClickAsync();
             await page.WaitForURLAsync("**/quality-review", new PageWaitForURLOptions { Timeout = 10000 });
 

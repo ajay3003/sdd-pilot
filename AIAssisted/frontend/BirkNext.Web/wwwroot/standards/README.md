@@ -39,9 +39,11 @@ The folder path reflects the standard + version. When a new version of a standar
 | `standardId`  | yes      | Free-form identifier string (e.g. `"WCAG22"`, `"NIST800-53"`). Must be unique across all entries. Case-insensitive. |
 | `label`       | yes      | Display name shown in the UI (e.g. `"WCAG 2.2"`). |
 | `description` | yes      | Short description shown in the UI (e.g. `"Web Content Accessibility Guidelines"`). |
+| `evidenceDomains` | yes | Review domains allowed to consume this pack. Current keyword packs declare `Document` only. |
+| `evidenceTypes` | yes | Evidence required by the checks. Current keyword packs declare `Document` only. |
 | `path`        | yes      | Relative URL to the rule-pack JSON file (e.g. `"standards/wcag/2.2/rule-pack.json"`). |
 
-**No C# code needs to change when adding a new entry.** The UI discovers available standards at runtime by reading this file.
+The current Standards Compliance engine is document-only and loads only entries that declare both `Document` domain and `Document` evidence. Runtime WCAG/security checks use their domain-specific browser, API, and integration analyzers; a document keyword rule must not be reused as a runtime check.
 
 Example:
 
@@ -51,6 +53,8 @@ Example:
     "standardId": "WCAG22",
     "label": "WCAG 2.2",
     "description": "Web Content Accessibility Guidelines",
+    "evidenceDomains": ["Document"],
+    "evidenceTypes": ["Document"],
     "path": "standards/wcag/2.2/rule-pack.json"
   }
 ]

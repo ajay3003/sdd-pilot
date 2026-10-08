@@ -1,6 +1,6 @@
 # Source Analysis archive uploads
 
-Source Analysis accepts one `.zip` archive for the active Target Environment. An environment does not need an application URL.
+Source Analysis accepts one `.zip` archive. No Target Environment is needed: a source snapshot belongs to the workspace, and a Target Environment is runtime context only (see `project-import.md`, *Source snapshots and Target Environments*).
 
 ## Limits and archive safety
 
@@ -15,4 +15,4 @@ Source Analysis accepts one `.zip` archive for the active Target Environment. An
 
 A safe archive may have one wrapper directory, multiple top-level service folders, nested source folders, infrastructure, documentation, or no recognized source code. Validation does not require `.sln`, `.csproj`, C# files, Azure files, or a particular product structure. Unsupported technologies and document-only archives pass archive validation; later analysis reports the technology coverage or analysis limitations it can establish.
 
-An invalid ZIP, a safety-limit violation, extraction/read failure, source-analysis failure, snapshot-save failure, and a missing Target Environment are separate outcomes. Upload errors show a stable code, stage, safe reason, and relevant relative entry path or limit. Server paths, source contents, and stack traces are not returned to the user.
+An invalid ZIP, a safety-limit violation, extraction/read failure, source-analysis failure, and snapshot-save failure are separate outcomes. Upload errors show a stable code, stage, safe reason, and relevant relative entry path or limit. Server paths, source contents, and stack traces are not returned to the user.

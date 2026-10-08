@@ -36,9 +36,9 @@ public sealed class TestExecutionImportService(IEnumerable<ITestExecutionEvidenc
 
         var limitations = preview.Limitations.ToList();
         SourceTestInventory? inventory = null;
-        if (context.SourceSnapshotId is { } snapshotId && !string.IsNullOrWhiteSpace(context.EnvironmentId))
+        if (context.SourceSnapshotId is { } snapshotId)
         {
-            var snapshot = await sources.FindSourceAnalysisAsync(context.EnvironmentId!, snapshotId, ct);
+            var snapshot = await sources.FindSourceAnalysisAsync(snapshotId, ct);
             if (snapshot is null) limitations.Add("The selected source snapshot was not found; executions were not correlated to source tests.");
             else if (snapshot.TestInventory is null) limitations.Add("The selected source snapshot was analyzed before source test discovery existed; re-upload the source to correlate tests.");
             else inventory = snapshot.TestInventory;
@@ -73,7 +73,7 @@ public sealed class TestExecutionImportService(IEnumerable<ITestExecutionEvidenc
 
     public async Task<(SourceTestInventory? Inventory, string? Error)> SourceTestsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default)
     {
-        var snapshot = await sources.FindSourceAnalysisAsync(environmentId, snapshotId, ct);
+        var snapshot = await sources.FindSourceAnalysisAsync(snapshotId, ct);
         if (snapshot is null) return (null, "Source snapshot not found.");
         return snapshot.TestInventory is null ? (null, "This snapshot was analyzed before source test discovery existed. Upload the source again to discover tests.") : (snapshot.TestInventory, null);
     }

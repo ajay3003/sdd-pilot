@@ -49,7 +49,7 @@ public static class QualityReviewPackReadiness
 
     public static PackReadiness Evaluate(QualityReviewPackDescriptor pack, ReviewArtifactPresence p)
     {
-        if (pack.PackGroup == "Standards")
+        if (pack.PackGroup is "Standards Documentation" or "Standards")
             return Standards(pack, p);
 
         return pack.PackId switch

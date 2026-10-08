@@ -114,6 +114,7 @@ public sealed class ReportExportService : IReportExportService
 
             else if (pack.Standards is { } st)
             {
+                sb.Append("<p>Documentation coverage only. These keyword checks do not establish accessibility conformance, implementation security, legal compliance, or measured software quality.</p>\n");
                 sb.Append("<div class=\"kpi-row\">");
                 sb.Append(Kpi($"{st.OverallScore:0.#}", "Score"));
                 sb.Append(Kpi(st.Results.Count.ToString(), "Checks"));
@@ -244,7 +245,7 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
-        return BuildHtml("Quality Review Report", projectName, $"Run: {report.RunAt:yyyy-MM-dd HH:mm} UTC", sb.ToString());
+        return BuildHtml("Document Quality Review Report", projectName, $"Evidence scope: Project documentation / SDD artifacts · source implementation and runtime behavior were not assessed · Run: {report.RunAt:yyyy-MM-dd HH:mm} UTC", sb.ToString());
     }
 
     public string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName)
@@ -385,13 +386,14 @@ public sealed class ReportExportService : IReportExportService
 
             sb.Append($"<section class=\"block\">\n<h2>{Esc(CategoryLabel(cat))}</h2>\n");
             sb.Append(Table(
-                ["Severity", "Title", "Description", "Recommendation"],
+                ["Severity", "Title", "Description", "Recommendation", "Standards references"],
                 catFindings.Select(f => new[]
                 {
                     Badge(f.Severity.ToString()),
                     Esc(f.Title),
                     Esc(f.Description),
-                    Esc(f.Recommendation)
+                    Esc(f.Recommendation),
+                    Esc(string.Join("; ", f.StandardsReferences.Select(r => $"{r.StandardName} {r.ReferenceId} ({r.MappingType}; {r.EvidenceScope})")))
                 })));
             sb.Append("</section>\n");
         }

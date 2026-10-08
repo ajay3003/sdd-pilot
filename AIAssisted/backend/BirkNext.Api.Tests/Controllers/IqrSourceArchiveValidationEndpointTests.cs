@@ -44,7 +44,7 @@ public sealed class IqrSourceArchiveValidationEndpointTests
     }
 
     [Fact]
-    public async Task MissingEnvironmentMapsToPrerequisiteCodeBeforeArchiveValidation()
+    public async Task MissingEnvironmentIsNoLongerAPrerequisite_TheUploadItselfIsValidated()
     {
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var controller = new IqrSourceEvidenceController(new IqrSourceStore(db),
@@ -55,8 +55,7 @@ public sealed class IqrSourceArchiveValidationEndpointTests
 
         var result = await controller.AnalyzeSourceSnapshot("", CancellationToken.None);
         var response = result.Should().BeOfType<ObjectResult>().Subject;
-        response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        JsonSerializer.Serialize(response.Value).Should().Contain("NO_ACTIVE_ENVIRONMENT").And.Contain("prerequisite");
+        JsonSerializer.Serialize(response.Value).Should().NotContain("NO_ACTIVE_ENVIRONMENT").And.NotContain("prerequisite", "no file was sent: the upload is rejected, never the missing target");
         (await db.IqrSourceSnapshots.CountAsync()).Should().Be(0);
     }
 

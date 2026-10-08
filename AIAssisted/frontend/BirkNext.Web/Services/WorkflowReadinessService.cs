@@ -23,7 +23,7 @@ public sealed record WorkflowReviewOption(string ReviewId, string Label, string 
 /// <summary>
 /// Workflow readiness for the current project inputs. Whether a workspace, project or artifact exists comes from
 /// <see cref="CurrentWorkspaceSnapshot"/> (the same read model the Dashboard uses); source and target come from the shared
-/// applicability state (active Target Environment and its latest Source Analysis snapshot). This record only adds the document
+/// applicability state (active Target Environment and the workspace's latest Source Analysis snapshot). This record only adds the document
 /// review steps, the applicable reviews, the next recommended action and release readiness.
 /// </summary>
 public sealed record WorkflowReadiness(
@@ -152,7 +152,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var environmentKnown = true;
         try { await _applicability.EnsureLoadedAsync(); }
         catch (Exception ex) { environmentKnown = false; _logger.LogWarning(ex, "Source and target state could not be read"); }
-        var inputs = ProjectInputPresentation.Build(workspace, _applicability.Profile, _applicability.Coverage, environmentKnown);
+        var inputs = ProjectInputPresentation.Build(workspace, _applicability.Profile, _applicability.Coverage, environmentKnown && _applicability.LoadError is null);
         var reviews = ApplicableReviews();
 
         if (workspace.State == CurrentWorkspaceState.Error)

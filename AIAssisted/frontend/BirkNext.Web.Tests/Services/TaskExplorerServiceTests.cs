@@ -692,7 +692,7 @@ The goal of our project is good.
     [Fact]
     public void Parse_RealScimTasks_VerifiesCounts()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -711,7 +711,7 @@ The goal of our project is good.
     [Fact]
     public void Parse_RealScimTasks_VerifiesT033AndT033aAreSeparate()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -732,7 +732,7 @@ The goal of our project is good.
     [Fact]
     public void Parse_RealScimTasks_AllPhaseMetadata()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -775,7 +775,7 @@ The goal of our project is good.
     [Fact]
     public void Parse_RealScimTasks_CorrectParallelCount()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -863,7 +863,7 @@ The goal of our project is good.
     [Fact]
     public void ParseExplicitDependencies_RealScimDependencies()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -892,7 +892,7 @@ The goal of our project is good.
     [Fact]
     public void Parse_RealScimTasks_CheckpointPresenceCAndFormatNode()
     {
-        var scimTasksPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "SampleData", "autorisasjon", "tasks.md");
+        var scimTasksPath = TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md");
         if (!File.Exists(scimTasksPath))
             throw new FileNotFoundException($"Test file not found: {scimTasksPath}");
 
@@ -1067,3 +1067,4 @@ The goal of our project is good.
         }
     }
 }
+

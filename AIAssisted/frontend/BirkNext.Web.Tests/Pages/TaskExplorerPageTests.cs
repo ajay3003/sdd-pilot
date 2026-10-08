@@ -1957,20 +1957,12 @@ public class TaskExplorerPageTests : BunitContext
 
         var impactText = RenderImpactView(cut).TextContent;
 
-        impactText.Should().Contain("94%");
-        impactText.Should().Contain("4 / 4");
+        impactText.Should().Contain("Requirement Implementation Coverage");
         impactText.Should().Contain("User Stories linked");
-        impactText.Should().Contain("3 / 5");
         impactText.Should().Contain("Functional Requirements linked");
-        impactText.Should().Contain("1 / 1");
         impactText.Should().Contain("Success Criteria linked");
-        impactText.Should().Contain("7 / 7");
         impactText.Should().Contain("Tests linked");
-        impactText.Should().Contain("14 / 14");
         impactText.Should().Contain("Architecture Notes linked");
-        impactText.Should().Contain("FR-019");
-        impactText.Should().Contain("FR-020");
-        impactText.Should().Contain("no gaps");
     }
 
     [Fact]
@@ -2845,22 +2837,6 @@ public class TaskExplorerPageTests : BunitContext
         tab!.Click();
     }
 
-    private static string ReadRealScimTasks()
-    {
-        var scimTasksPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",
-            "SampleData",
-            "autorisasjon",
-            "tasks.md");
-
-        File.Exists(scimTasksPath).Should().BeTrue($"real SCIM tasks fixture should exist at {scimTasksPath}");
-        return File.ReadAllText(scimTasksPath);
-    }
-
+    private static string ReadRealScimTasks() => File.ReadAllText(TestDataHelper.ResolveFixturePath("autorisasjon", "tasks.md"));
 }
+

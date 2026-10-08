@@ -4,7 +4,9 @@
   "standardVersion": "asvs-top10",
   "rulePackVersion": "1.0",
   "lastUpdated": "2026-06-29",
-  "description": "Documentation coverage checks for OWASP Application Security Verification Standard (ASVS) and OWASP Top 10. Checks whether security requirements are identified and described in the project artifacts.",
+  "description": "Document-only coverage checks for whether security expectations are described in project artifacts. These keyword rules do not inspect implementation or verify source or runtime protection.",
+  "evidenceDomains": ["Document"],
+  "evidenceTypes": ["Document"],
   "rules": [
     {
       "ruleId": "owasp-auth",

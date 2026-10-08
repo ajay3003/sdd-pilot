@@ -108,21 +108,14 @@
             <h3 id="dr-setup-heading" tabindex="-1" @ref="_sourceHeading">Source snapshot</h3>
             <p class="dr-muted">Declared dependencies and Renovate policy of source already analyzed by Source Analysis: one primary snapshot plus any related sources you include, each reviewed separately with its own provenance. Source Analysis owns source snapshots — nothing is uploaded here, nothing is written to a repository and Renovate is not run.</p>
             <p class="dr-scope"><strong>Can assess:</strong> Renovate coverage and policy per repository, declared dependencies, version differences across the selected sources.<br /><strong>Cannot assess:</strong> registry, advisories, licenses (run the dependency health review on the resulting inventory), packaged or deployed evidence.</p>
-            @if (FeatureViz.SourceAnalysis && _environmentId is null)
-            {
-                <p class="dr-muted" data-testid="dr-source-no-target">Select a Target Environment to use its Source Analysis snapshots.</p>
-            }
-            else
-            {
-                <SourceEvidencePrerequisite State="_scope" Prefix="dr" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="Dependency Review" EmptyHeadingLevel="4" ReturnTo="dependency-review"
-                                            DisabledDetail="Existing inventory, SBOM and deployed evidence remain available"
-                                            OtherSectionsNote="Existing inventory, SBOM and deployed evidence modes do not need a source snapshot.">
-                    <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="dr" Busy="_busy" MissingEvidenceLabel="no dependency evidence" OnPrimaryChanged="PrimaryChangedAsync" />
-                    <ReviewSourceScopePanel State="_scope" Prefix="dr" Busy="_busy" EvidenceLabel="Dependency evidence" MissingEvidenceLabel="no dependency evidence" AllowManualRelated="true"
-                                            RelatedExplanation="Detected from the primary snapshot's package and project references (exact package ID or project file)."
-                                            OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusPrimaryAsync" />
-                </SourceEvidencePrerequisite>
-            }
+            <SourceEvidencePrerequisite State="_scope" Prefix="dr" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="Dependency Review" EmptyHeadingLevel="4" ReturnTo="dependency-review"
+                                        DisabledDetail="Existing inventory, SBOM and deployed evidence remain available"
+                                        OtherSectionsNote="Existing inventory, SBOM and deployed evidence modes do not need a source snapshot.">
+                <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="dr" Busy="_busy" MissingEvidenceLabel="no dependency evidence" OnPrimaryChanged="PrimaryChangedAsync" />
+                <ReviewSourceScopePanel State="_scope" Prefix="dr" Busy="_busy" EvidenceLabel="Dependency evidence" MissingEvidenceLabel="no dependency evidence" AllowManualRelated="true"
+                                        RelatedExplanation="Detected from the primary snapshot's package and project references (exact package ID or project file)."
+                                        OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusPrimaryAsync" />
+            </SourceEvidencePrerequisite>
             <ReviewDisclosure Text="Add Renovate config override" CollapseText="Hide Renovate config override" TestId="dr-override" Class="disclosure-inline" Hint="optional">
                 <p class="dr-muted">The supplied file replaces the chosen repository's in-repository configuration for this review only; the source snapshot is not changed.</p>
                 <div class="dr-upload">
@@ -762,8 +755,9 @@
         if (!FeatureViz.SourceAnalysis) return; // feature visibility is respected: hidden Source Analysis offers no snapshots here
         try
         {
-            _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull?.Id;
-            if (_environmentId is not null) _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request);
+            // Source snapshots need no Target Environment; the id (blank without one) is only the caller's runtime context.
+            _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull?.Id ?? "";
+            _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request);
         }
         catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _status = BackendRequestClassifier.FromException("Source Analysis snapshots", ex).UserMessage; }
     }

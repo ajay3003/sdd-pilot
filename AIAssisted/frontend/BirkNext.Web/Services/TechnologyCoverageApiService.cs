@@ -77,10 +77,11 @@ public sealed class ProjectApplicabilityState : IDisposable
         try
         {
             // Without an active Target Environment (e.g. right after a local data reset) the context carries an empty placeholder profile:
-            // that is "no target", not a backend that did not answer.
+            // that is "no target", not a backend that did not answer. Source technology needs no target: the current source snapshot is
+            // read either way; only configured integrations and runtime targets come from the target.
             var context = await contexts.GetActiveContextAsync();
             profile = context.ActiveTargetError is null && context.ActiveProfile is { Id.Length: > 0 } active ? active : null;
-            coverage = profile is null ? null : await api.GetAsync(profile.Id);
+            coverage = await api.GetAsync(profile?.Id ?? "");
         }
         catch (Exception ex) when (ex is InvalidOperationException || BackendRequestClassifier.IsRequestFailure(ex))
         {

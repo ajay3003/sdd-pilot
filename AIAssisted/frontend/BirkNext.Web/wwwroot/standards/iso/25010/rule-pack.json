@@ -4,7 +4,9 @@
   "standardVersion": "25010",
   "rulePackVersion": "1.0",
   "lastUpdated": "2026-06-29",
-  "description": "Documentation coverage checks for ISO 25010 software product quality characteristics. Checks whether quality requirements across performance, reliability, usability, security, maintainability, compatibility, and portability are documented in the project artifacts.",
+  "description": "Document-only coverage checks for documented ISO 25010 quality characteristics. These checks do not measure product quality or produce an overall ISO assessment.",
+  "evidenceDomains": ["Document"],
+  "evidenceTypes": ["Document"],
   "rules": [
     {
       "ruleId": "iso-performance",

@@ -4,7 +4,9 @@
   "standardVersion": "documentation",
   "rulePackVersion": "1.0",
   "lastUpdated": "2026-06-29",
-  "description": "Documentation coverage checks for GDPR data protection requirements. Checks whether data protection and privacy requirements are identified and described in the project artifacts. These checks assess documentation coverage only — they do not determine GDPR compliance.",
+  "description": "Document-only coverage checks for privacy and data protection expectations in project artifacts. These checks are not legal advice and do not determine GDPR compliance.",
+  "evidenceDomains": ["Document"],
+  "evidenceTypes": ["Document"],
   "rules": [
     {
       "ruleId": "gdpr-personal-data",

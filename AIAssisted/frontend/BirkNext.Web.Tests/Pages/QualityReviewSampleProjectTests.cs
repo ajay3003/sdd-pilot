@@ -69,7 +69,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Run Quality Review");
+            cut.Markup.Should().Contain("Run Document Quality Review");
             cut.Markup.Should().Contain("Review packs");
             cut.Markup.Should().NotContain("SpecificationImport");
             cut.FindAll("input[type=file]").Should().BeEmpty();
@@ -96,7 +96,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Current workspace artifacts");
             cut.Markup.Should().NotContain("No Sample Project selected");
-            cut.Markup.Should().NotContain("No review artifacts available");
+            cut.Markup.Should().NotContain("No document artifacts are available for review");
             FindPackLabel(cut, "QA Auditor").ClassList.Should().NotContain("is-disabled");
             _qualityReview.Calls.Should().BeEmpty("opening the page does not execute a review");
             imported.IsSuccess.Should().BeTrue();
@@ -142,8 +142,8 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No review artifacts available.");
-            cut.Markup.Should().NotContain("Run Quality Review");
+            cut.Markup.Should().Contain("No document artifacts are available for review.");
+            cut.Markup.Should().NotContain("Run Document Quality Review");
             cut.Markup.Should().NotContain("Sample Project Artifacts");
             cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");
         });
@@ -251,7 +251,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Project B");
             cut.Markup.Should().NotContain("Restored A Pack");
-            cut.Markup.Should().Contain("Run Quality Review");
+            cut.Markup.Should().Contain("Run Document Quality Review");
             cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeFalse();
         });
     }
@@ -349,10 +349,10 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No review artifacts available.");
+            cut.Markup.Should().Contain("No document artifacts are available for review.");
             cut.Markup.Should().NotContain("Sample Project Artifacts");
             cut.Markup.Should().NotContain("Captured QA Auditor");
-            cut.Markup.Should().NotContain("Run Quality Review");
+            cut.Markup.Should().NotContain("Run Document Quality Review");
             cut.Markup.Should().NotContain("Project A");
         });
     }

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using BirkNext.BrowserCompanion;
 using BirkNext.Web.Services;
+using BirkNext.Standards;
 
 namespace BirkNext.Web.Models;
 
@@ -33,6 +34,8 @@ public sealed record BrowserQualityFinding
     [JsonPropertyName("source")] public string Source { get; init; } = BrowserQualityRules.CompanionSource;
     [JsonPropertyName("observedAt")] public DateTimeOffset ObservedAt { get; init; }
     [JsonPropertyName("wcag")] public string? Wcag { get; init; }
+    [JsonPropertyName("standardsReferences")] public List<StandardReference> StandardsReferences =>
+        string.IsNullOrWhiteSpace(Wcag) ? [] : [StandardsReferenceMappings.Wcag(Wcag, null, StandardsEvidenceScope.BrowserRuntime)];
 }
 
 /// <summary>Result of the Browser Quality engine for one review: which pages had evidence and the findings derived from them.</summary>

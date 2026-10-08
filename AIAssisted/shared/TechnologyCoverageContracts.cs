@@ -293,7 +293,7 @@ public static class ReviewCatalog
     public static IReadOnlyList<ReviewDescriptor> All { get; } =
     [
         new("source-analysis", "Source Analysis", "source-analysis", [Capability.SourceCode], "Architecture, database, observability and evidence domains from an uploaded source archive."),
-        new("quality-review", "Quality Review", "quality-review", [Capability.Requirements], "Requirements, documentation and traceability quality."),
+        new("quality-review", "Document Quality Review", "quality/document", [Capability.Requirements], "Quality, governance and readiness of project documentation and SDD artifacts."),
         new("frontend-quality-review", "Frontend Quality Review", "frontend-quality-review", [Capability.FrontendApplication, Capability.BrowserTarget], "Accessibility, performance and security of a browser frontend."),
         new("api-quality-review", "API Quality Review", "api-quality-review", [Capability.ApiTarget], "REST and GraphQL contract, security and performance against a configured target."),
         new("integration-quality-review", "Integration Quality Review", "integration-quality-review", [Capability.IntegrationCatalog], "Configuration, contracts and runtime evidence of configured integrations."),

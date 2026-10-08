@@ -210,12 +210,12 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
         if(row.Revision != request.Revision) throw new SecurityDiscoveryReviewException("Review changed; refresh discovery.");
         var result = JsonSerializer.Deserialize<SecurityExpectationDiscoveryResult>(row.EvidenceJson,Json)!;
         if (accept && result.SourceScope is null) throw new SecurityDiscoveryReviewException("Legacy source discovery is read-only. Refresh candidates from its exact Source Analysis snapshot.");
-        if(accept && !await db.IqrSourceSnapshots.AnyAsync(s => s.EnvironmentId == environmentId && s.Id == result.SourceSnapshotId, ct))
+        if(accept && !await db.IqrSourceSnapshots.AnyAsync(s => s.Id == result.SourceSnapshotId, ct))
             throw new SecurityDiscoveryReviewException("Source evidence changed; refresh discovery.");
         if (accept)
         foreach (var binding in result.SourceFingerprints)
         {
-            var sourceRow = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId && s.Id == binding.Key && s.IntegrationId == "source-analysis", ct);
+            var sourceRow = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == binding.Key && s.IntegrationId == "source-analysis", ct);
             if (sourceRow is null || JsonSerializer.Deserialize<IqrSourceSnapshot>(sourceRow.EvidenceJson, Json)?.Archive.Sha256 != binding.Value)
                 throw new SecurityDiscoveryReviewException("Selected source scope binding changed; refresh candidates.");
         }

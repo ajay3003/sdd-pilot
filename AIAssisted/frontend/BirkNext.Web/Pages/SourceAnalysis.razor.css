@@ -75,3 +75,7 @@ a.sa-file-button:focus-visible { outline: 2px solid var(--clr-link, #2563eb); ou
     .sa-card { padding: .75rem .8rem; }
     .sa-file-button, .sa-actions > .btn-primary, .sa-actions > .btn-secondary { justify-content: center; }
 }
+.sa-target-context { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; margin: 0; font-size: .84rem; }
+.sa-target-context div { display: flex; gap: .4rem; min-width: 0; }
+.sa-target-context dt { color: var(--clr-text-muted); font-weight: 600; }
+.sa-target-context dd { margin: 0; overflow-wrap: anywhere; }

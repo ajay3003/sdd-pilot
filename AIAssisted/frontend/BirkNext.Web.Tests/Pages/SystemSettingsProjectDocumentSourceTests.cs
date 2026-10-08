@@ -49,7 +49,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
-    private static string Sample(string file) => File.ReadAllText(TestDataHelper.ResolveSampleDataPath("autorisasjon", file));
+    private static string Sample(string file) => File.ReadAllText(TestDataHelper.ResolveFixturePath("autorisasjon", file));
 
     private void Resolver(string slug, params string[] files) =>
         Services.AddSingleton<ISampleProjectDocumentResolver>(new FakeResolver(slug, files.ToDictionary(f => f, Sample)));
@@ -85,7 +85,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
 
         cut.WaitForAssertion(() => Text(cut).Should().Contain("Validation complete for Sample project 'autorisasjon'"));
         Text(cut).Should().NotContain("No workspace artifacts are loaded");
-        Text(cut).Should().Contain("Source: Sample project 'autorisasjon' (SampleData, resolved on demand)");
+        Text(cut).Should().Contain("Sample project 'autorisasjon' (configured catalog, resolved on demand)");
         foreach (var file in new[] { "constitution.md", "spec.md", "plan.md", "tasks.md", "data-model.md" })
             Row(cut, file).Should().Contain("Loaded");
         // Metrics are read from real documents, so they are observations — not "Not evaluated", not zero-as-pass.
@@ -125,7 +125,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         Resolver("autorisasjon", "constitution.md", "spec.md", "plan.md", "tasks.md", "data-model.md");
         var cut = Open("Runtime Diagnostics");
 
-        cut.WaitForAssertion(() => Text(cut).Should().Contain("Sample project 'autorisasjon' (SampleData, resolved on demand)"));
+        cut.WaitForAssertion(() => Text(cut).Should().Contain("Sample project 'autorisasjon' (configured catalog, resolved on demand)"));
         Text(cut).Should().Contain("Selected project").And.Contain("Session artifacts").And.Contain("None imported");
         Text(cut).Should().NotContain("No workspace loaded");
     }

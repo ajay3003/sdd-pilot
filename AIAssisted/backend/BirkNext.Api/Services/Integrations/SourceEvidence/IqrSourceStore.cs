@@ -16,31 +16,41 @@ public sealed class IqrSourceStore(AppDbContext db)
     /// <summary>The owner id of snapshots ingested by Source Analysis (the one source-upload entry point). Other owner ids are snapshots an
     /// earlier version uploaded per integration in Integration Quality Review: kept and readable, never offered for new review scopes.</summary>
     public const string SourceAnalysisOwner = "source-analysis";
+    /// <summary>The stored environment of a Source Analysis snapshot: none. Rows from earlier versions keep the target id they were stored with,
+    /// which no longer scopes anything.</summary>
+    public const string NoEnvironment = "";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Source Analysis snapshots of an environment, newest first (deterministic: id breaks ties).</summary>
-    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceAnalysisAsync(string environmentId, int take = 100, CancellationToken ct = default)
+    /// <summary>
+    /// The workspace's Source Analysis snapshots, newest first (deterministic: id breaks ties). Source evidence is not runtime evidence:
+    /// a Target Environment never scopes, owns or selects a source snapshot, so selecting, switching or deleting a target changes neither
+    /// the history nor which snapshot is newest. Snapshots stored by earlier versions with a target's id are listed the same way.
+    /// </summary>
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceAnalysisAsync(int take = 100, CancellationToken ct = default)
     {
-        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.IntegrationId == SourceAnalysisOwner)
+        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner)
             .OrderByDescending(r => r.AnalyzedAt).ThenByDescending(r => r.Id).Take(take).ToListAsync(ct);
         return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
     }
 
-    /// <summary>Exactly this Source Analysis snapshot of the environment, or null.</summary>
-    public async Task<IqrSourceSnapshot?> FindSourceAnalysisAsync(string environmentId, Guid id, CancellationToken ct = default)
+    /// <summary>Exactly this Source Analysis snapshot, or null. Whatever target was active when it was created does not matter.</summary>
+    public async Task<IqrSourceSnapshot?> FindSourceAnalysisAsync(Guid id, CancellationToken ct = default)
     {
-        var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId && r.IntegrationId == SourceAnalysisOwner, ct);
+        var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.IntegrationId == SourceAnalysisOwner, ct);
         return record is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(record.EvidenceJson, Json);
     }
+    /// <summary>Every snapshot available with this environment: the workspace's Source Analysis snapshots (whatever target, if any, was active
+    /// when they were created) plus the legacy per-integration snapshots an earlier version stored for this environment. Newest first.</summary>
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default)
     {
-        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.EnvironmentId == environmentId)
+        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner || r.EnvironmentId == environmentId)
             .OrderByDescending(r => r.AnalyzedAt).Take(50).ToListAsync(ct);
         return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
     }
     public async Task<IqrSourceSnapshot?> GetAsync(string environmentId, string integrationId, Guid id, CancellationToken ct = default)
     {
-        var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId && r.IntegrationId == integrationId, ct);
+        var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.IntegrationId == integrationId
+            && (integrationId == SourceAnalysisOwner || r.EnvironmentId == environmentId), ct);
         return record is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(record.EvidenceJson, Json);
     }
     internal static BirkNext.TestEvidence.SourceTestInventory DiscoverTests(IqrSourceSnapshot snapshot, string repository, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)
@@ -65,11 +75,13 @@ public sealed class IqrSourceStore(AppDbContext db)
     }
 
     /// <summary>Analyzes a validated workspace into a new immutable snapshot. Project Import passes its provenance (import identity and archive
-    /// fingerprint shared with the imported artifacts); a standalone upload passes none.</summary>
-    internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string environmentId, string integrationId, string name, byte[] bytes,
+    /// fingerprint shared with the imported artifacts); a standalone upload passes none. A Source Analysis snapshot needs no Target Environment
+    /// and is stored without one (<see cref="NoEnvironment"/>); only the legacy per-integration snapshots keep the environment they were uploaded for.</summary>
+    internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string? environmentId, string integrationId, string name, byte[] bytes,
         IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default, BirkNext.ProjectImport.ProjectImportProvenance? projectImport = null)
     {
         ct.ThrowIfCancellationRequested();
+        environmentId = integrationId == SourceAnalysisOwner ? NoEnvironment : environmentId ?? NoEnvironment;
         var snapshot = IqrSourceAnalyzer.Analyze(integrationId, workspace, DateTimeOffset.UtcNow, ct);
         snapshot = snapshot with { DatabaseArchitecture = await DatabaseArchitecture.DatabaseArchitectureAnalyzer.AnalyzeAsync(snapshot.Id, workspace, snapshot.AnalyzedAt, ct) };
         // Source architecture (components, dependencies, messaging, datastores): its own model; datastores only link to the Database analysis above.

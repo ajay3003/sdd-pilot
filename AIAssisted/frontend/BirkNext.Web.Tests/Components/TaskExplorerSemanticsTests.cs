@@ -497,7 +497,7 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     [InlineData("person-adapter")]
     public void Counts_SummaryFilterBadgeAndFilteredTree_Agree(string? sample)
     {
-        var text = sample is null ? Fixture : File.ReadAllText(TestDataHelper.ResolveSampleDataPath(sample, "tasks.md"));
+        var text = sample is null ? Fixture : File.ReadAllText(TestDataHelper.ResolveFixturePath(sample, "tasks.md"));
         var cut = Render(text);
         var health = TaskExplorerService.ComputeEnrichedHealth(TaskExplorerService.Parse(text));
 

@@ -205,9 +205,9 @@ public sealed class ProjectInputWorkflowTests
 
         var r = await ReadinessAsync();
 
-        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Quality & Testing"]);
+        r.ApplicableReviews.Select(x => x.Lane).Distinct().Should().BeEquivalentTo(["Document Review", "Quality & Testing"]);
         r.ApplicableReviews.Select(x => x.ReviewId).Should().Contain(["quality-review", "api-quality-review"]);
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "sidebar order: Quality Review first");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review", "Document Review appears before runtime reviews in the sidebar");
     }
 
     [Fact]
@@ -236,8 +236,8 @@ public sealed class ProjectInputWorkflowTests
 
         DocumentStepsApproved();
         r = await ReadinessAsync();
-        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "dependency-review",
-            "documents done: the first applicable review in sidebar order (source review before runtime testing)");
+        r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.OpenReviewKeyPrefix + "quality-review",
+            "the Document Quality Review appears before Source Review and runtime reviews in the sidebar");
         r.Inputs.All.Should().OnlyContain(i => i.Status == ProjectInputStatus.Ready);
     }
 

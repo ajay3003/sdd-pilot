@@ -217,29 +217,7 @@ public class ReviewContextRuntimeValidationTest
 
     private string LoadArtifact(string filename)
     {
-        var path = Path.Combine(FindSampleModulePath(), filename);
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException($"Sample artifact not found: {path}");
-        }
-        return File.ReadAllText(path);
-    }
-
-    private static string FindSampleModulePath()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null)
-        {
-            var candidate = Path.Combine(directory.FullName, "SampleData", SampleModuleName);
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException($"Sample module not found: SampleData/{SampleModuleName}");
+        return File.ReadAllText(TestDataHelper.ResolveFixturePath(SampleModuleName, filename));
     }
 
     private class ValidationResult

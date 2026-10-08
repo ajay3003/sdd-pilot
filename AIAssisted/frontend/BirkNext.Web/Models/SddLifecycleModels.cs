@@ -49,7 +49,6 @@ public sealed class SddProjectImportRecord
     /// <summary>NotDetected, Created, Reused, NotCreated or Failed (ProjectImportSourceState).</summary>
     public string SourceState { get; set; } = "";
     public Guid? SourceSnapshotId { get; set; }
-    public string? SourceEnvironmentId { get; set; }
     public DateTimeOffset? SourceAnalyzedAt { get; set; }
 }
 

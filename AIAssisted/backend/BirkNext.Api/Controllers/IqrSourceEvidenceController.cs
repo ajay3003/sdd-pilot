@@ -8,7 +8,8 @@ namespace BirkNext.Api.Controllers;
 /// <summary>
 /// Source Analysis: the single source-ingestion entry point (ZIP upload → immutable snapshot). Reviews read snapshots through the shared
 /// source-evidence provider; none of them uploads source. The per-integration upload Integration Quality Review once had is removed — the
-/// snapshots it created stay in the store and in historical IQR results.
+/// snapshots it created stay in the store and in historical IQR results. Source Analysis snapshots need no Target Environment: a target is
+/// runtime context, so these endpoints accept a blank environmentId and never scope source snapshots by it.
 /// </summary>
 [ApiController]
 [Route("api/integration-review/source")]
@@ -18,10 +19,9 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
 {
     /// <summary>Integration Quality Review's view of Source Analysis: snapshots for binding one to an integration (read-only metadata).</summary>
     [HttpGet("scope")]
-    public async Task<ActionResult<BirkNext.SourceEvidence.ReviewSourceOptions>> Scope([FromQuery] string environmentId, [FromQuery] Guid? primary, CancellationToken ct)
+    public async Task<ActionResult<BirkNext.SourceEvidence.ReviewSourceOptions>> Scope([FromQuery] string? environmentId, [FromQuery] Guid? primary, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
-        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId ?? "", ct) : [];
         return Ok(BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.Options(sources.SourceAnalysisEnabled, snapshots, IqrEvidence,
             primary is { } p ? new BirkNext.SourceEvidence.ReviewSourceScopeRequest { PrimarySnapshotId = p } : null, _ => []));
     }
@@ -36,31 +36,32 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     /// when source names it), compared with the configured value. Read-only — a suggestion is applied only by a person saving the form.
     /// </summary>
     [HttpGet("infrastructure-suggestions")]
-    public async Task<ActionResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion>> InfrastructureSuggestions([FromQuery] string environmentId, [FromQuery] BirkNext.SourceDomains.InfrastructureResourceKind kind,
+    public async Task<ActionResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion>> InfrastructureSuggestions([FromQuery] string? environmentId, [FromQuery] BirkNext.SourceDomains.InfrastructureResourceKind kind,
         [FromQuery] string? field, [FromQuery] string? configured, [FromQuery] string? targetEnvironment, [FromQuery] string? parent, [FromQuery] Guid? snapshotId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
-        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId ?? "", ct) : [];
         return Ok(BirkNext.Api.Services.SourceAnalysis.SourceInfrastructureSuggestions.Suggest(snapshots, snapshotId, kind, field ?? kind.ToString(), configured,
-            targetEnvironment ?? environmentId, parent, sources.SourceAnalysisEnabled));
+            targetEnvironment ?? environmentId ?? "", parent, sources.SourceAnalysisEnabled));
     }
 
+    /// <summary>
+    /// The workspace's Source Analysis snapshots (newest first) whether or not a Target Environment is selected; with a target, also the
+    /// legacy per-integration snapshots an earlier version stored for it, so their history stays readable.
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string? environmentId, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await store.ListAsync(environmentId, ct));
+        Ok(await store.ListAsync(environmentId ?? "", ct));
 
     [HttpPost("snapshots")]
     [RequestSizeLimit(SourceArchiveUpload.RequestLimit)]
     [RequestFormLimits(MultipartBodyLengthLimit = SourceArchiveUpload.RequestLimit)]
-    // environmentId is nullable on purpose: [ApiController] would otherwise reject a missing or empty value with a code-less
-    // ProblemDetails before this action runs, and the client could only show a generic archive rejection.
+    // environmentId is optional and ignored for Source Analysis snapshots: source needs no Target Environment. Kept on the route so
+    // existing clients that still send it are not rejected.
     public Task<IActionResult> AnalyzeSourceSnapshot([FromQuery] string? environmentId, CancellationToken ct) =>
         AnalyzeArchive(environmentId, IqrSourceStore.SourceAnalysisOwner, ct);
 
     private async Task<IActionResult> AnalyzeArchive(string? environmentId, string integrationId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(environmentId)) return Failure(StatusCodes.Status400BadRequest,
-            new("NO_ACTIVE_ENVIRONMENT", "prerequisite", "Select or create a Target Environment before uploading source."));
         // One upload reader for Source Analysis and Project Import: bytes from the uploaded stream only, never the client path.
         var upload = await SourceArchiveUpload.ReadAsync(Request, ct);
         if (!upload.IsRead) return Failure(upload.StatusCode, upload.Failure!);
@@ -70,7 +71,7 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         if (!validation.IsValid) return Failure(StatusCodes.Status400BadRequest, validation.Failure!, bytes.Length, validation.EntryCount);
 
         IqrSourceSnapshot snapshot;
-        try { snapshot = await store.AnalyzeValidatedAsync(environmentId!, integrationId, fileName, bytes, validation.Workspace!, ct); }
+        try { snapshot = await store.AnalyzeValidatedAsync(environmentId, integrationId, fileName, bytes, validation.Workspace!, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (SourceSnapshotPersistenceException)
         {

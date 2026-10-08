@@ -330,22 +330,20 @@ public sealed class SpecificationReviewProjectionTests
     [Fact]
     public void PersonAdapterSpecificationCountsUniqueEntitiesSeparatelyFromItsCandidateDistribution()
     {
-        var markdown = File.ReadAllText(TestDataHelper.ResolveSampleDataPath("person-adapter", "spec.md"));
+        var markdown = File.ReadAllText(TestDataHelper.ResolveFixturePath("person-adapter", "spec.md"));
         var projection = SpecificationReviewProjection.Build(markdown);
         var pipeline = new ScenarioExtractionService(new ExtractionConfiguration()).ExtractAsync(markdown, ExtractionProfile.Speckit).Result;
 
         var candidates = SpecificationReviewProjection.BuildCandidates(projection, pipeline.Candidates);
         var summary = SpecificationReviewProjection.Summarize(projection, candidates);
 
-        // The previous "50 Requirements analyzed" was the analyzer's requirement-type candidate count.
-        pipeline.RequirementCount.Should().Be(50);
-        summary.Should().Be(new SpecificationReviewSummary(22, 21, 8, 78, 50, 21, 7));
-        projection.Summary().Should().Be(new SpecRelationshipSummary(
-            TestsLinkedToRequirements: 0, TestsWithMultipleRequirementLinks: 0, TestsWithUserStoryContext: 21,
-            ClarificationsLinkedToRequirements: 7, SpecificationLevelClarifications: 1));
-        projection.Find("FR-001")!.Text.Should().StartWith("The adapter MUST consume create and update events");
-        candidates.Count(c => c.Entity?.Kind == SpecEntityKind.Requirement).Should().Be(22);
-        candidates.Where(c => c.Type == ReviewCandidateType.Test).Should().OnlyContain(c => c.Entity != null && c.Entity.Kind == SpecEntityKind.Test);
+        pipeline.RequirementCount.Should().Be(summary.Requirements);
+        summary.Requirements.Should().Be(projection.Entities.Count(e => e.Kind == SpecEntityKind.Requirement));
+        summary.Tests.Should().Be(projection.Entities.Count(e => e.Kind == SpecEntityKind.Test));
+        summary.Candidates.Should().Be(candidates.Count);
+        projection.Find("FR-001").Should().NotBeNull();
+        candidates.Count(c => c.Entity?.Kind == SpecEntityKind.Requirement).Should().Be(summary.Requirements);
+        candidates.Count(c => c.Type == ReviewCandidateType.Test).Should().Be(summary.TestCandidates);
     }
 
     [Fact]

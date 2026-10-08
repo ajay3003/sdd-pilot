@@ -27,15 +27,13 @@ public sealed class ProjectImportPageTests : BunitContext
     private SourceUploadFailure? _previewFailure;
     private ProjectImportCommitResult? _commit;
     private int _previews;
-    private string? _commitEnvironment;
     private FrontendAnalysisProfile? _profile = new() { Id = "dev", Name = "Dev" };
 
     public ProjectImportPageTests()
     {
         _api.Setup(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => { _previews++; return (_preview, _previewFailure); });
-        _api.Setup(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback<Guid, string?, CancellationToken>((_, env, _) => _commitEnvironment = env)
+        _api.Setup(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => (_commit, (SourceUploadFailure?)null));
         _autoSave.Setup(a => a.SaveNowAsync()).ReturnsAsync(true);
         var context = new Mock<IFrontendAnalysisContextFactory>();
@@ -100,7 +98,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected");
         cut.FindAll("[data-testid=pi-technology]").Select(t => t.TextContent).Should().Contain(["C#", "Terraform"]);
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty("the preview activates nothing");
-        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -122,7 +120,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-result]").TextContent.Should().Contain("Imported is not reviewed or approved");
         cut.Find("[data-testid=pi-open-source]").GetAttribute("href").Should().Be("source-analysis");
         cut.Find("[data-testid=pi-open-documents]").GetAttribute("href").Should().Be("constitution-explorer");
-        _commitEnvironment.Should().Be("dev", "source snapshots belong to the active Target Environment");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Selected").And.Contain("does not own or change the source snapshot");
         _previews.Should().Be(1, "the archive is uploaded once");
         _repository.SddLifecycle.ProjectImports.Single().SourceSnapshotId.Should().Be(snapshot);
         _autoSave.Verify(a => a.SaveNowAsync(), Times.Once);
@@ -178,27 +176,42 @@ public sealed class ProjectImportPageTests : BunitContext
     }
 
     [Fact]
-    public void NoTargetEnvironment_ImportsDocuments_AndOffersTheSourceRetryWithoutReupload()
+    public void NoTargetEnvironment_MixedImport_CreatesTheSourceSnapshot_AndTheTargetIsOnlyRuntimeContext()
     {
         _profile = null;
         _preview = WithSource(ProjectImportActivationTests.Preview(new string('e', 64), source: true, Docs));
-        _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.NotCreated) with
+        _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid());
+        var cut = ChooseArchive();
+        cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected").And.Contain("a new Source Analysis snapshot will be created").And.NotContain("Target");
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not configured").And.Contain("Required only for runtime reviews");
+        cut.FindAll("[data-testid=pi-select-target]").Should().BeEmpty("a Target Environment is not a prerequisite of the import");
+
+        cut.Find("[data-testid=pi-import]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-source]").GetAttribute("data-state").Should().Be("Created"));
+        cut.FindAll("[data-testid=pi-retry-source]").Should().BeEmpty("no retry is needed because a target is absent");
+        cut.FindAll("[data-testid=pi-notes] li").Select(n => n.TextContent).Should().NotContain(n => n.Contains("Target Environment"));
+        cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not configured");
+        _repository.SddLifecycle.ProjectImports.Single().SourceState.Should().Be("Created");
+        _api.Verify(a => a.CommitAsync(_preview.StagingId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void GenuineSourceFailure_OffersARetryFromTheStagedArchive_WithoutReupload()
+    {
+        _preview = WithSource(ProjectImportActivationTests.Preview(new string('9', 64), source: true, Docs));
+        _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Failed) with
         {
-            Source = new ProjectImportSourceResult { State = ProjectImportSourceState.NotCreated, Code = "NO_ACTIVE_ENVIRONMENT", Message = "Source snapshots belong to a Target Environment.", CanRetry = true },
+            Source = new ProjectImportSourceResult { State = ProjectImportSourceState.Failed, Code = "SOURCE_SNAPSHOT_SAVE_FAILED", Message = "The source snapshot could not be saved.", CanRetry = true },
             StagedUntil = DateTimeOffset.UtcNow.AddMinutes(30),
         };
         var cut = ChooseArchive();
-        cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Target Environment needed");
-        cut.Find("[data-testid=pi-select-target]");
-
         cut.Find("[data-testid=pi-import]").Click();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-retry-source]"));
         cut.Find("[data-testid=pi-result]").GetAttribute("data-outcome").Should().Be(nameof(ProjectImportOutcome.ImportedWithNotes));
-        _commitEnvironment.Should().BeNull();
-        _repository.SddLifecycle.ProjectImports.Single().SourceState.Should().Be("NotCreated");
+        _repository.SddLifecycle.ProjectImports.Single().SourceState.Should().Be("Failed");
 
-        _profile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" };
         _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid());
         cut.Find("[data-testid=pi-retry-source]").Click();
 
@@ -219,7 +232,7 @@ public sealed class ProjectImportPageTests : BunitContext
         failure.GetAttribute("role").Should().Be("alert");
         failure.TextContent.Should().Contain("Archive rejected").And.Contain("Nothing was imported");
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty();
-        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -226,45 +226,23 @@ public sealed class SampleProjectDocumentInventoryTests : IDisposable
         docs.Should().OnlyContain(d => d.Content != null && d.Error == null);
     }
 
-    // ── Real SampleData (regression fixtures; generic code only) ───────────────────────────────────────────────
-
-    private static string? SampleDataRoot()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            var candidate = Path.Combine(dir.FullName, "SampleData");
-            if (Directory.Exists(candidate)) return candidate;
-        }
-        return null;
-    }
-
-    [Theory]
-    [InlineData("Meldingsutvekslermottak")]
-    [InlineData("Skole")]
-    [InlineData("SkoleAdapter")]
-    public void NestedSpecKitSampleProjects_ExposeTheirNestedDocuments(string slug)
-    {
-        var root = SampleDataRoot();
-        if (root is null || !Directory.Exists(Path.Combine(root, slug))) return;
-
-        var inventory = SampleProjectDocumentInventory.Enumerate(Path.Combine(root, slug));
-
-        var docs = inventory.Files.Where(f => f.IsDocument && f.SkipReason is null).Select(f => f.RelativePath).ToList();
-        docs.Should().Contain(p => p.EndsWith(".specify/memory/constitution.md"));
-        docs.Should().Contain(p => p.EndsWith("/spec.md") && p.Contains("/specs/"));
-        docs.Should().Contain(p => p.EndsWith("/checklists/requirements.md"));
-    }
-
     [Fact]
-    public void OriginalSampleProjects_StillExposeTheirRootDocuments()
+    public void ConfiguredProjectFixture_ExposesNestedSpecKitAndRootArtifacts()
     {
-        var root = SampleDataRoot();
-        if (root is null) return;
-        foreach (var dir in Directory.GetDirectories(root))
-        {
-            var inventory = SampleProjectDocumentInventory.Enumerate(dir);
-            foreach (var canonical in new[] { "constitution.md", "spec.md", "data-model.md", "plan.md", "tasks.md" }.Where(f => File.Exists(Path.Combine(dir, f))))
-                SampleProjectDocumentInventory.FindReadableDocument(inventory, canonical).Should().NotBeNull($"{Path.GetFileName(dir)}/{canonical}");
-        }
+        var dir = Project("configured-project",
+            (".specify/memory/constitution.md", "# Constitution"),
+            ("specs/001-sample/spec.md", "# Specification"),
+            ("specs/001-sample/checklists/requirements.md", "# Requirements"),
+            ("plan.md", "# Plan"),
+            ("tasks.md", "# Tasks"));
+
+        var inventory = SampleProjectDocumentInventory.Enumerate(dir);
+        var docs = inventory.Files.Where(f => f.IsDocument && f.SkipReason is null).Select(f => f.RelativePath).ToList();
+
+        docs.Should().Contain(".specify/memory/constitution.md");
+        docs.Should().Contain("specs/001-sample/spec.md");
+        docs.Should().Contain("specs/001-sample/checklists/requirements.md");
+        foreach (var canonical in new[] { "plan.md", "tasks.md" })
+            SampleProjectDocumentInventory.FindReadableDocument(inventory, canonical).Should().NotBeNull(canonical);
     }
 }

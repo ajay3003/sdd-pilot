@@ -1,4 +1,5 @@
 @page "/quality-review"
+@page "/quality/document"
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
@@ -13,12 +14,13 @@
 @inject BirkNext.Web.Services.Explorers.IArtifactExplorerContext ArtifactContext
 @implements IDisposable
 
-<PageTitle>Quality Review</PageTitle>
+<PageTitle>Document Quality Review</PageTitle>
 
 <div class="qr-page">
 
-    <PageHeader Title="Quality Review"
-                Description="Run deterministic quality, governance, standards and readiness packs against evidence available in the current workspace." />
+    <PageHeader Title="Document Quality Review"
+                Description="Review the quality, consistency, governance and readiness of project documentation and SDD artifacts in the current workspace. Source code is not required." />
+    <p class="qr-section-desc" data-testid="document-review-scope"><strong>Evidence scope:</strong> Project documentation / SDD artifacts. This review does not assess source implementation or runtime behavior.</p>
 
     @{ var sharedEvidence = SharedEvidence; }
 
@@ -185,7 +187,7 @@
     @if (!HasWorkspaceArtifacts)
     {
         <div class="qr-empty-state">
-            <p class="qr-empty-title">No review artifacts available.</p>
+            <p class="qr-empty-title">No document artifacts are available for review.</p>
             <p>Select a Sample Project or import artifacts into the current workspace.</p>
         </div>
     }
@@ -208,7 +210,7 @@
             <p class="qr-section-desc">Available means the artifact is present in the current workspace. It is not a review, an approval or a pass.</p>
             @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
             {
-                <p role="status" class="qr-inline-note">Some roles have multiple artifacts. Select one in its Explorer before running Quality Review.</p>
+                <p role="status" class="qr-inline-note">Some roles have multiple artifacts. Select one in its Explorer before running Document Quality Review.</p>
             }
             <!-- ── Artifact cards ───────────────────────────────────────── -->
             <div class="qr-artifact-grid">
@@ -246,7 +248,7 @@
                     <button class="qr-shortcut-btn qr-shortcut-btn--clear" @onclick="() => _selectedPacks.Clear()" title="Clear all selections">Clear</button>
                 </div>
                 <div class="qr-packs-grid">
-                    @foreach (var group in QrService.AvailablePacks
+                    @foreach (var group in DocumentPacks
                         .GroupBy(p => p.PackGroup)
                         .OrderBy(g => _groupOrder.GetValueOrDefault(g.Key, 99)))
                     {
@@ -314,7 +316,7 @@
                                 </ul>
                             }
                         </div>
-                        <p class="qr-readiness-note">Ready means a pack's inputs are available, not that it will pass. Selected packs read document artifacts only; shared SDD evidence is not one of their inputs and is not reported as a Quality Review finding.</p>
+                        <p class="qr-readiness-note">Ready means a pack's inputs are available, not that it will pass. Selected packs read document artifacts only; shared SDD evidence is contextual and is not reported as a Document Quality Review finding.</p>
                         <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_packReadinessOpen ? "true" : "false")" aria-controls="qr-pack-readiness-list"
                                 data-testid="qr-pack-readiness-toggle" @onclick="() => _packReadinessOpen = !_packReadinessOpen">
                             @(_packReadinessOpen ? "Hide pack readiness" : "View pack readiness")
@@ -340,7 +342,7 @@
                 </div>
                 <div class="qr-run-action">
                     <PrimaryButton OnClick="RunReview" Disabled="@CannotRun">
-                        @if (_running) { <span>Running…</span> } else { <span>Run Quality Review</span> }
+                        @if (_running) { <span>Running…</span> } else { <span>Run Document Quality Review</span> }
                     </PrimaryButton>
                     @if (CannotRun && !_running)
                     {
@@ -364,7 +366,8 @@
 
         <!-- ── Overall summary ────────────────────────────────────────── -->
         <section class="qr-review-summary" aria-labelledby="qr-summary-title">
-            <div class="qr-summary-heading" id="qr-summary-title">Quality Review Summary</div>
+            <div class="qr-summary-heading" id="qr-summary-title">Document Quality Review Summary</div>
+            <p class="qr-section-desc"><strong>Evidence scope:</strong> Project documentation / SDD artifacts. Source implementation and runtime behavior were not assessed.</p>
             <div class="qr-readiness-summary">
                 @if (DeliveryReadinessResult is { } delivery)
                 {
@@ -585,7 +588,7 @@
     }
         else if (!_inputExpanded)
         {
-            <EmptyState Icon="📋" Title="No review run yet." Description="Expand the panel above to load artifacts and run a review." />
+            <EmptyState Icon="📋" Title="No document review run yet." Description="Expand the panel above to load project artifacts and run Document Quality Review." />
         }
     }
 
@@ -675,19 +678,20 @@
 
     private int AvailableArtifactCount => ArtifactRoles.Count(r => !string.IsNullOrWhiteSpace(ArtifactText(r.Role)));
 
-    private IEnumerable<string> PackGroups => QrService.AvailablePacks.Select(p => p.PackGroup).Distinct()
+    private IReadOnlyList<QualityReviewPackDescriptor> DocumentPacks => QrService.AvailablePacks;
+    private IEnumerable<string> PackGroups => DocumentPacks.Select(p => p.PackGroup).Distinct()
         .OrderBy(g => _groupOrder.GetValueOrDefault(g, 99));
 
     private ReviewArtifactPresence Presence => new(HasConstitution, HasSpec, HasPlan, HasTasks, HasDataModel);
 
     private PackReadiness Readiness(QualityReviewPackDescriptor pack) => QualityReviewPackReadiness.Evaluate(pack, Presence);
 
-    private IReadOnlyList<PackReadiness> SelectedReadiness => QrService.AvailablePacks
+    private IReadOnlyList<PackReadiness> SelectedReadiness => DocumentPacks
         .Where(p => _selectedPacks.Contains(p.PackId)).Select(Readiness).ToList();
 
     private static readonly Dictionary<string, int> _groupOrder = new()
     {
-        ["Quality"] = 0, ["Governance"] = 1, ["Standards"] = 2, ["Readiness"] = 3,
+        ["Quality"] = 0, ["Governance"] = 1, ["Standards Documentation"] = 2, ["Readiness"] = 3,
     };
 
     // ── QA Auditor preview state ─────────────────────────────────────────────
@@ -727,7 +731,7 @@
                 _selectedPacks.Clear();
                 foreach (var packId in QualitySession.SelectedPackIds)
                 {
-                    var pack = QrService.AvailablePacks.FirstOrDefault(p => p.PackId == packId);
+                    var pack = DocumentPacks.FirstOrDefault(p => p.PackId == packId);
                     if (pack is not null && IsPackAvailable(pack))
                         _selectedPacks.Add(packId);
                 }
@@ -912,7 +916,7 @@
     private HashSet<string> GetDefaultSelectedPacks()
     {
         var defaultPacks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var pack in QrService.AvailablePacks)
+        foreach (var pack in DocumentPacks)
         {
             if (IsPackAvailable(pack))
                 defaultPacks.Add(pack.PackId);
@@ -932,7 +936,7 @@
             _selectedPacks.Remove(id);
 
         // Add selections for newly-available packs if they were defaults
-        foreach (var pack in QrService.AvailablePacks)
+        foreach (var pack in DocumentPacks)
         {
             if (pack.IsDefault && IsPackAvailable(pack) && !_selectedPacks.Contains(pack.PackId))
                 _selectedPacks.Add(pack.PackId);
@@ -953,7 +957,7 @@
     {
         if (_report is null) return;
         var html = ExportService.ExportQualityReview(_report, _selectedProject ?? string.Empty);
-        await JS.InvokeVoidAsync("downloadHtmlFile", $"quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"document-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
     private async Task ExportJson()
@@ -962,7 +966,7 @@
         var json = System.Text.Json.JsonSerializer.Serialize(
             _diagnosticSnapshot,
             new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-        var filename = $"quality-review-{_selectedProject}-{DateTime.UtcNow:yyyy-MM-dd-HHmmss}.json";
+        var filename = $"document-quality-review-{_selectedProject}-{DateTime.UtcNow:yyyy-MM-dd-HHmmss}.json";
         await JS.InvokeVoidAsync("downloadJsonFile", filename, json);
     }
 
@@ -1007,7 +1011,7 @@
         try
         {
             var artifactSnapshot = BuildArtifactSnapshot();
-            var selectedPackIds = QrService.AvailablePacks.Where(p => _selectedPacks.Contains(p.PackId) && IsPackAvailable(p)).Select(p => p.PackId).ToArray();
+            var selectedPackIds = DocumentPacks.Where(p => _selectedPacks.Contains(p.PackId) && IsPackAvailable(p)).Select(p => p.PackId).ToArray();
             QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
 
             _report = await QrService.RunAsync(
@@ -1122,7 +1126,7 @@
     /// <summary>Adds every pack that can run; Blocked packs stay unselected.</summary>
     private void SelectAllPacks()
     {
-        foreach (var p in QrService.AvailablePacks.Where(IsPackAvailable))
+        foreach (var p in DocumentPacks.Where(IsPackAvailable))
             _selectedPacks.Add(p.PackId);
     }
 
@@ -1130,7 +1134,7 @@
     private void SelectPackGroup(string group)
     {
         _selectedPacks.Clear();
-        foreach (var p in QrService.AvailablePacks.Where(p => p.PackGroup == group && IsPackAvailable(p)))
+        foreach (var p in DocumentPacks.Where(p => p.PackGroup == group && IsPackAvailable(p)))
             _selectedPacks.Add(p.PackId);
     }
 

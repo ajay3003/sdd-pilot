@@ -65,6 +65,13 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
         {
             if (string.IsNullOrWhiteSpace(entry.StandardId) || string.IsNullOrWhiteSpace(entry.Path))
                 continue;
+            if (!entry.EvidenceDomains.Contains("Document", StringComparer.OrdinalIgnoreCase) ||
+                !entry.EvidenceTypes.Contains("Document", StringComparer.OrdinalIgnoreCase))
+            {
+                _loadResults.Add(new RulePackLoadResult(entry.StandardId, entry.Path, null,
+                    "This keyword evaluator loads Document-domain packs with Document evidence only."));
+                continue;
+            }
             _indexEntries.Add(entry);
             await LoadPackAsync(entry);
         }
@@ -75,6 +82,15 @@ public sealed class StandardsComplianceService : IStandardsComplianceService
         try
         {
             var pack = await _http.GetFromJsonAsync<StandardRulePack>(entry.Path);
+
+            if (pack is not null &&
+                (!pack.EvidenceDomains.Contains("Document", StringComparer.OrdinalIgnoreCase) ||
+                 !pack.EvidenceTypes.Contains("Document", StringComparer.OrdinalIgnoreCase)))
+            {
+                _loadResults.Add(new RulePackLoadResult(entry.StandardId, entry.Path, null,
+                    "This keyword evaluator accepts Document-domain packs with Document evidence only."));
+                return;
+            }
 
             var validationError = ValidatePack(pack);
             if (validationError is not null)

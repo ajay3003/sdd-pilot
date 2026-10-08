@@ -42,7 +42,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("SampleProjects",             "Sample Projects"),
         ("TraceabilityCoverage",       "Traceability & Coverage"),
         ("ArtifactTraceability",       "Artifact Traceability"),
-        ("QualityReview",              "Quality Review"),
+        ("QualityReview",              "Document Quality Review"),
         ("FrontendQualityReview",      "Frontend Quality Review"),
         ("ApiQualityReview",           "API Quality Review"),
         ("IntegrationQualityReview",   "Integration Quality Review"),

@@ -1414,7 +1414,7 @@ else if (_settings is not null)
 
     /// <summary>
     /// The current project's documents as the reviews read them. Three layers that were reported as one:
-    /// the selected project (persisted identity), Sample Project documents (resolved on demand from SampleData, never
+    /// the selected project (persisted identity), Sample Project documents (resolved on demand from its configured catalog, never
     /// copied into the session), and artifacts imported into this browser session.
     /// </summary>
     private sealed record ProjectDocuments(string Source, bool IsSampleProject,
@@ -1448,7 +1448,7 @@ else if (_settings is not null)
                     var result = await resolver.ResolveAsync(slug, type);
                     documents[kind] = (result.IsSuccess ? result.Content : null, result.IsSuccess ? DateTime.UtcNow : null);
                 }
-                return new ProjectDocuments($"Sample project '{slug}' (SampleData, resolved on demand)", true, documents);
+                return new ProjectDocuments($"Sample project '{slug}' (configured catalog, resolved on demand)", true, documents);
             }
         }
 
@@ -1606,7 +1606,7 @@ else if (_settings is not null)
         ("Azure Environment Analysis", "AzureEnvironmentAnalysis"),
 
         // Quality
-        ("Quality Review",          "QualityReview"),
+        ("Document Quality Review", "QualityReview"),
         ("WASM Security Review",    "BlazorWasmSecurityReview"),
         ("WASM Performance Review", "BlazorWasmPerformanceReview"),
 
@@ -1970,7 +1970,7 @@ else if (_settings is not null)
                 "Requires loaded workspace and at least two artifacts",
                 AnalysisSessions.TraceabilityRunAt);
 
-            yield return new("Quality Review",
+            yield return new("Document Quality Review",
                 NormalizeSessionStatus(QualitySession.Status),
                 SessionReason(NormalizeSessionStatus(QualitySession.Status), "Quality review session completed."),
                 "Requires ReviewContext",
@@ -3091,7 +3091,7 @@ else if (_settings is not null)
         ("Implementation Review",        "task-alignment"),
         ("Implementation Traceability",  "implementation-traceability"),
         ("Source Analysis",              "source-analysis"),
-        ("Quality Review",               "quality-review"),
+        ("Document Quality Review",      "quality/document"),
         ("WASM Security Review",         "wasm-security-review"),
         ("WASM Performance Review",      "wasm-performance-review"),
         ("AI Change Review",             "ai-change-auditor"),
@@ -3107,14 +3107,14 @@ else if (_settings is not null)
         ("Recommended Workflow", "specification-explorer",      "Phase 3 CTA"),
         ("Recommended Workflow", "plan-explorer",               "Phase 4 CTA"),
         ("Recommended Workflow", "artifact-traceability",       "Phase 4 CTA"),
-        ("Recommended Workflow", "quality-review",              "Phase 4 CTA (secondary)"),
+        ("Recommended Workflow", "quality/document",           "Phase 4 CTA (secondary)"),
         ("Recommended Workflow", "task-alignment",              "Phase 5 CTA"),
-        ("Recommended Workflow", "quality-review",              "Phase 6 CTA"),
+        ("Recommended Workflow", "quality/document",           "Phase 6 CTA"),
         ("Recommended Workflow", "user-guide",                  "Footer cross-link"),
         // UserGuide.razor
         ("User Guide", "/getting-started",                      "Onboarding callout"),
         ("User Guide", "/ai-change-auditor",                    "AI Change Review feature link"),
-        ("User Guide", "/quality-review",                       "Quality Review feature links"),
+        ("User Guide", "/quality/document",                    "Document Quality Review feature link"),
         ("User Guide", "/constitution-explorer",                "Constitution Explorer link"),
         ("User Guide", "/data-model-explorer",                  "Data Model Explorer link"),
         ("User Guide", "/specification-explorer",               "Specification Explorer link"),

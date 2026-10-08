@@ -76,9 +76,9 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             // 3. Preserve the selected project by navigating within the current
             // WASM application session.
             await page.GetByRole(AriaRole.Navigation)
-                .GetByRole(AriaRole.Link, new() { Name = "Quality Review", Exact = true })
+                .GetByRole(AriaRole.Link, new() { Name = "Document Quality Review", Exact = true })
                 .ClickAsync();
-            await page.WaitForURLAsync("**/quality-review", new PageWaitForURLOptions { Timeout = 10000 });
+            await page.WaitForURLAsync("**/quality/document", new PageWaitForURLOptions { Timeout = 10000 });
 
             // 5. Verify Quality Review page loaded with project context
             var pageContent = await page.ContentAsync();
@@ -111,7 +111,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             isDisabled.Should().BeFalse("Data Model Quality pack must be enabled/available for this project");
 
             // 7. Run quality review
-            var runButton = page.Locator("button:has-text('Run Quality Review')");
+            var runButton = page.Locator("button:has-text('Run Document Quality Review')");
             await runButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
             (await runButton.IsDisabledAsync()).Should().BeFalse();
             await runButton.ClickAsync();

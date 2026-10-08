@@ -276,7 +276,7 @@ public static class KnownIntegrationTemplates
     /// The QA values the audit established. These are the ONLY bindings in the catalogue. Adding a
     /// DEV or PROD entry requires real deployment evidence, never a string substitution on these.
     ///
-    /// BirkNext's own SampleData/hendelsestjenesten names the Leselogg queue "revisjon.leselogg".
+    /// The configured integration example names the Leselogg queue "revisjon.leselogg".
     /// The audited M2LB source identifies it as "leselogg", and sample data is not authoritative
     /// deployment evidence, so the audited value stands. The two are deliberately not reconciled
     /// automatically: the resource name is part of structural identity, so changing it would move

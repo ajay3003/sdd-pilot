@@ -1,5 +1,7 @@
 using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
+using BirkNext.BrowserCompanion;
+using BirkNext.Standards;
 
 namespace BirkNext.Web.Services;
 
@@ -940,6 +942,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             SourceSystem = "axe-core",
             EngineId = FrontendQualityEngineId.Accessibility,
             SourceRuleId = f.RuleId,
+            StandardsReferences = AxeRuleCatalog.Criteria(f.RuleId).Select(id =>
+            {
+                var criterion = WcagRegistry.All.FirstOrDefault(c => c.CriterionId == id);
+                return StandardsReferenceMappings.Wcag(id, criterion?.Title, StandardsEvidenceScope.BrowserRuntime);
+            }).ToList(),
             Status = f.Kind == AccessibilityFindingKindDto.Violation ? CheckExecutionStatus.Failed : CheckExecutionStatus.NotAssessed
         }).ToList();
         var scores = report.CategoryScores.Select(score => score.Category == FrontendQualityCategory.Accessibility

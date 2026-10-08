@@ -333,18 +333,18 @@
         @if (Snapshot.DeliveryReport is not null || Snapshot.ReadinessReport is not null)
         {
             <div class="db-readiness-grid">
-                @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "quality-review")
-                @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "quality-review")
-                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "quality-review")
-                @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "quality-review")
+                @ReadinessCard("Development", Snapshot.DeliveryReport?.DevelopmentDecision.State, Snapshot.DeliveryReport?.Health.DevelopmentScore, "quality/document")
+                @ReadinessCard("Testing",     Snapshot.DeliveryReport?.TestingDecision.State,     Snapshot.DeliveryReport?.Health.TestingScore,     "quality/document")
+                @ReadinessCard("Release",     Snapshot.DeliveryReport?.ReleaseDecision.State,     Snapshot.DeliveryReport?.Health.ReleaseScore,      "quality/document")
+                @ReadinessCardScore("QA Readiness", Snapshot.ReadinessReport?.OverallScore, "quality/document")
             </div>
         }
         else
         {
             <div class="db-section-empty">
-                Run a Quality Review with Readiness packs selected to populate this section.
+                Run a Document Quality Review with Readiness packs selected to populate this section.
                 <div class="db-empty-actions">
-                    <a href="quality-review" class="db-qa-btn">Quality Review</a>
+                    <a href="quality/document" class="db-qa-btn">Document Quality Review</a>
                 </div>
             </div>
         }
@@ -373,9 +373,9 @@
         else
         {
             <div class="db-section-empty">
-                No risks detected. Run Quality Review to surface governance risks.
+                No risks detected. Run Document Quality Review to surface governance risks.
                 <div class="db-empty-actions">
-                    <a href="quality-review" class="db-qa-btn">Run Quality Review</a>
+                    <a href="quality/document" class="db-qa-btn">Run Document Quality Review</a>
                 </div>
             </div>
         }
@@ -410,7 +410,7 @@
         else
         {
             <div class="db-section-empty">
-                No recommendations yet. Run Quality Review with the QA Auditor or Delivery Readiness pack to generate actionable recommendations.
+                No recommendations yet. Run Document Quality Review with the QA Auditor or Delivery Readiness pack to generate actionable recommendations.
             </div>
         }
     </section>
@@ -428,7 +428,7 @@
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Quality Review — QA Auditor completed</span>
+                            <span class="db-tl-action">Document Quality Review — QA Auditor completed</span>
                             <span class="db-tl-meta">@Snapshot.AuditReport.Health.TotalFindings finding@(Snapshot.AuditReport.Health.TotalFindings != 1 ? "s" : "")</span>
                         </div>
                     </div>
@@ -440,7 +440,7 @@
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Quality Review — Delivery Readiness completed</span>
+                            <span class="db-tl-action">Document Quality Review — Delivery Readiness completed</span>
                             <span class="db-tl-meta">@Snapshot.DeliveryReport.Health.OverallReadinessScore.ToString("0")% overall readiness</span>
                         </div>
                     </div>
@@ -464,7 +464,7 @@
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Quality Review — Constitution Compliance completed</span>
+                            <span class="db-tl-action">Document Quality Review — Constitution Compliance completed</span>
                             <span class="db-tl-meta">@Snapshot.ComplianceReport.Coverage.CompliancePercentage.ToString("0")% compliant</span>
                         </div>
                     </div>
@@ -476,7 +476,7 @@
                     <div class="db-tl-entry">
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
-                            <span class="db-tl-action">Quality Review — QA Readiness completed</span>
+                            <span class="db-tl-action">Document Quality Review — QA Readiness completed</span>
                             <span class="db-tl-meta">@Snapshot.ReadinessReport.OverallScore.ToString("0")% overall</span>
                         </div>
                     </div>
@@ -551,7 +551,7 @@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">Constitution Compliance</span>
-                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
+                    <a href="quality/document" class="db-summary-open" aria-label="Open Document Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.ComplianceReport is { } cr)
                 {
@@ -567,8 +567,8 @@
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Quality Review.
-                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Document Quality Review.
+                        <a href="quality/document" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -577,7 +577,7 @@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">QA Audit</span>
-                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
+                    <a href="quality/document" class="db-summary-open" aria-label="Open Document Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.AuditReport is { } ar)
                 {
@@ -598,8 +598,8 @@
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Quality Review.
-                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Document Quality Review.
+                        <a href="quality/document" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -608,7 +608,7 @@
             <div class="db-analysis-card">
                 <div class="db-analysis-card-header">
                     <span class="db-analysis-card-title">Delivery Readiness</span>
-                    <a href="quality-review" class="db-summary-open" aria-label="Open Quality Review">Open →</a>
+                    <a href="quality/document" class="db-summary-open" aria-label="Open Document Quality Review">Open →</a>
                 </div>
                 @if (Snapshot.DeliveryReport is { } dr)
                 {
@@ -627,8 +627,8 @@
                 else
                 {
                     <div class="db-analysis-empty">
-                        Not run — populate by running Quality Review.
-                        <a href="quality-review" class="db-analysis-run-link">Run now →</a>
+                        Not run — populate by running Document Quality Review.
+                        <a href="quality/document" class="db-analysis-run-link">Run now →</a>
                     </div>
                 }
             </div>
@@ -781,7 +781,7 @@
                 <div class="db-qa-group-label">Analysis</div>
                 <div class="db-qa-buttons">
                     <a href="artifact-traceability"   class="db-qa-btn">Requirements Traceability</a>
-                    <a href="quality-review"          class="db-qa-btn">Quality Review</a>
+                    <a href="quality/document"          class="db-qa-btn">Document Quality Review</a>
                     <a href="frontend-quality-review"  class="db-qa-btn">Frontend Quality Review</a>
                     <a href="api-quality-review"       class="db-qa-btn">API Quality Review</a>
                     <a href="integration-quality-review" class="db-qa-btn">Integration Quality Review</a>
@@ -1116,12 +1116,12 @@
                 list.AddRange(ar.Recommendations
                     .OrderBy(r => r.Priority)
                     .Take(3)
-                    .Select(r => (r.Text, r.Category.ToString(), "quality-review")));
+                    .Select(r => (r.Text, r.Category.ToString(), "quality/document")));
             if (list.Count < 3 && Snapshot.DeliveryReport is { } dr)
                 list.AddRange(dr.Recommendations
                     .OrderBy(r => r.Priority)
                     .Take(3 - list.Count)
-                    .Select(r => (r.Text, r.Category, "quality-review")));
+                    .Select(r => (r.Text, r.Category, "quality/document")));
             return list.Take(3);
         }
     }

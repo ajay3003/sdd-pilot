@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.Standards;
 
 namespace BirkNext.Integrations;
 
@@ -756,6 +757,7 @@ public sealed record IntegrationReviewFinding
     public List<string> Evidence { get; init; } = [];
     public string Recommendation { get; init; } = "";
     public List<string> AffectedIntegrations { get; init; } = [];
+    public List<StandardReference> StandardsReferences { get; init; } = [];
 }
 
 /// <summary>A task or gap for a person — not a defect.</summary>

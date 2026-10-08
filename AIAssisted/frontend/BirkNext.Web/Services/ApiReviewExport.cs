@@ -139,10 +139,11 @@ public static class ApiReviewExport
 
         sb.Append("<section class=\"block\"><h2>Source findings</h2>");
         if (report.Findings.Count == 0) sb.Append("<p>No findings on the completed targets. Blocked/Not tested targets are not passes.</p>");
-        else sb.Append(table(["Severity", "Type", "Endpoint / operation", "Check", "Check result", "Finding", "Evidence", "Recommendation", "Drift"], report.Findings.Select(f => new[]
+        else sb.Append(table(["Severity", "Type", "Endpoint / operation", "Check", "Check result", "Finding", "Evidence", "Recommendation", "Drift", "Standards references"], report.Findings.Select(f => new[]
         {
             badge(f.Severity.ToString()), esc(ApiReviewStatusLabels.AreaLabel(f.Type)), esc(f.Endpoint), esc(f.Check), esc(ApiReviewStatusLabels.FindingCheckLabel(f)), $"<strong>{esc(f.Title)}</strong><br/>{esc(f.Description)}",
             esc(string.Join("; ", f.Evidence)), esc(f.Recommendation), esc(f.Drift?.ToString() ?? "—"),
+            esc(string.Join("; ", f.StandardsReferences.Select(r => $"{r.StandardName} {r.ReferenceId} ({r.MappingType}; {r.EvidenceScope})"))),
         })));
         sb.Append("</section>\n");
 

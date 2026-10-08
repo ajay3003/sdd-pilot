@@ -654,7 +654,7 @@
                 {
                     <div class="iqr-tablewrap" tabindex="0" role="region" aria-label="Findings">
                         <table class="iqr-table" data-testid="iqr-findings-table">
-                            <thead><tr><th scope="col">Severity</th><th scope="col">Domain</th><th scope="col">Integration / topic</th><th scope="col">Finding</th><th scope="col">Evidence</th><th scope="col">Recommendation</th></tr></thead>
+                            <thead><tr><th scope="col">Severity</th><th scope="col">Domain</th><th scope="col">Integration / topic</th><th scope="col">Finding</th><th scope="col">Evidence</th><th scope="col">Recommendation</th><th scope="col">Standards</th></tr></thead>
                             <tbody>
                                 @foreach (var f in result.Findings)
                                 {
@@ -665,6 +665,7 @@
                                         <td><strong>@f.Title</strong></td>
                                         <td>@string.Join(" ", f.Evidence)</td>
                                         <td>@f.Recommendation</td>
+                                        <td><StandardReferences References="f.StandardsReferences" /></td>
                                     </tr>
                                 }
                             </tbody>

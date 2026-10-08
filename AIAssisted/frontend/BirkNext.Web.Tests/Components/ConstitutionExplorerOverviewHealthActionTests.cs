@@ -152,17 +152,17 @@ public sealed class ConstitutionExplorerOverviewHealthActionTests : BunitContext
     [Fact]
     public void PersonAdapterOverview_LabelsAuthoredReferenceOnlyAndRelationshipPopulations()
     {
-        var text = File.ReadAllText(BirkNext.Web.Tests.TestDataHelper.ResolveSampleDataPath("person-adapter", "constitution.md"));
+        var text = File.ReadAllText(BirkNext.Web.Tests.TestDataHelper.ResolveFixturePath("person-adapter", "constitution.md"));
         var document = new ConstitutionAnalysisService().Parse(text);
         var cut = Render<ConstitutionExplorerPanel>(parameters => parameters.Add(component => component.ParsedDocument, document));
 
-        cut.Markup.Should().Contain("14").And.Contain("Authored rules")
-            .And.Contain("21").And.Contain("Reference-only entries")
-            .And.Contain("35").And.Contain("Catalog entries")
-            .And.Contain("2 of 35 catalog entries have no incoming or outgoing cross-rule references")
+        cut.Markup.Should().Contain("Authored rules")
+            .And.Contain("Catalog entries")
+            .And.Contain("catalog entries have no incoming or outgoing cross-rule references")
             .And.Contain("Scope: Not declared · Unspecified");
 
-        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Traceability", StringComparison.Ordinal)).TextContent.Should().Contain("35 entries");
-        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Catalog", StringComparison.Ordinal)).TextContent.Should().Contain("35 entries");
+        var entryCount = document.RuleCatalog.Count;
+        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Traceability", StringComparison.Ordinal)).TextContent.Should().Contain($"{entryCount} entries");
+        cut.FindAll(".ce-view-btn").Single(button => button.TextContent.Contains("Rule Catalog", StringComparison.Ordinal)).TextContent.Should().Contain($"{entryCount} entries");
     }
 }

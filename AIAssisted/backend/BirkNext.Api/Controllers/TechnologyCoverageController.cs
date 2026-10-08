@@ -15,18 +15,20 @@ namespace BirkNext.Api.Controllers;
 public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegrationCatalogService catalog) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<ProjectTechnologyCoverage>> Get([FromQuery] string environmentId, CancellationToken ct)
+    public async Task<ActionResult<ProjectTechnologyCoverage>> Get([FromQuery] string? environmentId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
-        var latest = (await sources.ListSourceAnalysisAsync(environmentId, 1, ct)).FirstOrDefault();
+        // Source technology comes from the workspace's current source snapshot and needs no Target Environment. Configured integrations
+        // belong to a target: without one there are none to list (not "none configured").
+        var latest = (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
+        var hasTarget = !string.IsNullOrWhiteSpace(environmentId);
         // No environment type: a read-only check never upgrades or applies a template.
-        var configured = await catalog.GetAsync(environmentId, null, null, ct);
+        var configured = hasTarget ? await catalog.GetAsync(environmentId!, null, null, ct) : new BirkNext.Integrations.IntegrationCatalog();
         var notices = new List<string>();
-        if (latest is null) notices.Add("No source archive has been analyzed for this environment.");
+        if (latest is null) notices.Add("No source archive has been analyzed yet.");
         else if (latest.TechnologyCoverage is null) notices.Add("The latest snapshot was analyzed before technology inventory existed; analyze the source again to see it.");
         return Ok(new ProjectTechnologyCoverage
         {
-            EnvironmentId = environmentId, SourceSnapshotId = latest?.Id, SourceArchive = latest?.Archive.FileName, AnalyzedAt = latest?.AnalyzedAt,
+            EnvironmentId = environmentId ?? "", SourceSnapshotId = latest?.Id, SourceArchive = latest?.Archive.FileName, AnalyzedAt = latest?.AnalyzedAt,
             Source = latest?.TechnologyCoverage,
             ConfiguredIntegrations = configured.Integrations.Where(i => i.Enabled).Select(i => IntegrationTechnology.Map(i.Kind, i.DisplayName, i.SystemName))
                 .Concat(configured.Platforms.Where(p => p.Enabled).Select(p => IntegrationTechnology.Map(p.Kind, p.Name)))

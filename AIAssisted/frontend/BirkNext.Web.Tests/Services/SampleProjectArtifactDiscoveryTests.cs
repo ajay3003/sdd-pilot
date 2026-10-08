@@ -220,23 +220,21 @@ public sealed class SampleProjectArtifactDiscoveryTests
 
     // ── Real SampleData projects (regression fixtures; no project-specific code) ─────────────────────────────────
 
-    [Theory]
-    [InlineData("Meldingsutvekslermottak")]
-    [InlineData("Skole")]
-    [InlineData("SkoleAdapter")]
-    public async Task NestedSpecKitSampleProjects_FindConstitutionAndSpecification(string slug)
+        [Theory]
+    [InlineData("project-a")]
+    [InlineData("project-b")]
+    public async Task NestedProjectFixtures_FindConstitutionAndSpecification(string slug)
     {
-        var backend = FakeBackend.FromSampleData(slug);
-        if (backend is null) return; // SampleData folder not present in this checkout
+        var backend = new FakeBackend().Add(slug, new Dictionary<string, string>
+        {
+            [".specify/memory/constitution.md"] = "# Fixture Constitution",
+            ["specs/001-feature/spec.md"] = "# Fixture Specification",
+            ["specs/001-feature/checklists/requirements.md"] = "# Requirements",
+        });
         var result = await backend.Discovery().DiscoverAsync(slug);
-
-        var constitution = result!.Role(WorkspaceArtifactType.Constitution);
-        constitution.State.Should().Be(SampleRoleState.Detected);
-        constitution.Primary!.RelativePath.Should().EndWith(".specify/memory/constitution.md");
-        var spec = result.Role(WorkspaceArtifactType.Specification);
-        spec.State.Should().Be(SampleRoleState.Detected);
-        spec.Primary!.RelativePath.Should().MatchRegex(@"/specs/001-[^/]+/spec\.md$");
-        spec.Primary.Confidence.Should().Be(ArtifactConfidence.Confirmed);
+        result!.Role(WorkspaceArtifactType.Constitution).State.Should().Be(SampleRoleState.Detected);
+        result.Role(WorkspaceArtifactType.Constitution).Primary!.RelativePath.Should().EndWith(".specify/memory/constitution.md");
+        result.Role(WorkspaceArtifactType.Specification).Primary!.RelativePath.Should().MatchRegex(@"(^|/)specs/001-[^/]+/spec\.md$");
         result.Unclassified.Should().ContainSingle(d => d.RelativePath.EndsWith("checklists/requirements.md"));
         result.NeedsReview.Should().BeEmpty();
         result.Roles.Where(r => r.Role is WorkspaceArtifactType.Plan or WorkspaceArtifactType.Tasks or WorkspaceArtifactType.DataModel)
@@ -244,34 +242,21 @@ public sealed class SampleProjectArtifactDiscoveryTests
     }
 
     [Fact]
-    public async Task OriginalSampleProjects_StillResolveTheirCanonicalFiles()
+    public async Task ProjectFixtures_ResolveTheirCanonicalFiles()
     {
-        var root = FakeBackend.SampleDataRoot();
-        if (root is null) return;
-        var checkedProjects = 0;
-        foreach (var dir in Directory.GetDirectories(root))
+        var docs = new Dictionary<string, string> { ["constitution.md"] = Constitution, ["spec.md"] = Spec,
+            ["data-model.md"] = "# Data Model\n\n## Entities\n", ["plan.md"] = Plan, ["tasks.md"] = Tasks };
+        var result = await new FakeBackend().Add("fixture", docs).Discovery().DiscoverAsync("fixture");
+        foreach (var (file, role) in new[] { ("constitution.md", WorkspaceArtifactType.Constitution), ("spec.md", WorkspaceArtifactType.Specification),
+                     ("data-model.md", WorkspaceArtifactType.DataModel), ("plan.md", WorkspaceArtifactType.Plan), ("tasks.md", WorkspaceArtifactType.Tasks) })
         {
-            var slug = Path.GetFileName(dir);
-            var canonical = new[] { ("constitution.md", WorkspaceArtifactType.Constitution), ("spec.md", WorkspaceArtifactType.Specification),
-                ("data-model.md", WorkspaceArtifactType.DataModel), ("plan.md", WorkspaceArtifactType.Plan), ("tasks.md", WorkspaceArtifactType.Tasks) }
-                .Where(c => File.Exists(Path.Combine(dir, c.Item1))).ToList();
-            if (canonical.Count == 0) continue;
-
-            var result = await FakeBackend.FromSampleData(slug)!.Discovery().DiscoverAsync(slug);
-            foreach (var (file, role) in canonical)
-            {
-                var summary = result!.Role(role);
-                summary.State.Should().Be(SampleRoleState.Detected, $"{slug}/{file}");
-                summary.Primary!.RelativePath.Should().Be(file);
-                summary.Primary.Confidence.Should().Be(ArtifactConfidence.Confirmed, $"{slug}/{file}");
-            }
-            result!.NeedsReview.Should().BeEmpty(slug);
-            checkedProjects++;
+            result!.Role(role).State.Should().Be(SampleRoleState.Detected, file);
+            result.Role(role).Primary!.RelativePath.Should().Be(file);
+            result.Role(role).Primary.Confidence.Should().Be(ArtifactConfidence.Confirmed, file);
         }
-        checkedProjects.Should().BeGreaterThan(0);
+        result!.NeedsReview.Should().BeEmpty();
     }
-
-    [Fact]
+[Fact]
     public async Task LargeProject_ClassifiesHundredDocumentsQuickly()
     {
         var docs = new Dictionary<string, string>();
@@ -308,26 +293,6 @@ public sealed class SampleProjectArtifactDiscoveryTests
         public SampleProjectArtifactDiscoveryService Discovery() => new(Api());
         public SampleProjectDocumentResolver Resolver(ISampleProjectArtifactDiscovery? discovery = null) =>
             new(Api(), Mock.Of<IWorkspaceSessionService>(), discovery ?? Discovery());
-
-        internal static string? SampleDataRoot()
-        {
-            for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            {
-                var candidate = Path.Combine(dir.FullName, "SampleData");
-                if (Directory.Exists(candidate)) return candidate;
-            }
-            return null;
-        }
-
-        internal static FakeBackend? FromSampleData(string slug)
-        {
-            var root = SampleDataRoot();
-            if (root is null || !Directory.Exists(Path.Combine(root, slug))) return null;
-            var dir = Path.Combine(root, slug);
-            var docs = Directory.EnumerateFiles(dir, "*.md", SearchOption.AllDirectories)
-                .ToDictionary(f => Path.GetRelativePath(dir, f).Replace(Path.DirectorySeparatorChar, '/'), File.ReadAllText);
-            return new FakeBackend().Add(slug, docs);
-        }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -367,3 +332,5 @@ public sealed class SampleProjectArtifactDiscoveryTests
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, mediaType) });
     }
 }
+
+

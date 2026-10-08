@@ -262,7 +262,7 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         // An explicitly chosen snapshot is a Source Analysis snapshot (exact id); without a choice only a snapshot uploaded for this
         // integration by an earlier version is used — a standalone Source Analysis snapshot is never bound silently.
         var selected = snapshotId is not { } id ? snapshots.FirstOrDefault() : snapshots.FirstOrDefault(s => s.Id == id);
-        if (snapshotId is { } chosenId && selected is null && await sources.FindSourceAnalysisAsync(environmentId, chosenId, ct) is { } chosen)
+        if (snapshotId is { } chosenId && selected is null && await sources.FindSourceAnalysisAsync(chosenId, ct) is { } chosen)
             selected = chosen with { IntegrationId = integrationId };
         var manifest = snapshotId is not null && selected is null
             ? ActiveCdcContractManifestService.Evaluate(scenario, null, null) with { Detail = "The selected source snapshot does not belong to this integration." }

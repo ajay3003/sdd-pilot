@@ -108,22 +108,33 @@ public class LibraryPageModelBuilderTests
     }
 
     [Fact]
-    public async Task SampleProjects_WithRealSampleData_DiscoversDynamically()
+    public async Task SampleProjects_DiscoversProjectsFromConfiguredFixtureDirectory()
     {
-        // Create config without explicit base directory to trigger auto-discovery
-        var config = new ConfigurationBuilder().Build();
+        var root = Path.Combine(Path.GetTempPath(), "BirkNext.Api.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "ProjectA"));
+        Directory.CreateDirectory(Path.Combine(root, "ProjectB"));
+        File.WriteAllText(Path.Combine(root, "ProjectA", "spec.md"), "# Project A specification");
+        File.WriteAllText(Path.Combine(root, "ProjectB", "plan.md"), "# Project B plan");
+        try
+        {
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection([new KeyValuePair<string, string?>("SampleProjects:BaseDirectory", root)])
+                .Build();
+            var catalog = new SampleProjectCatalogService(config);
+            var builder = new SampleProjectsPageModelBuilder(catalog, NullLogger<SampleProjectsPageModelBuilder>.Instance);
 
-        var catalog = new SampleProjectCatalogService(config);
-        var builder = new SampleProjectsPageModelBuilder(
-            catalog,
-            NullLogger<SampleProjectsPageModelBuilder>.Instance);
+            var model = await builder.BuildPageModelAsync();
 
-        var model = await builder.BuildPageModelAsync();
-
-        // Should discover actual projects from SampleData directory
-        Assert.True(model.Items.Count > 0, $"Expected to discover projects, but found {model.Items.Count}");
-        Assert.Equal(LibraryStatus.Ready, model.ReadinessStatus);
-        Assert.True(model.Summary.HasAvailableActions);
+            Assert.Equal(LibraryStatus.Ready, model.ReadinessStatus);
+            Assert.Equal(2, model.Items.Count);
+            Assert.Contains(model.Items, item => item.Name == "ProjectA");
+            Assert.Contains(model.Items, item => item.Name == "ProjectB");
+            Assert.True(model.Summary.HasAvailableActions);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

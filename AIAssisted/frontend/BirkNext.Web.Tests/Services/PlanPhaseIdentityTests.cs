@@ -220,19 +220,14 @@ public sealed class PlanPhaseIdentityTests
 
     public static TheoryData<string> AllRepositoryPlans()
     {
-        var data = new TheoryData<string>();
-        var root = Path.GetFullPath(TestDataHelper.ResolveSampleDataPath(".."));
-        foreach (var dir in new[] { "SampleData", "specs" })
-            foreach (var file in Directory.GetFiles(Path.Combine(root, dir), "plan.md", SearchOption.AllDirectories).Order())
-                data.Add(Path.GetRelativePath(root, file));
-        return data;
+        return new TheoryData<string> { "autorisasjon/plan.md", "person-module/plan.md" };
     }
 
     [Theory]
     [MemberData(nameof(AllRepositoryPlans))]
     public void EveryRepositoryPlan_BuildsSemanticModelWithoutLosingPhases(string relativePath)
     {
-        var path = TestDataHelper.ResolveSampleDataPath("..", relativePath);
+        var path = TestDataHelper.ResolveFixturePath(relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries));
         var doc = _svc.Parse(File.ReadAllText(path));
 
         var model = PlanAnalysisService.BuildSemanticModel(doc);
@@ -244,7 +239,7 @@ public sealed class PlanPhaseIdentityTests
     [Fact]
     public void Plan008_LetteredGroups_AllRetained()
     {
-        var path = TestDataHelper.ResolveSampleDataPath("..", "specs", "008-traceability-first", "plan.md");
+        var path = TestDataHelper.ResolveFixturePath("..", "specs", "008-traceability-first", "plan.md");
         var model = PlanAnalysisService.BuildSemanticModel(_svc.Parse(File.ReadAllText(path)));
 
         model.PhaseGroups.Select(g => g.PhaseKey).Should()
@@ -256,7 +251,7 @@ public sealed class PlanPhaseIdentityTests
     [Fact]
     public void PersonModule_LetteredPhases_AllRetained()
     {
-        var path = TestDataHelper.ResolveSampleDataPath("person-module", "plan.md");
+        var path = TestDataHelper.ResolveFixturePath("person-module", "plan.md");
         var model = PlanAnalysisService.BuildSemanticModel(_svc.Parse(File.ReadAllText(path)));
 
         model.PhaseGroups.Select(g => g.PhaseKey).Should()

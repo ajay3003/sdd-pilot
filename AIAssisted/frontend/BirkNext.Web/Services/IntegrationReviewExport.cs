@@ -217,9 +217,10 @@ public static class IntegrationReviewExport
 
         sb.Append("<section class=\"block\"><h2>Findings</h2>");
         sb.Append(result.Findings.Count == 0 ? "<p>No findings on the assessed checks. Not-assessed checks are listed above, never as passes.</p>" :
-            table(["Severity", "Domain", "Subject", "Finding", "Evidence", "Recommendation", "Affected"], result.Findings.Select(f => new[]
+            table(["Severity", "Domain", "Subject", "Finding", "Evidence", "Recommendation", "Standards references", "Affected"], result.Findings.Select(f => new[]
             {
                 badge(f.Severity.ToString()), esc(IntegrationReviewLabels.Domain(f.Domain)), esc(f.Subject), esc(f.Title), esc(string.Join("; ", f.Evidence)), esc(f.Recommendation),
+                esc(string.Join("; ", f.StandardsReferences.Select(r => $"{r.StandardName} {r.ReferenceId} ({r.MappingType}; {r.EvidenceScope})"))),
                 f.AffectedIntegrations.Count.ToString(),
             })));
         sb.Append("</section>\n");

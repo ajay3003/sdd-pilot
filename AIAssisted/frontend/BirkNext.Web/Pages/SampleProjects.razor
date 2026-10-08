@@ -81,9 +81,7 @@
                 }
                 else
                 {
-                    <span>No SampleData folder found. Expected location: <code>&lt;repo-root&gt;/SampleData</code>.</span>
-                    <br/>
-                    <span>To override, set <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</span>
+                    <span>No sample-project directory is configured. Set <code>SampleProjects:BaseDirectory</code> in the application configuration, or import a project ZIP.</span>
                 }
             </p>
         </div>
@@ -93,7 +91,7 @@
         @if (_meta is not null)
         {
             <div class="sp-meta-bar">
-                <span class="sp-meta-label">@(_meta.Source == "config" ? "Configured" : "Auto-discovered")</span>
+                <span class="sp-meta-label">Configured sample projects</span>
                 <code class="sp-meta-path">@_meta.ResolvedPath</code>
             </div>
         }
@@ -668,7 +666,7 @@
         new("Open Data Model Explorer", "data-model-explorer"),
         new("Open Plan Explorer", "plan-explorer"),
         new("Open Task Explorer", "task-explorer"),
-        new("Open Quality Review", "quality-review"),
+        new("Open Document Quality Review", "quality/document"),
         new("Open Dashboard", "dashboard"),
     ];
 

@@ -46,7 +46,7 @@ public sealed class PlanExplorerPhaseGroupingTests : BunitContext
     [Fact]
     public void LabelledPhases_RenderOwnLabel_NotPre()
     {
-        var path = TestDataHelper.ResolveSampleDataPath("person-module", "plan.md");
+        var path = TestDataHelper.ResolveFixturePath("person-module", "plan.md");
         var cut = RenderPhases(File.ReadAllText(path));
 
         cut.FindAll(".pe-phase-item").Should().HaveCount(6);
@@ -58,7 +58,7 @@ public sealed class PlanExplorerPhaseGroupingTests : BunitContext
     [Fact]
     public void Plan008_RendersAllGroups()
     {
-        var path = TestDataHelper.ResolveSampleDataPath("..", "specs", "008-traceability-first", "plan.md");
+        var path = TestDataHelper.ResolveFixturePath("..", "specs", "008-traceability-first", "plan.md");
         var cut = RenderPhases(File.ReadAllText(path));
 
         cut.FindAll(".pe-phase-item").Should().HaveCount(7);

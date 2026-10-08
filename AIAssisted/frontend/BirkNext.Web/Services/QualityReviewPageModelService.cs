@@ -4,7 +4,7 @@ using System.Net.Http.Json;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Loads Quality Review page models from the backend API.
+/// Loads Document Quality Review page models from the backend API.
 /// Eliminates duplicate readiness, pack selection, and prerequisite logic.
 /// </summary>
 public interface IQualityReviewPageModelService
@@ -32,14 +32,14 @@ public class QualityReviewPageModelService : IQualityReviewPageModelService
     {
         try
         {
-            _logger.LogInformation("Loading Quality Review page model");
+            _logger.LogInformation("Loading Document Quality Review page model");
             var response = await _httpClient.GetFromJsonAsync<QualityReviewPageModel>(
                 "api/quality-review-page-model/quality-review");
             return response;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error loading Quality Review page model");
+            _logger.LogError(ex, "Error loading Document Quality Review page model");
             return null;
         }
     }

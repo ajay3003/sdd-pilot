@@ -51,15 +51,35 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
     }
 
     [Fact]
-    public void SourceAnalysis_WithoutActiveEnvironment_AsksForOne_AndOffersNoUploadThatCouldOnlyFail()
+    public void SourceAnalysis_WithoutActiveEnvironment_ListsAndUploadsSource_TheTargetIsOnlyRuntimeContext()
     {
         Setup(NoActiveEnvironment());
 
         var cut = Render<SourceAnalysis>();
 
-        cut.WaitForElement("[data-testid=sa-no-target]").TextContent.Should().Contain("Select a target environment");
-        cut.FindAll("[data-testid=sa-upload], [data-testid=sa-empty-upload]").Should().BeEmpty();
-        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never, "no request with an empty environment id");
+        cut.WaitForElement("[data-testid=sa-empty-upload]");
+        cut.FindAll("[data-testid=sa-no-target]").Should().BeEmpty("source snapshots need no Target Environment");
+        cut.Find("[data-testid=sa-target-state]").TextContent.Should().Be("Not selected");
+        cut.Find("[data-testid=sa-target-context]").TextContent.Should().Contain("Runtime-dependent evidence").And.Contain("Not available");
+        _api.Verify(a => a.ListSourceSnapshotsAsync("", It.IsAny<CancellationToken>()), Times.Once, "the workspace's snapshots are listed without a target");
+    }
+
+    [Fact]
+    public void SourceAnalysis_WithoutActiveEnvironment_ShowsTheCurrentSnapshot()
+    {
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = Guid.NewGuid(), IntegrationId = "source-analysis", Archive = new SourceArchive("shop.zip", new string('a', 64), 3),
+            AnalyzedAt = DateTimeOffset.UtcNow, Status = SourceAnalysisStatus.Ready,
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-aaaaaaaaaaaaaaaa", ArchiveFileName = "shop.zip", ArchiveSha256 = new string('a', 64), ImportedAt = DateTimeOffset.UtcNow },
+        };
+        Setup(NoActiveEnvironment());
+        _api.Setup(a => a.ListSourceSnapshotsAsync("", It.IsAny<CancellationToken>())).ReturnsAsync([snapshot]);
+
+        var cut = Render<SourceAnalysis>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=source-snapshot]").GetAttribute("disabled").Should().BeNull());
+        cut.Markup.Should().Contain("import-aaaaaaaaaaaaaaaa").And.NotContain("Select a target environment");
     }
 
     [Fact]

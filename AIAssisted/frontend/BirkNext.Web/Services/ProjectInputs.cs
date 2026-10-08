@@ -39,9 +39,9 @@ public sealed record ProjectInputs(ProjectInput Documents, ProjectInput Source, 
 
 /// <summary>
 /// Derives the three inputs from their existing owners — no new state:
-/// documents from the current workspace (<see cref="CurrentWorkspaceSnapshot"/>), source from the active environment's latest
+/// documents from the current workspace (<see cref="CurrentWorkspaceSnapshot"/>), source from the workspace's latest
 /// Source Analysis snapshot (<see cref="ProjectTechnologyCoverage"/>), target from the active Target Environment profile.
-/// Source snapshots are stored per Target Environment, so a source needs an active environment even when no runtime target URL is set.
+/// Source needs no Target Environment: a target is runtime context only, so the source input never depends on one.
 /// </summary>
 public static class ProjectInputPresentation
 {
@@ -52,7 +52,7 @@ public static class ProjectInputPresentation
 
     public static ProjectInputs Build(CurrentWorkspaceSnapshot workspace, FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage,
         bool environmentKnown = true) =>
-        new(Documents(workspace), Source(environment, coverage, environmentKnown), Target(environment, environmentKnown));
+        new(Documents(workspace), Source(coverage, environmentKnown), Target(environment, environmentKnown));
 
     public static ProjectInput Documents(CurrentWorkspaceSnapshot workspace)
     {
@@ -84,24 +84,19 @@ public static class ProjectInputPresentation
                 "Open Sample Projects", SampleProjectsRoute, facts);
     }
 
-    public static ProjectInput Source(FrontendAnalysisProfile? environment, ProjectTechnologyCoverage? coverage, bool environmentKnown = true)
+    /// <summary>The source input. <paramref name="sourceKnown"/> is false when the source state could not be read; a missing coverage
+    /// that was read is "not added". No Target Environment is needed for source.</summary>
+    public static ProjectInput Source(ProjectTechnologyCoverage? coverage, bool sourceKnown = true)
     {
         const string title = "Source";
         const string requirement = "Optional · for source-based reviews";
-        if (!environmentKnown)
+        if (!sourceKnown)
             return new(ProjectInputKind.Source, ProjectInputStatus.Unknown, title, requirement, "Unknown",
                 "Source state could not be read.", "Open Source Analysis", SourceAnalysisRoute, []);
-        if (environment is null)
+        if (coverage?.SourceSnapshotId is null)
             return new(ProjectInputKind.Source, ProjectInputStatus.Absent, title, requirement, "Not added",
-                "Source snapshots are kept per Target Environment: select or create one (no application URL needed), then import the project ZIP — its source is analyzed in the same import.",
+                "No source analyzed yet. Import the project ZIP — its source becomes a snapshot in the same import, no Target Environment needed — for Technology Coverage, Dependency and Pipeline Review.",
                 "Open Source Analysis", SourceAnalysisRoute, []);
-        if (coverage is null)
-            return new(ProjectInputKind.Source, ProjectInputStatus.Unknown, title, requirement, "Unknown",
-                $"The source snapshots of {environment.Name} could not be read.", "Open Source Analysis", SourceAnalysisRoute, []);
-        if (coverage.SourceSnapshotId is null)
-            return new(ProjectInputKind.Source, ProjectInputStatus.Absent, title, requirement, "Not added",
-                $"No source analyzed for {environment.Name}. Import the project ZIP (its source becomes a snapshot in the same import) for Technology Coverage, Dependency and Pipeline Review.",
-                "Import Project", ProjectImportRoute, []);
 
         var facts = new List<string>();
         if (coverage.SourceArchive is { Length: > 0 } archive) facts.Add(archive);
@@ -114,7 +109,7 @@ public static class ProjectInputPresentation
                     : "The latest snapshot predates current CI/CD evidence. Analyze the source again.",
                 "Analyze again", SourceAnalysisRoute, facts);
         return new(ProjectInputKind.Source, ProjectInputStatus.Ready, title, requirement, "Analyzed",
-            $"Source snapshot of {environment.Name}.", "Open Source Analysis", SourceAnalysisRoute, facts);
+            "Current source snapshot of the workspace.", "Open Source Analysis", SourceAnalysisRoute, facts);
     }
 
     public static ProjectInput Target(FrontendAnalysisProfile? environment, bool environmentKnown = true)

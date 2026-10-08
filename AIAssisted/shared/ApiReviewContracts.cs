@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using BirkNext.LocalHttpsProxy;
+using BirkNext.Standards;
 
 namespace BirkNext.ApiReview;
 
@@ -372,6 +373,7 @@ public sealed record ApiReviewFinding
     public List<string> Evidence { get; init; } = [];
     public string Recommendation { get; init; } = "";
     public ApiReviewDriftClassification? Drift { get; init; }
+    public List<StandardReference> StandardsReferences { get; init; } = [];
 }
 
 public sealed record ApiReviewContractSummary

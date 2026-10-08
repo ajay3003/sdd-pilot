@@ -89,15 +89,12 @@ public static class ProjectImportPresentation
         }).ToList();
 
     /// <summary>The source part before the import runs.</summary>
-    public static ProjectImportSourceRow SourcePreview(ProjectImportSourceDetection source, bool hasTargetEnvironment, bool sourceAnalysisAvailable = true)
+    public static ProjectImportSourceRow SourcePreview(ProjectImportSourceDetection source, bool sourceAnalysisAvailable = true)
     {
         if (!source.Detected)
             return new(ProjectImportTone.Neutral, "No source detected", "This archive has no source Source Analysis reads. Project documents can still be imported.");
         if (!sourceAnalysisAvailable)
             return new(ProjectImportTone.Partial, "Source detected", "Source Analysis is turned off, so no source snapshot will be created.");
-        if (!hasTargetEnvironment)
-            return new(ProjectImportTone.Partial, "Source detected — Target Environment needed",
-                "Source snapshots belong to a Target Environment. Import now and create the snapshot after selecting one (no new upload needed), or select one first.");
         return new(ProjectImportTone.Available, "Source detected", $"{Count(source.SourceFiles, "source file")} — a new Source Analysis snapshot will be created.");
     }
 
@@ -109,10 +106,18 @@ public static class ProjectImportPresentation
             source.SnapshotStatus == SourceAnalysisStatus.Ready ? "Snapshot created" : "Snapshot created — partial coverage",
             "A new immutable Source Analysis snapshot was created from this archive. Created is not reviewed: run the source-based reviews next."),
         ProjectImportSourceState.Reused => new(source.SnapshotStatus == SourceAnalysisStatus.Ready ? ProjectImportTone.Available : ProjectImportTone.Partial,
-            "Current snapshot reused", "The same archive is already the current Source Analysis snapshot of this Target Environment, so it was not analyzed again."),
+            "Current snapshot reused", "The same archive is already the current Source Analysis snapshot, so it was not analyzed again."),
         ProjectImportSourceState.NotCreated => new(ProjectImportTone.Partial, "Snapshot not created", source.Message ?? "Source was detected, but no snapshot was created."),
         _ => new(ProjectImportTone.Partial, "Snapshot not created — retry available", source.Message ?? "Source analysis did not complete. No snapshot was created."),
     };
+
+    /// <summary>
+    /// The Target Environment beside an import. Never a prerequisite or a note about the import: source snapshots and documents need no
+    /// target; a target is runtime context that only deployed/runtime reviews use, and it can be added or changed later without re-importing.
+    /// </summary>
+    public static ProjectImportSourceRow TargetEnvironment(bool configured) => configured
+        ? new(ProjectImportTone.Neutral, "Selected", "Runtime reviews use it. It does not own or change the source snapshot.")
+        : new(ProjectImportTone.Neutral, "Not configured", "Required only for runtime reviews (Frontend, API and Integration Quality Review). Add one later without importing again.");
 
     /// <summary>Research artifacts are kept and counted, but no explorer opens them.</summary>
     private static bool HasExplorer(WorkspaceArtifactType role) => role != WorkspaceArtifactType.Research;

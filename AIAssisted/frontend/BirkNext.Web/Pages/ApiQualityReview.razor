@@ -1023,6 +1023,7 @@
                                         <div><dt>Check</dt><dd>@f.Check · <span class="aqr-state aqr-state-@f.Result.ToString().ToLowerInvariant()" data-testid="aqr-finding-check-result">@ApiReviewStatusLabels.FindingCheckLabel(f)</span></dd></div>
                                         @if (f.Evidence.Count > 0) { <div><dt>Evidence</dt><dd class="aqr-mono aqr-evidence">@string.Join(" · ", f.Evidence.Take(8))</dd></div> }
                                         <div><dt>Recommendation</dt><dd>@f.Recommendation</dd></div>
+                                        @if (f.StandardsReferences.Count > 0) { <div><dt>Standards</dt><dd><StandardReferences References="f.StandardsReferences" /></dd></div> }
                                         @if (f.Result == ApiReviewCheckResult.ManualReview) { <div><dt>Manual verification</dt><dd>Required — this item was not verified automatically.</dd></div> }
                                         @if (f.Drift is { } drift) { <div><dt>Contract drift</dt><dd>@ApiReviewStatusLabels.DriftLabel(drift)</dd></div> }
                                     </dl>

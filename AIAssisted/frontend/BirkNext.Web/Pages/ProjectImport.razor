@@ -71,7 +71,7 @@
                 {
                     Phase.Validating => $"Validating {_fileName} and finding project documents and source…",
                     Phase.Classifying => $"Archive accepted. Detecting document roles: {_classified} of {_classifyTotal} Markdown documents…",
-                    _ => _preview?.Source.Detected == true && _hasTarget ? "Activating project documents and analyzing source… Source analysis can take up to a minute for a large project." : "Activating project documents…",
+                    _ => _preview?.Source.Detected == true ? "Activating project documents and analyzing source… Source analysis can take up to a minute for a large project." : "Activating project documents…",
                 })
             </p>
             @if (_phase == Phase.Classifying && _classifyTotal > 0)
@@ -94,8 +94,9 @@
 
         <div class="pi-columns">
             <ProjectImportArtifacts Discovery="discovery" />
-            <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source, _hasTarget)" />
+            <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source)" />
         </div>
+        @TargetEnvironmentFact
 
         @if (Warnings(preview, discovery) is { Count: > 0 } warnings)
         {
@@ -115,7 +116,6 @@
         <div class="pi-actions">
             <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery))" @onclick="ImportAsync">Import project</button>
             <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
-            @if (preview.Source.Detected && !_hasTarget) { <a href="@NavigationCatalog.TargetEnvironmentsRoute" data-testid="pi-select-target">Select a Target Environment</a> }
         </div>
     }
     else if (_phase == Phase.Result && _preview is { } done && _discovery is { } doneDiscovery)
@@ -146,13 +146,14 @@
                     {
                         <div class="pi-actions">
                             <button type="button" class="btn-secondary" data-testid="pi-retry-source" disabled="@_retrying" @onclick="RetrySourceAsync">Create source snapshot</button>
-                            @if (source.Code == "NO_ACTIVE_ENVIRONMENT") { <a href="@NavigationCatalog.TargetEnvironmentsRoute">Select a Target Environment</a> }
                         </div>
                         <p class="pi-muted">The archive stays staged until @(_commit.StagedUntil?.ToLocalTime().ToString("HH:mm") ?? "it expires"), so no new upload is needed.</p>
                     }
                 </ProjectImportSource>
             }
         </div>
+
+        @TargetEnvironmentFact
 
         <div class="pi-actions" data-testid="pi-next">
             @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
@@ -173,8 +174,8 @@
     private ProjectImportArtifactDiscovery? _discovery;
     private ProjectImportCommitResult? _commit;
     private SourceUploadFailure? _failure;
+    /// <summary>Shown beside the import only; never sent with it and never a condition for the source snapshot.</summary>
     private bool _hasTarget;
-    private string? _environmentId;
     private bool _saveWarning;
     private bool _retrying;
     private string? _focusId;
@@ -186,10 +187,9 @@
         try
         {
             var context = await ContextFactory.GetActiveContextAsync();
-            _environmentId = context.ActiveProfileOrNull?.Id;
+            _hasTarget = !string.IsNullOrWhiteSpace(context.ActiveProfileOrNull?.Id);
         }
-        catch (Exception) { _environmentId = null; }
-        _hasTarget = !string.IsNullOrWhiteSpace(_environmentId);
+        catch (Exception) { _hasTarget = false; }
     }
 
     private async Task ChooseAsync(InputFileChangeEventArgs args)
@@ -226,10 +226,9 @@
     {
         if (_preview is not { } preview || _discovery is not { } discovery) return;
         _phase = Phase.Importing;
-        await LoadEnvironmentAsync();
         ProjectImportCommitResult? commit;
         SourceUploadFailure? error;
-        try { (commit, error) = await Api.CommitAsync(preview.StagingId, _environmentId); }
+        try { (commit, error) = await Api.CommitAsync(preview.StagingId); }
         catch (HttpRequestException ex) { (commit, error) = (null, new SourceUploadFailure("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was activated; retry.")); }
         catch (TaskCanceledException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_TIMEOUT", "upload", "The import did not finish before the request timed out. Nothing was activated in this workspace; retry — the same archive reuses a snapshot that was already created.")); }
         if (commit is null)
@@ -253,10 +252,9 @@
     {
         if (_preview is not { } preview || _commit is null) return;
         _retrying = true;
-        await LoadEnvironmentAsync();
         try
         {
-            var (commit, error) = await Api.CommitAsync(preview.StagingId, _environmentId);
+            var (commit, error) = await Api.CommitAsync(preview.StagingId);
             if (commit is not null)
             {
                 _commit = commit;
@@ -336,6 +334,14 @@
                 return (ProjectInputPresentation.ExplorerRoute(role), BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(role) + " Explorer");
         return null;
     }
+
+    private RenderFragment TargetEnvironmentFact => __builder =>
+    {
+        var row = ProjectImportPresentation.TargetEnvironment(_hasTarget);
+        <dl class="pi-facts pi-target" data-testid="pi-target">
+            <div><dt>Target Environment</dt><dd>@row.Status <span class="pi-muted">— @row.Detail</span></dd></div>
+        </dl>
+    };
 
     private static (string Route, string Label)? FirstExplorerFor(ProjectImportArtifactDiscovery discovery) =>
         discovery.DetectedRoles.Where(r => r.Role != WorkspaceArtifactType.Research).Select(r => r.Role).Cast<WorkspaceArtifactType?>().FirstOrDefault() is { } role

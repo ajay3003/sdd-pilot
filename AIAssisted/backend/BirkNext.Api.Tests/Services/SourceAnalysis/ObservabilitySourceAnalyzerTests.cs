@@ -494,7 +494,7 @@ public sealed class ObservabilitySourceAnalyzerTests
         error.Should().BeNull();
         snapshot!.Observability.Should().NotBeNull();
         snapshot.Observability!.SourceSnapshotId.Should().Be(snapshot.Id);
-        var stored = await store.FindSourceAnalysisAsync("dev", snapshot.Id);
+        var stored = await store.FindSourceAnalysisAsync(snapshot.Id);
         stored!.Observability!.Boundaries.Should().HaveCount(snapshot.Observability.Boundaries.Count);
         stored.Observability.Findings.Select(f => f.Id).Should().Equal(snapshot.Observability.Findings.Select(f => f.Id));
         (await db.IqrSourceSnapshots.SingleAsync()).EvidenceJson.Should().NotContain("SECRET_SENTINEL");

@@ -3,6 +3,7 @@ using System.Globalization;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Api.Services.Integrations.ServiceBus;
 using BirkNext.Integrations;
+using BirkNext.Standards;
 
 namespace BirkNext.Api.Services.Integrations;
 
@@ -498,7 +499,8 @@ public sealed class IntegrationReviewEngine(
         var result = new IntegrationReviewResult
         {
             RunId = Guid.NewGuid(), EnvironmentId = catalog.EnvironmentId, EnvironmentName = request.EnvironmentName, StartedAt = started, CompletedAt = DateTimeOffset.UtcNow,
-            Outcome = outcome, ConfigurationSnapshot = catalog with { Notices = [] }, Systems = systems, Domains = domains, Findings = grouped,
+            Outcome = outcome, ConfigurationSnapshot = catalog with { Notices = [] }, Systems = systems, Domains = domains,
+            Findings = grouped.Select(f => f with { StandardsReferences = StandardsReferenceMappings.ForIntegrationRule(f.RuleId).ToList() }).ToList(),
             ManualFollowUp = ManualFollowUp(enabled, catalog, systems, allChecks), Limitations = Limitations(enabled, catalog, adapterStatuses, allChecks),
             Freshness = freshness, EvidenceSources = sources, ReviewWindowHours = windows.Count == 0 ? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours : windows.Max(),
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),

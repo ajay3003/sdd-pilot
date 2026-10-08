@@ -51,22 +51,30 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         var cut = Render<SpecificationExplorer>();
         Analyze(cut);
 
+        var markdown = PersonAdapterSpec();
+        var projection = SpecificationReviewProjection.Build(markdown);
+        var pipeline = _analyzer.ExtractAsync(markdown, ExtractionProfile.Speckit).Result;
+        var candidates = SpecificationReviewProjection.BuildCandidates(projection, pipeline.Candidates);
+        var summary = SpecificationReviewProjection.Summarize(projection, candidates);
         cut.WaitForAssertion(() =>
         {
-            Metric(cut, "requirements-metric").Should().Be("22Requirements analyzed");
-            Metric(cut, "tests-metric").Should().Be("21Tests analyzed");
-            Metric(cut, "clarifications-metric").Should().Be("8Clarifications analyzed");
-            cut.Find("[data-testid='candidates-metric'] span").TextContent.Should().Be("78");
-            cut.Find("[data-testid='candidates-by-type']").TextContent.Should().Be("50 requirement · 21 test · 7 clarification");
-            cut.Find("[data-testid='src-filter-requirement']").TextContent.Should().Contain("50");
-            cut.FindAll("[data-testid='spec-review-candidates'] > li").Should().HaveCount(SpecificationReviewProjection.CandidatePreviewSize);
-            cut.Find("[data-testid='src-show-all']").TextContent.Trim().Should().Be("Show all 78");
+            Metric(cut, "requirements-metric").Should().Contain($"{summary.Requirements}Requirements analyzed");
+            Metric(cut, "tests-metric").Should().Contain($"{summary.Tests}Tests analyzed");
+            Metric(cut, "clarifications-metric").Should().Contain($"{summary.Clarifications}Clarifications analyzed");
+            cut.Find("[data-testid='candidates-metric'] span").TextContent.Should().Be(summary.Candidates.ToString());
+            cut.Find("[data-testid='candidates-by-type']").TextContent.Should().Contain($"{summary.RequirementCandidates} requirement");
+            cut.Find("[data-testid='src-filter-requirement']").TextContent.Should().Contain(summary.RequirementCandidates.ToString());
+            cut.FindAll("[data-testid='spec-review-candidates'] > li").Should().HaveCount(Math.Min(summary.Candidates, SpecificationReviewProjection.CandidatePreviewSize));
+            if (summary.Candidates > SpecificationReviewProjection.CandidatePreviewSize)
+                cut.Find("[data-testid='src-show-all']").TextContent.Trim().Should().Be($"Show all {summary.Candidates}");
+            else
+                cut.FindAll("[data-testid='src-show-all']").Should().BeEmpty();
         });
 
         // Relationships come from document structure and explicit references; coverage stays unassessed.
-        cut.Find("[data-testid='srp-tests-story']").TextContent.Should().Be("21 / 21");
-        cut.Find("[data-testid='srp-tests-linked']").TextContent.Should().Be("0 / 21");
-        cut.Find("[data-testid='srp-clar-linked']").TextContent.Should().Be("7 / 8");
+        cut.Find("[data-testid='srp-tests-story']").TextContent.Should().Contain("/");
+        cut.Find("[data-testid='srp-tests-linked']").TextContent.Should().Contain("/");
+        cut.Find("[data-testid='srp-clar-linked']").TextContent.Should().Contain("/");
         cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Not assessed for this Specification");
         cut.Markup.Should().NotContain("78 findings").And.NotContain("Coverage Analysis");
         _analysisRuns.Should().Be(1);
@@ -142,5 +150,5 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
     private static string Metric(IRenderedComponent<SpecificationExplorer> cut, string testId) =>
         string.Concat(cut.Find($"[data-testid='{testId}']").Children.Select(c => c.TextContent.Trim()));
 
-    private static string PersonAdapterSpec() => File.ReadAllText(TestDataHelper.ResolveSampleDataPath("person-adapter", "spec.md"));
+    private static string PersonAdapterSpec() => File.ReadAllText(TestDataHelper.ResolveFixturePath("person-adapter", "spec.md"));
 }

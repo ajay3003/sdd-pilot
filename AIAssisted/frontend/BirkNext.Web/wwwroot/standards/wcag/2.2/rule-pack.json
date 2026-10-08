@@ -4,7 +4,9 @@
   "standardVersion": "2.2",
   "rulePackVersion": "1.0",
   "lastUpdated": "2026-06-29",
-  "description": "Documentation coverage checks for WCAG 2.2 Web Content Accessibility Guidelines. Checks whether accessibility requirements are identified and described in the project artifacts.",
+  "description": "Document-only coverage checks for whether accessibility expectations are described in project artifacts. These keyword rules do not test an interface or establish WCAG conformance.",
+  "evidenceDomains": ["Document"],
+  "evidenceTypes": ["Document"],
   "rules": [
     {
       "ruleId": "wcag-keyboard",
