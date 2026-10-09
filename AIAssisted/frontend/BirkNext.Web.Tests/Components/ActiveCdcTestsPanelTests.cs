@@ -181,6 +181,11 @@ public sealed class ActiveCdcTestsPanelTests : BunitContext
             return Task.FromResult(Ready);
         }
 
+        public Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(FrontendAnalysisProfile profile, string integrationId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ActiveEventScenarioDescriptor>>(integrationId == Person.Id
+                ? [new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", ScenarioVersion = "1", DisplayName = "Normal Person", RequiredTransportType = "EventHub" }]
+                : []);
+
         public Task<(ActiveCdcRun? Run, string? Error)> StartAsync(FrontendAnalysisProfile profile, ActiveCdcRunRequest request, CancellationToken ct = default)
         {
             Started.Add(request);

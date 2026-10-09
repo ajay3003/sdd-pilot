@@ -18,7 +18,7 @@
         var blockers = _readiness?.Checks.Where(c => c.State == ActiveCdcReadinessState.Blocked).ToList() ?? [];
         <dl class="act-summary" data-testid="act-summary">
             <div><dt>Scenarios</dt><dd data-testid="act-summary-scenarios">@ScenarioOptions.Length available</dd></div>
-            <div><dt>Selected scenario</dt><dd data-testid="act-summary-scenario">@ScenarioOptions.First(o => o.Id == _scenarioId).Name</dd></div>
+            <div><dt>Selected scenario</dt><dd data-testid="act-summary-scenario">@(ScenarioOptions.FirstOrDefault(o => o.Id == _scenarioId)?.Name ?? "None available")</dd></div>
             <div><dt>Execution</dt><dd><span class="act-pill act-pill-@(_readiness?.CanRun == true ? "ready" : "neutral")" data-testid="act-summary-execution">@SummaryExecution</span></dd></div>
         </dl>
         @if (blockers.Count > 0)
@@ -37,6 +37,7 @@
             <label class="act-scenario">
                 <input type="radio" name="act-scenario" value="@option.Id" checked="@(option.Id == _scenarioId)" data-testid="@($"act-scenario-{option.Id}")" @onchange="() => SelectScenarioAsync(option.Id)" />
                 <span>@option.Name</span> <span class="act-pill act-pill-neutral">@option.Category</span>
+                <span class="act-muted">Provider @option.ExtensionId · transport @option.TransportType</span>
             </label>
         }
     </fieldset>
@@ -44,9 +45,9 @@
     <p class="act-muted">@Shown.Description</p>
     @if (Shown.Limitation.Length > 0) { <p class="act-limitation" role="note" data-testid="act-limitation"><strong>@Shown.Limitation</strong></p> }
 
-    @if (Candidates.Count == 0)
+@if (Candidates.Count == 0)
     {
-        <p class="act-empty" data-testid="act-no-integration">No enabled Event Hub integration carries a Person CDC source (database.dbo.Person). Configure it in Target Environment → Integrations.</p>
+        <p class="act-empty" data-testid="act-no-integration">No enabled Event Hub integration is available. Configure an integration in Target Environment → Integrations.</p>
     }
     else
     {
@@ -220,7 +221,7 @@
             <ul class="act-history">
                 @foreach (var item in _history)
                 {
-                    <li data-testid="act-history-item"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @ScenarioName(item.ScenarioId) · @ActiveCdcLabels.Status(item.Status) · @(item.SendAttempted ? item.ScenarioId == ScenarioOptions[0].Id ? "event sent" : "events sent" : "nothing sent")@if (item.ManifestFingerprint.Length > 0) { <span class="act-muted"> · manifest @item.ManifestFingerprint</span> }</li>
+                    <li data-testid="act-history-item"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @ScenarioName(item.ScenarioId) · @ActiveCdcLabels.Status(item.Status) · @(item.SendAttempted ? ScenarioOptions.FirstOrDefault(s => s.Id == item.ScenarioId)?.EventCount > 1 ? "events sent" : "event sent" : "nothing sent")@if (item.ManifestFingerprint.Length > 0) { <span class="act-muted"> · manifest @item.ManifestFingerprint</span> }</li>
                 }
             </ul>
         </details>
@@ -243,25 +244,15 @@
     /// <summary>Poll interval while a run is in flight (tests shorten it).</summary>
     [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 
-    private static readonly ActiveCdcScenario Scenario = new()
-    {
-        Id = "person.normal.create", Version = "1", Name = "Normal Person",
-        Description = "Sends one synthetic Debezium Person create event (synthetic name marker, synthetic birth date, no national id, DUF number or child data) and records each stage it can observe.",
-    };
-
     // Optional: hosts that do not register the client (older page tests) simply show no Active tests panel.
     private IActiveCdcTestsApiService? Api => _api ??= Services.GetService<IActiveCdcTestsApiService>();
     private IActiveCdcTestsApiService? _api;
-    private sealed record ScenarioOption(string Id, string Name, string Category);
-    private static readonly ScenarioOption[] ScenarioOptions =
-    [
-        new("person.normal.create", "Normal Person", "Transport"),
-        new("person.same-personpk-replay", "Same PersonPK replay", "Runtime resilience"),
-        new("person.invalid-then-valid", "Invalid Person → valid Person", "Fault resilience"),
-    ];
-    private string _scenarioId = ScenarioOptions[0].Id;
-    private string Category => Shown.Category.Length > 0 ? Shown.Category : ScenarioOptions.FirstOrDefault(o => o.Id == Shown.Id)?.Category ?? "";
-    private static string ScenarioName(string id) => ScenarioOptions.FirstOrDefault(o => o.Id == id)?.Name ?? id;
+    private sealed record ScenarioOption(string Id, string Name, string Category, string ExtensionId, string TransportType, int EventCount);
+    private IReadOnlyList<ActiveEventScenarioDescriptor> _scenarioDescriptors = [];
+    private ScenarioOption[] ScenarioOptions => _scenarioDescriptors.Select(s => new ScenarioOption(s.ScenarioId, s.DisplayName, s.Category, s.ExtensionId, s.RequiredTransportType, s.ExpectedEventCount)).ToArray();
+    private string _scenarioId = "";
+    private string Category => ScenarioOptions.FirstOrDefault(o => o.Id == _scenarioId)?.Category ?? "";
+    private string ScenarioName(string id) => ScenarioOptions.FirstOrDefault(o => o.Id == id)?.Name ?? id;
 
     private async Task SelectScenarioAsync(string id)
     {
@@ -280,16 +271,39 @@
     private string? _error;
     private string? _loadedFor;
 
-    private IReadOnlyList<IntegrationDefinition> Candidates => Integrations
-        .Where(i => i.Enabled && i.Kind == IntegrationKind.EventHub && (i.SourceResource ?? "").EndsWith(".Person", StringComparison.OrdinalIgnoreCase)).ToList();
+    private IReadOnlyList<IntegrationDefinition> RawCandidates => Integrations.Where(i => i is { Enabled: true, Kind: IntegrationKind.EventHub }).ToList();
+    private Dictionary<string, IReadOnlyList<ActiveEventScenarioDescriptor>> _scenarioCache = new(StringComparer.Ordinal);
+    private bool _scenarioCacheReady;
+    private IReadOnlyList<IntegrationDefinition> Candidates => _scenarioCacheReady
+        ? RawCandidates.Where(integration => _scenarioCache.TryGetValue(integration.Id, out var descriptors) && descriptors is { Count: > 0 }).ToList()
+        : RawCandidates;
     private ActiveCdcScenario Shown => _readiness?.Scenario is { Id.Length: > 0 } s && s.Id == _scenarioId ? s
-        : Scenario with { Id = _scenarioId, Name = ScenarioName(_scenarioId), MessageCount = _scenarioId == ScenarioOptions[1].Id ? 3 : _scenarioId == ScenarioOptions[2].Id ? 2 : 1 };
-    private bool IsInvalidScenario => _scenarioId == ScenarioOptions[2].Id;
+        : _scenarioDescriptors.FirstOrDefault(s => s.ScenarioId == _scenarioId) is { } descriptor
+            ? new ActiveCdcScenario { Id = descriptor.ScenarioId, Version = descriptor.ScenarioVersion, Name = descriptor.DisplayName, Description = descriptor.Description,
+                Category = descriptor.Category, MessageCount = descriptor.ExpectedEventCount }
+            : new ActiveCdcScenario();
+    private bool IsInvalidScenario => _scenarioDescriptors.FirstOrDefault(s => s.ScenarioId == _scenarioId)?.ReplayKind == ActiveEventReplayKind.ControlAfterInvalid;
     private bool Busy => _loading || _starting || _run is { Completed: false };
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Api is null || Candidates.Count == 0) return;
+        if (Api is null || RawCandidates.Count == 0) return;
+        try
+        {
+            var scenarios = new Dictionary<string, IReadOnlyList<ActiveEventScenarioDescriptor>>(StringComparer.Ordinal);
+            foreach (var integration in RawCandidates)
+                scenarios[integration.Id] = await Api.ScenariosAsync(Profile, integration.Id, _disposed.Token) ?? [];
+            _scenarioCache = scenarios;
+            _scenarioCacheReady = true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _error = BackendRequestClassifier.FromException("Active event scenarios", ex).UserMessage;
+            _scenarioCacheReady = true;
+            _scenarioDescriptors = [];
+            return;
+        }
+        if (Candidates.Count == 0) return;
         if (!Candidates.Any(c => c.Id == _integrationId)) _integrationId = Candidates[0].Id;
         var key = $"{Profile.Id}|{_integrationId}|{SnapshotId}|{_scenarioId}";
         if (key != _loadedFor) await LoadAsync();
@@ -313,7 +327,17 @@
         _error = null;
         try
         {
-            var readiness = await Api!.ReadinessAsync(Profile, _integrationId, SnapshotId, _scenarioId, _disposed.Token);
+            var descriptors = _scenarioCache.GetValueOrDefault(_integrationId, []);
+            if (key != _loadedFor) return;
+            _scenarioDescriptors = descriptors;
+            if (!_scenarioDescriptors.Any(s => s.ScenarioId == _scenarioId)) _scenarioId = _scenarioDescriptors.FirstOrDefault()?.ScenarioId ?? "";
+            if (_scenarioId.Length == 0)
+            {
+                _readiness = null;
+                _history = await Api.HistoryAsync(Profile.Id, _integrationId, _disposed.Token);
+                return;
+            }
+            var readiness = await Api.ReadinessAsync(Profile, _integrationId, SnapshotId, _scenarioId, _disposed.Token);
             var history = await Api!.HistoryAsync(Profile.Id, _integrationId, _disposed.Token);
             // The scenario can change while this load is in flight: an answer for a previous selection is dropped, never shown.
             if (key != _loadedFor) return;

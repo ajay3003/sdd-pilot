@@ -26,6 +26,8 @@ using BirkNext.Api.Services.TargetEnvironmentDetection;
 using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.ContractAnalysis;
 using HotChocolate.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Net;
@@ -72,6 +74,18 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod()));
 
 builder.Services.AddControllers();
+
+// Active Event execution uses an Entra-issued API bearer token. Missing authority/audience leaves the scheme unable to validate
+// callers; there is no development bypass and no trusted identity header path.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.Authority = builder.Configuration["Authentication:Entra:Authority"];
+    options.Audience = builder.Configuration["Authentication:Entra:Audience"];
+    options.RequireHttpsMetadata = true;
+});
+builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionHandler>();
+builder.Services.AddAuthorization(options => options.AddPolicy("ActiveEventExecute", policy =>
+    policy.RequireAuthenticatedUser().AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement())));
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
 
@@ -464,7 +478,14 @@ builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewS
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestSender, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestSender>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportProvider, BirkNext.Api.Services.ActiveEventTesting.EventHubActiveEventTransportProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventTransportRegistry>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventExecutionRunner>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioProvider, BirkNext.Api.Services.ActiveEventTesting.M2lbPersonScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventScenarioRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventLifecycleService, BirkNext.Api.Services.ActiveEventTesting.ActiveEventLifecycleService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunCoordinator>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunner>();
 builder.Services.AddScoped<BirkNext.Api.Services.ActiveCdcTests.IActiveCdcTestService, BirkNext.Api.Services.ActiveCdcTests.ActiveCdcTestService>();
@@ -585,6 +606,8 @@ app.UseStaticFiles();
 
 app.UseCors("Frontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.MapGraphQL()

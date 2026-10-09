@@ -207,6 +207,7 @@ public sealed class ActiveCdcInvalidThenValidTests
         async Task Blocked(Action<H> arrange, string? type = "Development", IqrSourceSnapshot? snapshot = null, string because = "")
         {
             await using var h = new H();
+            h.Options = h.Options with { TrustedTargets = type is null ? [] : [new(H.Env, type, "https://m2lb-dev.example.test", "Test target")] };
             await h.AddSnapshotAsync(snapshot ?? SourceSnapshot());
             arrange(h);
             var run = await RunAsync(h, type: type);

@@ -184,6 +184,14 @@ public sealed class ActiveCdcReplayPanelTests : BunitContext
             });
         }
 
+        public Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(FrontendAnalysisProfile profile, string integrationId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ActiveEventScenarioDescriptor>>(integrationId == Person.Id
+                ? [
+                    new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", ScenarioVersion = "1", DisplayName = "Normal Person", RequiredTransportType = "EventHub" },
+                    new() { ExtensionId = "m2lb.person", ScenarioId = ReplayId, ScenarioVersion = "1", DisplayName = Scenario.Name, Category = Scenario.Category,
+                        RequiredTransportType = "EventHub", ExpectedEventCount = 3, ReplayKind = ActiveEventReplayKind.ExactReplay },
+                ] : []);
+
         public Task<(ActiveCdcRun? Run, string? Error)> StartAsync(FrontendAnalysisProfile profile, ActiveCdcRunRequest request, CancellationToken ct = default)
         {
             Started.Add(request);

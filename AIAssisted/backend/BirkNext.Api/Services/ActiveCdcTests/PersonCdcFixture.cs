@@ -31,6 +31,7 @@ public static class ActiveCdcScenarioCatalog
     public static readonly ActiveCdcScenario SamePersonPkReplay = NormalPerson with
     {
         Id = SamePersonPkReplayId, Version = "1", Name = "Same PersonPK replay", Category = "Runtime resilience", MessageCount = 3,
+        ReplayKind = ActiveEventReplayKind.ExactReplay,
         Description = "Sends one synthetic Person, replays the same source identity, then sends another valid Person to check whether the observable consumer path continues.",
         Limitation = "This does not verify database idempotency or duplicate Person handling.",
         PassCriterion = "Passed requires all three sends accepted, A2 byte-identical to A, and the consumer checkpoint past both the replay and the control event on their partitions.",
@@ -47,6 +48,7 @@ public static class ActiveCdcScenarioCatalog
     public static readonly ActiveCdcScenario InvalidThenValid = NormalPerson with
     {
         Id = InvalidThenValidId, Version = "1", Name = "Invalid Person → valid Person", Category = "Fault resilience", MessageCount = 2,
+        ReplayKind = ActiveEventReplayKind.ControlAfterInvalid,
         Description = "Sends one controlled invalid Person CDC event followed by a valid synthetic Person event to check whether the observable consumer continues advancing.",
         Limitation = "This verifies consumer continuity, not correct handling or persistence of either message.",
         PassCriterion = "Passed requires both sends accepted, the reviewed invalid fixture, and the consumer checkpoint past the invalid event and the valid control on their partitions.",

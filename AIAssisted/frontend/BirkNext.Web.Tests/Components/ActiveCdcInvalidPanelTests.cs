@@ -194,6 +194,15 @@ public sealed class ActiveCdcInvalidPanelTests : BunitContext
             return Answer(profile, integrationId, scenarioId);
         }
 
+        public Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(FrontendAnalysisProfile profile, string integrationId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<ActiveEventScenarioDescriptor>>(integrationId == Person.Id
+                ? [
+                    new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", ScenarioVersion = "1", DisplayName = "Normal Person", RequiredTransportType = "EventHub" },
+                    new() { ExtensionId = "m2lb.person", ScenarioId = "person.same-personpk-replay", ScenarioVersion = "1", DisplayName = "Same PersonPK replay", RequiredTransportType = "EventHub", ExpectedEventCount = 2, ReplayKind = ActiveEventReplayKind.ExactReplay },
+                    new() { ExtensionId = "m2lb.person", ScenarioId = InvalidId, ScenarioVersion = "1", DisplayName = Scenario.Name, Category = Scenario.Category,
+                        RequiredTransportType = "EventHub", ExpectedEventCount = 2, ReplayKind = ActiveEventReplayKind.ControlAfterInvalid },
+                ] : []);
+
         private static ActiveCdcReadiness Answer(FrontendAnalysisProfile profile, string integrationId, string scenarioId) => (new ActiveCdcReadiness
             {
                 EnvironmentId = profile.Id, IntegrationId = integrationId, CanRun = true, ObservationSeconds = 180,
