@@ -34,15 +34,18 @@ public sealed class SourceChangeImpactExportTests
         var report = new ImpactAnalysisRunReport(Guid.NewGuid(), DateTimeOffset.UtcNow, "import:orders-1", "orders-1", "Imported Orders",
             new("RequirementAndSourceSnapshotComparison", [Guid.NewGuid()], Guid.NewGuid(), snapshot, new string('a', 64), new string('b', 64)),
             [new("test:1", ImpactAnalysisFindingKind.Test, "Orders API test", ImpactAnalysisClassification.RelatedOnly, "ExplicitTraceLink", 1,
-                "Linked test; execution is not verified.", [new("Requirements Traceability", "Covers link.", "tests/orders.feature", snapshot)])],
+                "Linked test; execution is not verified.", [new("Requirements Traceability", "Covers link.", "tests/orders.feature", snapshot)])
+                { SuggestedQaVerification = "Review and run the linked test." }],
             [new("Journeys", ImpactAnalysisEvidenceStatus.NotEvaluated, "No journey provider was evaluated.")], null,
             ["No runtime evidence was assessed."]);
 
         var html = SourceChangeImpactExport.UnifiedHtml(report);
         var markdown = SourceChangeImpactExport.UnifiedMarkdown(report);
 
-        html.Should().Contain("import:orders-1").And.Contain(snapshot.ToString()).And.Contain("No journey provider was evaluated");
-        markdown.Should().Contain("Orders API test").And.Contain("No runtime evidence was assessed").And.Contain("NotEvaluated");
+        html.Should().Contain("import:orders-1").And.Contain(snapshot.ToString()).And.Contain("No journey provider was evaluated")
+            .And.Contain("Suggested QA verification").And.Contain("Review and run the linked test.");
+        markdown.Should().Contain("Orders API test").And.Contain("No runtime evidence was assessed").And.Contain("NotEvaluated")
+            .And.Contain("QA verification: Review and run the linked test.").And.Contain($"[snapshot {snapshot}]");
     }
 
     private static SourceChangeImpactReport Report()

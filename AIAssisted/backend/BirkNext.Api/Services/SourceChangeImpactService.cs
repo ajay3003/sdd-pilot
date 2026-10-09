@@ -37,7 +37,8 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         var after = await sources.ResolveAsync(request.EnvironmentId ?? string.Empty, request.TargetSnapshotId, ct);
         if (before is null || after is null || ReviewSourceEvidenceProvider.Identity(before).Key != ReviewSourceEvidenceProvider.Identity(after).Key)
             return null;
-        if (request.ProjectImportId is { Length: > 0 } importId && after.ProjectImport?.ImportId != importId)
+        if (request.ProjectImportId is { Length: > 0 } importId &&
+            (before.ProjectImport?.ImportId != importId || after.ProjectImport?.ImportId != importId))
             return null;
 
         var limitations = new List<string>();

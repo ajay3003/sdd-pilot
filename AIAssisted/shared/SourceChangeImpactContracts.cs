@@ -57,7 +57,10 @@ public sealed record ImpactAnalysisRunRequest(string ProjectId, string? ProjectD
 public sealed record ImpactAnalysisEvidence(string Kind, string Description, string? SourcePath = null, Guid? SourceSnapshotId = null);
 public sealed record ImpactAnalysisFinding(string Id, ImpactAnalysisFindingKind Kind, string DisplayName,
     ImpactAnalysisClassification Classification, string VerificationState, int Depth, string Reason,
-    List<ImpactAnalysisEvidence> Evidence);
+    List<ImpactAnalysisEvidence> Evidence)
+{
+    public string SuggestedQaVerification { get; init; } = "Review the evidence and choose a relevant verification with the project team.";
+}
 public sealed record ImpactAnalysisDomainAssessment(string Domain, ImpactAnalysisEvidenceStatus Status, string Reason);
 public sealed record ImpactAnalysisChangeSet(string ChangeOrigin, List<Guid> SelectedRequirementIds,
     Guid? BaselineSnapshotId, Guid? CurrentSnapshotId, string? BaselineFingerprint, string? CurrentFingerprint);

@@ -2,13 +2,18 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
+using BirkNext.Api.Services.SourceAnalysis;
+using BirkNext.Integrations;
 using BirkNext.SourceImpact;
+using BirkNext.GeneratedDocumentation;
+using BirkNext.SecurityExpectations;
+using BirkNext.SourceArchitecture;
 using Microsoft.EntityFrameworkCore;
 
 namespace BirkNext.Api.Services;
 
 /// <summary>Runs requirement and source-change analysis into one persisted, snapshot-bound report contract.</summary>
-public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpactService sourceImpact)
+public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpactService sourceImpact, IReviewSourceEvidenceProvider sourceEvidence)
 {
     public async Task<IReadOnlyList<ImpactRequirementOption>> RequirementsAsync(string projectId, CancellationToken ct)
     {
@@ -34,6 +39,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
             throw new ArgumentException("Select a requirement or a source snapshot comparison.");
 
         SourceChangeImpactReport? source = null;
+        IqrSourceSnapshot? currentSourceEvidence = null;
         if (hasBaseline)
         {
             source = await sourceImpact.AnalyzeAsync(new SourceChangeImpactRequest(string.Empty, request.ProjectId,
@@ -41,16 +47,23 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
                 request.ProjectDisplayName, Math.Clamp(request.MaxImpactDepth, 0, 3)), ct, persist: false);
             if (source is null) throw new InvalidOperationException("The selected snapshots are unavailable, do not belong to the same repository, or do not match this Project Import.");
             source = Sanitize(source);
+            currentSourceEvidence = await sourceEvidence.ResolveAsync(string.Empty, source.TargetSnapshotId, ct);
+            if (currentSourceEvidence is null || currentSourceEvidence.Id != source.TargetSnapshotId ||
+                !string.Equals(currentSourceEvidence.Archive.Sha256, source.TargetFingerprint, StringComparison.OrdinalIgnoreCase) ||
+                (request.ProjectImportId is { Length: > 0 } boundImport && currentSourceEvidence.ProjectImport?.ImportId != boundImport))
+                throw new InvalidOperationException("The current source evidence no longer matches the selected snapshot and imported project identity.");
         }
 
         var findings = new Dictionary<string, ImpactAnalysisFinding>(StringComparer.OrdinalIgnoreCase);
         var limitations = new List<string>();
         if (source is not null) AddSourceFindings(source, findings);
-        var selectedRequirements = await AddRequirementFindingsAsync(request.ProjectId, requirementIds, source?.TargetSnapshotId, findings, ct);
+        if (source is not null && currentSourceEvidence is not null)
+            AddSnapshotEvidenceFindings(currentSourceEvidence, source, findings);
+        var (selectedRequirements, linkedRequirementTests) = await AddRequirementFindingsAsync(request.ProjectId, requirementIds, source?.TargetSnapshotId, findings, ct);
         if (requirementIds.Count > 0 && selectedRequirements < requirementIds.Count)
             limitations.Add($"{requirementIds.Count - selectedRequirements} selected requirement(s) were not found in the current project traceability records. No relationships were inferred for them.");
 
-        var assessments = BuildAssessments(source, requirementIds.Count > 0, selectedRequirements, requirementIds.Count);
+        var assessments = BuildAssessments(source, currentSourceEvidence, requirementIds.Count > 0, selectedRequirements, requirementIds.Count, linkedRequirementTests);
         if (source is not null) limitations.AddRange(source.Limitations.Concat(source.CoverageGaps));
         if (requirementIds.Count > 0 && selectedRequirements == 0)
             limitations.Add("Requirement analysis was not evaluated because this project has no matching persisted requirement records.");
@@ -99,12 +112,12 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
         return row is null ? null : ToUnified(row.ResultJson, row);
     }
 
-    private async Task<int> AddRequirementFindingsAsync(string projectId, IReadOnlyCollection<Guid> ids, Guid? snapshotId,
+    private async Task<(int RequirementsFound, int LinkedTestsFound)> AddRequirementFindingsAsync(string projectId, IReadOnlyCollection<Guid> ids, Guid? snapshotId,
         Dictionary<string, ImpactAnalysisFinding> findings, CancellationToken ct)
     {
-        if (ids.Count == 0) return 0;
+        if (ids.Count == 0) return (0, 0);
         var requirements = await db.Scenarios.AsNoTracking().Where(s => s.ProjectId == projectId && s.Kind == ScenarioKind.Requirement && ids.Contains(s.Id)).ToListAsync(ct);
-        if (requirements.Count == 0) return 0;
+        if (requirements.Count == 0) return (0, 0);
         var requirementIds = requirements.Select(r => r.Id).ToHashSet();
         var links = await db.TraceLinks.AsNoTracking().Where(t => t.ProjectId == projectId && t.SourceKind == TraceLinkArtifactKind.Scenario &&
             t.TargetKind == TraceLinkArtifactKind.Scenario && (requirementIds.Contains(t.SourceId) || requirementIds.Contains(t.TargetId))).ToListAsync(ct);
@@ -115,6 +128,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
                                where l.ProjectId == projectId && f.ProjectId == projectId && requirementIds.Contains(l.ScenarioId)
                                select new { l.ScenarioId, f.FilePath, f.FileName }).ToListAsync(ct);
 
+        var linkedTestIds = new HashSet<Guid>();
         foreach (var requirement in requirements)
         {
             AddFinding(findings, new($"requirement:{requirement.Id}", ImpactAnalysisFindingKind.Requirement, requirement.Title,
@@ -131,6 +145,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
                 var otherId = link.SourceId == requirement.Id ? link.TargetId : link.SourceId;
                 if (relatedScenarios.FirstOrDefault(s => s.Id == otherId) is not { } scenario) continue;
                 var isTest = scenario.Kind == ScenarioKind.Test;
+                if (isTest) linkedTestIds.Add(scenario.Id);
                 var kind = isTest ? ImpactAnalysisFindingKind.Test : ImpactAnalysisFindingKind.Requirement;
                 var relationship = link.LinkType == TraceLinkType.Covers ? "Covers" : "Related to";
                 var reason = isTest && link.LinkType == TraceLinkType.Covers
@@ -141,7 +156,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
                     [new("Requirements Traceability", $"{relationship} link {link.Id}.", SourceSnapshotId: snapshotId)]));
             }
         }
-        return requirements.Count;
+        return (requirements.Count, linkedTestIds.Count);
     }
 
     private static void AddSourceFindings(SourceChangeImpactReport source, Dictionary<string, ImpactAnalysisFinding> findings)
@@ -178,11 +193,89 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
         {
             var isConfiguration = review.Contains("configuration change", StringComparison.OrdinalIgnoreCase);
             AddFinding(findings, new($"review:{StableKey(review)}", isConfiguration ? ImpactAnalysisFindingKind.Configuration : ImpactAnalysisFindingKind.Security, isConfiguration ? "Configuration review" : "Security review",
-                ImpactAnalysisClassification.NeedsReview, "SourceChangeSuggestion", 1, review, []));
+                ImpactAnalysisClassification.NeedsReview, "SourceChangeSuggestion", 1, review,
+                source.Changes.Where(c => isConfiguration ? c.Domain == ImpactChangeDomain.Configuration : c.Domain is ImpactChangeDomain.Configuration or ImpactChangeDomain.Architecture)
+                    .SelectMany(c => c.SourceFiles.Select(path => new ImpactAnalysisEvidence(isConfiguration ? "Source configuration comparison" : "Security-related source change",
+                        c.Detail, path, source.TargetSnapshotId))).ToList()));
         }
     }
 
-    private static List<ImpactAnalysisDomainAssessment> BuildAssessments(SourceChangeImpactReport? source, bool requirementsRequested, int requirementsFound, int requirementsRequestedCount)
+    private static void AddSnapshotEvidenceFindings(IqrSourceSnapshot snapshot, SourceChangeImpactReport source,
+        Dictionary<string, ImpactAnalysisFinding> findings)
+    {
+        var changedPaths = source.Changes.SelectMany(c => c.SourceFiles).Concat(source.TechnicalImpacts.SelectMany(i => i.SourceFiles))
+            .Select(NormalizePath).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var changedEntityIds = source.Changes.SelectMany(c => new[] { c.Id, c.EntityKey }).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Source Analysis already resolved cross-domain producer/consumer links. Reuse the resulting paths and preserve their
+        // provider confidence; no separate integration parser or project-specific matching is introduced here.
+        foreach (var item in source.TechnicalImpacts.Where(i => i.Path.Any(p =>
+                     p.Relationship.Contains("contract", StringComparison.OrdinalIgnoreCase) ||
+                     p.Relationship.Contains("messaging", StringComparison.OrdinalIgnoreCase) ||
+                     p.Relationship.Contains("producer", StringComparison.OrdinalIgnoreCase) ||
+                     p.Relationship.Contains("consumer", StringComparison.OrdinalIgnoreCase) ||
+                     p.Relationship.Contains("infrastructure", StringComparison.OrdinalIgnoreCase))))
+        {
+            AddFinding(findings, new($"integration:{item.Id}", ImpactAnalysisFindingKind.Integration, item.DisplayName,
+                item.Level switch { TechnicalImpactLevel.Direct => ImpactAnalysisClassification.DirectRelation, TechnicalImpactLevel.Indirect => ImpactAnalysisClassification.IndirectRelation,
+                    TechnicalImpactLevel.Potential => ImpactAnalysisClassification.PossibleRelation, _ => ImpactAnalysisClassification.NeedsReview },
+                item.EvidenceState, item.Depth, item.Reason,
+                item.Path.Select(p => new ImpactAnalysisEvidence(p.Relationship, $"{p.Label}: {p.Basis}", p.Basis, snapshot.Id)).ToList()));
+        }
+
+        // The existing generated-documentation snapshot links documents to modules and source evidence. A changed file inside
+        // the documented module is a review suggestion only; it does not establish that the generated document is stale.
+        if (snapshot.GeneratedDocumentation is { } generated && generated.SourceSnapshotId == snapshot.Id &&
+            string.Equals(generated.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            var modules = generated.Modules.GroupBy(m => m.ModuleId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            foreach (var document in generated.Documents.Where(d => d.SourceSnapshotId == snapshot.Id && d.Origin == DocumentationOrigin.Generated))
+            {
+                var moduleRoot = modules.GetValueOrDefault(document.ModuleId)?.RootPath;
+                var relatedPaths = changedPaths.Where(path => IsWithin(path, moduleRoot)).ToList();
+                var relatedByEvidence = document.RelatedSourceEvidenceIds.Any(changedEntityIds.Contains) ||
+                                        document.RelatedContractEvidenceIds.Any(changedEntityIds.Contains);
+                if (relatedPaths.Count == 0 && !relatedByEvidence) continue;
+                var evidence = new List<ImpactAnalysisEvidence>
+                {
+                    new("Generated Documentation Analysis", $"Generated {document.DocumentKind} document in module {document.ModuleId}; freshness remains governed by the documentation review.", document.SafeRelativePath, snapshot.Id)
+                };
+                evidence.AddRange(relatedPaths.Select(path => new ImpactAnalysisEvidence("Source snapshot comparison", "Changed source file is within the documented module scope.", path, snapshot.Id)));
+                AddFinding(findings, new($"documentation:{document.EvidenceId}", ImpactAnalysisFindingKind.Documentation, document.SafeRelativePath,
+                    ImpactAnalysisClassification.PossibleRelation, "GeneratedDocumentationModuleScope", 1,
+                    "This generated document covers a module containing changed source. Review whether it needs regeneration; no stale state is asserted.", evidence));
+            }
+        }
+
+        // Security expectation evidence stores public field names and paths. Values are deliberately excluded from findings and history.
+        if (snapshot.SecurityExpectationsEvidence is { } security && security.SourceSnapshotId == snapshot.Id &&
+            string.Equals(security.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var candidate in security.Candidates.Where(c => c.IsCurrent && c.SourceSnapshotId == snapshot.Id))
+            {
+                var matchingChanges = changedPaths.Where(p => string.Equals(p, NormalizePath(candidate.SourceFile), StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matchingChanges.Count == 0) continue;
+                var state = candidate.EvidenceState.ToString();
+                AddFinding(findings, new($"security:{candidate.Id}", ImpactAnalysisFindingKind.Security, $"Security configuration: {candidate.FieldType}",
+                    ImpactAnalysisClassification.NeedsReview, state, 1,
+                    "Changed source file also contains security/authentication expectation evidence. Review the policy and related tests; this is source evidence, not a runtime security result.",
+                    matchingChanges.Select(path => new ImpactAnalysisEvidence("Security Expectations source evidence",
+                        $"{candidate.FieldType} candidate at line {candidate.SourceLine}; candidate state {candidate.CandidateState}, evidence {state}.", path, snapshot.Id)).ToList()));
+            }
+        }
+
+        static string NormalizePath(string? path) => (path ?? string.Empty).Replace('\\', '/').TrimStart('/');
+        static bool IsWithin(string path, string? root)
+        {
+            var normalizedRoot = NormalizePath(root);
+            return normalizedRoot.Length == 0 || path.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
+                   path.StartsWith(normalizedRoot.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static List<ImpactAnalysisDomainAssessment> BuildAssessments(SourceChangeImpactReport? source, IqrSourceSnapshot? snapshot,
+        bool requirementsRequested, int requirementsFound, int requirementsRequestedCount, int linkedRequirementTests)
     {
         var list = new List<ImpactAnalysisDomainAssessment>
         {
@@ -195,15 +288,29 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
             SourceStatus(source, "Data model", "Database comparison unavailable", "Source data-model evidence does not establish runtime database impact."),
             SourceStatus(source, "Configuration", "configuration comparisons unavailable", "Only source configuration evidence is assessed; runtime values and deployment behavior are not verified."),
             PartialOrNot(source, "Dependencies", "The source comparison does not establish runtime dependency usage."),
-            new("Integrations", ImpactAnalysisEvidenceStatus.NotEvaluated, "Producer/consumer integration evidence is not yet connected to the unified run resolver."),
+            snapshot?.Architecture is not null || snapshot?.EvidenceDomains is not null
+                ? new("Integrations and cross-service contracts", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Source Analysis architecture, contract-consumer and cross-domain relationships were reused for the exact current snapshot. Unresolved links and deployed/runtime topology are not assessed.")
+                : new("Integrations and cross-service contracts", ImpactAnalysisEvidenceStatus.NotEvaluated, "The selected source snapshot has no architecture or cross-domain integration evidence."),
             source is { Journeys.Count: > 0 } ? new("Journeys", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Paths are source-derived and bounded; business journey completeness and runtime traffic are not verified.") : new("Journeys", ImpactAnalysisEvidenceStatus.NotEvaluated, "No source journey path was established; this does not prove no journey exists."),
-            source is { RecommendedTests.Count: > 0 } || requirementsFound > 0 ? new("Tests", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Only explicit links are included. Tests were not executed and behavior coverage is not proven.") : new("Tests", ImpactAnalysisEvidenceStatus.NotEvaluated, "No linked tests were available; absence of links does not mean no tests are affected."),
-            source is { SecurityAndConfigurationReviews.Count: > 0 } ? new("Security/authentication", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Review suggestions are source-based; no vulnerability or runtime security outcome is asserted.") : new("Security/authentication", ImpactAnalysisEvidenceStatus.NotEvaluated, "No dedicated security relationship provider was evaluated."),
+            source is { RecommendedTests.Count: > 0 } || linkedRequirementTests > 0 ? new("Tests", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Only explicit links are included. Tests were not executed and behavior coverage is not proven.") : new("Tests", ImpactAnalysisEvidenceStatus.NotEvaluated, "No linked tests were available; absence of links does not mean no tests are affected."),
+            snapshot is { SecurityExpectationsEvidence: { } securityEvidence } && source is not null &&
+                securityEvidence.SourceSnapshotId == snapshot.Id && string.Equals(securityEvidence.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase)
+                ? new("Security/authentication", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Security Expectations source candidates were checked against changed source paths for this exact snapshot. Runtime policy behavior and vulnerability status are not evaluated.")
+                : new("Security/authentication", ImpactAnalysisEvidenceStatus.NotEvaluated, snapshot is null ? "No source snapshot comparison was selected." : "Security Expectations source evidence is unavailable for this snapshot."),
             SourceStatus(source, "Deployment", "CI/CD", "Source CI/CD and infrastructure evidence is partial and does not verify deployment."),
-            new("Documentation", ImpactAnalysisEvidenceStatus.NotEvaluated, "Documentation-to-source freshness relationships are not connected to this run.")
+            snapshot is { GeneratedDocumentation: { } documentationEvidence } && documentationEvidence.SourceSnapshotId == snapshot.Id &&
+                string.Equals(documentationEvidence.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase)
+                ? new("Documentation", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Generated Documentation Analysis was reused for the exact current snapshot. Module-scope matches suggest documents to review; freshness is not recalculated here and authored documentation is not evaluated.")
+                : new("Documentation", ImpactAnalysisEvidenceStatus.NotEvaluated, snapshot is null ? "No source snapshot comparison was selected." : "Generated Documentation Analysis is unavailable for this snapshot.")
         };
+
+        list[list.FindIndex(a => a.Domain == "Tests")] = source is { RecommendedTests.Count: > 0 } || linkedRequirementTests > 0
+            ? new("Tests", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Source-discovered tests and explicit traceability links are used where available. Discovery is not execution evidence, and E2E classification is only shown when a provider establishes it.")
+            : new("Tests", ImpactAnalysisEvidenceStatus.NotEvaluated, "No test inventory or linked tests were available; absence of evidence does not mean no tests are affected.");
         return list;
     }
+
+    private static string NormalizePath(string? path) => (path ?? string.Empty).Replace('\\', '/').TrimStart('/');
 
     private static ImpactAnalysisDomainAssessment SourceStatus(SourceChangeImpactReport? source, string domain, string unavailableToken, string assessedReason)
     {
@@ -230,10 +337,25 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
 
     private static void AddFinding(Dictionary<string, ImpactAnalysisFinding> findings, ImpactAnalysisFinding finding)
     {
+        finding = finding with { SuggestedQaVerification = SuggestedVerification(finding.Kind) };
         if (!findings.TryGetValue(finding.Id, out var old)) { findings[finding.Id] = finding; return; }
         findings[finding.Id] = old with { Evidence = old.Evidence.Concat(finding.Evidence).Distinct().ToList(),
             Reason = string.Join("; ", new[] { old.Reason, finding.Reason }.Distinct(StringComparer.Ordinal)), Depth = Math.Min(old.Depth, finding.Depth) };
     }
+
+    private static string SuggestedVerification(ImpactAnalysisFindingKind kind) => kind switch
+    {
+        ImpactAnalysisFindingKind.Test => "Review this linked test and run it when appropriate; discovery or traceability does not prove it ran or covers the changed behavior.",
+        ImpactAnalysisFindingKind.Journey => "Review the affected journey section and select an appropriate end-to-end or manual check; no runtime journey was executed.",
+        ImpactAnalysisFindingKind.Security => "Review the related authentication or security policy and its focused tests; this finding does not assert a vulnerability.",
+        ImpactAnalysisFindingKind.Documentation => "Check whether this document should be regenerated or updated from the changed source; staleness is not asserted.",
+        ImpactAnalysisFindingKind.Integration or ImpactAnalysisFindingKind.Contract => "Review the linked contract boundary and relevant producer/consumer or contract tests; no live integration was exercised.",
+        ImpactAnalysisFindingKind.Configuration or ImpactAnalysisFindingKind.Deployment => "Review the named configuration or deployment evidence and its validation checks; no deployment was performed.",
+        ImpactAnalysisFindingKind.Requirement => "Review linked implementation, tasks, and tests for this requirement; traceability does not prove implementation or test execution.",
+        ImpactAnalysisFindingKind.Data => "Review the affected data model and migration or persistence tests; source evidence does not verify a live database.",
+        ImpactAnalysisFindingKind.Dependency => "Review projects using this dependency and run their relevant build or tests; declared use does not prove runtime impact.",
+        _ => "Review the source evidence and identify a focused verification for the changed area."
+    };
 
     private static string StableKey(string value) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value)))[..16];
 
@@ -244,6 +366,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
     private static ImpactAnalysisFinding Sanitize(ImpactAnalysisFinding finding) => finding with
     {
         Id = Safe(finding.Id), DisplayName = Safe(finding.DisplayName), VerificationState = Safe(finding.VerificationState), Reason = Safe(finding.Reason),
+        SuggestedQaVerification = Safe(finding.SuggestedQaVerification),
         Evidence = finding.Evidence.Select(e => e with { Kind = Safe(e.Kind), Description = Safe(e.Description), SourcePath = e.SourcePath is null ? null : Safe(e.SourcePath) }).ToList()
     };
 
@@ -270,7 +393,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
         var legacy = JsonSerializer.Deserialize<SourceChangeImpactReport>(json) ?? throw new JsonException("Invalid historical source-impact report.");
         var findings = new Dictionary<string, ImpactAnalysisFinding>(StringComparer.OrdinalIgnoreCase);
         AddSourceFindings(legacy, findings);
-        var assessments = BuildAssessments(legacy, false, 0, 0);
+        var assessments = BuildAssessments(legacy, null, false, 0, 0, 0);
         return new ImpactAnalysisRunReport(row.Id, row.CreatedAt, row.ProjectId, row.ProjectImportId, row.ProjectDisplayName,
             new("SourceSnapshotComparison", [], legacy.BaselineSnapshotId == Guid.Empty ? null : legacy.BaselineSnapshotId,
                 legacy.TargetSnapshotId == Guid.Empty ? null : legacy.TargetSnapshotId,

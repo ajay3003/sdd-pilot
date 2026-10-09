@@ -74,19 +74,28 @@ public sealed class SourceChangeImpactServiceTests
     public async Task Imported_project_target_must_be_the_exact_import_snapshot()
     {
         await using var db = Db();
-        var before = Snapshot("v1", []);
+        var before = Snapshot("v1", []) with
+        {
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-current" }
+        };
         var after = Snapshot("v2", []) with
         {
             ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-current" }
         };
-        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after]));
+        var otherImportBaseline = Snapshot("v0", []) with
+        {
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "another-import" }
+        };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([otherImportBaseline, before, after]));
 
         var accepted = await service.AnalyzeAsync(Request(before, after) with { EnvironmentId = string.Empty, ProjectImportId = "import-current" }, default);
         var mismatched = await service.AnalyzeAsync(Request(before, after) with { EnvironmentId = string.Empty, ProjectImportId = "another-import" }, default);
+        var crossImportBaseline = await service.AnalyzeAsync(Request(otherImportBaseline, after) with { EnvironmentId = string.Empty, ProjectImportId = "import-current" }, default);
 
         accepted.Should().NotBeNull();
         accepted!.ProjectImportId.Should().Be("import-current");
         mismatched.Should().BeNull();
+        crossImportBaseline.Should().BeNull("both snapshots must belong to the current imported project");
     }
 
     [Fact]

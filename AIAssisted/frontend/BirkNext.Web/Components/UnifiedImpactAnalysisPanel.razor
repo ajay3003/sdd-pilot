@@ -120,7 +120,8 @@
                     {
                         <li><div><strong>@finding.DisplayName</strong> <span class="unified-impact-tag">@ClassificationLabel(finding.Classification)</span> <span class="unified-impact-muted">@finding.VerificationState · depth @finding.Depth</span></div>
                             <p>@finding.Reason</p>
-                            @if (finding.Evidence.Count > 0) { <details><summary>Evidence (@finding.Evidence.Count)</summary><ul>@foreach (var evidence in finding.Evidence) { <li><strong>@evidence.Kind:</strong> @evidence.Description @if (evidence.SourcePath is not null) { <code>@evidence.SourcePath</code> }</li> }</ul></details> }
+                            <p><strong>Suggested QA verification:</strong> @finding.SuggestedQaVerification</p>
+                            @if (finding.Evidence.Count > 0) { <details><summary>Evidence (@finding.Evidence.Count)</summary><ul>@foreach (var evidence in finding.Evidence) { <li><strong>@evidence.Kind:</strong> @evidence.Description @if (evidence.SourcePath is not null) { <code>@evidence.SourcePath</code> } @if (evidence.SourceSnapshotId is { } evidenceSnapshot) { <span class="unified-impact-muted">Snapshot @evidenceSnapshot</span> } else { <span class="unified-impact-muted">Snapshot not bound</span> }</li> }</ul></details> }
                         </li>
                     }</ul>
                 }

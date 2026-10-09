@@ -8,7 +8,7 @@ public static class SourceChangeImpactExport
     public static string UnifiedHtml(ImpactAnalysisRunReport report)
     {
         static string E(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
-        var findings = string.Join("", report.Findings.Select(x => $"<li><strong>{E(x.DisplayName)}</strong> — {E(x.Classification.ToString())} · {E(x.VerificationState)}<p>{E(x.Reason)}</p><ul>{string.Join("", x.Evidence.Select(e => $"<li>{E(e.Kind)}: {E(e.Description)}{(e.SourcePath is null ? "" : $" ({E(e.SourcePath)})")}</li>"))}</ul></li>"));
+        var findings = string.Join("", report.Findings.Select(x => $"<li><strong>{E(x.DisplayName)}</strong> — {E(x.Classification.ToString())} · {E(x.VerificationState)}<p>{E(x.Reason)}</p><p><strong>Suggested QA verification:</strong> {E(x.SuggestedQaVerification)}</p><ul>{string.Join("", x.Evidence.Select(e => $"<li>{E(e.Kind)}: {E(e.Description)}{(e.SourcePath is null ? "" : $" ({E(e.SourcePath)})")}{(e.SourceSnapshotId is null ? "" : $" [snapshot {E(e.SourceSnapshotId.Value.ToString())}]")}</li>"))}</ul></li>"));
         var domains = string.Join("", report.DomainAssessments.Select(x => $"<li><strong>{E(x.Domain)}</strong>: {E(x.Status.ToString())} — {E(x.Reason)}</li>"));
         var limitations = string.Join("", report.Limitations.Select(x => $"<li>{E(x)}</li>"));
         var baseline = report.ChangeSet.BaselineSnapshotId?.ToString() ?? "Not selected";
@@ -18,7 +18,7 @@ public static class SourceChangeImpactExport
 
     public static string UnifiedMarkdown(ImpactAnalysisRunReport report)
     {
-        var findings = report.Findings.Count == 0 ? "- No impact findings were established from the selected evidence." : string.Join("\n", report.Findings.Select(x => $"- **{x.DisplayName}** — {x.Classification} ({x.VerificationState}): {x.Reason}\n  {string.Join("; ", x.Evidence.Select(e => $"{e.Kind}: {e.Description}{(e.SourcePath is null ? "" : $" ({e.SourcePath})")}"))}"));
+        var findings = report.Findings.Count == 0 ? "- No impact findings were established from the selected evidence." : string.Join("\n", report.Findings.Select(x => $"- **{x.DisplayName}** — {x.Classification} ({x.VerificationState}): {x.Reason}\n  QA verification: {x.SuggestedQaVerification}\n  {string.Join("; ", x.Evidence.Select(e => $"{e.Kind}: {e.Description}{(e.SourcePath is null ? "" : $" ({e.SourcePath})")}{(e.SourceSnapshotId is null ? "" : $" [snapshot {e.SourceSnapshotId}]")}"))}"));
         var domains = string.Join("\n", report.DomainAssessments.Select(x => $"- **{x.Domain}: {x.Status}** — {x.Reason}"));
         var limitations = report.Limitations.Count == 0 ? "- None recorded." : string.Join("\n", report.Limitations.Select(x => $"- {x}"));
         return $"# Impact Analysis\n\nProject: {report.ProjectDisplayName} (`{report.ProjectId}`)\n\nImport: {report.ProjectImportId ?? "None"}\n\nChange source: {report.ChangeSet.ChangeOrigin}\n\nBaseline snapshot: {report.ChangeSet.BaselineSnapshotId?.ToString() ?? "Not selected"} ({report.ChangeSet.BaselineFingerprint ?? "Not available"})\n\nCurrent snapshot: {report.ChangeSet.CurrentSnapshotId?.ToString() ?? "Not selected"} ({report.ChangeSet.CurrentFingerprint ?? "Not available"})\n\n## What may be affected and why\n\n{findings}\n\n## Evidence domains\n\n{domains}\n\n## What is not known\n\n{limitations}\n\nLinked evidence does not prove test execution, runtime behavior, or a failure.\n";

@@ -26,7 +26,8 @@ public sealed class ImpactAnalysisRunServiceTests
             SourceKind = TraceLinkArtifactKind.Scenario, TargetKind = TraceLinkArtifactKind.Scenario, LinkType = TraceLinkType.Covers });
         await db.SaveChangesAsync();
 
-        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, new NoSnapshots()));
+        var evidence = new NoSnapshots();
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
         var report = await service.RunAsync(new(projectId, "Imported Orders", importId, [requirement.Id], null, null), default);
         var history = await service.HistoryAsync(projectId, importId, default);
         var reopened = await service.HistoryItemAsync(report.RunId, default);
@@ -45,7 +46,8 @@ public sealed class ImpactAnalysisRunServiceTests
     public async Task Imported_project_identity_mismatch_is_rejected_before_persistence()
     {
         await using var db = Db();
-        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, new NoSnapshots()));
+        var evidence = new NoSnapshots();
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
 
         var act = () => service.RunAsync(new("sample-project", "Imported", "import-1", [Guid.NewGuid()], null, null), default);
 
@@ -58,10 +60,12 @@ public sealed class ImpactAnalysisRunServiceTests
     {
         await using var db = Db();
         const string importId = "empty-import";
-        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, new NoSnapshots()));
+        var evidence = new NoSnapshots();
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
         var report = await service.RunAsync(new($"import:{importId}", "Imported", importId, [Guid.NewGuid()], null, null), default);
 
         report.DomainAssessments.Should().Contain(x => x.Domain == "Requirements" && x.Status == ImpactAnalysisEvidenceStatus.PartiallyEvaluated);
+        report.DomainAssessments.Should().Contain(x => x.Domain == "Tests" && x.Status == ImpactAnalysisEvidenceStatus.NotEvaluated && x.Reason.Contains("absence of evidence does not mean no tests", StringComparison.OrdinalIgnoreCase));
         report.Limitations.Should().Contain(x => x.Contains("not found", StringComparison.OrdinalIgnoreCase));
         report.Findings.Should().BeEmpty();
     }
@@ -72,7 +76,8 @@ public sealed class ImpactAnalysisRunServiceTests
         await using var db = Db();
         var baseline = Snapshot('a', DateTimeOffset.UtcNow.AddDays(-1));
         var current = Snapshot('b', DateTimeOffset.UtcNow);
-        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, new SnapshotProvider([baseline, current])));
+        var evidence = new SnapshotProvider([baseline, current]);
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
 
         var report = await service.RunAsync(new("orders", "Orders", null, [], baseline.Id, current.Id), default);
         var reopened = await service.HistoryItemAsync(report.RunId, default);
@@ -93,13 +98,38 @@ public sealed class ImpactAnalysisRunServiceTests
         const string secret = "should-never-be-persisted-xyz";
         var baseline = Snapshot('a', DateTimeOffset.UtcNow.AddDays(-1)) with { EvidenceDomains = Infra("Password=old-value") };
         var current = Snapshot('b', DateTimeOffset.UtcNow) with { EvidenceDomains = Infra($"Password={secret}") };
-        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, new SnapshotProvider([baseline, current])));
+        var evidence = new SnapshotProvider([baseline, current]);
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
 
         var report = await service.RunAsync(new("orders", "Orders", null, [], baseline.Id, current.Id), default);
         var saved = await db.ImpactAnalysisRuns.SingleAsync(x => x.Id == report.RunId);
 
         report.SourceComparison!.Changes.Should().NotContain(x => x.Detail.Contains(secret, StringComparison.Ordinal));
         saved.ResultJson.Should().NotContain(secret);
+    }
+
+    [Fact]
+    public async Task Source_run_reports_available_integration_and_documentation_evidence_as_partial()
+    {
+        await using var db = Db();
+        var baseline = Snapshot('a', DateTimeOffset.UtcNow.AddDays(-1));
+        var current = Snapshot('b', DateTimeOffset.UtcNow);
+        current = current with
+        {
+            GeneratedDocumentation = new BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot
+            {
+                SourceSnapshotId = current.Id,
+                SourceFingerprint = current.Archive.Sha256
+            }
+        };
+        var evidence = new SnapshotProvider([baseline, current]);
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
+
+        var report = await service.RunAsync(new("orders", "Orders", null, [], baseline.Id, current.Id), default);
+
+        report.DomainAssessments.Should().Contain(x => x.Domain == "Integrations and cross-service contracts" && x.Status == ImpactAnalysisEvidenceStatus.PartiallyEvaluated);
+        report.DomainAssessments.Should().Contain(x => x.Domain == "Documentation" && x.Status == ImpactAnalysisEvidenceStatus.PartiallyEvaluated);
+        report.DomainAssessments.Should().Contain(x => x.Domain == "Security/authentication" && x.Status == ImpactAnalysisEvidenceStatus.NotEvaluated);
     }
 
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
