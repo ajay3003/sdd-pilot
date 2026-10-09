@@ -114,6 +114,8 @@
                         var reqDetail = !isHeading ? GetRequirementDetail(node) : null;
 
                         <div class="se-row @(isSelected ? "is-selected" : "") @(isMatch ? "is-match" : "") @(isHeading ? "is-heading" : "is-item") @(_isMapView ? "se-row-map" : "")"
+                             data-birknext-projection-id="@(node.Provenance?.ProjectionId)"
+                             data-birknext-projection-kind="@(node.Provenance?.ProjectionKind)"
                              style="padding-left: @(depth * (_isMapView ? 24 : 16) + 6)px"
                              role="treeitem"
                              aria-selected="@isSelected.ToString().ToLower()"

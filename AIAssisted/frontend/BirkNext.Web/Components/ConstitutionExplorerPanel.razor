@@ -274,7 +274,7 @@
                         @foreach (var principle in visiblePrinciples)
                         {
                             var isExpanded = _expandedIds.Contains(principle.NodeId);
-                            <div class="ce-principle-card @(isExpanded ? "is-expanded" : "")">
+                            <div class="ce-principle-card @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@principle.Provenance?.ProjectionId" data-birknext-projection-kind="@principle.Provenance?.ProjectionKind">
                                 <button class="ce-principle-header" @onclick="() => ToggleExpanded(principle.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                     <div class="ce-principle-header-left">
                                         @if (!string.IsNullOrEmpty(principle.Id))
@@ -360,7 +360,7 @@
                                 @foreach (var standard in group)
                                 {
                                     var isExpanded = _expandedIds.Contains(standard.NodeId);
-                                    <div class="ce-standard-card @(isExpanded ? "is-expanded" : "")">
+                                    <div class="ce-standard-card @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@standard.Provenance?.ProjectionId" data-birknext-projection-kind="@standard.Provenance?.ProjectionKind">
                                         <button class="ce-standard-header" @onclick="() => ToggleExpanded(standard.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="ce-standard-header-left">
                                                 @if (!string.IsNullOrEmpty(standard.Id))
@@ -437,7 +437,7 @@
                     {
                         @foreach (var item in _document.GovernanceItems)
                         {
-                            <div class="ce-governance-card ce-gov-type-@item.Type.ToString().ToLowerInvariant()">
+                            <div class="ce-governance-card ce-gov-type-@item.Type.ToString().ToLowerInvariant()" data-birknext-projection-id="@item.Provenance?.ProjectionId" data-birknext-projection-kind="@item.Provenance?.ProjectionKind">
                                 <div class="ce-governance-header">
                                     <span class="ce-governance-type-badge">@GovernanceTypeLabel(item.Type)</span>
                                     <h3 class="ce-governance-title">@item.Title</h3>
@@ -662,7 +662,7 @@
                                 <tbody>
                                     @foreach (var rule in catalogRows)
                                     {
-                                        <tr class="ce-catalog-row" @onclick="() => NavigateToTraceability(rule)">
+                                        <tr class="ce-catalog-row" data-birknext-projection-id="@rule.Provenance?.ProjectionId" data-birknext-projection-kind="@rule.Provenance?.ProjectionKind" @onclick="() => NavigateToTraceability(rule)">
                                             <td class="ce-catalog-td">
                                                 @if (!string.IsNullOrEmpty(rule.RuleId))
                                                 {
@@ -1160,6 +1160,8 @@
         var isExpanded = _expandedIds.Contains(constraint.NodeId);
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", $"ce-constraint-card {(isExpanded ? "is-expanded" : "")}");
+        __builder.AddAttribute(2, "data-birknext-projection-id", constraint.Provenance?.ProjectionId);
+        __builder.AddAttribute(3, "data-birknext-projection-kind", constraint.Provenance?.ProjectionKind);
 
         __builder.OpenElement(2, "button");
         __builder.AddAttribute(3, "class", "ce-constraint-header");
@@ -1239,11 +1241,13 @@
 
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", $"ce-map-node ce-map-depth-{node.Depth} ce-map-type-{node.Rule.RuleType.ToString().ToLowerInvariant()}");
-        __builder.AddAttribute(2, "data-node-id", node.NodeId);
-        __builder.AddAttribute(3, "data-rule-id", node.Rule.RuleId);
-        __builder.AddAttribute(4, "data-depth", node.Depth);
+        __builder.AddAttribute(2, "data-birknext-projection-id", node.Rule.Provenance?.ProjectionId);
+        __builder.AddAttribute(3, "data-birknext-projection-kind", node.Rule.Provenance?.ProjectionKind);
+        __builder.AddAttribute(4, "data-node-id", node.NodeId);
+        __builder.AddAttribute(5, "data-rule-id", node.Rule.RuleId);
+        __builder.AddAttribute(6, "data-depth", node.Depth);
         if (!string.IsNullOrEmpty(parentNodeId))
-            __builder.AddAttribute(5, "data-parent-node-id", parentNodeId);
+            __builder.AddAttribute(7, "data-parent-node-id", parentNodeId);
 
         __builder.OpenElement(6, "div");
         __builder.AddAttribute(7, "class", "ce-map-node-row");

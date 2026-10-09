@@ -218,7 +218,8 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
                 decorative || ignoredFenceDelimiter || unsupportedFenceBody ? CoverageEvidenceStatus.NotApplicable : CoverageEvidenceStatus.NotVerified,
                 classification == CoverageClassification.Missing ? "ProjectionEvidenceMissing" : classification == CoverageClassification.Unsupported ? "UnsupportedConstruct" :
                     classification is CoverageClassification.RepresentedStructurally or CoverageClassification.RepresentedDirectly
-                        ? "RenderedComponentEvidenceNotExercised" : null));
+                        ? "RenderedComponentEvidenceNotExercised" : null,
+                projectionIds));
         }
         var direct = blocks.Count(b => b.Classification == CoverageClassification.RepresentedDirectly);
         var structural = blocks.Count(b => b.Classification == CoverageClassification.RepresentedStructurally);
@@ -228,7 +229,8 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
         var renderUnverified = blocks.Any(b => b.Classification == CoverageClassification.RepresentedStructurally &&
             b.RenderEvidence == CoverageEvidenceStatus.NotVerified);
         return new(role, displayName, blocks.Count, direct, structural, ignored, unsupported, missing,
-            missing > 0 ? DiagnosticStatus.Fail : unsupported > 0 || renderUnverified ? DiagnosticStatus.Partial : DiagnosticStatus.Pass, blocks);
+            missing > 0 ? DiagnosticStatus.Fail : unsupported > 0 || renderUnverified ? DiagnosticStatus.Partial : DiagnosticStatus.Pass,
+            blocks, ExpectedDocumentId: artifactFingerprint);
     }
 
     private static object ParseWithProductionExplorer(string role, string text) => role switch

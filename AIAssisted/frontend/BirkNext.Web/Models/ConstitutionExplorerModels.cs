@@ -75,6 +75,7 @@ public sealed class ConstitutionDocument
 
 public sealed class ConstitutionRule
 {
+    public ProjectionProvenance? Provenance { get; init; }
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
     public string RuleId { get; init; } = string.Empty;     // PP-01, PS-07, GL-24, etc.
     public string Title { get; init; } = string.Empty;

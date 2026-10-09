@@ -1,5 +1,6 @@
 using System.Text;
 using BirkNext.Web.Models;
+using BirkNext.Web.Services;
 using BirkNext.Web.Services.SampleProjects;
 
 namespace BirkNext.Web.Services.Explorers;
@@ -28,7 +29,8 @@ public sealed record ExplorerArtifact(
     int RevisionCount,
     string Authority,
     ExplorerArtifactCurrentness Currentness,
-    DateTimeOffset? CapturedAt)
+    DateTimeOffset? CapturedAt,
+    string? DocumentIdentity = null)
 {
     /// <summary>Approved or Baseline. Explicit repository authority only; never inferred from being latest or first.</summary>
     public bool IsAuthoritative => Authority is "Approved" or "Baseline";
@@ -191,7 +193,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                 artifacts.Add((new ExplorerArtifact(
                     SamplePrefix + document.RelativePath, role, DisplayNameOf(content, document.FileName), document.FileName,
                     document.RelativePath, ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown",
-                    ExplorerArtifactCurrentness.Current, null), () => content, false));
+                    ExplorerArtifactCurrentness.Current, null, content is null ? null : MarkdownTokenizer.DocumentFingerprint(content)), () => content, false));
             }
         }
 
@@ -315,7 +317,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                 var artifact = new ExplorerArtifact(
                     WorkspacePrefix + g.Key, role, DisplayNameOf(revision.Content, g.Key), g.Key, revision.SourceReference,
                     ExplorerArtifactSource.Workspace, revision.Origin, revision.Revision, g.Count(),
-                    string.IsNullOrWhiteSpace(revision.Authority) ? "Unknown" : revision.Authority, CurrentnessOf(revision), revision.CapturedAt);
+                    string.IsNullOrWhiteSpace(revision.Authority) ? "Unknown" : revision.Authority, CurrentnessOf(revision), revision.CapturedAt,
+                    MarkdownTokenizer.DocumentFingerprint(revision.Content));
                 return (artifact, revision);
             })
             .ToList();

@@ -7,7 +7,8 @@
    error, empty, choose-an-artifact or the loaded artifact (context bar + selector) around the explorer's own content.
    Explorers get the selected artifact's content from here and never look up files by name. *@
 
-<section class="axh" data-testid="artifact-explorer" data-role="@Role" data-status="@StatusKey">
+<section class="axh" data-testid="artifact-explorer" data-role="@Role" data-status="@StatusKey"
+         data-birknext-document-id="@DocumentIdentity">
     @if (_state is null)
     {
         <div class="axh-card axh-loading" role="status" aria-live="polite" data-testid="artifact-explorer-loading">
@@ -96,6 +97,7 @@
                         {
                             <li>
                                 <button type="button" class="axh-choice" data-testid="artifact-explorer-choice"
+                                        data-birknext-document-id="@artifact.DocumentIdentity"
                                         @onclick="() => SelectAsync(artifact.Id)">
                                     <span class="axh-choice-name">@artifact.DisplayName</span>
                                     <span class="axh-choice-meta">@MetaLine(artifact)</span>
@@ -143,7 +145,8 @@
                                     value="@selected.Id" @onchange="OnSelectorChanged">
                                 @foreach (var artifact in _state.Artifacts)
                                 {
-                                    <option value="@artifact.Id">@OptionText(artifact)</option>
+                                    <option value="@artifact.Id"
+                                            data-birknext-document-id="@artifact.DocumentIdentity">@OptionText(artifact)</option>
                                 }
                             </select>
                         }
@@ -200,6 +203,10 @@
     private string Label => ArtifactExplorerRoles.Label(Role);
     private string Icon => ArtifactExplorerRoles.Icon(Role);
     private string StatusKey => _state is null ? "Loading" : _state.Status.ToString();
+    // Same canonical content fingerprint used by every role parser. This is an opaque identity, not source text or path.
+    private string? DocumentIdentity => _state is { Status: ExplorerArtifactStatus.Loaded, Content: { } content }
+        ? MarkdownTokenizer.DocumentFingerprint(content)
+        : null;
     private string WorkspaceLabel => _state?.HasProject == true ? $"project {_state.ProjectName ?? _state.ProjectSlug}" : "the current workspace";
     private string WorkspaceName => _state?.HasProject == true ? (_state.ProjectName ?? _state.ProjectSlug)! : "the current workspace";
     /// <summary>Whether the manual workspace holds any artifact (decides "no project loaded" vs "this role has none" without a project).</summary>

@@ -349,7 +349,7 @@
                                 <ul class="pe-overview-list pe-dep-list">
                                     @foreach (var dep in VisibleDependencies)
                                     {
-                                        <li data-testid="pe-dependency">
+                                        <li data-testid="pe-dependency" data-birknext-projection-id="@dep.Provenance?.ProjectionId" data-birknext-projection-kind="@dep.Provenance?.ProjectionKind">
                                             <span class="pe-dep-name">@dep.Name</span>
                                             @if (!string.IsNullOrEmpty(dep.Version))
                                             { <span class="pe-dep-version">@dep.Version</span> }
@@ -397,7 +397,7 @@
                                 <ul class="pe-overview-list">
                                     @foreach (var ms in _plan.Milestones)
                                     {
-                                        <li>
+                                        <li data-birknext-projection-id="@ms.Provenance?.ProjectionId" data-birknext-projection-kind="@ms.Provenance?.ProjectionKind">
                                             <span class="pe-ms-title">@ms.Title</span>
                                             @if (!string.IsNullOrEmpty(ms.TargetDate))
                                             { <span class="pe-ms-date">@ms.TargetDate</span> }
@@ -436,7 +436,7 @@
                             @foreach (var adr in VisibleDecisions)
                             {
                                 var isExpanded = _expanded.Contains(adr.NodeId);
-                                <div class="pe-adr-card @(isExpanded ? "is-expanded" : "")">
+                                <div class="pe-adr-card @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@adr.Provenance?.ProjectionId" data-birknext-projection-kind="@adr.Provenance?.ProjectionKind">
                                     <button class="pe-adr-header" @onclick="() => Toggle(adr.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                         <div class="pe-adr-header-left">
                                             @if (!string.IsNullOrEmpty(adr.Id))
@@ -505,7 +505,7 @@
                     {
                         @foreach (var sec in techSections)
                         {
-                            <div class="pe-section">
+                            <div class="pe-section" data-birknext-projection-id="@sec.Provenance?.ProjectionId" data-birknext-projection-kind="@sec.Provenance?.ProjectionKind">
                                 <div class="pe-section-title">@sec.Title</div>
                                 <div class="pe-section-content">
                                     <MarkdownContent Content="@sec.RawContent" PreserveSoftLineBreaks="true" />
@@ -534,7 +534,7 @@
                     {
                         @foreach (var sec in structureSections)
                         {
-                            <div class="pe-section">
+                            <div class="pe-section" data-birknext-projection-id="@sec.Provenance?.ProjectionId" data-birknext-projection-kind="@sec.Provenance?.ProjectionKind">
                                 <div class="pe-section-title">@sec.Title</div>
                                 <div class="pe-section-content">
                                     @{
@@ -603,7 +603,7 @@
                                 @foreach (var risk in group)
                                 {
                                     var isExpanded = _expanded.Contains(risk.NodeId);
-                                    <div class="pe-risk-card pe-risk-@risk.Severity.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")">
+                                    <div class="pe-risk-card pe-risk-@risk.Severity.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@risk.Provenance?.ProjectionId" data-birknext-projection-kind="@risk.Provenance?.ProjectionKind">
                                         <button class="pe-risk-header" @onclick="() => Toggle(risk.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="pe-risk-header-left">
                                                 <span class="pe-severity-badge pe-badge-@risk.Severity.ToString().ToLowerInvariant()">@SeverityLabel(risk.Severity)</span>
@@ -648,7 +648,7 @@
                                     <div class="pe-constraint-group">
                                         @foreach (var constraint in cgroup)
                                         {
-                                            <div class="pe-constraint-card pe-ctype-@ConstraintTypeCss(constraint.ConstraintType)">
+                                            <div class="pe-constraint-card pe-ctype-@ConstraintTypeCss(constraint.ConstraintType)" data-birknext-projection-id="@constraint.Provenance?.ProjectionId" data-birknext-projection-kind="@constraint.Provenance?.ProjectionKind">
                                                 <span class="pe-constraint-type-badge pe-cbadge-@ConstraintTypeCss(constraint.ConstraintType)">@ConstraintTypeLabel(constraint.ConstraintType)</span>
                                                 <div class="pe-constraint-body">
                                                     <div class="pe-constraint-title">@constraint.Title</div>
@@ -697,7 +697,7 @@
                                 @foreach (var item in group)
                                 {
                                     var isExpanded = _expanded.Contains(item.NodeId);
-                                    <div class="pe-complexity-card pe-complexity-@item.Level.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")">
+                                    <div class="pe-complexity-card pe-complexity-@item.Level.ToString().ToLowerInvariant() @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@item.Provenance?.ProjectionId" data-birknext-projection-kind="@item.Provenance?.ProjectionKind">
                                         <button class="pe-complexity-header" @onclick="() => Toggle(item.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="pe-complexity-header-left">
                                                 <span class="pe-complexity-badge pe-cbadge-@item.Level.ToString().ToLowerInvariant()">@ComplexityLevelLabel(item.Level)</span>
@@ -760,7 +760,7 @@
                                 var isExpanded = _expanded.Contains(phase.NodeId);
                                 var phaseClass = phase.PhaseNumber == 0 ? "is-pre" : phase.PhaseNumber == 99 ? "is-post" : string.Empty;
                                 var phaseLabel = PhaseNodeLabel(phase);
-                                <div class="pe-phase-item @phaseClass @(isExpanded ? "is-expanded" : "")">
+                                <div class="pe-phase-item @phaseClass @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@phase.Provenance?.ProjectionId" data-birknext-projection-kind="@phase.Provenance?.ProjectionKind">
                                     <div class="pe-phase-node">
                                         <span class="pe-phase-number">@phaseLabel</span>
                                     </div>
@@ -839,7 +839,7 @@
             @if (_tab == "testing")
             {
                 <!-- ── Testing Tab ────────────────────────────────────────── -->
-                <div class="pe-testing">
+                <div class="pe-testing" data-birknext-projection-id="@_plan.TestingInfo?.Provenance?.ProjectionId" data-birknext-projection-kind="@_plan.TestingInfo?.Provenance?.ProjectionKind">
                     @{
                         var testing = _plan.TestingInfo;
                     }
@@ -867,7 +867,7 @@
                         <!-- Gate refs -->
                         @if (testing.GateRefs.Count > 0)
                         {
-                            <div class="pe-testing-section">
+                                    <div class="pe-testing-section">
                                 <div class="pe-testing-section-title">Constitution Gate References</div>
                                 <div class="pe-testing-gate-refs">
                                     @foreach (var ref_ in testing.GateRefs)
@@ -968,7 +968,7 @@
                                 <tbody>
                                     @foreach (var gate in visibleGates)
                                     {
-                                        <tr>
+                                        <tr data-birknext-projection-id="@gate.Provenance?.ProjectionId" data-birknext-projection-kind="@gate.Provenance?.ProjectionKind">
                                             <td class="pe-gate-label">@gate.Gate</td>
                                             <td class="pe-gate-rule">@(string.IsNullOrEmpty(gate.RuleId) ? gate.Principle : gate.RuleId)</td>
                                             <td>
@@ -1013,7 +1013,7 @@
                                 @foreach (var item in group)
                                 {
                                     var isExpanded = _expanded.Contains(item.NodeId);
-                                    <div class="pe-check-card pe-check-@CheckStatusCss(item.Status) @(isExpanded ? "is-expanded" : "")">
+                                    <div class="pe-check-card pe-check-@CheckStatusCss(item.Status) @(isExpanded ? "is-expanded" : "")" data-birknext-projection-id="@item.Provenance?.ProjectionId" data-birknext-projection-kind="@item.Provenance?.ProjectionKind">
                                         <button class="pe-check-header" @onclick="() => Toggle(item.NodeId)" aria-expanded="@isExpanded.ToString().ToLower()">
                                             <div class="pe-check-header-left">
                                                 @if (!string.IsNullOrEmpty(item.RuleId))
@@ -1398,6 +1398,8 @@
     {
         __builder.OpenElement(0, "div");
         __builder.AddAttribute(1, "class", "pe-section-content");
+        __builder.AddAttribute(2, "data-birknext-projection-id", section.Provenance?.ProjectionId);
+        __builder.AddAttribute(3, "data-birknext-projection-kind", section.Provenance?.ProjectionKind);
 
         foreach (var block in section.Blocks.Where(b => b.HasContent || b.SubHeading is not null))
         {

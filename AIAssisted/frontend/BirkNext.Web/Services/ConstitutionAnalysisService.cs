@@ -434,7 +434,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
     {
         // Tuple: (PrimaryId, Title, Desc, RuleType, RawText, TitleAliases, IsReferenceOnly)
         var mutableRules = new List<(string Id, string Title, string Desc,
-            ConstitutionRuleType Type, string Raw, List<string> Aliases, bool IsReferenceOnly)>();
+            ConstitutionRuleType Type, string Raw, List<string> Aliases, bool IsReferenceOnly, ProjectionProvenance? Provenance)>();
 
         int principleSeq = 0, standardSeq = 0, constraintSeq = 0, govSeq = 0;
 
@@ -443,7 +443,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             var (primaryId, aliases) = ResolveItemId(p.Id, p.Title, "PP-",
                 ref principleSeq, "PRINCIPLE");
             mutableRules.Add((primaryId, p.Title, p.Description,
-                ConstitutionRuleType.Principle, p.RawText, aliases, false));
+                ConstitutionRuleType.Principle, p.RawText, aliases, false, p.Provenance));
         }
 
         foreach (var s in standards)
@@ -451,7 +451,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             var (primaryId, aliases) = ResolveItemId(s.Id, s.Title, "PS-",
                 ref standardSeq, "STANDARD");
             mutableRules.Add((primaryId, s.Title, s.Description,
-                ConstitutionRuleType.Standard, s.RawText, aliases, false));
+                ConstitutionRuleType.Standard, s.RawText, aliases, false, s.Provenance));
         }
 
         foreach (var c in constraints)
@@ -460,7 +460,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 ref constraintSeq);
             var ctype = InferConstraintRuleType(primaryId);
             mutableRules.Add((primaryId, c.Title, c.Description,
-                ctype, c.RawText, aliases, false));
+                ctype, c.RawText, aliases, false, c.Provenance));
         }
 
         foreach (var g in governance)
@@ -472,7 +472,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
                 .Where(id => !id.Equals(govId, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             mutableRules.Add((govId, g.Title, g.Description,
-                ConstitutionRuleType.Governance, g.RawText, aliases, false));
+                ConstitutionRuleType.Governance, g.RawText, aliases, false, g.Provenance));
         }
 
         // Build set of all explicitly known IDs (primaries + aliases)
@@ -482,7 +482,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         // Extract forward refs from BOTH title (contains embedded IDs) AND raw body
         var forwardRefs = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, title, _, _, raw, _, _) in mutableRules)
+        foreach (var (id, title, _, _, raw, _, _, _) in mutableRules)
         {
             forwardRefs[id] = ExtractRuleIds(title + "\n" + raw)
                 .Where(refId => !refId.Equals(id, StringComparison.OrdinalIgnoreCase))
@@ -500,7 +500,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             if (!knownIds.Contains(refId))
             {
                 var impliedType = InferRuleTypeFromId(refId);
-                mutableRules.Add((refId, refId, string.Empty, impliedType, string.Empty, [], true));
+                mutableRules.Add((refId, refId, string.Empty, impliedType, string.Empty, [], true, null));
                 knownIds.Add(refId);
             }
         }
@@ -511,7 +511,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
 
         // Also register aliases in referencedBy for resolution
         var aliasToId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, _, _, _, _, aliasList, _) in mutableRules)
+        foreach (var (id, _, _, _, _, aliasList, _, _) in mutableRules)
         {
             foreach (var alias in aliasList)
                 aliasToId.TryAdd(alias, id);
@@ -551,6 +551,7 @@ public sealed class ConstitutionAnalysisService : IConstitutionAnalysisService
             Description = r.Desc,
             RuleType = r.Type,
             IsReferenceOnly = r.IsReferenceOnly,
+            Provenance = r.Provenance,
             Aliases = r.Aliases.Select(a => a.ToUpperInvariant()).ToList(),
             References = forwardRefs.TryGetValue(r.Id, out var fr)
                 ? fr.Distinct(StringComparer.OrdinalIgnoreCase).ToList()

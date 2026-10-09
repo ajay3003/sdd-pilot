@@ -900,7 +900,7 @@ else if (_settings is not null)
             {
                 <section class="settings-card settings-card-full-width" aria-labelledby="explorer-coverage-title">
                     <div class="settings-card-title" id="explorer-coverage-title">Explorer Text Coverage</div>
-                    <p class="settings-card-note">Compares source blocks with the production role parser output. Direct source-note blocks include render hooks. For structured blocks, parser output does not yet prove extractor, page-model, or rendered-component provenance, so those stages remain NotVerified until the mapping is carried through and exercised in the Explorer DOM. Missing blocks are defects. This diagnostic does not change workspace selections.</p>
+                    <p class="settings-card-note">Tracks supported source blocks through parser, extractor, Explorer page model, and browser-observed DOM identity. Missing blocks are defects when supported content has no destination; Unsupported and Intentionally Ignored have separate reasons. Page Model Verified does not imply Render Verified. Render becomes Verified or Missing only when browser evidence is attached; unavailable browser execution remains NotVerified. Direct blocks without block-level DOM identity remain NotVerified. This diagnostic does not change workspace selections.</p>
                     <button class="btn-edit-settings" @onclick="RunExplorerCoverageAsync" disabled="@_coverageRunning">@(_coverageRunning ? "Running Explorer coverage diagnostics…" : "Run Explorer coverage diagnostics")</button>
                     @if (_coverageError is not null) { <p role="alert" class="settings-card-note">@_coverageError</p> }
                     @if (_coverageRun is { } coverage)
@@ -915,8 +915,15 @@ else if (_settings is not null)
                         {
                             <details class="settings-card-note"><summary>@doc.DisplayName — @doc.Status · @doc.SourceBlockCount blocks · @doc.MissingCount missing</summary>
                                 <p>Direct @doc.RepresentedDirectlyCount · Structured @doc.RepresentedStructurallyCount · Ignored @doc.IntentionallyIgnoredCount · Unsupported @doc.UnsupportedCount · Missing @doc.MissingCount</p>
+                                @if (doc.RenderVerifications is { Count: > 0 })
+                                {
+                                    @foreach (var render in doc.RenderVerifications)
+                                    {
+                                        <p data-testid="coverage-render-verification">Render verification: @render.ExecutionStatus · expected @render.ExpectedProjectionIds.Count · found @render.FoundProjectionIds.Count · missing @render.MissingProjectionIds.Count · duplicates @render.DuplicateProjectionIds.Count · unexpected @render.UnexpectedProjectionIds.Count@(render.UnavailableReason is null ? "" : $" · {render.UnavailableReason}")</p>
+                                    }
+                                }
                                 <div class="table-responsive"><table class="settings-table"><thead><tr><th>Lines</th><th>Type</th><th>Preview</th><th>Classification</th><th>Evidence stages</th><th>Rule</th><th>Reason / destination</th></tr></thead><tbody>
-                                @foreach (var block in VisibleCoverageBlocks(doc)) { <tr data-source-block-id="@block.BlockId"><td>@block.StartLine–@block.EndLine</td><td>@block.BlockType</td><td>@block.Preview</td><td>@block.Classification</td><td>Source @block.SourceEvidence · Parser @block.ParserEvidence · Extractor @block.ExtractorEvidence · Page model @block.PageModelEvidence · Render @block.RenderEvidence</td><td>@block.RuleId</td><td>@block.Reason@if (block.Destination is not null) { <span> · @block.Destination</span> }</td></tr> }
+                                @foreach (var block in VisibleCoverageBlocks(doc)) { <tr data-source-block-id="@block.BlockId"><td>@block.StartLine–@block.EndLine</td><td>@block.BlockType</td><td>@block.Preview</td><td>@block.Classification</td><td>Source @block.SourceEvidence · Parser @block.ParserEvidence · Extractor @block.ExtractorEvidence · Page model @block.PageModelEvidence · Render @RenderEvidenceLabel(block.RenderEvidence)</td><td>@block.RuleId</td><td>@block.Reason@if (block.Destination is not null) { <span> · @block.Destination</span> }</td></tr> }
                                 </tbody></table></div>
                             </details>
                         }
@@ -1496,6 +1503,14 @@ else if (_settings is not null)
         "Direct" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.RepresentedDirectly),
         "Structured" => document.Blocks.Where(b => b.Classification == BirkNext.MarkdownDiagnostics.CoverageClassification.RepresentedStructurally),
         _ => document.Blocks
+    };
+
+    private static string RenderEvidenceLabel(BirkNext.MarkdownDiagnostics.CoverageEvidenceStatus status) => status switch
+    {
+        BirkNext.MarkdownDiagnostics.CoverageEvidenceStatus.Present => "Verified",
+        BirkNext.MarkdownDiagnostics.CoverageEvidenceStatus.Absent => "Missing",
+        BirkNext.MarkdownDiagnostics.CoverageEvidenceStatus.NotApplicable => "NotApplicable",
+        _ => "NotVerified"
     };
 
     private async Task RunProjectCompatibilityAsync()

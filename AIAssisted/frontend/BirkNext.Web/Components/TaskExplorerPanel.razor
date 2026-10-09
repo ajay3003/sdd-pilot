@@ -500,7 +500,7 @@
                                     var phaseStatus = PhaseMarkedDoneLabel(phase.CompletedCount, phase.TaskCount);
                                     var phaseStatusClass = phase.TaskCount == 0 || phase.CompletedCount == 0 ? "not-started" : (phasePct == 100 ? "complete" : "in-progress");
                                     var phaseProgressText = $"{phase.Title}: {phase.CompletedCount} of {phase.TaskCount} task{(phase.TaskCount == 1 ? "" : "s")} marked done in Task artifact";
-                                    <div class="te-phase-card">
+                                    <div class="te-phase-card" data-birknext-projection-id="@phase.Provenance?.ProjectionId" data-birknext-projection-kind="@phase.Provenance?.ProjectionKind">
                                         <div class="te-phase-card-header">
                                             <div class="te-phase-name">@phase.Title</div>
                                             <span class="te-phase-status te-phase-status-@phaseStatusClass">@phaseStatus</span>
@@ -596,7 +596,7 @@
                                 var taskGroups = phase.Children.Where(IsExecutionGroup).ToList();
                                 var directTasks = phase.Children.Where(n => n.NodeType == TaskNodeType.Task).ToList();
 
-                                <div class="te-map-phase-card pe-section-block">
+                                <div class="te-map-phase-card pe-section-block" data-birknext-projection-id="@phase.Provenance?.ProjectionId" data-birknext-projection-kind="@phase.Provenance?.ProjectionKind">
                                     <!-- Phase header -->
                                     <div class="te-map-phase-header">
                                         <h3 class="te-map-phase-title">@phase.Title</h3>
@@ -608,7 +608,7 @@
                                     {
                                         var groupTasks = AllNodes(group.Children).Where(n => n.NodeType == TaskNodeType.Task).ToList();
 
-                                        <div class="te-map-group">
+                                        <div class="te-map-group" data-birknext-projection-id="@group.Provenance?.ProjectionId" data-birknext-projection-kind="@group.Provenance?.ProjectionKind">
                                             <div class="te-map-group-header">
                                                 <span class="te-map-group-title">@group.Title</span>
                                                 <span class="te-map-group-count">@groupTasks.Count task@(groupTasks.Count != 1 ? "s" : "")</span>
@@ -678,6 +678,8 @@
                         var isPhase = node.NodeType == TaskNodeType.Phase;
 
                         <div class="te-row @(isSelected ? "is-selected" : "") @TreeFilterMatchClass(isMatch) @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")"
+                             data-birknext-projection-id="@(node.Provenance?.ProjectionId)"
+                             data-birknext-projection-kind="@(node.Provenance?.ProjectionKind)"
                              style="--te-depth: @depth"
                              role="treeitem"
                              aria-selected="@isSelected.ToString().ToLower()"
@@ -1318,7 +1320,7 @@
     private RenderFragment MapTaskItem(TaskNode task, int phaseIndex, string? tabStopId) => __builder =>
     {
         var isSelected = _selectedNodeId == task.Id;
-        <li class="te-map-task-item">
+        <li class="te-map-task-item" data-birknext-projection-id="@task.Provenance?.ProjectionId" data-birknext-projection-kind="@task.Provenance?.ProjectionKind">
             <button type="button" class="te-map-task @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)"
                     tabindex="@(task.Id == tabStopId ? "0" : "-1")" data-map-phase="@phaseIndex"
                     title="@task.Title" data-task-id="@task.TaskId" @onclick="@(() => HandleNodeClick(task))">

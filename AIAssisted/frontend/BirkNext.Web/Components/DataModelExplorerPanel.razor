@@ -206,7 +206,7 @@ else
                         <div class="dme-enum-chips">
                             @foreach (var e in _document.Enums)
                             {
-                                <div class="dme-enum-chip" title="@string.Join(", ", e.Values)">
+                                <div class="dme-enum-chip" title="@string.Join(", ", e.Values)" data-birknext-projection-id="@e.Provenance?.ProjectionId" data-birknext-projection-kind="@e.Provenance?.ProjectionKind">
                                     <strong>@e.Name</strong>
                                     <span class="dme-enum-count">@e.Values.Count values</span>
                                 </div>
@@ -245,7 +245,7 @@ else
                             var cardMod    = hasError ? "has-error" : hasWarn ? "has-warning" : "";
                             var entityRels = GetEntityRelationships(entity.Name);
 
-                            <div class="dme-dc @cardMod">
+                            <div class="dme-dc @cardMod" data-birknext-projection-id="@entity.Provenance?.ProjectionId" data-birknext-projection-kind="@entity.Provenance?.ProjectionKind">
                                 <div class="dme-dc-header">
                                     <span class="dme-dc-kind">@StructureKindLabel(entity.Kind)</span>
                                     <span class="dme-dc-name" title="@entity.Name">@entity.Name</span>
@@ -262,7 +262,7 @@ else
                                         {
                                             var indexed = IsColumnIndexed(entity, col);
                                             var isSens  = AnalysisService.IsSensitiveColumn(col);
-                                            <div class="dme-dc-col @(col.IsPrimaryKey ? "is-pk" : col.IsForeignKey ? "is-fk" : "")">
+                                            <div class="dme-dc-col @(col.IsPrimaryKey ? "is-pk" : col.IsForeignKey ? "is-fk" : "")" data-birknext-projection-id="@col.Provenance?.ProjectionId" data-birknext-projection-kind="@col.Provenance?.ProjectionKind">
                                                 <span class="dme-dc-col-name" title="@col.Name">@col.Name</span>
                                                 <div class="dme-dc-badges">
                                                     @if (col.IsPrimaryKey)                           { <span class="dme-db-badge dme-db-pk">PK</span> }
@@ -327,7 +327,7 @@ else
                             <div class="dme-rel-list" role="list">
                                 @foreach (var rel in _document.Relationships)
                                 {
-                                    <div class="dme-rel-row" role="listitem">
+                                    <div class="dme-rel-row" role="listitem" data-birknext-projection-id="@rel.Provenance?.ProjectionId" data-birknext-projection-kind="@rel.Provenance?.ProjectionKind">
                                         <div class="dme-rel-source">
                                             <span class="dme-rel-entity">@rel.SourceEntity</span>
                                             @if (!string.IsNullOrEmpty(rel.SourceColumn))
@@ -371,7 +371,7 @@ else
                 <div class="dme-rel-list" role="list">
                     @foreach (var rel in visible)
                     {
-                        <div class="dme-rel-row" role="listitem">
+                        <div class="dme-rel-row" role="listitem" data-birknext-projection-id="@rel.Provenance?.ProjectionId" data-birknext-projection-kind="@rel.Provenance?.ProjectionKind">
                             <div class="dme-rel-source">
                                 <span class="dme-rel-entity">@rel.SourceEntity</span>
                                 @if (!string.IsNullOrEmpty(rel.SourceColumn))
@@ -419,7 +419,7 @@ else
                     <div class="dme-idx-list" role="list">
                         @foreach (var idx in visibleIdx)
                         {
-                            <div class="dme-idx-row" role="listitem">
+                            <div class="dme-idx-row" role="listitem" data-birknext-projection-id="@idx.Provenance?.ProjectionId" data-birknext-projection-kind="@idx.Provenance?.ProjectionKind">
                                 <span class="dme-idx-name" title="@idx.Name">@idx.Name</span>
                                 @if (!string.IsNullOrEmpty(idx.EntityName))
                                 { <span class="dme-idx-entity">@idx.EntityName</span> }
@@ -451,7 +451,7 @@ else
                         <div class="dme-idx-list" role="list">
                             @foreach (var con in visibleCon)
                             {
-                                <div class="dme-idx-row" role="listitem">
+                                <div class="dme-idx-row" role="listitem" data-birknext-projection-id="@con.Provenance?.ProjectionId" data-birknext-projection-kind="@con.Provenance?.ProjectionKind">
                                     <span class="dme-con-type dme-con-@con.ConstraintType.ToLowerInvariant()" title="@GetConstraintTypeLabel(con.ConstraintType)">@con.ConstraintType</span>
                                     <span class="dme-idx-name" title="@con.Name">@con.Name</span>
                                     @if (!string.IsNullOrEmpty(con.EntityName))
