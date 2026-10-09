@@ -60,14 +60,16 @@ public sealed class ProjectCompatibilityDiagnosticService(IConfiguration configu
         Check("Renamed Markdown documents", "Content-supported roles remain discoverable after filenames change.", () =>
         {
             var result = Inspect(Archive([.. renamed, .. Source]), cancellationToken);
-            return EquivalentRoles(baseline, result) ? "Role and content-fingerprint set is unchanged." : throw new InvalidOperationException("Role/content semantics changed after rename.");
+            var comparison = CompareSemantics(baseline, result);
+            return comparison.Equivalent ? comparison.Summary : throw new InvalidOperationException($"Role/content semantics changed after rename. {comparison.Details}");
         });
 
         var moved = Documents.Select((d, i) => ($"layer-{i}/nested/area/{d.Path.Split('/').Last()}", d.Content)).ToArray();
         Check("Moved and nested documents", "Content-supported roles survive alternate nested folders.", () =>
         {
             var result = Inspect(Archive([.. moved, .. Source]), cancellationToken);
-            return EquivalentRoles(baseline, result) ? "Role and content-fingerprint set is unchanged." : throw new InvalidOperationException("Role/content semantics changed after move.");
+            var comparison = CompareSemantics(baseline, result);
+            return comparison.Equivalent ? comparison.Summary : throw new InvalidOperationException($"Role/content semantics changed after move. {comparison.Details}");
         });
 
         Check("Multiple archive roots", "No single top-level project folder is required.", () =>
@@ -193,10 +195,12 @@ public sealed class ProjectCompatibilityDiagnosticService(IConfiguration configu
                     {
                         var mutationTimer = Stopwatch.StartNew();
                         var mutated = Inspect(MutateMarkdownArchive(File.ReadAllBytes(acceptancePath)), cancellationToken);
-                        var equivalent = EquivalentRoles(result, mutated);
-                        results.Add(new("Optional real-project Markdown mutation", equivalent ? status : ProjectCompatibilityStatus.Fail,
+                        var comparison = CompareSemantics(result, mutated);
+                        var mutationStatus = comparison.Equivalent ? status : comparison.OnlyCanonicalFilenameEvidence
+                            ? ProjectCompatibilityStatus.Partial : ProjectCompatibilityStatus.Fail;
+                        results.Add(new("Optional real-project Markdown mutation", mutationStatus,
                             "Renamed and nested Markdown files preserve discovered document role/content semantics.",
-                            equivalent ? "Role and normalized content-fingerprint set is unchanged." : "Document discovery changed after deterministic path mutation.",
+                            comparison.Summary, comparison.Details,
                             DurationMilliseconds: mutationTimer.ElapsedMilliseconds));
                     }
                 }
@@ -218,23 +222,85 @@ public sealed class ProjectCompatibilityDiagnosticService(IConfiguration configu
         return new(Guid.NewGuid(), started, completed, overall, results, realFixtureUsed);
     }
 
-    private static bool EquivalentRoles(Inspection left, Inspection right) => left.Valid && right.Valid
-        && left.RoleFingerprints.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(right.RoleFingerprints.OrderBy(x => x, StringComparer.Ordinal));
+    private sealed record DocumentSemantic(string Fingerprint, string RelativePath, string Status, string? Role, string Confidence,
+        string CandidateRoles, string CandidateConfidence, bool ExactCanonicalFilenameSignal, string Signals);
+
+    private sealed record SemanticComparison(bool Equivalent, bool OnlyCanonicalFilenameEvidence, string Summary, string? Details);
 
     private sealed record Inspection(bool Valid, bool SourceDetected, int UnsupportedFiles, string[] Roles, string[] RoleFingerprints,
+        IReadOnlyList<DocumentSemantic> DocumentSemantics, string[] TechnologyIds,
         IReadOnlyList<(string Path, string Content)> Documents, IqrSourceArchiveReader.Workspace? Workspace);
+
+    private static SemanticComparison CompareSemantics(Inspection left, Inspection right)
+    {
+        var leftByFingerprint = left.DocumentSemantics.GroupBy(d => d.Fingerprint, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.OrderBy(ClassificationKey, StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+        var rightByFingerprint = right.DocumentSemantics.GroupBy(d => d.Fingerprint, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.OrderBy(ClassificationKey, StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+        var changed = new List<(string Fingerprint, DocumentSemantic[] Original, DocumentSemantic[] Mutated)>();
+        var confidenceChanges = new List<(string Fingerprint, DocumentSemantic[] Original, DocumentSemantic[] Mutated)>();
+        foreach (var fingerprint in leftByFingerprint.Keys.Union(rightByFingerprint.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal))
+        {
+            var original = leftByFingerprint.GetValueOrDefault(fingerprint, []).OrderBy(ClassificationKey, StringComparer.Ordinal).ToArray();
+            var mutated = rightByFingerprint.GetValueOrDefault(fingerprint, []).OrderBy(ClassificationKey, StringComparer.Ordinal).ToArray();
+            if (!original.Select(OutcomeKey).Order(StringComparer.Ordinal).SequenceEqual(mutated.Select(OutcomeKey).Order(StringComparer.Ordinal), StringComparer.Ordinal))
+                changed.Add((fingerprint, original, mutated));
+            else if (!original.Select(ClassificationKey).SequenceEqual(mutated.Select(ClassificationKey), StringComparer.Ordinal))
+                confidenceChanges.Add((fingerprint, original, mutated));
+        }
+
+        var sourceSame = left.SourceDetected == right.SourceDetected && left.UnsupportedFiles == right.UnsupportedFiles
+            && left.TechnologyIds.SequenceEqual(right.TechnologyIds, StringComparer.Ordinal);
+        if (changed.Count == 0 && confidenceChanges.Count == 0 && sourceSame)
+            return new(true, false, "Document role, classification/ambiguity, candidate-role and source technology semantics are unchanged; path and display-name differences are provenance only.", null);
+
+        var canonicalConfidenceOnly = changed.Count == 0 && confidenceChanges.Count > 0 && sourceSame && confidenceChanges.All(change =>
+            change.Original.Length > 0 && change.Original.All(d => d.ExactCanonicalFilenameSignal)
+            && change.Mutated.Length > 0 && change.Mutated.All(d => !d.ExactCanonicalFilenameSignal));
+        var canonicalRoleLossOnly = changed.Count > 0 && sourceSame && changed.All(change =>
+            change.Original.Length == change.Mutated.Length && change.Original.Length > 0
+            && change.Original.All(d => d.ExactCanonicalFilenameSignal && d.Role is not null)
+            && change.Mutated.All(d => !d.ExactCanonicalFilenameSignal && (d.Role is null || d.Role == change.Original[0].Role)));
+        var details = changed.Select(change =>
+            $"fingerprint {change.Fingerprint[..Math.Min(12, change.Fingerprint.Length)]}: original [{string.Join(" | ", change.Original.Select(Describe))}], mutated [{string.Join(" | ", change.Mutated.Select(Describe))}]")
+            .Concat(confidenceChanges.Take(8).Select(change =>
+                $"confidence-only fingerprint {change.Fingerprint[..Math.Min(12, change.Fingerprint.Length)]}: original [{string.Join(" | ", change.Original.Select(Describe))}], mutated [{string.Join(" | ", change.Mutated.Select(Describe))}]"))
+            .Concat(sourceSame ? [] : [$"source: original detected={left.SourceDetected}, unsupported={left.UnsupportedFiles}, technologies={string.Join(",", left.TechnologyIds)}; mutated detected={right.SourceDetected}, unsupported={right.UnsupportedFiles}, technologies={string.Join(",", right.TechnologyIds)}"])
+            .ToArray();
+        var summary = canonicalRoleLossOnly
+            ? $"{changed.Count} content fingerprint(s) lost an assigned role after renaming because the original exact canonical filename was required to cross the role threshold; mutated content still has no conflicting role assignment. Other classification changes: {confidenceChanges.Count}. Source semantics are unchanged. This remains Partial because discovery is filename-dependent for those documents."
+            : canonicalConfidenceOnly
+            ? $"Final detected/unassigned state, role, and ambiguity candidate-role set are unchanged for all documents. {confidenceChanges.Count} content fingerprint(s) have a lower/changed confidence label after the exact canonical filename signal was removed; source semantics are unchanged. This is an expected filename-evidence strength difference, not a discovery loss."
+            : changed.Count == 0
+                ? $"Final role/ambiguity outcomes are unchanged, but confidence evidence changed for {confidenceChanges.Count} content fingerprint(s); source semantics {(sourceSame ? "were unchanged" : "also changed")}. See per-fingerprint evidence details."
+                : $"Semantic discovery changed for {changed.Count} content fingerprint(s); source semantics {(sourceSame ? "were unchanged" : "also changed")}. See the per-fingerprint comparison details.";
+        return new(false, canonicalRoleLossOnly || canonicalConfidenceOnly || (changed.Count == 0 && confidenceChanges.Count > 0), summary, string.Join(Environment.NewLine, details));
+    }
+
+    private static string OutcomeKey(DocumentSemantic d) => $"{d.Status}|{d.Role}|{string.Join(",", d.CandidateRoles.Split(',', StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal))}";
+    private static string ClassificationKey(DocumentSemantic d) => $"{OutcomeKey(d)}|{d.Confidence}|{d.CandidateConfidence}";
+    private static string Describe(DocumentSemantic d) =>
+        $"{SafeLabel(d.RelativePath)} => {d.Status}/{d.Role ?? "unassigned"}/{d.Confidence}, candidate roles=[{d.CandidateRoles}], candidate confidence=[{d.CandidateConfidence}], exact canonical filename signal={d.ExactCanonicalFilenameSignal}";
+    private static string SafeLabel(string path) => path.Replace('\\', '/').TrimStart('/');
 
     private static Inspection Inspect(byte[] bytes, CancellationToken ct)
     {
         var read = IqrSourceArchiveReader.ReadDetailed("diagnostic.zip", bytes, captureDocuments: true, ct);
-        if (!read.IsValid) return new(false, false, 0, [], [], [], null);
+        if (!read.IsValid) return new(false, false, 0, [], [], [], [], [], null);
         var workspace = read.Workspace!;
         var docs = (workspace.DocumentFiles ?? []).Select(d => (d.Path, d.Content)).ToArray();
         var classified = ArtifactDocumentDiscovery.Classify(docs.Select(d => new ArtifactDocumentDiscovery.Candidate(d.Path, System.IO.Path.GetFileName(d.Path), d.Content)));
         var roles = classified.Where(d => d.Status == BirkNext.Web.Services.SampleProjects.ArtifactDiscoveryStatus.Detected && d.Role.HasValue).ToArray();
         var source = ProjectImportService.DetectSource(workspace);
+        var semantics = classified.Select(d => new DocumentSemantic(d.Fingerprint ?? "", d.RelativePath, d.Status.ToString(), d.Role?.ToString(), d.Confidence.ToString(),
+            string.Join(",", d.Candidates.Select(c => c.Role.ToString()).Order(StringComparer.Ordinal)),
+            string.Join(",", d.Candidates.Select(c => $"{c.Role}:{c.Confidence}").Order(StringComparer.Ordinal)),
+            d.Reasons.Any(reason => reason.StartsWith("Exact canonical filename ", StringComparison.Ordinal)),
+            string.Join("; ", d.Reasons.Select(reason => reason.Replace(Environment.NewLine, " "))))).ToArray();
+        var technologies = BirkNext.Api.Services.SourceAnalysis.Technology.TechnologyInventory.Detect(workspace).Technologies
+            .Select(t => t.TechnologyId).Order(StringComparer.Ordinal).ToArray();
         return new(true, source.Detected, source.UnsupportedSourceFiles, roles.Select(d => d.Role!.Value.ToString()).Distinct().ToArray(),
-            roles.Select(d => $"{d.Role}:{d.Fingerprint}").ToArray(), docs, workspace);
+            roles.Select(d => $"{d.Role}:{d.Fingerprint}").ToArray(), semantics, technologies, docs, workspace);
     }
 
     private static byte[] Archive(IEnumerable<(string Path, string Content)> files)
@@ -260,7 +326,22 @@ public sealed class ProjectCompatibilityDiagnosticService(IConfiguration configu
             {
                 var path = entry.FullName;
                 if (path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
-                    path = $"relocated/area-{index++}/renamed-document-{index}.md";
+                {
+                    using var markdownSource = entry.Open();
+                    using var content = new MemoryStream();
+                    markdownSource.CopyTo(content);
+                    var text = System.Text.Encoding.UTF8.GetString(content.ToArray());
+                    var classification = ArtifactDocumentDiscovery.Classify(
+                        [new ArtifactDocumentDiscovery.Candidate(path, System.IO.Path.GetFileName(path), text)]).Single();
+                    // Use the exact production document discovery result. Preserve ancillary Markdown which production
+                    // intentionally excludes by path/name; mutate every actual candidate, including unresolved ones.
+                    if (classification.Status != ArtifactDiscoveryStatus.Unclassified)
+                        path = $"relocated/area-{index++}/renamed-document-{index}.md";
+                    using var markdownTarget = mutated.CreateEntry(path).Open();
+                    content.Position = 0;
+                    content.CopyTo(markdownTarget);
+                    continue;
+                }
                 using var target = mutated.CreateEntry(path).Open();
                 using var source = entry.Open();
                 source.CopyTo(target);

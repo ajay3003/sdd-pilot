@@ -255,7 +255,9 @@ public static class SampleArtifactClassifier
         // 3. Structure: title, headings, extractor evidence.
         foreach (var (role, signals) in Signals)
         {
-            if (title.Length > 0 && signals.Title.IsMatch(title)) Add(role, 3, $"Title “{Shorten(title)}”");
+            // A role-specific document title is strong content evidence on its own. Canonical filenames may raise
+            // confidence, but renaming a document must not be what turns a clear role title into NeedsReview.
+            if (title.Length > 0 && signals.Title.IsMatch(title)) Add(role, 4, $"Title “{Shorten(title)}”");
             var matched = headings.Skip(1).Select(h => h.Content).Where(h => signals.Heading.IsMatch(h))
                 .Select(h => Shorten(h)).Distinct(StringComparer.OrdinalIgnoreCase).Take(signals.HeadingCap).ToList();
             if (matched.Count > 0) Add(role, matched.Count, $"Heading{(matched.Count == 1 ? "" : "s")} {string.Join(", ", matched.Select(m => $"“{m}”"))}");
@@ -264,7 +266,7 @@ public static class SampleArtifactClassifier
         var spec = SpecExplorerService.Parse(body);
         var specItems = Flatten(spec.Roots, n => n.Children).Count(n => n.NodeType is SpecNodeType.Requirement or SpecNodeType.SuccessCriterion
             or SpecNodeType.AcceptanceTest or SpecNodeType.BddScenario or SpecNodeType.UserStory);
-        if (specItems >= 3) Add(WorkspaceArtifactType.Specification, 3, $"{specItems} requirement/scenario items (Specification extractor)");
+        if (specItems >= 3) Add(WorkspaceArtifactType.Specification, 4, $"{specItems} requirement/scenario items (Specification extractor)");
         else if (specItems > 0) Add(WorkspaceArtifactType.Specification, 1, $"{specItems} requirement/scenario item{(specItems == 1 ? "" : "s")} (Specification extractor)");
 
         var tasks = TaskExplorerService.Parse(body);
@@ -276,7 +278,7 @@ public static class SampleArtifactClassifier
 
         var dataModel = DataModelExtractor.Parse(body);
         var entities = dataModel.Entities.Count(e => e.Columns.Count > 0);
-        if (entities >= 2) Add(WorkspaceArtifactType.DataModel, 3, $"{entities} entities with fields (Data Model extractor)");
+        if (entities >= 2) Add(WorkspaceArtifactType.DataModel, 4, $"{entities} entities with fields (Data Model extractor)");
         else if (entities == 1) Add(WorkspaceArtifactType.DataModel, 1, "1 entity with fields (Data Model extractor)");
 
         var constitution = ConstitutionExtractor.Parse(body);

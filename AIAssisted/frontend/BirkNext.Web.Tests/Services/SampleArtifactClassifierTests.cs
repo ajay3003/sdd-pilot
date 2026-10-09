@@ -139,6 +139,41 @@ public sealed class SampleArtifactClassifierTests
     }
 
     [Theory]
+    [InlineData("plan", Plan, WorkspaceArtifactType.Plan)]
+    [InlineData("constitution", Constitution, WorkspaceArtifactType.Constitution)]
+    [InlineData("spec", Spec, WorkspaceArtifactType.Specification)]
+    [InlineData("data-model", DataModel, WorkspaceArtifactType.DataModel)]
+    [InlineData("tasks", Tasks, WorkspaceArtifactType.Tasks)]
+    [InlineData("research", Research, WorkspaceArtifactType.Research)]
+    public void StrongContentClassificationSurvivesCanonicalFilenameRemoval(string canonicalStem, string content, WorkspaceArtifactType role)
+    {
+        var canonical = SampleArtifactClassifier.Classify($"{canonicalStem}.md", content);
+        var relocated = SampleArtifactClassifier.Classify("arbitrary/nested/renamed-document.md", content);
+
+        canonical.Status.Should().Be(ArtifactDiscoveryStatus.Detected);
+        relocated.Status.Should().Be(canonical.Status, string.Join("; ", relocated.Reasons));
+        canonical.Role.Should().Be(role);
+        relocated.Role.Should().Be(role);
+        relocated.Confidence.Should().Be(ArtifactConfidence.Strong);
+        relocated.Reasons.Should().NotContain(r => r.StartsWith("Exact canonical filename"));
+        relocated.Candidates.Select(c => c.Role).Should().Equal(canonical.Candidates.Select(c => c.Role));
+    }
+
+    [Fact]
+    public void CanonicalFilenameRemainsASupportedHintForContentWithoutStrongRoleEvidence()
+    {
+        const string weakDataModel = "# VisningstilstandType (enum)\n\nA list of values used by the application.\n";
+
+        var canonical = SampleArtifactClassifier.Classify("data-model.md", weakDataModel);
+        var renamed = SampleArtifactClassifier.Classify("arbitrary/renamed-document.md", weakDataModel);
+
+        canonical.Status.Should().Be(ArtifactDiscoveryStatus.Detected);
+        canonical.Role.Should().Be(WorkspaceArtifactType.DataModel);
+        renamed.Status.Should().NotBe(ArtifactDiscoveryStatus.Detected,
+            "a weakly structured document should not inherit a role after its only strong signal is removed");
+    }
+
+    [Theory]
     [InlineData("requirements.md", Spec, WorkspaceArtifactType.Specification)]
     [InlineData("implementation-plan.md", Plan, WorkspaceArtifactType.Plan)]
     [InlineData("domain-model.md", DataModel, WorkspaceArtifactType.DataModel)]
