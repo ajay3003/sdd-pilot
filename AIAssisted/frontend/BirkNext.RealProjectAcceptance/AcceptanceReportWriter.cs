@@ -85,7 +85,8 @@ public static partial class AcceptanceReportWriter
 
     private static string SafeSegment(string id) => InvalidSegment().Replace(id, "-");
 
-    [GeneratedRegex(@"Bearer\s+[A-Za-z0-9\-_\.=]+", RegexOptions.IgnoreCase)] private static partial Regex BearerPattern();
+    // A bearer credential has a digit or token separator; "bearer token"/"bearer auth" in a test name is plain text.
+    [GeneratedRegex(@"Bearer\s+(?=[A-Za-z0-9\-_\.=]*[0-9._=-])[A-Za-z0-9\-_\.=]{6,}", RegexOptions.IgnoreCase)] private static partial Regex BearerPattern();
     [GeneratedRegex(@"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}")] private static partial Regex JwtPattern();
     [GeneratedRegex(@"\b(Password|Pwd|AccountKey|SharedAccessKey|User ID|Uid)\s*=\s*[^;""\s]+", RegexOptions.IgnoreCase)] private static partial Regex ConnectionStringPattern();
     [GeneratedRegex(@"\b(client[_-]?secret|api[_-]?key|access[_-]?token)(""?\s*[:=]\s*""?)[^\s"",;]{6,}", RegexOptions.IgnoreCase)] private static partial Regex SecretAssignmentPattern();

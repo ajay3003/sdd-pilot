@@ -3,6 +3,7 @@ using System;
 using BirkNext.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BirkNext.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261009121957_AddTestCoverageReview")]
+    partial class AddTestCoverageReview
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -70,44 +73,6 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("EnvironmentId", "IntegrationId", "StartedAt");
 
                     b.ToTable("active_cdc_runs", (string)null);
-                });
-
-            modelBuilder.Entity("BirkNext.Api.Models.ActiveEventRunRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("IntegrationId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("ResultJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EnvironmentId", "IntegrationId", "StartedAt");
-
-                    b.ToTable("active_event_runs", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.AiCodeReviewRunRecord", b =>
@@ -490,66 +455,6 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasKey("EnvironmentId", "TargetId");
 
                     b.ToTable("graphql_schema_artifacts", (string)null);
-                });
-
-            modelBuilder.Entity("BirkNext.Api.Models.ImpactAnalysisRunRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("BaselineFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("baseline_fingerprint");
-
-                    b.Property<Guid>("BaselineSnapshotId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("baseline_snapshot_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("CurrentFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("current_fingerprint");
-
-                    b.Property<Guid>("CurrentSnapshotId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("current_snapshot_id");
-
-                    b.Property<string>("ProjectDisplayName")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("project_display_name");
-
-                    b.Property<string>("ProjectId")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("project_id");
-
-                    b.Property<string>("ProjectImportId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("project_import_id");
-
-                    b.Property<string>("ResultJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("result_json");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId", "ProjectImportId", "CreatedAt");
-
-                    b.ToTable("impact_analysis_runs", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.IntegrationContractArtifactRecord", b =>

@@ -495,6 +495,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.PipelineReview.IPipelineMet
 builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewService, BirkNext.Api.Services.PipelineReview.PipelineReviewService>();
 // AI-Generated Code Review: deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
 builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestCoverage.ITestCoverageReviewService, BirkNext.Api.Services.TestCoverage.TestCoverageReviewService>();
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();

@@ -121,6 +121,8 @@ public sealed class IqrSourceStore(AppDbContext db)
         // Code-risk observations for the AI-Generated Code Review profile (placeholders, error handling, authorization metadata, duplicates,
         // test assertions): syntax facts captured once here; the review reads them from the snapshot and never rescans the archive.
         snapshot = snapshot with { CodeRiskEvidence = AnalyzeCodeRisk(snapshot, workspace, ct) };
+        // Per-test facts for the Test Coverage & Overlap Review (boundary signals, assertions, targets): read once here, never by rescanning the archive.
+        snapshot = snapshot with { TestBehaviorEvidence = AnalyzeTestBehavior(snapshot, workspace, ct) };
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
         snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };
@@ -141,6 +143,20 @@ public sealed class IqrSourceStore(AppDbContext db)
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new SourceSnapshotPersistenceException(); }
         return snapshot;
+    }
+
+    internal static BirkNext.TestCoverage.TestBehaviorSourceEvidence AnalyzeTestBehavior(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)
+    {
+        try { return SourceAnalysis.TestBehavior.TestBehaviorSourceAnalyzer.Analyze(snapshot.Id, snapshot.TestInventory, workspace.Files, workspace.AllPaths ?? workspace.Files.Select(f => f.Path).ToList(), ct); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new BirkNext.TestCoverage.TestBehaviorSourceEvidence
+            {
+                SnapshotId = snapshot.Id, AnalyzerVersion = SourceAnalysis.TestBehavior.TestBehaviorSourceAnalyzer.Version,
+                Limitations = [$"Test analysis stopped on an unsupported pattern ({ex.GetType().Name}); no per-test facts were recorded."],
+            };
+        }
     }
 
     internal static BirkNext.AiCodeReview.CodeRiskSourceEvidence AnalyzeCodeRisk(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)

@@ -126,6 +126,7 @@ public static class NavigationCatalog
         // Runtime/deployed-system quality reviews remain target-bound.
         new("quality-testing", "Quality & Testing",
         [
+            new("test-coverage-review", "Test Coverage & Overlap Review", "nav-icon-task-alignment", Always),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review"),
             new("api-quality-review", "API Quality Review", "nav-icon-constitution-compliance", f => f.ApiQualityReview, ReviewId: "api-quality-review"),
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review"),
