@@ -10,6 +10,7 @@ public interface IReportExportService
     /// <summary>API Quality Review export including the latest safe-fuzzing run of the same Target Environment.</summary>
     string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName, BirkNext.ApiReview.ApiFuzzingReport? fuzzing) => ExportApiReview(report, projectName);
     string ExportApiFuzzing(BirkNext.ApiReview.ApiFuzzingReport run, string? projectName) => throw new NotSupportedException();
+    string ExportApiAuthorization(BirkNext.RuntimeSecurity.AuthorizationRunReport run, string? projectName) => throw new NotSupportedException();
     string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName);
     string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => throw new NotSupportedException();
     string ExportSourceArchitecture(BirkNext.SourceArchitecture.ArchitectureSnapshot snapshot) => throw new NotSupportedException();

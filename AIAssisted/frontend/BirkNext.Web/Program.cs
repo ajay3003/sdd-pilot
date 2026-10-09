@@ -203,8 +203,14 @@ builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerC
         sp.GetRequiredService<IWorkspaceUpdateCoordinator>(),
         sp.GetRequiredService<IWorkspaceStateManager>()));
 
+// Protected security execution (authorization scenarios, fuzzing runs) attaches the BirkNext user token when sign-in is configured.
+// Hooks only: wwwroot/appsettings.json "BirkNextAuthentication" stays empty until a deployment provides real values; no client secret.
+var securityExecutionAuth = builder.Configuration.GetSection(SecurityExecutionAuthOptions.SectionName).Get<SecurityExecutionAuthOptions>() ?? new SecurityExecutionAuthOptions();
+builder.Services.AddSingleton(securityExecutionAuth);
+builder.Services.AddSingleton<ISecurityExecutionTokenProvider, UnavailableSecurityExecutionTokenProvider>();
+builder.Services.AddTransient<SecurityExecutionBearerHandler>();
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
-    client.BaseAddress = backendBase);
+    client.BaseAddress = backendBase).AddHttpMessageHandler<SecurityExecutionBearerHandler>();
 
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>

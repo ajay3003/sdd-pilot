@@ -284,7 +284,7 @@
 
 .aqr-state { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; border: 1px solid var(--clr-border); background: var(--clr-surface); white-space: nowrap; }
 .aqr-state-pass { border-color: var(--clr-success-border); color: var(--clr-success); background: var(--clr-success-bg); }
-.aqr-state-fail { border-color: var(--clr-danger-border); color: var(--clr-danger); background: var(--clr-danger-bg); }
+.aqr-state-fail { border-color: var(--clr-danger-border); color: #991b1b; background: var(--clr-danger-bg); }
 .aqr-state-warning { border-color: var(--clr-warning-border); color: var(--clr-warning); background: var(--clr-warning-bg-light); }
 .aqr-state-manualreview { border-color: var(--clr-accent-border); color: var(--clr-accent); background: var(--clr-accent-bg); }
 .aqr-state-blocked { border-color: var(--clr-danger-border); color: var(--clr-danger); }

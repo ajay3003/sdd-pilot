@@ -124,6 +124,13 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             if (fetched.ContainsKey(path))
                 findings.Insert(0, ConfigExposedFinding(Url(base_, path), path));
 
+        // Cookie attributes of the frontend document response. The value is dropped by the parser before anything is kept.
+        var cookieHost = Uri.TryCreate(base_, UriKind.Absolute, out var baseUri) ? baseUri.Host : "";
+        var cookieSecurity = BirkNext.RuntimeSecurity.CookieSecurityEvaluator.Evaluate(
+            indexHeaders.Where(h => string.Equals(h.Name, "Set-Cookie", StringComparison.OrdinalIgnoreCase)).SelectMany(h => h.Values)
+                .Select(v => BirkNext.RuntimeSecurity.SetCookieMetadataParser.Parse(v, cookieHost, BirkNext.RuntimeSecurity.CookieEvidenceSource.FrontendDocumentResponse))
+                .Where(c => c is not null).Select(c => c!),
+            request.CookieExpectations);
         var configSummary = BuildConfigSummary(fetched, findings);
         var headerResults = BuildHeaderResults(headers, request.ExpectedSecurityHeaders, https);
         var deduped       = Deduplicate(findings);
@@ -156,6 +163,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             Headers            = headerResults,
             Recommendations    = recommendations,
             Limitations        = Limitations(),
+            CookieSecurity     = cookieSecurity,
         };
     }
 
@@ -885,6 +893,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         "Only text assets are downloaded and analyzed. Compiled WASM binaries are not decompiled.",
         "Dynamic JavaScript execution is not performed.",
         "Path brute-forcing is not performed.",
+        "Cookie security reads Set-Cookie attributes of the anonymous frontend document response only (names and attributes, never values); cookies set after sign-in are visible only through the Local HTTPS proxy observation.",
     ];
 
     // ── Fetch helpers ──────────────────────────────────────────────────────

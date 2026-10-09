@@ -10,7 +10,14 @@ namespace BirkNext.Api.Services.ApiQuality.Fuzzing;
 /// the query document. Built only from a contract-derived fuzz case; re-validated by <see cref="ApiSafeRequestGuard"/> on the public path and
 /// again inside the authenticated execution service before the credential is applied.
 /// </summary>
-public sealed record ApiSafeRequest(string Method, string Url, IReadOnlyList<KeyValuePair<string, string>> Headers, string? GraphQlQuery = null, bool AllowGraphQlSyntaxError = false);
+public sealed record ApiSafeRequest(string Method, string Url, IReadOnlyList<KeyValuePair<string, string>> Headers, string? GraphQlQuery = null, bool AllowGraphQlSyntaxError = false,
+    string? Body = null, string? ContentType = null, BodyFuzzApproval? BodyApproval = null);
+
+/// <summary>
+/// Server-built approval for one body case: the target was resolved as trusted by the server registry and the operation is explicitly
+/// opted in as read-only body safe. Never deserialized from a client; the guard and the authenticated execution service both require it.
+/// </summary>
+public sealed record BodyFuzzApproval(bool TrustedTarget, BirkNext.RuntimeSecurity.BodyFuzzingPolicy Policy, string Operation);
 
 /// <summary>
 /// Backend safety rules for every safe-fuzzing request. Nothing is sent unless all hold: the environment decision allows active testing;
@@ -50,7 +57,11 @@ public static partial class ApiSafeRequestGuard
             if (Uri.UnescapeDataString(part.Replace('+', ' ')).Length > settings.MaxParameterLength + 64)
                 return $"A query parameter exceeds the parameter limit ({settings.MaxParameterLength} characters).";
 
-        if (request.GraphQlQuery is null)
+        if (request.Body is not null || request.BodyApproval is not null)
+        {
+            if (BodyRejection(request, settings.MaxBodyBytes) is { } bodyRejection) return bodyRejection;
+        }
+        else if (request.GraphQlQuery is null)
         {
             if (!SafeRestMethods.Contains(request.Method)) return $"{request.Method} is not a read-only method; only GET, HEAD and OPTIONS are fuzzed.";
         }
@@ -66,6 +77,30 @@ public static partial class ApiSafeRequestGuard
             if (IsForbiddenHeader(name)) return $"The header {name} is never set by safe fuzzing (credentials, cookies and infrastructure headers are excluded).";
             if (value.Length > settings.MaxParameterLength || value.Contains('\r') || value.Contains('\n')) return $"The value of header {name} exceeds the limit or contains a line break.";
         }
+        return null;
+    }
+
+    private static readonly HashSet<string> BodyMethods = new(StringComparer.OrdinalIgnoreCase) { "POST", "PUT", "PATCH" };
+    private static readonly HashSet<string> BodyContentTypes = new(StringComparer.OrdinalIgnoreCase) { "application/json", "text/plain" };
+
+    /// <summary>
+    /// Body-case rule: a server-built approval for a trusted target and a read-only-body-safe opt-in, POST/PUT/PATCH only (never DELETE,
+    /// never GraphQL), a body within the byte limit and a JSON or text/plain Content-Type (or none, for the missing-content-type case).
+    /// State-changing operations are never executed by safe fuzzing in this milestone.
+    /// </summary>
+    public static string? BodyRejection(ApiSafeRequest request, int maxBodyBytes)
+    {
+        if (request.BodyApproval is not { } approval) return "A request body needs a server-built body-fuzzing approval; unknown operation safety is blocked.";
+        if (!approval.TrustedTarget) return "Body fuzzing runs only against a server-registered trusted target.";
+        if (approval.Policy != BirkNext.RuntimeSecurity.BodyFuzzingPolicy.ReadOnlyBodySafe)
+            return approval.Policy == BirkNext.RuntimeSecurity.BodyFuzzingPolicy.StateChangingWithCleanup
+                ? "State-changing body fuzzing is blocked: no executable cleanup contract in this milestone."
+                : "The operation is not opted in for body fuzzing.";
+        if (request.GraphQlQuery is not null) return "GraphQL mutations and GraphQL body fuzzing are never sent.";
+        if (!BodyMethods.Contains(request.Method)) return $"{request.Method} cannot carry a fuzzed body; only explicitly opted-in POST, PUT and PATCH operations.";
+        if (request.Body is null) return "The body case has no body within the limits.";
+        if (Encoding.UTF8.GetByteCount(request.Body) > maxBodyBytes) return $"The request body exceeds {maxBodyBytes} bytes.";
+        if (request.ContentType is not null && !BodyContentTypes.Contains(request.ContentType)) return "Only application/json or text/plain bodies are sent.";
         return null;
     }
 

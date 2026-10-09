@@ -79,7 +79,7 @@ public sealed class ApiSafeFuzzingPresentationTests
         };
         var html = new ReportExportService().ExportApiFuzzing(run, "Fixture");
         html.Should().Contain("It is not a penetration test").And.Contain("Contract fuzzing").And.Contain("At most 40 requests").And.Contain("hash ABCDEF")
-            .And.Contain("Handled validation").And.Contain("not-a-uuid").And.Contain("authorization (what each role may access) is not tested");
+            .And.Contain("Handled validation").And.Contain("not-a-uuid").And.Contain("never inferred from fuzzing");
         html.Should().NotContainAny("Bearer", "eyJ", "Authorization:", "OWASP compliant", "penetration test passed");
     }
 

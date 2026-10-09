@@ -20,6 +20,12 @@ public interface IApiReviewService
         Task.FromResult<(ApiFuzzingReport?, string?)>((null, "Safe fuzzing is not available in this client."));
     Task<ApiFuzzingReport?> GetFuzzingRunAsync(string runId, CancellationToken ct = default) => Task.FromResult<ApiFuzzingReport?>(null);
     Task<ApiFuzzingReport?> CancelFuzzingAsync(string runId, CancellationToken ct = default) => Task.FromResult<ApiFuzzingReport?>(null);
+    /// <summary>Whether protected security execution is available and whether the Target Environment is server-registered (no target request).</summary>
+    Task<BirkNext.RuntimeSecurity.SecurityExecutionStatus?> GetSecurityExecutionAsync(string? profileId, CancellationToken ct = default) =>
+        Task.FromResult<BirkNext.RuntimeSecurity.SecurityExecutionStatus?>(null);
+    /// <summary>Runs explicit authorization scenarios; the backend re-checks trust, safety and every scenario.</summary>
+    Task<(BirkNext.RuntimeSecurity.AuthorizationRunReport? Report, string? Error)> RunAuthorizationAsync(BirkNext.RuntimeSecurity.AuthorizationRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(BirkNext.RuntimeSecurity.AuthorizationRunReport?, string?)>((null, "Authorization scenarios are not available in this client."));
 }
 
 /// <summary>Backend client of the API Quality Review v2 engine. The request carries the review snapshot and non-secret identity only.</summary>
@@ -80,6 +86,25 @@ public sealed class ApiReviewService(HttpClient client) : IApiReviewService
         catch (Exception) { return null; }
     }
 
+    public async Task<BirkNext.RuntimeSecurity.SecurityExecutionStatus?> GetSecurityExecutionAsync(string? profileId, CancellationToken ct = default)
+    {
+        try { return await client.GetFromJsonAsync<BirkNext.RuntimeSecurity.SecurityExecutionStatus>($"api/api-quality/security-execution?profileId={Uri.EscapeDataString(profileId ?? "")}", ct); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
+    }
+
+    public async Task<(BirkNext.RuntimeSecurity.AuthorizationRunReport? Report, string? Error)> RunAuthorizationAsync(BirkNext.RuntimeSecurity.AuthorizationRunRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await client.PostAsJsonAsync("api/api-quality/authorization/runs", request, ct);
+            if (!response.IsSuccessStatusCode) return (null, await ErrorMessageAsync(response, "Authorization scenarios could not run", ct));
+            return (await response.Content.ReadFromJsonAsync<BirkNext.RuntimeSecurity.AuthorizationRunReport>(cancellationToken: ct), null);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return (null, "Could not reach the backend. Check that the server is running."); }
+    }
+
     /// <summary>The backend's own message (safety policy, conflict) when it sent one; never a raw body.</summary>
     private static async Task<string> ErrorMessageAsync(HttpResponseMessage response, string prefix, CancellationToken ct)
     {
@@ -101,6 +126,8 @@ public sealed class ApiReviewHistory
     public Dictionary<string, ApiReviewBaseline> Baselines { get; set; } = new(StringComparer.Ordinal);
     /// <summary>Completed safe-fuzzing runs, newest first, each with the environment, settings, contract fingerprints and results it ran with.</summary>
     public List<ApiFuzzingReport> FuzzRuns { get; set; } = [];
+    /// <summary>Completed authorization scenario runs, newest first, each bound to the scenarios, trust decision and expectation fingerprint it ran with.</summary>
+    public List<BirkNext.RuntimeSecurity.AuthorizationRunReport> AuthorizationRuns { get; set; } = [];
 }
 
 public sealed record ApiReviewRunSummary(DateTimeOffset GeneratedAt, string EnvironmentName, int Targets, int Completed, int Blocked, int High, int Medium, int Low, int Info);
@@ -120,6 +147,8 @@ public interface IApiReviewHistoryService
     Task ClearAsync(IJSRuntime js, string profileId);
     /// <summary>Stores a finished fuzzing run as recorded (never re-evaluated against a newer contract).</summary>
     Task RecordFuzzingAsync(IJSRuntime js, string profileId, ApiFuzzingReport report) => Task.CompletedTask;
+    /// <summary>Stores a finished authorization run as recorded (identity aliases and roles only; never a credential).</summary>
+    Task RecordAuthorizationAsync(IJSRuntime js, string profileId, BirkNext.RuntimeSecurity.AuthorizationRunReport report) => Task.CompletedTask;
 }
 
 public sealed class ApiReviewHistoryService : IApiReviewHistoryService
@@ -168,6 +197,16 @@ public sealed class ApiReviewHistoryService : IApiReviewHistoryService
         history.FuzzRuns.RemoveAll(r => r.RunId == report.RunId);
         history.FuzzRuns.Insert(0, report with { Running = false });
         if (history.FuzzRuns.Count > MaxFuzzRuns) history.FuzzRuns = history.FuzzRuns.Take(MaxFuzzRuns).ToList();
+        _byProfile[profileId] = history;
+        try { await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, JsonSerializer.Serialize(_byProfile, Options)); } catch { /* best effort */ }
+    }
+
+    public async Task RecordAuthorizationAsync(IJSRuntime js, string profileId, BirkNext.RuntimeSecurity.AuthorizationRunReport report)
+    {
+        var history = For(profileId);
+        history.AuthorizationRuns.RemoveAll(r => r.RunId == report.RunId);
+        history.AuthorizationRuns.Insert(0, report);
+        if (history.AuthorizationRuns.Count > MaxFuzzRuns) history.AuthorizationRuns = history.AuthorizationRuns.Take(MaxFuzzRuns).ToList();
         _byProfile[profileId] = history;
         try { await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, JsonSerializer.Serialize(_byProfile, Options)); } catch { /* best effort */ }
     }

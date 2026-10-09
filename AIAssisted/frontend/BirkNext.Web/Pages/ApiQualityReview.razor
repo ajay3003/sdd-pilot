@@ -216,6 +216,7 @@
 
         @* Safe fuzzing: bounded, contract-derived invalid input for non-production APIs (same targets and access as the review). *@
         <ApiSafeFuzzingPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
+        <ApiAuthorizationScenariosPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
 
         @* 2. Scope: what the review covers, in review words rather than access or configuration words. *@
         <section class="aqr-section aqr-domains" data-testid="aqr-domains" aria-labelledby="aqr-domains-heading">
@@ -820,6 +821,60 @@
                 </table>
             </div>
         }
+        <p class="aqr-muted" data-testid="aqr-runtime-security-warning">@BirkNext.RuntimeSecurity.RuntimeSecurityWording.NotAPenetrationTest</p>
+        var exposures = report.Targets.Where(t => t.DocumentationExposure is not null).GroupBy(t => t.DocumentationExposure!.Origin).Select(g => g.First()).ToList();
+        if (exposures.Count > 0)
+        {
+            <h3>API documentation exposure</h3>
+            <p class="aqr-muted">Anonymous GETs of a few same-origin documentation paths, judged against Target Environment → Security Expectations. Public documentation is not a defect by itself; exposure evidence is not the review's contract source.</p>
+            <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="API documentation exposure">
+                <table class="aqr-table" data-testid="aqr-docs-exposure">
+                    <thead><tr><th scope="col">API origin</th><th scope="col">Probes</th><th scope="col">Observed</th><th scope="col">Expectation</th><th scope="col">Assessment</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in exposures)
+                        {
+                            var d = t.DocumentationExposure!;
+                            <tr data-testid="aqr-docs-exposure-row" data-assessment="@d.Assessment">
+                                <td class="aqr-mono">@d.Origin</td>
+                                <td class="aqr-mono">@(d.Probes.Count == 0 ? "none sent" : string.Join(", ", d.Probes.Select(p => $"{p.Path} → {(p.StatusCode?.ToString() ?? "—")}")))</td>
+                                <td>@BirkNext.RuntimeSecurity.ApiDocumentationExposureRules.Label(d.Observed)</td>
+                                <td>@RuntimeSecurityExpectationsEditor.ExposureLabel(d.Expectation)</td>
+                                <td><span class="aqr-state aqr-state-@(d.Assessment == BirkNext.RuntimeSecurity.ApiDocumentationAssessment.UnexpectedExposure ? "fail" : d.Assessment == BirkNext.RuntimeSecurity.ApiDocumentationAssessment.AsExpected ? "pass" : "muted")">@d.Assessment</span> <span class="aqr-muted">@d.Reason</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        var corsTargets = report.Targets.Where(t => t.CorsProbes.Count > 0).ToList();
+        if (corsTargets.Count > 0)
+        {
+            <h3>CORS</h3>
+            <p class="aqr-muted">Anonymous preflights from the frontend origin, configured allowed origins and one synthetic foreign origin (@BirkNext.RuntimeSecurity.CorsProbeRules.ForeignOrigin). No CORS headers is not a network failure and not a finding by itself.</p>
+            @foreach (var t in corsTargets)
+            {
+                <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="@($"CORS · {ApiReviewPresentation.DisplayName(t.Target)}")">
+                    <table class="aqr-table" data-testid="aqr-cors-matrix" data-target-id="@t.Target.TargetId">
+                        <caption class="aqr-visually-hidden">CORS preflights of @ApiReviewPresentation.DisplayName(t.Target)</caption>
+                        <thead><tr><th scope="col">Probe</th><th scope="col">Origin</th><th scope="col">Allow-Origin</th><th scope="col">Credentials</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Assessment</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in t.CorsProbes)
+                            {
+                                <tr data-testid="aqr-cors-row" data-kind="@o.Kind" data-assessment="@o.Assessment">
+                                    <td>@o.Kind</td>
+                                    <td class="aqr-mono">@o.Origin</td>
+                                    <td class="aqr-mono">@(o.AllowOrigin ?? "absent")</td>
+                                    <td>@(o.AllowCredentials ? "true" : "absent/false")</td>
+                                    <td>@o.Expected</td>
+                                    <td>@o.Observed</td>
+                                    <td><span class="aqr-state aqr-state-@(o.Assessment is BirkNext.RuntimeSecurity.CorsAssessment.AsExpected ? "pass" : o.Assessment is BirkNext.RuntimeSecurity.CorsAssessment.Observation or BirkNext.RuntimeSecurity.CorsAssessment.NotVerified ? "muted" : "fail")">@o.Assessment</span> <span class="aqr-muted">@o.Note</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
         var headerTargets = report.Targets.Where(t => t.SecurityHeaders.Count > 0).ToList();
         if (headerTargets.Count > 0)
         {
@@ -874,6 +929,8 @@
                 LargePayloadBytes = context.PerformanceThresholds.MaxRestPayloadBytes,
                 // Security Expectations own the header policy; the review evaluates presence of exactly these headers.
                 ExpectedSecurityHeaders = [.. context.SecuritySettings.ExpectedSecurityHeaders],
+                // Runtime security expectations (documentation exposure, CORS) are copied into the run: history never re-binds to newer settings.
+                RuntimeSecurity = BirkNext.RuntimeSecurity.ApiRuntimeSecurityPolicy.From(context.SecuritySettings.RuntimeSecurity),
             },
             Baselines = history is null ? [] : selectedTargets.Where(t => history.Baselines.ContainsKey(t.TargetId)).Select(t => history.Baselines[t.TargetId]).ToList(),
             FrontendOrigin = Uri.TryCreate(context.TargetUrl, UriKind.Absolute, out var origin) ? origin.GetLeftPart(UriPartial.Authority) : null,

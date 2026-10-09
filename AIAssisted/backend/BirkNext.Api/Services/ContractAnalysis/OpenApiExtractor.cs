@@ -112,6 +112,8 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                         jsonContentEl.TryGetProperty("schema", out var schemaEl))
                     {
                         operation.RequestSchema = ParseSchema(schemaEl, new Dictionary<string, NormalizedSchema>());
+                        operation.RequestBody = ExtractRequestBody(schemaEl, $"{pathPointer}/{method}/requestBody/content/application~1json/schema", root,
+                            reqBodyEl.TryGetProperty("required", out var bodyRequired) && bodyRequired.ValueKind == JsonValueKind.True);
                     }
                 }
 
@@ -225,6 +227,42 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
     }
 
     /// <summary>Resolves a local "#/components/..." pointer one level. External or chained references return null.</summary>
+    /// <summary>
+    /// Top-level fields of a JSON request body: an object schema (inline or one local <c>$ref</c>), each property with the same constraints
+    /// parameters get (type, format, enum, nullable, bounds, lengths) and a JSON-pointer source reference. Anything else is not modelled.
+    /// </summary>
+    internal static NormalizedRequestBody? ExtractRequestBody(JsonElement schema, string pointer, JsonElement root, bool required)
+    {
+        if (schema.ValueKind != JsonValueKind.Object) return null;
+        if (schema.TryGetProperty("$ref", out var reference))
+        {
+            if (ResolveLocal(root, reference.GetString()) is not { } resolved) return null;
+            schema = resolved;
+            pointer = reference.GetString()!;
+        }
+        if (!schema.TryGetProperty("properties", out var properties) || properties.ValueKind != JsonValueKind.Object) return null;
+        var requiredNames = schema.TryGetProperty("required", out var req) && req.ValueKind == JsonValueKind.Array
+            ? req.EnumerateArray().Where(r => r.ValueKind == JsonValueKind.String).Select(r => r.GetString()!).ToHashSet(StringComparer.Ordinal) : [];
+        var body = new NormalizedRequestBody
+        {
+            Required = required, SourceRef = pointer,
+            AllowsAdditionalProperties = schema.TryGetProperty("additionalProperties", out var additional) ? additional.ValueKind != JsonValueKind.False : null,
+        };
+        foreach (var property in properties.EnumerateObject().Take(50))
+        {
+            var definition = property.Value;
+            if (definition.TryGetProperty("$ref", out var propertyRef) && ResolveLocal(root, propertyRef.GetString()) is { } resolvedProperty) definition = resolvedProperty;
+            var field = new NormalizedParameter
+            {
+                Name = property.Name, Location = NormalizedParameterLocation.Body, Required = requiredNames.Contains(property.Name),
+                SourceRef = $"{pointer}/properties/{Escape(property.Name)}",
+            };
+            ApplyConstraints(field, definition);
+            body.Fields.Add(field);
+        }
+        return body;
+    }
+
     private static JsonElement? ResolveLocal(JsonElement root, string? reference)
     {
         if (reference is null || !reference.StartsWith("#/", StringComparison.Ordinal)) return null;

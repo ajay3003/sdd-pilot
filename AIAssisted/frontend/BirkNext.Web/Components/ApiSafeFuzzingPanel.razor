@@ -45,6 +45,15 @@
         }
     </fieldset>
 
+    <div class="asf-body-option" data-testid="aqr-fuzzing-body">
+        <label>
+            <input type="checkbox" data-testid="aqr-fuzzing-body-toggle" checked="@_bodyFuzzing" disabled="@(_running || _clientBlocked is not null || _level == ApiFuzzingLevel.Off)"
+                   aria-describedby="aqr-fuzzing-body-help" @onchange="e => SetBodyFuzzing(e.Value is true)" />
+            Include request-body cases for explicitly opted-in operations
+        </label>
+        <p class="asf-muted" id="aqr-fuzzing-body-help" data-testid="aqr-fuzzing-body-help">@ApiFuzzingPresentation.BodyScopeNote @BodyOptInSummary</p>
+    </div>
+
     <div class="asf-actions">
         <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-analyze" disabled="@(!CanAnalyze)" @onclick="AnalyzeAsync">Analyze eligibility</button>
         <button type="button" class="btn-primary" data-testid="aqr-fuzzing-run" disabled="@(!CanRun)" aria-describedby="aqr-fuzzing-run-help" @onclick="RunAsync">Run safe fuzzing</button>
@@ -207,7 +216,19 @@
     private string? _profileId;
     private CancellationTokenSource? _poll;
 
-    private ApiFuzzingSettings Settings => new() { Level = _level };
+    private bool _bodyFuzzing;
+    private ApiFuzzingSettings Settings => new() { Level = _level, BodyFuzzing = _bodyFuzzing };
+    private List<BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn> BodyOptIns => Context?.SecuritySettings.RuntimeSecurity?.BodyFuzzOperations ?? [];
+    private string BodyOptInSummary => BodyOptIns.Count == 0
+        ? "No operation is opted in (Target Environment → Security Expectations → Request-body fuzzing opt-ins)."
+        : $"{BodyOptIns.Count(o => o.Policy == BirkNext.RuntimeSecurity.BodyFuzzingPolicy.ReadOnlyBodySafe)} read-only opt-in(s); {BodyOptIns.Count(o => o.Policy == BirkNext.RuntimeSecurity.BodyFuzzingPolicy.StateChangingWithCleanup)} state-changing (blocked without a cleanup contract).";
+
+    private void SetBodyFuzzing(bool value)
+    {
+        _bodyFuzzing = value;
+        _plan = null;
+        _status = value ? "Request-body cases requested. Analyze eligibility: the backend checks the server registration of this target and each opt-in." : "Request-body cases off.";
+    }
     private bool CanAnalyze => !_busy && !_running && _clientBlocked is null && _level != ApiFuzzingLevel.Off && BuildReviewRequest?.Invoke() is { Targets.Count: > 0 };
     private bool CanRun => !_busy && !_running && _clientBlocked is null && _plan is { CanRun: true } plan && plan.Level == _level;
     private string RunHelp => _clientBlocked is not null ? "Run is disabled: blocked by safety policy."
@@ -236,7 +257,9 @@
         _status = level == ApiFuzzingLevel.Off ? "Safe fuzzing is off." : $"{ApiFuzzingPresentation.LevelLabel(level)} selected. Analyze eligibility to preview the cases.";
     }
 
-    private ApiFuzzingRunRequest? Request() => BuildReviewRequest?.Invoke() is { } review ? new ApiFuzzingRunRequest { Review = review, Settings = Settings } : null;
+    private ApiFuzzingRunRequest? Request() => BuildReviewRequest?.Invoke() is { } review
+        ? new ApiFuzzingRunRequest { Review = review, Settings = Settings, BodyOperations = _bodyFuzzing ? BodyOptIns.Select(o => new BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn { Method = o.Method, Path = o.Path, Policy = o.Policy, CleanupStrategyId = o.CleanupStrategyId }).ToList() : [] }
+        : null;
 
     private async Task AnalyzeAsync()
     {

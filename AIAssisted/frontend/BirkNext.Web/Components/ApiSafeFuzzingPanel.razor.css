@@ -81,3 +81,6 @@
     .asf-dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
     .asf-actions button { flex: 1 1 100%; }
 }
+.asf-body-option { margin: 0.5rem 0 0.75rem; } .asf-body-option label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; color: var(--clr-text-body); }
+/* Disabled actions stay readable (no opacity fade): muted text on a light surface keeps AA contrast. */
+.asf-actions .btn-primary:disabled, .asf-actions .btn-secondary:disabled { opacity: 1; color: var(--clr-text-muted); background: var(--clr-surface); border-color: var(--clr-border-input); }

@@ -376,7 +376,8 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         // "secure" alone matches the access panel's "existing secure gateway session", which
         // describes the transport rather than claiming the API is secure. Assert the verdict
         // wording that would actually constitute an unearned pass.
-        page.Markup.Should().NotContain("Review results")
+        // The runtime-security disclaimer says the checks do NOT establish that an application is secure; it is not a verdict.
+        page.Markup.Replace(BirkNext.RuntimeSecurity.RuntimeSecurityWording.NotAPenetrationTest, "").Should().NotContain("Review results")
             .And.NotContainAny("Passed", "is secure", "security approved", "compliant", "penetration test passed", "pentest");
         // The only mention of penetration testing is the safe-fuzzing disclaimer that it is NOT one.
         page.Find("[data-testid=aqr-fuzzing-intro]").TextContent.Should().Contain("It is not a penetration test.");

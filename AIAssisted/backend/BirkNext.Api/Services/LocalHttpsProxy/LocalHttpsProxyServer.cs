@@ -93,6 +93,9 @@ internal sealed class ProxyExchange
     public long? ResponseBytes { get; init; }
     /// <summary>The response carried a Content-Encoding (presence only; the value is never kept).</summary>
     public bool ResponseEncoded { get; init; }
+    /// <summary>Set-Cookie ATTRIBUTES of the response (name, Secure, HttpOnly, SameSite, Domain, Path, persistence). The cookie value is
+    /// discarded by the parser before the exchange is built; it is never stored, logged or relayed anywhere but to the browser.</summary>
+    public IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation> Cookies { get; init; } = [];
     public override string ToString() => $"{Method} {Host}:{Port} -> HTTP {StatusCode}";
 }
 
@@ -467,6 +470,9 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             HasLastModified = response?.Header("Last-Modified") is { Length: > 0 },
             ResponseBytes = response?.ContentLength,
             ResponseEncoded = response?.Header("Content-Encoding") is { Length: > 0 },
+            Cookies = response is null ? [] : response.Headers.Where(h => string.Equals(h.Key, "Set-Cookie", StringComparison.OrdinalIgnoreCase))
+                .Select(h => BirkNext.RuntimeSecurity.SetCookieMetadataParser.Parse(h.Value, host, BirkNext.RuntimeSecurity.CookieEvidenceSource.LocalHttpsProxyObserved))
+                .Where(c => c is not null).Select(c => c!).Take(20).ToList(),
         };
         request.Bearer = null;
         try { observer.OnExchange(exchange); }

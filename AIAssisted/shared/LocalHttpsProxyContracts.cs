@@ -168,6 +168,8 @@ public sealed record AuthenticatedApiExecutionResult
     public bool AuthenticationRejected => StatusCode is 401 or 403;
     public int? GraphQlErrorCount { get; init; }
     public bool? GraphQlHasData { get; init; }
+    /// <summary>GraphQL error extension codes (e.g. AUTH_NOT_AUTHORIZED), capped and sanitized; never error messages.</summary>
+    public List<string> GraphQlErrorCodes { get; init; } = [];
     /// <summary>GraphQL server fingerprints of the response ("kind|evidence"); descriptions only, never message text or values.</summary>
     public List<string> GraphQlServerFingerprints { get; init; } = [];
     public string Outcome { get; init; } = "";

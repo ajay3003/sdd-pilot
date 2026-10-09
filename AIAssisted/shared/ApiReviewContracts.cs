@@ -208,6 +208,9 @@ public sealed record ApiReviewPolicy
     /// defaults (HSTS and X-Content-Type-Options) and says so.
     /// </summary>
     public List<string>? ExpectedSecurityHeaders { get; init; }
+    /// <summary>Runtime security expectations at Run (documentation exposure, CORS). Null on older reports: exposure probing and
+    /// expectation-based CORS assessment did not exist then.</summary>
+    public BirkNext.RuntimeSecurity.ApiRuntimeSecurityPolicy? RuntimeSecurity { get; init; }
 }
 
 /// <summary>How strongly a GraphQL technology is evidenced. Confirmed needs build/source evidence; runtime fingerprints reach Likely at most.</summary>
@@ -498,6 +501,10 @@ public sealed record ApiReviewTargetResult
     public ApiAuthenticationEnforcementResult? AuthenticationEnforcement { get; init; }
     /// <summary>Security headers of the target's primary response against the Target Environment's expectations. Empty on older reports.</summary>
     public List<SecurityHeaderEvaluation> SecurityHeaders { get; init; } = [];
+    /// <summary>Anonymous API documentation probing against the exposure expectation. Null on older reports or when not run.</summary>
+    public BirkNext.RuntimeSecurity.ApiDocumentationExposureResult? DocumentationExposure { get; init; }
+    /// <summary>CORS preflights per probing origin (frontend, configured allowed, synthetic foreign). Empty on older reports.</summary>
+    public List<BirkNext.RuntimeSecurity.CorsProbeObservation> CorsProbes { get; init; } = [];
 }
 
 public sealed record ApiReviewCoverage

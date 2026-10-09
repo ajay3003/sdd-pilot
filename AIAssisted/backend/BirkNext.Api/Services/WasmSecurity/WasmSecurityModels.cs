@@ -113,6 +113,8 @@ public sealed class WasmSecurityReviewReport
     public List<string> Limitations { get; init; } = [];
     public bool IsBlazorWasm { get; init; }
     public string? ErrorMessage { get; init; }
+    /// <summary>Set-Cookie metadata of the frontend document response against the cookie expectations. Never a cookie value.</summary>
+    public BirkNext.RuntimeSecurity.CookieSecurityAssessment? CookieSecurity { get; init; }
 }
 
 public sealed class WasmScanRequest
@@ -126,4 +128,6 @@ public sealed class WasmScanRequest
     public List<string> KnownSafeDomains { get; init; } = [];
     /// <summary>Target Environment → Security Expectations → expected security headers. Null = historical default list (older clients).</summary>
     public List<string>? ExpectedSecurityHeaders { get; init; }
+    /// <summary>Target Environment → Security Expectations → cookie expectations. Null = cookies are observations only.</summary>
+    public BirkNext.RuntimeSecurity.CookieSecurityExpectations? CookieExpectations { get; init; }
 }

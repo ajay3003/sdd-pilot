@@ -468,6 +468,8 @@
     flex-shrink: 0;
     padding-top: 0.25rem;
     flex-wrap: wrap;
+    /* Never wider than the header: long action labels wrap instead of pushing the page sideways at narrow widths. */
+    max-width: 100%;
 }
 
 

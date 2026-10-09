@@ -163,6 +163,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Risks              = risks,
             Limitations        = limitations,
             IsBlazorWasm       = isBlazorWasm,
+            CookieSecurity     = securityReport?.CookieSecurity,
             Completeness       = completeness,
             AssessedEngines    = assessedEngines,
             FailedEngines      = failedEngines,

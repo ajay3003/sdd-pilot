@@ -14,7 +14,8 @@ public static class ApiFuzzingPresentation
 {
     public const string Intro = ApiFuzzingWording.NotAPenetrationTest;
     public const string ScopeNote = ApiFuzzingWording.Scope;
-    public const string AuthorizationLimitation = "Authentication enforcement is checked by the review; general authorization (what each role may access) is not tested and remains future work.";
+    public const string AuthorizationLimitation = "Authentication enforcement is checked by the review; authorization is tested only by explicit Authorization scenarios (each identity against its own Allow/Deny expectation), never inferred from fuzzing.";
+    public const string BodyScopeNote = ApiFuzzingWording.BodyScope;
     public const string BlockedTitle = "Blocked by safety policy";
 
     public static IReadOnlyList<ApiFuzzingLevel> Levels { get; } = [ApiFuzzingLevel.Off, ApiFuzzingLevel.ContractFuzzing, ApiFuzzingLevel.SafeSecurityFuzzing];
@@ -63,13 +64,17 @@ public static class ApiFuzzingPresentation
         ApiFuzzSafetyClassification.ProductionBlocked => "Blocked — production",
         ApiFuzzSafetyClassification.AccessUnavailable => "Skipped — access unavailable",
         ApiFuzzSafetyClassification.BudgetExhausted => "Not in this run — budget",
+        ApiFuzzSafetyClassification.BodyFuzzNotOptedIn => "Skipped — body not opted in",
+        ApiFuzzSafetyClassification.StateChangingWithoutCleanup => "Blocked — state-changing, no cleanup",
+        ApiFuzzSafetyClassification.UntrustedTarget => "Blocked — target not server-registered",
+        ApiFuzzSafetyClassification.NoRequestBodySchema => "Skipped — no JSON body schema",
         _ => classification.ToString(),
     };
 
     public static string ClassificationTone(ApiFuzzSafetyClassification classification) => classification switch
     {
         ApiFuzzSafetyClassification.ReadOnlyEligible => "ready",
-        ApiFuzzSafetyClassification.ProductionBlocked => "attention",
+        ApiFuzzSafetyClassification.ProductionBlocked or ApiFuzzSafetyClassification.StateChangingWithoutCleanup or ApiFuzzSafetyClassification.UntrustedTarget => "attention",
         _ => "muted",
     };
 
@@ -97,6 +102,20 @@ public static class ApiFuzzingPresentation
         ApiFuzzMutationType.GraphQlNullForNonNull => "Null for non-null argument",
         ApiFuzzMutationType.GraphQlInvalidEnum => "Invalid enum value",
         ApiFuzzMutationType.GraphQlMalformedSyntax => "Malformed syntax",
+        ApiFuzzMutationType.BodyMissingRequiredField => "Body: required field omitted",
+        ApiFuzzMutationType.BodyNullForNonNull => "Body: null for non-null field",
+        ApiFuzzMutationType.BodyEmptyString => "Body: empty string",
+        ApiFuzzMutationType.BodyInvalidEnum => "Body: invalid enum value",
+        ApiFuzzMutationType.BodyWrongType => "Body: wrong type",
+        ApiFuzzMutationType.BodyInvalidUuid => "Body: invalid UUID",
+        ApiFuzzMutationType.BodyInvalidDate => "Body: invalid date",
+        ApiFuzzMutationType.BodyNumericBelowMinimum => "Body: below minimum",
+        ApiFuzzMutationType.BodyNumericAboveMaximum => "Body: above maximum",
+        ApiFuzzMutationType.BodyStringTooLong => "Body: longer than maxLength",
+        ApiFuzzMutationType.BodyUnknownField => "Body: unknown extra field",
+        ApiFuzzMutationType.BodyMalformedJson => "Body: malformed JSON",
+        ApiFuzzMutationType.BodyWrongContentType => "Body: wrong Content-Type",
+        ApiFuzzMutationType.BodyMissingContentType => "Body: missing Content-Type",
         _ => mutation.ToString(),
     };
 

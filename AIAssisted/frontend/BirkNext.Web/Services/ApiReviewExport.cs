@@ -89,6 +89,7 @@ public static class ApiReviewExport
             }
             if (t.AuthenticationEnforcement is { } enforcement)
                 sb.Append($"<p><strong>Authentication enforcement:</strong> {badge(ApiFuzzingPresentation.EnforcementLabel(enforcement.Status))} {esc(enforcement.Probe ?? "")} — {esc(enforcement.Reason)}{(enforcement.Evidence.Count > 0 ? " (" + esc(string.Join("; ", enforcement.Evidence)) + ")" : "")}. Authorization is not assessed.</p>");
+            sb.Append(RuntimeSecurityExport.DocumentationAndCors(t, table, badge, esc));
             if (t.SecurityHeaders.Count > 0)
                 sb.Append("<h3>Security headers vs Target Environment expectations</h3>").Append(table(["Header", "Expected", "Observed", "Result", "Note"], t.SecurityHeaders.Select(h => new[]
                 {

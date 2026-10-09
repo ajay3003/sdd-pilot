@@ -5,20 +5,26 @@ OWASP compliance. This page describes what each review actually executes and whe
 
 ## Capability matrix
 
+> BirkNext performs bounded non-production security checks. These checks are not a penetration test and do not establish that an
+> application is secure.
+
 | Area | State | Where | Evidence |
 |---|---|---|---|
-| Security headers | Runnable with expectations | FQR Static Security (frontend document), AQR (API responses) | Runtime response headers vs Target Environment → Security Expectations (presence only) |
-| CORS | Partially runnable | AQR (OPTIONS preflight), FQR (wildcard on the document) | Runtime; own frontend origin only — foreign/reflected origins not tested |
-| Cookies (Secure/HttpOnly/SameSite) | Not implemented | — | Set-Cookie is deliberately not captured; ZAP passive rules may flag cookies only if ZAP runs |
-| Swagger/OpenAPI exposure | Not implemented | — | AQR reviews the configured contract's quality; it does not probe for exposed documents |
+| Security headers | Runnable | FQR Static Security (frontend document), AQR (API responses) | Runtime response headers vs Target Environment → Security Expectations (presence only) |
+| CORS | Runnable with bounded configured-origin tests | AQR → Security | Anonymous preflights: frontend origin, up to 3 configured allowed origins, one synthetic foreign origin (`https://foreign.birknext.invalid`) |
+| Cookies | Runnable metadata inspection | FQR Static Security → Cookie security | Set-Cookie attributes of the frontend document; Local HTTPS proxy observed attributes. Never values |
+| Swagger/OpenAPI exposure | Runnable | AQR → Security | Anonymous GETs of ≤ 6 same-origin documentation paths vs the exposure expectation |
 | GraphQL introspection | Runnable | AQR | Runtime `__schema` query; policy warning in production-like environments |
-| Error leakage | Runnable | AQR (unknown route / unknown field probes outside production, every response), safe fuzzing | Indicator names only (stack trace, exception, SQL, path, internal host, assembly, framework page, token/secret) |
+| Error leakage | Runnable | AQR probes, safe fuzzing | Indicator names only |
 | Authentication enforcement | Runnable | AQR | Deliberate anonymous request per authenticated target |
-| Authorization | Partial, M2LB-specific only | Security Classification live probe | General role/identity allow-deny testing is future work |
+| Role-based authorization | Runnable with explicit scenarios and available test identities | AQR → Authorization scenarios | Each identity against its own Allow/Deny expectation; trusted targets only |
+| Query/path/header fuzzing | Runnable | AQR → Safe fuzzing | Runtime responses to synthetic invalid/boundary input |
+| Body fuzzing | Runnable only on explicitly opted-in operations | AQR → Safe fuzzing | Read-only-body-safe opt-ins on server-registered trusted targets |
+| GraphQL mutation fuzzing | Not implemented | — | GraphQL mutations are never sent |
 | OWASP | Reporting metadata | AQR/FQR findings | "Related" references on emitted finding rule ids; never a finding generator |
-| Passive Security (ZAP) | Optional, truthful readiness | FQR | Needs server enablement, a trusted target profile and a local container image |
-| Safe fuzzing | Runnable (bounded, read-only, contract-derived) | AQR → Safe fuzzing | Runtime responses to synthetic invalid/boundary input |
+| ZAP | Optional dependency | FQR Passive Security | Needs server enablement, a trusted target profile and a local container image |
 | Dependency vulnerabilities | Runnable (separate) | Dependency Health (OSV + nuget.org) | Package metadata; fuzzing does not replace it |
+| Full penetration test | Not implemented | — | — |
 
 ## Environment safety (backend authority)
 
@@ -76,7 +82,7 @@ IDs → Configuration Review only.
   header parameters are modelled with type, format, enum, nullable, min/max, length and a JSON-pointer `SourceRef`. GraphQL cases need
   the schema (runtime introspection or a configured SDL artifact). Without a contract, fuzzing is **Not available** — unknown endpoints
   are never fuzzed.
-- **Methods:** REST GET/HEAD/OPTIONS, GraphQL queries (inline literals, no variables). Write methods, request bodies, GraphQL mutations
+- **Methods:** REST GET/HEAD/OPTIONS, GraphQL queries (inline literals, no variables). Write methods (unless explicitly opted in for request-body cases, see below), GraphQL mutations
   and subscriptions are listed as skipped and never sent. Sign-in/token endpoints are skipped.
 - **Cases (contract):** missing required, invalid enum, invalid UUID, invalid date, wrong type, below minimum / above maximum,
   zero/negative where invalid, longer than maxLength, missing required header, invalid header value; GraphQL unknown field, wrong scalar,
@@ -104,6 +110,124 @@ IDs → Configuration Review only.
   Runs are kept in API review history (latest five per Target Environment) with their environment, settings and contract fingerprints;
   old runs are never re-evaluated against a newer contract.
 
+## Runtime security expectations (Target Environment → Security Expectations)
+
+Manual expectations only — source discovery never fills them. Each field shows the review that reads it ("Used by"):
+
+| Field | Used by |
+|---|---|
+| API documentation exposure (Not specified / Allowed / Expected protected / Expected unavailable) + optional paths | AQR → Runtime security: API documentation exposure |
+| CORS allowed origins, credentials expectation, allowed methods/headers | AQR → Runtime security: CORS |
+| Auth/session cookie names, Secure/HttpOnly required, allowed SameSite and domains, persistent auth cookies | FQR → Static Security: cookie security |
+| Authorization scenarios | AQR → Authorization scenarios |
+| Request-body fuzzing opt-ins | AQR → Safe fuzzing (request-body cases) |
+
+A run copies the expectations it uses (AQR policy snapshot, authorization expectation fingerprint, fuzzing opt-ins): history is never
+re-evaluated against newer settings. Never enter passwords, tokens or cookie values.
+
+## API documentation exposure (AQR)
+
+Probing runs only when an exposure expectation or documentation paths are set, and never in production-like environments. Candidates are
+same-origin only: configured paths, the target's OpenAPI URL, then `/swagger`, `/swagger/index.html`, `/swagger/v1/swagger.json`,
+`/openapi.json`, `/api-docs` (at most 6, stopping at the first public document). Anonymous GET; redirects are not followed.
+
+| Response | State |
+|---|---|
+| 2xx with an OpenAPI document or Swagger UI page | ReachablePublic (a JSON document is validated with the shared OpenAPI parser — exposure evidence, not contract authority) |
+| 2xx that is not documentation (SPA fallback) | NotVerified |
+| 401 / 403 | ReachableProtected |
+| 404 | NotFound (not a security pass by itself) |
+| 3xx | Redirected |
+
+Assessment follows the expectation: public documentation with **Allowed** is as expected; with **Expected protected** or **Expected
+unavailable** it is `api-docs-unexpected-exposure` (Medium, once per API origin); a protected endpoint with **Expected unavailable** is
+`api-docs-unexpected-endpoint` (Low); nothing found with **Allowed** is UnexpectedAbsence (no finding). **Not specified** = not probed.
+
+## CORS (AQR)
+
+The frontend-origin preflight always runs (as before). Outside production-like environments AQR also sends anonymous preflights for up to
+three configured allowed origins and one synthetic foreign origin. Observed behaviour (allowed, reflected, wildcard, denied, no CORS
+headers) and the expectation are kept apart:
+
+- Wildcard + credentials → `cors-wildcard-credentials` (High, unchanged).
+- Foreign origin reflected with credentials → `cors-reflected-origin-credentials` (High); without credentials on an authenticated API →
+  `cors-reflected-origin` (Medium); on a public API → `cors-reflected-origin-public` (Low).
+- Configured allowed origin not granted → `cors-allowed-origin-denied` (Low). Credentials granted although the expectation says none →
+  `cors-credentials-unexpected` (Medium). Methods/headers beyond the expected lists → `cors-preflight-broader-than-expected` (Low).
+- No CORS headers is not a network failure and not a finding by itself.
+
+## Cookie security (FQR)
+
+Sources: the Set-Cookie headers of the anonymous frontend document response (Static Security), and Set-Cookie attributes observed by the
+Local HTTPS proxy on approved hosts (loaded on demand in the cookie section through `api/local-https-proxy/observed-cookie-attributes`;
+the polled proxy status deliberately carries no cookie data). The parser drops the value before anything is kept: name (digested when
+secret-shaped), Secure, HttpOnly, SameSite, Domain, Path, session/persistent.
+
+Declared auth/session cookies (exact names): missing Secure (High), missing HttpOnly (Medium), SameSite outside the allowed list (Low),
+explicit Domain outside the allowed list (Low/Medium), persistent (Low). Every cookie: SameSite=None without Secure (Medium). Undeclared
+cookies are observations — their purpose cannot be known. Cookie findings are listed in the cookie section and are not scored.
+
+## Trusted targets (backend authority for authorization scenarios and body fuzzing)
+
+These two checks cross the read-only boundary, so the server — not the client — must register the Target Environment:
+
+```json
+"SecurityTesting": {
+  "TrustedTargets": {
+    "<target-environment-id>": { "EnvironmentType": "QA", "ApiOrigins": [ "https://api-qa.example.test" ] }
+  },
+  "RequireAuthenticatedUser": false
+}
+```
+
+Production is refused even when registered; Local/Development/QA/Test only; every destination origin must be a registered API origin
+(arbitrary URLs are never contacted). The client environment type, production flag and URLs are inputs, never the decision; the existing
+environment safety policy (production markers, proxy context) applies as well.
+
+`RequireAuthenticatedUser=true` makes the protected endpoints refuse with "Security execution requires Entra authentication
+configuration" — this instance has no user authentication scheme. The frontend has configuration hooks only (`wwwroot/appsettings.json`
+→ `BirkNextAuthentication`: TenantId, SpaClientId, ApiScope, Authority, RedirectUri, PostLogoutRedirectUri; no client secret) and attaches
+a bearer token to authorization/fuzzing runs only when a sign-in provider returns one. No tenant or client values are shipped, and no
+sign-in library is bundled in this build.
+
+## Authorization scenarios (AQR)
+
+A scenario is one safe request (REST GET/HEAD or one GraphQL query without variables; mutations rejected) plus 1–4 identities, each with
+an explicit expectation. Identities: `anonymous` (no credential), `proxy-session` (the memory-only Local HTTPS proxy credential) or an alias
+served by a server-side `IAuthorizationTestIdentityProvider` (none is registered by default; passwords and tokens are never stored). The
+Security Classification probe's M2LB-specific fixed queries remain a separate extension; the scenario machinery here is project-neutral.
+
+| Expected | Response | Outcome |
+|---|---|---|
+| Allow | configured success (default 2xx; GraphQL: data without authorization error) | VerifiedAllow |
+| Allow | 401 | AuthenticationFailed |
+| Allow | 403, GraphQL authorization error | UnexpectedDeny |
+| Deny | 401, 403, GraphQL authorization error (AUTH_NOT_AUTHORIZED …) | VerifiedDeny |
+| Deny | 404 with anti-disclosure declared | VerifiedDeny |
+| Deny | 404 without the declaration | NotVerified |
+| Deny | success | UnexpectedAllow |
+| any | identity not available, untrusted, invalid | ExecutionUnavailable |
+
+Counts and differences between identities are never evidence. Bounds: 20 scenarios, 4 identities each, 40 requests, one at a time, 250 ms
+apart, 15 s timeout, cancellation. Results keep aliases, roles, status codes and the expectation fingerprint — never a credential — and are
+kept in API review history (latest five per Target Environment).
+
+## Request-body fuzzing (AQR → Safe fuzzing)
+
+Off by default ("Include request-body cases for explicitly opted-in operations"). Policies per operation: Disabled, Read-only body safe,
+State-changing (needs cleanup), Not allowed. Only **Read-only body safe** POST/PUT/PATCH operations of a trusted target get cases;
+state-changing operations are blocked (an `IRequestCleanupStrategy` contract exists — precondition, execution id, cleanup, verification —
+but state-changing execution is not implemented in this milestone); DELETE and GraphQL mutations are never fuzzed; operations without a
+locally resolvable JSON object body are skipped.
+
+Cases from the contract body (flat, synthetic, deterministic): missing required field, null for non-null, empty string, invalid enum, wrong
+type, invalid UUID, invalid date, below minimum / above maximum, longer than maxLength, unknown extra field, malformed JSON, wrong
+Content-Type (text/plain), missing Content-Type. Duplicate-field cases are not generated (serializer-dependent). Per-operation and total
+request caps, body ≤ 4 KB by default (hard limit 8 KB), concurrency 1, delay, timeout and cancellation are backend-enforced; mutation types
+are interleaved so a capped run covers the most distinct mutations. Outcomes reuse safe fuzzing: Handled validation, Unexpected 5xx,
+Unexpected acceptance, Contract violation, Potential information leak, Timeout, Connection failure, Safety blocked. The guard and the
+authenticated execution service both require a server-built approval before any body is sent.
+
 ## Frontend Quality Review security
 
 - **Static Security** (default on): anonymous HTTP review of the deployed frontend — exposed configuration, boot/debug assets, source
@@ -115,7 +239,7 @@ IDs → Configuration Review only.
   pinned image is available to the container runtime. Engine status reports an untrusted target as unavailable; the engine settings
   never offer a usable switch for an engine the server cannot run. Readiness allows up to 75 s for the ZAP JVM start. The real ZAP
   integration tests are reported as **skipped** unless `RUN_EXTERNAL_FRONTEND_QUALITY_TESTS=true`.
-- Browser Runtime and Browser Quality collect no cookie, token or storage evidence.
+- Browser Runtime and Browser Quality collect no cookie, token or storage evidence; cookie metadata comes from Static Security and the Local HTTPS proxy only.
 
 ## OWASP references
 
@@ -125,5 +249,6 @@ keyword coverage, not a security audit.
 
 ## Not covered
 
-Penetration testing, authorization matrices between roles, request-body and write-method fuzzing, mutation testing, rate-limit and load
-testing, cookie attributes, Swagger exposure probing, certificate inspection, and foreign-origin CORS reflection.
+Aggressive or dictionary fuzzing, GraphQL mutation fuzzing, state-changing body fuzzing, brute-force or password-spraying authentication
+tests, account lockout and user enumeration, denial-of-service and rate-limit/load testing, automatic exploit confirmation, certificate
+inspection, and full penetration testing. Real QA runtime acceptance of these checks needs an explicitly approved runtime target.

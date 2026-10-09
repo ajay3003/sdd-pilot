@@ -307,7 +307,8 @@ public sealed partial class ApiReviewEngineTests
         var safeReport = await Engine(safeFixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()));
         Assert.DoesNotContain(safeReport.Findings, f => f.Id.StartsWith("cors-"));
         Assert.Contains(safeReport.Targets[0].Checks, c => c.CheckId == "cors-policy" && c.Result == ApiReviewCheckResult.Pass);
-        var preflight = safeFixture.Requests.Single(r => r.Method == HttpMethod.Options);
+        // The frontend-origin preflight; the synthetic foreign-origin preflight is a separate request (cross-origin CORS probe).
+        var preflight = safeFixture.Requests.Single(r => r.Method == HttpMethod.Options && r.Headers.GetValues("Origin").Single() != BirkNext.RuntimeSecurity.CorsProbeRules.ForeignOrigin);
         Assert.Equal("https://m2lbdev.example.test", preflight.Headers.GetValues("Origin").Single());
     }
 

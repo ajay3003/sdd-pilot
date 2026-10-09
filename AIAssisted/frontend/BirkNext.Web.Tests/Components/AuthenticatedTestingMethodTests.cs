@@ -181,6 +181,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var profile = new FrontendAnalysisProfile { Id = "dev", TargetUrl = Url };
         profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.LocalHttpsProxy;
         var json = JsonSerializer.Serialize(profile);
+        // Cookie EXPECTATIONS (declared auth-cookie names and required attributes) are configuration, not proxy runtime state: they are
+        // checked separately below and excluded from the runtime-state scan.
+        var cookieExpectations = System.Text.Json.Nodes.JsonNode.Parse(json)!["security"]!["runtimeSecurity"]!["cookies"]!.AsObject();
+        Assert.Equal(["authCookieNames", "requireSecure", "requireHttpOnly", "allowedSameSite", "allowedDomains", "allowPersistentAuthCookies"], cookieExpectations.Select(p => p.Key).ToArray());
+        var scanned = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        scanned["security"]!["runtimeSecurity"]!.AsObject().Remove("cookies");
+        json = scanned.ToJsonString();
         Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(json, "\"authenticatedTestingMethod\"").Count);
         Assert.Contains("\"authenticatedTestingMethod\":\"LocalHttpsProxy\"", json);
         foreach (var runtimeOnly in new[] { "sessionId", "\"port\"", "certificate", "interceptedRequests", "authenticatedCredentialAvailable", "credentialExpiresAt", "approvedHosts", "bearer", "Bearer", "eyJ", "cookie" })

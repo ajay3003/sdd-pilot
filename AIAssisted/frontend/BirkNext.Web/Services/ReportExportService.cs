@@ -398,6 +398,13 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
+        if (report.CookieSecurity is { } cookieSecurity)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Cookie Security</h2>\n");
+            sb.Append(RuntimeSecurityExport.CookieSection(cookieSecurity, Table, Badge, Esc));
+            sb.Append("</section>\n");
+        }
+
         if (report.Recommendations.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
@@ -427,6 +434,7 @@ public sealed class ReportExportService : IReportExportService
     public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName, BirkNext.ApiReview.ApiFuzzingReport? fuzzing) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml, fuzzing);
     public string ExportApiFuzzing(BirkNext.ApiReview.ApiFuzzingReport run, string? projectName) => ApiFuzzingExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportApiAuthorization(BirkNext.RuntimeSecurity.AuthorizationRunReport run, string? projectName) => RuntimeSecurityExport.BuildAuthorization(run, projectName, Table, Badge, Esc, BuildHtml);
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => ActiveCdcRunExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);

@@ -264,6 +264,8 @@
             @if (_history.Count > 1) { <p>@_history.Count recent reviews are kept separately from approved settings.</p> }
         </ReviewDisclosure>
     }
+    <RuntimeSecurityExpectationsEditor Settings="@(Settings.RuntimeSecurity ??= new())" Editable="Editable" />
+
     @if (!Editable)
     {
         <ReviewDisclosure Text="Defaults" TestId="sec-defaults">

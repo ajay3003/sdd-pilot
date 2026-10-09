@@ -61,10 +61,24 @@ public sealed class NormalizedOperation
     /// <summary>Path, query and header parameters (path-level and operation-level, operation-level wins). Cookie parameters are not modelled.</summary>
     [JsonPropertyName("parameters")]
     public List<NormalizedParameter> Parameters { get; set; } = [];
+
+    /// <summary>The JSON request body's top-level fields with their declared constraints (Location = Body). Null when the operation declares
+    /// no application/json body or its schema cannot be resolved locally. Used by opt-in body fuzzing only.</summary>
+    [JsonPropertyName("request_body")]
+    public NormalizedRequestBody? RequestBody { get; set; }
+}
+
+public sealed class NormalizedRequestBody
+{
+    [JsonPropertyName("required")] public bool Required { get; set; }
+    [JsonPropertyName("content_type")] public string ContentType { get; set; } = "application/json";
+    [JsonPropertyName("source_ref")] public string SourceRef { get; set; } = "";
+    [JsonPropertyName("additional_properties")] public bool? AllowsAdditionalProperties { get; set; }
+    [JsonPropertyName("fields")] public List<NormalizedParameter> Fields { get; set; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum NormalizedParameterLocation { Path, Query, Header }
+public enum NormalizedParameterLocation { Path, Query, Header, Body }
 
 /// <summary>
 /// One declared OpenAPI parameter with the constraints the document states — nothing inferred. <see cref="SourceRef"/> is the JSON pointer of

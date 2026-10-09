@@ -177,7 +177,7 @@ public enum ApiFuzzingLevel { Off, ContractFuzzing, SafeSecurityFuzzing }
 public enum ApiFuzzProtocol { Rest, GraphQl }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ApiFuzzParameterLocation { Query, Path, Header, GraphQlArgument, GraphQlField, GraphQlDocument }
+public enum ApiFuzzParameterLocation { Query, Path, Header, GraphQlArgument, GraphQlField, GraphQlDocument, Body }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ApiFuzzMutationType
@@ -204,6 +204,21 @@ public enum ApiFuzzMutationType
     GraphQlNullForNonNull,
     GraphQlInvalidEnum,
     GraphQlMalformedSyntax,
+    // Request-body cases (explicitly opted-in operations only)
+    BodyMissingRequiredField,
+    BodyNullForNonNull,
+    BodyEmptyString,
+    BodyInvalidEnum,
+    BodyWrongType,
+    BodyInvalidUuid,
+    BodyInvalidDate,
+    BodyNumericBelowMinimum,
+    BodyNumericAboveMaximum,
+    BodyStringTooLong,
+    BodyUnknownField,
+    BodyMalformedJson,
+    BodyWrongContentType,
+    BodyMissingContentType,
 }
 
 /// <summary>What a well-behaved API should do with the case. Accepting a tolerated case (unknown query parameter) is not a defect.</summary>
@@ -224,6 +239,14 @@ public enum ApiFuzzSafetyClassification
     AccessUnavailable,
     /// <summary>Eligible, but the run's request budget is spent before its cases.</summary>
     BudgetExhausted,
+    /// <summary>A write method without an explicit body-fuzzing opt-in for this operation.</summary>
+    BodyFuzzNotOptedIn,
+    /// <summary>Opted in as state-changing, but no registered cleanup strategy exists: blocked.</summary>
+    StateChangingWithoutCleanup,
+    /// <summary>Body fuzzing needs a server-registered trusted target; this one is not.</summary>
+    UntrustedTarget,
+    /// <summary>Opted in, but the contract declares no JSON request body to derive cases from.</summary>
+    NoRequestBodySchema,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -260,6 +283,10 @@ public sealed record ApiFuzzingSettings
     public int RequestDelayMs { get; init; } = ApiFuzzingLimits.DefaultDelayMs;
     public int RequestTimeoutSeconds { get; init; } = ApiFuzzingLimits.MaxTimeoutSeconds;
     public bool StopOnUnexpected5xx { get; init; } = true;
+    /// <summary>Request-body cases for explicitly opted-in operations of trusted non-production targets. Off by default.</summary>
+    public bool BodyFuzzing { get; init; }
+    /// <summary>Body payload limit (bytes), clamped to <see cref="ApiFuzzingLimits.MaxBodyBytes"/>.</summary>
+    public int MaxBodyBytes { get; init; } = ApiFuzzingLimits.DefaultBodyBytes;
 
     /// <summary>The effective settings: every limit inside the hard bounds; concurrency is always 1.</summary>
     public ApiFuzzingSettings Clamped() => this with
@@ -271,6 +298,7 @@ public sealed record ApiFuzzingSettings
         MaxConcurrency = 1,
         RequestDelayMs = Math.Clamp(RequestDelayMs, ApiFuzzingLimits.MinDelayMs, ApiFuzzingLimits.MaxDelayMs),
         RequestTimeoutSeconds = Math.Clamp(RequestTimeoutSeconds, 1, ApiFuzzingLimits.MaxTimeoutSeconds),
+        MaxBodyBytes = Math.Clamp(MaxBodyBytes, 256, ApiFuzzingLimits.MaxBodyBytes),
     };
 }
 
@@ -290,6 +318,10 @@ public static class ApiFuzzingLimits
     public const int MaxDelayMs = 5000;
     public const int MaxTimeoutSeconds = 20;
     public const int MaxTargets = 10;
+    public const int MaxBodyBytes = 8192;
+    public const int DefaultBodyBytes = 4096;
+    /// <summary>Body cases per opted-in operation never exceed the per-operation case limit.</summary>
+    public const int MaxBodyFields = 25;
 }
 
 /// <summary>
@@ -322,6 +354,13 @@ public sealed record ApiFuzzCase
     public string? GraphQlQuery { get; init; }
     /// <summary>The query is deliberately not parseable (malformed-syntax case).</summary>
     public bool ExpectSyntaxError { get; init; }
+    /// <summary>Synthetic JSON (or deliberately malformed) request body for body cases; bounded by MaxBodyBytes.</summary>
+    public string? Body { get; init; }
+    /// <summary>Content-Type sent with the body; null with <see cref="OmitContentType"/> for the missing-content-type case.</summary>
+    public string? ContentType { get; init; }
+    public bool OmitContentType { get; init; }
+    /// <summary>The opt-in policy that made this body case eligible (null for parameter cases).</summary>
+    public BirkNext.RuntimeSecurity.BodyFuzzingPolicy? BodyPolicy { get; init; }
 
     public static string IdFor(string targetId, string operationId, ApiFuzzMutationType mutation, ApiFuzzParameterLocation location, string parameter)
     {
@@ -353,6 +392,8 @@ public sealed record ApiFuzzingPlan
     public List<ApiFuzzOperationEligibility> Operations { get; init; } = [];
     public List<ApiFuzzCase> Cases { get; init; } = [];
     public List<ApiFuzzContractFingerprint> Contracts { get; init; } = [];
+    /// <summary>Server trust decision per target for request-body cases (only when body fuzzing was requested). Empty otherwise.</summary>
+    public List<BirkNext.RuntimeSecurity.TrustedTargetDecision> BodyTrust { get; init; } = [];
     /// <summary>Eligible cases that did not fit the request budget (not executed, never silently dropped).</summary>
     public int CasesOverBudget { get; init; }
     /// <summary>Why nothing can run (Off, blocked environment, no contract). Null when at least one case is planned.</summary>
@@ -407,6 +448,9 @@ public sealed record ApiFuzzingReport
     public List<ApiFuzzCaseResult> Results { get; init; } = [];
     public List<ApiFuzzFinding> Findings { get; init; } = [];
     public List<ApiFuzzContractFingerprint> Contracts { get; init; } = [];
+    public List<BirkNext.RuntimeSecurity.TrustedTargetDecision> BodyTrust { get; init; } = [];
+    /// <summary>The body-fuzzing opt-ins the run used (history binding; never re-evaluated against newer settings).</summary>
+    public List<BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn> BodyOperations { get; init; } = [];
     public int CasesPlanned { get; init; }
     public int CasesExecuted { get; init; }
     public int CasesBlocked { get; init; }
@@ -427,6 +471,8 @@ public sealed record ApiFuzzingRunRequest
     public ApiFuzzingSettings Settings { get; init; } = new();
     /// <summary>Optional subset of eligible operation ids; null = every eligible operation (within budget). Unknown ids are ignored.</summary>
     public List<string>? OperationIds { get; init; }
+    /// <summary>Body-fuzzing opt-ins from Target Environment → Security Expectations at Run (the backend re-checks trust and cleanup).</summary>
+    public List<BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn> BodyOperations { get; init; } = [];
 }
 
 /// <summary>Plain wording shared by the UI, the export and the docs.</summary>
@@ -435,5 +481,7 @@ public static class ApiFuzzingWording
     public const string NotAPenetrationTest =
         "Safe fuzzing sends a bounded set of deterministic invalid/boundary requests to non-production APIs. It is not a penetration test.";
     public const string Scope =
-        "REST GET/HEAD/OPTIONS on operations of the published OpenAPI contract and GraphQL queries from the schema only. No write methods, no GraphQL mutations, no request bodies, no attack dictionaries, never Production.";
+        "REST GET/HEAD/OPTIONS on operations of the published OpenAPI contract and GraphQL queries from the schema only. No GraphQL mutations, no attack dictionaries, never Production.";
+    public const string BodyScope =
+        "Request-body cases run only for operations explicitly opted in under Security Expectations, on a server-registered trusted non-production target; state-changing operations additionally need a registered cleanup strategy. DELETE and GraphQL mutations are never fuzzed.";
 }

@@ -26,6 +26,7 @@ public static class ApiFuzzingExport
             sb.Append($"<dt>Contract · {esc(contract.Kind)}</dt><dd>{esc(contract.Source ?? "not available")}{(contract.Hash is null ? "" : $" · hash {esc(contract.Hash)}")}</dd>");
         sb.Append("</dl>");
         sb.Append(table(["Measure", "Count"], ApiFuzzingPresentation.Summary(run).Select(c => new[] { esc(c.Label), c.Value.ToString() })));
+        sb.Append(RuntimeSecurityExport.BodyFuzzingSummary(run, esc));
         if (run.Operations.Count > 0)
         {
             sb.Append("<h3>Eligibility</h3>");

@@ -140,7 +140,14 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
     {
         var scope = ScopeForProfile(profileId, contextFingerprint);
         var graphQl = request.GraphQlQuery is not null;
-        if (graphQl)
+        var hasBody = request.Body is not null || request.BodyApproval is not null;
+        if (hasBody)
+        {
+            // Re-validated here, before the credential is applied: an opted-in read-only body case of a trusted target only.
+            if (ApiQuality.Fuzzing.ApiSafeRequestGuard.BodyRejection(request, BirkNext.ApiReview.ApiFuzzingLimits.MaxBodyBytes) is { } bodyRejection)
+                throw new ArgumentException(bodyRejection);
+        }
+        else if (graphQl)
         {
             if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("GraphQL queries are sent as POST only.");
             if (ApiQuality.Fuzzing.ApiSafeRequestGuard.GraphQlQueryRejection(request.GraphQlQuery!, request.AllowGraphQlSyntaxError, BirkNext.ApiReview.ApiFuzzingLimits.MaxPayloadBytes) is { } rejection)
@@ -152,6 +159,11 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         var uri = ApprovedUriForProfile(scope, request.Url);
         using var message = new HttpRequestMessage(graphQl ? HttpMethod.Post : new HttpMethod(request.Method.Trim().ToUpperInvariant()), uri);
         if (graphQl) message.Content = new StringContent(JsonSerializer.Serialize(new { query = request.GraphQlQuery }), Encoding.UTF8, "application/json");
+        else if (hasBody)
+        {
+            message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body!));
+            if (request.ContentType is { } bodyType) message.Content.Headers.ContentType = new MediaTypeHeaderValue(bodyType) { CharSet = "utf-8" };
+        }
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (graphQl) message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
         foreach (var (name, value) in request.Headers)
@@ -285,6 +297,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         int? errors = null;
         bool? hasData = null;
         bool? jsonValid = null;
+        List<string> errorCodes = [];
         IReadOnlyList<BirkNext.ApiReview.JsonShapeEntry> shape = [];
         var leaks = new List<string>();
         var fingerprints = new List<string>();
@@ -302,6 +315,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
                 {
                     errors = document.RootElement.TryGetProperty("errors", out var e) && e.ValueKind == JsonValueKind.Array ? e.GetArrayLength() : 0;
                     hasData = document.RootElement.TryGetProperty("data", out var d) && d.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
+                    errorCodes = BirkNext.RuntimeSecurity.GraphQlErrorCodeReader.Codes(document.RootElement);
                 }
             }
             catch (JsonException) { jsonValid = false; }
@@ -310,7 +324,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         return new AuthenticatedApiExecutionResult
         {
             StatusCode = status, ContentType = mediaType, ContentLength = length, ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1),
-            GraphQlErrorCount = errors, GraphQlHasData = hasData, GraphQlServerFingerprints = fingerprints, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData),
+            GraphQlErrorCount = errors, GraphQlHasData = hasData, GraphQlErrorCodes = errorCodes, GraphQlServerFingerprints = fingerprints, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData),
             SecurityHeaders = CollectSecurityHeaders(response), BodyShape = shape, LeakIndicators = leaks, JsonValid = jsonValid,
             ProblemDetails = ApiQuality.JsonBodyInspector.IsProblemDetails(mediaType, shape),
         };

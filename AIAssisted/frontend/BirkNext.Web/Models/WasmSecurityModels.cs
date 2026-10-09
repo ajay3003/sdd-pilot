@@ -106,6 +106,8 @@ public sealed class WasmSecurityReviewReport
     [JsonPropertyName("limitations")]         public List<string>                 Limitations          { get; init; } = [];
     [JsonPropertyName("isBlazorWasm")]        public bool                         IsBlazorWasm         { get; init; }
     [JsonPropertyName("errorMessage")]        public string?                      ErrorMessage         { get; init; }
+    /// <summary>Cookie metadata (never values) of the frontend document response. Null on older reports.</summary>
+    [JsonPropertyName("cookieSecurity")]      public BirkNext.RuntimeSecurity.CookieSecurityAssessment? CookieSecurity { get; init; }
 }
 
 public sealed class WasmScanRequest
@@ -119,4 +121,5 @@ public sealed class WasmScanRequest
     [JsonPropertyName("knownSafeDomains")]         public List<string> KnownSafeDomains          { get; init; } = [];
     /// <summary>Target Environment → Security Expectations → expected security headers (presence only).</summary>
     [JsonPropertyName("expectedSecurityHeaders")]  public List<string>? ExpectedSecurityHeaders  { get; init; }
+    [JsonPropertyName("cookieExpectations")]       public BirkNext.RuntimeSecurity.CookieSecurityExpectations? CookieExpectations { get; init; }
 }

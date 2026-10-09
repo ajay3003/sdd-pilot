@@ -5,6 +5,8 @@ using System.Text.Json;
 using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.ApiReview;
+using BirkNext.Api.Services.ApiQuality.Security;
+using BirkNext.RuntimeSecurity;
 using BirkNext.Standards;
 using BirkNext.LocalHttpsProxy;
 
@@ -47,6 +49,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     private readonly Dictionary<string, List<string>> serverFingerprints = new(StringComparer.Ordinal);
     // Per run: the backend's environment decision. Production-like (claim, marker or server-held context) disables active probes.
     private bool productionLike;
+    // Per run: runtime security probe results (attached to each target result after its review) and exposure results per API origin.
+    private readonly Dictionary<string, List<BirkNext.RuntimeSecurity.CorsProbeObservation>> corsProbes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, BirkNext.RuntimeSecurity.ApiDocumentationExposureResult> exposureByOrigin = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<ApiReviewReport> RunAsync(ApiReviewRunRequest request, CancellationToken cancellationToken = default)
     {
@@ -80,6 +85,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         };
 
         serverFingerprints.Clear();
+        corsProbes.Clear();
+        exposureByOrigin.Clear();
+        limitations.Add(productionLike
+            ? "Production policy: API documentation exposure probing and cross-origin CORS preflights are disabled."
+            : $"Runtime security probes are anonymous and bounded: at most {BirkNext.RuntimeSecurity.ApiDocumentationExposureRules.MaxProbes} documentation GETs per API origin, and CORS preflights for the frontend origin, up to {BirkNext.RuntimeSecurity.CorsProbeRules.MaxConfiguredOriginProbes} configured allowed origins and one synthetic foreign origin ({BirkNext.RuntimeSecurity.CorsProbeRules.ForeignOrigin}).");
         // The frontend build manifest is read only when a GraphQL target will actually be reviewed: a blocked review sends nothing.
         var reviewableGraphQl = request.Targets.Where(t => t.Selected && t.ApiType == ApiReviewTargetType.GraphQl)
             .Any(t => ResolveAccess(t, request, capabilities).Mode is not (ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked));
@@ -109,6 +119,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                         target.TargetId, technology.Server.Technology ?? "unknown", technology.Server.Confidence, technology.Server.Source,
                         technology.Client.Technology ?? "unknown", technology.Client.Confidence, technology.Client.Source);
                 }
+                result = await AttachRuntimeSecurityAsync(result, request, findings, cancellationToken);
                 results.Add(result);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -445,6 +456,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var h = new Dictionary<string, string>(primary.Headers, StringComparer.OrdinalIgnoreCase);
         // Preflight probe (OPTIONS with Origin) is always anonymous: browsers never send credentials on preflight, so this is safe and representative.
         var origin = request.FrontendOrigin ?? request.Environment.TargetUrl;
+        int? frontendPreflightStatus = null;
+        var frontendPreflightHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
         {
             try
@@ -455,9 +468,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 preflight.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "authorization, content-type");
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(10));
                 using var response = await publicClient.SendAsync(preflight, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                foreach (var name in new[] { "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-methods", "access-control-allow-headers" })
-                    if (response.Headers.TryGetValues(name, out var values)) h[name] = string.Join(", ", values);
-                checks.Add(Check("cors-preflight", ApiReviewFindingType.Security, "CORS preflight", (int)response.StatusCode < 400 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, $"OPTIONS → HTTP {(int)response.StatusCode} for Origin {originUri.GetLeftPart(UriPartial.Authority)} (the frontend's own origin; foreign-origin and reflected-origin behaviour is not tested)."));
+                frontendPreflightStatus = (int)response.StatusCode;
+                foreach (var name in new[] { "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-methods", "access-control-allow-headers", "vary" })
+                    if (response.Headers.TryGetValues(name, out var values)) { h[name] = string.Join(", ", values); frontendPreflightHeaders[name] = h[name]; }
+                checks.Add(Check("cors-preflight", ApiReviewFindingType.Security, "CORS preflight", (int)response.StatusCode < 400 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, $"OPTIONS → HTTP {(int)response.StatusCode} for Origin {originUri.GetLeftPart(UriPartial.Authority)} (the frontend's own origin; configured and foreign origins are probed separately when the environment permits active probes)."));
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
@@ -489,6 +503,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             checks.Add(Check("cors-policy", ApiReviewFindingType.Security, "CORS policy", ApiReviewCheckResult.Pass, "Explicit origin policy.", evidence));
         if (methods is not null && methods.Contains('*'))
             Add(targetFindings, findings, Finding(target, "cors-any-method", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "CORS", "CORS allows any method", "Access-Control-Allow-Methods: * is broader than the API needs.", "List the methods the frontend actually uses.", evidence, ApiReviewCheckResult.Warning));
+        checks.AddRange(await CrossOriginProbesAsync(target, request, originUri, frontendPreflightStatus, frontendPreflightHeaders, targetFindings, findings, ct));
         return checks;
     }
 
@@ -1205,6 +1220,132 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (list.Contains(ApiReviewCheckResult.Warning)) return ApiReviewCheckResult.Warning;
         if (list.Contains(ApiReviewCheckResult.ManualReview)) return ApiReviewCheckResult.ManualReview;
         return list.Count == 0 ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Pass;
+    }
+
+    // ── Runtime security: cross-origin CORS and API documentation exposure ─────────────────────────────────
+
+    /// <summary>
+    /// Records the frontend-origin preflight against the expectations and — outside production-like environments — probes up to three
+    /// configured allowed origins and one synthetic foreign origin. Wildcard findings stay with the existing CORS policy check (no duplicates).
+    /// </summary>
+    private async Task<List<ApiReviewCheck>> CrossOriginProbesAsync(ApiReviewTarget target, ApiReviewRunRequest request, Uri? frontendOrigin, int? frontendStatus,
+        Dictionary<string, string> frontendHeaders, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var checks = new List<ApiReviewCheck>();
+        var expectations = request.Policy.RuntimeSecurity?.Cors ?? new CorsExpectations();
+        var observations = new List<CorsProbeObservation>();
+        var url = $"{target.Origin}{target.BasePath}";
+        if (frontendOrigin is not null)
+            observations.Add(CorsProbeRules.Evaluate(CorsProbeKind.FrontendOrigin, frontendOrigin.GetLeftPart(UriPartial.Authority).ToLowerInvariant(),
+                frontendStatus, frontendHeaders, expectations, target.AuthRequired));
+        if (productionLike)
+        {
+            checks.Add(Check("cors-cross-origin", ApiReviewFindingType.Security, "Cross-origin CORS", ApiReviewCheckResult.NotTested, "Production policy: configured-origin and foreign-origin preflights are not sent."));
+            corsProbes[target.TargetId] = observations;
+            return checks;
+        }
+        var configured = expectations.AllowedOrigins.Select(CorsProbeRules.NormalizeOrigin).Where(o => o is not null).Select(o => o!)
+            .Where(o => frontendOrigin is null || !string.Equals(o, frontendOrigin.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(CorsProbeRules.MaxConfiguredOriginProbes).ToList();
+        foreach (var allowed in configured)
+        {
+            var (status, headers) = await ApiRuntimeSecurityProbes.PreflightAsync(publicClient, url, allowed, ct);
+            observations.Add(CorsProbeRules.Evaluate(CorsProbeKind.ConfiguredAllowedOrigin, allowed, status, headers, expectations, target.AuthRequired));
+        }
+        var (foreignStatus, foreignHeaders) = await ApiRuntimeSecurityProbes.PreflightAsync(publicClient, url, CorsProbeRules.ForeignOrigin, ct);
+        var foreign = CorsProbeRules.Evaluate(CorsProbeKind.ForeignOrigin, CorsProbeRules.ForeignOrigin, foreignStatus, foreignHeaders, expectations, target.AuthRequired);
+        observations.Add(foreign);
+        corsProbes[target.TargetId] = observations;
+
+        foreach (var o in observations.Where(o => o.RuleId is not null and not ("cors-wildcard-credentials" or "cors-wildcard-authenticated")).GroupBy(o => o.RuleId).Select(g => g.First()))
+        {
+            var evidence = new List<string> { $"Probe: {o.Kind} {o.Origin}", $"HTTP {o.StatusCode?.ToString() ?? "no response"}", $"Access-Control-Allow-Origin: {o.AllowOrigin ?? "absent"}", $"Access-Control-Allow-Credentials: {(o.AllowCredentials ? "true" : "absent/false")}" };
+            var (severity, title, recommendation) = o.RuleId switch
+            {
+                "cors-reflected-origin-credentials" => (ApiReviewSeverity.High, "Arbitrary origin reflected with credentials", "Replace origin reflection with an explicit allowlist; never combine reflection with credentials."),
+                "cors-reflected-origin" => (ApiReviewSeverity.Medium, "Arbitrary origin reflected on an authenticated API", "Allow only the known frontend origins."),
+                "cors-reflected-origin-public" => (ApiReviewSeverity.Low, "Arbitrary origin reflected on a public API", "Confirm the API is intended for any origin; prefer an explicit allowlist."),
+                "cors-credentials-unexpected" => (ApiReviewSeverity.Medium, "Credentialed CORS allowed against expectation", "Remove Access-Control-Allow-Credentials or update the Target Environment expectation."),
+                "cors-allowed-origin-denied" => (ApiReviewSeverity.Low, "Configured allowed origin not granted", "Add the origin to the API's CORS policy or correct the Target Environment expectation."),
+                _ => (ApiReviewSeverity.Low, "Origin granted outside the allowed list", "Align the API's CORS policy with the allowed origins."),
+            };
+            Add(targetFindings, findings, Finding(target, o.RuleId!, severity, ApiReviewFindingType.Security, target.Origin, "CORS", title, o.Note, recommendation, evidence,
+                o.Assessment == CorsAssessment.UnexpectedDeny ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Fail));
+        }
+        checks.Add(Check("cors-foreign-origin", ApiReviewFindingType.Security, "Foreign-origin CORS",
+            foreign.Assessment switch
+            {
+                CorsAssessment.AsExpected => ApiReviewCheckResult.Pass,
+                CorsAssessment.NotVerified => ApiReviewCheckResult.NotTested,
+                CorsAssessment.Observation => ApiReviewCheckResult.ManualReview,
+                _ => foreign.AllowCredentials ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning,
+            }, $"Synthetic origin {foreign.Origin}: {foreign.Observed}. {foreign.Note}"));
+        if (configured.Count > 0)
+            checks.Add(Check("cors-allowed-origins", ApiReviewFindingType.Security, "Configured allowed origins",
+                observations.Where(o => o.Kind == CorsProbeKind.ConfiguredAllowedOrigin).All(o => o.Assessment == CorsAssessment.AsExpected) ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning,
+                $"{configured.Count} configured origin(s) probed."));
+        var excessMethods = observations.SelectMany(o => CorsProbeRules.Excess(o.AllowMethods, expectations.AllowedMethods)).Where(m => m != "*").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var excessHeaders = observations.SelectMany(o => CorsProbeRules.Excess(o.AllowHeaders, expectations.AllowedHeaders)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (excessMethods.Count + excessHeaders.Count > 0)
+            Add(targetFindings, findings, Finding(target, "cors-preflight-broader-than-expected", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "CORS",
+                "Preflight grants more than the expected methods/headers", "The preflight response allows methods or headers outside the Target Environment expectation.",
+                "Restrict Access-Control-Allow-Methods/Headers to what the frontend uses.",
+                [.. excessMethods.Select(m => $"Method: {m}"), .. excessHeaders.Select(h => $"Header: {h}")], ApiReviewCheckResult.Warning));
+        return checks;
+    }
+
+    /// <summary>Attaches the CORS probe matrix and — once per API origin, outside production-like environments — documentation exposure.</summary>
+    private async Task<ApiReviewTargetResult> AttachRuntimeSecurityAsync(ApiReviewTargetResult result, ApiReviewRunRequest request, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var target = result.Target;
+        if (corsProbes.TryGetValue(target.TargetId, out var probes)) result = result with { CorsProbes = probes };
+        if (result.Status is not (ApiReviewTargetStatus.Completed or ApiReviewTargetStatus.PartiallyCompleted)) return result;
+        if (productionLike)
+            return result with
+            {
+                Checks = [.. result.Checks, Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", ApiReviewCheckResult.NotTested, "Production policy: documentation endpoints are not probed.")],
+            };
+        var runtime = request.Policy.RuntimeSecurity;
+        if ((runtime?.ApiDocumentationExposure ?? ApiDocumentationExposureExpectation.NotSpecified) == ApiDocumentationExposureExpectation.NotSpecified
+            && (runtime?.ApiDocumentationPaths.Count ?? 0) == 0)
+        {
+            // No expectation and no configured path: nothing is sent, so a review without the setting adds no documentation traffic.
+            return result with
+            {
+                DocumentationExposure = new ApiDocumentationExposureResult
+                {
+                    TargetId = target.TargetId, Origin = target.Origin, Observed = ApiDocumentationProbeState.NotVerified, Assessment = ApiDocumentationAssessment.NotVerified,
+                    Reason = "Not probed: set an API documentation exposure expectation (or documentation paths) under Security Expectations to probe this API's documentation endpoints.",
+                },
+                Checks = [.. result.Checks, Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", ApiReviewCheckResult.NotTested, "Not probed: no API documentation exposure expectation is set for this Target Environment.")],
+            };
+        }
+        var first = !exposureByOrigin.TryGetValue(target.Origin, out var exposure);
+        exposure ??= exposureByOrigin[target.Origin] = await ApiRuntimeSecurityProbes.DocumentationExposureAsync(publicClient, openApi, target.TargetId, target.Origin,
+            target.ContractSource, request.Policy.RuntimeSecurity, ct);
+        var checkResult = exposure.Assessment switch
+        {
+            ApiDocumentationAssessment.AsExpected => ApiReviewCheckResult.Pass,
+            ApiDocumentationAssessment.UnexpectedExposure => ApiReviewCheckResult.Fail,
+            ApiDocumentationAssessment.UnexpectedAbsence => ApiReviewCheckResult.Warning,
+            ApiDocumentationAssessment.NoExpectation => ApiReviewCheckResult.ManualReview,
+            _ => ApiReviewCheckResult.NotTested,
+        };
+        var checks = result.Checks.Append(Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", checkResult, exposure.Reason,
+            exposure.Probes.Select(p => $"{p.Path} → {(p.StatusCode?.ToString() ?? "no response")} ({p.State})").ToList())).ToList();
+        var added = 0;
+        if (first && exposure.Assessment == ApiDocumentationAssessment.UnexpectedExposure)
+        {
+            var publicDocs = exposure.Observed == ApiDocumentationProbeState.ReachablePublic;
+            var targetFindings = new List<ApiReviewFinding>();
+            Add(targetFindings, findings, Finding(target, publicDocs ? "api-docs-unexpected-exposure" : "api-docs-unexpected-endpoint", publicDocs ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low,
+                ApiReviewFindingType.Security, target.Origin, "API documentation", publicDocs ? "API documentation served without authentication" : "API documentation endpoint present (protected)",
+                exposure.Reason, publicDocs ? "Protect or disable the documentation endpoint for this environment, or change the Target Environment expectation if exposure is intended." : "Remove the documentation endpoint for this environment or update the expectation.",
+                exposure.Probes.Where(p => p.State is ApiDocumentationProbeState.ReachablePublic or ApiDocumentationProbeState.ReachableProtected)
+                    .Select(p => $"{p.Path} → HTTP {p.StatusCode} ({p.DocumentKind ?? p.State.ToString()})").ToList()));
+            added = targetFindings.Count;
+        }
+        return result with { DocumentationExposure = exposure, Checks = checks, FindingCount = result.FindingCount is { } count ? count + added : result.FindingCount };
     }
 
     private static void Add(List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> all, ApiReviewFinding finding) { targetFindings.Add(finding); all.Add(finding); }

@@ -25,9 +25,14 @@ public interface IApiFuzzingService
 /// use the anonymous client; authenticated targets go through the review gateway, which re-validates and applies the memory-only credential.
 /// </summary>
 public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl,
-    IApiEnvironmentSafetyPolicy safetyPolicy, ILogger<ApiFuzzingService> logger, IGraphQlSchemaArtifactStore? schemaArtifacts = null) : IApiFuzzingService
+    IApiEnvironmentSafetyPolicy safetyPolicy, ILogger<ApiFuzzingService> logger, IGraphQlSchemaArtifactStore? schemaArtifacts = null,
+    Security.ITrustedSecurityTargetRegistry? trust = null, IEnumerable<IRequestCleanupStrategy>? cleanupStrategies = null) : IApiFuzzingService
 {
-    private sealed record TargetContext(ApiReviewTarget Target, ApiReviewAccessMode Mode, Dictionary<string, List<string>> DeclaredCodes, AuthenticatedReviewIdentity Identity);
+    private sealed record TargetContext(ApiReviewTarget Target, ApiReviewAccessMode Mode, Dictionary<string, List<string>> DeclaredCodes, AuthenticatedReviewIdentity Identity)
+    {
+        /// <summary>The server resolved this target as trusted for request-body cases.</summary>
+        public bool BodyTrusted { get; set; }
+    }
 
     public async Task<ApiFuzzingPlan> PlanAsync(ApiFuzzingRunRequest request, CancellationToken ct = default) => (await PlanInternalAsync(request, ct)).Plan;
 
@@ -58,6 +63,8 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
         var operations = new List<ApiFuzzOperationEligibility>();
         var cases = new List<ApiFuzzCase>();
         var fingerprints = new List<ApiFuzzContractFingerprint>();
+        var bodyTrust = new List<BirkNext.RuntimeSecurity.TrustedTargetDecision>();
+        var cleanupIds = (cleanupStrategies ?? []).Select(c => c.Id).ToList();
         foreach (var target in selected)
         {
             var (mode, accessReason, _) = ApiReviewEngine.ResolveAccess(target, request.Review, capabilities);
@@ -80,7 +87,31 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
                     continue;
                 }
                 foreach (var op in contract.Operations) context.DeclaredCodes[$"{op.Method.ToUpperInvariant()} {op.Path}"] = op.ResponseCodes;
+                foreach (var op in contract.Operations) context.DeclaredCodes[$"{op.Method.ToUpperInvariant()} {op.Path} (body)"] = op.ResponseCodes;
                 generated = ApiFuzzCaseGenerator.Rest(target, contract, settings);
+                if (settings.BodyFuzzing)
+                {
+                    // Request bodies cross the read-only boundary: the server registry, not the client, decides the target is trusted.
+                    var decision = trust?.Resolve(request.Review.Environment.EnvironmentId, [target.Origin])
+                        ?? new BirkNext.RuntimeSecurity.TrustedTargetDecision { Reason = "No trusted target registry is available on this server." };
+                    bodyTrust.Add(decision);
+                    if (decision.Allowed)
+                    {
+                        context.BodyTrusted = true;
+                        var body = ApiBodyFuzzCaseGenerator.Rest(target, contract, settings, request.BodyOperations, cleanupIds);
+                        generated = new(generated.Operations.Concat(body.Operations).ToList(), generated.Cases.Concat(body.Cases).ToList());
+                    }
+                    else
+                    {
+                        var untrusted = request.BodyOperations.Where(o => o.Policy is BirkNext.RuntimeSecurity.BodyFuzzingPolicy.ReadOnlyBodySafe or BirkNext.RuntimeSecurity.BodyFuzzingPolicy.StateChangingWithCleanup)
+                            .Select(o => new ApiFuzzOperationEligibility
+                            {
+                                TargetId = target.TargetId, OperationId = o.Key + " (body)", Display = o.Key + " · request body", Protocol = protocol, Method = o.Method.ToUpperInvariant(),
+                                Classification = ApiFuzzSafetyClassification.UntrustedTarget, Reason = decision.Reason,
+                            });
+                        generated = new(generated.Operations.Concat(untrusted).ToList(), generated.Cases);
+                    }
+                }
             }
             else
             {
@@ -111,6 +142,7 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
         var plan = new ApiFuzzingPlan
         {
             Safety = safety, Level = settings.Level, Settings = settings, Operations = operations, Cases = planned, Contracts = fingerprints, CasesOverBudget = overBudget, GeneratedAt = DateTimeOffset.UtcNow,
+            BodyTrust = bodyTrust,
             NotAvailableReason = planned.Count > 0 ? null
                 : operations.Count == 0 ? "No API target is selected."
                 : operations.All(o => o.Classification == ApiFuzzSafetyClassification.MissingContract) ? "Contract fuzzing is not available: no OpenAPI contract or GraphQL schema could be retrieved. Unknown endpoints are never fuzzed."
@@ -130,6 +162,7 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
         {
             RunId = runId, EnvironmentId = request.Review.Environment.EnvironmentId, EnvironmentName = request.Review.Environment.Name, Safety = plan.Safety, Level = plan.Level, Settings = settings,
             Operations = plan.Operations, Cases = plan.Cases, Contracts = plan.Contracts, CasesPlanned = plan.Cases.Count, CasesOverBudget = plan.CasesOverBudget, StartedAt = started,
+            BodyTrust = plan.BodyTrust, BodyOperations = settings.BodyFuzzing ? [.. request.BodyOperations] : [],
             Limitations = Limitations(settings),
         };
         if (!plan.CanRun)
@@ -144,7 +177,7 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
             if (ct.IsCancellationRequested) { stopReason ??= "Cancelled by the user: no further cases were scheduled."; }
             if (stopReason is not null) { results.Add(NotExecuted(fuzzCase, stopReason)); continue; }
             if (!contexts.TryGetValue(fuzzCase.TargetId, out var context)) { results.Add(Blocked(fuzzCase, "The target is no longer part of the plan.")); continue; }
-            var safe = BuildRequest(fuzzCase, context.Target);
+            var safe = BuildRequest(fuzzCase, context.Target, context.BodyTrusted);
             if (ApiSafeRequestGuard.Validate(safe, context.Target.Origin, settings, plan.Safety) is { } rejection)
             {
                 logger.LogWarning("Safe fuzzing case {CaseId} ({OperationId}, {Mutation}) blocked by the safety guard: {Reason}", fuzzCase.CaseId, fuzzCase.OperationId, fuzzCase.MutationType, rejection);
@@ -214,10 +247,11 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
     [
         ApiFuzzingWording.NotAPenetrationTest,
         ApiFuzzingWording.Scope,
+        settings.BodyFuzzing ? $"{ApiFuzzingWording.BodyScope} Bodies ≤ {settings.MaxBodyBytes} bytes, flat (no nesting is generated)." : "Request-body fuzzing was off for this run.",
         $"Bounded: at most {settings.MaxTotalRequests} requests, {settings.MaxCasesPerOperation} per operation, one at a time, {settings.RequestDelayMs} ms apart, {settings.RequestTimeoutSeconds} s timeout, parameters ≤ {settings.MaxParameterLength} characters, GraphQL documents ≤ {settings.MaxPayloadBytes} bytes.",
         "Values are synthetic. Responses are scanned transiently for internal-detail indicators; no body, header value or credential is stored.",
         "A rejected request (4xx) is the expected behaviour for invalid input and is not a finding. Findings are robustness and contract evidence, not proof of exploitability.",
-        "Not covered: request bodies and write methods, GraphQL mutations, authorization between roles, rate limiting, dependency vulnerabilities (see Dependency Health).",
+        "Not covered: write methods without an explicit read-only-body opt-in, state-changing operations, DELETE, GraphQL mutations, authorization between roles (see Authorization scenarios), rate limiting, dependency vulnerabilities (see Dependency Health).",
     ];
 
     private static ApiFuzzCaseResult NotExecuted(ApiFuzzCase c, string note) => new() { CaseId = c.CaseId, Outcome = ApiFuzzOutcome.NotExecuted, Note = note };
@@ -226,10 +260,17 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
     private static string ApiTargetName(ApiReviewTarget t) => string.IsNullOrWhiteSpace(t.ServiceName) ? t.Url : t.ServiceName;
 
     /// <summary>Destination from the target's own origin + the contract path (prefixed with the target base path when the contract path is relative to it).</summary>
-    internal static ApiSafeRequest BuildRequest(ApiFuzzCase c, ApiReviewTarget target)
+    internal static ApiSafeRequest BuildRequest(ApiFuzzCase c, ApiReviewTarget target, bool bodyTrusted = false)
     {
         if (c.Protocol == ApiFuzzProtocol.GraphQl)
             return new ApiSafeRequest("POST", target.Url, [], c.GraphQlQuery, c.ExpectSyntaxError);
+        if (c.Location == ApiFuzzParameterLocation.Body)
+        {
+            var bodyBase = target.BasePath.TrimEnd('/');
+            var bodyPath = bodyBase.Length > 0 && !c.Path.StartsWith(bodyBase + "/", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.Path, bodyBase, StringComparison.OrdinalIgnoreCase) ? bodyBase + c.Path : c.Path;
+            return new ApiSafeRequest(c.Method, $"{target.Origin}{bodyPath}", [], Body: c.Body, ContentType: c.OmitContentType ? null : c.ContentType,
+                BodyApproval: new BodyFuzzApproval(bodyTrusted, c.BodyPolicy ?? BirkNext.RuntimeSecurity.BodyFuzzingPolicy.Disabled, c.OperationId));
+        }
         var basePath = target.BasePath.TrimEnd('/');
         var path = basePath.Length > 0 && !c.Path.StartsWith(basePath + "/", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.Path, basePath, StringComparison.OrdinalIgnoreCase)
             ? basePath + c.Path : c.Path;
@@ -260,6 +301,11 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
             {
                 message.Content = new StringContent(JsonSerializer.Serialize(new { query = request.GraphQlQuery }), Encoding.UTF8, "application/json");
                 message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
+            }
+            else if (request.Body is not null)
+            {
+                message.Content = new ByteArrayContent(Encoding.UTF8.GetBytes(request.Body));
+                if (request.ContentType is { } bodyType) message.Content.Headers.ContentType = new MediaTypeHeaderValue(bodyType) { CharSet = "utf-8" };
             }
             foreach (var (name, value) in request.Headers) message.Headers.TryAddWithoutValidation(name, value);
             var stopwatch = Stopwatch.StartNew();
