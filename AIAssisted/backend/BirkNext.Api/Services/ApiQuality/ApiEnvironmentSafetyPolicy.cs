@@ -1,4 +1,4 @@
-using BirkNext.Api.Services.ActiveCdcTests;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.ApiReview;
 using Microsoft.Extensions.Options;
@@ -44,7 +44,7 @@ public sealed class ApiEnvironmentSafetyPolicy(ILocalHttpsProxyStatusQuery? prox
         var hosts = request.Targets.Where(t => t.Selected).Select(t => t.Host)
             .Append(Uri.TryCreate(environment.TargetUrl, UriKind.Absolute, out var targetUri) ? targetUri.Host : null)
             .Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h!.ToLowerInvariant()).Distinct(StringComparer.Ordinal).ToList();
-        var markerHost = hosts.FirstOrDefault(h => !IsLoopback(h) && ActiveCdcPolicy.LooksLikeProduction(h));
+        var markerHost = hosts.FirstOrDefault(h => !IsLoopback(h) && ActiveEventPolicy.LooksLikeProduction(h));
         var blockedHost = hosts.FirstOrDefault(h => settings.BlockedHosts.Any(p => HostMatches(h, p)));
         evidence.Add(markerHost is null ? $"Host production markers: none on {hosts.Count} host(s)" : $"Host production marker: {markerHost}");
 

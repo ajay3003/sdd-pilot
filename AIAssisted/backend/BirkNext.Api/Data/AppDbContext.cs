@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
     public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
+    public DbSet<ActiveEventSyntheticIdentityRecord> ActiveEventSyntheticIdentities => Set<ActiveEventSyntheticIdentityRecord>();
+    public DbSet<IntegrationJourneyRunRecord> IntegrationJourneyRuns => Set<IntegrationJourneyRunRecord>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -854,6 +856,29 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Status).HasMaxLength(40).IsRequired();
             entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.StartedAt });
+        });
+
+        modelBuilder.Entity<ActiveEventSyntheticIdentityRecord>(entity =>
+        {
+            entity.ToTable("active_event_synthetic_identities");
+            entity.HasKey(r => new { r.EnvironmentId, r.Scope, r.Value });
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Scope).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ExtensionId).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => r.RunId);
+        });
+
+        modelBuilder.Entity<IntegrationJourneyRunRecord>(entity =>
+        {
+            entity.ToTable("integration_journey_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.PackId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.JourneyId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ScenarioId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.PackId, r.JourneyId, r.StartedAt });
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

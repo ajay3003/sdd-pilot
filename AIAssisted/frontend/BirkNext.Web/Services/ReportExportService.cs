@@ -437,7 +437,10 @@ public sealed class ReportExportService : IReportExportService
     public string ExportApiAuthorization(BirkNext.RuntimeSecurity.AuthorizationRunReport run, string? projectName) => RuntimeSecurityExport.BuildAuthorization(run, projectName, Table, Badge, Esc, BuildHtml);
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
-    public string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => ActiveCdcRunExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportActiveEventRun(BirkNext.Integrations.ActiveEventRunResult run, string? projectName) => ActiveEventRunExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportIntegrationJourneys(BirkNext.Integrations.IntegrationJourneyPackView pack, BirkNext.Integrations.ArchitectureRuleReport? rules,
+        IReadOnlyList<BirkNext.Integrations.IntegrationJourneyRunSummary> history, string? projectName) =>
+        IntegrationJourneyExport.Build(pack, rules, history, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportSourceArchitecture(BirkNext.SourceArchitecture.ArchitectureSnapshot snapshot) => SourceArchitectureExport.Build(snapshot, Table, Esc, BuildHtml);
     public string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result) => DependencyReviewExport.Build(result, Table, Badge, Esc, BuildHtml);
     public string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run) => DependencyHealthExport.Build(run, Table, Badge, Esc, BuildHtml);

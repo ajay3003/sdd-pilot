@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Integrations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
@@ -23,6 +24,8 @@ public sealed class IntegrationMessageFlowController(IIntegrationMessageFlowStor
     public async Task<ActionResult<IntegrationMessageFlowPackage>> Get(string environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await store.GetAsync(environmentId, ct));
 
+    /// <summary>Message-flow test configuration is IQR configuration (journey readiness reads it): writes need IntegrationConfiguration.Write.</summary>
+    [Authorize(Policy = BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPut("{environmentId}")]
     public async Task<ActionResult<IntegrationMessageFlowPackage>> Save(string environmentId, [FromBody] IntegrationMessageFlowPackage request,
         [FromServices] BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider sources, CancellationToken ct)

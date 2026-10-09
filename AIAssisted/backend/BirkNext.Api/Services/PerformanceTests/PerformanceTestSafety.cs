@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using BirkNext.Api.Services.ActiveCdcTests;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.CriticalE2E;
 using BirkNext.PerformanceTests;
 using HotChocolate.Language;
@@ -34,7 +34,7 @@ public static partial class PerformanceTestSafety
         if (!string.IsNullOrEmpty(uri.UserInfo)) return (null, "The target URL must not contain credentials.");
         var host = uri.Host.ToLowerInvariant();
         var loopback = uri.IsLoopback;
-        if (ActiveCdcPolicy.LooksLikeProduction(host))
+        if (ActiveEventPolicy.LooksLikeProduction(host))
             return (null, $"The target host {host} carries a production marker; production hosts cannot be load-tested, whatever the environment classification.");
         if (options.BlockedHosts.Any(p => HostMatches(host, p))) return (null, $"The target host {host} is blocked for performance tests in backend configuration.");
         if (options.AllowedHosts.Count > 0 && !loopback && !options.AllowedHosts.Any(p => HostMatches(host, p)))

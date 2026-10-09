@@ -1,6 +1,8 @@
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.IntegrationQuality;
 using BirkNext.Integrations;
+using BirkNext.Api.Services.ActiveEventTesting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
@@ -10,6 +12,8 @@ namespace BirkNext.Api.Controllers;
 /// secret is accepted or returned (authentication is a mechanism name). <c>environmentType</c> and
 /// <c>targetUrl</c> only decide whether the M2LB DEV template is SUGGESTED; it is applied solely through
 /// <c>POST templates/{templateId}/apply</c> (an explicit action), so a generic project never receives M2LB records.
+/// Reads stay open (configuration metadata only, never a secret); every write requires the IntegrationConfigurationWrite policy, because
+/// Active Event execution resolves its destination from this catalog.
 /// </summary>
 [ApiController]
 [Route("api/integrations")]
@@ -50,6 +54,7 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
             : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct) with { AzureRuntimeEnabled = azure.Credential is not null });
 
     /// <summary>Explicitly applies a project integration template (add-missing only). The only path that writes template records.</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("templates/{templateId}/apply")]
     public async Task<ActionResult<IntegrationCatalog>> ApplyTemplate([FromQuery] string environmentId, string templateId, [FromServices] IIntegrationAzureCredential azure, CancellationToken ct)
     {
@@ -57,6 +62,7 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         return await catalog.ApplyTemplateAsync(environmentId, templateId, ct) is { } applied ? Ok(applied with { AzureRuntimeEnabled = azure.Credential is not null }) : NotFound();
     }
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost]
     public async Task<ActionResult<IntegrationDefinition>> Create([FromQuery] string environmentId, [FromBody] IntegrationDefinition definition, CancellationToken ct)
     {
@@ -64,18 +70,22 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         catch (InvalidOperationException ex) { return Conflict(ex.Message); }
     }
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPut("{id}")]
     public async Task<ActionResult<IntegrationDefinition>> Update([FromQuery] string environmentId, string id, [FromBody] IntegrationDefinition definition, CancellationToken ct) =>
         await catalog.UpdateAsync(environmentId, id, definition, ct) is { } updated ? Ok(updated) : NotFound();
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("{id}/enabled")]
     public async Task<ActionResult<IntegrationDefinition>> SetEnabled([FromQuery] string environmentId, string id, [FromQuery] bool enabled, CancellationToken ct) =>
         await catalog.SetEnabledAsync(environmentId, id, enabled, ct) is { } updated ? Ok(updated) : NotFound();
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete([FromQuery] string environmentId, string id, CancellationToken ct) =>
         await catalog.DeleteAsync(environmentId, id, ct) ? NoContent() : NotFound();
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPut("platforms/{id}")]
     public async Task<ActionResult<IntegrationPlatform>> UpdatePlatform([FromQuery] string environmentId, string id, [FromBody] IntegrationPlatform platform, CancellationToken ct)
     {
@@ -90,6 +100,7 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
     public async Task<ActionResult<IReadOnlyList<IntegrationContractArtifact>>> Contracts([FromQuery] string environmentId, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
         Ok(await store.ListAsync(environmentId, ct));
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPut("contracts")]
     [RequestSizeLimit(JsonSchemaContract.MaxBytes * 2 + 64 * 1024)]
     public async Task<ActionResult<IntegrationContractArtifact>> SaveContract([FromBody] IntegrationContractUpload upload, [FromServices] IIntegrationContractStore store, CancellationToken ct)
@@ -98,11 +109,13 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         return artifact is null ? BadRequest(new { message = error }) : Ok(artifact);
     }
 
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpDelete("contracts")]
     public async Task<IActionResult> DeleteContract([FromQuery] string environmentId, [FromQuery] string integrationId, [FromQuery] IntegrationContractRole role, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
         await store.DeleteAsync(environmentId, integrationId, role, ct) ? NoContent() : NotFound();
 
     /// <summary>One-time import of integrations that were stored in the browser Target Environment profile.</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("import-legacy")]
     public async Task<ActionResult<int>> ImportLegacy([FromQuery] string environmentId, [FromBody] List<IntegrationConfigDto> legacy, CancellationToken ct) =>
         Ok(await catalog.ImportLegacyAsync(environmentId, legacy, ct));

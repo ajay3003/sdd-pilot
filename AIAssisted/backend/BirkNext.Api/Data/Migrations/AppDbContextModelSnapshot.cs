@@ -110,6 +110,37 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("active_event_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ActiveEventSyntheticIdentityRecord", b =>
+                {
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<long>("Value")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ExtensionId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("ReservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("EnvironmentId", "Scope", "Value");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("active_event_synthetic_identities", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.AiCodeReviewRunRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -669,6 +700,54 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasKey("EnvironmentId");
 
                     b.ToTable("integration_environment_states", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.IntegrationJourneyRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("JourneyId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PackId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ScenarioId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "PackId", "JourneyId", "StartedAt");
+
+                    b.ToTable("integration_journey_runs", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.IntegrationMessageFlowRecord", b =>

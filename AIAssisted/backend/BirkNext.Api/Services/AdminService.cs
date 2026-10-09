@@ -458,7 +458,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
                 .ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
 
             // Refuse to remove records while a tracked CDC or performance operation is active.
-            var activeCdc = await _db.ActiveCdcRuns.AnyAsync(r => r.Status.ToLower() == "running");
+            var activeCdc = await _db.ActiveCdcRuns.AnyAsync(r => r.Status.ToLower() == "running")
+                || await _db.ActiveEventRuns.AnyAsync(r => r.Status.ToLower() == "running");
             var activePerformance = await _db.PerformanceTestRuns.AnyAsync(r =>
                 r.State.ToLower() == "queued" || r.State.ToLower() == "preparing"
                 || r.State.ToLower() == "running" || r.State.ToLower() == "cancelling");

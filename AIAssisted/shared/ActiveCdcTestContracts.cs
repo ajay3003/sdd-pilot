@@ -2,7 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.Integrations;
 
-// Active CDC tests (Phase 1): BirkNext sends ONE synthetic Debezium Person event to an approved DEV/QA Event Hub and records what
+// LEGACY (read-only history): the contract of runs recorded by the retired Active CDC runner, kept so stored rows still deserialize and can be
+// projected into the generic ActiveEventRunResult. New runs and every UI use ActiveEventTestingContracts.
+// Active CDC tests (Phase 1): BirkNext sent ONE synthetic Debezium Person event to an approved DEV/QA Event Hub and records what
 // it could observe afterwards. Each stage is its own evidence: generated ≠ sent ≠ accepted by Event Hub ≠ consumer checkpoint ≠
 // Person persisted ≠ outbox ≠ Service Bus delivered ≠ subscriber processed. Not observed / unavailable / not assessed are never a
 // failure and never zero. Nothing here carries the payload, a credential, a connection string or a personal value.

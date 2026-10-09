@@ -1,0 +1,63 @@
+.ijp { min-width: 0; overflow-wrap: anywhere; padding: 1rem; border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); margin: 1rem 0; background: var(--clr-surface-white, #fff); }
+.ijp h2 { margin: 0 0 .5rem; }
+.ijp-pack-title { margin: .5rem 0 .25rem; font-size: 1.05rem; }
+.ijp-subheading { margin: 1rem 0 .35rem; font-size: .95rem; }
+.ijp-muted { color: var(--clr-text-muted, #4b5563); font-size: .85rem; margin: .25rem 0; }
+.ijp-mono { font-family: var(--font-mono, monospace); font-size: .8rem; overflow-wrap: anywhere; }
+.ijp-note { margin: .5rem 0; padding: .5rem .75rem; border-left: 4px solid var(--clr-link, #2563eb); background: var(--clr-surface, #f8fafc); font-size: .88rem; }
+.ijp-error { margin: .5rem 0; padding: .55rem .75rem; border-radius: var(--radius-md, .5rem); border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; font-size: .88rem; }
+.ijp-empty { margin: .5rem 0 0; padding: .75rem; border: 1px dashed var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); font-size: .86rem; }
+.ijp-trust { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; margin: .35rem 0 .75rem; }
+.ijp-packs { border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); padding: .5rem .75rem; margin: .5rem 0; min-width: 0; }
+.ijp-pack-option { display: flex; gap: .4rem; align-items: center; font-weight: 400; }
+.ijp-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border, #aaa6); margin: .5rem 0 0; }
+.ijp-tab { background: none; border: 1px solid transparent; border-bottom: none; border-radius: var(--radius-md, .5rem) var(--radius-md, .5rem) 0 0; padding: .45rem .75rem; font-size: .88rem; cursor: pointer; color: inherit; }
+.ijp-tab-active { border-color: var(--clr-border, #aaa6); background: var(--clr-surface, #f8fafc); font-weight: 600; }
+.ijp-tabpanel { padding: .75rem 0; min-width: 0; }
+.ijp-tab:focus-visible, .ijp-tabpanel:focus-visible, .ijp-table:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, button:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.ijp-pill { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid var(--clr-border, #aaa6); white-space: nowrap; }
+.ijp-pill-ready { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ijp-pill-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ijp-pill-danger { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.ijp-pill-neutral { background: var(--clr-surface, #f8fafc); color: #374151; }
+.ijp-table { overflow-x: auto; border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); contain: inline-size; margin: .5rem 0; }
+.ijp-table table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 40rem; }
+.ijp-table th, .ijp-table td { text-align: left; padding: .42rem .6rem; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); vertical-align: top; }
+.ijp-table thead th { font-size: .74rem; color: var(--clr-text-muted, #4b5563); background: var(--clr-surface, #f8fafc); }
+.ijp-table p { margin: .5rem .6rem; font-size: .86rem; }
+.ijp-maturity { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; padding: 0; margin: .5rem 0; }
+.ijp-maturity li { border: 1px solid var(--clr-border, #aaa6); border-radius: 999px; padding: .1rem .55rem; font-size: .78rem; }
+.ijp-maturity li[data-on="True"] { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ijp-steps { list-style: decimal; margin: .25rem 0; padding-left: 1.5rem; }
+.ijp-step { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: .15rem .75rem; padding: .45rem 0; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); font-size: .86rem; align-items: baseline; }
+.ijp-step-label { font-weight: 600; }
+.ijp-step-owner, .ijp-step-flags, .ijp-step-limit { color: var(--clr-text-muted, #4b5563); min-width: 0; }
+.ijp-step-flags { display: flex; flex-wrap: wrap; gap: .25rem .75rem; grid-column: 1 / 3; font-size: .8rem; }
+.ijp-step-limit { grid-column: 1 / -1; font-size: .8rem; }
+.ijp-checks, .ijp-rules { list-style: none; margin: .35rem 0; padding: 0; }
+.ijp-check, .ijp-rule { display: grid; grid-template-columns: minmax(9rem, 16rem) auto minmax(0, 1fr); gap: .15rem .75rem; align-items: baseline; padding: .4rem 0; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); font-size: .86rem; min-width: 0; }
+.ijp-rule { grid-template-columns: minmax(0, 1fr) auto; }
+.ijp-check-label, .ijp-rule-title { font-weight: 600; }
+.ijp-check-detail, .ijp-rule-detail { color: var(--clr-text-muted, #4b5563); min-width: 0; }
+.ijp-rule > .ijp-muted, .ijp-rule-detail, .ijp-rule > .ijp-details { grid-column: 1 / -1; }
+.ijp-notes { margin: .35rem 0; padding-left: 1.25rem; font-size: .85rem; }
+.ijp-details { margin: .35rem 0; }
+.ijp-details summary { cursor: pointer; font-weight: 600; font-size: .86rem; }
+.ijp-details ul { margin: .35rem 0; padding-left: 1.25rem; font-size: .84rem; }
+.ijp-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .25rem .75rem; align-items: end; }
+.ijp label { display: block; margin-top: .5rem; font-weight: 600; font-size: .86rem; }
+.ijp select { max-width: 100%; width: 100%; box-sizing: border-box; padding: .45rem; margin: .3rem 0; }
+.ijp-run { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--clr-border, #aaa6); min-width: 0; }
+.ijp-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 .25rem; }
+.ijp-confirm { margin: .75rem 0 0; padding: .75rem; border: 2px solid #f59e0b; border-radius: var(--radius-md, .5rem); background: #fffbeb; }
+.ijp-confirm h5 { margin: 0 0 .35rem; font-size: .95rem; }
+.ijp-confirm p { margin: 0 0 .4rem; font-size: .86rem; }
+.ijp .ijp-ack { display: flex; gap: .5rem; align-items: flex-start; font-weight: 400; }
+.ijp-ack input { margin-top: .2rem; flex: none; }
+
+@media (max-width: 640px) {
+    .ijp { padding: .75rem; }
+    .ijp-step, .ijp-check { grid-template-columns: minmax(0, 1fr) auto; }
+    .ijp-step-owner, .ijp-step-flags, .ijp-step-limit, .ijp-check-detail { grid-column: 1 / -1; }
+    .ijp-tab { flex: 1 1 auto; text-align: center; }
+}

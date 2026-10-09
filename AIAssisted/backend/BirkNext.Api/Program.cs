@@ -75,17 +75,25 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 
-// Active Event execution uses an Entra-issued API bearer token. Missing authority/audience leaves the scheme unable to validate
-// callers; there is no development bypass and no trusted identity header path.
+// Active Event execution and integration configuration writes use an Entra-issued API bearer token. Missing authority/audience leaves
+// the scheme unable to validate callers; there is no development bypass and no trusted identity header path. Inbound claim mapping is off,
+// so Entra's "scp" and "roles" claims are evaluated under their own names.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.Authority = builder.Configuration["Authentication:Entra:Authority"];
     options.Audience = builder.Configuration["Authentication:Entra:Audience"];
     options.RequireHttpsMetadata = true;
+    options.MapInboundClaims = false;
 });
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionHandler>();
-builder.Services.AddAuthorization(options => options.AddPolicy("ActiveEventExecute", policy =>
-    policy.RequireAuthenticatedUser().AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement())));
+builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.ActiveEventExecutePolicy, policy =>
+        policy.RequireAuthenticatedUser().AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement()));
+    options.AddPolicy(BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.IntegrationConfigurationWritePolicy, policy =>
+        policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteRequirement()));
+});
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
 
@@ -496,21 +504,45 @@ builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewS
 // AI-Generated Code Review: deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
 builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestCoverage.ITestCoverageReviewService, BirkNext.Api.Services.TestCoverage.TestCoverageReviewService>();
-// Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
-builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestSender, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestSender>();
+// Active Event Testing: one generic lifecycle and runner for every scenario provider; the only Event Hub SEND path. Off unless
+// ActiveEventTesting:Enabled; backend-owned trusted DEV/QA environments (TargetEnvironments:Trusted) and enrolled destinations only;
+// instance identity only. Providers are compiled extensions registered here; they cannot weaken any core check.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPolicy(BirkNext.Api.Services.ActiveEventTesting.ActiveEventOptions.From(sp.GetRequiredService<IConfiguration>())));
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ITrustedExecutionEnvironmentRegistry>(sp =>
+    BirkNext.Api.Services.ActiveEventTesting.TrustedExecutionEnvironmentRegistry.From(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveEventTesting.AzureEventHubTestProducerFactory>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IEventHubTestSender, BirkNext.Api.Services.ActiveEventTesting.AzureEventHubTestSender>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportProvider, BirkNext.Api.Services.ActiveEventTesting.EventHubActiveEventTransportProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventTransportRegistry>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventExecutionRunner>();
-builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioProvider, BirkNext.Api.Services.ActiveEventTesting.M2lbPersonScenarioProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventContinuityProvider, BirkNext.Api.Services.ActiveEventTesting.Observation.EventHubCheckpointContinuityProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventConsumerActivityProvider, BirkNext.Api.Services.ActiveEventTesting.Observation.TelemetryConsumerActivityProvider>();
+// No IActiveEventDownstreamVerifier is registered: no domain has a trustworthy read contract yet, so downstream results stay Not verified.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveEventTesting.ActiveEventExecutionRunner(
+    sp.GetRequiredService<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportRegistry>(),
+    sp.GetServices<BirkNext.Api.Services.ActiveEventTesting.IActiveEventConsumerActivityProvider>(),
+    sp.GetServices<BirkNext.Api.Services.ActiveEventTesting.IActiveEventContinuityProvider>(),
+    sp.GetServices<BirkNext.Api.Services.ActiveEventTesting.IActiveEventDownstreamVerifier>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<BirkNext.Api.Services.ActiveEventTesting.ActiveEventPolicy>().Options.MaxEventsPerRun));
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventSyntheticIdentityReservation, BirkNext.Api.Services.ActiveEventTesting.SyntheticIdentityReservation>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioProvider, BirkNext.Api.Services.ActiveEventTesting.Providers.M2lbPerson.M2lbPersonScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioProvider, BirkNext.Api.Services.ActiveEventTesting.Providers.SkoleNaervaer.SkoleNaervaerScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventScenarioRegistry>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunCoordinator>();
 builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventLifecycleService, BirkNext.Api.Services.ActiveEventTesting.ActiveEventLifecycleService>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunCoordinator>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunner>();
-builder.Services.AddScoped<BirkNext.Api.Services.ActiveCdcTests.IActiveCdcTestService, BirkNext.Api.Services.ActiveCdcTests.ActiveCdcTestService>();
+// Integration journeys: generic multi-boundary journeys (runner, readiness, history) with compiled domain packs. Packs reuse the IQR catalog,
+// trusted environments, Source Analysis and Active Event readiness; no step executor or observer is registered yet, so no journey can run.
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPack, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
+    sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunGate>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyService>();
+// Legacy (read-only): history of runs recorded by the retired Active CDC runner.
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.LegacyActiveCdcHistory>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IntegrationMappingEvidenceService>();
 // Application messaging (Wolverine) evidence: syntax-only analysis of uploaded source + read-only handler telemetry (Azure-gated).
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingStore, BirkNext.Api.Services.Integrations.ApplicationMessaging.ApplicationMessagingStore>();
