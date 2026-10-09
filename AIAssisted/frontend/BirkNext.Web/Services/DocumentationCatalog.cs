@@ -93,6 +93,7 @@ public static class DocumentationCatalog
         ["dependency-review"] = new("Reviews supported dependency inventory/SBOM evidence.", "Source Analysis inventory and supported ecosystem/source mode.", "Unsupported package ecosystems remain tool limitations."),
         ["pipeline-review"] = new("Interprets CI/CD definitions and pipeline structure.", "CI/CD evidence from the selected Source Analysis snapshot.", "A definition does not prove execution, success or deployment."),
         ["critical-e2e-regression"] = new("Runs configured safety-gated critical browser journeys.", "Configured journeys, target and browser/runtime readiness.", "A journey covers only its recorded steps and cannot prove full correctness."),
+        ["ai-generated-code-review"] = new("Reviews source for risk patterns common after generated or AI-assisted changes, with deterministic rules.", "The current (and optional baseline) Source Analysis snapshot, its contract/configuration/dependency/test evidence, and the workspace requirement graph.", "It never determines who or what wrote the code; no indicators observed does not mean the code is correct."),
         ["admin/system-settings"] = new("Configures platform, targets, capabilities and diagnostics.", "Host settings and Target Environment profiles.", "Visibility/configuration is not support, applicability or verification."),
         ["ai-change-auditor"] = new("Optionally reviews AI-generated changes when enabled.", "AI configuration and submitted change context.", "Optional; not a core workflow and not a substitute for deterministic evidence.")
     };
@@ -230,6 +231,7 @@ public static class DocumentationCatalog
             ("integration-quality-review","Integration Quality Review","/integration-quality-review","quality-reviews","Quality & Testing",null,null),
             ("performance-test-review","Performance Test Review","/performance-test-review","testing","Quality & Testing",null,null),
             ("critical-e2e-regression","Critical E2E Regression","/critical-e2e-regression","testing","Quality & Testing",null,null),
+            ("ai-generated-code-review","AI-Generated Code Review","/ai-generated-code-review","ai-generated-code-review","Quality & Testing",null,null),
             ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
