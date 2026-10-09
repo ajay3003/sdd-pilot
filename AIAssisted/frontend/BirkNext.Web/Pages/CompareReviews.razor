@@ -54,6 +54,10 @@
         {
             <p class="loading-state">Loading reviews...</p>
         }
+        else if (_notice is not null)
+        {
+            <div class="notification notification-info" role="status" data-testid="sample-store-notice">@_notice</div>
+        }
         else if (_loadError is not null)
         {
             <div class="notification notification-error" role="alert" data-testid="reviews-load-error">
@@ -74,6 +78,7 @@
     private IReadOnlyList<IGetQaDeltaReviews_QaDeltaReviews> _reviews = [];
     private bool _isLoading;
     private string? _loadError;
+    private string? _notice;
     private string? _deletingId;
     private Dictionary<string, string> _deleteErrors = [];
 
@@ -107,7 +112,7 @@
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
             _isLoading = false;
-            _loadError = "Select a Sample Project to view delta reviews.";
+            _notice = SampleProjectStoreNotice.Message("delta reviews", Workspace);
             StateHasChanged();
             return;
         }
@@ -119,7 +124,7 @@
     {
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
-            _loadError = "Select a Sample Project to view delta reviews.";
+            _notice = SampleProjectStoreNotice.Message("delta reviews", Workspace);
             _isLoading = false;
             StateHasChanged();
             return;
@@ -127,6 +132,7 @@
 
         _isLoading = true;
         _loadError = null;
+        _notice = null;
         StateHasChanged();
 
         try

@@ -18,6 +18,9 @@ public interface ILocalHttpsProxyApiService
     Task<ProxyCertificateStatus> RemoveCertificateAsync();
     Task<AuthenticatedApiExecutionResult> ExecuteRestAsync(AuthenticatedRestRequest request);
     Task<AuthenticatedApiExecutionResult> ExecuteGraphQlAsync(AuthenticatedGraphQlRequest request);
+    /// <summary>Cookie attributes observed in the running proxy session (never values).</summary>
+    Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest request) =>
+        Task.FromResult<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>>([]);
 }
 
 public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProxyApiService
@@ -40,6 +43,8 @@ public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProx
     public Task<ProxyCertificateStatus> RemoveCertificateAsync() => PostAsync<ProxyCertificateStatus>("api/local-https-proxy/certificate/remove", new LocalHttpsProxyCertificateRequest(true));
     public Task<AuthenticatedApiExecutionResult> ExecuteRestAsync(AuthenticatedRestRequest request) => PostAsync<AuthenticatedApiExecutionResult>("api/local-https-proxy/execute/rest", request);
     public Task<AuthenticatedApiExecutionResult> ExecuteGraphQlAsync(AuthenticatedGraphQlRequest request) => PostAsync<AuthenticatedApiExecutionResult>("api/local-https-proxy/execute/graphql", request);
+    public async Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest request) =>
+        await PostAsync<List<BirkNext.RuntimeSecurity.CookieObservation>>("api/local-https-proxy/observed-cookie-attributes", request);
 }
 
 /// <summary>

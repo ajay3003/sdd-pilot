@@ -35,15 +35,20 @@ public sealed class StandardsReferenceMappingTests
         Assert.Equal(StandardsMappingType.Related, mapped[0].MappingType);
         Assert.Equal(StandardsEvidenceScope.ApiRuntime, mapped[0].EvidenceScope);
         Assert.Empty(StandardsReferenceMappings.ForApiRule("unknown-rule"));
-        Assert.Single(StandardsReferenceMappings.ForApiRule("rest-latency"));
+        // Keys are emitted finding rule ids: "rest-slow" (the finding), never "rest-latency" (a check id).
+        Assert.Single(StandardsReferenceMappings.ForApiRule("rest-slow"));
+        Assert.Empty(StandardsReferenceMappings.ForApiRule("rest-latency"));
+        Assert.Equal("A05:2021", Assert.Single(StandardsReferenceMappings.ForApiRule("sec-server-disclosure")).ReferenceId);
+        Assert.Equal("A05:2021", Assert.Single(StandardsReferenceMappings.ForApiRule("cors-wildcard-credentials")).ReferenceId);
+        Assert.Equal("A02:2021", Assert.Single(StandardsReferenceMappings.ForApiRule("sec-no-tls")).ReferenceId);
+        Assert.Empty(StandardsReferenceMappings.ForApiRule("sec-server-exposed"));
     }
 
     [Fact]
     public void IntegrationMappingsRetainConfigurationVersusRuntimeScope()
     {
-        var tls = Assert.Single(StandardsReferenceMappings.ForIntegrationRule("sec-tls"));
-        Assert.Equal("A02:2021", tls.ReferenceId);
-        Assert.Equal(StandardsEvidenceScope.IntegrationRuntime, tls.EvidenceScope);
+        // "sec-tls" is an IQR check id, never a finding rule id: no reference is attached to something that is never emitted.
+        Assert.Empty(StandardsReferenceMappings.ForIntegrationRule("sec-tls"));
         Assert.Equal(StandardsEvidenceScope.IntegrationContract,
             Assert.Single(StandardsReferenceMappings.ForIntegrationRule("contract-incompatible")).EvidenceScope);
         Assert.Equal(StandardsEvidenceScope.IntegrationRuntime,
@@ -74,7 +79,7 @@ public sealed class StandardsReferenceMappingTests
             StandardsReferences =
             [
                 StandardsReferenceMappings.ForApiRule("gql-error-leak")[0],
-                StandardsReferenceMappings.ForApiRule("rest-latency")[0],
+                StandardsReferenceMappings.ForApiRule("rest-slow")[0],
             ]
         };
         var report = new ApiReviewReport { Findings = [finding] };

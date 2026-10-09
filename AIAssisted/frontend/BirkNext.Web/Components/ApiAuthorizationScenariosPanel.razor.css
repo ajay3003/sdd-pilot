@@ -1,0 +1,39 @@
+/* API Quality Review → Authorization scenarios. Scoped to this component. */
+.aas-panel {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.15rem;
+    margin-top: 1rem;
+    min-width: 0;
+}
+.aas-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.aas-head h2 { margin: 0; font-size: 1.15rem; color: var(--clr-text-heading); }
+.aas-results h3 { margin: 1rem 0 0.4rem; font-size: 1.02rem; color: var(--clr-text-heading); }
+.aas-intro { margin: 0 0 0.35rem; color: var(--clr-text-body); font-weight: 600; }
+.aas-muted { color: var(--clr-text-subtle); font-size: 0.88rem; line-height: 1.5; }
+.aas-mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; overflow-wrap: anywhere; }
+.aas-status { min-height: 1.2em; margin: 0.25rem 0; font-size: 0.9rem; color: var(--clr-text-body); }
+.aas-error { color: var(--clr-danger); font-weight: 600; margin: 0.25rem 0; }
+.aas-blocked { margin: 0.6rem 0; padding: 0.6rem 0.8rem; border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light); color: var(--clr-text-body); border-radius: var(--radius-md); }
+.aas-dl { margin: 0.5rem 0; display: grid; }
+.aas-dl > div { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--clr-border-subtle); font-size: 0.92rem; }
+.aas-dl dt { color: var(--clr-text-muted); font-weight: 500; }
+.aas-dl dd { margin: 0; overflow-wrap: anywhere; }
+.aas-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.aas-tablewrap { overflow-x: auto; max-width: 100%; margin: 0.5rem 0; }
+.aas-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.aas-table th { text-align: left; color: var(--clr-text-muted); font-weight: 600; padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--clr-border); }
+.aas-table td { padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--clr-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
+.aas-counts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0; }
+.aas-pill { display: inline-block; border-radius: 999px; padding: 0.05rem 0.5rem; font-size: 0.78rem; font-weight: 600; border: 1px solid var(--clr-border); background: var(--clr-surface); color: var(--clr-text-body); }
+.aas-pill-ready { border-color: var(--clr-success-border); background: var(--clr-success-bg); color: var(--clr-success); }
+.aas-pill-attention { border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); color: #78350f; }
+.aas-pill-fail { border-color: var(--clr-danger-border); background: var(--clr-danger-bg); color: #991b1b; }
+.aas-pill-muted { color: var(--clr-text-muted); }
+
+@media (max-width: 640px) {
+    .aas-dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+}
+.aas-actions .btn-primary:disabled, .aas-actions .btn-secondary:disabled { opacity: 1; color: var(--clr-text-muted); background: var(--clr-surface); border-color: var(--clr-border-input); }
+.aas-actions button:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }

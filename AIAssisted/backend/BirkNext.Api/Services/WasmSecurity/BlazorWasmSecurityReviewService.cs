@@ -100,7 +100,8 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             findings.AddRange(CheckSensitiveData(content, path));
         }
 
-        findings.AddRange(CheckSecurityHeaders(headers));
+        var https = request.TargetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        findings.AddRange(CheckSecurityHeaders(headers, request.ExpectedSecurityHeaders, https));
         findings.AddRange(CheckCors(headers));
 
         // Source maps exposed
@@ -123,8 +124,15 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             if (fetched.ContainsKey(path))
                 findings.Insert(0, ConfigExposedFinding(Url(base_, path), path));
 
+        // Cookie attributes of the frontend document response. The value is dropped by the parser before anything is kept.
+        var cookieHost = Uri.TryCreate(base_, UriKind.Absolute, out var baseUri) ? baseUri.Host : "";
+        var cookieSecurity = BirkNext.RuntimeSecurity.CookieSecurityEvaluator.Evaluate(
+            indexHeaders.Where(h => string.Equals(h.Name, "Set-Cookie", StringComparison.OrdinalIgnoreCase)).SelectMany(h => h.Values)
+                .Select(v => BirkNext.RuntimeSecurity.SetCookieMetadataParser.Parse(v, cookieHost, BirkNext.RuntimeSecurity.CookieEvidenceSource.FrontendDocumentResponse))
+                .Where(c => c is not null).Select(c => c!),
+            request.CookieExpectations);
         var configSummary = BuildConfigSummary(fetched, findings);
-        var headerResults = BuildHeaderResults(headers);
+        var headerResults = BuildHeaderResults(headers, request.ExpectedSecurityHeaders, https);
         var deduped       = Deduplicate(findings);
         // The target page could not be fetched: no check ran, so there is no score (not 100, not 0).
         int? score        = indexContent is null ? null : CalculateScore(deduped);
@@ -155,6 +163,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             Headers            = headerResults,
             Recommendations    = recommendations,
             Limitations        = Limitations(),
+            CookieSecurity     = cookieSecurity,
         };
     }
 
@@ -400,31 +409,40 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
 
     // ── Check: Security headers ────────────────────────────────────────────
 
-    internal static IEnumerable<WasmSecurityFinding> CheckSecurityHeaders(
-        IReadOnlyDictionary<string, string> headers)
+    /// <summary>Static Security's historical header policy: used only when the request carries no Target Environment expectations.</summary>
+    internal static readonly string[] DefaultExpectedHeaders = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Strict-Transport-Security", "Permissions-Policy"];
+
+    private static readonly Dictionary<string, (WasmSecuritySeverity Severity, string Impact)> HeaderImpact = new(StringComparer.OrdinalIgnoreCase)
     {
-        var checks = new (string Header, WasmSecuritySeverity Severity, string Impact)[]
-        {
-            ("Content-Security-Policy",   WasmSecuritySeverity.High,   "Without CSP, the app is vulnerable to XSS and data injection attacks."),
-            ("X-Content-Type-Options",    WasmSecuritySeverity.Medium, "Without this header, browsers may MIME-sniff responses, enabling script injection."),
-            ("Referrer-Policy",           WasmSecuritySeverity.Low,    "Without this header, sensitive URL parameters may leak to third parties via the Referer header."),
-            ("Strict-Transport-Security", WasmSecuritySeverity.High,   "Without HSTS, users may be vulnerable to protocol downgrade attacks."),
-            ("Permissions-Policy",        WasmSecuritySeverity.Low,    "Without Permissions-Policy, the app may unintentionally allow access to browser APIs (camera, microphone, etc.)."),
-        };
+        ["Content-Security-Policy"] = (WasmSecuritySeverity.High, "Without CSP, the app is vulnerable to XSS and data injection attacks."),
+        ["X-Content-Type-Options"] = (WasmSecuritySeverity.Medium, "Without this header, browsers may MIME-sniff responses, enabling script injection."),
+        ["Referrer-Policy"] = (WasmSecuritySeverity.Low, "Without this header, sensitive URL parameters may leak to third parties via the Referer header."),
+        ["Strict-Transport-Security"] = (WasmSecuritySeverity.High, "Without HSTS, users may be vulnerable to protocol downgrade attacks."),
+        ["Permissions-Policy"] = (WasmSecuritySeverity.Low, "Without Permissions-Policy, the app may unintentionally allow access to browser APIs (camera, microphone, etc.)."),
+        ["X-Frame-Options"] = (WasmSecuritySeverity.Medium, "Without X-Frame-Options (or CSP frame-ancestors), the page can be framed by other sites (clickjacking)."),
+    };
 
-        foreach (var (header, severity, impact) in checks)
+    /// <summary>
+    /// Missing-header findings for the headers the Target Environment expects (Security Expectations → expected security headers).
+    /// A header the environment does not require is never a finding; null expectations (older clients) fall back to the historical list.
+    /// Presence only: the expectation model stores names, not values.
+    /// </summary>
+    internal static IEnumerable<WasmSecurityFinding> CheckSecurityHeaders(
+        IReadOnlyDictionary<string, string> headers, IReadOnlyList<string>? expected = null, bool https = true)
+    {
+        foreach (var e in BirkNext.ApiReview.SecurityHeaderExpectations.Evaluate(headers, expected ?? DefaultExpectedHeaders, apiResponse: false, https))
         {
-            if (headers.ContainsKey(header.ToLowerInvariant())) continue;
-
+            if (e.Result != BirkNext.ApiReview.SecurityHeaderOutcome.Missing) continue;
+            var (severity, impact) = HeaderImpact.TryGetValue(e.Header, out var known) ? known : (WasmSecuritySeverity.Low, "The Target Environment expects this header on the frontend document.");
             yield return new WasmSecurityFinding
             {
-                Id          = $"HDR-MISSING-{Slug(header)}",
-                Title       = $"Missing security header: {header}",
+                Id          = $"HDR-MISSING-{Slug(e.Header)}",
+                Title       = $"Missing security header: {e.Header}",
                 Severity    = severity,
                 Category    = WasmSecurityCategory.SecurityHeaders,
                 Status      = WasmSecurityStatus.Fail,
-                Description = impact,
-                Recommendation = $"Add the '{header}' response header to your hosting configuration or CDN.",
+                Description = $"{impact} The Target Environment expects this header (Security Expectations); presence only, no value policy is stored.",
+                Recommendation = $"Add the '{e.Header}' response header to your hosting configuration or CDN.",
                 ConstitutionRule  = "GL-26",
                 ConstitutionRuleTitle = "Security headers must be set on all public-facing services",
             };
@@ -811,29 +829,31 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
     }
 
     private static List<SecurityHeaderResult> BuildHeaderResults(
-        IReadOnlyDictionary<string, string> headers)
+        IReadOnlyDictionary<string, string> headers, IReadOnlyList<string>? expected, bool https)
     {
-        var checks = new (string Header, string Rec)[]
+        var recommendations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ("Content-Security-Policy",   "Add a CSP to restrict content sources."),
-            ("X-Content-Type-Options",    "Add 'nosniff' to prevent MIME-sniffing."),
-            ("Referrer-Policy",           "Add 'strict-origin-when-cross-origin' or stricter."),
-            ("Strict-Transport-Security", "Add HSTS with at least 1 year max-age."),
-            ("Permissions-Policy",        "Add to restrict access to browser APIs."),
-            ("X-Frame-Options",           "Add 'DENY' or 'SAMEORIGIN', or use CSP frame-ancestors."),
+            ["Content-Security-Policy"] = "Add a CSP to restrict content sources.",
+            ["X-Content-Type-Options"] = "Add 'nosniff' to prevent MIME-sniffing.",
+            ["Referrer-Policy"] = "Add 'strict-origin-when-cross-origin' or stricter.",
+            ["Strict-Transport-Security"] = "Add HSTS with at least 1 year max-age.",
+            ["Permissions-Policy"] = "Add to restrict access to browser APIs.",
+            ["X-Frame-Options"] = "Add 'DENY' or 'SAMEORIGIN', or use CSP frame-ancestors.",
         };
-
-        return checks.Select(c =>
+        // "Missing" only when the Target Environment expects the header; otherwise the table says what was observed.
+        return BirkNext.ApiReview.SecurityHeaderExpectations.Evaluate(headers, expected ?? DefaultExpectedHeaders, apiResponse: false, https).Select(e => new SecurityHeaderResult
         {
-            var key = c.Header.ToLowerInvariant();
-            headers.TryGetValue(key, out var value);
-            return new SecurityHeaderResult
+            Header         = e.Header,
+            Status         = e.Result switch
             {
-                Header         = c.Header,
-                Status         = value is not null ? "Present" : "Missing",
-                Value          = value is not null ? TruncateValue(value) : null,
-                Recommendation = c.Rec,
-            };
+                BirkNext.ApiReview.SecurityHeaderOutcome.Missing => "Missing",
+                BirkNext.ApiReview.SecurityHeaderOutcome.NotAssessed => "Not required",
+                BirkNext.ApiReview.SecurityHeaderOutcome.NotApplicable => "Not applicable",
+                _ => "Present",
+            },
+            Value          = e.ObservedValue is not null ? TruncateValue(e.ObservedValue) : null,
+            Recommendation = recommendations.TryGetValue(e.Header, out var rec) ? rec : $"Add the '{e.Header}' header.",
+            Expected       = e.Expected,
         }).ToList();
     }
 
@@ -873,6 +893,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         "Only text assets are downloaded and analyzed. Compiled WASM binaries are not decompiled.",
         "Dynamic JavaScript execution is not performed.",
         "Path brute-forcing is not performed.",
+        "Cookie security reads Set-Cookie attributes of the anonymous frontend document response only (names and attributes, never values); cookies set after sign-in are visible only through the Local HTTPS proxy observation.",
     ];
 
     // ── Fetch helpers ──────────────────────────────────────────────────────

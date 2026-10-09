@@ -629,6 +629,6 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         await page.InvokeAsync(() => page.Find("[data-testid=aqr-export]").Click());
 
-        Mock.Get(export).Verify(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>()), Times.Once);
+        Mock.Get(export).Verify(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>(), It.IsAny<ApiFuzzingReport?>()), Times.Once);
     }
 }

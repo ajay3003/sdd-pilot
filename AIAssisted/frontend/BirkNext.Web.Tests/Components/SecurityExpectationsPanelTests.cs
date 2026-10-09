@@ -399,6 +399,8 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         var legacySecurity = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(profile.Security))!;
         legacySecurity.AsObject().Remove("origins");
         legacySecurity.AsObject().Remove("scopedClientIds");
+        // Runtime security expectations (CORS, cookies, authorization scenarios) are not authentication configuration either.
+        legacySecurity.AsObject().Remove("runtimeSecurity");
         var legacyContext = System.Text.Json.JsonSerializer.Serialize(new { profile.Id, profile.TargetUrl, profile.EnvironmentType, profile.Authentication,
             profile.RequestTimeoutSeconds, profile.RetryCount, Security = legacySecurity, profile.ExpectedApiGateway, profile.AllowedRestHosts, profile.AllowedGraphQlEndpoints });
         ManualAuthenticationVerificationEvidence.Fingerprint(profile).Should().Be(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(legacyContext))));

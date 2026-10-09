@@ -1,0 +1,207 @@
+@using BirkNext.Web.Models
+@using BirkNext.ApiReview
+@using BirkNext.RuntimeSecurity
+@inject IApiReviewService ReviewService
+@inject IApiReviewHistoryService History
+@inject IReportExportService ExportService
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* API Quality Review → Authorization scenarios. Each configured identity is compared with its own explicit Allow/Deny expectation for
+   the same safe request. The backend decides trust (server registration), environment safety and every request; no credential is ever
+   entered, stored or shown here. Never presented as a penetration test. *@
+<section class="aas-panel" data-testid="aqr-authorization" aria-labelledby="aqr-authorization-heading">
+    <div class="aas-head">
+        <h2 id="aqr-authorization-heading">Authorization scenarios</h2>
+        <span class="aas-pill aas-pill-@StateTone" data-testid="aqr-authorization-state">@StateLabel</span>
+    </div>
+    <p class="aas-intro" data-testid="aqr-authorization-warning">@RuntimeSecurityWording.NotAPenetrationTest</p>
+    <p class="aas-muted">Explicit expectations only: an identity is <em>allowed</em> when the configured success comes back and <em>denied</em> on 401/403, a GraphQL authorization error, or 404 where anti-disclosure is declared. Result counts are never used as evidence.</p>
+
+    <dl class="aas-dl">
+        <div><dt>Environment</dt><dd>@(Context?.ActiveProfile.Name ?? "No active Target Environment") <span class="aas-pill aas-pill-muted">@(Context?.ActiveProfile.EnvironmentType.ToString() ?? "Unknown")</span></dd></div>
+        <div><dt>Server registration</dt><dd data-testid="aqr-authorization-trust" data-state="@(_execution?.Trust.State.ToString() ?? "Unknown")">@TrustText</dd></div>
+        <div><dt>Sign-in</dt><dd data-testid="aqr-authorization-signin">@SignInText</dd></div>
+        <div><dt>Scenarios</dt><dd data-testid="aqr-authorization-count">@Scenarios.Count configured (Target Environment → Security Expectations → Authorization scenarios)</dd></div>
+    </dl>
+
+    @if (_execution is { ProtectedExecutionAvailable: false })
+    {
+        <div class="aas-blocked" role="status" data-testid="aqr-authorization-auth-unconfigured">
+            <strong>@SecurityExecutionStatus.AuthenticationRequiredMessage</strong> Protected security runs are disabled until BirkNext user sign-in is configured for this deployment.
+        </div>
+    }
+
+    @if (Scenarios.Count > 0)
+    {
+        <div class="aas-tablewrap" tabindex="0" role="region" aria-label="Configured authorization scenarios">
+            <table class="aas-table" data-testid="aqr-authorization-plan">
+                <thead><tr><th scope="col">Scenario</th><th scope="col">Resource</th><th scope="col">Identity / role</th><th scope="col">Expected</th></tr></thead>
+                <tbody>
+                    @foreach (var s in Scenarios)
+                    {
+                        foreach (var i in s.Identities)
+                        {
+                            <tr data-testid="aqr-authorization-plan-row">
+                                <td>@Name(s)</td>
+                                <td class="aas-mono">@Resource(s)</td>
+                                <td>@i.Alias@(string.IsNullOrWhiteSpace(i.Role) ? "" : $" · {i.Role}")</td>
+                                <td>@i.Expected@(i.NotFoundMeansDeny ? " (404 = deny)" : "")</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <div class="aas-actions">
+        <button type="button" class="btn-primary" data-testid="aqr-authorization-run" disabled="@(!CanRun)" aria-describedby="aqr-authorization-run-help" @onclick="RunAsync">Run authorization scenarios</button>
+        @if (_report is not null)
+        {
+            <button type="button" class="btn-secondary" data-testid="aqr-authorization-export" @onclick="ExportAsync">Export HTML</button>
+        }
+    </div>
+    <p class="aas-muted" id="aqr-authorization-run-help" data-testid="aqr-authorization-run-help">@RunHelp</p>
+    <p class="aas-status" role="status" aria-live="polite" data-testid="aqr-authorization-status">@_status</p>
+    @if (_error is not null) { <p class="aas-error" role="alert" data-testid="aqr-authorization-error">@_error</p> }
+
+    @if (_report is { } report)
+    {
+        <section class="aas-results" data-testid="aqr-authorization-results" aria-labelledby="aqr-authorization-results-heading">
+            <h3 id="aqr-authorization-results-heading">@(_historical ? "Previous run" : "Results") <span class="aas-muted">· @report.CompletedAt.ToLocalTime().ToString("g") · expectations @report.ExpectationFingerprint</span></h3>
+            @if (report.BlockedReason is { } blocked) { <p class="aas-blocked" role="status" data-testid="aqr-authorization-blocked">@blocked</p> }
+            <p class="aas-counts" data-testid="aqr-authorization-counts">
+                @foreach (var (outcome, count) in report.Outcomes) { <span class="aas-pill aas-pill-@OutcomeTone(outcome)">@OutcomeLabel(outcome): @count</span> }
+            </p>
+            @if (report.Observations.Count > 0)
+            {
+                <div class="aas-tablewrap" tabindex="0" role="region" aria-label="Authorization scenario results">
+                    <table class="aas-table" data-testid="aqr-authorization-results-table">
+                        <thead><tr><th scope="col">Scenario</th><th scope="col">Identity / role</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Result</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in report.Observations)
+                            {
+                                <tr data-testid="aqr-authorization-result-row" data-outcome="@o.Outcome">
+                                    <td>@o.Scenario</td>
+                                    <td>@o.IdentityAlias@(string.IsNullOrWhiteSpace(o.Role) ? "" : $" · {o.Role}")</td>
+                                    <td>@o.Expected</td>
+                                    <td class="aas-mono">@(o.StatusCode is { } status ? $"HTTP {status}" : "—")@(o.GraphQlAuthorizationError == true ? " · GraphQL auth error" : "")</td>
+                                    <td><span class="aas-pill aas-pill-@OutcomeTone(o.Outcome)">@OutcomeLabel(o.Outcome)</span> <span class="aas-muted">@o.Reason</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <ReviewDisclosure Text="Limitations" TestId="aqr-authorization-limitations">
+                <ul>@foreach (var l in report.Limitations) { <li>@l</li> }</ul>
+            </ReviewDisclosure>
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter] public FrontendAnalysisContext? Context { get; set; }
+    [Parameter] public Func<ApiReviewRunRequest?>? BuildReviewRequest { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+
+    private ISecurityExecutionTokenProvider? SignIn => Services.GetService<ISecurityExecutionTokenProvider>();
+    private SecurityExecutionStatus? _execution;
+    private AuthorizationRunReport? _report;
+    private bool _historical;
+    private bool _busy;
+    private string _status = "";
+    private string? _error;
+    private string? _profileId;
+
+    private List<AuthorizationScenario> Scenarios => Context?.SecuritySettings.RuntimeSecurity?.AuthorizationScenarios ?? [];
+    private string? ClientBlocked => ClientBlockedReason(Context?.ActiveProfile.EnvironmentType.ToString());
+
+    /// <summary>Client mirror of the backend rule (the backend decides): Production and unclassified environments are never tested.</summary>
+    public static string? ClientBlockedReason(string? environmentType) =>
+        string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase) ? "Production environments are never tested by authorization scenarios."
+        : ApiActiveTestingEnvironments.IsAllowed(environmentType) ? null
+        : "Authorization scenarios run only against Local, Development, QA or Test environments.";
+    private bool CanRun => !_busy && ClientBlocked is null && Scenarios.Count > 0 && _execution is { ProtectedExecutionAvailable: true, Trust.Allowed: true }
+        && BuildReviewRequest?.Invoke() is { Targets.Count: > 0 };
+
+    private string RunHelp => _busy ? "Running…"
+        : ClientBlocked is { } blocked ? $"Run is disabled: {blocked}"
+        : Scenarios.Count == 0 ? "Add authorization scenarios under Target Environment → Security Expectations to run them."
+        : _execution is null ? "Run is disabled: the backend could not be asked whether this environment is registered."
+        : !_execution.ProtectedExecutionAvailable ? $"Run is disabled: {SecurityExecutionStatus.AuthenticationRequiredMessage}"
+        : !_execution.Trust.Allowed ? $"Run is disabled: {_execution.Trust.Reason}"
+        : BuildReviewRequest?.Invoke() is not { Targets.Count: > 0 } ? "Select the API targets the scenarios belong to."
+        : $"Sends at most {Scenarios.Sum(s => s.Identities.Count)} safe request(s), one at a time.";
+
+    private string StateLabel => ClientBlocked is not null ? "Blocked" : _execution is { ProtectedExecutionAvailable: false } ? "Sign-in required"
+        : _execution?.Trust.Allowed == true ? "Ready" : _execution is null ? "Unknown" : "Not registered";
+    private string StateTone => StateLabel == "Ready" ? "ready" : "attention";
+    private string TrustText => _execution is null ? "Unknown (backend not reached)" : _execution.Trust.Allowed ? $"Registered ({_execution.Trust.ServerEnvironmentType}) · {_execution.Trust.RegisteredOrigins.Count} API origin(s)" : _execution.Trust.Reason;
+    private string SignInText => _execution?.RequireAuthenticatedUser == true
+        ? (SignIn?.IsConfigured == true ? "Required; sign-in hooks are configured, but no sign-in library is available in this build." : $"Required; {SecurityExecutionStatus.AuthenticationRequiredMessage}")
+        : "Not required by this BirkNext instance (local workstation).";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Context?.ActiveProfile.Id is { } id && id != _profileId)
+        {
+            _profileId = id;
+            _error = null;
+            _execution = await ReviewService.GetSecurityExecutionAsync(id);
+            await History.LoadAsync(JS);
+            if (History.For(id).AuthorizationRuns.FirstOrDefault() is { } previous) { _report = previous; _historical = true; }
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        if (!CanRun || BuildReviewRequest?.Invoke() is not { } review || Context is null) return;
+        _busy = true; _error = null; _status = "Running authorization scenarios…";
+        try
+        {
+            var (report, error) = await ReviewService.RunAuthorizationAsync(new AuthorizationRunRequest { Review = review, Scenarios = Scenarios.Select(Copy).ToList() });
+            if (report is null) { _error = error ?? "Authorization scenarios could not run."; _status = ""; return; }
+            _report = report; _historical = false;
+            _status = report.BlockedReason is { } blocked ? $"Not run: {blocked}" : $"Finished: {report.Observations.Count} identity result(s).";
+            await History.RecordAuthorizationAsync(JS, Context.ActiveProfile.Id, report);
+        }
+        finally { _busy = false; }
+    }
+
+    private static AuthorizationScenario Copy(AuthorizationScenario s) => new()
+    {
+        ScenarioId = s.ScenarioId, DisplayName = s.DisplayName, ApiType = s.ApiType, Url = s.Url, Method = s.Method, GraphQlQuery = s.GraphQlQuery,
+        SuccessStatusCodes = [.. s.SuccessStatusCodes], Identities = s.Identities.Select(i => new AuthorizationScenarioIdentity { Alias = i.Alias, Role = i.Role, Expected = i.Expected, NotFoundMeansDeny = i.NotFoundMeansDeny }).ToList(),
+    };
+
+    private async Task ExportAsync()
+    {
+        if (_report is not { } report) return;
+        var html = ExportService.ExportApiAuthorization(report, ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"api-authorization-scenarios-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    private static string Name(AuthorizationScenario s) => string.IsNullOrWhiteSpace(s.DisplayName) ? s.ScenarioId : s.DisplayName;
+    private static string Resource(AuthorizationScenario s) => s.ApiType == AuthorizationScenarioApiType.GraphQl ? $"GraphQL {s.Url}" : $"{s.Method} {s.Url}";
+
+    public static string OutcomeLabel(AuthorizationOutcome outcome) => outcome switch
+    {
+        AuthorizationOutcome.VerifiedAllow => "Verified allow",
+        AuthorizationOutcome.VerifiedDeny => "Verified deny",
+        AuthorizationOutcome.UnexpectedAllow => "Unexpected allow",
+        AuthorizationOutcome.UnexpectedDeny => "Unexpected deny",
+        AuthorizationOutcome.AuthenticationFailed => "Authentication failed",
+        AuthorizationOutcome.ExecutionUnavailable => "Execution unavailable",
+        _ => "Not verified",
+    };
+
+    public static string OutcomeTone(AuthorizationOutcome outcome) => outcome switch
+    {
+        AuthorizationOutcome.VerifiedAllow or AuthorizationOutcome.VerifiedDeny => "ready",
+        AuthorizationOutcome.UnexpectedAllow or AuthorizationOutcome.UnexpectedDeny => "fail",
+        AuthorizationOutcome.AuthenticationFailed => "attention",
+        _ => "muted",
+    };
+}

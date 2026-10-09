@@ -115,6 +115,17 @@ public static class FrontendReviewEnginePresentation
             .ToList();
     }
 
+    /// <summary>
+    /// Why Passive Security (ZAP) cannot run for this target according to the server's configuration layers (no readiness probe), or null
+    /// when the server allows it. An unavailable engine is never presented as a usable switch: it can be switched off, not on.
+    /// </summary>
+    public static string? ServerUnavailableReason(FrontendQualityEngineId id, FrontendQualityEngineStatusDto? status) =>
+        id != FrontendQualityEngineId.PassiveSecurity || status is null ? null
+        : !status.Layer1Allowed ? "Unavailable — not allowed on this BirkNext installation"
+        : !status.Layer2Enabled ? "Unavailable — not enabled on server"
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted) ? "Unavailable — target not registered as trusted on the server"
+        : null;
+
     /// <summary>Applies a toggle change for one engine to the draft. Mirrors <see cref="FrontendQualityActiveEngines.IsEnabled"/>.</summary>
     public static void SetEnabled(FrontendAnalysisFeatureToggles toggles, FrontendQualityEngineId id, bool enabled)
     {

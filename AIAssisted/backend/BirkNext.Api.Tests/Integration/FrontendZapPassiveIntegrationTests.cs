@@ -11,10 +11,9 @@ namespace BirkNext.Api.Tests.Integration;
 
 public sealed class FrontendZapPassiveIntegrationTests
 {
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_HealthyControl_StartsPinnedZapAndNormalizesPassiveResult()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/healthy"));
         Console.WriteLine($"ZAP-TEST healthy status={result.ExecutionStatus} version={result.ZapVersion} requests={topology.RequestCount("/healthy")} durationMs={result.DurationMs} alerts={result.Findings.Count}");
@@ -23,10 +22,9 @@ public sealed class FrontendZapPassiveIntegrationTests
         topology.RequestCount("/healthy").Should().BeGreaterThan(0);
     }
 
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_MissingNosniff_ProducesSanitizedNormalizedPassiveFinding()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/missing-nosniff?access_token=SECRET-ZAP-TOKEN-12345"));
         var observed = result.Findings.FirstOrDefault(f => f.PluginId == "10021");
@@ -38,10 +36,9 @@ public sealed class FrontendZapPassiveIntegrationTests
         finding.Evidence.Should().NotContain("SECRET-ZAP-TOKEN-12345");
     }
 
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_PassiveAssessment_DoesNotCrawlLinkedPages()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/crawl-root"));
         result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.Assessed, result.EngineError);
@@ -50,10 +47,9 @@ public sealed class FrontendZapPassiveIntegrationTests
         topology.RequestCount("/should-not-be-crawled-2").Should().Be(0);
     }
 
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_SameOriginRedirect_IsAssessed()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/redirect-same"));
         result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.Assessed, result.EngineError);
@@ -61,10 +57,9 @@ public sealed class FrontendZapPassiveIntegrationTests
         topology.RequestCount("/redirect-final").Should().BeGreaterThan(0);
     }
 
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_CrossOriginRedirect_IsBlockedBeforeNavigation()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartDualAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/redirect-cross"));
         Console.WriteLine($"ZAP-TEST cross-origin status={result.ExecutionStatus} version={result.ZapVersion} requests={topology.RequestCount("/redirect-cross")} requests-untrusted={topology.RequestCountUntrusted("/redirect-final")} durationMs={result.DurationMs}");
@@ -73,10 +68,9 @@ public sealed class FrontendZapPassiveIntegrationTests
         topology.RequestCountUntrusted("/redirect-final").Should().Be(0, "untrusted origin should never be accessed");
     }
 
-    [Fact, Trait("Category", "FrontendZapPassiveIntegration")]
+    [ExternalFrontendQualityFact, Trait("Category", "FrontendZapPassiveIntegration")]
     public async Task RealZap_SensitiveRedirect_IsBlockedBeforeNavigation()
     {
-        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
         await using var topology = await TestTopology.StartAsync();
         var result = await topology.Service.ReviewAsync(topology.Request("/redirect-sensitive"));
         Console.WriteLine($"ZAP-TEST sensitive status={result.ExecutionStatus} version={result.ZapVersion} requests={topology.RequestCount("/redirect-sensitive")} durationMs={result.DurationMs}");

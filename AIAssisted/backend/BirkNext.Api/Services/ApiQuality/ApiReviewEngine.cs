@@ -5,6 +5,8 @@ using System.Text.Json;
 using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.ApiReview;
+using BirkNext.Api.Services.ApiQuality.Security;
+using BirkNext.RuntimeSecurity;
 using BirkNext.Standards;
 using BirkNext.LocalHttpsProxy;
 
@@ -22,7 +24,7 @@ public interface IApiReviewEngine
 /// engine never sees a token. Endpoint paths come from the request (Endpoint Discovery / configuration / contract) — nothing is guessed.
 /// </summary>
 public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl, ILogger<ApiReviewEngine> logger,
-    IGraphQlSchemaArtifactStore? schemaArtifacts = null) : IApiReviewEngine
+    IGraphQlSchemaArtifactStore? schemaArtifacts = null, IApiEnvironmentSafetyPolicy? safetyPolicy = null) : IApiReviewEngine
 {
     public const string TypenameProbe = "query { __typename }";
     public const string InvalidFieldProbe = "query { __birkNextUnknownFieldProbe }";
@@ -45,6 +47,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     // Per run: the frontend's GraphQL client technology (app-level) and each GraphQL target's server fingerprints.
     private GraphQlTechnologyFinding clientTechnology = new();
     private readonly Dictionary<string, List<string>> serverFingerprints = new(StringComparer.Ordinal);
+    // Per run: the backend's environment decision. Production-like (claim, marker or server-held context) disables active probes.
+    private bool productionLike;
+    // Per run: runtime security probe results (attached to each target result after its review) and exposure results per API origin.
+    private readonly Dictionary<string, List<BirkNext.RuntimeSecurity.CorsProbeObservation>> corsProbes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, BirkNext.RuntimeSecurity.ApiDocumentationExposureResult> exposureByOrigin = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<ApiReviewReport> RunAsync(ApiReviewRunRequest request, CancellationToken cancellationToken = default)
     {
@@ -59,7 +66,12 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             "Response bodies are parsed transiently for structural contract validation; only JSON paths and types are recorded, never values.",
             "GraphQL operation names are client-defined; mapping to schema root fields is a normalized heuristic and unmatched operations are marked Manual Review.",
         };
-        if (request.Environment.IsProduction) limitations.Add("Production policy: passive read-only review; unknown-route/invalid-query error probes are disabled.");
+        var safety = (safetyPolicy ?? ApiEnvironmentSafetyPolicy.Default).Evaluate(request);
+        productionLike = safety.ProductionLike;
+        if (productionLike) limitations.Add("Production policy: passive read-only review; unknown-route/invalid-query error probes are disabled.");
+        else if (!safety.ActiveTestingAllowed) limitations.Add($"Active error probes are disabled: {safety.Reason}");
+        limitations.Add("Authentication enforcement is checked with one anonymous read-only request per authenticated target; it says nothing about authorization (what an authenticated identity may access).");
+        logger.LogInformation("API review environment safety: {State} ({EnvironmentType}); production-like {ProductionLike}.", safety.State, safety.EnvironmentType ?? "unknown", safety.ProductionLike);
         var policy = request.Policy;
         logger.LogInformation(
             "API review policy: profile {Profile}; single request {Single} ({LatencySource}); average {Average} ms; REST payload {RestPayload} bytes; GraphQL payload {GraphQlPayload} bytes; compression minimum {CompressionMinimum} bytes.",
@@ -73,6 +85,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         };
 
         serverFingerprints.Clear();
+        corsProbes.Clear();
+        exposureByOrigin.Clear();
+        limitations.Add(productionLike
+            ? "Production policy: API documentation exposure probing and cross-origin CORS preflights are disabled."
+            : $"Runtime security probes are anonymous and bounded: at most {BirkNext.RuntimeSecurity.ApiDocumentationExposureRules.MaxProbes} documentation GETs per API origin, and CORS preflights for the frontend origin, up to {BirkNext.RuntimeSecurity.CorsProbeRules.MaxConfiguredOriginProbes} configured allowed origins and one synthetic foreign origin ({BirkNext.RuntimeSecurity.CorsProbeRules.ForeignOrigin}).");
         // The frontend build manifest is read only when a GraphQL target will actually be reviewed: a blocked review sends nothing.
         var reviewableGraphQl = request.Targets.Where(t => t.Selected && t.ApiType == ApiReviewTargetType.GraphQl)
             .Any(t => ResolveAccess(t, request, capabilities).Mode is not (ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked));
@@ -102,6 +119,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                         target.TargetId, technology.Server.Technology ?? "unknown", technology.Server.Confidence, technology.Server.Source,
                         technology.Client.Technology ?? "unknown", technology.Client.Confidence, technology.Client.Source);
                 }
+                result = await AttachRuntimeSecurityAsync(result, request, findings, cancellationToken);
                 results.Add(result);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -122,13 +140,13 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Environment = request.Environment, Policy = request.Policy, StartedAt = startedAt, GeneratedAt = DateTimeOffset.UtcNow, Access = capabilities,
             Targets = results, Findings = findings.OrderBy(f => f.Severity).ThenBy(f => f.Type).ThenBy(f => f.Endpoint)
                 .Select(f => f with { StandardsReferences = StandardsReferenceMappings.ForApiRule(f.RuleId).ToList() }).ToList(),
-            Coverage = Coverage(results, request), ManualReviewItems = manual, Limitations = limitations,
+            Coverage = Coverage(results, request), ManualReviewItems = manual, Limitations = limitations, Safety = safety,
         };
     }
 
     // ── Access resolution (fail fast) ───────────────────────────────────────────
 
-    private static (ApiReviewAccessMode Mode, string Reason, string? Action) ResolveAccess(ApiReviewTarget target, ApiReviewRunRequest request, AuthenticatedReviewCapabilities capabilities)
+    internal static (ApiReviewAccessMode Mode, string Reason, string? Action) ResolveAccess(ApiReviewTarget target, ApiReviewRunRequest request, AuthenticatedReviewCapabilities capabilities)
     {
         if (!string.Equals(target.Scheme, "https", StringComparison.OrdinalIgnoreCase) && target.AuthRequired)
             return (ApiReviewAccessMode.Blocked, "Authenticated review requires HTTPS; the target is not served over TLS.", "Serve the API over HTTPS.");
@@ -177,6 +195,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 Target = target, AccessMode = mode, AccessReason = reason, RequiredAction = action, Status = ApiReviewTargetStatus.Blocked, Contract = contractSummary, Checks = checks,
                 Operations = target.Operations.Select(o => new ApiReviewOperationResult { Display = o.Display, Method = o.Method, Path = o.Path, AccessMode = mode, Executed = false, Result = ApiReviewCheckResult.Blocked, Note = reason }).ToList(),
                 FindingCount = contractReview is null ? null : targetFindings.Count, Baseline = null,
+                AuthenticationEnforcement = target.AuthRequired ? NotVerifiedEnforcement($"Not verified: the target was not executed ({reason})") : NotApplicableEnforcement,
             };
         }
 
@@ -218,10 +237,6 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 Add(targetFindings, findings, Finding(target, "rest-5xx", ApiReviewSeverity.High, ApiReviewFindingType.Rest, display, "Status code", $"Server error HTTP {exec.StatusCode}", "A safe GET returned a server error.", "Investigate server logs for this operation.", [$"HTTP {exec.StatusCode}"]));
             else if (exec.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.AuthenticatedHttp)
                 Add(targetFindings, findings, Finding(target, "rest-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, display, "Authentication", $"Authenticated request rejected (HTTP {exec.StatusCode})", "The in-memory credential was rejected; the API audience or scopes may differ from the observed traffic.", "Verify the API audience/scopes; the review cannot assess this operation's contract.", [$"HTTP {exec.StatusCode}"], ApiReviewCheckResult.Warning));
-            else if (exec.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.PublicHttp && op.AuthObserved)
-                opChecks.Add(Check("rest-auth-enforced", ApiReviewFindingType.AccessControl, "Authentication enforced without credential", ApiReviewCheckResult.Pass, $"HTTP {exec.StatusCode} without credential, as expected for an authenticated endpoint."));
-            else if (exec.StatusCode is >= 200 and < 300 && mode == ApiReviewAccessMode.PublicHttp && op.AuthObserved)
-                Add(targetFindings, findings, Finding(target, "rest-unexpectedly-public", ApiReviewSeverity.High, ApiReviewFindingType.AccessControl, display, "Authentication", "Endpoint answers without authentication although traffic carried a bearer", "The observed traffic used a bearer token, yet an anonymous request succeeded.", "Confirm whether the endpoint is intentionally public; otherwise enforce authentication.", [$"HTTP {exec.StatusCode} without credential"]));
 
             // Content type & JSON validity
             var json = JsonBodyInspector.IsJsonMediaType(exec.ContentType);
@@ -315,11 +330,15 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             operations.Add(new ApiReviewOperationResult { Display = op.Display, Method = op.Method, Path = op.Path, AccessMode = mode, Executed = false, Result = ApiReviewCheckResult.ManualReview, Note = "Write operation observed; not executed by the automated review (read-only policy)." });
 
         // Service-level: security headers, CORS, error handling probes
+        List<SecurityHeaderEvaluation> headerEvaluations = [];
+        ApiAuthenticationEnforcementResult? enforcement = target.AuthRequired ? null : NotApplicableEnforcement;
         if (primary is not null)
         {
-            checks.AddRange(SecurityChecks(target, primary, targetFindings, findings));
+            if (target.AuthRequired && mode == ApiReviewAccessMode.AuthenticatedHttp)
+                enforcement = await RestAuthenticationEnforcementAsync(target, request, safeOps, statuses, checks, targetFindings, findings, ct);
+            checks.AddRange(SecurityChecks(target, request, primary, targetFindings, findings, out headerEvaluations));
             checks.AddRange(await CorsChecksAsync(target, request, mode, primary, targetFindings, findings, ct));
-            if (request.Policy.ErrorHandlingProbes && !request.Environment.IsProduction)
+            if (request.Policy.ErrorHandlingProbes && !productionLike)
                 checks.AddRange(await RestErrorHandlingProbesAsync(target, request, mode, targetFindings, findings, ct));
             else checks.Add(Check("errors-unknown-route", ApiReviewFindingType.Errors, "Unknown route handling", ApiReviewCheckResult.NotTested, "Error probes disabled by policy."));
             var rateLimit = primary.Headers.Keys.Any(k => k.StartsWith("x-ratelimit", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ratelimit", StringComparison.OrdinalIgnoreCase) || k == "retry-after");
@@ -343,6 +362,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         return new ApiReviewTargetResult
         {
             Target = target, AccessMode = mode, AccessReason = reason, Status = status, Operations = operations, Contract = contractSummary, Checks = checks, FindingCount = executed == 0 && contractReview is null ? null : targetFindings.Count,
+            SecurityHeaders = headerEvaluations, AuthenticationEnforcement = enforcement ?? NotVerifiedEnforcement("No operation of this authenticated target could be executed, so no anonymous comparison was made."),
             Baseline = new ApiReviewBaseline { TargetId = target.TargetId, RecordedAt = DateTimeOffset.UtcNow, ContractHash = contractReview?.Hash, ContractOperationCount = contractReview?.Operations.Count, OperationShapes = shapes, OperationStatuses = statuses },
         };
     }
@@ -376,22 +396,49 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
     private static string TrimBase(string path, string basePath) => basePath.Length > 1 && path.StartsWith(basePath, StringComparison.OrdinalIgnoreCase) ? path[basePath.Length..] : path;
 
-    private List<ApiReviewCheck> SecurityChecks(ApiReviewTarget target, Exec primary, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings)
+    /// <summary>Historical AQR header policy, used only when the request carries no Target Environment expectations (older clients).</summary>
+    internal static readonly string[] LegacyExpectedHeaders = ["Strict-Transport-Security", "X-Content-Type-Options"];
+
+    /// <summary>
+    /// Transport and disclosure posture of the primary response. Security headers follow the Target Environment's expected headers
+    /// (<see cref="ApiReviewPolicy.ExpectedSecurityHeaders"/>): an expected transport header that is absent is a finding, a header the
+    /// environment does not require is only observed, and document-level headers (CSP, X-Frame-Options, Referrer-Policy,
+    /// Permissions-Policy) are recorded but evaluated on the frontend document by FQR Static Security, not on API responses.
+    /// </summary>
+    private List<ApiReviewCheck> SecurityChecks(ApiReviewTarget target, ApiReviewRunRequest request, Exec primary, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings,
+        out List<SecurityHeaderEvaluation> headerEvaluations)
     {
         var checks = new List<ApiReviewCheck>();
         var h = primary.Headers;
         var https = string.Equals(target.Scheme, "https", StringComparison.OrdinalIgnoreCase);
-        checks.Add(Check("sec-tls", ApiReviewFindingType.Security, "TLS", https ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, https ? "HTTPS" : "Plain HTTP"));
+        checks.Add(Check("sec-tls", ApiReviewFindingType.Security, "TLS", https ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, https ? "HTTPS (URL scheme only; the certificate is not inspected)" : "Plain HTTP"));
         if (!https)
             Add(targetFindings, findings, Finding(target, "sec-no-tls", ApiReviewSeverity.High, ApiReviewFindingType.Security, target.Origin, "TLS", "API served over plain HTTP", "Unencrypted API traffic exposes tokens and data.", "Serve the API over HTTPS only.", [target.Origin]));
-        var hsts = h.ContainsKey("strict-transport-security");
-        checks.Add(Check("sec-hsts", ApiReviewFindingType.Security, "Strict-Transport-Security", !https ? ApiReviewCheckResult.NotApplicable : hsts ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, hsts ? h["strict-transport-security"] : "absent"));
-        if (https && !hsts)
-            Add(targetFindings, findings, Finding(target, "sec-no-hsts", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "HSTS", "HSTS header missing on API responses", "Strict-Transport-Security is absent; browsers will not pin HTTPS for this host.", "Add Strict-Transport-Security with a long max-age.", [], ApiReviewCheckResult.Warning));
-        var xcto = h.TryGetValue("x-content-type-options", out var x) && x.Contains("nosniff", StringComparison.OrdinalIgnoreCase);
-        checks.Add(Check("sec-xcto", ApiReviewFindingType.Security, "X-Content-Type-Options: nosniff", xcto ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, xcto ? "nosniff" : "absent"));
-        if (!xcto)
-            Add(targetFindings, findings, Finding(target, "sec-no-xcto", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "Content type sniffing", "X-Content-Type-Options missing", "Without nosniff, browsers may MIME-sniff API responses.", "Add X-Content-Type-Options: nosniff.", [], ApiReviewCheckResult.Warning));
+
+        var configured = request.Policy.ExpectedSecurityHeaders;
+        var source = configured is null ? "BirkNext default (no Target Environment expectations in this request)" : "Target Environment → Security Expectations";
+        headerEvaluations = SecurityHeaderExpectations.Evaluate(h, configured ?? [.. LegacyExpectedHeaders], apiResponse: true, https);
+        foreach (var e in headerEvaluations)
+        {
+            var (id, title) = e.Header switch
+            {
+                "Strict-Transport-Security" => ("sec-hsts", "Strict-Transport-Security"),
+                "X-Content-Type-Options" => ("sec-xcto", "X-Content-Type-Options: nosniff"),
+                _ => ($"sec-header-{e.Header.ToLowerInvariant()}", e.Header),
+            };
+            var result = e.Result switch
+            {
+                SecurityHeaderOutcome.Pass => ApiReviewCheckResult.Pass,
+                SecurityHeaderOutcome.Missing => ApiReviewCheckResult.Warning,
+                _ => ApiReviewCheckResult.NotApplicable,
+            };
+            checks.Add(Check(id, ApiReviewFindingType.Security, title, result, $"{(e.Present ? e.ObservedValue ?? "present" : "absent")} — {e.Note}", [$"Expectation source: {source}"]));
+            if (e.Result != SecurityHeaderOutcome.Missing) continue;
+            if (e.Header == "Strict-Transport-Security")
+                Add(targetFindings, findings, Finding(target, "sec-no-hsts", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "HSTS", "HSTS header missing on API responses", "Strict-Transport-Security is expected by the Target Environment but absent; browsers will not pin HTTPS for this host.", "Add Strict-Transport-Security with a long max-age.", [$"Expectation source: {source}"], ApiReviewCheckResult.Warning));
+            else if (e.Header == "X-Content-Type-Options")
+                Add(targetFindings, findings, Finding(target, "sec-no-xcto", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "Content type sniffing", "X-Content-Type-Options missing", "X-Content-Type-Options: nosniff is expected by the Target Environment but absent; browsers may MIME-sniff API responses.", "Add X-Content-Type-Options: nosniff.", [$"Expectation source: {source}"], ApiReviewCheckResult.Warning));
+        }
         var cache = h.TryGetValue("cache-control", out var cc) ? cc : null;
         checks.Add(Check("sec-cache-control", ApiReviewFindingType.Security, "Cache-Control on API responses", cache is null ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, cache ?? "absent"));
         if (cache is null)
@@ -409,6 +456,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var h = new Dictionary<string, string>(primary.Headers, StringComparer.OrdinalIgnoreCase);
         // Preflight probe (OPTIONS with Origin) is always anonymous: browsers never send credentials on preflight, so this is safe and representative.
         var origin = request.FrontendOrigin ?? request.Environment.TargetUrl;
+        int? frontendPreflightStatus = null;
+        var frontendPreflightHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
         {
             try
@@ -419,9 +468,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 preflight.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "authorization, content-type");
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(10));
                 using var response = await publicClient.SendAsync(preflight, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                foreach (var name in new[] { "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-methods", "access-control-allow-headers" })
-                    if (response.Headers.TryGetValues(name, out var values)) h[name] = string.Join(", ", values);
-                checks.Add(Check("cors-preflight", ApiReviewFindingType.Security, "CORS preflight", (int)response.StatusCode < 400 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, $"OPTIONS → HTTP {(int)response.StatusCode} for Origin {originUri.GetLeftPart(UriPartial.Authority)}."));
+                frontendPreflightStatus = (int)response.StatusCode;
+                foreach (var name in new[] { "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-methods", "access-control-allow-headers", "vary" })
+                    if (response.Headers.TryGetValues(name, out var values)) { h[name] = string.Join(", ", values); frontendPreflightHeaders[name] = h[name]; }
+                checks.Add(Check("cors-preflight", ApiReviewFindingType.Security, "CORS preflight", (int)response.StatusCode < 400 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, $"OPTIONS → HTTP {(int)response.StatusCode} for Origin {originUri.GetLeftPart(UriPartial.Authority)} (the frontend's own origin; configured and foreign origins are probed separately when the environment permits active probes)."));
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
@@ -453,6 +503,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             checks.Add(Check("cors-policy", ApiReviewFindingType.Security, "CORS policy", ApiReviewCheckResult.Pass, "Explicit origin policy.", evidence));
         if (methods is not null && methods.Contains('*'))
             Add(targetFindings, findings, Finding(target, "cors-any-method", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "CORS", "CORS allows any method", "Access-Control-Allow-Methods: * is broader than the API needs.", "List the methods the frontend actually uses.", evidence, ApiReviewCheckResult.Warning));
+        checks.AddRange(await CrossOriginProbesAsync(target, request, originUri, frontendPreflightStatus, frontendPreflightHeaders, targetFindings, findings, ct));
         return checks;
     }
 
@@ -487,6 +538,103 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         return checks;
     }
 
+    // ── Authentication enforcement (deliberate anonymous probe) ──────────────────
+
+    private static readonly ApiAuthenticationEnforcementResult NotApplicableEnforcement = new()
+    {
+        Status = ApiAuthenticationEnforcementStatus.NotApplicable, Reason = "Not applicable: the target does not require authentication (no bearer observed or configured).",
+    };
+
+    private static ApiAuthenticationEnforcementResult NotVerifiedEnforcement(string reason) => new() { Status = ApiAuthenticationEnforcementStatus.NotVerified, Reason = reason };
+
+    /// <summary>Sign-in, token and session endpoints are never probed: the check is about protected resources, not about the login flow.</summary>
+    internal static bool IsAuthenticationFlowPath(string path)
+    {
+        var tokens = path.ToLowerInvariant().Split(['/', '-', '_', '.'], StringSplitOptions.RemoveEmptyEntries);
+        return tokens.Any(t => t is "login" or "logout" or "signin" or "signout" or "token" or "tokens" or "oauth" or "oauth2" or "authorize" or "session" or "sessions"
+            or "password" or "connect" or "saml" or "openid" or "callback" || t.StartsWith("auth", StringComparison.Ordinal) || t.StartsWith("login", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Authentication enforcement for an authenticated REST target: resend ONE already-reviewed safe GET (one the credential reached) with no
+    /// credential through the anonymous client. 401/403 = Verified; a JSON body = potentially unexpectedly public; 404 is not a verdict
+    /// (anti-disclosure is legitimate); redirects are not followed. Never a login/token endpoint, never a write method.
+    /// </summary>
+    private async Task<ApiAuthenticationEnforcementResult> RestAuthenticationEnforcementAsync(ApiReviewTarget target, ApiReviewRunRequest request, IReadOnlyList<ApiReviewOperation> safeOps,
+        IReadOnlyDictionary<string, int> authenticatedStatuses, List<ApiReviewCheck> checks, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var candidate = safeOps
+            .Where(o => o.Method == "GET" && !o.Path.Contains('{') && !IsAuthenticationFlowPath(o.Path) && authenticatedStatuses.ContainsKey($"{o.Method} {o.Path}"))
+            .OrderBy(o => authenticatedStatuses[$"{o.Method} {o.Path}"] is >= 200 and < 300 ? 0 : 1).ThenBy(o => o.AuthObserved ? 0 : 1).ThenBy(o => o.Path, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (candidate is null)
+        {
+            var none = NotVerifiedEnforcement("Not verified: no reviewed safe GET operation is available for an anonymous comparison (sign-in and token endpoints are never probed).");
+            checks.Add(Check("auth-enforcement", ApiReviewFindingType.AccessControl, "Authentication enforced without credential", ApiReviewCheckResult.NotTested, none.Reason));
+            return none;
+        }
+        var probe = $"GET {candidate.Path}";
+        var authenticatedStatus = authenticatedStatuses[probe];
+        var exec = await ExecuteRestAsync(request, ApiReviewAccessMode.PublicHttp, "GET", $"{target.Origin}{candidate.Path}", ct);
+        logger.LogInformation("Authentication enforcement probe for target {TargetId}: anonymous {Probe} → {Status}.", target.TargetId, probe, exec.Executed ? exec.StatusCode.ToString() : "not executed");
+        var evidence = new List<string> { $"Anonymous: {(exec.Executed ? $"HTTP {exec.StatusCode}" : exec.Message)}", $"With credential (same run): HTTP {authenticatedStatus}" };
+        ApiAuthenticationEnforcementResult Result(ApiAuthenticationEnforcementStatus status, string reason) =>
+            new() { Status = status, Probe = probe, StatusCode = exec.Executed ? exec.StatusCode : null, AuthenticatedStatusCode = authenticatedStatus, Reason = reason, Evidence = evidence };
+        var result = !exec.Executed ? Result(ApiAuthenticationEnforcementStatus.NotVerified, $"Not verified: the anonymous request did not complete ({exec.Message}).")
+            : exec.StatusCode == 401 ? Result(ApiAuthenticationEnforcementStatus.Verified, "HTTP 401 without a credential: authentication is required.")
+            : exec.StatusCode == 403 ? Result(ApiAuthenticationEnforcementStatus.Verified, "HTTP 403 without a credential: access is denied. This is denial evidence only; authorization of authenticated identities is not assessed.")
+            : exec.StatusCode is >= 200 and < 300 && exec.JsonValid == true && exec.Shape.Count > 0 && !exec.ProblemDetails
+                ? Result(ApiAuthenticationEnforcementStatus.UnexpectedlyPublic, $"HTTP {exec.StatusCode} with a JSON body ({exec.Shape.Count} structural paths) without a credential: the resource may be unexpectedly public.")
+            : exec.StatusCode is >= 200 and < 300 ? Result(ApiAuthenticationEnforcementStatus.NotVerified, $"HTTP {exec.StatusCode} without a credential but no JSON content (for example an SPA fallback page): neither enforcement nor exposure is shown.")
+            : exec.StatusCode == 404 ? Result(ApiAuthenticationEnforcementStatus.NotVerified, "HTTP 404 without a credential: may be deliberate anti-disclosure; treated as neither a pass nor a failure.")
+            : exec.StatusCode is >= 300 and < 400 ? Result(ApiAuthenticationEnforcementStatus.NotVerified, $"HTTP {exec.StatusCode} redirect without a credential (often to sign-in); redirects are not followed, so this is not an API-level denial.")
+            : Result(ApiAuthenticationEnforcementStatus.NotVerified, $"HTTP {exec.StatusCode} without a credential: neither an authentication denial nor protected content.");
+        checks.Add(Check("auth-enforcement", ApiReviewFindingType.AccessControl, "Authentication enforced without credential", EnforcementCheckResult(result.Status), result.Reason, evidence));
+        if (result.Status == ApiAuthenticationEnforcementStatus.UnexpectedlyPublic)
+            Add(targetFindings, findings, Finding(target, "rest-unexpectedly-public", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, probe, "Authentication", "Protected endpoint answers without authentication",
+                "The same read-only request that was reviewed with the credential returned JSON content when it was sent without any credential. The resource may be intentionally public; otherwise authentication is not enforced.",
+                "Confirm whether the endpoint is intentionally public; otherwise require authentication.", evidence, ApiReviewCheckResult.Warning));
+        return result;
+    }
+
+    /// <summary>
+    /// GraphQL authentication enforcement: the safe <c>query { __typename }</c> without a credential. 401/403 or an error envelope without
+    /// data = Verified; data = the endpoint accepts anonymous queries (endpoint level — field-level authorization is not assessed).
+    /// </summary>
+    private async Task<ApiAuthenticationEnforcementResult> GraphQlAuthenticationEnforcementAsync(ApiReviewTarget target, ApiReviewRunRequest request, int authenticatedStatus,
+        List<ApiReviewCheck> checks, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var exec = await ExecuteGraphQlAsync(request, ApiReviewAccessMode.PublicHttp, target.Url, TypenameProbe, ct);
+        logger.LogInformation("Authentication enforcement probe for target {TargetId}: anonymous __typename → {Status}.", target.TargetId, exec.Executed ? exec.StatusCode.ToString() : "not executed");
+        var evidence = new List<string>
+        {
+            $"Anonymous: {(exec.Executed ? $"HTTP {exec.StatusCode}; data {(exec.GraphQlHasData == true ? "present" : "absent")}; {exec.GraphQlErrors ?? 0} error(s)" : exec.Message)}",
+            $"With credential (same run): HTTP {authenticatedStatus}",
+        };
+        ApiAuthenticationEnforcementResult Result(ApiAuthenticationEnforcementStatus status, string reason) =>
+            new() { Status = status, Probe = TypenameProbe, StatusCode = exec.Executed ? exec.StatusCode : null, AuthenticatedStatusCode = authenticatedStatus, Reason = reason, Evidence = evidence };
+        var result = !exec.Executed ? Result(ApiAuthenticationEnforcementStatus.NotVerified, $"Not verified: the anonymous query did not complete ({exec.Message}).")
+            : exec.StatusCode is 401 or 403 ? Result(ApiAuthenticationEnforcementStatus.Verified, $"HTTP {exec.StatusCode} without a credential: the endpoint requires authentication.")
+            : exec.StatusCode is >= 200 and < 300 && exec.GraphQlHasData == true ? Result(ApiAuthenticationEnforcementStatus.UnexpectedlyPublic, $"HTTP {exec.StatusCode} with GraphQL data without a credential: the endpoint accepts anonymous queries (field-level authorization was not assessed).")
+            : exec.StatusCode is >= 200 and < 300 && exec.GraphQlErrors is > 0 ? Result(ApiAuthenticationEnforcementStatus.Verified, $"HTTP {exec.StatusCode} with a GraphQL error envelope and no data without a credential: the query was refused.")
+            : exec.StatusCode == 404 ? Result(ApiAuthenticationEnforcementStatus.NotVerified, "HTTP 404 without a credential: may be deliberate anti-disclosure; treated as neither a pass nor a failure.")
+            : Result(ApiAuthenticationEnforcementStatus.NotVerified, $"HTTP {exec.StatusCode} without a credential: neither an authentication denial nor data.");
+        checks.Add(Check("auth-enforcement", ApiReviewFindingType.AccessControl, "Authentication enforced without credential", EnforcementCheckResult(result.Status), result.Reason, evidence));
+        if (result.Status == ApiAuthenticationEnforcementStatus.UnexpectedlyPublic)
+            Add(targetFindings, findings, Finding(target, "gql-unexpectedly-public", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, target.Url, "Authentication", "GraphQL endpoint answers queries without authentication",
+                "An anonymous query { __typename } returned data although the endpoint was reviewed with a credential. Fields may still enforce authorization individually; that was not assessed.",
+                "Confirm field-level authorization or require authentication at the endpoint.", evidence, ApiReviewCheckResult.Warning));
+        return result;
+    }
+
+    private static ApiReviewCheckResult EnforcementCheckResult(ApiAuthenticationEnforcementStatus status) => status switch
+    {
+        ApiAuthenticationEnforcementStatus.Verified => ApiReviewCheckResult.Pass,
+        ApiAuthenticationEnforcementStatus.UnexpectedlyPublic => ApiReviewCheckResult.Warning,
+        ApiAuthenticationEnforcementStatus.NotApplicable => ApiReviewCheckResult.NotApplicable,
+        _ => ApiReviewCheckResult.NotTested,
+    };
+
     // ── GraphQL ─────────────────────────────────────────────────────────────────
 
     private async Task<ApiReviewTargetResult> ReviewGraphQlAsync(ApiReviewTarget target, ApiReviewRunRequest request, ApiReviewAccessMode mode, string reason, string? action,
@@ -505,6 +653,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, RequiredAction = action, Status = ApiReviewTargetStatus.Blocked, FindingCount = null,
+                AuthenticationEnforcement = target.AuthRequired ? NotVerifiedEnforcement($"Not verified: the target was not executed ({reason})") : NotApplicableEnforcement,
                 Operations = CompatibilityRows(blockedCompatibility, target, mode, ApiReviewCheckResult.Blocked, reason),
                 GraphQlCompatibility = blockedCompatibility, GraphQlOperationMatches = Matches(blockedCompatibility),
             };
@@ -523,6 +672,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.NotTested, Checks = checks, FindingCount = null, RequiredAction = probe.Message,
+                AuthenticationEnforcement = target.AuthRequired ? NotVerifiedEnforcement($"Not verified: the endpoint did not answer the safe query ({probe.Message})") : NotApplicableEnforcement,
                 Operations = CompatibilityRows(unreachedCompatibility, target, mode, ApiReviewCheckResult.NotTested, "Observed operation; not executed."),
                 GraphQlCompatibility = unreachedCompatibility, GraphQlOperationMatches = Matches(unreachedCompatibility),
             };
@@ -535,8 +685,6 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Add(targetFindings, findings, Finding(target, "gql-non-json", ApiReviewSeverity.Medium, ApiReviewFindingType.GraphQl, endpoint, "Content type", "GraphQL response is not JSON", $"Content-Type: {probe.ContentType ?? "absent"}.", "Return application/json or application/graphql-response+json.", [$"Content-Type: {probe.ContentType ?? "absent"}"], ApiReviewCheckResult.Warning));
         if (probe.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.AuthenticatedHttp)
             Add(targetFindings, findings, Finding(target, "gql-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, endpoint, "Authentication", $"Authenticated GraphQL query rejected (HTTP {probe.StatusCode})", "The in-memory credential was rejected by the GraphQL endpoint.", "Verify the API audience/scopes.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
-        else if (probe.StatusCode is >= 200 and < 300 && probe.GraphQlHasData == true && mode == ApiReviewAccessMode.PublicHttp && target.AuthRequired)
-            Add(targetFindings, findings, Finding(target, "gql-unexpectedly-public", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, endpoint, "Authentication", "GraphQL endpoint answers queries without authentication", "Observed traffic carried a bearer, yet an anonymous __typename query succeeded (the endpoint may enforce auth per field).", "Confirm field-level authorization or require authentication at the endpoint.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
         else if (probe.StatusCode >= 500)
             Add(targetFindings, findings, Finding(target, "gql-5xx", ApiReviewSeverity.High, ApiReviewFindingType.GraphQl, endpoint, "Status code", $"GraphQL endpoint returned HTTP {probe.StatusCode}", "A trivial query caused a server error.", "Investigate the GraphQL server.", [$"HTTP {probe.StatusCode}"]));
         var latency = probe.ElapsedMs ?? 0;
@@ -550,7 +698,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         operations.Add(new ApiReviewOperationResult { Display = "query { __typename }", Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = true, StatusCode = probe.StatusCode, ContentType = probe.ContentType, ElapsedMs = probe.ElapsedMs, ContentLength = probe.PayloadBytes, Body = probe.Body, Result = ok ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, ShapeEntryCount = probe.Shape.Count });
 
         // 2. Security headers / CORS on the endpoint
-        checks.AddRange(SecurityChecks(target, probe, targetFindings, findings));
+        checks.AddRange(SecurityChecks(target, request, probe, targetFindings, findings, out var headerEvaluations));
+        var enforcement = target.AuthRequired && mode == ApiReviewAccessMode.AuthenticatedHttp
+            ? await GraphQlAuthenticationEnforcementAsync(target, request, probe.StatusCode, checks, targetFindings, findings, ct)
+            : target.AuthRequired ? NotVerifiedEnforcement("Not verified: the endpoint was not reviewed with a credential, so there is nothing to compare an anonymous query with.") : NotApplicableEnforcement;
         checks.AddRange(await CorsChecksAsync(target, request, mode, probe, targetFindings, findings, ct));
 
         // 3. Schema via introspection (query-only). Disabled introspection is a policy observation, not a failure.
@@ -574,9 +725,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                     MutationCount = schemaReview.MutationFields.Count, SubscriptionCount = schemaReview.SubscriptionFields.Count, DeprecatedCount = schemaReview.DeprecatedFields.Count, IntrospectionEnabled = true, Hash = schemaReview.Hash,
                     Note = $"{schemaReview.RootQueryFields.Count} root query fields, {schemaReview.MutationFields.Count} mutations (not executed), {schemaReview.TypeCount} types.",
                 };
-                if (request.Policy.IntrospectionExpectedDisabled)
+                if (IntrospectionExpectedDisabled(request))
                     Add(targetFindings, findings, Finding(target, "gql-introspection-enabled", ApiReviewSeverity.Medium, ApiReviewFindingType.Security, endpoint, "Introspection policy", "Introspection is enabled", "The environment policy expects introspection to be disabled (production-like).", "Disable introspection for this environment.", [endpoint], ApiReviewCheckResult.Warning));
-                checks.Add(Check("gql-introspection", ApiReviewFindingType.Security, "Introspection policy", request.Policy.IntrospectionExpectedDisabled ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, request.Policy.IntrospectionExpectedDisabled ? "Enabled although the policy expects it disabled." : "Enabled (acceptable for this environment type)."));
+                checks.Add(Check("gql-introspection", ApiReviewFindingType.Security, "Introspection policy", IntrospectionExpectedDisabled(request) ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, IntrospectionExpectedDisabled(request) ? "Enabled although the policy expects it disabled." : "Enabled (acceptable for this environment type)."));
                 if (baseline is not null)
                 {
                     var drift = ContractValidation.GraphQlDrift(baseline, schemaReview, target.TargetId, endpoint);
@@ -619,7 +770,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Add(targetFindings, findings, Finding(target, "gql-observed-mutation", ApiReviewSeverity.Info, ApiReviewFindingType.GraphQl, endpoint, "Mutations", $"Observed mutation {o.OperationName ?? "(anonymous)"} requires manual review", "Mutations are never executed by the automated review.", "Verify mutation behaviour and authorization manually.", [o.Display], ApiReviewCheckResult.ManualReview));
 
         // 4. Error handling: invalid field (query-only, safe). Disabled in production policy.
-        if (request.Policy.ErrorHandlingProbes && !request.Environment.IsProduction)
+        if (request.Policy.ErrorHandlingProbes && !productionLike)
         {
             var invalid = await ExecuteGraphQlAsync(request, mode, endpoint, InvalidFieldProbe, ct);
             prints.AddRange(invalid.ServerFingerprints ?? []);
@@ -652,6 +803,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         {
             Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.Completed, Operations = operations, Contract = contractSummary, Checks = checks,
             GraphQlOperationMatches = Matches(compatibility), GraphQlCompatibility = compatibility, FindingCount = targetFindings.Count,
+            SecurityHeaders = headerEvaluations, AuthenticationEnforcement = enforcement,
             Baseline = new ApiReviewBaseline { TargetId = target.TargetId, RecordedAt = DateTimeOffset.UtcNow, GraphQlSchemaHash = schemaReview?.Hash, GraphQlRootFields = schemaReview?.RootQueryFields ?? [], GraphQlDeprecatedFields = schemaReview?.DeprecatedFields ?? [] },
         };
     }
@@ -1055,6 +1207,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         };
     }
 
+    /// <summary>Introspection is expected disabled when the client policy says so or the backend decided the environment is production-like.</summary>
+    private bool IntrospectionExpectedDisabled(ApiReviewRunRequest request) => request.Policy.IntrospectionExpectedDisabled || productionLike;
+
     private static string Label(ApiReviewAccessMode mode) => mode == ApiReviewAccessMode.AuthenticatedHttp ? "authenticated HTTP (gateway)" : "public HTTP";
 
     private static ApiReviewCheckResult Worst(IEnumerable<ApiReviewCheckResult> results)
@@ -1065,6 +1220,132 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (list.Contains(ApiReviewCheckResult.Warning)) return ApiReviewCheckResult.Warning;
         if (list.Contains(ApiReviewCheckResult.ManualReview)) return ApiReviewCheckResult.ManualReview;
         return list.Count == 0 ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Pass;
+    }
+
+    // ── Runtime security: cross-origin CORS and API documentation exposure ─────────────────────────────────
+
+    /// <summary>
+    /// Records the frontend-origin preflight against the expectations and — outside production-like environments — probes up to three
+    /// configured allowed origins and one synthetic foreign origin. Wildcard findings stay with the existing CORS policy check (no duplicates).
+    /// </summary>
+    private async Task<List<ApiReviewCheck>> CrossOriginProbesAsync(ApiReviewTarget target, ApiReviewRunRequest request, Uri? frontendOrigin, int? frontendStatus,
+        Dictionary<string, string> frontendHeaders, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var checks = new List<ApiReviewCheck>();
+        var expectations = request.Policy.RuntimeSecurity?.Cors ?? new CorsExpectations();
+        var observations = new List<CorsProbeObservation>();
+        var url = $"{target.Origin}{target.BasePath}";
+        if (frontendOrigin is not null)
+            observations.Add(CorsProbeRules.Evaluate(CorsProbeKind.FrontendOrigin, frontendOrigin.GetLeftPart(UriPartial.Authority).ToLowerInvariant(),
+                frontendStatus, frontendHeaders, expectations, target.AuthRequired));
+        if (productionLike)
+        {
+            checks.Add(Check("cors-cross-origin", ApiReviewFindingType.Security, "Cross-origin CORS", ApiReviewCheckResult.NotTested, "Production policy: configured-origin and foreign-origin preflights are not sent."));
+            corsProbes[target.TargetId] = observations;
+            return checks;
+        }
+        var configured = expectations.AllowedOrigins.Select(CorsProbeRules.NormalizeOrigin).Where(o => o is not null).Select(o => o!)
+            .Where(o => frontendOrigin is null || !string.Equals(o, frontendOrigin.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(CorsProbeRules.MaxConfiguredOriginProbes).ToList();
+        foreach (var allowed in configured)
+        {
+            var (status, headers) = await ApiRuntimeSecurityProbes.PreflightAsync(publicClient, url, allowed, ct);
+            observations.Add(CorsProbeRules.Evaluate(CorsProbeKind.ConfiguredAllowedOrigin, allowed, status, headers, expectations, target.AuthRequired));
+        }
+        var (foreignStatus, foreignHeaders) = await ApiRuntimeSecurityProbes.PreflightAsync(publicClient, url, CorsProbeRules.ForeignOrigin, ct);
+        var foreign = CorsProbeRules.Evaluate(CorsProbeKind.ForeignOrigin, CorsProbeRules.ForeignOrigin, foreignStatus, foreignHeaders, expectations, target.AuthRequired);
+        observations.Add(foreign);
+        corsProbes[target.TargetId] = observations;
+
+        foreach (var o in observations.Where(o => o.RuleId is not null and not ("cors-wildcard-credentials" or "cors-wildcard-authenticated")).GroupBy(o => o.RuleId).Select(g => g.First()))
+        {
+            var evidence = new List<string> { $"Probe: {o.Kind} {o.Origin}", $"HTTP {o.StatusCode?.ToString() ?? "no response"}", $"Access-Control-Allow-Origin: {o.AllowOrigin ?? "absent"}", $"Access-Control-Allow-Credentials: {(o.AllowCredentials ? "true" : "absent/false")}" };
+            var (severity, title, recommendation) = o.RuleId switch
+            {
+                "cors-reflected-origin-credentials" => (ApiReviewSeverity.High, "Arbitrary origin reflected with credentials", "Replace origin reflection with an explicit allowlist; never combine reflection with credentials."),
+                "cors-reflected-origin" => (ApiReviewSeverity.Medium, "Arbitrary origin reflected on an authenticated API", "Allow only the known frontend origins."),
+                "cors-reflected-origin-public" => (ApiReviewSeverity.Low, "Arbitrary origin reflected on a public API", "Confirm the API is intended for any origin; prefer an explicit allowlist."),
+                "cors-credentials-unexpected" => (ApiReviewSeverity.Medium, "Credentialed CORS allowed against expectation", "Remove Access-Control-Allow-Credentials or update the Target Environment expectation."),
+                "cors-allowed-origin-denied" => (ApiReviewSeverity.Low, "Configured allowed origin not granted", "Add the origin to the API's CORS policy or correct the Target Environment expectation."),
+                _ => (ApiReviewSeverity.Low, "Origin granted outside the allowed list", "Align the API's CORS policy with the allowed origins."),
+            };
+            Add(targetFindings, findings, Finding(target, o.RuleId!, severity, ApiReviewFindingType.Security, target.Origin, "CORS", title, o.Note, recommendation, evidence,
+                o.Assessment == CorsAssessment.UnexpectedDeny ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Fail));
+        }
+        checks.Add(Check("cors-foreign-origin", ApiReviewFindingType.Security, "Foreign-origin CORS",
+            foreign.Assessment switch
+            {
+                CorsAssessment.AsExpected => ApiReviewCheckResult.Pass,
+                CorsAssessment.NotVerified => ApiReviewCheckResult.NotTested,
+                CorsAssessment.Observation => ApiReviewCheckResult.ManualReview,
+                _ => foreign.AllowCredentials ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning,
+            }, $"Synthetic origin {foreign.Origin}: {foreign.Observed}. {foreign.Note}"));
+        if (configured.Count > 0)
+            checks.Add(Check("cors-allowed-origins", ApiReviewFindingType.Security, "Configured allowed origins",
+                observations.Where(o => o.Kind == CorsProbeKind.ConfiguredAllowedOrigin).All(o => o.Assessment == CorsAssessment.AsExpected) ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning,
+                $"{configured.Count} configured origin(s) probed."));
+        var excessMethods = observations.SelectMany(o => CorsProbeRules.Excess(o.AllowMethods, expectations.AllowedMethods)).Where(m => m != "*").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var excessHeaders = observations.SelectMany(o => CorsProbeRules.Excess(o.AllowHeaders, expectations.AllowedHeaders)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (excessMethods.Count + excessHeaders.Count > 0)
+            Add(targetFindings, findings, Finding(target, "cors-preflight-broader-than-expected", ApiReviewSeverity.Low, ApiReviewFindingType.Security, target.Origin, "CORS",
+                "Preflight grants more than the expected methods/headers", "The preflight response allows methods or headers outside the Target Environment expectation.",
+                "Restrict Access-Control-Allow-Methods/Headers to what the frontend uses.",
+                [.. excessMethods.Select(m => $"Method: {m}"), .. excessHeaders.Select(h => $"Header: {h}")], ApiReviewCheckResult.Warning));
+        return checks;
+    }
+
+    /// <summary>Attaches the CORS probe matrix and — once per API origin, outside production-like environments — documentation exposure.</summary>
+    private async Task<ApiReviewTargetResult> AttachRuntimeSecurityAsync(ApiReviewTargetResult result, ApiReviewRunRequest request, List<ApiReviewFinding> findings, CancellationToken ct)
+    {
+        var target = result.Target;
+        if (corsProbes.TryGetValue(target.TargetId, out var probes)) result = result with { CorsProbes = probes };
+        if (result.Status is not (ApiReviewTargetStatus.Completed or ApiReviewTargetStatus.PartiallyCompleted)) return result;
+        if (productionLike)
+            return result with
+            {
+                Checks = [.. result.Checks, Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", ApiReviewCheckResult.NotTested, "Production policy: documentation endpoints are not probed.")],
+            };
+        var runtime = request.Policy.RuntimeSecurity;
+        if ((runtime?.ApiDocumentationExposure ?? ApiDocumentationExposureExpectation.NotSpecified) == ApiDocumentationExposureExpectation.NotSpecified
+            && (runtime?.ApiDocumentationPaths.Count ?? 0) == 0)
+        {
+            // No expectation and no configured path: nothing is sent, so a review without the setting adds no documentation traffic.
+            return result with
+            {
+                DocumentationExposure = new ApiDocumentationExposureResult
+                {
+                    TargetId = target.TargetId, Origin = target.Origin, Observed = ApiDocumentationProbeState.NotVerified, Assessment = ApiDocumentationAssessment.NotVerified,
+                    Reason = "Not probed: set an API documentation exposure expectation (or documentation paths) under Security Expectations to probe this API's documentation endpoints.",
+                },
+                Checks = [.. result.Checks, Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", ApiReviewCheckResult.NotTested, "Not probed: no API documentation exposure expectation is set for this Target Environment.")],
+            };
+        }
+        var first = !exposureByOrigin.TryGetValue(target.Origin, out var exposure);
+        exposure ??= exposureByOrigin[target.Origin] = await ApiRuntimeSecurityProbes.DocumentationExposureAsync(publicClient, openApi, target.TargetId, target.Origin,
+            target.ContractSource, request.Policy.RuntimeSecurity, ct);
+        var checkResult = exposure.Assessment switch
+        {
+            ApiDocumentationAssessment.AsExpected => ApiReviewCheckResult.Pass,
+            ApiDocumentationAssessment.UnexpectedExposure => ApiReviewCheckResult.Fail,
+            ApiDocumentationAssessment.UnexpectedAbsence => ApiReviewCheckResult.Warning,
+            ApiDocumentationAssessment.NoExpectation => ApiReviewCheckResult.ManualReview,
+            _ => ApiReviewCheckResult.NotTested,
+        };
+        var checks = result.Checks.Append(Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", checkResult, exposure.Reason,
+            exposure.Probes.Select(p => $"{p.Path} → {(p.StatusCode?.ToString() ?? "no response")} ({p.State})").ToList())).ToList();
+        var added = 0;
+        if (first && exposure.Assessment == ApiDocumentationAssessment.UnexpectedExposure)
+        {
+            var publicDocs = exposure.Observed == ApiDocumentationProbeState.ReachablePublic;
+            var targetFindings = new List<ApiReviewFinding>();
+            Add(targetFindings, findings, Finding(target, publicDocs ? "api-docs-unexpected-exposure" : "api-docs-unexpected-endpoint", publicDocs ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low,
+                ApiReviewFindingType.Security, target.Origin, "API documentation", publicDocs ? "API documentation served without authentication" : "API documentation endpoint present (protected)",
+                exposure.Reason, publicDocs ? "Protect or disable the documentation endpoint for this environment, or change the Target Environment expectation if exposure is intended." : "Remove the documentation endpoint for this environment or update the expectation.",
+                exposure.Probes.Where(p => p.State is ApiDocumentationProbeState.ReachablePublic or ApiDocumentationProbeState.ReachableProtected)
+                    .Select(p => $"{p.Path} → HTTP {p.StatusCode} ({p.DocumentKind ?? p.State.ToString()})").ToList()));
+            added = targetFindings.Count;
+        }
+        return result with { DocumentationExposure = exposure, Checks = checks, FindingCount = result.FindingCount is { } count ? count + added : result.FindingCount };
     }
 
     private static void Add(List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> all, ApiReviewFinding finding) { targetFindings.Add(finding); all.Add(finding); }

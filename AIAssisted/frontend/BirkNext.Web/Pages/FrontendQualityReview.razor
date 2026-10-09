@@ -560,6 +560,10 @@
                 }
             </ReviewDisclosure>
 
+            <ReviewDisclosure Text="Cookie security" CollapseText="Hide cookie security" Hint="@CookieHint(report)" TestId="fqr-cookie-security" Class="fqr-detail-disclosure">
+                <CookieSecuritySection Assessment="report.CookieSecurity" ProfileId="@_context?.ActiveProfile.Id" Expectations="@_context?.SecuritySettings.RuntimeSecurity?.Cookies" />
+            </ReviewDisclosure>
+
             <ReviewDisclosure Text="Engine coverage" CollapseText="Hide engine coverage"
                               Hint="@EngineCoverageHint(report, result)" TestId="fqr-engine-coverage" Class="fqr-detail-disclosure">
                 <FrontendQualityDecisionSupport Report="report" />
@@ -892,6 +896,9 @@
     /// report.LogicalIssues as "not actionable and not informational", which dropped the derived Info record and read 3
     /// beside a metric of 4.
     /// </summary>
+    private static string CookieHint(FrontendQualityReviewReport report) => report.CookieSecurity is not { } cookies ? "Not recorded in this review"
+        : cookies.Cookies.Count == 0 ? "No Set-Cookie on the frontend document" : $"{cookies.Cookies.Count} cookie(s), {cookies.Findings.Count} finding(s)";
+
     private static string ReviewItemsHint(FrontendQualityResultView result) =>
         $"{result.LogicalIssueCount} actionable logical issue{(result.LogicalIssueCount == 1 ? "" : "s")}"
         + (result.InformationalIssueCount > 0 ? $" · {result.InformationalIssueCount} informational observation{(result.InformationalIssueCount == 1 ? "" : "s")}" : "")
@@ -1069,6 +1076,7 @@
                     kvp => kvp.Value),
             // Only the ACTIVE backend engines get the expensive Layer 3 readiness probe, and only in the informational phase.
             ReadinessEngines = withReadiness ? ActiveBackendEngineIds.ToList() : [],
+            Target = new ReviewEngineTargetDto { ProfileId = _context.ActiveProfile.Id, TargetUrl = _context.TargetUrl, EnvironmentType = _context.ActiveProfile.EnvironmentType.ToString() },
         };
 
         _engineStatus = await EngineStatusService.GetStatusAsync(authMode, selection);
@@ -1233,6 +1241,7 @@
             Risks = qualityReport.Risks,
             Limitations = qualityReport.Limitations,
             IsBlazorWasm = qualityReport.IsBlazorWasm,
+            CookieSecurity = qualityReport.CookieSecurity,
             Coverage = qualityReport.Coverage,
             ReleaseDisposition = qualityReport.ReleaseDisposition,
             EngineOutcomes = qualityReport.EngineOutcomes,

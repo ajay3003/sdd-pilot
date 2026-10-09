@@ -424,7 +424,11 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enableBrowserRuntimeEngine")]  public bool EnableBrowserRuntimeEngine  { get; set; } = false;
     [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = true;
     [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = true;
-    [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = true;
+    /// <summary>
+    /// Passive Security (OWASP ZAP) is opt-in: it needs server enablement, a server-registered trusted target and a local container image, none
+    /// of which a default installation has. A new Target Environment therefore starts with it off; saved profiles keep their value.
+    /// </summary>
+    [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = false;
     /// <summary>BirkNext Browser Quality (Browser Companion): experimental native engine that needs the paired extension, so it is opt-in per Target Environment (like Browser Runtime). Release policy Optional.</summary>
     [JsonPropertyName("enableBrowserQualityEngine")]  public bool EnableBrowserQualityEngine  { get; set; } = false;
     /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse; opt-in per Target Environment. Release policy Optional.</summary>

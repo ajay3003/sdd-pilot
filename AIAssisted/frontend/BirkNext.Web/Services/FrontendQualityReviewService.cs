@@ -163,6 +163,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             Risks              = risks,
             Limitations        = limitations,
             IsBlazorWasm       = isBlazorWasm,
+            CookieSecurity     = securityReport?.CookieSecurity,
             Completeness       = completeness,
             AssessedEngines    = assessedEngines,
             FailedEngines      = failedEngines,
@@ -194,6 +195,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             SourceSystem   = "Security",
             EngineId       = FrontendQualityEngineId.StaticSecurity,
             SourceRuleId   = f.Id,
+            StandardsReferences = StandardsReferenceMappings.ForFrontendRule(f.Id).ToList(),
         };
     }
 

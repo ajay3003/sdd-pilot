@@ -76,7 +76,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
             });
         _review.Setup(r => r.RunAsync(It.IsAny<ApiReviewRunRequest>(), It.IsAny<CancellationToken>()))
             .Returns((ApiReviewRunRequest request, CancellationToken _) => Task.FromResult<(ApiReviewReport?, string?)>(((report ?? (q => StubReport(q, authenticated)))(request), null)));
-        _export.Setup(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>())).Returns("<html></html>");
+        _export.Setup(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>(), It.IsAny<ApiFuzzingReport?>())).Returns("<html></html>");
         Services.AddSingleton(factory.Object);
         Services.AddSingleton<IEndpointDiscoveryService>(_discovery);
         Services.AddSingleton<IApiReviewHistoryService>(_history);
@@ -376,8 +376,11 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         // "secure" alone matches the access panel's "existing secure gateway session", which
         // describes the transport rather than claiming the API is secure. Assert the verdict
         // wording that would actually constitute an unearned pass.
-        page.Markup.Should().NotContain("Review results")
-            .And.NotContainAny("Passed", "is secure", "security approved", "compliant", "penetration");
+        // The runtime-security disclaimer says the checks do NOT establish that an application is secure; it is not a verdict.
+        page.Markup.Replace(BirkNext.RuntimeSecurity.RuntimeSecurityWording.NotAPenetrationTest, "").Should().NotContain("Review results")
+            .And.NotContainAny("Passed", "is secure", "security approved", "compliant", "penetration test passed", "pentest");
+        // The only mention of penetration testing is the safe-fuzzing disclaimer that it is NOT one.
+        page.Find("[data-testid=aqr-fuzzing-intro]").TextContent.Should().Contain("It is not a penetration test.");
     }
 
     [Fact]
@@ -529,7 +532,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
 
         await page.InvokeAsync(() => page.Find("[data-testid=aqr-export]").Click());
 
-        _export.Verify(e => e.ExportApiReview(It.Is<ApiReviewReport>(r => r.Targets.Count == 2), It.IsAny<string>()), Times.Once);
+        _export.Verify(e => e.ExportApiReview(It.Is<ApiReviewReport>(r => r.Targets.Count == 2), It.IsAny<string>(), It.IsAny<ApiFuzzingReport?>()), Times.Once);
         JSInterop.VerifyInvoke("downloadHtmlFile");
     }
 

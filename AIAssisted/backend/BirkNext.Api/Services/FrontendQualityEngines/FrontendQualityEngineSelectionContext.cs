@@ -7,4 +7,11 @@ namespace BirkNext.Api.Services.FrontendQualityEngines;
 /// </summary>
 public sealed record FrontendQualityEngineSelectionContext(
     IReadOnlyDictionary<FrontendQualityEngineId, bool> Selected,
-    IReadOnlyList<FrontendQualityEngineId>? ReadinessEngines = null);
+    IReadOnlyList<FrontendQualityEngineId>? ReadinessEngines = null,
+    FrontendQualityEngineTargetContext? Target = null);
+
+/// <summary>
+/// The Target Environment the review is about. Passive Security only runs against a target registered by the server
+/// (FrontendPassiveSecurity:TrustedProfiles), so status reports an untrusted target as unavailable instead of Ready.
+/// </summary>
+public sealed record FrontendQualityEngineTargetContext(string ProfileId, string TargetUrl, string? EnvironmentType);

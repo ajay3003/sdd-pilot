@@ -50,3 +50,16 @@ public static class ExternalFrontendQualityTestGate
             "true",
             StringComparison.OrdinalIgnoreCase);
 }
+
+/// <summary>
+/// A fact that needs the external tools behind <see cref="ExternalFrontendQualityTestGate"/>. Without the opt-in it is reported as
+/// SKIPPED with the reason — never as a passing test that returned early, which used to count as execution proof it was not.
+/// </summary>
+public sealed class ExternalFrontendQualityFactAttribute : FactAttribute
+{
+    public ExternalFrontendQualityFactAttribute()
+    {
+        if (!ExternalFrontendQualityTestGate.IsEnabled)
+            Skip = $"External tool test (container runtime + pinned ZAP image): set {ExternalFrontendQualityTestGate.EnvironmentVariableName}=true to execute it.";
+    }
+}

@@ -1274,6 +1274,7 @@
                                                 <label class="fa-check-row">
                                                     <input type="checkbox" checked="@row.Enabled"
                                                            aria-label="@($"Enable {row.DisplayName} for this target")"
+                                                           disabled="@(!row.Enabled && FrontendReviewEnginePresentation.ServerUnavailableReason(row.EngineId, _passiveSecurityServerStatus) is not null)"
                                                            data-testid="engine-enabled-input"
                                                            @onchange="@((ChangeEventArgs e) => FrontendReviewEnginePresentation.SetEnabled(_editProfile.Features, row.EngineId, (bool)e.Value!))" />
                                                     <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
@@ -1287,7 +1288,16 @@
                                         <td data-label="Coverage policy"><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span>
                                             <span class="fa-engine-policy-help" data-testid="engine-policy-help">@FrontendReviewEnginePresentation.PolicyHelp(row.Policy)</span></td>
                                         <td data-label="Prerequisites"><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
-                                        <td data-label="Capability"><span class="fa-engine-capability" data-testid="engine-capability">@FrontendReviewEnginePresentation.CapabilityCell</span></td>
+                                        <td data-label="Capability">
+                                            @if (FrontendReviewEnginePresentation.ServerUnavailableReason(row.EngineId, _passiveSecurityServerStatus) is { } serverReason)
+                                            {
+                                                <span class="fa-engine-capability fa-engine-unavailable" data-testid="engine-server-unavailable">@serverReason</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="fa-engine-capability" data-testid="engine-capability">@FrontendReviewEnginePresentation.CapabilityCell</span>
+                                            }
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -1816,6 +1826,25 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
+        if (_activeTab == "features" && CurrentProfile is { } engineProfile && _passiveSecurityStatusProfileId != engineProfile.Id)
+            await LoadPassiveSecurityServerStatusAsync(engineProfile);
+    }
+
+    // Passive Security (ZAP) server layers for the engines tab: configuration only (no readiness probe is requested).
+    private FrontendQualityEngineStatusDto? _passiveSecurityServerStatus;
+    private string? _passiveSecurityStatusProfileId;
+
+    private async Task LoadPassiveSecurityServerStatusAsync(FrontendAnalysisProfile profile)
+    {
+        _passiveSecurityStatusProfileId = profile.Id;
+        if (ServiceProvider.GetService<IFrontendQualityEngineStatusApiService>() is not { } statusApi) return;
+        var report = await statusApi.GetStatusAsync(ReviewAuthenticationModeDto.Anonymous, new ReviewEngineSelectionDto
+        {
+            ReadinessEngines = [],
+            Target = new ReviewEngineTargetDto { ProfileId = profile.Id, TargetUrl = profile.TargetUrl ?? "", EnvironmentType = profile.EnvironmentType.ToString() },
+        });
+        _passiveSecurityServerStatus = report?.Engines.FirstOrDefault(e => e.EngineId == FrontendQualityEngineIdDto.PassiveSecurity);
+        if (!_disposed) await InvokeAsync(StateHasChanged);
     }
     public ValueTask DisposeAsync()
     {
