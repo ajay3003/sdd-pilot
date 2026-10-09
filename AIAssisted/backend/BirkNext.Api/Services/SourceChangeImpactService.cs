@@ -9,6 +9,7 @@ using BirkNext.SourceDomains;
 using BirkNext.DatabaseArchitecture;
 using BirkNext.SourceImpact;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace BirkNext.Api.Services;
 
@@ -26,14 +27,17 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
     public async Task<ImpactSnapshotList> SnapshotListAsync(string environmentId, CancellationToken ct) =>
         new(sources.SourceAnalysisEnabled, sources.SourceAnalysisEnabled ? (await ListSnapshotsAsync(environmentId, ct)).ToList() : []);
 
-    public async Task<SourceChangeImpactReport?> AnalyzeAsync(SourceChangeImpactRequest request, CancellationToken ct)
+    public async Task<SourceChangeImpactReport?> AnalyzeAsync(SourceChangeImpactRequest request, CancellationToken ct, bool persist = true)
     {
-        if (!sources.SourceAnalysisEnabled || string.IsNullOrWhiteSpace(request.EnvironmentId) ||
+        if (!sources.SourceAnalysisEnabled ||
             request.BaselineSnapshotId == Guid.Empty || request.TargetSnapshotId == Guid.Empty || request.BaselineSnapshotId == request.TargetSnapshotId)
             return null;
-        var before = await sources.ResolveAsync(request.EnvironmentId, request.BaselineSnapshotId, ct);
-        var after = await sources.ResolveAsync(request.EnvironmentId, request.TargetSnapshotId, ct);
+        // Source Analysis snapshots belong to the workspace, not to a Target Environment.
+        var before = await sources.ResolveAsync(request.EnvironmentId ?? string.Empty, request.BaselineSnapshotId, ct);
+        var after = await sources.ResolveAsync(request.EnvironmentId ?? string.Empty, request.TargetSnapshotId, ct);
         if (before is null || after is null || ReviewSourceEvidenceProvider.Identity(before).Key != ReviewSourceEvidenceProvider.Identity(after).Key)
+            return null;
+        if (request.ProjectImportId is { Length: > 0 } importId && after.ProjectImport?.ImportId != importId)
             return null;
 
         var limitations = new List<string>();
@@ -41,7 +45,8 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         if (changes.Count == 0 && !string.Equals(before.Archive.Sha256, after.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
             changes.Add(new ImpactChange("unclassified-snapshot-change", ImpactChangeDomain.Unclassified, ImpactChangeKind.Changed,
                 "Unclassified source change", after.Id.ToString(), "Unclassified source change", "Snapshot fingerprints differ, but no supported structured comparison identified the change. Impact is unknown; review required.", []));
-        var impacts = BuildTechnicalImpacts(before, after, changes, limitations);
+        var maxImpactDepth = Math.Clamp(request.MaxImpactDepth, 0, 3);
+        var impacts = BuildTechnicalImpacts(before, after, changes, limitations, maxImpactDepth);
 
         // Traceability is deliberately a second stage: no links can remove or downgrade a technical impact.
         var files = impacts.SelectMany(i => i.SourceFiles).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -86,10 +91,160 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
 
         var identityBefore = ReviewSourceEvidenceProvider.Identity(before);
         var identityAfter = ReviewSourceEvidenceProvider.Identity(after);
-        return new(before.Id, identityBefore.DisplayName, before.Archive.FileName, before.Archive.Sha256, before.AnalyzedAt,
+        var securityAndConfigurationReviews = SecurityAndConfigurationReviews(changes);
+        var journeys = BuildSourceJourneys(after.Architecture, impacts, after.Id);
+        var runId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow;
+        var report = new SourceChangeImpactReport(before.Id, identityBefore.DisplayName, before.Archive.FileName, before.Archive.Sha256, before.AnalyzedAt,
             after.Id, identityAfter.DisplayName, after.Archive.FileName, after.Archive.Sha256, after.AnalyzedAt,
             changes, impacts, requirementItems, [], recommendations, coverageGaps.Distinct().ToList(), limitations.Distinct().ToList(),
-            "Not calculated for source-change impact; no source-change risk score is currently defined.");
+            "Not calculated for source-change impact; no source-change risk score is currently defined.")
+        {
+            RunId = runId, CreatedAt = createdAt,
+            ProjectId = request.ProjectId, ProjectImportId = request.ProjectImportId, ProjectDisplayName = request.ProjectDisplayName,
+            Journeys = journeys, SecurityAndConfigurationReviews = securityAndConfigurationReviews, MaxImpactDepth = maxImpactDepth
+        };
+        var record = new ImpactAnalysisRunRecord
+        {
+            Id = runId,
+            ProjectId = request.ProjectId ?? string.Empty,
+            ProjectImportId = request.ProjectImportId,
+            ProjectDisplayName = request.ProjectDisplayName ?? identityAfter.DisplayName,
+            BaselineSnapshotId = before.Id,
+            CurrentSnapshotId = after.Id,
+            BaselineFingerprint = before.Archive.Sha256,
+            CurrentFingerprint = after.Archive.Sha256,
+            CreatedAt = createdAt,
+            ResultJson = JsonSerializer.Serialize(report)
+        };
+        if (persist)
+        {
+            db.ImpactAnalysisRuns.Add(record);
+            await db.SaveChangesAsync(ct);
+        }
+        return report;
+    }
+
+    public async Task<IReadOnlyList<ImpactHistorySummary>> ListHistoryAsync(string projectId, string? projectImportId, CancellationToken ct)
+    {
+        var query = db.ImpactAnalysisRuns.AsNoTracking().Where(r => r.ProjectId == projectId);
+        query = string.IsNullOrEmpty(projectImportId) ? query.Where(r => r.ProjectImportId == null) : query.Where(r => r.ProjectImportId == projectImportId);
+        var records = await query.OrderByDescending(r => r.CreatedAt).Take(100).ToListAsync(ct);
+        return records.Select(r =>
+        {
+            var report = TryLegacyReport(r.ResultJson);
+            if (report is null) return null;
+            return new ImpactHistorySummary(r.Id, r.ProjectDisplayName, r.ProjectImportId, r.BaselineSnapshotId, r.CurrentSnapshotId,
+                r.BaselineFingerprint, r.CurrentFingerprint, r.CreatedAt, report?.Changes.Count ?? 0,
+                report?.TechnicalImpacts.Count ?? 0, report?.RecommendedTests.Count ?? 0, report?.Journeys.Count ?? 0);
+        }).Where(x => x is not null).Cast<ImpactHistorySummary>().ToList();
+    }
+
+    public async Task<SourceChangeImpactReport?> GetHistoryAsync(Guid runId, CancellationToken ct)
+    {
+        var record = await db.ImpactAnalysisRuns.AsNoTracking().SingleOrDefaultAsync(r => r.Id == runId, ct);
+        return record is null ? null : TryLegacyReport(record.ResultJson);
+    }
+
+    private static SourceChangeImpactReport? TryLegacyReport(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("ChangeSet", out _)) return null;
+            return JsonSerializer.Deserialize<SourceChangeImpactReport>(json);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static List<string> SecurityAndConfigurationReviews(IReadOnlyList<ImpactChange> changes)
+    {
+        var output = new List<string>();
+        foreach (var change in changes)
+        {
+            if (change.Domain == ImpactChangeDomain.Configuration &&
+                (change.EntityKey.Contains("auth", StringComparison.OrdinalIgnoreCase) ||
+                 change.EntityKey.Contains("cors", StringComparison.OrdinalIgnoreCase) ||
+                 change.EntityKey.Contains("security", StringComparison.OrdinalIgnoreCase)))
+                output.Add($"Review authentication, authorization, or security configuration related to {change.Name}. A source change is not evidence of a security defect.");
+            else if (change.Domain == ImpactChangeDomain.Configuration)
+                output.Add($"Review the configuration change to {change.Name} and the components linked to it. Runtime values and deployment behavior are not verified.");
+            else if (change.Domain == ImpactChangeDomain.Architecture && change.Detail.Contains("Auth", StringComparison.OrdinalIgnoreCase))
+                output.Add($"Review authentication or authorization behavior related to {change.Name}. A source change is not evidence of unauthorized access.");
+        }
+        return output.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static List<ImpactJourneyItem> BuildSourceJourneys(ArchitectureSnapshot? architecture, IReadOnlyList<TechnicalImpactItem> impacts, Guid snapshotId)
+    {
+        if (architecture is null) return [];
+        var components = architecture.Components.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+        var channels = architecture.MessagingChannels.ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+        var adjacency = new Dictionary<string, List<ImpactJourneyStep>>(StringComparer.OrdinalIgnoreCase);
+        void Edge(string from, ImpactJourneyStep step)
+        {
+            if (!adjacency.TryGetValue(from, out var list)) adjacency[from] = list = [];
+            list.Add(step);
+        }
+        foreach (var dependency in architecture.Dependencies.Where(d => d.ToId is not null && !string.IsNullOrWhiteSpace(d.FromComponentId)))
+        {
+            var target = dependency.ToId!;
+            var targetNode = channels.ContainsKey(target) ? "channel:" + target : target;
+            var targetName = components.GetValueOrDefault(target)?.Name ?? channels.GetValueOrDefault(target)?.Name ?? target;
+            Edge(dependency.FromComponentId, new(channels.ContainsKey(target) ? "Messaging channel" : "Source dependency", targetNode, targetName,
+                dependency.DependencyType.ToString(), dependency.EvidenceState.ToString(), dependency.Evidence.Select(e => e.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
+        }
+        foreach (var channel in architecture.MessagingChannels)
+        {
+            var channelNode = "channel:" + channel.Id;
+            foreach (var producer in channel.Producers)
+            {
+                var producerName = components.GetValueOrDefault(producer.ComponentId)?.Name ?? producer.ComponentId;
+                Edge(producer.ComponentId, new("Messaging channel", channelNode, channel.Name, "Publishes to " + channel.Type,
+                    producer.State.ToString(), producer.Evidence.Select(e => e.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
+                foreach (var consumer in channel.Consumers)
+                {
+                    var consumerName = components.GetValueOrDefault(consumer.ComponentId)?.Name ?? consumer.ComponentId;
+                    Edge(channelNode, new("Component", consumer.ComponentId, consumerName, "Consumed from " + channel.Type,
+                        consumer.State.ToString(), consumer.Evidence.Select(e => e.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList()));
+                }
+            }
+        }
+
+        var results = new Dictionary<string, ImpactJourneyItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var start in impacts.Where(i => i.EntityType == "Component" && components.ContainsKey(i.EntityId)))
+        {
+            var path = new List<ImpactJourneyStep> { new("Component", start.EntityId, components[start.EntityId].Name, "Changed or related component",
+                start.EvidenceState, start.SourceFiles) };
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { start.EntityId };
+            void Walk(string current, int depth)
+            {
+                if (depth >= 4 || !adjacency.TryGetValue(current, out var next)) return;
+                foreach (var step in next)
+                {
+                    if (visited.Contains(step.EntityId)) continue;
+                    path.Add(step);
+                    visited.Add(step.EntityId);
+                    if (path.Count >= 3 && path.Count(p => p.EntityType == "Component") >= 2)
+                    {
+                        var id = string.Join("|", path.Select(p => p.EntityType + ":" + p.EntityId));
+                        var state = path.Any(p => p.EvidenceState is "Unresolved" or "Conflict") ? "NeedsConfirmation"
+                            : path.Any(p => p.EvidenceState == "Inferred") ? "Suggested"
+                            : path.Any(p => p.EvidenceState == "StronglySupported") ? "StronglySupported" : "Confirmed";
+                        results.TryAdd(id, new(id, $"Source path involving {start.DisplayName}",
+                            string.Join(" → ", path.Select(p => p.Label)), state, snapshotId, path.ToList(),
+                            "Derived from source relationships in this snapshot. It does not verify deployed topology or runtime traffic."));
+                    }
+                    Walk(step.EntityId, depth + 1);
+                    visited.Remove(step.EntityId);
+                    path.RemoveAt(path.Count - 1);
+                    if (results.Count >= 100) return;
+                }
+            }
+            Walk(start.EntityId, 0);
+            if (results.Count >= 100) break;
+        }
+        return results.Values.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
     }
 
     private static List<ImpactChange> Compare(IqrSourceSnapshot before, IqrSourceSnapshot after, List<string> limitations)
@@ -148,7 +303,7 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         return output;
     }
 
-    private static List<TechnicalImpactItem> BuildTechnicalImpacts(IqrSourceSnapshot before, IqrSourceSnapshot after, List<ImpactChange> changes, List<string> limitations)
+    private static List<TechnicalImpactItem> BuildTechnicalImpacts(IqrSourceSnapshot before, IqrSourceSnapshot after, List<ImpactChange> changes, List<string> limitations, int maxDepth)
     {
         var items = new Dictionary<string, TechnicalImpactItem>(StringComparer.OrdinalIgnoreCase);
         void Add(string type, string id, string name, ImpactChangeDomain domain, TechnicalImpactLevel level, string state, string reason,
@@ -163,8 +318,10 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
             var sourceFiles = (files ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (items.TryGetValue(key, out var old))
                 items[key] = old with { Level = Stronger(old.Level, level), EvidenceState = Weaker(old.EvidenceState, state), SourceChangeIds = old.SourceChangeIds.Append(change.Id).Distinct().ToList(), SourceFiles = old.SourceFiles.Concat(sourceFiles).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                    Path = old.Path.Concat(path.Skip(1)).Distinct().ToList(), Reason = string.Join("; ", new[] { old.Reason, reason }.Distinct()) };
-            else items[key] = new(key, type, id, name, domain, type == change.EntityType ? baseLevel : level, state, reason, path, [change.Id], sourceFiles);
+                    Path = old.Path.Concat(path.Skip(1)).Distinct().ToList(), Reason = string.Join("; ", new[] { old.Reason, reason }.Distinct()),
+                    Depth = Math.Min(old.Depth, type == change.EntityType ? 0 : 1) };
+            else items[key] = new TechnicalImpactItem(key, type, id, name, domain, type == change.EntityType ? baseLevel : level, state, reason, path, [change.Id], sourceFiles)
+            { Depth = type == change.EntityType ? 0 : 1 };
         }
 
         foreach (var c in changes)
@@ -283,8 +440,54 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                     "Observability evidence names component", c.Detail, component.Evidence.Select(e => e.File));
             }
         }
+        ExpandDependentComponents(before.Architecture, after.Architecture, items, maxDepth);
         if (changes.Count == 0) limitations.Add("No structured changes were produced by the supported Source Analysis comparisons. This does not prove no impact.");
         return items.Values.OrderBy(i => i.Level).ThenBy(i => i.Domain).ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static void ExpandDependentComponents(ArchitectureSnapshot? before, ArchitectureSnapshot? after,
+        Dictionary<string, TechnicalImpactItem> impacts, int maxDepth)
+    {
+        if (maxDepth < 1) return;
+        var components = (before?.Components ?? []).Concat(after?.Components ?? []).DistinctBy(c => c.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(c => c.Id, StringComparer.OrdinalIgnoreCase);
+        var dependencies = (before?.Dependencies ?? []).Concat(after?.Dependencies ?? []).DistinctBy(d => d.Id, StringComparer.OrdinalIgnoreCase).ToList();
+        var processed = new HashSet<(string Id, int Depth)>();
+        for (var depth = 0; depth < maxDepth; depth++)
+        {
+            var frontier = impacts.Values.Where(i => i.EntityType == "Component" && i.Depth == depth).ToList();
+            foreach (var current in frontier)
+            {
+                if (!processed.Add((current.EntityId, depth))) continue;
+                foreach (var edge in dependencies.Where(d => string.Equals(d.ToId, current.EntityId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (!components.TryGetValue(edge.FromComponentId, out var dependent)) continue;
+                    var key = $"Component:{dependent.Id}";
+                    var relationState = edge.EvidenceState.ToString();
+                    var nextDepth = depth + 1;
+                    var level = edge.EvidenceState is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported
+                        ? TechnicalImpactLevel.Indirect : TechnicalImpactLevel.Potential;
+                    var step = new ImpactPathStep("Component", dependent.Id, dependent.Name, "Depends on changed component", relationState,
+                        string.Join(", ", edge.Evidence.Select(e => e.File).Distinct(StringComparer.OrdinalIgnoreCase)));
+                    if (impacts.TryGetValue(key, out var old))
+                    {
+                        impacts[key] = old with
+                        {
+                            Depth = Math.Min(old.Depth, nextDepth),
+                            Level = Stronger(old.Level, level),
+                            EvidenceState = Weaker(old.EvidenceState, relationState),
+                            Reason = string.Join("; ", new[] { old.Reason, $"{dependent.Name} depends on {current.DisplayName} in source architecture." }.Distinct()),
+                            SourceChangeIds = old.SourceChangeIds.Concat(current.SourceChangeIds).Distinct().ToList(),
+                            SourceFiles = old.SourceFiles.Concat(edge.Evidence.Select(e => e.File)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                            Path = old.Path.Concat(current.Path).Concat([step]).Distinct().ToList()
+                        };
+                    }
+                    else impacts[key] = new TechnicalImpactItem(key, "Component", dependent.Id, dependent.Name, ImpactChangeDomain.Architecture,
+                        level, relationState, $"{dependent.Name} depends on {current.DisplayName} in source architecture.", current.Path.Concat([step]).ToList(),
+                        current.SourceChangeIds.ToList(), edge.Evidence.Select(e => e.File).Distinct(StringComparer.OrdinalIgnoreCase).ToList()) { Depth = nextDepth };
+                }
+            }
+        }
     }
 
     private static IEnumerable<string> ArchitectureFiles(ArchitectureSnapshot? snapshot, string area, string key) => snapshot is null ? [] : area switch

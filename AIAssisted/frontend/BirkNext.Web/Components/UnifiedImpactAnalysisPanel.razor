@@ -1,0 +1,239 @@
+@using BirkNext.SourceImpact
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject SourceChangeImpactApiService Api
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+<main class="unified-impact" aria-labelledby="impact-title">
+    <h1 id="impact-title">Impact Analysis</h1>
+    <p>Review requirement and source changes together. Findings explain their evidence; linked tests are not proof of execution or behavioral coverage.</p>
+    @if (_loading)
+    {
+        <p role="status">Loading project and source evidence…</p>
+    }
+    else if (_error is not null)
+    {
+        <div class="notification notification-error" role="alert">@_error</div>
+    }
+    else if (ProjectId is null)
+    {
+        <div class="unified-impact-empty" role="status">No current project or imported workspace is loaded.</div>
+    }
+    else
+    {
+        <section class="unified-impact-card" aria-label="Analysis inputs">
+            <h2>Project</h2>
+            <p><strong>@ProjectDisplayName</strong> <span class="unified-impact-muted">(@ProjectId)</span></p>
+            @if (CurrentImport is { } import)
+            {
+                <p>Imported project @import.ImportId. Source target is bound to snapshot @(import.SourceSnapshotId?.ToString() ?? "not recorded").</p>
+            }
+            <h2>Requirement changes</h2>
+            @if (_requirementsUnavailable)
+            {
+                <p class="unified-impact-muted" role="status">Requirements and traceability are not available for this project identity. Source analysis can still run.</p>
+            }
+            else if (_requirements.Count == 0)
+            {
+                <p class="unified-impact-muted" role="status">No persisted requirement records were returned. Requirement impact is not evaluated; this does not mean there are no requirements.</p>
+            }
+            else
+            {
+                <div class="unified-impact-requirements" aria-label="Select changed requirements">
+                    @foreach (var requirement in _requirements)
+                    {
+                        <label><input type="checkbox" checked="@_selectedRequirements.Contains(requirement.Id)" @onchange="e => SelectRequirement(requirement.Id, e)" /> <span>@requirement.Title</span></label>
+                    }
+                </div>
+            }
+            <h2>Source snapshot comparison <span class="unified-impact-muted">(optional)</span></h2>
+            @if (!_sourceEnabled)
+            {
+                <p class="unified-impact-muted" role="status">Source Analysis is unavailable in this workspace. Requirement-only analysis remains available.</p>
+            }
+            else if (_snapshots.Count == 0)
+            {
+                <p class="unified-impact-muted" role="status">No source snapshots are available. Source impact is not evaluated.</p>
+            }
+            else if (CurrentImport?.SourceSnapshotId is { } requiredSnapshot && _snapshots.All(s => s.Id != requiredSnapshot))
+            {
+                <p class="unified-impact-muted" role="status">The imported project's recorded source snapshot is unavailable. Source impact is not evaluated; reanalyze the same imported source to create its bound snapshot.</p>
+            }
+            else if (AvailableTargets.Count == 0 || AvailableBaselines.Count == 0)
+            {
+                <p class="unified-impact-muted" role="status">A baseline and current snapshot from the same repository are required. Source impact is not evaluated.</p>
+            }
+            else
+            {
+                <div class="unified-impact-selectors">
+                    <label>Baseline snapshot
+                        <select class="form-control" @bind="_baselineId">
+                            @foreach (var snapshot in AvailableBaselines) { <option value="@snapshot.Id">@SnapshotLabel(snapshot)</option> }
+                        </select>
+                    </label>
+                    <label>Current snapshot
+                        <select class="form-control" @bind="_currentId" @bind:after="CurrentSnapshotChanged" disabled="@(CurrentImport?.SourceSnapshotId is not null)">
+                            @foreach (var snapshot in AvailableTargets) { <option value="@snapshot.Id">@SnapshotLabel(snapshot)</option> }
+                        </select>
+                    </label>
+                </div>
+                @if (CurrentImport?.SourceSnapshotId is not null)
+                {
+                    <p class="unified-impact-muted">The current snapshot is fixed to the imported project's recorded source snapshot.</p>
+                }
+            }
+            <label class="unified-impact-depth">Relationship depth
+                <select class="form-control" @bind="_depth">
+                    <option value="0">Selected changes only</option><option value="1">Direct relationships</option>
+                    <option value="2">Up to two relationship steps</option><option value="3">Up to three relationship steps</option>
+                </select>
+            </label>
+            <button class="btn-primary" type="button" disabled="@(_busy || (!HasSelectedRequirements && !HasSnapshotPair))" @onclick="RunAsync">
+                @(_busy ? "Analyzing…" : "Run unified analysis")
+            </button>
+            @if (_error is not null) { <p class="notification notification-error" role="alert">@_error</p> }
+        </section>
+
+        @if (_report is { } report)
+        {
+            <section class="unified-impact-card" aria-live="polite" aria-labelledby="impact-result-title">
+                <div class="unified-impact-result-heading"><div><h2 id="impact-result-title">Saved impact report</h2><p>Run @report.RunId · @report.CreatedAt.ToLocalTime().ToString("g")</p></div>
+                    <div><button class="btn-secondary" type="button" @onclick="ExportHtmlAsync">Export HTML</button> <button class="btn-secondary" type="button" @onclick="ExportMarkdownAsync">Export Markdown</button></div></div>
+                <p><strong>@report.ProjectDisplayName</strong> · project identity @report.ProjectId · import @(report.ProjectImportId ?? "not imported")</p>
+                <p>Change source: @report.ChangeSet.ChangeOrigin</p>
+                @if (report.ChangeSet.BaselineSnapshotId is { } baseline)
+                {
+                    <p>Baseline <code>@baseline</code> · @report.ChangeSet.BaselineFingerprint</p>
+                    <p>Current <code>@report.ChangeSet.CurrentSnapshotId</code> · @report.ChangeSet.CurrentFingerprint</p>
+                }
+                <h3>Evidence availability</h3>
+                <ul class="unified-impact-domains">@foreach (var domain in report.DomainAssessments)
+                {
+                    <li><strong>@domain.Domain — @DomainLabel(domain.Status)</strong><span>@domain.Reason</span></li>
+                }</ul>
+                <h3>What may be affected and why</h3>
+                @if (report.Findings.Count == 0) { <p>No findings were established from the selected evidence. This does not prove there is no impact.</p> }
+                else
+                {
+                    <ul class="unified-impact-findings">@foreach (var finding in report.Findings)
+                    {
+                        <li><div><strong>@finding.DisplayName</strong> <span class="unified-impact-tag">@ClassificationLabel(finding.Classification)</span> <span class="unified-impact-muted">@finding.VerificationState · depth @finding.Depth</span></div>
+                            <p>@finding.Reason</p>
+                            @if (finding.Evidence.Count > 0) { <details><summary>Evidence (@finding.Evidence.Count)</summary><ul>@foreach (var evidence in finding.Evidence) { <li><strong>@evidence.Kind:</strong> @evidence.Description @if (evidence.SourcePath is not null) { <code>@evidence.SourcePath</code> }</li> }</ul></details> }
+                        </li>
+                    }</ul>
+                }
+                @if (report.Limitations.Count > 0) { <h3>What is not known</h3><ul>@foreach (var item in report.Limitations) { <li>@item</li> }</ul> }
+                <p class="unified-impact-muted">Source and traceability relationships do not verify deployed behavior, test execution, or a failure.</p>
+            </section>
+        }
+
+        <section class="unified-impact-card" aria-labelledby="impact-history-title">
+            <h2 id="impact-history-title">Saved reports</h2>
+            @if (_history.Count == 0) { <p class="unified-impact-muted">No saved impact reports for this project.</p> }
+            else { <ul class="unified-impact-history">@foreach (var item in _history)
+            {
+                <li><button type="button" class="unified-impact-history-button" @onclick="() => OpenHistoryAsync(item.RunId)"><strong>@item.CreatedAt.ToLocalTime().ToString("g") · @item.ProjectDisplayName</strong><span>@item.FindingCount findings · @item.EvaluatedDomains evaluated · @item.NotEvaluatedDomains not evaluated</span><span>Run @item.RunId</span></button></li>
+            }</ul> }
+        </section>
+    }
+</main>
+
+@code {
+    private bool _loading = true;
+    private bool _busy;
+    private bool _sourceEnabled;
+    private bool _requirementsUnavailable;
+    private string? _error;
+    private int _depth = 1;
+    private Guid? _baselineId;
+    private Guid? _currentId;
+    private List<ImpactSnapshotOption> _snapshots = [];
+    private IReadOnlyList<ImpactRequirementOption> _requirements = [];
+    private readonly HashSet<Guid> _selectedRequirements = [];
+    private IReadOnlyList<ImpactAnalysisRunHistoryItem> _history = [];
+    private ImpactAnalysisRunReport? _report;
+
+    private SddProjectImportRecord? CurrentImport => Workspace.SddLifecycle.CurrentProjectImportId is { } id
+        ? Workspace.SddLifecycle.ProjectImports.FirstOrDefault(x => x.ImportId == id) : null;
+    private string? ProjectId => CurrentImport is { } import ? $"import:{import.ImportId}" : Workspace.CurrentProject;
+    private string ProjectDisplayName => CurrentImport?.ProjectName ?? Workspace.ProjectName ?? Workspace.CurrentProject ?? "Imported project";
+    private bool HasSelectedRequirements => _selectedRequirements.Count > 0;
+    private bool HasSnapshotPair => _baselineId is { } b && _currentId is { } c && b != c;
+    private IReadOnlyList<ImpactSnapshotOption> AvailableTargets => CurrentImport?.SourceSnapshotId is { } importedSnapshot
+        ? _snapshots.Where(s => s.Id == importedSnapshot).ToList()
+        : _snapshots.OrderByDescending(s => s.AnalyzedAt).ToList();
+    private IReadOnlyList<ImpactSnapshotOption> AvailableBaselines => _currentId is { } current
+        ? _snapshots.Where(s => s.Id != current && SameRepository(s, current)).OrderByDescending(s => s.AnalyzedAt).ToList()
+        : [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (ProjectId is null) return;
+            var reqTask = Api.RequirementsAsync(ProjectId);
+            var snapshotsTask = Api.SnapshotsAsync(string.Empty);
+            var historyTask = Api.UnifiedHistoryAsync(ProjectId, CurrentImport?.ImportId);
+            try { _requirements = await reqTask; } catch { _requirementsUnavailable = true; }
+            var snapshotResult = await snapshotsTask;
+            _sourceEnabled = snapshotResult.SourceAnalysisEnabled;
+            _snapshots = snapshotResult.Snapshots;
+            _history = await historyTask;
+            _currentId = CurrentImport?.SourceSnapshotId is { } pinned && _snapshots.Any(s => s.Id == pinned)
+                ? pinned : _snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+            _baselineId = _currentId is { } target ? _snapshots.Where(s => s.Id != target && SameRepository(s, target)).OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault() : null;
+        }
+        catch (Exception ex) { _error = $"Impact Analysis could not load project evidence: {ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private bool SameRepository(ImpactSnapshotOption snapshot, Guid otherId) =>
+        string.Equals(snapshot.Repository, _snapshots.FirstOrDefault(s => s.Id == otherId)?.Repository, StringComparison.OrdinalIgnoreCase);
+    private void CurrentSnapshotChanged() => _baselineId = _currentId is { } target
+        ? _snapshots.Where(s => s.Id != target && SameRepository(s, target)).OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault()
+        : null;
+    private static string SnapshotLabel(ImpactSnapshotOption s) => $"{s.Repository} · {s.ArchiveName} · {s.Fingerprint} · {s.AnalyzedAt.ToLocalTime():g} · {s.Status}";
+    private static string DomainLabel(ImpactAnalysisEvidenceStatus status) => status switch { ImpactAnalysisEvidenceStatus.Evaluated => "Evaluated", ImpactAnalysisEvidenceStatus.PartiallyEvaluated => "Partially evaluated", _ => "Not evaluated" };
+    private static string ClassificationLabel(ImpactAnalysisClassification classification) => classification switch
+    {
+        ImpactAnalysisClassification.DirectRelation => "Directly related",
+        ImpactAnalysisClassification.IndirectRelation => "Indirectly related",
+        ImpactAnalysisClassification.PossibleRelation => "Possibly affected",
+        ImpactAnalysisClassification.SelectedChange => "Observed change",
+        ImpactAnalysisClassification.SelectedForReview => "Selected for review",
+        ImpactAnalysisClassification.NeedsReview => "Needs review",
+        _ => "Related"
+    };
+
+    private void SelectRequirement(Guid id, ChangeEventArgs e)
+    {
+        if (e.Value is true || string.Equals(e.Value?.ToString(), "true", StringComparison.OrdinalIgnoreCase)) _selectedRequirements.Add(id);
+        else _selectedRequirements.Remove(id);
+    }
+
+    private async Task RunAsync()
+    {
+        if (ProjectId is null) return;
+        _busy = true; _error = null; _report = null;
+        try
+        {
+            var result = await Api.RunUnifiedAsync(new ImpactAnalysisRunRequest(ProjectId, ProjectDisplayName, CurrentImport?.ImportId,
+                _selectedRequirements.ToList(), HasSnapshotPair ? _baselineId : null, HasSnapshotPair ? _currentId : null, _depth));
+            if (result.Report is null) { _error = $"Impact analysis could not run: {result.Error}"; return; }
+            _report = result.Report;
+            _history = await Api.UnifiedHistoryAsync(ProjectId, CurrentImport?.ImportId);
+        }
+        catch (Exception ex) { _error = $"Impact analysis could not run: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task OpenHistoryAsync(Guid runId)
+    {
+        try { _report = await Api.UnifiedHistoryItemAsync(runId); _error = _report is null ? "The saved report is unavailable." : null; }
+        catch { _error = "The saved report could not be reopened."; }
+    }
+    private async Task ExportHtmlAsync() { if (_report is { } report) await JS.InvokeVoidAsync("downloadHtmlFile", $"impact-analysis-{report.RunId:N}.html", SourceChangeImpactExport.UnifiedHtml(report)); }
+    private async Task ExportMarkdownAsync() { if (_report is { } report) await JS.InvokeVoidAsync("downloadTextFile", $"impact-analysis-{report.RunId:N}.md", SourceChangeImpactExport.UnifiedMarkdown(report), "text/markdown;charset=utf-8"); }
+}

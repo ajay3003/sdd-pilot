@@ -1,8 +1,9 @@
 @using BirkNext.SourceImpact
+@using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject SourceChangeImpactApiService Api
-@inject IFrontendAnalysisContextFactory ContextFactory
 @inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
 
 <section class="sci-panel" aria-labelledby="sci-heading">
     <h2 id="sci-heading">Source change impact</h2>
@@ -17,7 +18,7 @@
     }
     else if (!_enabled)
     {
-        <div class="sci-empty"><p>Source Analysis is unavailable for this Target Environment.</p><a href="/source-analysis">Open Source Analysis</a></div>
+        <div class="sci-empty"><p>Source Analysis is unavailable in this workspace.</p><a href="/source-analysis">Open Source Analysis</a></div>
     }
     else if (_snapshots.Count == 0)
     {
@@ -33,7 +34,11 @@
                 </select>
             </label>
         }
-        @if (CurrentSnapshots.Count < 2)
+        @if (CurrentImport?.SourceSnapshotId is { } requiredTarget && CurrentSnapshots.All(s => s.Id != requiredTarget))
+        {
+            <div class="sci-empty"><p>The current import's exact Source Analysis snapshot is unavailable. Reanalyze that imported source before comparing changes.</p><a href="/source-analysis">Open Source Analysis</a></div>
+        }
+        else if (CurrentSnapshots.Count < 2)
         {
             <div class="sci-empty"><p>At least two snapshots are needed for source-change impact in this repository.</p><a href="/source-analysis">Open Source Analysis</a></div>
         }
@@ -42,21 +47,33 @@
             <div class="sci-selectors">
                 <label class="sci-field">Baseline snapshot
                     <select class="form-control" @bind="_baseline" @bind:after="SelectionChanged">
-                        @foreach (var s in CurrentSnapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
+                    @foreach (var s in CurrentSnapshots.Where(s => s.Id != _target)) { <option value="@s.Id">@SnapshotLabel(s)</option> }
                     </select>
                 </label>
                 <label class="sci-field">Target snapshot
                     <select class="form-control" @bind="_target" @bind:after="SelectionChanged">
-                        @foreach (var s in CurrentSnapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
+                    @foreach (var s in CurrentSnapshots.Where(s => CurrentImport?.SourceSnapshotId is null || s.Id == CurrentImport.SourceSnapshotId)) { <option value="@s.Id">@SnapshotLabel(s)</option> }
                     </select>
                 </label>
             </div>
+            @if (CurrentImport is { } currentImport)
+            {
+                <p class="sci-provenance">Current imported project: @currentImport.ProjectName. The target is bound to this import's exact Source Analysis snapshot.</p>
+            }
             <p class="sci-provenance">Each selection shows archive, full fingerprint, analysis time and status.</p>
+            <label class="sci-field sci-depth">Impact depth
+                <select class="form-control" @bind="_maxImpactDepth" @bind:after="SelectionChanged">
+                    <option value="0">Changed items only</option>
+                    <option value="1">Direct relationships</option>
+                    <option value="2">Up to two downstream steps</option>
+                    <option value="3">Up to three downstream steps</option>
+                </select>
+            </label>
             @if (_baseline == _target) { <p class="notification notification-warning" role="status">Select two different snapshots.</p> }
             <button type="button" class="btn-primary" disabled="@(_busy || _baseline == _target)" @onclick="AnalyzeAsync">
                 @(_busy ? "Analyzing…" : "Analyze impact")
             </button>
-            @if (string.IsNullOrWhiteSpace(Workspace.CurrentProject)) { <p class="sci-muted">Select a project to enrich technical impact with requirement and test traceability.</p> }
+            @if (string.IsNullOrWhiteSpace(Workspace.CurrentProject) && CurrentImport is null) { <p class="sci-muted">Load a project or imported workspace to enrich technical impact with requirement and test traceability.</p> }
             @if (_error is not null) { <p class="notification notification-error" role="alert">@_error</p> }
         }
     }
@@ -65,6 +82,10 @@
     {
         <section class="sci-results" aria-labelledby="sci-results-heading" aria-live="polite">
             <h3 id="sci-results-heading">Impact results</h3>
+            <div class="sci-export-actions">
+                <button type="button" class="btn-secondary" @onclick="ExportHtmlAsync">Export HTML</button>
+                <button type="button" class="btn-secondary" @onclick="ExportMarkdownAsync">Export Markdown</button>
+            </div>
             <dl class="sci-provenance-grid">
                 <div><dt>Baseline</dt><dd>@report.BaselineRepository · @report.BaselineArchiveName</dd><dd><code>@report.BaselineFingerprint</code></dd><dd>@report.BaselineAnalyzedAt.ToLocalTime().ToString("g")</dd></div>
                 <div><dt>Target</dt><dd>@report.TargetRepository · @report.TargetArchiveName</dd><dd><code>@report.TargetFingerprint</code></dd><dd>@report.TargetAnalyzedAt.ToLocalTime().ToString("g")</dd></div>
@@ -95,9 +116,9 @@
             else
             {
                 <div class="sci-table-scroll" tabindex="0" role="region" aria-label="Technical impact entities">
-                    <table class="sci-table"><thead><tr><th>Entity</th><th>Domain</th><th>Impact</th><th>Evidence</th><th>Reason and path</th></tr></thead>
+                    <table class="sci-table"><thead><tr><th>Entity</th><th>Domain</th><th>Impact</th><th>Depth</th><th>Evidence</th><th>Reason and path</th></tr></thead>
                         <tbody>@foreach (var item in report.TechnicalImpacts) { <tr>
-                            <th scope="row">@item.DisplayName</th><td>@item.Domain</td><td>@item.Level</td><td>@item.EvidenceState</td>
+                            <th scope="row">@item.DisplayName</th><td>@item.Domain</td><td>@item.Level</td><td>@item.Depth</td><td>@item.EvidenceState</td>
                             <td><p>@item.Reason</p><details><summary>Evidence path (@item.Path.Count steps)</summary><ol>@foreach (var step in item.Path) { <li><strong>@step.Label</strong> — @step.Relationship <span>(@step.EvidenceState)</span><small>@step.Basis</small></li> }</ol>@if (item.SourceFiles.Count > 0) { <p>Source locations: @string.Join(", ", item.SourceFiles)</p> }</details></td>
                         </tr> }</tbody>
                     </table>
@@ -115,22 +136,53 @@
             <h4>Recommended tests (@report.RecommendedTests.Count)</h4>
             @if (report.RecommendedTests.Count == 0) { <p>No linked tests found. No tests have been inferred.</p> }
             else { <ul>@foreach (var test in report.RecommendedTests) { <li><strong>@test.Title</strong> <span>(@test.TestKind)</span> — @test.Reason</li> }</ul> }
+            <h4>Source journey paths (@report.Journeys.Count)</h4>
+            <p class="sci-muted">These paths come from source relationships in the selected snapshot. They do not prove deployed topology or runtime traffic.</p>
+            @if (report.Journeys.Count == 0) { <p>No multi-component source path was established from the available evidence.</p> }
+            else
+            {
+                <ul class="sci-journeys">@foreach (var journey in report.Journeys)
+                {
+                    <li><strong>@journey.DisplayName</strong> <span>(@journey.EvidenceState)</span><p>@journey.ImpactedSection</p><small>@journey.Limitation</small></li>
+                }</ul>
+            }
+            <h4>Security and configuration review</h4>
+            @if (report.SecurityAndConfigurationReviews.Count == 0) { <p>No security or configuration review was inferred from changed evidence.</p> }
+            else { <ul>@foreach (var review in report.SecurityAndConfigurationReviews) { <li>@review</li> }</ul> }
             @if (report.Limitations.Count > 0) { <details><summary>Evidence limitations (@report.Limitations.Count)</summary><ul>@foreach (var limitation in report.Limitations) { <li>@limitation</li> }</ul></details> }
         </section>
     }
+
+    <section class="sci-history" aria-labelledby="sci-history-heading">
+        <h3 id="sci-history-heading">Previous source impact analyses</h3>
+        @if (_history.Count == 0) { <p class="sci-muted">No saved source comparison reports for this workspace.</p> }
+        else
+        {
+            <ul>@foreach (var entry in _history)
+            {
+                <li><button type="button" class="sci-history-link" @onclick="() => OpenHistoryAsync(entry.RunId)">
+                    @entry.CreatedAt.ToLocalTime().ToString("g") — @entry.ProjectDisplayName
+                    <span>@entry.ChangeCount changes · @entry.ImpactCount affected/related items</span>
+                </button></li>
+            }</ul>
+        }
+    </section>
 </section>
 
 @code {
     private bool _loading = true;
     private bool _busy;
     private bool _enabled;
+    private int _maxImpactDepth = 2;
     private string? _error;
-    private string? _environmentId;
     private string _repository = "";
     private Guid _baseline;
     private Guid _target;
     private List<ImpactSnapshotOption> _snapshots = [];
     private SourceChangeImpactReport? _report;
+    private IReadOnlyList<ImpactHistorySummary> _history = [];
+    private SddProjectImportRecord? CurrentImport => Workspace.SddLifecycle.CurrentProjectImportId is { } id
+        ? Workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == id) : null;
     private IReadOnlyList<string> _repositories => _snapshots.Select(s => s.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
     private IReadOnlyList<ImpactSnapshotOption> CurrentSnapshots => _snapshots.Where(s => string.Equals(s.Repository, _repository, StringComparison.OrdinalIgnoreCase))
         .OrderBy(s => s.AnalyzedAt).ThenBy(s => s.Id).ToList();
@@ -139,14 +191,16 @@
     {
         try
         {
-            var context = await ContextFactory.GetActiveContextAsync();
-            _environmentId = context.ActiveProfile?.Id;
-            if (string.IsNullOrWhiteSpace(_environmentId)) { _error = context.ActiveTargetError ?? "Select a Target Environment first."; return; }
-            var result = await Api.SnapshotsAsync(_environmentId);
+            var result = await Api.SnapshotsAsync(string.Empty);
             _enabled = result.SourceAnalysisEnabled;
             _snapshots = result.Snapshots;
-            _repository = _repositories.FirstOrDefault() ?? "";
+            var importedSnapshotId = CurrentImport?.SourceSnapshotId;
+            _repository = (importedSnapshotId is { } importedId ? _snapshots.FirstOrDefault(s => s.Id == importedId)?.Repository : null)
+                ?? _repositories.FirstOrDefault() ?? "";
             OnRepositoryChanged();
+            var projectId = Workspace.CurrentProject ?? (CurrentImport is null ? string.Empty : $"import:{CurrentImport.ImportId}");
+            if (!string.IsNullOrWhiteSpace(projectId))
+                _history = await Api.HistoryAsync(projectId, CurrentImport?.ImportId);
         }
         catch (Exception ex) { _error = $"Could not load Source Analysis snapshots: {ex.Message}"; }
         finally { _loading = false; }
@@ -155,8 +209,10 @@
     private void OnRepositoryChanged()
     {
         var ordered = CurrentSnapshots;
-        _baseline = ordered.FirstOrDefault()?.Id ?? Guid.Empty;
-        _target = ordered.LastOrDefault()?.Id ?? Guid.Empty;
+        var importedTarget = CurrentImport?.SourceSnapshotId;
+        var target = importedTarget is { } id ? ordered.FirstOrDefault(s => s.Id == id) : null;
+        _target = target?.Id ?? ordered.LastOrDefault()?.Id ?? Guid.Empty;
+        _baseline = ordered.Where(s => s.Id != _target).FirstOrDefault()?.Id ?? _target;
         _report = null;
     }
 
@@ -164,16 +220,43 @@
 
     private async Task AnalyzeAsync()
     {
-        if (_environmentId is null || _baseline == _target) return;
+        if (_baseline == _target) return;
         _busy = true; _error = null; _report = null;
         try
         {
-            var (report, error) = await Api.AnalyzeAsync(new(_environmentId, Workspace.CurrentProject, _baseline, _target));
+            var import = CurrentImport;
+            var projectId = Workspace.CurrentProject ?? (import is null ? string.Empty : $"import:{import.ImportId}");
+            var (report, error) = await Api.AnalyzeAsync(new(string.Empty, projectId, _baseline, _target,
+                import?.ImportId, import?.ProjectName ?? Workspace.CurrentProject, _maxImpactDepth));
             _report = report;
+            if (report is not null)
+                _history = await Api.HistoryAsync(projectId, import?.ImportId);
             _error = error is null ? null : $"Impact analysis could not run: {error}";
         }
         catch (Exception ex) { _error = $"Impact analysis could not run: {ex.Message}"; }
         finally { _busy = false; }
+    }
+
+    private async Task OpenHistoryAsync(Guid runId)
+    {
+        try
+        {
+            _report = await Api.HistoryItemAsync(runId);
+            _error = _report is null ? "The saved impact report is unavailable." : null;
+        }
+        catch { _error = "The saved impact report could not be loaded."; }
+    }
+
+    private async Task ExportHtmlAsync()
+    {
+        if (_report is { } report)
+            await JS.InvokeVoidAsync("downloadHtmlFile", $"impact-analysis-{report.RunId:N}.html", SourceChangeImpactExport.Html(report));
+    }
+
+    private async Task ExportMarkdownAsync()
+    {
+        if (_report is { } report)
+            await JS.InvokeVoidAsync("downloadTextFile", $"impact-analysis-{report.RunId:N}.md", SourceChangeImpactExport.Markdown(report), "text/markdown;charset=utf-8");
     }
 
     private static string SnapshotLabel(ImpactSnapshotOption s) => $"{s.Repository} · {s.ArchiveName} · {s.Fingerprint} · {s.AnalyzedAt.ToLocalTime():g} · {s.Status}";

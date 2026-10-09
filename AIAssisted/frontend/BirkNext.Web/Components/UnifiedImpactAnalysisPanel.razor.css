@@ -1,0 +1,21 @@
+.unified-impact { display:grid; gap:1rem; max-width:110rem; margin:0 auto; padding:1rem; min-width:0; }
+.unified-impact h1,.unified-impact h2,.unified-impact h3 { margin:.2rem 0 .55rem; }
+.unified-impact-card { border:1px solid var(--border-color,#d8dee8); border-radius:.7rem; background:var(--surface,#fff); padding:1rem; min-width:0; }
+.unified-impact-muted { color:var(--text-muted,#526174); overflow-wrap:anywhere; }
+.unified-impact-empty { border:1px dashed var(--border-color,#aab5c4); border-radius:.6rem; padding:1.2rem; }
+.unified-impact-requirements { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr)); gap:.4rem .8rem; max-height:20rem; overflow:auto; padding:.35rem; }
+.unified-impact-requirements label { display:flex; align-items:flex-start; gap:.55rem; padding:.5rem; border:1px solid var(--border-color,#d8dee8); border-radius:.45rem; min-width:0; }
+.unified-impact-requirements input { margin-top:.25rem; }
+.unified-impact-selectors { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+.unified-impact-selectors label,.unified-impact-depth { display:grid; gap:.35rem; min-width:0; font-weight:600; }
+.unified-impact-depth { margin:1rem 0; max-width:30rem; }
+.unified-impact-result-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
+.unified-impact-domains,.unified-impact-findings,.unified-impact-history { display:grid; gap:.6rem; padding-left:1.3rem; }
+.unified-impact-domains li,.unified-impact-findings>li { padding:.7rem; border:1px solid var(--border-color,#d8dee8); border-radius:.45rem; overflow-wrap:anywhere; }
+.unified-impact-domains li { display:grid; gap:.25rem; }
+.unified-impact-findings p { margin:.45rem 0; }
+.unified-impact-tag { display:inline-block; border-radius:1rem; padding:.12rem .5rem; background:var(--surface-subtle,#f1f4f8); font-size:.85rem; }
+.unified-impact-history { list-style:none; padding:0; }
+.unified-impact-history-button { display:grid; gap:.25rem; text-align:left; width:100%; padding:.75rem; border:1px solid var(--border-color,#d8dee8); border-radius:.5rem; background:transparent; color:inherit; }
+.unified-impact code { overflow-wrap:anywhere; }
+@media(max-width:700px) { .unified-impact { padding:.5rem; } .unified-impact-selectors { grid-template-columns:minmax(0,1fr); } .unified-impact-result-heading { display:grid; } }

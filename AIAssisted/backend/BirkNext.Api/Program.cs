@@ -137,6 +137,7 @@ builder.Services.AddScoped<TraceLinkService>();
 builder.Services.AddScoped<TraceabilitySuggestionService>();
 builder.Services.AddScoped<ImpactAnalysisService>();
 builder.Services.AddScoped<SourceChangeImpactService>();
+builder.Services.AddScoped<ImpactAnalysisRunService>();
 builder.Services.AddScoped<AIChangeAuditService>();
 builder.Services.AddScoped<SpecDriftDetectionService>();
 builder.Services.AddScoped<CodeTraceabilityService>();
