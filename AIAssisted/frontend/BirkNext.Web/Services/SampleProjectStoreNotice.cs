@@ -1,7 +1,7 @@
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Pages that read the backend's per-Sample-Project requirement/test/trace store (Spec Drift, Impact Analysis, change history, delta
+/// Pages that read the backend's per-Sample-Project requirement/test/trace store (Spec Drift, change history, delta
 /// reviews, traceability suggestions). Project Import and manual imports do not write that store, so for such a workspace these pages
 /// have nothing to assess — they must say so instead of telling the user to pick a Sample Project (which would replace their project).
 /// </summary>

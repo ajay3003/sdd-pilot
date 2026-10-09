@@ -40,6 +40,108 @@ public sealed class SourceChangeImpactServiceTests
     }
 
     [Fact]
+    public async Task Source_snapshot_comparison_does_not_require_a_target_environment()
+    {
+        await using var db = Db();
+        var (service, before, after) = Setup(db);
+
+        var report = await service.AnalyzeAsync(Request(before, after) with { EnvironmentId = string.Empty }, default);
+
+        report.Should().NotBeNull();
+        report!.BaselineSnapshotId.Should().Be(before.Id);
+        report.TargetSnapshotId.Should().Be(after.Id);
+    }
+
+    [Fact]
+    public async Task History_reopens_the_original_snapshot_bound_result()
+    {
+        await using var db = Db();
+        var (service, before, after) = Setup(db);
+        var created = await service.AnalyzeAsync(Request(before, after) with { ProjectDisplayName = "Orders workspace" }, default);
+
+        var history = await service.ListHistoryAsync("generic", null, default);
+        var reopened = await service.GetHistoryAsync(created!.RunId, default);
+
+        history.Should().ContainSingle(x => x.RunId == created.RunId && x.BaselineSnapshotId == before.Id && x.CurrentSnapshotId == after.Id);
+        reopened.Should().NotBeNull();
+        reopened!.RunId.Should().Be(created.RunId);
+        reopened.BaselineFingerprint.Should().Be(created.BaselineFingerprint);
+        reopened.TargetFingerprint.Should().Be(created.TargetFingerprint);
+        reopened.TechnicalImpacts.Should().BeEquivalentTo(created.TechnicalImpacts);
+    }
+
+    [Fact]
+    public async Task Imported_project_target_must_be_the_exact_import_snapshot()
+    {
+        await using var db = Db();
+        var before = Snapshot("v1", []) with
+        {
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-current" }
+        };
+        var after = Snapshot("v2", []) with
+        {
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-current" }
+        };
+        var otherImportBaseline = Snapshot("v0", []) with
+        {
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "another-import" }
+        };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([otherImportBaseline, before, after]));
+
+        var accepted = await service.AnalyzeAsync(Request(before, after) with { EnvironmentId = string.Empty, ProjectImportId = "import-current" }, default);
+        var mismatched = await service.AnalyzeAsync(Request(before, after) with { EnvironmentId = string.Empty, ProjectImportId = "another-import" }, default);
+        var crossImportBaseline = await service.AnalyzeAsync(Request(otherImportBaseline, after) with { EnvironmentId = string.Empty, ProjectImportId = "import-current" }, default);
+
+        accepted.Should().NotBeNull();
+        accepted!.ProjectImportId.Should().Be("import-current");
+        mismatched.Should().BeNull();
+        crossImportBaseline.Should().BeNull("both snapshots must belong to the current imported project");
+    }
+
+    [Fact]
+    public async Task Component_impact_expands_to_a_configured_depth_and_stops_there()
+    {
+        await using var db = Db();
+        var before = Snapshot("v1", []) with { Architecture = ImpactGraph("v1") };
+        var after = Snapshot("v2", []) with { Architecture = ImpactGraph("v2") };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after]));
+
+        var depthOne = await service.AnalyzeAsync(Request(before, after) with { MaxImpactDepth = 1 }, default);
+        var depthTwo = await service.AnalyzeAsync(Request(before, after) with { MaxImpactDepth = 2 }, default);
+
+        depthOne!.TechnicalImpacts.Should().Contain(i => i.EntityId == "api" && i.Depth == 0);
+        depthOne.TechnicalImpacts.Should().Contain(i => i.EntityId == "adapter" && i.Depth == 1 && i.Level == TechnicalImpactLevel.Indirect);
+        depthOne.TechnicalImpacts.Should().NotContain(i => i.EntityId == "worker");
+        depthTwo!.TechnicalImpacts.Should().Contain(i => i.EntityId == "worker" && i.Depth == 2);
+    }
+
+    [Fact]
+    public async Task Source_journey_discovery_is_bounded_and_cycle_safe()
+    {
+        await using var db = Db();
+        var before = Snapshot("v1", []) with { Architecture = ImpactGraph("v1") };
+        var after = Snapshot("v2", []) with
+        {
+            Architecture = ImpactGraph("v2") with
+            {
+                MessagingChannels =
+                [
+                    new MessagingChannel { Id = "orders", Name = "orders", Type = MessagingChannelType.KafkaTopic,
+                        Producers = [new("api", ChannelRole.Producer, ArchitectureEvidenceState.Confirmed, "Kafka", [])],
+                        Consumers = [new("worker", ChannelRole.Consumer, ArchitectureEvidenceState.Confirmed, "Kafka", [])] }
+                ]
+            }
+        };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after]));
+
+        var report = await service.AnalyzeAsync(Request(before, after) with { MaxImpactDepth = 3 }, default);
+
+        report!.Journeys.Should().NotBeEmpty();
+        report.Journeys.Select(x => x.Id).Should().OnlyHaveUniqueItems();
+        report.Journeys.Should().OnlyContain(x => x.Steps.Count <= 5 && x.Limitation.Contains("does not verify", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Requirement_and_direct_source_paths_recommend_one_test_with_both_reasons()
     {
         await using var db = Db();
@@ -124,6 +226,22 @@ public sealed class SourceChangeImpactServiceTests
             Components = [new ArchitectureComponent { Id = "orders-api", Name = "Orders API", ComponentType = ArchitectureComponentType.Api,
                 Technologies = [technology], Evidence = evidence }]
         }
+    };
+
+    private static ArchitectureSnapshot ImpactGraph(string changedTechnology) => new()
+    {
+        Components =
+        [
+            new ArchitectureComponent { Id = "adapter", Name = "Adapter", Technologies = ["adapter"] },
+            new ArchitectureComponent { Id = "api", Name = "API", Technologies = [changedTechnology] },
+            new ArchitectureComponent { Id = "worker", Name = "Worker", Technologies = ["worker"] }
+        ],
+        Dependencies =
+        [
+            new ArchitectureDependency { Id = "adapter-api", FromComponentId = "adapter", ToId = "api", DependencyType = ArchitectureDependencyType.Http, EvidenceState = ArchitectureEvidenceState.Confirmed },
+            new ArchitectureDependency { Id = "worker-adapter", FromComponentId = "worker", ToId = "adapter", DependencyType = ArchitectureDependencyType.ProjectReference, EvidenceState = ArchitectureEvidenceState.Confirmed },
+            new ArchitectureDependency { Id = "api-adapter", FromComponentId = "api", ToId = "adapter", DependencyType = ArchitectureDependencyType.ProjectReference, EvidenceState = ArchitectureEvidenceState.Confirmed }
+        ]
     };
 
     private static SourceEvidenceDomainsSnapshot Domains(SourceContract? contract = null, SourceEvidenceLink? link = null) => new()

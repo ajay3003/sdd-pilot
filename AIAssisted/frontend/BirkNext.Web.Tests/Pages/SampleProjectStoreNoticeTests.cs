@@ -10,7 +10,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Spec Drift and Impact Analysis read the backend's per-Sample-Project requirement/test store, which Project Import does not write.
+/// Spec Drift (and formerly Impact Analysis) read the backend's per-Sample-Project requirement/test store, which Project Import does not write.
 /// Found by real-project acceptance: with an imported project they told the user to select a Sample Project (replacing their project).
 /// They now say the workspace is not assessed by them, and only fall back to the import/sample choice when nothing is loaded.
 /// </summary>
@@ -31,7 +31,8 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
         _workspace.SddLifecycle.CurrentProjectImportId = "import-0123456789abcdef";
         _workspace.Set(WorkspaceArtifactType.Specification, "# Spec\n\n- FR-001: The system shall work.");
 
-        foreach (var markup in new[] { Render<SpecDrift>().Markup, Render<ImpactAnalysis>().Markup })
+        // Impact Analysis is the unified, import-aware panel since 69a3945e; Spec Drift still reads the Sample Project store.
+        foreach (var markup in new[] { Render<SpecDrift>().Markup })
         {
             markup.Should().Contain("data-testid=\"sample-store-notice\"").And.Contain("Not assessed for this workspace");
             markup.Should().NotContain("Select a Sample Project");

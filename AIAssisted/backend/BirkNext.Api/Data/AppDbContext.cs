@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
+    public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
     public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
@@ -47,6 +48,22 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ImpactAnalysisRunRecord>(entity =>
+        {
+            entity.ToTable("impact_analysis_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.ProjectId).HasColumnName("project_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ProjectImportId).HasColumnName("project_import_id").HasMaxLength(200);
+            entity.Property(r => r.ProjectDisplayName).HasColumnName("project_display_name").HasMaxLength(500).IsRequired();
+            entity.Property(r => r.BaselineSnapshotId).HasColumnName("baseline_snapshot_id");
+            entity.Property(r => r.CurrentSnapshotId).HasColumnName("current_snapshot_id");
+            entity.Property(r => r.BaselineFingerprint).HasColumnName("baseline_fingerprint").HasMaxLength(128).IsRequired();
+            entity.Property(r => r.CurrentFingerprint).HasColumnName("current_fingerprint").HasMaxLength(128).IsRequired();
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.ProjectId, r.ProjectImportId, r.CreatedAt });
+        });
         modelBuilder.Entity<AzureEnvironmentSnapshotRecord>(entity => {
             entity.ToTable("azure_environment_snapshots");
             entity.HasKey(r => r.Id);
