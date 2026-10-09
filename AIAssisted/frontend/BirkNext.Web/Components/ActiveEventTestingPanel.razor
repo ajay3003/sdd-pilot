@@ -1,0 +1,554 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IReportExportService ExportService
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+@* IQR → Active tests: the shared Active Event panel for every registered scenario provider. The only IQR
+   action that SENDS. Every gate (trusted environment, integration, destination, source contract, synthetic data policy, transport) is
+   decided by the backend; this panel shows the decision, asks for explicit confirmation and then shows each stage as its own evidence.
+   Provider-specific details stay in expandable provider sections; nothing here is domain-specific. *@
+@if (Api is null) { return; }
+<section class="act" aria-labelledby="act-heading" data-testid="act-panel">
+    <h2 id="act-heading">Active tests</h2>
+    @if (SummaryFirst)
+    {
+        var blockers = Checks.Where(c => ActiveEventReadinessRules.Blocks(c.State)).ToList();
+        <dl class="act-summary" data-testid="act-summary">
+            <div><dt>Providers</dt><dd data-testid="act-summary-providers">@_providers.Count registered</dd></div>
+            <div><dt>Scenarios</dt><dd data-testid="act-summary-scenarios">@SupportedScenarios.Count available</dd></div>
+            <div><dt>Selected scenario</dt><dd data-testid="act-summary-scenario">@(SelectedScenario?.DisplayName ?? "None available")</dd></div>
+            <div><dt>Execution</dt><dd><span class="act-pill act-pill-@(CanSend ? "ready" : "neutral")" data-testid="act-summary-execution">@SummaryExecution</span></dd></div>
+        </dl>
+        @if (blockers.Count > 0)
+        {
+            <p class="act-summary-label">Main blockers</p>
+            <ul class="act-summary-blockers" data-testid="act-summary-blockers">@foreach (var b in blockers) { <li>@b.Label</li> }</ul>
+        }
+        <button type="button" class="act-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_runnerId" data-testid="act-open" @onclick="() => _open = !_open">@(_open ? "Hide active tests" : "Open active tests")</button>
+    }
+    <div id="@_runnerId" class="act-runner" hidden="@(SummaryFirst && !_open)" data-testid="act-runner">
+        <p class="act-notice" role="note" data-testid="act-notice"><strong>Active tests send synthetic events to a real non-production Event Hub. Every safety check is enforced by the backend; this page only shows its decision. Event Hub acceptance is never a pass on its own.</strong></p>
+
+        @if (_providers.Count > 0)
+        {
+            <fieldset class="act-scenarios" data-testid="act-providers" disabled="@Busy">
+                <legend>Scenario provider</legend>
+                @foreach (var provider in _providers)
+                {
+                    <label class="act-scenario">
+                        <input type="radio" name="act-provider-@_runnerId" value="@provider.ExtensionId" checked="@(provider.ExtensionId == _providerId)"
+                               data-testid="@($"act-provider-{provider.ExtensionId}")" @onchange="() => SelectProviderAsync(provider.ExtensionId)" />
+                        <span>@provider.DisplayName</span>
+                        <span class="act-muted">@string.Join(", ", provider.Resources)</span>
+                    </label>
+                }
+            </fieldset>
+        }
+
+        @if (SelectedProvider is { } selectedProvider)
+        {
+            <p class="act-muted" data-testid="act-provider-description">@selectedProvider.Description</p>
+            @if (ProviderIntegrations.Count == 0)
+            {
+                <p class="act-empty" data-testid="act-no-integration">@(selectedProvider.NotApplicableReason.Length > 0 ? selectedProvider.NotApplicableReason : "No configured integration applies to this provider.")</p>
+            }
+            else
+            {
+                <label for="@($"{_runnerId}-integration")">Integration</label>
+                <select id="@($"{_runnerId}-integration")" data-testid="act-integration" value="@_integrationId" @onchange="SelectIntegrationAsync" disabled="@Busy">
+                    @foreach (var integration in ProviderIntegrations) { <option value="@integration.Id">@integration.DisplayName</option> }
+                </select>
+            }
+
+            <fieldset class="act-scenarios" data-testid="act-scenarios" disabled="@Busy">
+                <legend>Scenario</legend>
+                @foreach (var option in ScenarioOptions)
+                {
+                    <label class="act-scenario">
+                        <input type="radio" name="act-scenario-@_runnerId" value="@option.ScenarioId" checked="@(option.ScenarioId == _scenarioId)"
+                               data-testid="@($"act-scenario-{option.ScenarioId}")" @onchange="() => SelectScenarioAsync(option.ScenarioId)" />
+                        <span>@option.DisplayName</span>
+                        <span class="act-pill act-pill-neutral">@option.Category</span>
+                        @if (option.Support == ActiveEventScenarioSupport.NotAssessed) { <span class="act-pill act-pill-attention" data-testid="act-not-assessed-pill">Not assessed</span> }
+                    </label>
+                }
+            </fieldset>
+
+            @if (SelectedScenario is { } scenario)
+            {
+                <h3 class="act-subheading" data-testid="act-scenario-heading">@scenario.DisplayName <span class="act-muted">(@scenario.ScenarioId v@(scenario.ScenarioVersion))</span></h3>
+                <p class="act-muted">@scenario.Description</p>
+                <dl class="act-facts" data-testid="act-scenario-facts">
+                    <div><dt>Resource</dt><dd class="act-mono">@(scenario.ResourceLabel.Length > 0 ? scenario.ResourceLabel : "—")</dd></div>
+                    <div><dt>Operation</dt><dd>@string.Join(", ", scenario.SupportedOperations.Select(ActiveEventPresentation.Operation))</dd></div>
+                    <div><dt>Events per run</dt><dd>@scenario.ExpectedEventCount</dd></div>
+                    <div><dt>Safety</dt><dd>@scenario.SafetyClassification@(scenario.StateChanging ? " · may change downstream state" : "")</dd></div>
+                </dl>
+                @if (scenario.Support == ActiveEventScenarioSupport.NotAssessed) { <p class="act-limitation" role="note" data-testid="act-support">@scenario.SupportDetail</p> }
+                @if (scenario.ResultDoesNotMean.Length > 0) { <p class="act-limitation" role="note" data-testid="act-limitation"><strong>@scenario.ResultDoesNotMean</strong></p> }
+            }
+        }
+
+        @if (_loading) { <p class="act-muted" role="status">Checking readiness…</p> }
+        @if (Checks.Count > 0)
+        {
+            <h3 class="act-subheading">Readiness</h3>
+            @if (_readiness?.Target is { } target)
+            {
+                <dl class="act-facts" data-testid="act-destination">
+                    <div><dt>Environment</dt><dd>@target.EnvironmentDisplayName <span class="act-muted">(@target.EnvironmentType, backend-owned)</span></dd></div>
+                    <div><dt>Event Hub</dt><dd class="act-mono">@(target.Resource ?? "Not configured")</dd></div>
+                    <div><dt>Namespace</dt><dd class="act-mono">@(target.Endpoint ?? "Not configured")</dd></div>
+                    <div><dt>Consumer group</dt><dd>@(target.Consumer is { } g ? $"{g}{(target.ConsumerAssumed ? " (configured assumption)" : "")}" : "Not configured")</dd></div>
+                    <div><dt>Source contract</dt><dd data-testid="act-contract">@(_readiness.SourceContract.ContractStatus.Length > 0 ? _readiness.SourceContract.ContractStatus : "Not evaluated")@if (_readiness.SourceContract.ContractFingerprint is { Length: > 0 } fp) { <span class="act-muted"> · @fp</span> }</dd></div>
+                </dl>
+            }
+            @foreach (var group in ActiveEventPresentation.CategoryOrder.Select(c => (Category: c, Items: Checks.Where(x => x.Category == c).ToList())).Where(g => g.Items.Count > 0))
+            {
+                <div class="act-group" data-testid="act-check-group" data-category="@group.Category">
+                    <h4 class="act-group-heading">@ActiveEventPresentation.Category(group.Category)</h4>
+                    <ul class="act-checks">
+                        @foreach (var check in group.Items)
+                        {
+                            <li class="act-check" data-testid="act-check" data-key="@check.Key" data-state="@check.State" data-category="@check.Category">
+                                <span class="act-check-label">@check.Label</span>
+                                <span class="act-pill act-pill-@ActiveEventPresentation.Tone(check.State)">@ActiveEventPresentation.State(check.State)</span>
+                                <span class="act-check-detail">@check.Detail</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+            @if (_readiness is { SyntheticSummary.Count: > 0 } preview)
+            {
+                <details class="act-details" data-testid="act-synthetic-summary"><summary>Synthetic event summary</summary>
+                    <dl class="act-facts">@foreach (var (key, value) in preview.SyntheticSummary) { <div><dt>@key</dt><dd>@value</dd></div> }</dl>
+                </details>
+            }
+
+            @if (Authentication.Configured && _authorized != true)
+            {
+                <p class="act-muted" data-testid="act-sign-in-note">Protected calls use your signed-in BirkNext account. <a href="authentication/login" data-testid="act-sign-in">Sign in</a> if you have not, then open Run history to let the backend check the ActiveEventExecute permission.</p>
+            }
+            @if (!_confirming)
+            {
+                <div class="act-actions">
+                    <button type="button" class="btn-primary" data-testid="act-start" disabled="@(!CanSend)" aria-describedby="@($"{_runnerId}-start-note")"
+                            @onclick="() => { _confirming = true; _acknowledged = false; }">@(SelectedScenario?.ExpectedEventCount > 1 ? $"Send {SelectedScenario.ExpectedEventCount} synthetic events…" : "Send one synthetic event…")</button>
+                </div>
+                <p id="@($"{_runnerId}-start-note")" class="act-muted" data-testid="act-start-note">@StartNote</p>
+            }
+            else if (_readiness is { Target: { } confirmTarget } ready && SelectedScenario is { } confirmScenario)
+            {
+                <div class="act-confirm" role="group" aria-labelledby="@($"{_runnerId}-confirm-heading")" data-testid="act-confirm">
+                    <h4 id="@($"{_runnerId}-confirm-heading")">Confirm active test</h4>
+                    <dl class="act-facts" data-testid="act-confirm-facts">
+                        <div><dt>Environment</dt><dd>@confirmTarget.EnvironmentDisplayName (@confirmTarget.EnvironmentType)</dd></div>
+                        <div><dt>Event Hub</dt><dd class="act-mono">@confirmTarget.Resource</dd></div>
+                        <div><dt>Namespace</dt><dd class="act-mono">@confirmTarget.Endpoint</dd></div>
+                        <div><dt>Resource</dt><dd class="act-mono">@confirmScenario.ResourceLabel</dd></div>
+                        <div><dt>Scenario</dt><dd>@confirmScenario.DisplayName</dd></div>
+                        <div><dt>Operation</dt><dd>@string.Join(", ", confirmScenario.SupportedOperations.Select(ActiveEventPresentation.Operation))</dd></div>
+                        <div><dt>Synthetic identity</dt><dd>@ready.SyntheticSummary.GetValueOrDefault("Synthetic identity", "Allocated by the provider from its reserved range")</dd></div>
+                    </dl>
+                    @if (confirmScenario.StateChanging) { <p data-testid="act-state-warning"><strong>State-changing:</strong> downstream systems may store these synthetic records and they may remain. Sent events cannot be recalled; cancelling only stops the remaining steps.</p> }
+                    <label class="act-ack"><input type="checkbox" data-testid="act-ack" @bind="_acknowledged" /> I understand this sends synthetic test data to a non-production environment and cannot be undone.</label>
+                    <div class="act-actions">
+                        <button type="button" class="btn-primary" data-testid="act-confirm-send" disabled="@(!_acknowledged || Busy)" @onclick="StartAsync">@(confirmScenario.ExpectedEventCount > 1 ? "Send synthetic events" : "Send synthetic event")</button>
+                        <button type="button" class="btn-secondary" data-testid="act-confirm-cancel" @onclick="() => _confirming = false">Cancel</button>
+                    </div>
+                </div>
+            }
+        }
+
+        @if (_error is { } error) { <p class="act-error" role="alert" data-testid="act-error">@error</p> }
+
+        @if (_run is { } run)
+        {
+            <section class="act-run" aria-labelledby="@($"{_runnerId}-run-heading")" data-testid="act-run" data-status="@run.Status">
+                <h3 id="@($"{_runnerId}-run-heading")">Active test result <span class="act-pill act-pill-@ActiveEventPresentation.Tone(run.Status)" data-testid="act-run-status">@ActiveEventPresentation.Status(run.Status)</span>@if (run.Legacy) { <span class="act-pill act-pill-neutral">Legacy record</span> }</h3>
+                <p aria-live="polite" data-testid="act-run-headline"><strong>@ActiveEventPresentation.Headline(run)</strong></p>
+                <dl class="act-facts" data-testid="act-run-facts">
+                    <div><dt>Provider</dt><dd>@run.Scenario.ProviderDisplayName</dd></div>
+                    <div><dt>Scenario</dt><dd>@run.Scenario.DisplayName</dd></div>
+                    <div><dt>Environment</dt><dd>@run.Target.EnvironmentDisplayName (@run.Target.EnvironmentType)</dd></div>
+                    <div><dt>Integration</dt><dd>@run.Target.IntegrationDisplayName</dd></div>
+                    <div><dt>Started</dt><dd>@run.StartedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd></div>
+                    <div><dt>Completed</dt><dd>@(run.CompletedAt?.ToString("yyyy-MM-dd HH:mm:ss") is { } done ? $"{done} UTC" : "In progress")</dd></div>
+                </dl>
+                @if (!run.Completed)
+                {
+                    <div class="act-actions"><button type="button" class="btn-secondary" data-testid="act-cancel" disabled="@_cancelling" @onclick="CancelAsync">Stop the run</button></div>
+                    <p class="act-muted" data-testid="act-cancel-note">Stopping does not recall events already sent; it only stops the remaining steps.</p>
+                }
+                <div class="act-table" tabindex="0" role="region" aria-label="Active test stages">
+                    <table>
+                        <thead><tr><th scope="col">Stage</th><th scope="col">Event</th><th scope="col">State</th><th scope="col">Correlation</th><th scope="col">Evidence</th><th scope="col">Source</th></tr></thead>
+                        <tbody>
+                            @foreach (var stage in run.Evidence)
+                            {
+                                <tr data-testid="act-stage" data-stage="@stage.Stage" data-state="@stage.Status">
+                                    <th scope="row">@ActiveEventPresentation.Stage(stage.Stage)</th>
+                                    <td class="act-mono">@(stage.EventId is { Length: > 0 } id ? Label(run, id) : "Run")</td>
+                                    <td><span class="act-pill act-pill-@ActiveEventPresentation.Tone(stage.Status)">@ActiveEventPresentation.Evidence(stage.Status)</span></td>
+                                    <td>@stage.CorrelationQuality</td>
+                                    <td>@stage.Detail</td>
+                                    <td class="act-muted">@stage.EvidenceSource</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (run.Events.Count > 0)
+                {
+                    <div class="act-table" tabindex="0" role="region" aria-label="Generated events" data-testid="act-events">
+                        <table>
+                            <thead><tr><th scope="col">Event</th><th scope="col">Role</th><th scope="col">Operation</th><th scope="col">Synthetic identity</th><th scope="col">Payload (not stored)</th></tr></thead>
+                            <tbody>
+                                @foreach (var item in run.Events)
+                                {
+                                    <tr data-testid="act-event" data-label="@item.SafeMetadata.GetValueOrDefault("sequenceLabel", "")">
+                                        <th scope="row" class="act-mono">@Label(run, item.EventId)</th>
+                                        <td>@item.SafeMetadata.GetValueOrDefault("role", "Generated event")</td>
+                                        <td>@ActiveEventPresentation.Operation(item.Operation)</td>
+                                        <td class="act-mono">@ActiveEventPresentation.SyntheticIdentity(item)</td>
+                                        <td class="act-muted">@item.BodyBytes bytes · <span class="act-mono">@(item.BodySha256.Length >= 12 ? item.BodySha256[..12] : item.BodySha256)…</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <details class="act-details" data-testid="act-provider-details"><summary>Provider details (@run.Scenario.ProviderDisplayName)</summary>
+                        @foreach (var item in run.Events)
+                        {
+                            <p class="act-muted"><strong>@Label(run, item.EventId)</strong></p>
+                            <ul>@foreach (var (key, value) in ActiveEventPresentation.ProviderDetails(item)) { <li><span class="act-mono">@key</span>: @value</li> }</ul>
+                        }
+                    </details>
+                }
+                @if (run.Completed)
+                {
+                    @if (run.Scenario.ResultDoesNotMean.Length > 0) { <p class="act-limitation" role="note" data-testid="act-result-bounds">@(run.Status == ActiveEventRunStatus.Completed ? $"{run.Scenario.ResultMeaning} " : "")<strong>@run.Scenario.ResultDoesNotMean</strong></p> }
+                    @if (run.Limitations.Count > 0) { <details class="act-details" open data-testid="act-limitations"><summary>Limitations (@run.Limitations.Count)</summary><ul>@foreach (var t in run.Limitations) { <li>@t</li> }</ul></details> }
+                    <div class="act-actions"><button type="button" class="btn-secondary" data-testid="act-export" @onclick="ExportAsync">Export HTML</button></div>
+                }
+            </section>
+        }
+
+        <details class="act-details" data-testid="act-history" @ontoggle="LoadHistoryAsync"><summary>Run history</summary>
+            <p class="act-muted">Stored runs are immutable; history mixes every provider (and read-only legacy CDC runs).</p>
+            <div class="act-filters" data-testid="act-history-filters">
+                <label for="@($"{_runnerId}-filter-provider")">Provider</label>
+                <select id="@($"{_runnerId}-filter-provider")" data-testid="act-filter-provider" @bind="_filterProvider" @bind:after="LoadHistoryAsync">
+                    <option value="">All providers</option>
+                    @foreach (var provider in _providers) { <option value="@provider.ExtensionId">@provider.DisplayName</option> }
+                </select>
+                <label for="@($"{_runnerId}-filter-status")">Status</label>
+                <select id="@($"{_runnerId}-filter-status")" data-testid="act-filter-status" @bind="_filterStatus" @bind:after="LoadHistoryAsync">
+                    <option value="">All statuses</option>
+                    @foreach (var status in Enum.GetValues<ActiveEventRunStatus>()) { <option value="@status">@ActiveEventPresentation.Status(status)</option> }
+                </select>
+                <label for="@($"{_runnerId}-filter-from")">From date</label>
+                <input id="@($"{_runnerId}-filter-from")" type="date" data-testid="act-filter-from" @bind="_filterFrom" @bind:after="LoadHistoryAsync" />
+            </div>
+            @if (_historyError is { } historyError) { <p class="act-muted" data-testid="act-history-error">@historyError</p> }
+            else if (_history.Count == 0) { <p class="act-muted" data-testid="act-history-empty">No runs recorded for this environment@(HasFilter ? " with these filters" : "").</p> }
+            else
+            {
+                <ul class="act-history">
+                    @foreach (var item in _history)
+                    {
+                        <li data-testid="act-history-item" data-provider="@item.ExtensionId"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @item.ProviderDisplayName · @item.ScenarioName · @ActiveEventPresentation.Status(item.Status) · @(item.SendAttempted ? $"{item.EventCount} event(s) generated, send attempted" : "nothing sent")@(item.Legacy ? " · legacy" : "")</li>
+                    }
+                </ul>
+            }
+        </details>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
+    [Parameter] public IReadOnlyList<IntegrationDefinition> Integrations { get; set; } = [];
+    /// <summary>Show a compact summary first and keep the full runner collapsed until opened (presentation only).</summary>
+    [Parameter] public bool SummaryFirst { get; set; }
+    /// <summary>The IQR source selections: a snapshot chosen there for this integration is the one the fixture is bound to (else the latest).</summary>
+    [Parameter] public IReadOnlyList<IqrSourceSelection> Selections { get; set; } = [];
+    /// <summary>Poll interval while a run is in flight (tests shorten it).</summary>
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+    // Optional: hosts that do not register the client (older page tests) simply show no Active tests panel.
+    private IActiveEventsApiService? Api => _api ??= Services.GetService<IActiveEventsApiService>();
+    private IActiveEventsApiService? _api;
+    private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private ActiveEventAuthenticationState? _authentication;
+
+    private readonly string _runnerId = "act-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly CancellationTokenSource _disposed = new();
+    private IReadOnlyList<ActiveEventProviderSummary> _providers = [];
+    private IReadOnlyList<ActiveEventScenarioDescriptor> _scenarios = [];
+    private ActiveEventEnvironmentTrust? _trust;
+    private string _providerId = "", _integrationId = "", _scenarioId = "";
+    private ActiveEventReadiness? _readiness;
+    private ActiveEventRunResult? _run;
+    private IReadOnlyList<ActiveEventRunSummary> _history = [];
+    private string? _error, _historyError, _loadedFor;
+    private bool _open, _loading, _starting, _cancelling, _confirming, _acknowledged;
+    private bool? _authorized;
+    private string _filterProvider = "", _filterStatus = "";
+    private DateOnly? _filterFrom;
+
+    private ActiveEventProviderSummary? SelectedProvider => _providers.FirstOrDefault(p => p.ExtensionId == _providerId);
+    private IReadOnlyList<IntegrationDefinition> ProviderIntegrations => SelectedProvider is { } provider
+        ? Integrations.Where(i => provider.ApplicableIntegrationIds.Contains(i.Id)).ToList() : [];
+    private IReadOnlyList<ActiveEventScenarioDescriptor> ScenarioOptions => _scenarios.Count > 0 ? _scenarios : SelectedProvider?.Scenarios ?? [];
+    private IReadOnlyList<ActiveEventScenarioDescriptor> SupportedScenarios => ScenarioOptions.Where(s => s.Support == ActiveEventScenarioSupport.Supported).ToList();
+    private ActiveEventScenarioDescriptor? SelectedScenario => ScenarioOptions.FirstOrDefault(s => s.ScenarioId == _scenarioId);
+    private Guid? SnapshotId => Selections.FirstOrDefault(s => s.IntegrationId == _integrationId)?.SnapshotId;
+    private bool Busy => _loading || _starting || _run is { Completed: false };
+    private bool HasFilter => _filterProvider.Length > 0 || _filterStatus.Length > 0 || _filterFrom is not null;
+
+    /// <summary>Backend checks plus the browser's own authentication/authorization facts (informational; the backend re-checks everything).</summary>
+    private IReadOnlyList<ActiveEventReadinessCheck> Checks
+    {
+        get
+        {
+            var checks = new List<ActiveEventReadinessCheck>(_readiness?.Checks ?? []);
+            if (SelectedProvider is { } provider && ProviderIntegrations.Count == 0)
+                checks.Add(new("integration", "Integration configuration (IQR)", ActiveEventReadinessState.NotConfigured,
+                    provider.NotApplicableReason.Length > 0 ? provider.NotApplicableReason : "No configured integration applies to this provider.", ActiveEventReadinessCategory.Integration));
+            if (_trust is { Trusted: false } untrusted && checks.All(c => c.Key != "environment"))
+                checks.Add(new("environment", "Trusted environment (DEV/QA only)", ActiveEventReadinessState.Blocked, untrusted.Detail, ActiveEventReadinessCategory.TrustedEnvironment));
+            if (_providers.Count == 0 && _trust is null) return checks;
+            checks.Add(Authentication.Configured
+                ? new("authentication", "Authentication", ActiveEventReadinessState.Ready, "Entra is configured; the browser requests a BirkNext API token for protected calls.", ActiveEventReadinessCategory.Authentication)
+                : new("authentication", "Authentication", ActiveEventReadinessState.NotConfigured, Authentication.Detail, ActiveEventReadinessCategory.Authentication));
+            checks.Add(_authorized switch
+            {
+                true => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.Ready, "The backend accepted this account for protected Active Event calls.", ActiveEventReadinessCategory.Authorization),
+                false => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.Blocked, _historyError ?? "The backend refused protected Active Event calls.", ActiveEventReadinessCategory.Authorization),
+                null => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.NotAvailable,
+                    Authentication.Configured ? "Not checked yet: open Run history or start a run to let the backend check the permission." : "Not available without authentication.", ActiveEventReadinessCategory.Authorization),
+            });
+            return checks;
+        }
+    }
+
+    private bool CanSend => _readiness is { CanRun: true } && Authentication.Configured && _authorized != false && !Busy &&
+        SelectedScenario is { Support: ActiveEventScenarioSupport.Supported } && Checks.All(c => !ActiveEventReadinessRules.Blocks(c.State));
+
+    private string SummaryExecution => _providers.Count == 0 ? (_loading ? "Checking…" : "No provider")
+        : !Authentication.Configured ? "Authentication not configured"
+        : CanSend ? "Ready" : "Blocked";
+
+    private string StartNote => !Authentication.Configured ? "Real execution is disabled: authentication is not configured. Nothing can be sent from this browser."
+        : SelectedScenario is { Support: ActiveEventScenarioSupport.NotAssessed } ? "This scenario is declared but not assessed; it never sends."
+        : !CanSend ? "Cannot run: resolve the checks marked Not ready, Not configured or Not available. Nothing is sent while any of them remains."
+        : $"Sends the scenario's events once each, in order, then observes read-only evidence for up to {_readiness!.ObservationTimeoutSeconds} s. Without a verified downstream result the best outcome is limited evidence.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Api is null || Profile is null) return;
+        var key = $"{Profile.Id}|{string.Join(",", Integrations.Select(i => i.Id))}";
+        if (key == _loadedFor) return;
+        _loadedFor = key;
+        _loading = true;
+        try
+        {
+            var trust = await Api.TrustAsync(Profile.Id, _disposed.Token);
+            _trust = trust.Value;
+            var providers = await Api.ProvidersAsync(Profile.Id, _disposed.Token);
+            if (providers.Error is { } providerError) { _error = providerError; return; }
+            _providers = providers.Value ?? [];
+            _providerId = _providers.FirstOrDefault(p => p.ApplicableIntegrationIds.Any(id => Integrations.Any(i => i.Id == id)))?.ExtensionId ?? _providers.FirstOrDefault()?.ExtensionId ?? "";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (!_disposed.IsCancellationRequested) _error = BackendRequestClassifier.FromException("Active event providers", ex).UserMessage;
+            return;
+        }
+        finally { _loading = false; }
+        await SelectProviderAsync(_providerId);
+    }
+
+    private async Task SelectProviderAsync(string extensionId)
+    {
+        _providerId = extensionId;
+        _integrationId = ProviderIntegrations.FirstOrDefault()?.Id ?? "";
+        await LoadScenariosAsync();
+    }
+
+    private async Task SelectIntegrationAsync(ChangeEventArgs e)
+    {
+        _integrationId = e.Value?.ToString() ?? "";
+        await LoadScenariosAsync();
+    }
+
+    private async Task LoadScenariosAsync()
+    {
+        _run = null;
+        _confirming = false;
+        _readiness = null;
+        _scenarios = [];
+        if (_integrationId.Length > 0)
+        {
+            try
+            {
+                var scenarios = await Api!.ScenariosAsync(Profile.Id, _integrationId, _disposed.Token);
+                _scenarios = (scenarios.Value ?? []).Where(s => s.ExtensionId == _providerId).ToList();
+                if (scenarios.Error is { } error) _error = error;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            {
+                if (!_disposed.IsCancellationRequested) _error = BackendRequestClassifier.FromException("Active event scenarios", ex).UserMessage;
+            }
+        }
+        _scenarioId = (SupportedScenarios.FirstOrDefault() ?? ScenarioOptions.FirstOrDefault())?.ScenarioId ?? "";
+        await LoadReadinessAsync();
+    }
+
+    private async Task SelectScenarioAsync(string scenarioId)
+    {
+        _scenarioId = scenarioId;
+        _run = null;
+        _confirming = false;
+        await LoadReadinessAsync();
+    }
+
+    private async Task LoadReadinessAsync()
+    {
+        _readiness = null;
+        if (_integrationId.Length == 0 || _scenarioId.Length == 0) return;
+        var key = (_integrationId, _scenarioId);
+        _loading = true;
+        _error = null;
+        try
+        {
+            var readiness = await Api!.ReadinessAsync(Profile.Id, _integrationId, _providerId, _scenarioId, SnapshotId, _disposed.Token);
+            // The selection can change while this load is in flight: an answer for a previous selection is dropped, never shown.
+            if (key != (_integrationId, _scenarioId)) return;
+            _readiness = readiness.Value;
+            if (readiness.Error is { } error) _error = error;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (!_disposed.IsCancellationRequested) _error = BackendRequestClassifier.FromException("Active test readiness", ex).UserMessage;
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task StartAsync()
+    {
+        if (_readiness?.Target is not { } target || SelectedScenario is not { } scenario || !_acknowledged) return;
+        _starting = true;
+        _error = null;
+        try
+        {
+            var started = await Api!.StartAsync(new ActiveEventRunRequest
+            {
+                TargetEnvironmentId = Profile.Id, IntegrationId = _integrationId, ExtensionId = scenario.ExtensionId, ScenarioId = scenario.ScenarioId,
+                SourceSnapshotId = _readiness.SourceContract.SourceSnapshotId ?? SnapshotId, Confirmed = true, ConfirmedDestination = target.Resource,
+                ReviewedContractFingerprint = _readiness.SourceContract.ContractFingerprint,
+            }, _disposed.Token);
+            _confirming = false;
+            if (started.Unauthorized || started.Forbidden) _authorized = false;
+            if (started.Error is { } error) { _error = error; return; }
+            _authorized = true;
+            _run = started.Value;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            // The request may have reached the backend: say so rather than implying nothing happened.
+            if (!_disposed.IsCancellationRequested) _error = $"{BackendRequestClassifier.FromException("Starting the active test", ex).UserMessage} Check the run history before starting again — the run may have started.";
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException)
+        {
+            _error = "Sign-in required: no access token is available. Sign in and start again; nothing was sent.";
+        }
+        finally { _starting = false; }
+        if (_run is { Completed: false }) await PollAsync(_run.RunId);
+    }
+
+    private async Task PollAsync(Guid runId)
+    {
+        while (!_disposed.IsCancellationRequested && _run is { Completed: false } && _run.RunId == runId)
+        {
+            try
+            {
+                await Task.Delay(PollInterval, _disposed.Token);
+                if ((await Api!.GetAsync(runId, _disposed.Token)).Value is { } latest) _run = latest;
+            }
+            catch (TaskCanceledException) { return; }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+            {
+                _error = $"Live progress is unavailable: {BackendRequestClassifier.FromException("Run progress", ex).Detail} The run continues in the backend; open it from the history.";
+                return;
+            }
+            StateHasChanged();
+        }
+        _cancelling = false;
+        await LoadReadinessAsync();
+        StateHasChanged();
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_run is null) return;
+        _cancelling = true;
+        try { if (!await Api!.CancelAsync(_run.RunId, _disposed.Token)) _error = "The run is no longer in flight."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = BackendRequestClassifier.FromException("Requesting cancellation", ex).UserMessage; }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        try
+        {
+            var history = await Api!.HistoryAsync(Profile.Id, new ActiveEventHistoryFilter(
+                _filterProvider.Length > 0 ? _filterProvider : null, null,
+                Enum.TryParse<ActiveEventRunStatus>(_filterStatus, out var status) ? status : null,
+                _filterFrom is { } from ? new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : null), _disposed.Token);
+            _history = history.Value ?? [];
+            _historyError = history.Error;
+            _authorized = history.Unauthorized || history.Forbidden ? false : history.Error is null ? true : _authorized;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (!_disposed.IsCancellationRequested) _historyError = BackendRequestClassifier.FromException("Run history", ex).UserMessage;
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException)
+        {
+            _historyError = "Sign-in required to read run history.";
+        }
+    }
+
+    private async Task OpenAsync(Guid runId)
+    {
+        try
+        {
+            var loaded = await Api!.GetAsync(runId, _disposed.Token);
+            if (loaded.Error is { } error) { _error = error; return; }
+            _run = loaded.Value;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The run could not be loaded."; }
+        if (_run is { Completed: false }) await PollAsync(_run.RunId);
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_run is null) return;
+        var html = ExportService.ExportActiveEventRun(_run, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"active-event-test-{_run.StartedAt:yyyy-MM-dd}-{_run.RunId.ToString("N")[..8]}.html", html);
+    }
+
+    private static string Label(ActiveEventRunResult run, string eventId) =>
+        run.Events.FirstOrDefault(e => e.EventId == eventId)?.SafeMetadata.GetValueOrDefault("sequenceLabel") is { Length: > 0 } label ? label : $"#{(run.Events.ToList().FindIndex(e => e.EventId == eventId) + 1)}";
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
+}

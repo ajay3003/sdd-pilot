@@ -37,24 +37,31 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
             ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.bufetat.no/" },
         });
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
-        var activeTests = new Mock<IActiveCdcTestsApiService>();
-        activeTests.Setup(a => a.ScenariosAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ActiveEventScenarioDescriptor[]
-            {
-                new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", DisplayName = "Normal Person", RequiredTransportType = "EventHub", ExpectedEventCount = 1 },
-                new() { ExtensionId = "m2lb.person", ScenarioId = "person.same-personpk-replay", DisplayName = "Same PersonPK replay", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ExactReplay, ExpectedEventCount = 3 },
-                new() { ExtensionId = "m2lb.person", ScenarioId = "person.invalid-then-valid", DisplayName = "Invalid Person → valid Person", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ControlAfterInvalid, ExpectedEventCount = 2 },
-            });
-        activeTests.Setup(a => a.ReadinessAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ActiveCdcReadiness
+        var personCdc = "dev:eventhub:birk-cdc:dbo.Person";
+        ActiveEventScenarioDescriptor[] scenarios =
+        [
+            new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", DisplayName = "Normal Person", RequiredTransportType = "EventHub", ExpectedEventCount = 1 },
+            new() { ExtensionId = "m2lb.person", ScenarioId = "person.same-personpk-replay", DisplayName = "Same PersonPK replay", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ExactReplay, ExpectedEventCount = 3 },
+            new() { ExtensionId = "m2lb.person", ScenarioId = "person.invalid-then-valid", DisplayName = "Invalid Person → valid Person", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ControlAfterInvalid, ExpectedEventCount = 2 },
+        ];
+        var activeTests = new Mock<IActiveEventsApiService>();
+        activeTests.Setup(a => a.TrustAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveEventApiResult<ActiveEventEnvironmentTrust>(new() { Trusted = true, DisplayName = "Dev", EnvironmentType = "Development", ExecutionAllowed = true }, null));
+        activeTests.Setup(a => a.ProvidersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<ActiveEventProviderSummary>>(
+                [new() { ExtensionId = "m2lb.person", DisplayName = "M2LB Person CDC", Resources = ["dbo.Person"], ApplicableIntegrationIds = [personCdc], Scenarios = scenarios }], null));
+        activeTests.Setup(a => a.ScenariosAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<ActiveEventScenarioDescriptor>>(scenarios, null));
+        activeTests.Setup(a => a.ReadinessAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveEventApiResult<ActiveEventReadiness>(new()
             {
                 CanRun = false,
-                Checks = [new("environment", "Environment is DEV or QA", ActiveCdcReadinessState.Ready, "Development"),
-                          new("identity", "Azure sender identity", ActiveCdcReadinessState.Blocked, "No sender identity is configured."),
-                          new("contract", "Source contract binding", ActiveCdcReadinessState.Blocked, "No source analysis is selected.")],
-            });
-        activeTests.Setup(a => a.HistoryAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+                Checks = [new("environment", "Trusted environment (DEV/QA only)", ActiveEventReadinessState.Ready, "Development", ActiveEventReadinessCategory.TrustedEnvironment),
+                          new("transport", "Transport provider", ActiveEventReadinessState.Blocked, "No sender identity is configured.", ActiveEventReadinessCategory.Transport),
+                          new("source-contract", "Source contract binding", ActiveEventReadinessState.Blocked, "No source analysis is selected.", ActiveEventReadinessCategory.SourceContract)],
+            }, null));
         Services.AddSingleton(activeTests.Object);
+        Services.AddSingleton(new ActiveEventAuthenticationState(true, "Configured (test)."));
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
         Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
@@ -142,7 +149,7 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
         cut.Find("[data-testid=act-summary-scenarios]").TextContent.Should().Be("3 available");
         cut.Find("[data-testid=act-summary-scenario]").TextContent.Should().Be("Normal Person");
         cut.Find("[data-testid=act-summary-execution]").TextContent.Should().Be("Blocked", "the backend readiness decides — never inferred here");
-        cut.FindAll("[data-testid=act-summary-blockers] li").Select(l => l.TextContent).Should().Equal("Azure sender identity", "Source contract binding");
+        cut.FindAll("[data-testid=act-summary-blockers] li").Select(l => l.TextContent).Should().Equal("Transport provider", "Source contract binding", "Authorization (ActiveEventExecute)");
         var toggle = cut.Find("[data-testid=act-open]");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
         toggle.TextContent.Should().Be("Open active tests");

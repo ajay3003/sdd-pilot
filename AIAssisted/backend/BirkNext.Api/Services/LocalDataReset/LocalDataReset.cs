@@ -35,7 +35,7 @@ public sealed class LocalDataResetState
     private readonly object _gate = new();
     private Snapshot _state;
 
-    public sealed record Snapshot(int Epoch, DateTimeOffset? LastResetAt, Dictionary<string, int> CdcPersonPkFloors);
+    public sealed record Snapshot(int Epoch, DateTimeOffset? LastResetAt, Dictionary<string, int> CdcPersonPkFloors, Dictionary<string, long>? SyntheticIdentityFloors = null);
 
     public LocalDataResetState(IHostEnvironment environment, IConfiguration configuration)
         : this(configuration["LocalDataReset:StatePath"] is { Length: > 0 } configured ? configured : Path.Combine(environment.ContentRootPath, "App_Data", "local-data-reset.json")) { }
@@ -49,18 +49,23 @@ public sealed class LocalDataResetState
     public int Epoch { get { lock (_gate) return _state.Epoch; } }
     public DateTimeOffset? LastResetAt { get { lock (_gate) return _state.LastResetAt; } }
     public int? CdcPersonPkFloor(string environmentId) { lock (_gate) return _state.CdcPersonPkFloors.TryGetValue(environmentId, out var f) ? f : null; }
+    /// <summary>Highest synthetic identity value already handed out for the environment and scope before the last reset (generic Active Event ledger).</summary>
+    public long? SyntheticIdentityFloor(string environmentId, string scope) { lock (_gate) return _state.SyntheticIdentityFloors?.TryGetValue(IdentityKey(environmentId, scope), out var f) == true ? f : null; }
+    public static string IdentityKey(string environmentId, string scope) => $"{environmentId}|{scope}";
 
     /// <summary>True when a workspace write carries the current epoch. A missing epoch is accepted only before the first reset (older clients).</summary>
     public bool Accepts(int? clientEpoch) => clientEpoch is { } e ? e == Epoch : Epoch == 0;
 
     /// <summary>Advances the epoch and records the CDC key floors. Throws when the file cannot be written (the caller reports it).</summary>
-    public int Advance(DateTimeOffset at, IReadOnlyDictionary<string, int> cdcFloors)
+    public int Advance(DateTimeOffset at, IReadOnlyDictionary<string, int> cdcFloors, IReadOnlyDictionary<string, long>? identityFloors = null)
     {
         lock (_gate)
         {
             var floors = new Dictionary<string, int>(_state.CdcPersonPkFloors, StringComparer.Ordinal);
             foreach (var (env, pk) in cdcFloors) floors[env] = floors.TryGetValue(env, out var old) ? Math.Max(old, pk) : pk;
-            var next = new Snapshot(_state.Epoch + 1, at, floors);
+            var identities = new Dictionary<string, long>(_state.SyntheticIdentityFloors ?? [], StringComparer.Ordinal);
+            foreach (var (key, value) in identityFloors ?? new Dictionary<string, long>()) identities[key] = identities.TryGetValue(key, out var old) ? Math.Max(old, value) : value;
+            var next = new Snapshot(_state.Epoch + 1, at, floors, identities);
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(next, Json));
@@ -72,7 +77,7 @@ public sealed class LocalDataResetState
 
     private static Snapshot? Read(string path)
     {
-        try { return File.Exists(path) ? JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(path), Json) is { } s ? s with { CdcPersonPkFloors = new(s.CdcPersonPkFloors ?? [], StringComparer.Ordinal) } : null : null; }
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(path), Json) is { } s ? s with { CdcPersonPkFloors = new(s.CdcPersonPkFloors ?? [], StringComparer.Ordinal), SyntheticIdentityFloors = new(s.SyntheticIdentityFloors ?? [], StringComparer.Ordinal) } : null : null; }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { return null; }
     }
 }
@@ -127,7 +132,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Sample project catalog files",
         "The HTTPS inspection certificate (Windows user store), local proxy port configuration and capability, browser profiles and the Azure sign-in of this machine",
         "Uploaded or external files outside the database (Source Analysis archives are never stored on disk)",
-        "The highest synthetic CDC key per environment (so test keys are never reused)",
+        "The highest synthetic CDC key per environment and the highest reserved synthetic identity per scope (so test keys are never reused)",
     ];
 
     public async Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default)
@@ -135,17 +140,18 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         if (!await Gate.WaitAsync(0, ct)) return new() { Status = "Blocked", Message = "A local data reset is already in progress." };
         try
         {
-            if (services.GetService<PerformanceTestExecutionService>()?.HasActiveRuns == true || services.GetService<ActiveCdcRunCoordinator>()?.HasRunning == true)
+            if (services.GetService<PerformanceTestExecutionService>()?.HasActiveRuns == true || services.GetService<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunCoordinator>()?.HasRunning == true)
                 return new() { Status = "Blocked", Message = "Reset is blocked while a CDC or performance test is running. Cancel it first." };
 
             var floors = await CdcFloorsAsync(ct);
+            var identityFloors = await SyntheticIdentityFloorsAsync(ct);
             var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync();
             if (!success)
                 return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
 
             var warnings = new List<string>();
             var epoch = state.Epoch;
-            try { epoch = state.Advance(at ?? DateTimeOffset.UtcNow, floors); }
+            try { epoch = state.Advance(at ?? DateTimeOffset.UtcNow, floors, identityFloors); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 logger.LogError(ex, "Local data reset: the reset epoch could not be saved");
@@ -184,6 +190,13 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         return rows.GroupBy(r => r.EnvironmentId, StringComparer.Ordinal)
             .Select(g => (g.Key, Max: g.SelectMany(r => new[] { r.SyntheticPersonPk, r.SyntheticPersonPkControl }).Where(v => v is not null).Select(v => v!.Value).DefaultIfEmpty(0).Max()))
             .Where(x => x.Max > 0).ToDictionary(x => x.Key, x => x.Max, StringComparer.Ordinal);
+    }
+
+    private async Task<Dictionary<string, long>> SyntheticIdentityFloorsAsync(CancellationToken ct)
+    {
+        var rows = await db.ActiveEventSyntheticIdentities.AsNoTracking()
+            .GroupBy(r => new { r.EnvironmentId, r.Scope }).Select(g => new { g.Key.EnvironmentId, g.Key.Scope, Max = g.Max(r => r.Value) }).ToListAsync(ct);
+        return rows.ToDictionary(r => LocalDataResetState.IdentityKey(r.EnvironmentId, r.Scope), r => r.Max, StringComparer.Ordinal);
     }
 
     private async Task Step(List<string> warnings, string what, Func<Task> action)

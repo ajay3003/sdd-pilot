@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
     public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
+    public DbSet<ActiveEventSyntheticIdentityRecord> ActiveEventSyntheticIdentities => Set<ActiveEventSyntheticIdentityRecord>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -811,6 +812,16 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Status).HasMaxLength(40).IsRequired();
             entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.StartedAt });
+        });
+
+        modelBuilder.Entity<ActiveEventSyntheticIdentityRecord>(entity =>
+        {
+            entity.ToTable("active_event_synthetic_identities");
+            entity.HasKey(r => new { r.EnvironmentId, r.Scope, r.Value });
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Scope).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ExtensionId).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => r.RunId);
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

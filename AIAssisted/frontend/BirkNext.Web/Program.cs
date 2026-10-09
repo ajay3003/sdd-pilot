@@ -21,23 +21,31 @@ var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000"
 BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 var backendBase = BackendUrlValidator.BaseAddress(backendUrl);
 
-// Active Event execution is protected by the API's ActiveEventExecute scope. These values are intentionally supplied
-// by deployment configuration; no tenant, client, or API scope is embedded in the application.
-var entraTenantId = builder.Configuration["Authentication:Entra:TenantId"];
-var entraClientId = builder.Configuration["Authentication:Entra:ClientId"];
-var activeEventApiScope = builder.Configuration["Authentication:Entra:ActiveEventApiScope"];
-var entraConfigured = !string.IsNullOrWhiteSpace(entraTenantId)
-    && !string.IsNullOrWhiteSpace(entraClientId)
-    && !string.IsNullOrWhiteSpace(activeEventApiScope);
-if (entraConfigured)
+// Active Event execution (ActiveEventExecute) and integration configuration writes (IntegrationConfiguration.Write) are protected by the
+// BirkNext API. These values are supplied by deployment configuration; no tenant, client, or API scope is embedded in the application and
+// there is no client secret (public SPA client, authorization code flow with PKCE). Without them the app still starts and every review
+// works; real execution shows "Authentication not configured" and stays disabled.
+var entra = BirkNext.Web.Configuration.EntraClientSettings.From(builder.Configuration);
+if (entra.Configured)
 {
     builder.Services.AddMsalAuthentication(options =>
     {
-        options.ProviderOptions.Authentication.Authority = $"https://login.microsoftonline.com/{entraTenantId}";
-        options.ProviderOptions.Authentication.ClientId = entraClientId!;
+        options.ProviderOptions.Authentication.Authority = entra.Authority;
+        options.ProviderOptions.Authentication.ClientId = entra.ClientId;
         options.ProviderOptions.Authentication.ValidateAuthority = true;
-        options.ProviderOptions.DefaultAccessTokenScopes.Add(activeEventApiScope!);
+        if (entra.RedirectUri is { } redirect) options.ProviderOptions.Authentication.RedirectUri = redirect;
+        if (entra.PostLogoutRedirectUri is { } postLogout) options.ProviderOptions.Authentication.PostLogoutRedirectUri = postLogout;
+        foreach (var scope in entra.ApiScopes) options.ProviderOptions.DefaultAccessTokenScopes.Add(scope);
+        options.ProviderOptions.LoginMode = "redirect";
     });
+    builder.Services.AddSingleton(new ActiveEventAuthenticationState(true, "Entra is configured for this deployment."));
+}
+else
+{
+    // The authentication state still exists (anonymous) so components can cascade it; nothing can request a token.
+    builder.Services.AddAuthorizationCore();
+    builder.Services.AddScoped<Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider, BirkNext.Web.Configuration.AnonymousAuthenticationStateProvider>();
+    builder.Services.AddSingleton(ActiveEventAuthenticationState.NotConfigured);
 }
 
 builder.Services
@@ -228,9 +236,12 @@ builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerC
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = backendBase);
 
-// Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
-builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
+// Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it. Reads are
+// open; writes need IntegrationConfiguration.Write, so a token is attached when one can be obtained silently (never a forced sign-in).
+var catalogClient = builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = backendBase);
+if (entra.Configured)
+    catalogClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Project Import: one archive → artifact repository (documents, activated here) + Source Analysis snapshot (created by the backend).
 builder.Services.AddHttpClient<BirkNext.Web.Services.ProjectImport.IProjectImportApiService, BirkNext.Web.Services.ProjectImport.ProjectImportApiService>(client =>
 {
@@ -258,18 +269,11 @@ builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiServi
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
     client.BaseAddress = backendBase);
-// IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.
-if (entraConfigured)
-{
-    builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client => client.BaseAddress = backendBase)
-        .AddHttpMessageHandler(sp => new ActiveEventAuthorizationMessageHandler(
-            sp.GetRequiredService<IAccessTokenProvider>(), sp.GetRequiredService<NavigationManager>(), backendBase.ToString(), activeEventApiScope!));
-}
-else
-{
-    // Readiness/history can still explain the configuration state. Protected execution remains blocked by the API.
-    builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client => client.BaseAddress = backendBase);
-}
+// IQR → Active tests: one shared client for every scenario provider; every gate is the backend's. With Entra configured, protected calls
+// get the access token from the normal authenticated pipeline; readiness metadata stays readable without it.
+var activeEventsClient = builder.Services.AddHttpClient<IActiveEventsApiService, ActiveEventsApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    activeEventsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);

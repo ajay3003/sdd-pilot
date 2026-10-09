@@ -65,3 +65,9 @@ select:focus-visible, input:focus-visible, .act-table:focus-visible, .act-link:f
 .act-toggle { background: none; border: 1px solid var(--clr-border); border-radius: 8px; padding: .3rem .7rem; font: inherit; font-size: .84rem; cursor: pointer; color: var(--clr-link, #2563eb); }
 .act-toggle:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
 .act-runner { margin-top: .5rem; }
+
+.act-group { margin: .5rem 0 0; }
+.act-group-heading { margin: .6rem 0 0; font-size: .82rem; text-transform: uppercase; letter-spacing: .02em; color: var(--clr-text-muted, #4b5563); }
+.act-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0 .75rem; align-items: end; }
+.act-filters label { margin-top: .5rem; font-size: .82rem; }
+.act-filters input { max-width: 100%; width: 100%; box-sizing: border-box; padding: .45rem; margin: .4rem 0; font: inherit; }

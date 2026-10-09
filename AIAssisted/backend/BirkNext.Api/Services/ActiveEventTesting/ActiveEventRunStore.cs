@@ -57,7 +57,7 @@ public sealed class ActiveEventRunStore(IServiceScopeFactory scopes, ILogger<Act
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var record = await db.ActiveEventRuns.AsNoTracking().FirstOrDefaultAsync(item => item.Id == runId, ct);
-        return record is null ? null : JsonSerializer.Deserialize<ActiveEventRunResult>(record.ResultJson, Json);
+        return record is null ? null : Read(record.ResultJson);
     }
 
     public async Task<IReadOnlyList<ActiveEventRunResult>> ListAsync(string environmentId, string? integrationId, int take, CancellationToken ct)
@@ -67,6 +67,10 @@ public sealed class ActiveEventRunStore(IServiceScopeFactory scopes, ILogger<Act
         var query = db.ActiveEventRuns.AsNoTracking().Where(item => item.EnvironmentId == environmentId);
         if (!string.IsNullOrWhiteSpace(integrationId)) query = query.Where(item => item.IntegrationId == integrationId);
         var records = await query.OrderByDescending(item => item.StartedAt).Take(take).ToListAsync(ct);
-        return records.Select(item => JsonSerializer.Deserialize<ActiveEventRunResult>(item.ResultJson, Json)).OfType<ActiveEventRunResult>().ToArray();
+        return records.Select(item => Read(item.ResultJson)).OfType<ActiveEventRunResult>().ToArray();
     }
+
+    /// <summary>Rows written before the stage was renamed (DownstreamPersistenceVerified → DownstreamVerified) keep their meaning.</summary>
+    private static ActiveEventRunResult? Read(string json) =>
+        JsonSerializer.Deserialize<ActiveEventRunResult>(json.Replace("\"DownstreamPersistenceVerified\"", "\"DownstreamVerified\"", StringComparison.Ordinal), Json);
 }
