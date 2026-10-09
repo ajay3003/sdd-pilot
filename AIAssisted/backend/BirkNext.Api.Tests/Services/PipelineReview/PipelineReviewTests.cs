@@ -47,13 +47,12 @@ public sealed class PipelineReviewTests
         evidence.Status.Should().NotBe(SourceDomainStatus.FailedAnalysis);
         evidence.Pipelines.Should().ContainSingle();
         var ci = evidence.Pipelines.Single();
-        ci.JobDetails.Should().ContainSingle(j => j.Name == "QualityGates");
+        // The repository pipeline builds and packages the runnable artifact only (tests run elsewhere since f58dd719);
+        // the self-check asserts what it really defines and that no test or scan step is reported that it does not have.
+        ci.JobDetails.Should().ContainSingle(j => j.Name == "BuildAndPackage");
         ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Build);
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Test || s.Kind == PipelineStepKind.UnitTest);
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.E2ETest);
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.SecurityScan);
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("test-results"));
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("pipeline-diagnostics"));
+        ci.Steps.Should().NotContain(s => s.Kind == PipelineStepKind.Test || s.Kind == PipelineStepKind.UnitTest || s.Kind == PipelineStepKind.E2ETest);
+        ci.Steps.Should().NotContain(s => s.Kind == PipelineStepKind.SecurityScan);
         ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("birknext-tester-package"));
         ci.Triggers.Should().Contain(t => t.Type == "pull-request");
     }
