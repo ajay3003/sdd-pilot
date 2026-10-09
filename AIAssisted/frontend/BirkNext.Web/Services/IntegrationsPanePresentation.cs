@@ -129,7 +129,10 @@ public static class IntegrationsPanePresentation
         if (string.IsNullOrWhiteSpace(definition.EndpointOrTopic)) errors.Add(definition.Kind == IntegrationKind.HttpApi ? "Endpoint is required." : "Event Hub / topic is required.");
         if (definition.ConsumerGroup is { } group && group.Trim().Length == 0) errors.Add("Consumer group cannot be blank; leave it unset if unknown.");
         foreach (var (label, url) in new[] { ("Health URL", definition.HealthUrl), ("Worker URL", definition.WorkerUrl), ("Monitoring URL", definition.MonitoringUrl), ("Runbook URL", definition.RunbookUrl) })
-            if (!string.IsNullOrWhiteSpace(url) && !Uri.TryCreate(url, UriKind.Absolute, out _)) errors.Add($"{label} must be an absolute URL.");
+            if (!string.IsNullOrWhiteSpace(url) && (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+                || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+                || string.IsNullOrWhiteSpace(parsed.Host)))
+                errors.Add($"{label} must be an absolute URL.");
         return errors;
     }
 }

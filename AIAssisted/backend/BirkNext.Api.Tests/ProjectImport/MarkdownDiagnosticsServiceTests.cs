@@ -102,6 +102,37 @@ public sealed class MarkdownDiagnosticsServiceTests
     }
 
     [Fact]
+    public void ExplorerCoverage_DistinguishesArchiveDocumentsFromBuiltInFixtures()
+    {
+        var archivePath = Path.Combine(Path.GetTempPath(), $"coverage-origin-{Guid.NewGuid():N}.zip");
+        try
+        {
+            using (var stream = File.Create(archivePath))
+            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+            {
+                var entry = archive.CreateEntry("specs/001-fixture/tasks.md");
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write("# Tasks\n\n## Phase 1\n\n- [ ] T001 Verify archive ownership\n");
+            }
+
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ProjectCompatibility:AcceptanceArchivePath"] = archivePath
+            }).Build();
+
+            var run = new MarkdownDiagnosticsService(config).RunExplorerCoverage();
+
+            run.Documents.Should().HaveCount(6);
+            run.Documents.Count(document => document.SourceOrigin == "BuiltInFixture").Should().Be(5);
+            run.Documents.Should().ContainSingle(document => document.SourceOrigin == "ConfiguredArchive" && document.DisplayName == "tasks.md");
+        }
+        finally
+        {
+            if (File.Exists(archivePath)) File.Delete(archivePath);
+        }
+    }
+
+    [Fact]
     public void ExplorerCoverage_PreservesUnprojectedCodeAndKeepsProjectedCodeStructured()
     {
         var archivePath = Path.Combine(Path.GetTempPath(), $"coverage-code-{Guid.NewGuid():N}.zip");

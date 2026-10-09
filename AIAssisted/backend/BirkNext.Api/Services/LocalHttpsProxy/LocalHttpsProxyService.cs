@@ -24,6 +24,9 @@ public interface ILocalHttpsProxyService
     /// port. For a browser left over from an earlier runtime, which is running but pointed at a port that is gone.
     /// </summary>
     Task<LocalHttpsProxyStatus> RestartEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Set-Cookie ATTRIBUTES observed on approved hosts in this session (never values). Kept out of the polled status on purpose.</summary>
+    Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest session) =>
+        Task.FromResult<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>>([]);
 }
 
 /// <summary>Lets the execution service resolve the approved host scope of a live session. Throws <see cref="System.Collections.Generic.KeyNotFoundException"/> for a stale or foreign session.</summary>
@@ -144,6 +147,13 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             }
             return Describe(session.Scope, session);
         }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest request)
+    {
+        await _gate.WaitAsync();
+        try { return Get(request).ObservedCookies; }
         finally { _gate.Release(); }
     }
 
@@ -587,6 +597,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         private long _credentialExpiresAtTicks;
         private readonly ObservedEndpointRegistry _endpoints = new();
         private readonly ObservedNetworkRegistry _networkEndpoints = new();
+        private readonly ObservedCookieRegistry _cookies = new();
 
         public string Id { get; } = Guid.NewGuid().ToString("N");
         public LocalHttpsProxyScopeRequest Scope { get; } = scope;
@@ -613,6 +624,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         public IReadOnlyList<ObservedAuthenticatedEndpoint> ObservedEndpoints => _endpoints.Snapshot();
         /// <summary>All page-correlated browser-observed network endpoints for this session. Runtime-only, no credential.</summary>
         public IReadOnlyList<ObservedNetworkEndpoint> ObservedNetworkEndpoints => _networkEndpoints.Snapshot();
+        /// <summary>Cookie attributes (never values) set by approved hosts in this session's observed traffic.</summary>
+        public IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation> ObservedCookies => _cookies.Snapshot();
         public DateTimeOffset? CredentialExpiresAt { get { var ticks = Interlocked.Read(ref _credentialExpiresAtTicks); return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero); } }
 
         public void Attach(LocalHttpsProxyServer server, int port) { Server = server; Port = port; }
@@ -688,6 +701,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             _lastHost = exchange.Host;
             // Page-oriented network discovery records every approved-host exchange (authenticated or not); credential promotion is separate.
             RecordNetworkEndpoint(exchange);
+            if (exchange.Cookies.Count > 0 && Hosts.Contains(exchange.Host, exchange.Port))
+                foreach (var cookie in exchange.Cookies) _cookies.Record(cookie);
             if (exchange.BearerToken is not { } token) return;
             Interlocked.Increment(ref _bearerObserved);
             if (Stopped) return;

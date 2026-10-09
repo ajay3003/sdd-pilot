@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\BirkNext.Web\BirkNext.Web.csproj" />
     <ProjectReference Include="..\..\backend\BirkNext.Api\BirkNext.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\BirkNext.RealProjectAcceptance\BirkNext.RealProjectAcceptance.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RunPreStartedPlaywrightTests)' != 'true'">

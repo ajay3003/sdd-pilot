@@ -1,0 +1,203 @@
+@using BirkNext.RuntimeSecurity
+@* Runtime security expectations of one Target Environment (Security Expectations tab). Every field states which review reads it, so no
+   setting exists without a consumer. Manual only: source discovery never fills these. Never enter passwords, tokens or cookie values. *@
+
+<section class="rse" data-testid="runtime-security-expectations" aria-labelledby="rse-heading">
+    <h4 id="rse-heading">Runtime security expectations</h4>
+    <p class="rse-muted">Expectations for bounded runtime checks. @RuntimeSecurityWording.NotAPenetrationTest Never enter passwords, tokens or cookie values here.</p>
+
+    @if (Editable)
+    {
+        <fieldset class="rse-group" data-testid="rse-docs">
+            <legend>API documentation exposure</legend>
+            <p class="rse-usage" id="rse-docs-usage">Used by: @RuntimeSecuritySettingsUsage.ApiDocumentationExposure</p>
+            <label for="rse-docs-expectation">Expected exposure</label>
+            <select id="rse-docs-expectation" class="form-control" aria-describedby="rse-docs-usage" data-testid="rse-docs-expectation"
+                    value="@Settings.ApiDocumentationExposure" @onchange="e => Settings.ApiDocumentationExposure = Enum.TryParse<ApiDocumentationExposureExpectation>(e.Value?.ToString(), out var v) ? v : ApiDocumentationExposureExpectation.NotSpecified">
+                @foreach (var value in Enum.GetValues<ApiDocumentationExposureExpectation>()) { <option value="@value">@ExposureLabel(value)</option> }
+            </select>
+            <label for="rse-docs-paths">Documentation paths (optional, one per line, same origin as the API)</label>
+            <textarea id="rse-docs-paths" class="form-control" rows="2" data-testid="rse-docs-paths" value="@Lines(Settings.ApiDocumentationPaths)" @onchange="e => Settings.ApiDocumentationPaths = Parse(e.Value)"></textarea>
+        </fieldset>
+
+        <fieldset class="rse-group" data-testid="rse-cors">
+            <legend>CORS</legend>
+            <p class="rse-usage" id="rse-cors-usage">Used by: @RuntimeSecuritySettingsUsage.Cors</p>
+            <label for="rse-cors-origins">Allowed origins (one per line, e.g. https://app.example.test)</label>
+            <textarea id="rse-cors-origins" class="form-control" rows="2" aria-describedby="rse-cors-usage" data-testid="rse-cors-origins" value="@Lines(Settings.Cors.AllowedOrigins)" @onchange="e => Settings.Cors.AllowedOrigins = Parse(e.Value)"></textarea>
+            <label for="rse-cors-credentials">Credentialed cross-origin requests</label>
+            <select id="rse-cors-credentials" class="form-control" data-testid="rse-cors-credentials" value="@CredentialsValue" @onchange="SetCredentials">
+                <option value="">Not specified</option>
+                <option value="true">Expected</option>
+                <option value="false">Not expected</option>
+            </select>
+            <label for="rse-cors-methods">Allowed methods (optional, one per line)</label>
+            <textarea id="rse-cors-methods" class="form-control" rows="2" value="@Lines(Settings.Cors.AllowedMethods)" @onchange="e => Settings.Cors.AllowedMethods = Parse(e.Value)"></textarea>
+            <label for="rse-cors-headers">Allowed request headers (optional, one per line)</label>
+            <textarea id="rse-cors-headers" class="form-control" rows="2" value="@Lines(Settings.Cors.AllowedHeaders)" @onchange="e => Settings.Cors.AllowedHeaders = Parse(e.Value)"></textarea>
+        </fieldset>
+
+        <fieldset class="rse-group" data-testid="rse-cookies">
+            <legend>Cookie security</legend>
+            <p class="rse-usage" id="rse-cookie-usage">Used by: @RuntimeSecuritySettingsUsage.Cookies</p>
+            <label for="rse-cookie-names">Auth/session cookie names (exact, one per line; names only, never values)</label>
+            <textarea id="rse-cookie-names" class="form-control" rows="2" aria-describedby="rse-cookie-usage" data-testid="rse-cookie-names" value="@Lines(Settings.Cookies.AuthCookieNames)" @onchange="e => Settings.Cookies.AuthCookieNames = Parse(e.Value)"></textarea>
+            <div class="rse-checks">
+                <span><input id="rse-cookie-secure" type="checkbox" checked="@Settings.Cookies.RequireSecure" @onchange="e => Settings.Cookies.RequireSecure = e.Value is true" /> <label for="rse-cookie-secure">Require Secure</label></span>
+                <span><input id="rse-cookie-httponly" type="checkbox" checked="@Settings.Cookies.RequireHttpOnly" @onchange="e => Settings.Cookies.RequireHttpOnly = e.Value is true" /> <label for="rse-cookie-httponly">Require HttpOnly</label></span>
+                <span><input id="rse-cookie-persistent" type="checkbox" checked="@Settings.Cookies.AllowPersistentAuthCookies" @onchange="e => Settings.Cookies.AllowPersistentAuthCookies = e.Value is true" /> <label for="rse-cookie-persistent">Allow persistent auth cookies</label></span>
+            </div>
+            <label for="rse-cookie-samesite">Allowed SameSite values (Strict, Lax, None; one per line)</label>
+            <textarea id="rse-cookie-samesite" class="form-control" rows="2" value="@Lines(Settings.Cookies.AllowedSameSite)" @onchange="e => Settings.Cookies.AllowedSameSite = Parse(e.Value)"></textarea>
+            <label for="rse-cookie-domains">Allowed cookie domains (one per line)</label>
+            <textarea id="rse-cookie-domains" class="form-control" rows="2" value="@Lines(Settings.Cookies.AllowedDomains)" @onchange="e => Settings.Cookies.AllowedDomains = Parse(e.Value)"></textarea>
+        </fieldset>
+
+        <fieldset class="rse-group" data-testid="rse-authz">
+            <legend>Authorization scenarios</legend>
+            <p class="rse-usage">Used by: @RuntimeSecuritySettingsUsage.AuthorizationScenarios</p>
+            <p class="rse-muted">Each identity has its own explicit Allow/Deny expectation for the same safe request (REST GET/HEAD or one GraphQL query). Identities: <code>anonymous</code>, <code>proxy-session</code> (the Local HTTPS proxy credential) or a server-registered test identity.</p>
+            @for (var si = 0; si < Settings.AuthorizationScenarios.Count; si++)
+            {
+                var s = Settings.AuthorizationScenarios[si];
+                var sid = $"rse-authz-{si}";
+                <div class="rse-scenario" data-testid="rse-authz-scenario">
+                    <div class="rse-row">
+                        <label for="@($"{sid}-id")">Scenario id</label>
+                        <input id="@($"{sid}-id")" class="form-control" value="@s.ScenarioId" @onchange="e => s.ScenarioId = e.Value?.ToString()?.Trim() ?? string.Empty" />
+                        <label for="@($"{sid}-name")">Name</label>
+                        <input id="@($"{sid}-name")" class="form-control" value="@s.DisplayName" @onchange="e => s.DisplayName = e.Value?.ToString() ?? string.Empty" />
+                        <label for="@($"{sid}-type")">API</label>
+                        <select id="@($"{sid}-type")" class="form-control" value="@s.ApiType" @onchange="e => s.ApiType = Enum.TryParse<AuthorizationScenarioApiType>(e.Value?.ToString(), out var t) ? t : AuthorizationScenarioApiType.Rest">
+                            <option value="Rest">REST</option>
+                            <option value="GraphQl">GraphQL</option>
+                        </select>
+                    </div>
+                    <label for="@($"{sid}-url")">URL (an API target of this environment)</label>
+                    <input id="@($"{sid}-url")" type="url" class="form-control" value="@s.Url" @onchange="e => s.Url = e.Value?.ToString()?.Trim() ?? string.Empty" />
+                    @if (s.ApiType == AuthorizationScenarioApiType.Rest)
+                    {
+                        <label for="@($"{sid}-method")">Method</label>
+                        <select id="@($"{sid}-method")" class="form-control" value="@s.Method" @onchange="e => s.Method = e.Value?.ToString() ?? DefaultRestMethod">
+                            <option value="GET">GET</option>
+                            <option value="HEAD">HEAD</option>
+                        </select>
+                    }
+                    else
+                    {
+                        <label for="@($"{sid}-query")">GraphQL query (no variables, no mutation)</label>
+                        <textarea id="@($"{sid}-query")" class="form-control rse-mono" rows="2" value="@s.GraphQlQuery" @onchange="e => s.GraphQlQuery = e.Value?.ToString()"></textarea>
+                    }
+                    <table class="rse-identities">
+                        <caption class="rse-visually-hidden">Identities of @(string.IsNullOrWhiteSpace(s.ScenarioId) ? "this scenario" : s.ScenarioId)</caption>
+                        <thead><tr><th scope="col">Identity</th><th scope="col">Role label</th><th scope="col">Expected</th><th scope="col">404 means deny</th><th scope="col"><span class="rse-visually-hidden">Remove</span></th></tr></thead>
+                        <tbody>
+                            @for (var ii = 0; ii < s.Identities.Count; ii++)
+                            {
+                                var identity = s.Identities[ii];
+                                var iid = $"{sid}-identity-{ii}";
+                                <tr data-testid="rse-authz-identity">
+                                    <td><label class="rse-visually-hidden" for="@($"{iid}-alias")">Identity alias</label><input id="@($"{iid}-alias")" class="form-control" list="rse-identity-aliases" value="@identity.Alias" @onchange="e => identity.Alias = e.Value?.ToString()?.Trim() ?? string.Empty" /></td>
+                                    <td><label class="rse-visually-hidden" for="@($"{iid}-role")">Role label</label><input id="@($"{iid}-role")" class="form-control" value="@identity.Role" @onchange="e => identity.Role = e.Value?.ToString() ?? string.Empty" /></td>
+                                    <td>
+                                        <select aria-label="Expected result" class="form-control" value="@identity.Expected" @onchange="e => identity.Expected = Enum.TryParse<AuthorizationExpectation>(e.Value?.ToString(), out var x) ? x : AuthorizationExpectation.Deny">
+                                            <option value="Allow">Allow</option>
+                                            <option value="Deny">Deny</option>
+                                        </select>
+                                    </td>
+                                    <td><label class="rse-visually-hidden" for="@($"{iid}-404")">HTTP 404 counts as deny (anti-disclosure)</label><input id="@($"{iid}-404")" type="checkbox" checked="@identity.NotFoundMeansDeny" @onchange="e => identity.NotFoundMeansDeny = e.Value is true" /></td>
+                                    <td><button type="button" class="btn-secondary rse-small" aria-label="@($"Remove identity {identity.Alias}")" @onclick="() => s.Identities.Remove(identity)">Remove</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="rse-actions">
+                        <button type="button" class="btn-secondary rse-small" disabled="@(s.Identities.Count >= AuthorizationScenarioRules.MaxIdentitiesPerScenario)" @onclick="() => s.Identities.Add(new AuthorizationScenarioIdentity())">Add identity</button>
+                        <button type="button" class="btn-secondary rse-small" aria-label="@($"Remove scenario {s.ScenarioId}")" @onclick="() => Settings.AuthorizationScenarios.Remove(s)">Remove scenario</button>
+                    </div>
+                    @if (AuthorizationScenarioRules.Validate(s) is { } problem) { <p class="rse-warning" data-testid="rse-authz-invalid">@problem</p> }
+                </div>
+            }
+            <datalist id="rse-identity-aliases"><option value="anonymous"></option><option value="proxy-session"></option></datalist>
+            <button type="button" class="btn-secondary rse-small" data-testid="rse-authz-add" disabled="@(Settings.AuthorizationScenarios.Count >= AuthorizationScenarioRules.MaxScenarios)" @onclick="AddScenario">Add scenario</button>
+        </fieldset>
+
+        <fieldset class="rse-group" data-testid="rse-bodyfuzz">
+            <legend>Request-body fuzzing opt-ins</legend>
+            <p class="rse-usage">Used by: @RuntimeSecuritySettingsUsage.BodyFuzzOperations</p>
+            <p class="rse-muted">Only operations listed here can receive body cases. Read-only body safe: invalid input changes no state (for example a POST search). State-changing operations are blocked without a registered cleanup strategy. DELETE is never fuzzed.</p>
+            <table class="rse-identities">
+                <caption class="rse-visually-hidden">Body-fuzzing opt-ins</caption>
+                <thead><tr><th scope="col">Method</th><th scope="col">OpenAPI path</th><th scope="col">Policy</th><th scope="col">Cleanup strategy</th><th scope="col"><span class="rse-visually-hidden">Remove</span></th></tr></thead>
+                <tbody>
+                    @for (var oi = 0; oi < Settings.BodyFuzzOperations.Count; oi++)
+                    {
+                        var op = Settings.BodyFuzzOperations[oi];
+                        var oid = $"rse-bodyfuzz-{oi}";
+                        <tr data-testid="rse-bodyfuzz-row">
+                            <td>
+                                <select aria-label="Method" class="form-control" value="@op.Method" @onchange="e => op.Method = e.Value?.ToString() ?? DefaultBodyMethod">
+                                    <option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option>
+                                </select>
+                            </td>
+                            <td><label class="rse-visually-hidden" for="@($"{oid}-path")">OpenAPI path</label><input id="@($"{oid}-path")" class="form-control rse-mono" value="@op.Path" @onchange="e => op.Path = e.Value?.ToString()?.Trim() ?? string.Empty" /></td>
+                            <td>
+                                <select aria-label="Policy" class="form-control" value="@op.Policy" @onchange="e => op.Policy = Enum.TryParse<BodyFuzzingPolicy>(e.Value?.ToString(), out var p) ? p : BodyFuzzingPolicy.Disabled">
+                                    @foreach (var policy in Enum.GetValues<BodyFuzzingPolicy>()) { <option value="@policy">@PolicyLabel(policy)</option> }
+                                </select>
+                            </td>
+                            <td><label class="rse-visually-hidden" for="@($"{oid}-cleanup")">Cleanup strategy id</label><input id="@($"{oid}-cleanup")" class="form-control" value="@op.CleanupStrategyId" @onchange="e => op.CleanupStrategyId = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim()" /></td>
+                            <td><button type="button" class="btn-secondary rse-small" aria-label="@($"Remove opt-in {op.Key}")" @onclick="() => Settings.BodyFuzzOperations.Remove(op)">Remove</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <button type="button" class="btn-secondary rse-small" data-testid="rse-bodyfuzz-add" @onclick="() => Settings.BodyFuzzOperations.Add(new BodyFuzzOperationOptIn())">Add operation</button>
+        </fieldset>
+    }
+    else
+    {
+        <dl class="rse-summary" data-testid="rse-summary">
+            <div><dt>API documentation exposure</dt><dd data-testid="rse-summary-docs">@ExposureLabel(Settings.ApiDocumentationExposure)@(Settings.ApiDocumentationPaths.Count > 0 ? $" · {Settings.ApiDocumentationPaths.Count} path(s)" : "")</dd></div>
+            <div><dt>CORS allowed origins</dt><dd>@(Settings.Cors.AllowedOrigins.Count == 0 ? "Not specified" : string.Join(", ", Settings.Cors.AllowedOrigins))@(Settings.Cors.AllowCredentials is { } c ? (c ? " · credentials expected" : " · credentials not expected") : "")</dd></div>
+            <div><dt>Auth/session cookies</dt><dd>@(Settings.Cookies.AuthCookieNames.Count == 0 ? "None declared (cookies are observations only)" : string.Join(", ", Settings.Cookies.AuthCookieNames))</dd></div>
+            <div><dt>Authorization scenarios</dt><dd data-testid="rse-summary-authz">@Settings.AuthorizationScenarios.Count</dd></div>
+            <div><dt>Body-fuzzing opt-ins</dt><dd data-testid="rse-summary-bodyfuzz">@(Settings.BodyFuzzOperations.Count(o => o.Policy == BodyFuzzingPolicy.ReadOnlyBodySafe)) read-only · @(Settings.BodyFuzzOperations.Count(o => o.Policy == BodyFuzzingPolicy.StateChangingWithCleanup)) state-changing (blocked without cleanup)</dd></div>
+        </dl>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public RuntimeSecurityExpectations Settings { get; set; } = new();
+    [Parameter] public bool Editable { get; set; }
+
+    private const string DefaultRestMethod = "GET";
+    private const string DefaultBodyMethod = "POST";
+    private void SetCredentials(ChangeEventArgs e) => Settings.Cors.AllowCredentials = e.Value?.ToString() switch { "true" => true, "false" => false, _ => null };
+    private string CredentialsValue => Settings.Cors.AllowCredentials switch { true => "true", false => "false", _ => "" };
+    private static string Lines(IEnumerable<string> values) => string.Join("\n", values);
+    private static List<string> Parse(object? value) =>
+        (value?.ToString() ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).Take(50).ToList();
+
+    private void AddScenario() => Settings.AuthorizationScenarios.Add(new AuthorizationScenario
+    {
+        ScenarioId = $"scenario-{Settings.AuthorizationScenarios.Count + 1}",
+        Identities = [new() { Alias = AuthorizationIdentityAliases.ProxySession, Expected = AuthorizationExpectation.Allow }, new() { Alias = AuthorizationIdentityAliases.Anonymous, Expected = AuthorizationExpectation.Deny }],
+    });
+
+    public static string ExposureLabel(ApiDocumentationExposureExpectation value) => value switch
+    {
+        ApiDocumentationExposureExpectation.Allowed => "Allowed (public documentation is fine)",
+        ApiDocumentationExposureExpectation.ExpectedProtected => "Expected protected (401/403 without sign-in)",
+        ApiDocumentationExposureExpectation.ExpectedUnavailable => "Expected unavailable",
+        _ => "Not specified (not probed)",
+    };
+
+    public static string PolicyLabel(BodyFuzzingPolicy value) => value switch
+    {
+        BodyFuzzingPolicy.ReadOnlyBodySafe => "Read-only body safe",
+        BodyFuzzingPolicy.StateChangingWithCleanup => "State-changing (needs cleanup)",
+        BodyFuzzingPolicy.NotAllowed => "Not allowed",
+        _ => "Disabled",
+    };
+}

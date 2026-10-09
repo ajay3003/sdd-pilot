@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Azure.Messaging.EventHubs;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.ActiveCdcTests;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Integrations;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -87,6 +88,15 @@ public sealed class ActiveCdcTests
     }
 
     [Fact]
+    public void Policy_ResolvesOnlyOneExactServerConfiguredTarget_AndFailsClosedOnDuplicates()
+    {
+        var target = new ActiveCdcOptions.TrustedTargetBinding(H.Env, "Development", "https://m2lb-dev.example.test", "M2LB DEV");
+        new ActiveCdcPolicy(H.Enabled() with { TrustedTargets = [target] }).ResolveTrustedTarget(H.Env).Should().Be(target);
+        new ActiveCdcPolicy(H.Enabled() with { TrustedTargets = [target] }).ResolveTrustedTarget("other-env").Should().BeNull();
+        new ActiveCdcPolicy(H.Enabled() with { TrustedTargets = [target, target with { EnvironmentType = "Production" }] }).ResolveTrustedTarget(H.Env).Should().BeNull();
+    }
+
+    [Fact]
     public void Options_HaveNoSecretSetting_AndPersonPkRangeIsRequired()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -133,8 +143,9 @@ public sealed class ActiveCdcTests
         var sender = new AzureEventHubTestSender(h.Azure, h.Producers, Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureEventHubTestSender>.Instance);
         var destination = new ActiveCdcPolicy(H.Enabled()).Approve("Development", H.Fqdn, H.Hub, null).Approved!;
         var (evt, _) = PersonCdcFixtureBuilder.Build(Guid.NewGuid(), 900_000_000, Destination, DateTimeOffset.UtcNow, 8192);
+        var activeEvent = M2lbPersonActiveEventAdapter.ToGenerated(evt);
 
-        (await sender.SendAsync(destination, evt, TimeSpan.FromSeconds(5), default)).State.Should().Be(ActiveCdcEvidenceState.Observed);
+        (await sender.SendAsync(destination, activeEvent, TimeSpan.FromSeconds(5), default)).State.Should().Be(ActiveCdcEvidenceState.Observed);
         h.Producers.Created.Single().Should().Be((H.Fqdn, H.Hub, TimeSpan.FromSeconds(5)));
         var sent = h.Producers.Sent.Single();
         sent.EventBody.ToArray().Should().Equal(evt.Body.ToArray());
@@ -142,17 +153,17 @@ public sealed class ActiveCdcTests
         sent.Properties["BirkNextSynthetic"].Should().Be(true);
         sent.MessageId.Should().Be(evt.RunId.ToString("N"));
 
-        async Task<EventHubTestSendOutcome> With(Exception ex) { h.Producers.Behaviour = (_, _) => throw ex; return await sender.SendAsync(destination, evt, TimeSpan.FromSeconds(5), default); }
+        async Task<EventHubTestSendOutcome> With(Exception ex) { h.Producers.Behaviour = (_, _) => throw ex; return await sender.SendAsync(destination, activeEvent, TimeSpan.FromSeconds(5), default); }
         (await With(new UnauthorizedAccessException(H.Sentinel))).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.NotAuthorized && !o.Ambiguous && o.Detail.Contains("Data Sender"));
         (await With(new EventHubsException(false, H.Hub, H.Sentinel, EventHubsException.FailureReason.ResourceNotFound))).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.Error && !o.Ambiguous);
         (await With(new EventHubsException(true, H.Hub, H.Sentinel, EventHubsException.FailureReason.ServiceTimeout))).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.TimedOut && o.Ambiguous);
         (await With(new InvalidOperationException(H.Sentinel))).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.Error && o.Ambiguous && !o.Detail.Contains(H.Sentinel));
         h.Producers.Behaviour = async (_, ct) => await Task.Delay(TimeSpan.FromSeconds(30), ct);
-        (await sender.SendAsync(destination, evt, TimeSpan.FromMilliseconds(200), default)).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.TimedOut && o.Ambiguous);
+        (await sender.SendAsync(destination, activeEvent, TimeSpan.FromMilliseconds(200), default)).Should().Match<EventHubTestSendOutcome>(o => o.State == ActiveCdcEvidenceState.TimedOut && o.Ambiguous);
         h.Producers.Sent.Should().HaveCount(6, "every call is exactly one attempt — never a retry");
 
         h.Azure.Enabled = false;
-        var disabled = await sender.SendAsync(destination, evt, TimeSpan.FromSeconds(5), default);
+        var disabled = await sender.SendAsync(destination, activeEvent, TimeSpan.FromSeconds(5), default);
         (disabled.State, h.Producers.Sent.Count).Should().Be((ActiveCdcEvidenceState.NotAuthorized, 6), "no identity → no producer and no fallback secret");
     }
 
@@ -208,6 +219,7 @@ public sealed class ActiveCdcTests
     public async Task Run_NonDevQa_IsBlockedInTheBackend_AndNothingIsSent(string? type)
     {
         await using var h = new H();
+        h.Options = h.Options with { TrustedTargets = type is null ? [] : [new(H.Env, type, "https://m2lb-dev.example.test", "Test target")] };
         await h.AddSnapshotAsync();
         var run = await h.Service().StartAsync(H.Request(), type, null);
         run.Status.Should().Be(ActiveCdcRunStatus.Blocked);
@@ -215,6 +227,20 @@ public sealed class ActiveCdcTests
         h.Producers.Created.Should().BeEmpty();
         (await h.Store.GetAsync(run.RunId, default))!.Status.Should().Be(ActiveCdcRunStatus.Blocked, "blocked attempts are part of the history");
         run.WhatWasNotAssessed.Should().ContainSingle(l => l.StartsWith("Nothing was sent"));
+    }
+
+    [Fact]
+    public async Task Run_UsesServerBoundEnvironmentInsteadOfCallerClassificationOrTargetUrl()
+    {
+        await using var h = new H();
+        await h.AddSnapshotAsync();
+
+        var started = await h.Service().StartAsync(H.Request(), "Production", "https://production.example.test/");
+        var completed = await h.CompletedAsync(started);
+
+        completed.EnvironmentType.Should().Be("Development");
+        completed.EnvironmentName.Should().Be("M2LB DEV");
+        completed.Status.Should().Be(ActiveCdcRunStatus.Partial, "the caller cannot override the backend's trusted development binding");
     }
 
     [Fact]

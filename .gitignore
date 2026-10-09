@@ -73,6 +73,9 @@ blob-report/
 **/playwright-report/
 **/blob-report/
 
+# Real Project Acceptance run output (reports, screenshots, exports of external datasets)
+AIAssisted/artifacts/real-project-acceptance/
+
 # Playwright screenshots/videos/traces if generated
 test-results/
 **/test-results/

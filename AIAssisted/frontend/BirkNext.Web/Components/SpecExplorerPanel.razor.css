@@ -186,7 +186,7 @@
 }
 
 .se-view-btn:hover { color: var(--clr-text-primary); background: rgba(255,255,255,0.05); }
-.se-view-btn.is-active { background: rgba(99, 102, 241, 0.2); color: rgba(129, 140, 248, 1); font-weight: 600; }
+.se-view-btn.is-active { background: rgba(99, 102, 241, 0.2); color: var(--clr-primary-dark, #1d4ed8); font-weight: 600; }
 
 .se-reset-btn {
     background: transparent;
@@ -435,7 +435,7 @@
 .se-mc-us { background: var(--clr-accent-bg, #ede9fe); color: var(--clr-accent, #7c3aed); }
 .se-mc-test { background: var(--clr-badge-test-bg, #dcfce7); color: var(--clr-badge-test-text, #15803d); }
 .se-mc-clr { background: var(--clr-badge-clr-bg, #fef3c7); color: var(--clr-badge-clr-text, #92400e); }
-.se-mc-sc { background: var(--clr-danger-bg-light, #fff1f2); color: var(--clr-danger, #dc2626); }
+.se-mc-sc { background: var(--clr-danger-bg-light, #fff1f2); color: var(--clr-danger-strong, #b91c1c); }
 .se-mc-decision { background: var(--clr-review-new-bg, #f1f5f9); color: var(--clr-text-muted, #475569); }
 
 /* ── Candidate extraction count strip ───────────────────────────────────── */
@@ -826,16 +826,16 @@
     white-space: nowrap;
 }
 
-.se-sem-clarifications  { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
-.se-sem-edgecases       { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
-.se-sem-assumptions     { background: rgba(100, 116, 139, 0.12); color: #94a3b8; }
-.se-sem-apisurface      { background: rgba(251, 191,  36, 0.12); color: #fcd34d; }
-.se-sem-observability   { background: rgba(45,  212, 191, 0.12); color: #5eead4; }
-.se-sem-security        { background: rgba(248, 113, 113, 0.12); color: #fca5a5; }
-.se-sem-performance     { background: rgba(96,  165, 250, 0.12); color: #93c5fd; }
-.se-sem-acceptancescenarios { background: rgba(52, 211, 153, 0.12); color: #6ee7b7; }
-.se-sem-requirementssection { background: rgba(96, 165, 250, 0.12); color: #93c5fd; }
-.se-sem-successcriteriasection { background: rgba(244, 114, 182, 0.12); color: #f9a8d4; }
+.se-sem-clarifications  { background: rgba(251, 191,  36, 0.12); color: #92400e; }
+.se-sem-edgecases       { background: rgba(248, 113, 113, 0.12); color: #b91c1c; }
+.se-sem-assumptions     { background: rgba(100, 116, 139, 0.12); color: #475569; }
+.se-sem-apisurface      { background: rgba(251, 191,  36, 0.12); color: #92400e; }
+.se-sem-observability   { background: rgba(45,  212, 191, 0.12); color: #0f766e; }
+.se-sem-security        { background: rgba(248, 113, 113, 0.12); color: #b91c1c; }
+.se-sem-performance     { background: rgba(96,  165, 250, 0.12); color: #1d4ed8; }
+.se-sem-acceptancescenarios { background: rgba(52, 211, 153, 0.12); color: #047857; }
+.se-sem-requirementssection { background: rgba(96, 165, 250, 0.12); color: #1d4ed8; }
+.se-sem-successcriteriasection { background: rgba(244, 114, 182, 0.12); color: #be185d; }
 
 /* ── Type badges (leaf nodes without spec-id) ────────────────────────────── */
 

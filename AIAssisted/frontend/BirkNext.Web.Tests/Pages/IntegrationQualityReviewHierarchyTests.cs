@@ -38,6 +38,13 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
         });
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
         var activeTests = new Mock<IActiveCdcTestsApiService>();
+        activeTests.Setup(a => a.ScenariosAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ActiveEventScenarioDescriptor[]
+            {
+                new() { ExtensionId = "m2lb.person", ScenarioId = "person.normal.create", DisplayName = "Normal Person", RequiredTransportType = "EventHub", ExpectedEventCount = 1 },
+                new() { ExtensionId = "m2lb.person", ScenarioId = "person.same-personpk-replay", DisplayName = "Same PersonPK replay", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ExactReplay, ExpectedEventCount = 3 },
+                new() { ExtensionId = "m2lb.person", ScenarioId = "person.invalid-then-valid", DisplayName = "Invalid Person → valid Person", RequiredTransportType = "EventHub", ReplayKind = ActiveEventReplayKind.ControlAfterInvalid, ExpectedEventCount = 2 },
+            });
         activeTests.Setup(a => a.ReadinessAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ActiveCdcReadiness
             {

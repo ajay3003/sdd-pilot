@@ -38,6 +38,89 @@ public class ApiQualityController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Safe fuzzing eligibility and case preview for the selected targets. The backend decides environment safety, derives cases from the
+    /// published contract and sends no fuzz request. Production and unknown environments return a plan blocked by safety policy.
+    /// </summary>
+    [HttpPost("fuzzing/plan")]
+    public async Task<IActionResult> FuzzingPlan([FromBody] BirkNext.ApiReview.ApiFuzzingRunRequest request, [FromServices] BirkNext.Api.Services.ApiQuality.Fuzzing.IApiFuzzingService fuzzing, CancellationToken ct)
+    {
+        if (request.Review.Targets.Count(t => t.Selected) == 0)
+            return BadRequest(new { message = "No REST or GraphQL API target is selected." });
+        Response.Headers.CacheControl = "no-store";
+        try { return Ok(await fuzzing.PlanAsync(request, ct)); }
+        catch (OperationCanceledException) { return StatusCode(499); }
+    }
+
+    /// <summary>Starts a bounded safe-fuzzing run in the background (one at a time). Poll <c>fuzzing/runs/{id}</c>; cancel with <c>fuzzing/runs/{id}/cancel</c>.</summary>
+    [HttpPost("fuzzing/runs")]
+    public IActionResult StartFuzzing([FromBody] BirkNext.ApiReview.ApiFuzzingRunRequest request, [FromServices] BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator runs,
+        [FromServices] BirkNext.Api.Services.ApiQuality.IApiEnvironmentSafetyPolicy safety,
+        [FromServices] Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions> securityOptions)
+    {
+        if (request.Review.Targets.Count(t => t.Selected) == 0)
+            return BadRequest(new { message = "No REST or GraphQL API target is selected." });
+        if (request.Settings.BodyFuzzing && ProtectedExecutionRefusal(securityOptions.Value) is { } refusal) return refusal;
+        // The run would refuse anyway; refusing here keeps a blocked environment from ever reaching the run coordinator.
+        var decision = safety.EvaluateForFuzzing(request.Review);
+        if (!decision.ActiveTestingAllowed)
+            return UnprocessableEntity(new { message = $"Blocked by safety policy: {decision.Reason}", safety = decision });
+        try { return Accepted(runs.Start(request, decision)); }
+        catch (BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunConflictException ex) { return Conflict(new { message = ex.Message }); }
+    }
+
+    [HttpGet("fuzzing/runs/{runId}")]
+    public IActionResult FuzzingRun(string runId, [FromServices] BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator runs)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return runs.Get(runId) is { } report ? Ok(report) : NotFound(new { message = "Unknown fuzzing run." });
+    }
+
+    [HttpPost("fuzzing/runs/{runId}/cancel")]
+    public IActionResult CancelFuzzing(string runId, [FromServices] BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator runs) =>
+        runs.Cancel(runId) is { } report ? Ok(report) : NotFound(new { message = "Unknown fuzzing run." });
+
+    /// <summary>
+    /// Whether protected security execution is available and whether the Target Environment is server-registered for authorization
+    /// scenarios and body fuzzing. No request is sent to any target.
+    /// </summary>
+    [HttpGet("security-execution")]
+    public IActionResult SecurityExecution([FromQuery] string? profileId, [FromServices] Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions> options,
+        [FromServices] BirkNext.Api.Services.ApiQuality.Security.ITrustedSecurityTargetRegistry trust)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return Ok(ExecutionStatus(options.Value, trust.Resolve(profileId, [])));
+    }
+
+    /// <summary>
+    /// Runs explicit authorization scenarios (safe requests only) for a server-registered trusted non-production Target Environment.
+    /// Each identity is compared with its own expectation; credentials are never accepted from or returned to the client.
+    /// </summary>
+    [HttpPost("authorization/runs")]
+    public async Task<IActionResult> RunAuthorization([FromBody] BirkNext.RuntimeSecurity.AuthorizationRunRequest request,
+        [FromServices] BirkNext.Api.Services.ApiQuality.Security.IAuthorizationScenarioService authorization,
+        [FromServices] Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions> options, CancellationToken ct)
+    {
+        if (ProtectedExecutionRefusal(options.Value) is { } refusal) return refusal;
+        Response.Headers.CacheControl = "no-store";
+        try { return Ok(await authorization.RunAsync(request, ct)); }
+        catch (OperationCanceledException) { return StatusCode(499); }
+    }
+
+    private static BirkNext.RuntimeSecurity.SecurityExecutionStatus ExecutionStatus(BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions options, BirkNext.RuntimeSecurity.TrustedTargetDecision trust) => new()
+    {
+        RequireAuthenticatedUser = options.RequireAuthenticatedUser,
+        // No user authentication scheme is configured on this instance; when one is required, protected execution fails closed.
+        UserAuthenticationAvailable = false,
+        Message = options.RequireAuthenticatedUser ? BirkNext.RuntimeSecurity.SecurityExecutionStatus.AuthenticationRequiredMessage : null,
+        Trust = trust,
+    };
+
+    private ObjectResult? ProtectedExecutionRefusal(BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions options) =>
+        options.RequireAuthenticatedUser
+            ? StatusCode(503, new { message = BirkNext.RuntimeSecurity.SecurityExecutionStatus.AuthenticationRequiredMessage })
+            : null;
+
     [HttpPost("analyze")]
     public async Task<IActionResult> Analyze([FromBody] ApiQualityReviewRequest request, CancellationToken ct)
     {

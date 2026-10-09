@@ -158,7 +158,8 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
                 var file = read.Workspace.DocumentFiles.First(d => NormalizePath(d.Path).Equals(NormalizePath(candidate.RelativePath), StringComparison.OrdinalIgnoreCase));
                 var role = candidate.Role switch { WorkspaceArtifactType.DataModel => "Data Model", _ => candidate.Role!.Value.ToString() };
                 if (role is "Specification" or "Constitution" or "Plan" or "Tasks" or "Data Model")
-                    docs.Add(AnalyzeCoverage(role, System.IO.Path.GetFileName(candidate.RelativePath), file.Content, includePreview: false));
+                    docs.Add(AnalyzeCoverage(role, System.IO.Path.GetFileName(candidate.RelativePath), file.Content,
+                        includePreview: false, sourceOrigin: "ConfiguredArchive"));
             }
             var capped = candidates.Count > maxCandidates;
             var missing = docs.Sum(d => d.MissingCount);
@@ -171,7 +172,8 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
 
     private static string NormalizePath(string path) => path.Replace('\\', '/').TrimStart('/');
 
-    private static ExplorerCoverageDocument AnalyzeCoverage(string role, string displayName, string text, bool includePreview = true)
+    private static ExplorerCoverageDocument AnalyzeCoverage(string role, string displayName, string text, bool includePreview = true,
+        string sourceOrigin = "BuiltInFixture")
     {
         var parsed = ParseWithProductionExplorer(role, text);
         var projections = CollectProjectionProvenance(parsed);
@@ -230,7 +232,7 @@ public sealed class MarkdownDiagnosticsService(IConfiguration configuration)
             b.RenderEvidence == CoverageEvidenceStatus.NotVerified);
         return new(role, displayName, blocks.Count, direct, structural, ignored, unsupported, missing,
             missing > 0 ? DiagnosticStatus.Fail : unsupported > 0 || renderUnverified ? DiagnosticStatus.Partial : DiagnosticStatus.Pass,
-            blocks, ExpectedDocumentId: artifactFingerprint);
+            blocks, ExpectedDocumentId: artifactFingerprint, SourceOrigin: sourceOrigin);
     }
 
     private static object ParseWithProductionExplorer(string role, string text) => role switch

@@ -97,6 +97,9 @@ public class ApprovedSecurityExpectations
     [JsonPropertyName("allowedCdnHosts")] public List<string> AllowedCdnHosts { get; set; } = [];
     [JsonPropertyName("expectedSecurityHeaders")] public List<string> ExpectedSecurityHeaders { get; set; } = [.. DefaultHeaders];
     [JsonPropertyName("origins")] public List<SecurityExpectationProvenance> Origins { get; set; } = [];
+    /// <summary>Runtime security expectations (documentation exposure, CORS, cookies, authorization scenarios, body-fuzz opt-ins). Manual only:
+    /// source discovery never fills these.</summary>
+    [JsonPropertyName("runtimeSecurity")] public BirkNext.RuntimeSecurity.RuntimeSecurityExpectations RuntimeSecurity { get; set; } = new();
     public static readonly string[] DefaultHeaders = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "Strict-Transport-Security"];
 }
 
@@ -105,6 +108,27 @@ public sealed record SecurityDiscoveryRequest(Guid SourceSnapshotId, ApprovedSec
 public sealed record SecurityCandidateReviewRequest(Guid DiscoveryId, string CandidateId, int Revision, ApprovedSecurityExpectations Approved, bool Replace = false, string? Scope = null);
 public sealed record SecurityCandidateReviewResponse(SecurityExpectationDiscoveryResult Discovery, ApprovedSecurityExpectations Approved);
 public sealed record SecurityCandidateDecision(string CandidateId, SecurityCandidateState State, DateTimeOffset At);
+
+/// <summary>
+/// Which BirkNext reviews read each approved expectation at runtime — so a saved value is never presented as enforcement it does not get.
+/// Every field is also compared with source evidence by the Security Configuration Review.
+/// </summary>
+public static class SecurityExpectationUsage
+{
+    public const string ConfigurationReviewOnly = "Configuration Review only — not used by runtime reviews";
+
+    public static string Consumers(SecurityExpectationField field) => field switch
+    {
+        SecurityExpectationField.Authority => "FQR Static Security (MSAL authority in deployed configuration) · Configuration Review",
+        SecurityExpectationField.BackendDomain => "FQR Static Security (direct backend exposure) · Configuration Review",
+        SecurityExpectationField.CdnHost => "FQR Static Security (known safe hosts) · Configuration Review",
+        SecurityExpectationField.RestHost or SecurityExpectationField.GraphQlHost => "Local HTTPS proxy scope (which hosts may carry the test credential) · Configuration Review",
+        SecurityExpectationField.SecurityHeader => "FQR Static Security (frontend document) and API Quality Review (transport headers on API responses) — presence only · Configuration Review",
+        _ => ConfigurationReviewOnly,
+    };
+
+    public static bool RuntimeConsumed(SecurityExpectationField field) => Consumers(field) != ConfigurationReviewOnly;
+}
 
 /// <summary>Conservative comparison and approval projection shared by API and UI; no network or inference.</summary>
 public static class SecurityExpectationValues
@@ -211,7 +235,7 @@ public static class SecurityExpectationValues
         ExpectedAuthority = s.ExpectedAuthority, ExpectedTenant = s.ExpectedTenant, ExpectedClientId = s.ExpectedClientId,
         AllowedRedirectUrls = [.. s.AllowedRedirectUrls], AllowedBackendDomains = [.. s.AllowedBackendDomains], AllowedRestHosts = [.. s.AllowedRestHosts],
         AllowedGraphQlHosts = [.. s.AllowedGraphQlHosts], AllowedCdnHosts = [.. s.AllowedCdnHosts], ExpectedSecurityHeaders = [.. s.ExpectedSecurityHeaders], Origins = [.. s.Origins],
-        ScopedClientIds = [.. s.ScopedClientIds] };
+        ScopedClientIds = [.. s.ScopedClientIds], RuntimeSecurity = (s.RuntimeSecurity ?? new()).Copy() };
     /// <summary>Approves a Client/Application ID for one component scope; other scopes and the legacy project-wide value are unchanged.</summary>
     public static ApprovedSecurityExpectations AcceptScoped(ApprovedSecurityExpectations current, SecurityExpectationCandidate candidate, string scope, string fingerprint, DateTimeOffset at)
     {

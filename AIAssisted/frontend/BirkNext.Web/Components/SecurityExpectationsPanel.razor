@@ -58,13 +58,14 @@
             var fieldId = $"sec-field-{field}";
             <div class="sec-field" id="@fieldId" data-testid="@fieldId">
                 <label for="@($"{fieldId}-input")">@SecurityExpectationValues.Label(field)</label>
+                <p class="scr-muted sec-field-usage" id="@($"{fieldId}-usage")" data-testid="@($"{fieldId}-usage")" data-runtime="@(SecurityExpectationUsage.RuntimeConsumed(field) ? "true" : "false")">Used by: @SecurityExpectationUsage.Consumers(field)</p>
                 @if (SecurityExpectationValues.Singleton(field))
                 {
-                    <input id="@($"{fieldId}-input")" type="@(field == SecurityExpectationField.Authority ? "url" : "text")" class="form-control" value="@string.Join("", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())" />
+                    <input id="@($"{fieldId}-input")" aria-describedby="@($"{fieldId}-usage")" type="@(field == SecurityExpectationField.Authority ? "url" : "text")" class="form-control" value="@string.Join("", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())" />
                 }
                 else
                 {
-                    <textarea id="@($"{fieldId}-input")" class="form-control" rows="3" value="@string.Join("\n", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())"></textarea>
+                    <textarea id="@($"{fieldId}-input")" aria-describedby="@($"{fieldId}-usage")" class="form-control" rows="3" value="@string.Join("\n", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())"></textarea>
                 }
                 @if (field == SecurityExpectationField.ClientId && Settings.ScopedClientIds.Count > 0)
                 {
@@ -263,6 +264,8 @@
             @if (_history.Count > 1) { <p>@_history.Count recent reviews are kept separately from approved settings.</p> }
         </ReviewDisclosure>
     }
+    <RuntimeSecurityExpectationsEditor Settings="@(Settings.RuntimeSecurity ??= new())" Editable="Editable" />
+
     @if (!Editable)
     {
         <ReviewDisclosure Text="Defaults" TestId="sec-defaults">

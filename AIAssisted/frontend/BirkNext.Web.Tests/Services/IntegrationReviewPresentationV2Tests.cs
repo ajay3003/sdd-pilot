@@ -33,10 +33,22 @@ public sealed class IntegrationReviewPresentationV2Tests
         IntegrationsPanePresentation.Validate(definition).Should().Contain(e => e.StartsWith(message));
     }
 
-    [Fact]
-    public void ValidationRejectsRelativeUrls()
+    [Theory]
+    [InlineData("/health")]
+    [InlineData("file:///health")]
+    [InlineData("mailto:ops@example.test")]
+    public void ValidationRejectsRelativeAndNonHttpUrls(string healthUrl)
     {
-        IntegrationsPanePresentation.Validate(M2lbFixture.Topic("Person") with { HealthUrl = "/health" }).Should().Contain("Health URL must be an absolute URL.");
+        IntegrationsPanePresentation.Validate(M2lbFixture.Topic("Person") with { HealthUrl = healthUrl }).Should().Contain("Health URL must be an absolute URL.");
+    }
+
+    [Theory]
+    [InlineData("http://localhost:8080/health")]
+    [InlineData("https://service.example.test/health")]
+    public void ValidationAcceptsAbsoluteHttpHealthUrls(string healthUrl)
+    {
+        IntegrationsPanePresentation.Validate(M2lbFixture.Topic("Person") with { HealthUrl = healthUrl })
+            .Should().NotContain("Health URL must be an absolute URL.");
     }
 
     [Fact]

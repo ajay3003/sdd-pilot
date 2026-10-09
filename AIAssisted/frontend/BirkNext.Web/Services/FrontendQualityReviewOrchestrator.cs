@@ -786,7 +786,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore, Findings = report.Findings,
         LogicalIssues = issues, ManualReviewItems = manualItems,
         CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
-        Limitations = report.Limitations, IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+        Limitations = report.Limitations, IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
         Coverage = coverage, ReleaseDisposition = disposition, EngineOutcomes = outcomes,
         PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred, TargetAccess = access ?? report.TargetAccess,
@@ -827,7 +827,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             LogicalIssues = report.LogicalIssues, ManualReviewItems = report.ManualReviewItems,
             CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(performance.Limitations).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm || performance.Pages.Any(p => p.Blazor is { Detected: true }), ErrorMessage = report.ErrorMessage,
+            IsBlazorWasm = report.IsBlazorWasm || performance.Pages.Any(p => p.Blazor is { Detected: true }), ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
             Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes,
             Completeness = report.Completeness,
             AssessedEngines = performance.Assessed ? report.AssessedEngines.Append("BirkNext Performance Quality").Distinct().ToList() : report.AssessedEngines,
@@ -891,7 +891,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             Findings = report.Findings.Concat(findings).ToList(), CategoryScores = report.CategoryScores,
             Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(FrontendQualityAuthenticatedApiSurfaceFindings.Limitations(surface)).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
             PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
             RedirectOccurred = report.RedirectOccurred, AssessedEngines = report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
@@ -918,7 +918,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             Findings = report.Findings.Concat(runtimeFindings).ToList(), CategoryScores = report.CategoryScores,
             Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(sanitizedRuntime.Limitations ?? []).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
             PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
             RedirectOccurred = report.RedirectOccurred, AssessedEngines = report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
@@ -968,7 +968,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             Findings = report.Findings.Where(f => f.Category != FrontendQualityCategory.Accessibility).Concat(accessibilityFindings).ToList(),
             CategoryScores = scores, Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(accessibility.Limitations ?? []).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm, Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition,
+            IsBlazorWasm = report.IsBlazorWasm, CookieSecurity = report.CookieSecurity, Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition,
             EngineOutcomes = report.EngineOutcomes, Completeness = report.Completeness,
             AssessedEngines = assessed ? report.AssessedEngines.Append("Accessibility").Distinct().ToList() : report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
@@ -1000,7 +1000,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             LogicalIssues = report.LogicalIssues, ManualReviewItems = report.ManualReviewItems,
             CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(browserQuality.Limitations).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
             Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes,
             Completeness = report.Completeness,
             AssessedEngines = report.AssessedEngines.Append("Browser Quality").Distinct().ToList(),
@@ -1036,7 +1036,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             Findings = report.Findings.Concat(findings).ToList(), CategoryScores = report.CategoryScores,
             Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(lighthouse.Limitations ?? []).Distinct().ToList(),
-            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, Coverage = report.Coverage,
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity, Coverage = report.Coverage,
             ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes, Completeness = report.Completeness,
             PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
             RedirectOccurred = report.RedirectOccurred,
@@ -1068,7 +1068,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             SecurityScore=report.SecurityScore, AccessibilityScore=report.AccessibilityScore, StandardsScore=report.StandardsScore,
             WasmScore=report.WasmScore, ReadinessScore=report.ReadinessScore, Findings=report.Findings.Concat(findings).ToList(),
             CategoryScores=report.CategoryScores, Recommendations=report.Recommendations, Risks=report.Risks,
-            Limitations=report.Limitations.Concat(passive.Limitations ?? []).Distinct().ToList(), IsBlazorWasm=report.IsBlazorWasm,
+            Limitations=report.Limitations.Concat(passive.Limitations ?? []).Distinct().ToList(), IsBlazorWasm=report.IsBlazorWasm, CookieSecurity=report.CookieSecurity,
             ErrorMessage=report.ErrorMessage, Coverage=report.Coverage, ReleaseDisposition=report.ReleaseDisposition,
             EngineOutcomes=report.EngineOutcomes, Completeness=report.Completeness, PreflightStatus=report.PreflightStatus,
             PreflightMessage=report.PreflightMessage, RedirectOccurred=report.RedirectOccurred,
@@ -1140,9 +1140,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
 
         try
         {
-            // 5-second timeout for readiness check
+            // Bounded readiness revalidation: 5 s, except Passive Security whose readiness starts the ZAP container (JVM) on the server
+            // (server budget 75 s). With 5 s a working ZAP installation always timed out and was skipped as unavailable.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            cts.CancelAfter(engineId == FrontendQualityEngineIdDto.PassiveSecurity ? TimeSpan.FromSeconds(80) : TimeSpan.FromSeconds(5));
 
             var readiness = await _engineStatusService.RevalidateEngineReadinessAsync(engineId, cts.Token);
 
@@ -1184,7 +1185,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             AllowedBackendHostnames = allowedHosts,
             AllowedAuthority = ctx.SecuritySettings.ExpectedAuthority,
             AllowedClientIds = clientIds,
-            KnownSafeDomains = knownSafe
+            KnownSafeDomains = knownSafe,
+            // Static Security evaluates exactly the headers this Target Environment expects (presence only).
+            ExpectedSecurityHeaders = [.. ctx.SecuritySettings.ExpectedSecurityHeaders],
+            CookieExpectations = ctx.SecuritySettings.RuntimeSecurity?.Cookies,
         };
     }
 }

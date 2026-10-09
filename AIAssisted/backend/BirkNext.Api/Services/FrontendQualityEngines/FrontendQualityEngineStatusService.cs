@@ -5,6 +5,7 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
     private readonly IFrontendQualityEngineReadinessAggregator _readinessAggregator;
     private readonly FrontendQualityEngineLegacyConfigInterpreter _legacyInterpreter;
     private readonly ILogger<FrontendQualityEngineStatusService> _logger;
+    private readonly FrontendPassiveSecurity.PassiveSecurityTargetAuthorizer? _passiveSecurityAuthorizer;
 
     private static readonly FrontendQualityEngineId[] AllEngines = [
         FrontendQualityEngineId.BrowserRuntime,
@@ -24,8 +25,10 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
     public FrontendQualityEngineStatusService(
         IFrontendQualityEngineReadinessAggregator readinessAggregator,
         FrontendQualityEngineLegacyConfigInterpreter legacyInterpreter,
-        ILogger<FrontendQualityEngineStatusService> logger)
+        ILogger<FrontendQualityEngineStatusService> logger,
+        FrontendPassiveSecurity.PassiveSecurityTargetAuthorizer? passiveSecurityAuthorizer = null)
     {
+        _passiveSecurityAuthorizer = passiveSecurityAuthorizer;
         _readinessAggregator = readinessAggregator;
         _legacyInterpreter = legacyInterpreter;
         _logger = logger;
@@ -99,7 +102,19 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
         if (!authSupported)
             reasons.Add(FrontendQualityEngineUnavailableReason.AuthenticationModeUnsupported);
 
-        var available = layer1Allowed && layer2Enabled && layer3Available && authSupported;
+        // Passive Security only scans a server-registered trusted profile. Without one, every run is skipped, so the engine is not
+        // available for this target — whatever the runtime readiness says.
+        var targetTrusted = true;
+        if (engineId == FrontendQualityEngineId.PassiveSecurity && query.Selection?.Target is { } target && _passiveSecurityAuthorizer is not null)
+        {
+            var authorization = _passiveSecurityAuthorizer.Authorize(new FrontendPassiveSecurity.PassiveSecurityReviewRequest(
+                target.TargetUrl, target.ProfileId, target.TargetUrl, target.EnvironmentType ?? ""));
+            targetTrusted = authorization.IsValid;
+            if (!targetTrusted)
+                reasons.Add(FrontendQualityEngineUnavailableReason.TargetNotTrusted);
+        }
+
+        var available = layer1Allowed && layer2Enabled && layer3Available && authSupported && targetTrusted;
 
         bool? selected = null;
         if (query.Selection?.Selected.TryGetValue(engineId, out var selectedValue) == true)

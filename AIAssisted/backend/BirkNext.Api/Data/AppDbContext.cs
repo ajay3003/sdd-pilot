@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
+    public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -32,6 +33,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
+    public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
     public DbSet<PerformanceTestDefinitionRecord> PerformanceTestDefinitions => Set<PerformanceTestDefinitionRecord>();
     public DbSet<PerformanceTestRunRecord> PerformanceTestRuns => Set<PerformanceTestRunRecord>();
     public DbSet<PerformanceBaselineRecord> PerformanceBaselines => Set<PerformanceBaselineRecord>();
@@ -744,6 +746,19 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => r.EnvironmentId).HasDatabaseName("ix_performance_test_data_profiles_environment");
         });
 
+        modelBuilder.Entity<AiCodeReviewRunRecord>(entity =>
+        {
+            entity.ToTable("ai_code_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.CurrentSnapshotId).HasColumnName("current_snapshot_id");
+            entity.Property(r => r.BaselineSnapshotId).HasColumnName("baseline_snapshot_id");
+            entity.Property(r => r.Label).HasColumnName("label").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_ai_code_review_runs_completed");
+        });
+
         modelBuilder.Entity<DependencyReviewRunRecord>(entity =>
         {
             entity.ToTable("dependency_review_runs");
@@ -799,6 +814,17 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.StartedAt });
             entity.HasIndex(r => new { r.EnvironmentId, r.SyntheticPersonPk }).IsUnique();
             entity.HasIndex(r => new { r.EnvironmentId, r.SyntheticPersonPkControl }).IsUnique();
+        });
+
+        modelBuilder.Entity<ActiveEventRunRecord>(entity =>
+        {
+            entity.ToTable("active_event_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.IntegrationId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Status).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.StartedAt });
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

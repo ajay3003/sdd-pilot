@@ -25,6 +25,10 @@ public sealed class LocalHttpsProxyController(ILocalHttpsProxyService proxy, IAu
     [HttpPost("status")]
     public Task<IActionResult> Status(LocalHttpsProxySessionRequest request) => Run(async () => Ok(await proxy.StatusAsync(request)));
 
+    /// <summary>Cookie attributes (name, Secure, HttpOnly, SameSite, Domain, Path, persistence) observed in this session. Never a cookie value.</summary>
+    [HttpPost("observed-cookie-attributes")]
+    public Task<IActionResult> ObservedCookieAttributes(LocalHttpsProxySessionRequest request) => Run(async () => Ok(await proxy.ObservedCookieAttributesAsync(request)));
+
     [HttpPost("stop")]
     public Task<IActionResult> Stop(LocalHttpsProxySessionRequest request) => Run(async () => Ok(await proxy.StopAsync(request)));
 

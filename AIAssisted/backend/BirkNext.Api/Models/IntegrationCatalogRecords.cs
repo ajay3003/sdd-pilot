@@ -127,3 +127,14 @@ public class IntegrationMessageFlowRecord
     public string DocumentJson { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>A stored AI-Generated Code Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
+public class AiCodeReviewRunRecord
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CompletedAt { get; set; }
+    public Guid CurrentSnapshotId { get; set; }
+    public Guid? BaselineSnapshotId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string ResultJson { get; set; } = string.Empty;
+}

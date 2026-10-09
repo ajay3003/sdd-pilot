@@ -9,6 +9,13 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
 
     public FrontendQualityEngineId EngineId => FrontendQualityEngineId.PassiveSecurity;
 
+    /// <summary>
+    /// Readiness includes a real <c>zap.sh -version</c> container start (JVM), after the runtime and image checks (15 s + 15 s + 30 s
+    /// budgets in the service). The previous 5 s budget timed out before the JVM started, so a working installation reported
+    /// "status unknown". Bounded, never infinite.
+    /// </summary>
+    public static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(75);
+
     public PassiveSecurityReadinessProvider(
         IFrontendZapPassiveReviewService service,
         ILogger<PassiveSecurityReadinessProvider> logger)
@@ -21,7 +28,7 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
     {
         try
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var timeout = new CancellationTokenSource(ReadinessTimeout);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
 
             var result = await _service.CheckReadinessAsync(linked.Token);

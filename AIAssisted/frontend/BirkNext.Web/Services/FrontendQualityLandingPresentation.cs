@@ -301,6 +301,9 @@ public static class FrontendQualityLandingPresentation
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.", "Blocked by deployment policy.");
                 if (!record.Layer2Enabled)
                     return Build(FrontendQualityCapabilityState.DisabledInSystemSettings, "Disabled in System Settings.", null, "Open System Settings", SystemSettingsHref);
+                if (record.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted))
+                    return Build(FrontendQualityCapabilityState.Unavailable, "Not enabled for this target on the server: Passive Security (ZAP) only scans a target the BirkNext server has registered as trusted.",
+                        "The target is not registered in the server configuration (FrontendPassiveSecurity:TrustedProfiles), so every scan would be skipped.");
                 if (record.Layer3Readiness is { IsAvailable: false } readiness)
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.",
                         readiness.StatusReason is { Length: > 0 } reason ? reason : "Runtime unavailable.");
@@ -772,7 +775,8 @@ public static class FrontendQualityLandingPresentation
             new("Browser Runtime", context.FeatureToggles.EnableBrowserRuntimeEngine ? "Enabled" : "Disabled"),
             new("Accessibility", context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
-            new("Passive Security", context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
+            // The saved selection only; whether ZAP can actually run (server enablement, trusted target, container image) is the capability row.
+            new("Passive Security (ZAP)", context.FeatureToggles.EnablePassiveSecurityEngine ? "Selected (optional; availability is checked on the server)" : "Not selected"),
             new("Browser Quality", context.FeatureToggles.EnableBrowserQualityEngine ? "Enabled (Browser Companion, native checks)" : "Disabled"),
             new("BirkNext Performance Quality", context.FeatureToggles.EnablePerformanceQualityEngine ? "Enabled (Browser Companion + Local HTTPS proxy evidence, native)" : "Disabled"),
         ];

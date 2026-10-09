@@ -26,6 +26,8 @@ using BirkNext.Api.Services.TargetEnvironmentDetection;
 using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.ContractAnalysis;
 using HotChocolate.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Net;
@@ -72,6 +74,18 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod()));
 
 builder.Services.AddControllers();
+
+// Active Event execution uses an Entra-issued API bearer token. Missing authority/audience leaves the scheme unable to validate
+// callers; there is no development bypass and no trusted identity header path.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.Authority = builder.Configuration["Authentication:Entra:Authority"];
+    options.Audience = builder.Configuration["Authentication:Entra:Audience"];
+    options.RequireHttpsMetadata = true;
+});
+builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionHandler>();
+builder.Services.AddAuthorization(options => options.AddPolicy("ActiveEventExecute", policy =>
+    policy.RequireAuthenticatedUser().AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement())));
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
 
@@ -362,6 +376,25 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
 });
 // API Quality Review v2 engine (public client: no cookies, no automatic decompression so compression evidence stays visible, no redirects into other hosts)
 builder.Services.AddScoped<BirkNext.Api.Services.ApiQuality.IGraphQlSchemaArtifactStore, BirkNext.Api.Services.ApiQuality.GraphQlSchemaArtifactService>();
+builder.Services.Configure<BirkNext.Api.Services.ApiQuality.ApiActiveTestingOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.ApiQuality.ApiActiveTestingOptions.SectionName));
+builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.IApiEnvironmentSafetyPolicy, BirkNext.Api.Services.ApiQuality.ApiEnvironmentSafetyPolicy>();
+// Runtime security checks that cross the read-only boundary (authorization scenarios, body fuzzing) need a server-registered trusted target.
+builder.Services.Configure<BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.ApiQuality.Security.SecurityTestingOptions.SectionName));
+builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.Security.ITrustedSecurityTargetRegistry, BirkNext.Api.Services.ApiQuality.Security.TrustedSecurityTargetRegistry>();
+builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Security.IAuthorizationScenarioService, BirkNext.Api.Services.ApiQuality.Security.AuthorizationScenarioService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview-Authorization/1.0");
+    client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator>();
+// Safe fuzzing: same public-client shape as the review engine (no cookies, no redirects, bodies decoded by ResponseBodyReader).
+builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Fuzzing.IApiFuzzingService, BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview-SafeFuzzing/1.0");
+    client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
@@ -460,11 +493,20 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<BirkNext.Api.Services.PipelineReview.IPipelineMetadataSource, BirkNext.Api.Services.PipelineReview.AzureDevOpsPipelineMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewService, BirkNext.Api.Services.PipelineReview.PipelineReviewService>();
+// AI-Generated Code Review: deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
+builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestSender, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestSender>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportProvider, BirkNext.Api.Services.ActiveEventTesting.EventHubActiveEventTransportProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.IActiveEventTransportRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventTransportRegistry>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventExecutionRunner>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioProvider, BirkNext.Api.Services.ActiveEventTesting.M2lbPersonScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventScenarioRegistry, BirkNext.Api.Services.ActiveEventTesting.ActiveEventScenarioRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventLifecycleService, BirkNext.Api.Services.ActiveEventTesting.ActiveEventLifecycleService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunCoordinator>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunner>();
 builder.Services.AddScoped<BirkNext.Api.Services.ActiveCdcTests.IActiveCdcTestService, BirkNext.Api.Services.ActiveCdcTests.ActiveCdcTestService>();
@@ -585,6 +627,8 @@ app.UseStaticFiles();
 
 app.UseCors("Frontend");
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.MapGraphQL()

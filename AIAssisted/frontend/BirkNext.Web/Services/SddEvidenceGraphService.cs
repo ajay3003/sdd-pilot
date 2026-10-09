@@ -183,8 +183,80 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
         {
             Projection = new { projection.Metadata.Mode, projection.Metadata.BaselineId, projection.Metadata.ArtifactRevisionIds, projection.Metadata.ArtifactFingerprints, projection.Metadata.Limitations },
             Rows = projection.Rows
+                .OrderBy(row => row.Requirement.Id, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row => row.Requirement.Id, StringComparer.Ordinal)
+                .Select(row => new
+                {
+                    Requirement = new
+                    {
+                        row.Requirement.Id,
+                        row.Requirement.Text,
+                        row.Requirement.Category,
+                        SuccessCriteria = row.Requirement.LinkedSuccessCriteria
+                            .Select(item => new { item.Id, item.Text, Tasks = Sorted(item.LinkedTasks) })
+                            .OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Id, StringComparer.Ordinal),
+                        UserStories = row.Requirement.LinkedUserStories
+                            .Select(item => new
+                            {
+                                item.Id, item.Title, item.Priority, item.Description, item.Why, item.IndependentTest,
+                                AcceptanceScenarios = item.LinkedAcceptanceScenarios.Select(scenario => new
+                                {
+                                    Id = scenario.Id ?? scenario.Title, scenario.Title, scenario.Given, scenario.When, scenario.Then
+                                }).OrderBy(scenario => scenario.Id, StringComparer.OrdinalIgnoreCase).ThenBy(scenario => scenario.Id, StringComparer.Ordinal)
+                            })
+                            .OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Id, StringComparer.Ordinal),
+                        AcceptanceScenarios = row.Requirement.LinkedAcceptanceScenarios.Select(scenario => new
+                        {
+                            Id = scenario.Id ?? scenario.Title, scenario.Title, scenario.Given, scenario.When, scenario.Then
+                        }).OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Id, StringComparer.Ordinal),
+                        EdgeCases = row.Requirement.LinkedEdgeCases
+                            .Select(item => new { item.Title, item.Description, RelatedRequirementIds = Sorted(item.RelatedRequirementIds) })
+                            .OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Title, StringComparer.Ordinal),
+                        Security = row.Requirement.LinkedSecurityConsiderations
+                            .Select(item => new { item.Title, item.Description, AffectedRequirementIds = Sorted(item.AffectedRequirementIds) })
+                            .OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.Title, StringComparer.Ordinal),
+                        ConstitutionRules = Sorted(row.Requirement.LinkedConstitutionRules),
+                        Tasks = Sorted(row.Requirement.LinkedTasks),
+                        ArchitectureDecisions = Sorted(row.Requirement.LinkedArchitectureDecisions),
+                        DataEntities = Sorted(row.Requirement.LinkedDataEntities)
+                    },
+                    PlanReferences = Sorted(row.PlanReferences),
+                    TaskReferences = Sorted(row.TaskReferences),
+                    Implementation = row.Implementation.Select(item => new
+                    {
+                        item.Id, item.RequirementId, item.EvidenceType, item.Reference, item.SourceSnapshotId, item.SourceFingerprint,
+                        item.SourceEvidenceId, item.ProviderId, item.ProviderVersion, item.ObservedAt, item.RecordedAt, item.FilePath,
+                        item.SourceValidation, item.StableKey, item.CurrentnessReason, item.Confidence, item.Provenance, item.Currentness,
+                        item.TargetValidation,
+                        TargetResolutions = item.TargetResolutions.Select(target => new
+                        {
+                            target.OldSnapshotId, target.NewSnapshotId, target.OldFingerprint, target.NewFingerprint, target.ProviderId,
+                            target.State, target.TargetPath, target.MatchedPath, target.ContentChanged, target.Reason
+                        }).OrderBy(target => target.TargetPath, StringComparer.OrdinalIgnoreCase)
+                          .ThenBy(target => target.TargetPath, StringComparer.Ordinal)
+                    }).OrderBy(item => item.StableKey, StringComparer.Ordinal),
+                    DesignedTests = row.DesignedTests.Select(item => new
+                    {
+                        item.Id, item.RequirementId, item.AcceptanceCriterionId, item.TestReference, item.State, item.Result,
+                        item.Timestamp, item.Provenance, item.Currentness, item.CurrentnessReason
+                    }).OrderBy(item => item.Id),
+                    Executions = row.Executions.Select(item => new
+                    {
+                        item.Id, item.TestId, item.TestName, RequirementReferences = Sorted(item.RequirementReferences),
+                        AcceptanceCriterionReferences = Sorted(item.AcceptanceCriterionReferences), item.EvidenceKind, item.ExecutionState,
+                        item.Result, item.ProviderId, item.ResultSource, item.ProviderResultId, item.EnvironmentReference, item.BuildReference,
+                        item.SourceSnapshotId, item.SourceFingerprint, item.StartedAt, item.FinishedAt, item.ExecutedAt, item.Currentness,
+                        item.CurrentnessReason, item.Fingerprint, item.RunId, item.ArtifactId, item.FullyQualifiedTestName, item.DataRowLabel,
+                        item.ProviderOutcome, item.DurationMs, item.ErrorMessage, item.StackTrace, item.TestDefinitionId, item.CorrelationState,
+                        item.CorrelationBasis, CandidateRequirementReferences = Sorted(item.CandidateRequirementReferences), item.SourceCurrentness
+                    }).OrderBy(item => item.Id),
+                    row.NeedsClarification
+                })
         });
         return Fingerprint(payload);
+
+        static IReadOnlyList<string> Sorted(IEnumerable<string> values) => values.OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(value => value, StringComparer.Ordinal).ToArray();
     }
 
     public static int ImportExecutions(SddLifecycleState state, IEnumerable<SddTestExecutionImportRecord> records)
