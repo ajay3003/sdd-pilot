@@ -57,6 +57,8 @@ public static class BrowserAcceptanceFeatureRegistry
         new GeneratedDocumentationFeature(),
         // Quality & Testing + Security (target-gated: honest no-target state, source inputs verified, nothing executed)
         .. TargetGatedFeature.All(),
+        // Source-based review profile in Quality & Testing (needs only the snapshot; runs deterministically).
+        new AiGeneratedCodeReviewFeature(),
         // Diagnostics
         .. DiagnosticFeature.All(),
         // Cross-feature checks last: they read what the features above recorded.

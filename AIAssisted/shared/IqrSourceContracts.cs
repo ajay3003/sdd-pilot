@@ -68,6 +68,9 @@ public sealed record IqrSourceSnapshot
     /// <summary>Generated documentation of the same archive (autodoc-style folders, workflow provenance, freshness, generated-vs-source drift
     /// candidates). Its own evidence type: never authored documentation, never source evidence. Null in snapshots analyzed before it existed.</summary>
     public BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot? GeneratedDocumentation { get; init; }
+    /// <summary>Code-risk observations (placeholders, error handling, authorization metadata, duplicates, test assertions) captured once at upload
+    /// for the AI-Generated Code Review profile. Facts only; the review decides what they mean. Null in snapshots analyzed before it existed.</summary>
+    public BirkNext.AiCodeReview.CodeRiskSourceEvidence? CodeRiskEvidence { get; init; }
 }
 
 public sealed record SourceTargetIndex

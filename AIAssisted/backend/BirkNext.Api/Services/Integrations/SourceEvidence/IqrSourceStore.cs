@@ -118,6 +118,9 @@ public sealed class IqrSourceStore(AppDbContext db)
         // Source test definitions (test projects, [Fact]/[Theory], traits, explicit requirement references): discovery only, consumed when execution
         // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
         snapshot = snapshot with { TestInventory = DiscoverTests(snapshot, repository.DisplayName, workspace, ct) };
+        // Code-risk observations for the AI-Generated Code Review profile (placeholders, error handling, authorization metadata, duplicates,
+        // test assertions): syntax facts captured once here; the review reads them from the snapshot and never rescans the archive.
+        snapshot = snapshot with { CodeRiskEvidence = AnalyzeCodeRisk(snapshot, workspace, ct) };
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
         snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };
@@ -138,6 +141,25 @@ public sealed class IqrSourceStore(AppDbContext db)
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new SourceSnapshotPersistenceException(); }
         return snapshot;
+    }
+
+    internal static BirkNext.AiCodeReview.CodeRiskSourceEvidence AnalyzeCodeRisk(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)
+    {
+        try
+        {
+            var testDirectories = (snapshot.TestInventory?.Projects ?? []).Select(p => p.Path.Replace('\\', '/'))
+                .Select(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ? (p.LastIndexOf('/') is var i and >= 0 ? p[..i] : "") : p).ToList();
+            return SourceAnalysis.CodeRisk.CodeRiskSourceAnalyzer.Analyze(snapshot.Id, workspace.Files, workspace.AllPaths ?? workspace.Files.Select(f => f.Path).ToList(), testDirectories, ct);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return new BirkNext.AiCodeReview.CodeRiskSourceEvidence
+            {
+                SnapshotId = snapshot.Id, AnalyzerVersion = SourceAnalysis.CodeRisk.CodeRiskSourceAnalyzer.Version,
+                Limitations = [$"Code-risk analysis stopped on an unsupported pattern ({ex.GetType().Name}); no code-risk observations were recorded."],
+            };
+        }
     }
 
     internal static BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot AnalyzeGeneratedDocumentation(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace,
