@@ -53,6 +53,53 @@ public sealed class NormalizedOperation
 
     [JsonPropertyName("response_schemas")]
     public Dictionary<string, NormalizedSchema> ResponseSchemas { get; set; } = [];
+
+    /// <summary>Declared response status codes ("200", "400", "4XX", "default"), whether or not they carry a JSON schema.</summary>
+    [JsonPropertyName("response_codes")]
+    public List<string> ResponseCodes { get; set; } = [];
+
+    /// <summary>Path, query and header parameters (path-level and operation-level, operation-level wins). Cookie parameters are not modelled.</summary>
+    [JsonPropertyName("parameters")]
+    public List<NormalizedParameter> Parameters { get; set; } = [];
+
+    /// <summary>The JSON request body's top-level fields with their declared constraints (Location = Body). Null when the operation declares
+    /// no application/json body or its schema cannot be resolved locally. Used by opt-in body fuzzing only.</summary>
+    [JsonPropertyName("request_body")]
+    public NormalizedRequestBody? RequestBody { get; set; }
+}
+
+public sealed class NormalizedRequestBody
+{
+    [JsonPropertyName("required")] public bool Required { get; set; }
+    [JsonPropertyName("content_type")] public string ContentType { get; set; } = "application/json";
+    [JsonPropertyName("source_ref")] public string SourceRef { get; set; } = "";
+    [JsonPropertyName("additional_properties")] public bool? AllowsAdditionalProperties { get; set; }
+    [JsonPropertyName("fields")] public List<NormalizedParameter> Fields { get; set; } = [];
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum NormalizedParameterLocation { Path, Query, Header, Body }
+
+/// <summary>
+/// One declared OpenAPI parameter with the constraints the document states — nothing inferred. <see cref="SourceRef"/> is the JSON pointer of
+/// the definition in the document, so anything derived from it (fuzz cases) stays traceable to the contract.
+/// </summary>
+public sealed class NormalizedParameter
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("location")] public NormalizedParameterLocation Location { get; set; }
+    [JsonPropertyName("required")] public bool Required { get; set; }
+    [JsonPropertyName("type")] public string? Type { get; set; }
+    [JsonPropertyName("format")] public string? Format { get; set; }
+    [JsonPropertyName("enum_values")] public List<string>? EnumValues { get; set; }
+    [JsonPropertyName("nullable")] public bool Nullable { get; set; }
+    [JsonPropertyName("minimum")] public decimal? Minimum { get; set; }
+    [JsonPropertyName("maximum")] public decimal? Maximum { get; set; }
+    [JsonPropertyName("exclusive_minimum")] public bool ExclusiveMinimum { get; set; }
+    [JsonPropertyName("exclusive_maximum")] public bool ExclusiveMaximum { get; set; }
+    [JsonPropertyName("min_length")] public int? MinLength { get; set; }
+    [JsonPropertyName("max_length")] public int? MaxLength { get; set; }
+    [JsonPropertyName("source_ref")] public string SourceRef { get; set; } = "";
 }
 
 /// <summary>

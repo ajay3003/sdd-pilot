@@ -112,6 +112,7 @@
         FrontendQualityEngineUnavailableReasonDto.RuntimeStatusUnknown => "Status check timed out or is unknown",
         FrontendQualityEngineUnavailableReasonDto.NotApplicableToReview => "Not applicable to this review",
         FrontendQualityEngineUnavailableReasonDto.AuthenticationModeUnsupported => "Not supported for authenticated reviews",
+        FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted => "Target not registered as trusted on the server",
         _ => reason.ToString(),
     };
 

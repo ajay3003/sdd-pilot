@@ -167,21 +167,24 @@
     <section class="source-import">
         <h2>Source Analysis and CodeLinks</h2>
         <p>Source Analysis owns source parsing. A resolved target means the referenced location can still be found; it does not verify behavior or correctness.</p>
-        <label for="sdd-source-environment">Source Analysis environment ID</label>
-        <input id="sdd-source-environment" @bind="_sourceEnvironment" />
-        <button @onclick="LoadSourceSnapshotsAsync" disabled="@string.IsNullOrWhiteSpace(_sourceEnvironment)">Load Source Analysis snapshots</button>
-        @if (!string.IsNullOrWhiteSpace(_sourceMessage)) { <p role="status">@_sourceMessage</p> }
+        @* Source Analysis snapshots are workspace-level (Project Import and Source Analysis store them without a Target Environment). The
+           environment ID only adds legacy per-target snapshots an earlier version stored; blank lists the workspace's snapshots. *@
+        <label for="sdd-source-environment">Source Analysis environment ID (optional)</label>
+        <input id="sdd-source-environment" @bind="_sourceEnvironment" aria-describedby="sdd-source-environment-help" />
+        <p id="sdd-source-environment-help" class="field-help">Leave blank to use the project's Source Analysis snapshots (for example from Project Import).</p>
+        <button data-testid="ier-load-snapshots" @onclick="LoadSourceSnapshotsAsync">Load Source Analysis snapshots</button>
+        @if (!string.IsNullOrWhiteSpace(_sourceMessage)) { <p role="status" data-testid="ier-source-message">@_sourceMessage</p> }
         @foreach (var source in Artifacts.SddLifecycle.SourceSnapshots.OrderByDescending(x => x.AnalyzedAt))
         { <p>Source Analysis @source.AnalysisStatus · analyzer @source.AnalyzerVersion · @source.SnapshotId · @source.Fingerprint · @source.Currentness @if (source.Limitations.Count > 0) { <span> — limitations: @string.Join("; ", source.Limitations)</span> }</p> }
         @if (_sourceSnapshots.Count > 0)
         {
             <label for="sdd-source-snapshot">Snapshot</label>
-            <select id="sdd-source-snapshot" @bind="_selectedSourceSnapshotId">
+            <select id="sdd-source-snapshot" data-testid="ier-source-snapshot" @bind="_selectedSourceSnapshotId">
                 <option value="">Select a snapshot</option>
                 @foreach (var snapshot in _sourceSnapshots)
                 { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
             </select>
-            <button @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(Artifacts.ProjectName))">Bind explicit CodeLinks</button>
+            <button data-testid="ier-bind-codelinks" @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(Artifacts.ProjectName))">Bind explicit CodeLinks</button>
         }
         @foreach (var evidence in Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability"))
         {
@@ -338,7 +341,9 @@
         try
         {
             _sourceSnapshots = await SddEvidenceApi.SourceSnapshotsAsync(_sourceEnvironment);
-            _sourceMessage = _sourceSnapshots.Count == 0 ? "No Source Analysis snapshots are available for this environment." : $"Loaded {_sourceSnapshots.Count} metadata snapshot(s); no source was uploaded or reparsed.";
+            _sourceMessage = _sourceSnapshots.Count == 0
+                ? (string.IsNullOrWhiteSpace(_sourceEnvironment) ? "No Source Analysis snapshots are available for this workspace." : "No Source Analysis snapshots are available for this environment.")
+                :$"Loaded {_sourceSnapshots.Count} metadata snapshot(s); no source was uploaded or reparsed.";
         }
         catch (Exception ex) { _sourceMessage = $"Source Analysis is unavailable: {ex.Message}"; }
     }

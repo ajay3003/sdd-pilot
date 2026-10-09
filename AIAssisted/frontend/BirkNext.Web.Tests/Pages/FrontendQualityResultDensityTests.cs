@@ -275,7 +275,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         page.Find("[data-testid=fqr-result-details]")
             .QuerySelectorAll(":scope > .disclosure > .disclosure-toggle .disclosure-text")
             .Select(t => t.TextContent.Trim())
-            .Should().Equal("Review items", "Source findings", "Engine coverage",
+            .Should().Equal("Review items", "Source findings", "Cookie security", "Engine coverage",
                 "Target access at review start", "Engine scores", "Technical details");
     }
 

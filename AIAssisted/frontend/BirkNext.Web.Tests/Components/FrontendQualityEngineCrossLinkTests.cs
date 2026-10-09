@@ -24,6 +24,8 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
         {
             Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = Url,
         };
+        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
         {

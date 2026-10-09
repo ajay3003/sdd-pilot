@@ -28,6 +28,10 @@
     {
         <p class="loading-state">Analysing traceability data…</p>
     }
+    else if (_notice is not null)
+    {
+        <div class="notification notification-info" role="status" data-testid="sample-store-notice">@_notice</div>
+    }
     else if (_loadError is not null)
     {
         <div class="notification notification-error" role="alert">@_loadError</div>
@@ -245,6 +249,7 @@
 @code {
     private bool _isLoading = true;
     private string? _loadError;
+    private string? _notice;
     private IGetSpecDriftReport_SpecDriftReport? _report;
     private string? _activeFilter;
     private string _activeTab = "overview";
@@ -263,7 +268,7 @@
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
             _isLoading = false;
-            _loadError = "Select a Sample Project to view specification drift.";
+            _notice = SampleProjectStoreNotice.Message("Spec Drift", Workspace);
             StateHasChanged();
             return;
         }
@@ -277,7 +282,7 @@
     {
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
-            _loadError = "Select a Sample Project to view specification drift.";
+            _notice = SampleProjectStoreNotice.Message("Spec Drift", Workspace);
             _isLoading = false;
             StateHasChanged();
             return;
@@ -285,6 +290,7 @@
 
         _isLoading = true;
         _loadError = null;
+        _notice = null;
         StateHasChanged();
 
         try

@@ -119,6 +119,8 @@ public sealed record FrontendQualityReviewReport
     [JsonPropertyName("limitations")]        public List<string>                     Limitations        { get; init; } = [];
     [JsonPropertyName("isBlazorWasm")]       public bool                             IsBlazorWasm       { get; init; }
     [JsonPropertyName("errorMessage")]       public string?                          ErrorMessage       { get; init; }
+    /// <summary>Static Security cookie metadata of the frontend document (names and attributes, never values). Not scored; null on older reports.</summary>
+    [JsonPropertyName("cookieSecurity")]     public BirkNext.RuntimeSecurity.CookieSecurityAssessment? CookieSecurity { get; init; }
     [JsonPropertyName("coverage")]           public FrontendQualityCoverage? Coverage
     {
         get => _coverage ?? (EngineOutcomes.Count > 0 ? FrontendQualityCoverage.Evaluate(EngineOutcomes) : null);

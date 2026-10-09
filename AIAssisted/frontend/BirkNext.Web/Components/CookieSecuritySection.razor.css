@@ -1,0 +1,20 @@
+/* FQR → Cookie security. */
+.csec { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.csec-muted { color: var(--clr-text-subtle); font-size: 0.88rem; line-height: 1.5; margin: 0.25rem 0 0.5rem; }
+.csec-mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; overflow-wrap: anywhere; }
+.csec-small { font-size: 0.85rem; padding: 0.25rem 0.6rem; }
+.csec-proxy { margin-top: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--clr-border-subtle); }
+.csec-proxy h4 { margin: 0 0 0.4rem; font-size: 0.95rem; color: var(--clr-text-heading); }
+.csec-tablewrap { overflow-x: auto; max-width: 100%; }
+.csec-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.88rem; }
+.csec-table th { text-align: left; color: var(--clr-text-muted); font-weight: 600; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--clr-border); }
+.csec-table td { padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--clr-border-subtle); vertical-align: top; }
+.csec-findings { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+.csec-findings li { margin: 0.25rem 0; overflow-wrap: anywhere; }
+.csec-pill { display: inline-block; border-radius: 999px; padding: 0 0.45rem; font-size: 0.78rem; font-weight: 600; border: 1px solid var(--clr-border); background: var(--clr-surface); color: var(--clr-text-body); }
+.csec-pill-high { border-color: var(--clr-danger-border); background: var(--clr-danger-bg); color: #991b1b; }
+.csec-pill-medium { border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); color: var(--clr-warning); }
+.csec-button { font-size: 0.85rem; padding: 0.3rem 0.7rem; border-radius: var(--radius-md); border: 1px solid var(--clr-border-input); background: var(--clr-surface-white); color: var(--clr-text-body); cursor: pointer; }
+.csec-button:hover:not(:disabled) { background: var(--clr-surface); }
+.csec-button:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.csec-button:disabled { cursor: not-allowed; color: var(--clr-text-muted); }

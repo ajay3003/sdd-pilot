@@ -1712,7 +1712,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> QualitySectionKeys =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "QualityReview", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview"
+            "QualityReview", "BlazorWasmPerformanceReview"
         };
 
     private static readonly HashSet<string> AiReviewKeys =
@@ -1764,7 +1764,6 @@ else if (_settings is not null)
 
         // Quality
         ("Document Quality Review", "QualityReview"),
-        ("WASM Security Review",    "BlazorWasmSecurityReview"),
         ("WASM Performance Review", "BlazorWasmPerformanceReview"),
 
         // AI Review
@@ -3213,7 +3212,7 @@ else if (_settings is not null)
         "/task-explorer", "/sample-projects", "/traceability",
         "/traceability/suggestions", "/code-traceability", "/spec-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
-        "/implementation-traceability", "/quality-review", "/wasm-security-review",
+        "/implementation-traceability", "/quality-review",
         "/wasm-performance-review", "/ai-change-auditor", "/admin/system-settings",
         "/getting-started", "/user-guide",
     };
@@ -3222,6 +3221,8 @@ else if (_settings is not null)
     private static readonly HashSet<string> RemovedRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/qa-auditor", "/constitution-compliance", "/standards-compliance",
+        // The standalone WASM Security Review page was retired; its scanner runs as Frontend Quality Review → Static Security.
+        "/wasm-security-review",
         "/qa-readiness", "/delivery-readiness",
         "qa-auditor", "constitution-compliance", "standards-compliance",
         "qa-readiness", "delivery-readiness",
@@ -3249,7 +3250,6 @@ else if (_settings is not null)
         ("Implementation Traceability",  "implementation-traceability"),
         ("Source Analysis",              "source-analysis"),
         ("Document Quality Review",      "quality/document"),
-        ("WASM Security Review",         "wasm-security-review"),
         ("WASM Performance Review",      "wasm-performance-review"),
         ("AI Change Review",             "ai-change-auditor"),
         ("System Settings",              "admin/system-settings"),
@@ -3285,7 +3285,6 @@ else if (_settings is not null)
         ("User Guide", "/traceability",                         "Traceability & Coverage link"),
         ("User Guide", "/traceability/suggestions",             "Traceability Suggestions link"),
         ("User Guide", "/code-traceability",                    "Code Traceability link"),
-        ("User Guide", "/wasm-security-review",                 "WASM Security Review link"),
         ("User Guide", "/wasm-performance-review",              "WASM Performance Review link"),
         ("User Guide", "/admin/system-settings",                "System Settings link"),
         // Dashboard.razor
@@ -3296,7 +3295,6 @@ else if (_settings is not null)
         ("Dashboard", "quality-review",                         "Readiness Summary links"),
         ("Dashboard", "artifact-traceability",                  "Analysis Summary card"),
         ("Dashboard", "quality-review",                         "Analysis Summary card"),
-        ("Dashboard", "wasm-security-review",                   "Analysis Summary card"),
         ("Dashboard", "wasm-performance-review",                "Analysis Summary card"),
         ("Dashboard", "getting-started",                        "Onboarding CTA"),
         ("Dashboard", "constitution-explorer",                  "Quick Actions"),
@@ -3305,7 +3303,6 @@ else if (_settings is not null)
         ("Dashboard", "task-explorer",                          "Quick Actions"),
         ("Dashboard", "artifact-traceability",                  "Quick Actions"),
         ("Dashboard", "quality-review",                         "Quick Actions"),
-        ("Dashboard", "wasm-security-review",                   "Quick Actions"),
         ("Dashboard", "wasm-performance-review",                "Quick Actions"),
         ("Dashboard", "ai-change-auditor",                      "Quick Actions â€” AI"),
     ];

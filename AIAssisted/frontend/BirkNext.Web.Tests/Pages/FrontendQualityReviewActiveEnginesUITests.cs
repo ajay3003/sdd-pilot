@@ -165,20 +165,20 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("2 required available · 3 optional available · 3 optional disabled");
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("2 required available · 2 optional available · 4 optional disabled");
         // Required first, then Optional: the ROLE axis, carried by the grouping rather than by a per-row status word.
         page.FindAll("[data-testid=fqr-capability-group]").Select(g => g.GetAttribute("data-policy")).Should().Equal("Required", "Optional");
-        foreach (var off in new[] { FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality })
+        foreach (var off in new[] { FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PassiveSecurity })
             Row(page, off).GetAttribute("data-state").Should().Be("Disabled");
         // Phase 1 (layers, no probe) answered immediately → Run enabled; phase 2 (readiness) still pending and informational.
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
-        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness-pending]").TextContent.Should().Contain("Checking runtime readiness of 3 active engines"));
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness-pending]").TextContent.Should().Contain("Checking runtime readiness of 2 active engines"));
         calls.Should().HaveCount(2);
         calls[0].Should().BeEmpty("first call fetches Layer 1–2 only");
-        calls[1].Should().BeEquivalentTo([FrontendQualityEngineIdDto.Accessibility, FrontendQualityEngineIdDto.Lighthouse, FrontendQualityEngineIdDto.PassiveSecurity], "readiness is probed only for active backend engines");
+        calls[1].Should().BeEquivalentTo([FrontendQualityEngineIdDto.Accessibility, FrontendQualityEngineIdDto.Lighthouse], "readiness is probed only for active backend engines (Passive Security is opt-in)");
         // 19, 32, 53. The per-engine diagnostic cards survive — under Technical details, not in the engine list.
         page.Find("[data-testid=fqr-technical-disclosure-body]").QuerySelectorAll(".fqr-engine-card")
-            .Select(c => c.GetAttribute("data-engine-id")).Should().BeEquivalentTo(["Accessibility", "Lighthouse", "PassiveSecurity"]);
+            .Select(c => c.GetAttribute("data-engine-id")).Should().BeEquivalentTo(["Accessibility", "Lighthouse"]);
 
         readiness.SetResult(new FrontendQualityEngineStatusReportDto { Engines = [] });
         page.WaitForAssertion(() => page.FindAll("[data-testid=fqr-readiness-pending]").Should().BeEmpty());

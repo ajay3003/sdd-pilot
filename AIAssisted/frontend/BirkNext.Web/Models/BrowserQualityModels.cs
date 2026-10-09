@@ -7,7 +7,8 @@ namespace BirkNext.Web.Models;
 
 /// <summary>Categories of the BirkNext Browser Quality engine (one common finding contract for every sub-result).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum BrowserQualityCategory { Accessibility, Performance, Runtime, Dom, Network, Blazor, SecurityObservation }
+/// <remarks>No Browser Quality rule observes security (no storage, cookie or token evidence is collected), so there is no security category.</remarks>
+public enum BrowserQualityCategory { Accessibility, Performance, Runtime, Dom, Network, Blazor }
 
 /// <summary>
 /// One Browser Quality finding. Deterministically derived from safe page evidence (companion) plus, where available, proxy network

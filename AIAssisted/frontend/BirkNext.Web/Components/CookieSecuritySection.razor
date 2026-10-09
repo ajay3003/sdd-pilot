@@ -1,0 +1,107 @@
+@using BirkNext.RuntimeSecurity
+@using BirkNext.LocalHttpsProxy
+@inject IServiceProvider Services
+
+@* Frontend Quality Review → Static Security → Cookie security. Names and attributes only: a cookie value is never received, stored or
+   shown. Auth/session cookies are evaluated strictly only when Security Expectations declare their names; other cookies are observations. *@
+<div class="csec" data-testid="fqr-cookies">
+    <p class="csec-muted">Set-Cookie attributes of the anonymous frontend document response. Values are never read. Cookies set after sign-in are visible through the Local HTTPS proxy observation below.</p>
+    @if (Assessment is null)
+    {
+        <p class="csec-muted" data-testid="fqr-cookies-not-recorded">Cookie metadata was not recorded in this review (older report or Static Security did not run).</p>
+    }
+    else
+    {
+        @RenderAssessment(Assessment, "fqr-cookies-document")
+    }
+
+    <div class="csec-proxy" data-testid="fqr-cookies-proxy">
+        <h4>Cookies observed by the Local HTTPS proxy</h4>
+        <button type="button" class="csec-button" data-testid="fqr-cookies-proxy-load" disabled="@(_loading || ProxyApi is null)" @onclick="LoadProxyCookiesAsync">Load observed cookie attributes</button>
+        <p class="csec-muted" role="status" aria-live="polite" data-testid="fqr-cookies-proxy-status">@_proxyStatus</p>
+        @if (_proxy is not null) { @RenderAssessment(_proxy, "fqr-cookies-proxy-result") }
+    </div>
+</div>
+
+@code {
+    [Parameter] public CookieSecurityAssessment? Assessment { get; set; }
+    [Parameter] public string? ProfileId { get; set; }
+    [Parameter] public CookieSecurityExpectations? Expectations { get; set; }
+
+    private ILocalHttpsProxyApiService? ProxyApi => Services.GetService<ILocalHttpsProxyApiService>();
+    private CookieSecurityAssessment? _proxy;
+    private bool _loading;
+    private string _proxyStatus = "Not loaded.";
+
+    private async Task LoadProxyCookiesAsync()
+    {
+        if (ProxyApi is null) return;
+        _loading = true;
+        try
+        {
+            var runtime = await ProxyApi.GetRuntimeAsync();
+            if (runtime.SessionId is not { Length: > 0 } session || runtime.ProfileId != ProfileId || runtime.ContextFingerprint is not { Length: > 0 } fingerprint)
+            {
+                _proxy = null;
+                _proxyStatus = "No Local HTTPS proxy session is running for this Target Environment, so no signed-in cookies were observed.";
+                return;
+            }
+            var observed = await ProxyApi.ObservedCookieAttributesAsync(new LocalHttpsProxySessionRequest(session, runtime.ProfileId!, fingerprint));
+            _proxy = CookieSecurityEvaluator.Evaluate(observed, Expectations);
+            _proxyStatus = observed.Count == 0 ? "The proxy session has observed no Set-Cookie on approved hosts yet." : $"{_proxy.Cookies.Count} cookie(s) observed on approved hosts.";
+        }
+        catch (Exception e) when (e is HttpRequestException or System.Text.Json.JsonException or InvalidOperationException or TaskCanceledException)
+        {
+            _proxyStatus = "The Local HTTPS proxy could not be asked for observed cookies.";
+        }
+        finally { _loading = false; }
+    }
+
+    private static string SameSite(CookieObservation c) => c.SameSite == CookieSameSite.NotSet ? "not set" : c.SameSite.ToString();
+
+    private RenderFragment RenderAssessment(CookieSecurityAssessment assessment, string testId) => __builder =>
+    {
+        <div data-testid="@testId">
+            @foreach (var note in assessment.Notes) { <p class="csec-muted" data-testid="fqr-cookies-note">@note</p> }
+            @if (assessment.Cookies.Count == 0)
+            {
+                <p class="csec-muted" data-testid="fqr-cookies-none">No cookie was set in the inspected response(s).</p>
+            }
+            else
+            {
+                <div class="csec-tablewrap" tabindex="0" role="region" aria-label="Cookie attributes">
+                    <table class="csec-table" data-testid="fqr-cookies-table">
+                        <thead><tr><th scope="col">Cookie</th><th scope="col">Class</th><th scope="col">Secure</th><th scope="col">HttpOnly</th><th scope="col">SameSite</th><th scope="col">Domain / Path</th><th scope="col">Lifetime</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in assessment.Cookies)
+                            {
+                                <tr data-testid="fqr-cookie-row" data-cookie="@c.Name">
+                                    <td class="csec-mono">@c.Name@(c.NameRedacted ? " (name digest)" : "") <span class="csec-muted">@c.Host</span></td>
+                                    <td>@(c.Classification == CookieClassification.DeclaredAuthOrSession ? "Auth/session (declared)" : "Unclassified")</td>
+                                    <td>@(c.Secure ? "Yes" : "No")</td>
+                                    <td>@(c.HttpOnly ? "Yes" : "No")</td>
+                                    <td>@SameSite(c)</td>
+                                    <td class="csec-mono">@(c.Domain ?? "host-only") · @c.Path</td>
+                                    <td>@(c.Persistent ? "Persistent" : "Session")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (assessment.Findings.Count > 0)
+            {
+                <ul class="csec-findings" data-testid="fqr-cookie-findings">
+                    @foreach (var f in assessment.Findings)
+                    {
+                        <li data-testid="fqr-cookie-finding" data-rule="@f.RuleId"><span class="csec-pill csec-pill-@f.Severity.ToLowerInvariant()">@f.Severity</span> <strong>@f.Title</strong> <span class="csec-mono">@f.Cookie</span> — @f.Detail</li>
+                    }
+                </ul>
+            }
+            else if (assessment.Cookies.Count > 0)
+            {
+                <p class="csec-muted" data-testid="fqr-cookie-no-findings">No cookie finding by the rules that apply to these cookies (observations are not a pass).</p>
+            }
+        </div>
+    };
+}

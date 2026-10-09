@@ -566,3 +566,27 @@ internal sealed class ObservedEndpointRegistry(int capacity = 50)
 
     public void Clear() { lock (_lock) _endpoints.Clear(); }
 }
+
+/// <summary>Distinct cookie attribute sets per host/name/path/domain observed in one proxy session (capped). Never a value.</summary>
+internal sealed class ObservedCookieRegistry(int capacity = 100)
+{
+    private readonly object _lock = new();
+    private readonly Dictionary<string, BirkNext.RuntimeSecurity.CookieObservation> _cookies = new(StringComparer.Ordinal);
+
+    public void Record(BirkNext.RuntimeSecurity.CookieObservation cookie)
+    {
+        if (cookie.Deletion) return;
+        var key = $"{cookie.Host}|{cookie.Name}|{cookie.Path}|{cookie.Domain}";
+        lock (_lock)
+        {
+            if (!_cookies.ContainsKey(key) && _cookies.Count >= capacity) return;
+            _cookies[key] = cookie;
+        }
+    }
+
+    public IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation> Snapshot()
+    {
+        lock (_lock)
+            return _cookies.Values.OrderBy(c => c.Host, StringComparer.Ordinal).ThenBy(c => c.Name, StringComparer.Ordinal).ToList();
+    }
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Real Project Acceptance: TEST INFRASTRUCTURE ONLY. Dataset descriptors, the feature registry contract, status model, runner and
+    report writer. No production project references this library, and it references no production project: it is dataset- and
+    browser-agnostic. Browser features live in BirkNext.Web.PlaywrightTests; real archives are always external.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>BirkNext.RealProjectAcceptance</RootNamespace>
+  </PropertyGroup>
+
+</Project>
