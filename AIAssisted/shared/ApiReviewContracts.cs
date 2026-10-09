@@ -202,6 +202,12 @@ public sealed record ApiReviewPolicy
         : $"{bytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes";
     /// <summary>Introspection enabled is a policy question: warn only for production-like environments.</summary>
     public bool IntrospectionExpectedDisabled { get; init; }
+    /// <summary>
+    /// Target Environment → Security Expectations → expected security headers at Run (presence only; no values are stored). Null in
+    /// reports recorded before expectations were consumed and in requests from older clients: the review then applies its historical
+    /// defaults (HSTS and X-Content-Type-Options) and says so.
+    /// </summary>
+    public List<string>? ExpectedSecurityHeaders { get; init; }
 }
 
 /// <summary>How strongly a GraphQL technology is evidenced. Confirmed needs build/source evidence; runtime fingerprints reach Likely at most.</summary>
@@ -488,6 +494,10 @@ public sealed record ApiReviewTargetResult
     /// <summary>Null when the target was blocked/not tested; 0 when completed with no findings.</summary>
     public int? FindingCount { get; init; }
     public ApiReviewBaseline? Baseline { get; init; }
+    /// <summary>Deliberate anonymous probe of a target that requires authentication. Null on reports recorded before it existed.</summary>
+    public ApiAuthenticationEnforcementResult? AuthenticationEnforcement { get; init; }
+    /// <summary>Security headers of the target's primary response against the Target Environment's expectations. Empty on older reports.</summary>
+    public List<SecurityHeaderEvaluation> SecurityHeaders { get; init; } = [];
 }
 
 public sealed record ApiReviewCoverage
@@ -520,6 +530,8 @@ public sealed record ApiReviewReport
     public List<string> ManualReviewItems { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
     public string? ErrorMessage { get; init; }
+    /// <summary>The backend's environment safety decision for this run (error probes and fuzzing follow it). Null on older reports.</summary>
+    public ApiEnvironmentSafetyDecision? Safety { get; init; }
     /// <summary>Quality among every assessed check of the run, with assessment coverage. Additive and computed (older stored reports recompute it).</summary>
     public BirkNext.Applicability.QualityResult Quality => ApiReviewScoring.Quality(Targets.SelectMany(t => t.Checks));
     /// <summary>Quality per review area (REST, GraphQL, Security …) over that area's assessed checks; an area without checks has no entry.</summary>

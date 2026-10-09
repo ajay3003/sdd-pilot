@@ -11,6 +11,15 @@ namespace BirkNext.Web.Services;
 public interface IApiReviewService
 {
     Task<(ApiReviewReport? Report, string? Error)> RunAsync(ApiReviewRunRequest request, CancellationToken ct = default);
+
+    /// <summary>Safe fuzzing eligibility and case preview (the backend decides safety and derives cases; nothing is fuzzed).</summary>
+    Task<(ApiFuzzingPlan? Plan, string? Error)> PlanFuzzingAsync(ApiFuzzingRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ApiFuzzingPlan?, string?)>((null, "Safe fuzzing is not available in this client."));
+    /// <summary>Starts a bounded background run; the backend re-derives every case and refuses blocked environments.</summary>
+    Task<(ApiFuzzingReport? Run, string? Error)> StartFuzzingAsync(ApiFuzzingRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ApiFuzzingReport?, string?)>((null, "Safe fuzzing is not available in this client."));
+    Task<ApiFuzzingReport?> GetFuzzingRunAsync(string runId, CancellationToken ct = default) => Task.FromResult<ApiFuzzingReport?>(null);
+    Task<ApiFuzzingReport?> CancelFuzzingAsync(string runId, CancellationToken ct = default) => Task.FromResult<ApiFuzzingReport?>(null);
 }
 
 /// <summary>Backend client of the API Quality Review v2 engine. The request carries the review snapshot and non-secret identity only.</summary>
@@ -29,6 +38,59 @@ public sealed class ApiReviewService(HttpClient client) : IApiReviewService
         catch (Exception) { return (null, "Could not reach the backend. Check that the server is running."); }
     }
 
+    public async Task<(ApiFuzzingPlan? Plan, string? Error)> PlanFuzzingAsync(ApiFuzzingRunRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await client.PostAsJsonAsync("api/api-quality/fuzzing/plan", request, ct);
+            if (!response.IsSuccessStatusCode) return (null, await ErrorMessageAsync(response, "Eligibility analysis failed", ct));
+            return (await response.Content.ReadFromJsonAsync<ApiFuzzingPlan>(cancellationToken: ct), null);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return (null, "Could not reach the backend. Check that the server is running."); }
+    }
+
+    public async Task<(ApiFuzzingReport? Run, string? Error)> StartFuzzingAsync(ApiFuzzingRunRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await client.PostAsJsonAsync("api/api-quality/fuzzing/runs", request, ct);
+            if (!response.IsSuccessStatusCode) return (null, await ErrorMessageAsync(response, "Safe fuzzing could not start", ct));
+            return (await response.Content.ReadFromJsonAsync<ApiFuzzingReport>(cancellationToken: ct), null);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return (null, "Could not reach the backend. Check that the server is running."); }
+    }
+
+    public async Task<ApiFuzzingReport?> GetFuzzingRunAsync(string runId, CancellationToken ct = default)
+    {
+        try { return await client.GetFromJsonAsync<ApiFuzzingReport>($"api/api-quality/fuzzing/runs/{Uri.EscapeDataString(runId)}", ct); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
+    }
+
+    public async Task<ApiFuzzingReport?> CancelFuzzingAsync(string runId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await client.PostAsync($"api/api-quality/fuzzing/runs/{Uri.EscapeDataString(runId)}/cancel", null, ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ApiFuzzingReport>(cancellationToken: ct) : null;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>The backend's own message (safety policy, conflict) when it sent one; never a raw body.</summary>
+    private static async Task<string> ErrorMessageAsync(HttpResponseMessage response, string prefix, CancellationToken ct)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("message", out var m) && m.GetString() is { Length: > 0 and < 600 } message) return message;
+        }
+        catch (JsonException) { }
+        return $"{prefix} (HTTP {(int)response.StatusCode}).";
+    }
 }
 
 /// <summary>Per-environment API review history: last report, run summaries and drift baselines (structural evidence only).</summary>
@@ -37,6 +99,8 @@ public sealed class ApiReviewHistory
     public ApiReviewReport? LastReport { get; set; }
     public List<ApiReviewRunSummary> Runs { get; set; } = [];
     public Dictionary<string, ApiReviewBaseline> Baselines { get; set; } = new(StringComparer.Ordinal);
+    /// <summary>Completed safe-fuzzing runs, newest first, each with the environment, settings, contract fingerprints and results it ran with.</summary>
+    public List<ApiFuzzingReport> FuzzRuns { get; set; } = [];
 }
 
 public sealed record ApiReviewRunSummary(DateTimeOffset GeneratedAt, string EnvironmentName, int Targets, int Completed, int Blocked, int High, int Medium, int Low, int Info);
@@ -54,6 +118,8 @@ public interface IApiReviewHistoryService
     ApiReviewHistory For(string profileId);
     Task RecordAsync(IJSRuntime js, string profileId, ApiReviewReport report);
     Task ClearAsync(IJSRuntime js, string profileId);
+    /// <summary>Stores a finished fuzzing run as recorded (never re-evaluated against a newer contract).</summary>
+    Task RecordFuzzingAsync(IJSRuntime js, string profileId, ApiFuzzingReport report) => Task.CompletedTask;
 }
 
 public sealed class ApiReviewHistoryService : IApiReviewHistoryService
@@ -90,6 +156,18 @@ public sealed class ApiReviewHistoryService : IApiReviewHistoryService
             report.Findings.Count(f => f.Severity == ApiReviewSeverity.Medium), report.Findings.Count(f => f.Severity == ApiReviewSeverity.Low), report.Findings.Count(f => f.Severity == ApiReviewSeverity.Info)));
         if (history.Runs.Count > MaxRuns) history.Runs = history.Runs.Take(MaxRuns).ToList();
         history.LastReport = report;
+        _byProfile[profileId] = history;
+        try { await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, JsonSerializer.Serialize(_byProfile, Options)); } catch { /* best effort */ }
+    }
+
+    public const int MaxFuzzRuns = 5;
+
+    public async Task RecordFuzzingAsync(IJSRuntime js, string profileId, ApiFuzzingReport report)
+    {
+        var history = For(profileId);
+        history.FuzzRuns.RemoveAll(r => r.RunId == report.RunId);
+        history.FuzzRuns.Insert(0, report with { Running = false });
+        if (history.FuzzRuns.Count > MaxFuzzRuns) history.FuzzRuns = history.FuzzRuns.Take(MaxFuzzRuns).ToList();
         _byProfile[profileId] = history;
         try { await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, JsonSerializer.Serialize(_byProfile, Options)); } catch { /* best effort */ }
     }

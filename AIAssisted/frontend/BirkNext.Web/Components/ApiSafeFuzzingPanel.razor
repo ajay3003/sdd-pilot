@@ -1,0 +1,317 @@
+@using BirkNext.Web.Models
+@using BirkNext.ApiReview
+@implements IDisposable
+@inject IApiReviewService ReviewService
+@inject IApiReviewHistoryService History
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
+
+@* API Quality Review → Safe fuzzing. The backend decides environment safety, eligibility and every case; this panel chooses a level,
+   shows the plan, runs it (polling a bounded background run) and shows outcomes. Never presented as a penetration test. *@
+<section class="asf-panel" data-testid="aqr-fuzzing" aria-labelledby="aqr-fuzzing-heading">
+    <div class="asf-head">
+        <h2 id="aqr-fuzzing-heading">Safe fuzzing</h2>
+        @if (_clientBlocked is not null)
+        {
+            <span class="asf-pill asf-pill-attention" data-testid="aqr-fuzzing-blocked-pill">@ApiFuzzingPresentation.BlockedTitle</span>
+        }
+    </div>
+    <p class="asf-intro" data-testid="aqr-fuzzing-intro">@ApiFuzzingPresentation.Intro</p>
+    <p class="asf-muted" data-testid="aqr-fuzzing-scope">@ApiFuzzingPresentation.ScopeNote</p>
+
+    <dl class="asf-dl">
+        <div><dt>Environment</dt><dd data-testid="aqr-fuzzing-environment">@(Context?.ActiveProfile.Name ?? "No active Target Environment") <span class="asf-pill asf-pill-muted">@(Context?.ActiveProfile.EnvironmentType.ToString() ?? "Unknown")</span></dd></div>
+        <div><dt>Limits</dt><dd class="asf-muted" data-testid="aqr-fuzzing-limits">@ApiFuzzingPresentation.LimitsText(Settings)</dd></div>
+    </dl>
+
+    @if (_clientBlocked is not null)
+    {
+        <div class="asf-blocked" role="status" data-testid="aqr-fuzzing-blocked">
+            <strong>@ApiFuzzingPresentation.BlockedTitle.</strong> @_clientBlocked The backend refuses fuzzing for this environment as well.
+        </div>
+    }
+
+    <fieldset class="asf-levels" data-testid="aqr-fuzzing-levels" disabled="@(_running || _clientBlocked is not null)">
+        <legend>Level</legend>
+        @foreach (var level in ApiFuzzingPresentation.Levels)
+        {
+            var id = $"aqr-fuzz-level-{level.ToString().ToLowerInvariant()}";
+            <div class="asf-level">
+                <input type="radio" id="@id" name="aqr-fuzz-level" value="@level" checked="@(_level == level)" aria-describedby="@($"{id}-help")"
+                       data-testid="@id" @onchange="() => SetLevel(level)" />
+                <label for="@id"><strong>@ApiFuzzingPresentation.LevelLabel(level)</strong></label>
+                <p class="asf-muted" id="@($"{id}-help")">@ApiFuzzingPresentation.LevelDescription(level)</p>
+            </div>
+        }
+    </fieldset>
+
+    <div class="asf-actions">
+        <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-analyze" disabled="@(!CanAnalyze)" @onclick="AnalyzeAsync">Analyze eligibility</button>
+        <button type="button" class="btn-primary" data-testid="aqr-fuzzing-run" disabled="@(!CanRun)" aria-describedby="aqr-fuzzing-run-help" @onclick="RunAsync">Run safe fuzzing</button>
+        @if (_running)
+        {
+            <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-cancel" disabled="@_cancelRequested" @onclick="CancelAsync">Cancel</button>
+        }
+    </div>
+    <p class="asf-muted" id="aqr-fuzzing-run-help" data-testid="aqr-fuzzing-run-help">@RunHelp</p>
+    <p class="asf-status" role="status" aria-live="polite" data-testid="aqr-fuzzing-status">@_status</p>
+    @if (_error is not null) { <p class="asf-error" role="alert" data-testid="aqr-fuzzing-error">@_error</p> }
+
+    @if (_plan is { } plan)
+    {
+        <section class="asf-block" data-testid="aqr-fuzzing-eligibility" aria-labelledby="aqr-fuzzing-eligibility-heading">
+            <h3 id="aqr-fuzzing-eligibility-heading">Eligibility</h3>
+            <p data-testid="aqr-fuzzing-safety"><span class="asf-pill asf-pill-@ApiFuzzingPresentation.SafetyTone(plan.Safety.State)">@ApiFuzzingPresentation.SafetyLabel(plan.Safety.State)</span> <span class="asf-muted">@plan.Safety.Reason</span></p>
+            <p class="asf-muted" data-testid="aqr-fuzzing-eligibility-summary">@plan.EligibleOperations eligible @(plan.EligibleOperations == 1 ? "operation" : "operations") · @plan.Operations.Count(o => o.Classification != ApiFuzzSafetyClassification.ReadOnlyEligible) skipped · @plan.Cases.Count @(plan.Cases.Count == 1 ? "case" : "cases") planned@(plan.CasesOverBudget > 0 ? $" · {plan.CasesOverBudget} over budget (not run)" : "")</p>
+            @if (plan.NotAvailableReason is { } notAvailable) { <p class="asf-muted" data-testid="aqr-fuzzing-not-available">@notAvailable</p> }
+            @if (plan.Operations.Count > 0)
+            {
+                <div class="asf-tablewrap" tabindex="0" role="region" aria-label="Fuzzing eligibility by operation">
+                    <table class="asf-table" data-testid="aqr-fuzzing-operations">
+                        <thead><tr><th scope="col">Operation</th><th scope="col">Protocol</th><th scope="col">Eligibility</th><th scope="col">Reason</th><th scope="col">Cases</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in plan.Operations)
+                            {
+                                <tr data-testid="aqr-fuzzing-operation-row" data-classification="@o.Classification">
+                                    <td class="asf-mono">@o.Display</td>
+                                    <td>@(o.Protocol == ApiFuzzProtocol.GraphQl ? "GraphQL" : "REST")</td>
+                                    <td><span class="asf-pill asf-pill-@ApiFuzzingPresentation.ClassificationTone(o.Classification)">@ApiFuzzingPresentation.ClassificationLabel(o.Classification)</span></td>
+                                    <td>@o.Reason</td>
+                                    <td>@o.CaseCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (plan.Cases.Count > 0)
+            {
+                <ReviewDisclosure Text="@($"Preview {plan.Cases.Count} planned case{(plan.Cases.Count == 1 ? "" : "s")}")" CollapseText="Hide case preview" TestId="aqr-fuzzing-preview" Class="disclosure-inline">
+                    <div class="asf-tablewrap" tabindex="0" role="region" aria-label="Planned fuzz cases">
+                        <table class="asf-table" data-testid="aqr-fuzzing-cases">
+                            <thead><tr><th scope="col">Operation</th><th scope="col">Mutation</th><th scope="col">Parameter / field</th><th scope="col">Value</th><th scope="col">Expected handling</th><th scope="col">Safety</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in plan.Cases)
+                                {
+                                    <tr data-testid="aqr-fuzzing-case-row" data-case-id="@c.CaseId">
+                                        <td class="asf-mono">@c.OperationDisplay</td>
+                                        <td>@ApiFuzzingPresentation.MutationLabel(c.MutationType)</td>
+                                        <td class="asf-mono">@c.Parameter <span class="asf-muted">(@c.Location)</span></td>
+                                        <td class="asf-muted">@c.ValuePreview</td>
+                                        <td>@ApiFuzzingPresentation.ExpectedLabel(c.ExpectedBehavior)</td>
+                                        <td>@ApiFuzzingPresentation.ClassificationLabel(c.SafetyClassification)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
+            }
+        </section>
+    }
+
+    @if (_run is { } run)
+    {
+        <section class="asf-block" data-testid="aqr-fuzzing-results" data-completeness="@run.Completeness" data-running="@(run.Running ? "true" : "false")" aria-labelledby="aqr-fuzzing-results-heading">
+            <div class="asf-head">
+                <h3 id="aqr-fuzzing-results-heading">@(_runIsHistorical ? "Previous safe fuzzing run" : "Safe fuzzing results")</h3>
+                @if (!run.Running)
+                {
+                    <button type="button" class="btn-secondary asf-btn-sm" data-testid="aqr-fuzzing-export" @onclick="ExportAsync">Export HTML</button>
+                }
+            </div>
+            <dl class="asf-dl">
+                <div><dt>Level</dt><dd data-testid="aqr-fuzzing-result-level">@ApiFuzzingPresentation.LevelLabel(run.Level)</dd></div>
+                <div><dt>Environment</dt><dd>@run.EnvironmentName <span class="asf-muted">· @ApiFuzzingPresentation.SafetyLabel(run.Safety.State)</span></dd></div>
+                <div><dt>Completeness</dt><dd data-testid="aqr-fuzzing-completeness">@ApiFuzzingPresentation.CompletenessLabel(run.Completeness, run.Running)@if (run.CompletenessReason is { Length: > 0 } why) { <span class="asf-muted"> · @why</span> }</dd></div>
+                <div><dt>Started</dt><dd>@run.StartedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd></div>
+            </dl>
+            <ul class="asf-counts" data-testid="aqr-fuzzing-counts">
+                @foreach (var count in ApiFuzzingPresentation.Summary(run))
+                {
+                    <li class="asf-count asf-count-@count.Tone" data-testid="aqr-fuzzing-count" data-key="@count.Key"><span class="asf-count-value">@count.Value</span> <span class="asf-count-label">@count.Label</span></li>
+                }
+            </ul>
+            <h4>Findings (@run.Findings.Count)</h4>
+            @if (run.Findings.Count == 0)
+            {
+                <p class="asf-muted" data-testid="aqr-fuzzing-no-findings">@(run.CasesExecuted == 0 ? "No case was executed, so nothing was assessed." : "No robustness or contract finding in the executed cases. Rejected invalid input (4xx) is the expected behaviour and is not a finding.")</p>
+            }
+            else
+            {
+                <ul class="asf-findings" data-testid="aqr-fuzzing-findings">
+                    @foreach (var f in run.Findings)
+                    {
+                        <li data-testid="aqr-fuzzing-finding" data-rule="@f.RuleId" data-cases="@f.CaseIds.Count">
+                            <span class="asf-sev asf-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span>
+                            <strong>@f.Title</strong> <span class="asf-muted">· @f.Operation · @f.CaseIds.Count @(f.CaseIds.Count == 1 ? "case" : "cases")</span>
+                            <ReviewDisclosure Text="Evidence" CollapseText="Hide evidence" TestId="@($"aqr-fuzzing-finding-{f.RuleId}-{f.CaseIds[0]}")" Class="disclosure-inline disclosure-small">
+                                <p>@f.Description</p>
+                                <ul class="asf-mono asf-evidence">@foreach (var e in f.Evidence) { <li>@e</li> }</ul>
+                                <p><strong>Recommendation:</strong> @f.Recommendation</p>
+                                @if (f.StandardsReferences.Count > 0) { <p class="asf-muted">Standards (reference only, not compliance): <StandardReferences References="f.StandardsReferences" /></p> }
+                            </ReviewDisclosure>
+                        </li>
+                    }
+                </ul>
+            }
+            @if (run.Results.Count > 0)
+            {
+                <ReviewDisclosure Text="@($"Case results ({run.Results.Count})")" CollapseText="Hide case results" TestId="aqr-fuzzing-case-results" Class="disclosure-inline">
+                    <div class="asf-tablewrap" tabindex="0" role="region" aria-label="Fuzz case results">
+                        <table class="asf-table" data-testid="aqr-fuzzing-results-table">
+                            <thead><tr><th scope="col">Case</th><th scope="col">Operation</th><th scope="col">Mutation</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Note</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in run.Results)
+                                {
+                                    var c = run.Cases.FirstOrDefault(x => x.CaseId == r.CaseId);
+                                    <tr data-testid="aqr-fuzzing-result-row" data-outcome="@r.Outcome">
+                                        <td class="asf-mono">@r.CaseId</td>
+                                        <td class="asf-mono">@(c?.OperationDisplay ?? "—")</td>
+                                        <td>@(c is null ? "—" : ApiFuzzingPresentation.MutationLabel(c.MutationType)) <span class="asf-muted">@c?.Parameter</span></td>
+                                        <td>@(r.StatusCode?.ToString() ?? "—")</td>
+                                        <td><span class="asf-state asf-state-@ApiFuzzingPresentation.OutcomeTone(r.Outcome)">@ApiFuzzingPresentation.OutcomeLabel(r.Outcome)</span></td>
+                                        <td class="asf-muted">@r.Note</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
+            }
+            <ReviewDisclosure Text="Limitations" CollapseText="Hide limitations" TestId="aqr-fuzzing-limitations" Class="disclosure-inline disclosure-small">
+                <ul class="asf-muted">@foreach (var l in run.Limitations.Append(ApiFuzzingPresentation.AuthorizationLimitation)) { <li>@l</li> }</ul>
+            </ReviewDisclosure>
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter] public FrontendAnalysisContext? Context { get; set; }
+    /// <summary>The same immutable review snapshot API Quality Review sends (targets, identity, environment); null when nothing is selected.</summary>
+    [Parameter] public Func<ApiReviewRunRequest?>? BuildReviewRequest { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    /// <summary>Poll interval of a running fuzz run (tests use a short one).</summary>
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    private ApiFuzzingLevel _level = ApiFuzzingLevel.Off;
+    private ApiFuzzingPlan? _plan;
+    private ApiFuzzingReport? _run;
+    private bool _runIsHistorical;
+    private bool _busy;
+    private bool _running;
+    private bool _cancelRequested;
+    private string _status = "";
+    private string? _error;
+    private string? _clientBlocked;
+    private string? _profileId;
+    private CancellationTokenSource? _poll;
+
+    private ApiFuzzingSettings Settings => new() { Level = _level };
+    private bool CanAnalyze => !_busy && !_running && _clientBlocked is null && _level != ApiFuzzingLevel.Off && BuildReviewRequest?.Invoke() is { Targets.Count: > 0 };
+    private bool CanRun => !_busy && !_running && _clientBlocked is null && _plan is { CanRun: true } plan && plan.Level == _level;
+    private string RunHelp => _clientBlocked is not null ? "Run is disabled: blocked by safety policy."
+        : _level == ApiFuzzingLevel.Off ? "Choose a level, then analyze eligibility."
+        : _plan is null || _plan.Level != _level ? "Analyze eligibility first: the run executes exactly the planned cases."
+        : _plan.CanRun ? $"Runs {_plan.Cases.Count} planned case{(_plan.Cases.Count == 1 ? "" : "s")} against {Context?.ActiveProfile.Name}."
+        : $"Run is disabled: {_plan.NotAvailableReason ?? "nothing to run."}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _clientBlocked = ApiFuzzingPresentation.ClientBlockedReason(Context?.ActiveProfile.EnvironmentType.ToString());
+        if (Context?.ActiveProfile.Id is { } id && id != _profileId)
+        {
+            _profileId = id;
+            _plan = null;
+            _error = null;
+            await History.LoadAsync(JS);
+            if (!_running && History.For(id).FuzzRuns.FirstOrDefault() is { } previous) { _run = previous; _runIsHistorical = true; }
+        }
+    }
+
+    private void SetLevel(ApiFuzzingLevel level)
+    {
+        _level = level;
+        if (_plan?.Level != level) _plan = null;
+        _status = level == ApiFuzzingLevel.Off ? "Safe fuzzing is off." : $"{ApiFuzzingPresentation.LevelLabel(level)} selected. Analyze eligibility to preview the cases.";
+    }
+
+    private ApiFuzzingRunRequest? Request() => BuildReviewRequest?.Invoke() is { } review ? new ApiFuzzingRunRequest { Review = review, Settings = Settings } : null;
+
+    private async Task AnalyzeAsync()
+    {
+        if (!CanAnalyze || Request() is not { } request) return;
+        _busy = true; _error = null; _status = "Analyzing eligibility (no fuzz request is sent)…";
+        try
+        {
+            var (plan, error) = await ReviewService.PlanFuzzingAsync(request);
+            _plan = plan;
+            _error = error;
+            _status = plan is null ? "Eligibility analysis failed." : plan.CanRun ? $"{plan.Cases.Count} case{(plan.Cases.Count == 1 ? "" : "s")} planned across {plan.EligibleOperations} eligible operation{(plan.EligibleOperations == 1 ? "" : "s")}." : plan.NotAvailableReason ?? "Nothing to run.";
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RunAsync()
+    {
+        if (!CanRun || Request() is not { } request || Context is null) return;
+        _busy = true; _error = null; _cancelRequested = false; _status = "Starting safe fuzzing…";
+        try
+        {
+            var (run, error) = await ReviewService.StartFuzzingAsync(request);
+            if (run is null) { _error = error ?? "Safe fuzzing could not start."; _status = ""; return; }
+            _run = run; _runIsHistorical = false;
+            _running = run.Running;
+            if (_running) _ = PollAsync(run.RunId, Context.ActiveProfile.Id);
+            else await FinishAsync(run, Context.ActiveProfile.Id);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PollAsync(string runId, string profileId)
+    {
+        _poll?.Cancel();
+        _poll = new CancellationTokenSource();
+        var token = _poll.Token;
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(PollInterval, token);
+                var update = await ReviewService.GetFuzzingRunAsync(runId, token);
+                if (update is null) continue;
+                _run = update;
+                _status = update.Running ? $"Running: {update.CasesExecuted} of {update.CasesPlanned} cases executed…" : _status;
+                if (!update.Running) { await FinishAsync(update, profileId); return; }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task FinishAsync(ApiFuzzingReport run, string profileId)
+    {
+        _running = false;
+        _run = run;
+        _status = $"Safe fuzzing finished: {ApiFuzzingPresentation.CompletenessLabel(run.Completeness, false)}. {run.CasesExecuted} of {run.CasesPlanned} cases executed, {run.Findings.Count} finding{(run.Findings.Count == 1 ? "" : "s")}.";
+        await History.RecordFuzzingAsync(JS, profileId, run);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_run is not { Running: true } run) return;
+        _cancelRequested = true;
+        _status = "Cancelling: no further cases are scheduled…";
+        await ReviewService.CancelFuzzingAsync(run.RunId);
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_run is not { } run) return;
+        var html = ExportService.ExportApiFuzzing(run, ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"api-safe-fuzzing-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    public void Dispose() { _poll?.Cancel(); _poll?.Dispose(); }
+}

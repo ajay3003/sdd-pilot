@@ -1,0 +1,83 @@
+/* API Quality Review → Safe fuzzing. Scoped to this component (the page's isolated CSS does not reach it). */
+.asf-panel {
+    background: var(--clr-surface-white);
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.15rem;
+    min-width: 0;
+}
+
+.asf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.asf-head h2 { margin: 0; font-size: 1.15rem; color: var(--clr-text-heading); }
+.asf-head h3 { margin: 0; font-size: 1.02rem; color: var(--clr-text-heading); }
+.asf-block { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--clr-border-subtle); min-width: 0; }
+.asf-block h4 { margin: 0.9rem 0 0.4rem; font-size: 0.95rem; color: var(--clr-text-heading); }
+
+.asf-intro { margin: 0 0 0.35rem; color: var(--clr-text-body); font-weight: 600; }
+.asf-muted { color: var(--clr-text-subtle); font-size: 0.88rem; line-height: 1.5; }
+.asf-mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; overflow-wrap: anywhere; }
+.asf-status { min-height: 1.2em; margin: 0.25rem 0; font-size: 0.9rem; color: var(--clr-text-body); }
+.asf-error { color: var(--clr-danger); font-weight: 600; margin: 0.25rem 0; }
+
+.asf-blocked {
+    margin: 0.6rem 0;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--clr-warning-border);
+    background: var(--clr-warning-bg-light);
+    color: var(--clr-text-body);
+    border-radius: var(--radius-md);
+}
+
+.asf-dl { margin: 0.5rem 0; display: grid; }
+.asf-dl > div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px solid var(--clr-border-subtle); font-size: 0.92rem; }
+.asf-dl > div:last-child { border-bottom: 0; }
+.asf-dl dt { color: var(--clr-text-muted); font-weight: 500; }
+.asf-dl dd { margin: 0; overflow-wrap: anywhere; }
+
+.asf-levels { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem 0.25rem; margin: 0.75rem 0; min-width: 0; }
+.asf-levels legend { font-weight: 600; padding: 0 0.3rem; color: var(--clr-text-heading); }
+.asf-level { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.5rem; align-items: baseline; margin-bottom: 0.4rem; }
+.asf-level p { grid-column: 2; margin: 0.1rem 0 0; }
+.asf-level input:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+
+.asf-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.asf-actions button:focus-visible, .asf-btn-sm:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.asf-btn-sm { font-size: 0.85rem; padding: 0.3rem 0.7rem; }
+
+.asf-pill { display: inline-flex; align-items: center; padding: 0.12rem 0.55rem; border-radius: 999px; border: 1px solid var(--clr-border); background: var(--clr-surface); color: var(--clr-text-muted); font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.asf-pill-ready { background: var(--clr-success-bg); color: var(--clr-success); border-color: var(--clr-success-border); }
+.asf-pill-attention { background: var(--clr-warning-bg-light); color: var(--clr-warning); border-color: var(--clr-warning-border); }
+.asf-pill-muted { background: var(--clr-surface); color: var(--clr-text-subtle); border-color: var(--clr-border); }
+
+.asf-tablewrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); margin: 0.5rem 0; }
+.asf-tablewrap:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.asf-table { width: 100%; border-collapse: collapse; }
+.asf-table th, .asf-table td { border-bottom: 1px solid var(--clr-border); padding: 0.5rem 0.65rem; text-align: left; vertical-align: top; font-size: 0.86rem; line-height: 1.45; overflow-wrap: anywhere; }
+.asf-table th { background: var(--clr-surface); color: var(--clr-text-muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.asf-table tbody tr:last-child td { border-bottom: 0; }
+
+.asf-state { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; border: 1px solid var(--clr-border); background: var(--clr-surface); white-space: nowrap; }
+.asf-state-pass { border-color: var(--clr-success-border); color: var(--clr-success); background: var(--clr-success-bg); }
+.asf-state-fail { border-color: var(--clr-danger-border); color: var(--clr-danger-strong, #b91c1c); background: var(--clr-danger-bg); }   /* #dc2626 on the danger background is below 4.5:1 at this size */
+.asf-state-warning { border-color: var(--clr-warning-border); color: var(--clr-warning); background: var(--clr-warning-bg-light); }
+.asf-state-muted { color: var(--clr-text-subtle); }
+
+.asf-counts { list-style: none; margin: 0.6rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem; }
+.asf-count { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: 0.45rem 0.6rem; background: var(--clr-surface); }
+.asf-count-value { display: block; font-size: 1.15rem; font-weight: 700; color: var(--clr-text-heading); }
+.asf-count-label { font-size: 0.8rem; color: var(--clr-text-muted); }
+.asf-count-fail { border-color: var(--clr-danger-border); }
+.asf-count-warning, .asf-count-attention { border-color: var(--clr-warning-border); }
+.asf-count-pass { border-color: var(--clr-success-border); }
+
+.asf-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.asf-findings > li { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: 0.5rem 0.65rem; min-width: 0; overflow-wrap: anywhere; }
+.asf-evidence { padding-left: 1.1rem; }
+.asf-sev { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-right: 0.35rem; border: 1px solid var(--clr-border); }
+.asf-sev-medium { color: var(--clr-warning); border-color: var(--clr-warning-border); background: var(--clr-warning-bg-light); }
+.asf-sev-low { color: var(--clr-info); border-color: var(--clr-info-border); background: var(--clr-info-bg-light); }
+
+@media (max-width: 760px) {
+    .asf-dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+    .asf-actions button { flex: 1 1 100%; }
+}

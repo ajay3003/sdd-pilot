@@ -231,6 +231,61 @@ public sealed class AuthenticatedApiExecutionServiceTests
         Assert.Null(_handler.LastRequest);
     }
 
+    // ── Parameter-capable safe requests (safe fuzzing) ────────────────────────
+
+    private static BirkNext.Api.Services.ApiQuality.Fuzzing.ApiSafeRequest Safe(string method, string url, string? query = null, bool syntaxError = false, params (string Name, string Value)[] headers) =>
+        new(method, url, headers.Select(h => new KeyValuePair<string, string>(h.Name, h.Value)).ToList(), query, syntaxError);
+
+    [Fact]
+    public async Task SafeRequest_QueryParametersAndDeclaredHeaders_CarryTheCredentialInternally()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"title\":\"Bad\",\"status\":400,\"type\":\"x\"}", Encoding.UTF8, "application/problem+json") };
+        using var service = Service();
+        var result = await service.ExecuteSafeRequestForProfileAsync("dev", Fp, Safe("GET", "https://api.example.test/v1/children?status=BIRKNEXT_INVALID_ENUM", headers: ("X-Tenant", "north")));
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal("status=BIRKNEXT_INVALID_ENUM", _handler.LastRequest!.RequestUri!.Query.TrimStart('?'));
+        Assert.Equal("north", _handler.LastRequest.Headers.GetValues("X-Tenant").Single());
+        Assert.Equal("Bearer", _handler.LastRequest.Headers.Authorization!.Scheme);
+        Assert.DoesNotContain(Token, JsonSerializer.Serialize(result));
+    }
+
+    [Theory]
+    [InlineData("POST", "https://api.example.test/v1/children", null)]
+    [InlineData("DELETE", "https://api.example.test/v1/children", null)]
+    [InlineData("GET", "https://evil.example.test/v1/children", null)]
+    [InlineData("POST", "https://graphql.example.test/graphql", "mutation { deleteUser(id: 1) }")]
+    [InlineData("GET", "https://graphql.example.test/graphql", "query { __typename }")]
+    public async Task SafeRequest_UnsafeMethodsOutOfScopeHostsAndMutations_NeverSent(string method, string url, string? query)
+    {
+        using var service = Service();
+        await Assert.ThrowsAnyAsync<Exception>(() => service.ExecuteSafeRequestForProfileAsync("dev", Fp, Safe(method, url, query)));
+        Assert.Null(_handler.LastRequest);
+    }
+
+    [Theory]
+    [InlineData("Authorization")]
+    [InlineData("Cookie")]
+    [InlineData("X-Forwarded-For")]
+    [InlineData("Ocp-Apim-Subscription-Key")]
+    public async Task SafeRequest_CredentialAndInfrastructureHeaders_AreRejected(string header)
+    {
+        using var service = Service();
+        await Assert.ThrowsAsync<ArgumentException>(() => service.ExecuteSafeRequestForProfileAsync("dev", Fp, Safe("GET", "https://api.example.test/v1/children", headers: (header, "x"))));
+        Assert.Null(_handler.LastRequest);
+    }
+
+    [Fact]
+    public async Task SafeRequest_MalformedGraphQl_OnlyWhenFlagged()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"errors\":[{\"message\":\"syntax\"}]}", Encoding.UTF8, "application/json") };
+        using var service = Service();
+        await Assert.ThrowsAsync<ArgumentException>(() => service.ExecuteSafeRequestForProfileAsync("dev", Fp, Safe("POST", "https://graphql.example.test/graphql", "query { __typename ")));
+        Assert.Null(_handler.LastRequest);
+        var result = await service.ExecuteSafeRequestForProfileAsync("dev", Fp, Safe("POST", "https://graphql.example.test/graphql", "query { __typename ", syntaxError: true));
+        Assert.Equal(400, result.StatusCode);
+        Assert.Equal(1, result.GraphQlErrorCount);
+    }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = _ => new HttpResponseMessage(HttpStatusCode.OK);

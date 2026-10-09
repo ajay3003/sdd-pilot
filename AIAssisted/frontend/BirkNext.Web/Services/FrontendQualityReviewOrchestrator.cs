@@ -1140,9 +1140,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
 
         try
         {
-            // 5-second timeout for readiness check
+            // Bounded readiness revalidation: 5 s, except Passive Security whose readiness starts the ZAP container (JVM) on the server
+            // (server budget 75 s). With 5 s a working ZAP installation always timed out and was skipped as unavailable.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            cts.CancelAfter(engineId == FrontendQualityEngineIdDto.PassiveSecurity ? TimeSpan.FromSeconds(80) : TimeSpan.FromSeconds(5));
 
             var readiness = await _engineStatusService.RevalidateEngineReadinessAsync(engineId, cts.Token);
 
@@ -1184,7 +1185,9 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             AllowedBackendHostnames = allowedHosts,
             AllowedAuthority = ctx.SecuritySettings.ExpectedAuthority,
             AllowedClientIds = clientIds,
-            KnownSafeDomains = knownSafe
+            KnownSafeDomains = knownSafe,
+            // Static Security evaluates exactly the headers this Target Environment expects (presence only).
+            ExpectedSecurityHeaders = [.. ctx.SecuritySettings.ExpectedSecurityHeaders],
         };
     }
 }

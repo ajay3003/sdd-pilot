@@ -425,6 +425,8 @@ public sealed class ReportExportService : IReportExportService
     }
 
     public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName, BirkNext.ApiReview.ApiFuzzingReport? fuzzing) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml, fuzzing);
+    public string ExportApiFuzzing(BirkNext.ApiReview.ApiFuzzingReport run, string? projectName) => ApiFuzzingExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => ActiveCdcRunExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
@@ -719,64 +721,6 @@ public sealed class ReportExportService : IReportExportService
         FrontendQualityCategory.Readiness     => "Readiness",
         _                                     => c.ToString(),
     };
-
-    public string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName)
-    {
-        var sb = new StringBuilder();
-        var h = report.Health;
-
-        sb.Append("<div class=\"kpi-row\">");
-        sb.Append(Kpi(h.Score.ToString(), "Score /100"));
-        sb.Append(Kpi(h.AssetsScanned.ToString(), "Assets Scanned"));
-        sb.Append(Kpi(h.EndpointsDiscovered.ToString(), "Endpoints"));
-        sb.Append(Kpi(h.HeadersChecked.ToString(), "Headers Checked"));
-        sb.Append(Kpi(h.FindingsCount.ToString(), "Findings"));
-        if (h.Critical > 0) sb.Append(Kpi(h.Critical.ToString(), "Critical"));
-        if (h.High > 0)     sb.Append(Kpi(h.High.ToString(), "High"));
-        sb.Append("</div>\n");
-
-        if (report.Findings.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Findings</h2>\n");
-            sb.Append(Table(
-                ["Severity", "Category", "Title", "Description", "Recommendation"],
-                report.Findings
-                    .OrderBy(f => f.Severity)
-                    .Select(f => new[]
-                    {
-                        Badge(f.Severity.ToString()),
-                        Esc(f.Category.ToString()),
-                        Esc(f.Title),
-                        Esc(f.Description),
-                        Esc(f.Recommendation)
-                    })));
-            sb.Append("</section>\n");
-        }
-
-        if (report.Recommendations.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
-            sb.Append(RecommendationList(report.Recommendations));
-            sb.Append("</section>\n");
-        }
-
-        if (report.Headers.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Security Headers</h2>\n");
-            sb.Append(Table(
-                ["Header", "Status", "Recommendation"],
-                report.Headers.Select(h2 => new[]
-                {
-                    Esc(h2.Header),
-                    Esc(h2.Status),
-                    Esc(h2.Recommendation)
-                })));
-            sb.Append("</section>\n");
-        }
-
-        var subtitle = string.IsNullOrWhiteSpace(report.TargetUrl) ? null : $"Target: {report.TargetUrl}  Scanned: {report.ScannedAt:yyyy-MM-dd HH:mm} UTC";
-        return BuildHtml("Security Review Report", projectName, subtitle, sb.ToString());
-    }
 
     public string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName)
     {

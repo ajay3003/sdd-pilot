@@ -112,7 +112,11 @@ public sealed partial class ApiReviewEngineTests
         Assert.Equal(ApiReviewAccessMode.AuthenticatedHttp, target.AccessMode);
         Assert.Equal(ApiReviewTargetStatus.Completed, target.Status);
         Assert.True(gateway.RestCalls >= 2, "operation GET + unknown-route probe go through the gateway");
-        Assert.DoesNotContain(fixture.Requests, r => r.Method == HttpMethod.Get);
+        // The only public GET is the deliberate anonymous authentication-enforcement probe: the reviewed path, no credential.
+        var anonymous = Assert.Single(fixture.Requests, r => r.Method == HttpMethod.Get);
+        Assert.Equal("/api/children", anonymous.RequestUri!.AbsolutePath);
+        Assert.Null(anonymous.Headers.Authorization);
+        Assert.Equal(ApiAuthenticationEnforcementStatus.NotVerified, target.AuthenticationEnforcement!.Status);   // fixture answers 404: not a verdict
         Assert.All(target.Operations.Where(o => o.Executed), o => Assert.Equal(ApiReviewAccessMode.AuthenticatedHttp, o.AccessMode));
         var json = JsonSerializer.Serialize(report);
         Assert.DoesNotContain("Bearer", json); Assert.DoesNotContain("Authorization", json); Assert.DoesNotContain("eyJ", json); Assert.DoesNotContain(FakeGateway.SecretToken, json);
@@ -319,19 +323,105 @@ public sealed partial class ApiReviewEngineTests
         Assert.Contains(report.Targets[0].Checks, c => c.CheckId == "rest-rate-limit-headers" && c.Result == ApiReviewCheckResult.ManualReview);
     }
 
-    [Fact]
-    public async Task UnexpectedlyPublic_AuthEndpointAnswersAnonymously_IsHigh_ProperRejectionIsPass()
-    {
-        // Observed traffic carried a bearer, but the environment has no authenticated context: the public probe must still be honest.
-        var open = new Fixture { Respond = (_, _) => Json(HttpStatusCode.OK, "{\"secret\":1}") };
-        var openTarget = Rest(auth: true) with { AuthRequired = false, Operations = [new ApiReviewOperation { Method = "GET", Path = "/api/children", AuthObserved = true, ObservedCount = 2 }] };
-        var openReport = await Engine(open).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, openTarget));
-        Assert.Contains(openReport.Findings, f => f.Id.StartsWith("rest-unexpectedly-public") && f.Severity == ApiReviewSeverity.High);
+    // ── Authentication enforcement: the deliberate anonymous probe ─────────────
 
-        var closed = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath.Contains("unknown-route") ? Json(HttpStatusCode.NotFound, "{\"title\":\"nf\",\"status\":404,\"type\":\"x\"}", "application/problem+json") : Json(HttpStatusCode.Unauthorized, "{\"title\":\"Unauthorized\",\"status\":401,\"type\":\"x\"}", "application/problem+json") };
-        var closedReport = await Engine(closed).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, openTarget));
-        Assert.Contains(closedReport.Targets[0].Operations[0].Checks, c => c.CheckId == "rest-auth-enforced" && c.Result == ApiReviewCheckResult.Pass);
-        Assert.DoesNotContain(closedReport.Findings, f => f.Id.StartsWith("rest-unexpectedly-public"));
+    private static Fixture AnonymousAnswers(HttpStatusCode status, string body, string contentType = "application/json") => new()
+    {
+        Respond = (req, _) => req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath == "/api/children" ? Json(status, body, contentType) : Json(HttpStatusCode.NoContent, ""),
+    };
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, ApiAuthenticationEnforcementStatus.Verified)]
+    [InlineData(HttpStatusCode.Forbidden, ApiAuthenticationEnforcementStatus.Verified)]
+    [InlineData(HttpStatusCode.NotFound, ApiAuthenticationEnforcementStatus.NotVerified)]
+    [InlineData(HttpStatusCode.Found, ApiAuthenticationEnforcementStatus.NotVerified)]
+    public async Task AuthEnforcement_AnonymousRest_StatusSemantics(HttpStatusCode anonymousStatus, ApiAuthenticationEnforcementStatus expected)
+    {
+        var fixture = AnonymousAnswers(anonymousStatus, "{\"title\":\"x\",\"status\":1,\"type\":\"about:blank\"}", "application/problem+json");
+        var report = await Engine(fixture, new FakeGateway(true)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true)));
+
+        var enforcement = Assert.Single(report.Targets).AuthenticationEnforcement!;
+        Assert.Equal(expected, enforcement.Status);
+        Assert.Equal("GET /api/children", enforcement.Probe);
+        Assert.Equal((int)anonymousStatus, enforcement.StatusCode);
+        Assert.Equal(200, enforcement.AuthenticatedStatusCode);
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "rest-unexpectedly-public");
+        var probe = Assert.Single(fixture.Requests, r => r.Method == HttpMethod.Get);
+        Assert.Null(probe.Headers.Authorization);
+        Assert.False(probe.Headers.Contains("Cookie"));
+        Assert.Contains(report.Targets[0].Checks, c => c.CheckId == "auth-enforcement");
+    }
+
+    [Fact]
+    public async Task AuthEnforcement_AnonymousRestReturnsProtectedJson_IsUnexpectedlyPublic_MediumWarning()
+    {
+        var fixture = AnonymousAnswers(HttpStatusCode.OK, "{\"items\":[{\"id\":1}],\"totalCount\":1}");
+        var report = await Engine(fixture, new FakeGateway(true)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true)));
+
+        Assert.Equal(ApiAuthenticationEnforcementStatus.UnexpectedlyPublic, report.Targets[0].AuthenticationEnforcement!.Status);
+        var finding = Assert.Single(report.Findings, f => f.RuleId == "rest-unexpectedly-public");
+        Assert.Equal(ApiReviewSeverity.Medium, finding.Severity);
+        Assert.Equal(ApiReviewFindingType.AccessControl, finding.Type);
+        Assert.Contains(finding.StandardsReferences, r => r.ReferenceId == "A07:2021" && r.MappingType == BirkNext.Standards.StandardsMappingType.Related);
+        Assert.DoesNotContain("\"id\":1", JsonSerializer.Serialize(report));
+    }
+
+    [Fact]
+    public async Task AuthEnforcement_AnonymousRest2xxWithoutJson_IsNotVerified()
+    {
+        var fixture = AnonymousAnswers(HttpStatusCode.OK, "<html>spa</html>", "text/html");
+        var report = await Engine(fixture, new FakeGateway(true)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true)));
+        Assert.Equal(ApiAuthenticationEnforcementStatus.NotVerified, report.Targets[0].AuthenticationEnforcement!.Status);
+        Assert.DoesNotContain(report.Findings, f => f.RuleId == "rest-unexpectedly-public");
+    }
+
+    [Fact]
+    public async Task AuthEnforcement_LoginAndTokenEndpointsAreNeverProbed()
+    {
+        var fixture = AnonymousAnswers(HttpStatusCode.OK, "{\"ok\":true}");
+        var target = Rest(auth: true, basePath: "/api", ops: [("GET", "/api/auth/token"), ("GET", "/api/login")]);
+        var report = await Engine(fixture, new FakeGateway(true)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, target));
+        Assert.DoesNotContain(fixture.Requests, r => r.Method == HttpMethod.Get);
+        Assert.Equal(ApiAuthenticationEnforcementStatus.NotVerified, report.Targets[0].AuthenticationEnforcement!.Status);
+        Assert.True(ApiReviewEngine.IsAuthenticationFlowPath("/connect/token"));
+        Assert.False(ApiReviewEngine.IsAuthenticationFlowPath("/api/children"));
+    }
+
+    [Fact]
+    public async Task AuthEnforcement_PublicTarget_IsNotApplicable_NoExtraRequest()
+    {
+        var fixture = new Fixture { Respond = (_, _) => Json(HttpStatusCode.OK, "{\"ok\":true}") };
+        var report = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()));
+        Assert.Equal(ApiAuthenticationEnforcementStatus.NotApplicable, report.Targets[0].AuthenticationEnforcement!.Status);
+        Assert.DoesNotContain(report.Findings, f => f.RuleId is "rest-unexpectedly-public" or "gql-unexpectedly-public");
+    }
+
+    [Fact]
+    public async Task AuthEnforcement_ContextMissing_NotVerified_NothingSent()
+    {
+        var fixture = new Fixture();
+        var report = await Engine(fixture, new FakeGateway(false)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true)));
+        Assert.Empty(fixture.Requests);
+        Assert.Equal(ApiAuthenticationEnforcementStatus.NotVerified, report.Targets[0].AuthenticationEnforcement!.Status);
+    }
+
+    [Theory]
+    [InlineData(401, "{\"errors\":[{\"message\":\"not authenticated\"}]}", ApiAuthenticationEnforcementStatus.Verified)]
+    [InlineData(200, "{\"errors\":[{\"message\":\"AUTH_NOT_AUTHENTICATED\"}],\"data\":null}", ApiAuthenticationEnforcementStatus.Verified)]
+    [InlineData(200, "{\"data\":{\"__typename\":\"Query\"}}", ApiAuthenticationEnforcementStatus.UnexpectedlyPublic)]
+    [InlineData(404, "{}", ApiAuthenticationEnforcementStatus.NotVerified)]
+    public async Task AuthEnforcement_AnonymousGraphQl_EnvelopeSemantics(int status, string body, ApiAuthenticationEnforcementStatus expected)
+    {
+        var fixture = new Fixture { Respond = (_, _) => Json((HttpStatusCode)status, body) };
+        var report = await Engine(fixture, new FakeGateway(true)).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, GraphQl(auth: true)));
+
+        var enforcement = report.Targets[0].AuthenticationEnforcement!;
+        Assert.Equal(expected, enforcement.Status);
+        Assert.Equal(ApiReviewEngine.TypenameProbe, enforcement.Probe);
+        var anonymous = Assert.Single(fixture.Requests, r => r.Method == HttpMethod.Post);
+        Assert.Null(anonymous.Headers.Authorization);
+        Assert.DoesNotContain(fixture.Bodies, b => b.Contains("mutation", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(expected == ApiAuthenticationEnforcementStatus.UnexpectedlyPublic, report.Findings.Any(f => f.RuleId == "gql-unexpectedly-public" && f.Severity == ApiReviewSeverity.Medium));
     }
 
     [Fact]

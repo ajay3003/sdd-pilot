@@ -12,7 +12,7 @@ namespace BirkNext.Web.Services;
 public static class ApiReviewExport
 {
     public static string Build(ApiReviewReport report, string? projectName, Func<string[], IEnumerable<string[]>, string> table, Func<string, string> badge, Func<string?, string> esc,
-        Func<string, string?, string?, string, string> buildHtml)
+        Func<string, string?, string?, string, string> buildHtml, ApiFuzzingReport? fuzzing = null)
     {
         var sb = new StringBuilder();
         var env = report.Environment;
@@ -22,7 +22,9 @@ public static class ApiReviewExport
         sb.Append($"<dt>Target URL</dt><dd>{esc(env.TargetUrl)}</dd>");
         sb.Append($"<dt>Authenticated testing method</dt><dd>{esc(env.AuthenticatedTestingMethod.ToString())}</dd>");
         sb.Append($"<dt>Access</dt><dd>{esc(AccessLabel(report))}</dd>");
-        sb.Append($"<dt>Policy</dt><dd>{(report.Policy.ReadOnly ? "Read-only" : "")}; error probes {(report.Policy.ErrorHandlingProbes && !env.IsProduction ? "enabled" : "disabled")}; response time {esc(report.Policy.LatencyPolicyText)}{(report.Policy.LatencySource is { } src ? $" ({esc(src)})" : "")}; REST payload warning &gt; {esc(ApiReviewPolicy.Bytes(report.Policy.RestPayloadThreshold))}{(report.Policy.GraphQlPayloadWarningBytes is { } gql ? $"; GraphQL payload warning &gt; {esc(ApiReviewPolicy.Bytes(gql))}" : "")} — thresholds captured when the review ran</dd>");
+        if (report.Safety is { } safety)
+            sb.Append($"<dt>Environment safety (backend)</dt><dd>{esc(ApiFuzzingPresentation.SafetyLabel(safety.State))} — {esc(safety.Reason)}</dd>");
+        sb.Append($"<dt>Policy</dt><dd>{(report.Policy.ReadOnly ? "Read-only" : "")}; error probes {(report.Policy.ErrorHandlingProbes && !env.IsProduction && report.Safety is not { ProductionLike: true } ? "enabled" : "disabled")}; response time {esc(report.Policy.LatencyPolicyText)}{(report.Policy.LatencySource is { } src ? $" ({esc(src)})" : "")}; REST payload warning &gt; {esc(ApiReviewPolicy.Bytes(report.Policy.RestPayloadThreshold))}{(report.Policy.GraphQlPayloadWarningBytes is { } gql ? $"; GraphQL payload warning &gt; {esc(ApiReviewPolicy.Bytes(gql))}" : "")} — thresholds captured when the review ran</dd>");
         foreach (var (label, value) in ApiReviewPresentation.PerformancePolicy(report.Policy))
             sb.Append($"<dt>Performance policy · {esc(label)}</dt><dd>{esc(value)}</dd>");
         sb.Append($"<dt>Started / generated</dt><dd>{report.StartedAt:u} / {report.GeneratedAt:u}</dd></dl></section>\n");
@@ -85,6 +87,13 @@ public static class ApiReviewExport
                         };
                     })));
             }
+            if (t.AuthenticationEnforcement is { } enforcement)
+                sb.Append($"<p><strong>Authentication enforcement:</strong> {badge(ApiFuzzingPresentation.EnforcementLabel(enforcement.Status))} {esc(enforcement.Probe ?? "")} — {esc(enforcement.Reason)}{(enforcement.Evidence.Count > 0 ? " (" + esc(string.Join("; ", enforcement.Evidence)) + ")" : "")}. Authorization is not assessed.</p>");
+            if (t.SecurityHeaders.Count > 0)
+                sb.Append("<h3>Security headers vs Target Environment expectations</h3>").Append(table(["Header", "Expected", "Observed", "Result", "Note"], t.SecurityHeaders.Select(h => new[]
+                {
+                    esc(h.Header), h.Expected ? "yes" : "no", esc(h.Present ? h.ObservedValue ?? "present" : "absent"), badge(ApiFuzzingPresentation.HeaderResultLabel(h.Result)), esc(h.Note),
+                })));
             var checks = t.Checks.Concat(t.Operations.SelectMany(o => o.Checks.Select(ch => ch with { Title = $"{o.Display}: {ch.Title}" }))).ToList();
             if (checks.Count > 0)
                 sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ApiReviewStatusLabels.AreaLabel(ch.Area)), esc(ch.Title), badge(ApiReviewEvidencePresentation.CheckLabel(ch, report.Policy)), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
@@ -146,6 +155,8 @@ public static class ApiReviewExport
             esc(string.Join("; ", f.StandardsReferences.Select(r => $"{r.StandardName} {r.ReferenceId} ({r.MappingType}; {r.EvidenceScope})"))),
         })));
         sb.Append("</section>\n");
+
+        if (fuzzing is not null && fuzzing.EnvironmentId == env.EnvironmentId) sb.Append(ApiFuzzingExport.Section(fuzzing, table, badge, esc));
 
         if (report.ManualReviewItems.Count > 0)
         {

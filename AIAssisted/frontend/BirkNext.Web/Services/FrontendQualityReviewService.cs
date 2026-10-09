@@ -194,6 +194,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             SourceSystem   = "Security",
             EngineId       = FrontendQualityEngineId.StaticSecurity,
             SourceRuleId   = f.Id,
+            StandardsReferences = StandardsReferenceMappings.ForFrontendRule(f.Id).ToList(),
         };
     }
 

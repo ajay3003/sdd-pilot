@@ -361,6 +361,16 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
 });
 // API Quality Review v2 engine (public client: no cookies, no automatic decompression so compression evidence stays visible, no redirects into other hosts)
 builder.Services.AddScoped<BirkNext.Api.Services.ApiQuality.IGraphQlSchemaArtifactStore, BirkNext.Api.Services.ApiQuality.GraphQlSchemaArtifactService>();
+builder.Services.Configure<BirkNext.Api.Services.ApiQuality.ApiActiveTestingOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.ApiQuality.ApiActiveTestingOptions.SectionName));
+builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.IApiEnvironmentSafetyPolicy, BirkNext.Api.Services.ApiQuality.ApiEnvironmentSafetyPolicy>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingRunCoordinator>();
+// Safe fuzzing: same public-client shape as the review engine (no cookies, no redirects, bodies decoded by ResponseBodyReader).
+builder.Services.AddHttpClient<BirkNext.Api.Services.ApiQuality.Fuzzing.IApiFuzzingService, BirkNext.Api.Services.ApiQuality.Fuzzing.ApiFuzzingService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview-SafeFuzzing/1.0");
+    client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);

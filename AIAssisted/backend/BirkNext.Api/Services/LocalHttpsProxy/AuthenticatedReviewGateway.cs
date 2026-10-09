@@ -16,6 +16,14 @@ public interface IAuthenticatedReviewGateway
     Task<AuthenticatedReviewExecutionOutcome> ExecuteGraphQlQueryAsync(AuthenticatedReviewIdentity identity, string endpointUrl, string query, CancellationToken cancellationToken = default);
     /// <summary>Authenticated GraphQL introspection (schema metadata only). Same identity/scope/read-only rules as a query; never a mutation.</summary>
     Task<AuthenticatedGraphQlSchemaOutcome> FetchGraphQlSchemaAsync(AuthenticatedReviewIdentity identity, string endpointUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Parameter-capable read-only request for safe fuzzing (query parameters, declared non-sensitive headers, one GraphQL query). The same
+    /// identity/scope/read-only rules apply and the execution service re-validates method, host scope, headers and the query before the
+    /// credential is applied. Implementations without this capability report it as rejected — never a silent public fallback.
+    /// </summary>
+    Task<AuthenticatedReviewExecutionOutcome> ExecuteSafeRequestAsync(AuthenticatedReviewIdentity identity, ApiQuality.Fuzzing.ApiSafeRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AuthenticatedReviewExecutionOutcome { Status = AuthenticatedExecutionStatus.Rejected, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = "Parameter-capable authenticated requests are not supported by this gateway." });
 }
 
 public sealed class AuthenticatedReviewGateway(IAuthenticatedApiExecutionService execution, ILocalHttpsProxyStatusQuery status, ILogger<AuthenticatedReviewGateway>? logger = null) : IAuthenticatedReviewGateway
@@ -74,6 +82,9 @@ public sealed class AuthenticatedReviewGateway(IAuthenticatedApiExecutionService
 
     public Task<AuthenticatedReviewExecutionOutcome> ExecuteGraphQlQueryAsync(AuthenticatedReviewIdentity identity, string endpointUrl, string query, CancellationToken cancellationToken = default) =>
         ExecuteAsync(identity, (p, f) => execution.ExecuteGraphQlQueryForProfileAsync(p, f, endpointUrl, query, cancellationToken));
+
+    public Task<AuthenticatedReviewExecutionOutcome> ExecuteSafeRequestAsync(AuthenticatedReviewIdentity identity, ApiQuality.Fuzzing.ApiSafeRequest request, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(identity, (p, f) => execution.ExecuteSafeRequestForProfileAsync(p, f, request, cancellationToken));
 
     public async Task<AuthenticatedGraphQlSchemaOutcome> FetchGraphQlSchemaAsync(AuthenticatedReviewIdentity identity, string endpointUrl, CancellationToken cancellationToken = default)
     {

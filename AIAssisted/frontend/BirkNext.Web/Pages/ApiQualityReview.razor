@@ -214,6 +214,9 @@
             }
         </section>
 
+        @* Safe fuzzing: bounded, contract-derived invalid input for non-production APIs (same targets and access as the review). *@
+        <ApiSafeFuzzingPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
+
         @* 2. Scope: what the review covers, in review words rather than access or configuration words. *@
         <section class="aqr-section aqr-domains" data-testid="aqr-domains" aria-labelledby="aqr-domains-heading">
             <h2 id="aqr-domains-heading">What will be reviewed</h2>
@@ -481,7 +484,11 @@
                     "Errors" => new[] { ApiReviewFindingType.Errors },
                     _ => new[] { ApiReviewFindingType.Performance },
                 };
-                @if (_tab == "Security") { <p class="aqr-scope-note" data-testid="aqr-security-note">@ApiReviewPresentation.SecurityScopeNote</p> }
+                @if (_tab == "Security")
+                {
+                    <p class="aqr-scope-note" data-testid="aqr-security-note">@ApiReviewPresentation.SecurityScopeNote</p>
+                    @RenderSecurityEvidence(report)
+                }
                 @if (_tab == "Performance")
                 {
                     <p class="aqr-scope-note" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p>
@@ -776,6 +783,71 @@
         finally { _running = false; }
     }
 
+    /// <summary>The review snapshot safe fuzzing analyses and runs with (same targets, identity and environment); null when nothing is selected.</summary>
+    private ApiReviewRunRequest? FuzzingReviewRequest()
+    {
+        if (_context is null || _context.ActiveTargetError is not null || _selected.Count == 0) return null;
+        var identity = _context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(_context);
+        return BuildRequest(_context, identity, _targets, _selected, _history);
+    }
+
+    /// <summary>
+    /// Security tab evidence the findings list cannot show: authentication enforcement per authenticated target (the deliberate anonymous
+    /// probe — authentication only, never authorization) and the security headers against the Target Environment's expectations.
+    /// </summary>
+    private RenderFragment RenderSecurityEvidence(ApiReviewReport report) => __builder =>
+    {
+        var enforcement = report.Targets.Where(t => t.AuthenticationEnforcement is not null).ToList();
+        if (enforcement.Count > 0)
+        {
+            <h3>Authentication enforcement</h3>
+            <p class="aqr-muted" data-testid="aqr-auth-enforcement-note">One safe read-only request per authenticated target is repeated without any credential. 401/403 verifies that authentication is enforced; this says nothing about what an authenticated identity may access (authorization is not tested).</p>
+            <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Authentication enforcement">
+                <table class="aqr-table" data-testid="aqr-auth-enforcement">
+                    <thead><tr><th scope="col">Service</th><th scope="col">Result</th><th scope="col">Anonymous probe</th><th scope="col">Detail</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in enforcement)
+                        {
+                            var e = t.AuthenticationEnforcement!;
+                            <tr data-testid="aqr-auth-enforcement-row" data-status="@e.Status">
+                                <td>@ApiReviewPresentation.DisplayName(t.Target)</td>
+                                <td><span class="aqr-state aqr-state-@ApiFuzzingPresentation.EnforcementTone(e.Status)">@ApiFuzzingPresentation.EnforcementLabel(e.Status)</span></td>
+                                <td class="aqr-mono">@(e.Probe ?? "—")@if (e.StatusCode is { } httpStatus) { <span class="aqr-muted"> → HTTP @httpStatus</span> }</td>
+                                <td>@e.Reason</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        var headerTargets = report.Targets.Where(t => t.SecurityHeaders.Count > 0).ToList();
+        if (headerTargets.Count > 0)
+        {
+            <h3>Security headers vs Target Environment expectations</h3>
+            <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates Security Expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required headers come from Target Environment → Security Expectations (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR Static Security.")</p>
+            @foreach (var t in headerTargets)
+            {
+                <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="@($"Security headers · {ApiReviewPresentation.DisplayName(t.Target)}")">
+                    <table class="aqr-table" data-testid="aqr-header-expectations" data-target-id="@t.Target.TargetId">
+                        <caption class="aqr-visually-hidden">Security headers of @ApiReviewPresentation.DisplayName(t.Target)</caption>
+                        <thead><tr><th scope="col">Header</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Result</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in t.SecurityHeaders)
+                            {
+                                <tr data-testid="aqr-header-row" data-header="@h.Header" data-result="@h.Result">
+                                    <td class="aqr-mono">@h.Header</td>
+                                    <td>@(h.Expected ? "Yes" : "No")</td>
+                                    <td class="aqr-mono">@(h.Present ? h.ObservedValue ?? "present" : "absent")</td>
+                                    <td><span class="aqr-state aqr-state-@ApiFuzzingPresentation.HeaderResultTone(h.Result)">@ApiFuzzingPresentation.HeaderResultLabel(h.Result)</span> <span class="aqr-muted">@h.Note</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    };
+
     public static ApiReviewRunRequest BuildRequest(FrontendAnalysisContext context, AuthenticatedReviewIdentity identity, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, ApiReviewHistory? history)
     {
         var production = context.ActiveProfile.EnvironmentType == FrontendEnvironmentType.Production;
@@ -800,6 +872,8 @@
                 CompressionMinimumBytes = context.PerformanceThresholds.CompressionMinPayloadBytes,
                 RestPayloadWarningBytes = context.PerformanceThresholds.MaxRestPayloadBytes, GraphQlPayloadWarningBytes = context.PerformanceThresholds.MaxGraphQlPayloadBytes,
                 LargePayloadBytes = context.PerformanceThresholds.MaxRestPayloadBytes,
+                // Security Expectations own the header policy; the review evaluates presence of exactly these headers.
+                ExpectedSecurityHeaders = [.. context.SecuritySettings.ExpectedSecurityHeaders],
             },
             Baselines = history is null ? [] : selectedTargets.Where(t => history.Baselines.ContainsKey(t.TargetId)).Select(t => history.Baselines[t.TargetId]).ToList(),
             FrontendOrigin = Uri.TryCreate(context.TargetUrl, UriKind.Absolute, out var origin) ? origin.GetLeftPart(UriPartial.Authority) : null,
@@ -823,7 +897,7 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportApiReview(_report, Workspace.ProjectName);
+        var html = ExportService.ExportApiReview(_report, Workspace.ProjectName, _history?.FuzzRuns.FirstOrDefault());
         await JS.InvokeVoidAsync("downloadHtmlFile", $"api-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 

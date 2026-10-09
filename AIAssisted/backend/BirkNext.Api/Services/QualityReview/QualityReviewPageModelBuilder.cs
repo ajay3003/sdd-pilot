@@ -172,7 +172,9 @@ public sealed class QualityReviewPageModelBuilder : IQualityReviewPageModelBuild
             Name = "OWASP ASVS / Top 10",
             Category = "Security",
             Status = hasSpecification ? QualityReviewStatus.Available : QualityReviewStatus.Blocked,
-            Description = "Security audit against OWASP Application Security Verification Standard",
+            // Keyword coverage of project documents only (wwwroot/standards/owasp/asvs-top10/rule-pack.json): never a security audit,
+            // OWASP compliance or a penetration test.
+            Description = "Documentation coverage against OWASP ASVS / Top 10 topics (document keyword checks; not a security audit or OWASP compliance)",
             RequiredInputs = ["specification"],
             MissingInputs = hasSpecification ? [] : ["specification.md"]
         };

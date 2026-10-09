@@ -23,6 +23,10 @@ public static class JsonBodyInspector
         ("source-file-path", new Regex(@"[A-Za-z]:\\[^""\s]+\.(cs|vb|fs|dll)|/[^""\s]+\.(cs|py|js|ts|java)(:line\s*\d+|:\d+)", RegexOptions.Compiled)),
         ("sql-or-connection-string", new Regex(@"\b(SqlException|Npgsql|ORA-\d{5}|ConnectionString|Data Source=|Server=.*;Database=)", RegexOptions.Compiled | RegexOptions.IgnoreCase)),
         ("internal-host-or-port", new Regex(@"\b(localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b", RegexOptions.Compiled)),
+        ("internal-hostname", new Regex(@"\b[a-z0-9][a-z0-9-]*\.(internal|corp|intra|intranet|lan)\b|\b(10\.\d{1,3}|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase)),
+        ("assembly-internals", new Regex(@"\bSystem\.Private\.CoreLib\b|Version=\d+\.\d+\.\d+\.\d+,\s*Culture=|PublicKeyToken=[0-9a-f]{16}", RegexOptions.Compiled | RegexOptions.IgnoreCase)),
+        ("framework-diagnostic", new Regex(@"An unhandled exception occurred while processing the request|Server Error in '/' Application|Whitelabel Error Page|DeveloperExceptionPage|Microsoft\.AspNetCore\.Diagnostics", RegexOptions.Compiled)),
+        ("token-or-secret", new Regex(@"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{8,}|\b(client[_-]?secret|api[_-]?key|AccountKey|SharedAccessKey|password)""?\s*[=:]\s*""?[^\s"",;]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase)),
     ];
 
     /// <summary>Shape of a JSON document: one entry per path with the observed type; arrays sample the first items into a [*] path.</summary>

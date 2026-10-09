@@ -1069,6 +1069,7 @@
                     kvp => kvp.Value),
             // Only the ACTIVE backend engines get the expensive Layer 3 readiness probe, and only in the informational phase.
             ReadinessEngines = withReadiness ? ActiveBackendEngineIds.ToList() : [],
+            Target = new ReviewEngineTargetDto { ProfileId = _context.ActiveProfile.Id, TargetUrl = _context.TargetUrl, EnvironmentType = _context.ActiveProfile.EnvironmentType.ToString() },
         };
 
         _engineStatus = await EngineStatusService.GetStatusAsync(authMode, selection);

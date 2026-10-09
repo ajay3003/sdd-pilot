@@ -80,6 +80,8 @@ public sealed class SecurityHeaderResult
     public required string Status { get; init; }
     public string? Value { get; init; }
     public required string Recommendation { get; init; }
+    /// <summary>The Target Environment expects this header (Security Expectations).</summary>
+    public bool Expected { get; init; }
 }
 
 public sealed class WasmSecurityHealth
@@ -122,4 +124,6 @@ public sealed class WasmScanRequest
     public string? AllowedAuthority { get; init; }
     public List<string> AllowedClientIds { get; init; } = [];
     public List<string> KnownSafeDomains { get; init; } = [];
+    /// <summary>Target Environment → Security Expectations → expected security headers. Null = historical default list (older clients).</summary>
+    public List<string>? ExpectedSecurityHeaders { get; init; }
 }

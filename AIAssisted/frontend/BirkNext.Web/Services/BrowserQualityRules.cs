@@ -227,7 +227,6 @@ public static class BrowserQualityRules
         BrowserQualityCategory.Accessibility => FrontendQualityCategory.Accessibility,
         BrowserQualityCategory.Performance or BrowserQualityCategory.Network => FrontendQualityCategory.Performance,
         BrowserQualityCategory.Blazor or BrowserQualityCategory.Runtime => FrontendQualityCategory.BlazorWasm,
-        BrowserQualityCategory.SecurityObservation => FrontendQualityCategory.Security,
         _ => FrontendQualityCategory.Standards,
     };
 

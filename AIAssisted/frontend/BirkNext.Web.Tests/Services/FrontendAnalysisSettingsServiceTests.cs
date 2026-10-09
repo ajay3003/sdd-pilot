@@ -71,7 +71,7 @@ public sealed class FrontendAnalysisSettingsServiceTests
         p.Features.EnablePerformanceEngine.Should().BeTrue();
         p.Features.EnableAccessibilityEngine.Should().BeTrue();
         p.Features.EnableLighthouseEngine.Should().BeTrue();
-        p.Features.EnablePassiveSecurityEngine.Should().BeTrue();
+        p.Features.EnablePassiveSecurityEngine.Should().BeFalse("Passive Security (ZAP) is opt-in: it cannot run on a default installation");
     }
 
     [Fact]

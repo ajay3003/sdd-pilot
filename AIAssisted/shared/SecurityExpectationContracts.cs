@@ -106,6 +106,27 @@ public sealed record SecurityCandidateReviewRequest(Guid DiscoveryId, string Can
 public sealed record SecurityCandidateReviewResponse(SecurityExpectationDiscoveryResult Discovery, ApprovedSecurityExpectations Approved);
 public sealed record SecurityCandidateDecision(string CandidateId, SecurityCandidateState State, DateTimeOffset At);
 
+/// <summary>
+/// Which BirkNext reviews read each approved expectation at runtime — so a saved value is never presented as enforcement it does not get.
+/// Every field is also compared with source evidence by the Security Configuration Review.
+/// </summary>
+public static class SecurityExpectationUsage
+{
+    public const string ConfigurationReviewOnly = "Configuration Review only — not used by runtime reviews";
+
+    public static string Consumers(SecurityExpectationField field) => field switch
+    {
+        SecurityExpectationField.Authority => "FQR Static Security (MSAL authority in deployed configuration) · Configuration Review",
+        SecurityExpectationField.BackendDomain => "FQR Static Security (direct backend exposure) · Configuration Review",
+        SecurityExpectationField.CdnHost => "FQR Static Security (known safe hosts) · Configuration Review",
+        SecurityExpectationField.RestHost or SecurityExpectationField.GraphQlHost => "Local HTTPS proxy scope (which hosts may carry the test credential) · Configuration Review",
+        SecurityExpectationField.SecurityHeader => "FQR Static Security (frontend document) and API Quality Review (transport headers on API responses) — presence only · Configuration Review",
+        _ => ConfigurationReviewOnly,
+    };
+
+    public static bool RuntimeConsumed(SecurityExpectationField field) => Consumers(field) != ConfigurationReviewOnly;
+}
+
 /// <summary>Conservative comparison and approval projection shared by API and UI; no network or inference.</summary>
 public static class SecurityExpectationValues
 {

@@ -74,6 +74,8 @@ public sealed class SecurityHeaderResult
     [JsonPropertyName("status")]         public string  Status         { get; init; } = "";
     [JsonPropertyName("value")]          public string? Value          { get; init; }
     [JsonPropertyName("recommendation")] public string  Recommendation { get; init; } = "";
+    /// <summary>The Target Environment expects this header. "Missing" is reported only for expected headers.</summary>
+    [JsonPropertyName("expected")]       public bool    Expected       { get; init; }
 }
 
 public sealed class WasmSecurityHealth
@@ -115,4 +117,6 @@ public sealed class WasmScanRequest
     [JsonPropertyName("allowedAuthority")]         public string?      AllowedAuthority          { get; init; }
     [JsonPropertyName("allowedClientIds")]         public List<string> AllowedClientIds           { get; init; } = [];
     [JsonPropertyName("knownSafeDomains")]         public List<string> KnownSafeDomains          { get; init; } = [];
+    /// <summary>Target Environment → Security Expectations → expected security headers (presence only).</summary>
+    [JsonPropertyName("expectedSecurityHeaders")]  public List<string>? ExpectedSecurityHeaders  { get; init; }
 }

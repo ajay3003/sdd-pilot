@@ -34,6 +34,14 @@ public interface IAuthenticatedApiExecutionService
     /// (schema metadata only — type and field names, never user data) or a typed "introspection disabled" outcome. Bounded size.
     /// </summary>
     Task<AuthenticatedGraphQlSchemaOutcome> ExecuteGraphQlIntrospectionForProfileAsync(string profileId, string contextFingerprint, string endpointUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Profile-keyed parameter-capable read-only request (safe fuzzing). Re-validates: REST GET/HEAD/OPTIONS only, GraphQL one query without
+    /// variables (or the bounded malformed-syntax case), approved host scope, non-sensitive declared headers, bounded sizes. Throws
+    /// <see cref="ArgumentException"/> for anything else; the credential is applied only after every check passed.
+    /// </summary>
+    Task<AuthenticatedApiExecutionResult> ExecuteSafeRequestForProfileAsync(string profileId, string contextFingerprint, ApiQuality.Fuzzing.ApiSafeRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Parameter-capable authenticated requests are not supported.");
 }
 
 /// <summary>Thrown when a profile-keyed authenticated execution cannot run because the memory-only context is missing/expired or the target host is out of scope. Carries no credential.</summary>
@@ -126,6 +134,34 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
         ApplyForProfile(profileId, contextFingerprint, message);
         return await SendAsync(message, graphQl: true, cancellationToken);
+    }
+
+    public async Task<AuthenticatedApiExecutionResult> ExecuteSafeRequestForProfileAsync(string profileId, string contextFingerprint, ApiQuality.Fuzzing.ApiSafeRequest request, CancellationToken cancellationToken = default)
+    {
+        var scope = ScopeForProfile(profileId, contextFingerprint);
+        var graphQl = request.GraphQlQuery is not null;
+        if (graphQl)
+        {
+            if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("GraphQL queries are sent as POST only.");
+            if (ApiQuality.Fuzzing.ApiSafeRequestGuard.GraphQlQueryRejection(request.GraphQlQuery!, request.AllowGraphQlSyntaxError, BirkNext.ApiReview.ApiFuzzingLimits.MaxPayloadBytes) is { } rejection)
+                throw new ArgumentException(rejection);
+        }
+        else if (string.IsNullOrWhiteSpace(request.Method) || !SafeMethods.Contains(request.Method.Trim()))
+            throw new ArgumentException("Only GET, HEAD and OPTIONS are allowed for authenticated REST checks in this phase; no request may mutate DEV data.");
+        if (request.Url.Length > BirkNext.ApiReview.ApiFuzzingLimits.MaxUrlLength) throw new ArgumentException("The request URL exceeds the safe-fuzzing limit.");
+        var uri = ApprovedUriForProfile(scope, request.Url);
+        using var message = new HttpRequestMessage(graphQl ? HttpMethod.Post : new HttpMethod(request.Method.Trim().ToUpperInvariant()), uri);
+        if (graphQl) message.Content = new StringContent(JsonSerializer.Serialize(new { query = request.GraphQlQuery }), Encoding.UTF8, "application/json");
+        message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        if (graphQl) message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
+        foreach (var (name, value) in request.Headers)
+        {
+            if (ApiQuality.Fuzzing.ApiSafeRequestGuard.IsForbiddenHeader(name) || value.Length > BirkNext.ApiReview.ApiFuzzingLimits.MaxParameterLength || value.Contains('\r') || value.Contains('\n'))
+                throw new ArgumentException($"The header {name} is not allowed for safe fuzzing.");
+            if (!message.Headers.TryAddWithoutValidation(name, value)) throw new ArgumentException($"The header {name} could not be set.");
+        }
+        ApplyForProfile(profileId, contextFingerprint, message);
+        return await SendAsync(message, graphQl, cancellationToken);
     }
 
     /// <summary>Standard introspection query (schema metadata only). Kept in sync with the contract-analysis fetcher.</summary>

@@ -29,6 +29,8 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         profile.Authentication.RequiresAuthentication = requiresAuth;
         profile.Authentication.AuthenticationType = requiresAuth ? FrontendAuthenticationType.MicrosoftEntraId : FrontendAuthenticationType.None;
         profile.Authentication.AuthenticatedTestingMethod = method;
+        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
         {

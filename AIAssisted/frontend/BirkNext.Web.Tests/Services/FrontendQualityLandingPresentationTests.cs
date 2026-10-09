@@ -22,6 +22,8 @@ public sealed class FrontendQualityLandingPresentationTests
         profile.Authentication.RequiresAuthentication = requiresAuth;
         profile.Authentication.AuthenticationType = requiresAuth ? FrontendAuthenticationType.MicrosoftEntraId : FrontendAuthenticationType.None;
         profile.Authentication.AuthenticatedTestingMethod = method;
+        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
         {
@@ -230,6 +232,19 @@ public sealed class FrontendQualityLandingPresentationTests
         passive.State.Should().Be(FrontendQualityCapabilityState.Unavailable);
         passive.Summary.Should().Be("The Passive Security engine is not available in this environment.");
         passive.TechnicalReason.Should().Be("Container runtime is unavailable.");
+    }
+
+    [Fact]
+    public void Capabilities_PassiveSecurityUntrustedTarget_IsUnavailable_NeverReady()
+    {
+        var context = Context();
+        var untrusted = Engine(FrontendQualityEngineIdDto.PassiveSecurity);
+        untrusted.Available = false;
+        untrusted.Reasons = [FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted];
+        var passive = Row(Capabilities(context, Status(untrusted)), FrontendQualityEngineId.PassiveSecurity);
+        passive.State.Should().Be(FrontendQualityCapabilityState.Unavailable, "runtime readiness alone is not enough: ZAP only scans a server-registered trusted target");
+        passive.Summary.Should().Contain("Not enabled for this target on the server");
+        passive.TechnicalReason.Should().Contain("FrontendPassiveSecurity:TrustedProfiles");
     }
 
     [Fact]

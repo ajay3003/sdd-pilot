@@ -49,7 +49,7 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
             {
                 foreach (var pathProp in pathsEl.EnumerateObject())
                 {
-                    ExtractOperations(pathProp.Value, pathProp.Name, contract.Operations);
+                    ExtractOperations(pathProp.Value, pathProp.Name, contract.Operations, root);
                 }
             }
 
@@ -83,8 +83,10 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         }
     }
 
-    private void ExtractOperations(JsonElement pathElement, string path, List<NormalizedOperation> operations)
+    private void ExtractOperations(JsonElement pathElement, string path, List<NormalizedOperation> operations, JsonElement root)
     {
+        var pathPointer = "#/paths/" + Escape(path);
+        var pathLevel = ExtractParameters(pathElement, pathPointer, root);
         var methods = new[] { "get", "post", "put", "delete", "patch", "head", "options" };
 
         foreach (var method in methods)
@@ -113,11 +115,16 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                     }
                 }
 
+                // Parameters: operation-level definitions override path-level ones with the same name and location.
+                var opLevel = ExtractParameters(opEl, $"{pathPointer}/{method}", root);
+                operation.Parameters = pathLevel.Where(p => !opLevel.Any(o => o.Name == p.Name && o.Location == p.Location)).Concat(opLevel).ToList();
+
                 // Extract responses
                 if (opEl.TryGetProperty("responses", out var responsesEl))
                 {
                     foreach (var respProp in responsesEl.EnumerateObject())
                     {
+                        operation.ResponseCodes.Add(respProp.Name);
                         if (respProp.Value.TryGetProperty("content", out var respContentEl) &&
                             respContentEl.TryGetProperty("application/json", out var respJsonEl) &&
                             respJsonEl.TryGetProperty("schema", out var respSchemaEl))
@@ -132,6 +139,102 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                 operations.Add(operation);
             }
         }
+    }
+
+    /// <summary>JSON pointer escaping (RFC 6901): "~" → "~0", "/" → "~1".</summary>
+    private static string Escape(string segment) => segment.Replace("~", "~0").Replace("/", "~1");
+
+    /// <summary>
+    /// The <c>parameters</c> array of a path item or operation: path, query and header parameters with the constraints the document states.
+    /// Local <c>$ref</c>s to <c>#/components/parameters</c> and one level of <c>#/components/schemas</c> are resolved; anything else is skipped,
+    /// never guessed. <see cref="NormalizedParameter.SourceRef"/> points at the definition that was used.
+    /// </summary>
+    internal static List<NormalizedParameter> ExtractParameters(JsonElement owner, string ownerPointer, JsonElement root)
+    {
+        var result = new List<NormalizedParameter>();
+        if (!owner.TryGetProperty("parameters", out var parametersEl) || parametersEl.ValueKind != JsonValueKind.Array) return result;
+        var index = 0;
+        foreach (var raw in parametersEl.EnumerateArray())
+        {
+            var pointer = $"{ownerPointer}/parameters/{index++}";
+            var definition = raw;
+            if (raw.TryGetProperty("$ref", out var refEl))
+            {
+                if (ResolveLocal(root, refEl.GetString()) is not { } resolved) continue;
+                definition = resolved;
+                pointer = refEl.GetString()!;
+            }
+            if (!definition.TryGetProperty("name", out var nameEl) || nameEl.GetString() is not { Length: > 0 } name) continue;
+            if (!definition.TryGetProperty("in", out var inEl)) continue;
+            NormalizedParameterLocation? location = inEl.GetString() switch
+            {
+                "path" => NormalizedParameterLocation.Path,
+                "query" => NormalizedParameterLocation.Query,
+                "header" => NormalizedParameterLocation.Header,
+                _ => null,
+            };
+            if (location is null) continue;
+            var parameter = new NormalizedParameter
+            {
+                Name = name, Location = location.Value, SourceRef = pointer,
+                Required = location == NormalizedParameterLocation.Path || (definition.TryGetProperty("required", out var req) && req.ValueKind == JsonValueKind.True),
+            };
+            if (definition.TryGetProperty("schema", out var schemaEl))
+            {
+                if (schemaEl.TryGetProperty("$ref", out var schemaRef) && ResolveLocal(root, schemaRef.GetString()) is { } resolvedSchema) schemaEl = resolvedSchema;
+                ApplyConstraints(parameter, schemaEl);
+            }
+            result.Add(parameter);
+        }
+        return result;
+    }
+
+    private static void ApplyConstraints(NormalizedParameter parameter, JsonElement schema)
+    {
+        if (schema.ValueKind != JsonValueKind.Object) return;
+        if (schema.TryGetProperty("type", out var t))
+        {
+            if (t.ValueKind == JsonValueKind.String) parameter.Type = t.GetString();
+            else if (t.ValueKind == JsonValueKind.Array)
+            {
+                // OpenAPI 3.1 type arrays: ["string", "null"].
+                var types = t.EnumerateArray().Select(x => x.GetString()).ToList();
+                parameter.Type = types.FirstOrDefault(x => x is not null && x != "null");
+                parameter.Nullable |= types.Contains("null");
+            }
+        }
+        if (schema.TryGetProperty("format", out var f)) parameter.Format = f.GetString();
+        if (schema.TryGetProperty("nullable", out var n) && n.ValueKind == JsonValueKind.True) parameter.Nullable = true;
+        if (schema.TryGetProperty("enum", out var e) && e.ValueKind == JsonValueKind.Array)
+            parameter.EnumValues = e.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.String).Select(v => v.GetString()!).ToList();
+        if (schema.TryGetProperty("minimum", out var min) && min.ValueKind == JsonValueKind.Number) parameter.Minimum = min.GetDecimal();
+        if (schema.TryGetProperty("maximum", out var max) && max.ValueKind == JsonValueKind.Number) parameter.Maximum = max.GetDecimal();
+        // OpenAPI 3.0: exclusiveMinimum/Maximum are booleans; 3.1: numbers that replace minimum/maximum.
+        if (schema.TryGetProperty("exclusiveMinimum", out var xmin))
+        {
+            if (xmin.ValueKind == JsonValueKind.True) parameter.ExclusiveMinimum = true;
+            else if (xmin.ValueKind == JsonValueKind.Number) { parameter.Minimum = xmin.GetDecimal(); parameter.ExclusiveMinimum = true; }
+        }
+        if (schema.TryGetProperty("exclusiveMaximum", out var xmax))
+        {
+            if (xmax.ValueKind == JsonValueKind.True) parameter.ExclusiveMaximum = true;
+            else if (xmax.ValueKind == JsonValueKind.Number) { parameter.Maximum = xmax.GetDecimal(); parameter.ExclusiveMaximum = true; }
+        }
+        if (schema.TryGetProperty("minLength", out var minLen) && minLen.ValueKind == JsonValueKind.Number) parameter.MinLength = minLen.GetInt32();
+        if (schema.TryGetProperty("maxLength", out var maxLen) && maxLen.ValueKind == JsonValueKind.Number) parameter.MaxLength = maxLen.GetInt32();
+    }
+
+    /// <summary>Resolves a local "#/components/..." pointer one level. External or chained references return null.</summary>
+    private static JsonElement? ResolveLocal(JsonElement root, string? reference)
+    {
+        if (reference is null || !reference.StartsWith("#/", StringComparison.Ordinal)) return null;
+        var current = root;
+        foreach (var segment in reference[2..].Split('/'))
+        {
+            var key = segment.Replace("~1", "/").Replace("~0", "~");
+            if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(key, out current)) return null;
+        }
+        return current.ValueKind == JsonValueKind.Object && !current.TryGetProperty("$ref", out _) ? current : null;
     }
 
     private NormalizedSchema? ExtractSchema(JsonElement schemaEl, string name, Dictionary<string, NormalizedSchema> schemaMap)
