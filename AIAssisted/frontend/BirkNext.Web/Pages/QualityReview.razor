@@ -967,7 +967,8 @@
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportQualityReview(_report, _selectedProject ?? string.Empty);
+        // The export names the project as the page does (imported scopes are ids, not names).
+        var html = ExportService.ExportQualityReview(_report, _selectedProjectName ?? _selectedProject ?? string.Empty);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"document-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
