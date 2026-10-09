@@ -250,6 +250,7 @@ public sealed class ActiveCdcReplayTests
         async Task Blocked(Action<H> arrange, string? type = "Development", bool snapshot = true, string because = "")
         {
             await using var h = new H();
+            h.Options = h.Options with { TrustedTargets = type is null ? [] : [new(H.Env, type, "https://m2lb-dev.example.test", "Test target")] };
             if (snapshot) await h.AddSnapshotAsync();
             arrange(h);
             var run = await RunAsync(h, type: type);

@@ -11,6 +11,7 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public interface IActiveCdcTestsApiService
 {
+    Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(FrontendAnalysisProfile profile, string integrationId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ActiveEventScenarioDescriptor>>([]);
     Task<ActiveCdcReadiness> ReadinessAsync(FrontendAnalysisProfile profile, string integrationId, Guid? snapshotId, string scenarioId, CancellationToken ct = default);
     /// <summary>Starts a run. Returns the run (Running, or already Blocked with its reason) or the backend's refusal message.</summary>
     Task<(ActiveCdcRun? Run, string? Error)> StartAsync(FrontendAnalysisProfile profile, ActiveCdcRunRequest request, CancellationToken ct = default);
@@ -23,17 +24,18 @@ public sealed class ActiveCdcTestsApiService(HttpClient http) : IActiveCdcTestsA
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private static string Scope(FrontendAnalysisProfile profile) =>
-        $"environmentType={Uri.EscapeDataString(profile.EnvironmentType.ToString())}&targetUrl={Uri.EscapeDataString(profile.TargetUrl ?? "")}";
+    public async Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(FrontendAnalysisProfile profile, string integrationId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<ActiveEventScenarioDescriptor>>(
+            $"api/active-cdc-tests/scenarios?environmentId={Uri.EscapeDataString(profile.Id)}&integrationId={Uri.EscapeDataString(integrationId)}", Json, ct) ?? [];
 
     public async Task<ActiveCdcReadiness> ReadinessAsync(FrontendAnalysisProfile profile, string integrationId, Guid? snapshotId, string scenarioId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<ActiveCdcReadiness>(
-            $"api/active-cdc-tests/readiness?environmentId={Uri.EscapeDataString(profile.Id)}&integrationId={Uri.EscapeDataString(integrationId)}&{Scope(profile)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}&scenarioId={Uri.EscapeDataString(scenarioId)}", Json, ct)
+            $"api/active-cdc-tests/readiness?environmentId={Uri.EscapeDataString(profile.Id)}&integrationId={Uri.EscapeDataString(integrationId)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}&scenarioId={Uri.EscapeDataString(scenarioId)}", Json, ct)
         ?? new ActiveCdcReadiness { EnvironmentId = profile.Id, IntegrationId = integrationId };
 
     public async Task<(ActiveCdcRun? Run, string? Error)> StartAsync(FrontendAnalysisProfile profile, ActiveCdcRunRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/active-cdc-tests/runs?{Scope(profile)}", request, Json, ct);
+        using var response = await http.PostAsJsonAsync("api/active-cdc-tests/runs", request, Json, ct);
         if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<ActiveCdcRun>(Json, ct), null);
         try { return (null, (await response.Content.ReadFromJsonAsync<JsonElement>(Json, ct)).GetProperty("message").GetString()); }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return (null, $"The backend refused the run (HTTP {(int)response.StatusCode})."); }

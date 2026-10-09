@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.ActiveCdcTests;
@@ -9,8 +10,9 @@ public sealed class ActiveCdcRequestException(string message) : Exception(messag
 public interface IActiveCdcTestService
 {
     Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, CancellationToken ct = default) =>
-        ReadinessAsync(environmentId, integrationId, environmentType, targetUrl, snapshotId, ActiveCdcScenarioCatalog.NormalPersonId, ct);
+        ReadinessAsync(environmentId, integrationId, environmentType, targetUrl, snapshotId, null, ct);
     Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, string? scenarioId, CancellationToken ct = default);
+    Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(string environmentId, string integrationId, CancellationToken ct = default);
     Task<ActiveCdcRun> StartAsync(ActiveCdcRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default);
     Task<ActiveCdcRun?> GetAsync(Guid runId, CancellationToken ct = default);
     Task<IReadOnlyList<ActiveCdcRunSummary>> HistoryAsync(string environmentId, string? integrationId, CancellationToken ct = default);
@@ -21,15 +23,22 @@ public interface IActiveCdcTestService
 /// Active CDC tests: readiness (nothing contacted), start (every gate re-evaluated in the backend, durable intent written before the send,
 /// one run per integration), cancellation, and immutable history. The send itself happens in <see cref="ActiveCdcRunner"/>.
 /// </summary>
-public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, IqrSourceStore sources, ActiveCdcPolicy policy, IEventHubTestSender sender,
+public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, IqrSourceStore sources, ActiveCdcPolicy policy, IActiveEventScenarioRegistry scenarios, IEventHubTestSender sender,
     ICheckpointEvidenceSource checkpoints, ActiveCdcRunStore store, ActiveCdcRunCoordinator coordinator, ActiveCdcRunner runner, TimeProvider clock) : IActiveCdcTestService
 {
     private sealed record Preparation(ActiveCdcScenario Scenario, IntegrationDefinition? Integration, IntegrationPlatform? Platform, ActiveCdcDestination Destination,
-        ApprovedCdcDestination? Approved, ActiveCdcContractManifest Manifest, List<ActiveCdcReadinessCheck> Checks, bool CanRun, Guid? RunningRunId);
+        ApprovedCdcDestination? Approved, ActiveCdcContractManifest Manifest, List<ActiveCdcReadinessCheck> Checks, bool CanRun, Guid? RunningRunId,
+        ActiveCdcOptions.TrustedTargetBinding? TrustedTarget);
 
     public async Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, string? scenarioId, CancellationToken ct = default)
     {
-        var scenario = ActiveCdcScenarioCatalog.Find(scenarioId ?? ActiveCdcScenarioCatalog.NormalPersonId) ?? throw new ActiveCdcRequestException("Unknown scenario. Only built-in reviewed scenarios can run.");
+        if (string.IsNullOrWhiteSpace(scenarioId))
+        {
+            var available = scenarios.Scenarios(await ScenarioContextAsync(environmentId, integrationId, ct));
+            scenarioId = available.FirstOrDefault()?.ScenarioId
+                ?? throw new ActiveCdcRequestException("No active event scenarios are registered for the selected integration.");
+        }
+        var scenario = await ResolveScenarioAsync(environmentId, integrationId, scenarioId, ct);
         var p = await PrepareAsync(scenario, environmentId, integrationId, environmentType, targetUrl, snapshotId, ct);
         return new ActiveCdcReadiness
         {
@@ -39,15 +48,21 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         };
     }
 
+    public async Task<IReadOnlyList<ActiveEventScenarioDescriptor>> ScenariosAsync(string environmentId, string integrationId, CancellationToken ct = default)
+    {
+        var context = await ScenarioContextAsync(environmentId, integrationId, ct);
+        return scenarios.Scenarios(context);
+    }
+
     public async Task<ActiveCdcRun> StartAsync(ActiveCdcRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
-        var scenario = ActiveCdcScenarioCatalog.Find(request.ScenarioId) ?? throw new ActiveCdcRequestException("Unknown scenario. Only built-in reviewed scenarios can run.");
+        var scenario = await ResolveScenarioAsync(request.EnvironmentId, request.IntegrationId, request.ScenarioId, ct);
         if (!request.ConfirmedSend) throw new ActiveCdcRequestException("Confirm that one synthetic event is sent to the named non-production Event Hub.");
         if (string.IsNullOrWhiteSpace(request.EnvironmentId) || string.IsNullOrWhiteSpace(request.IntegrationId)) throw new ActiveCdcRequestException("Environment and integration are required.");
         var p = await PrepareAsync(scenario, request.EnvironmentId, request.IntegrationId, environmentType, targetUrl, request.SourceSnapshotId, ct);
         var run = new ActiveCdcRun
         {
-            RunId = Guid.NewGuid(), EnvironmentId = request.EnvironmentId, EnvironmentName = request.EnvironmentName, EnvironmentType = environmentType?.Trim() ?? "Unknown",
+            RunId = Guid.NewGuid(), EnvironmentId = request.EnvironmentId, EnvironmentName = p.TrustedTarget?.DisplayName ?? "Untrusted environment", EnvironmentType = p.TrustedTarget?.EnvironmentType.Trim() ?? "Unknown",
             IntegrationId = request.IntegrationId, IntegrationName = p.Integration?.DisplayName ?? request.IntegrationId, Scenario = scenario, Manifest = p.Manifest,
             Destination = p.Destination, StartedAt = clock.GetUtcNow(),
         };
@@ -62,13 +77,33 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         var launched = false;
         try
         {
-            if (policy.PersonPkRange(out var rangeReason) is not { } range) return await BlockedAsync(run, p, [rangeReason], ct);
-            var next = (await store.MaxPersonPkAsync(request.EnvironmentId, range.Min, range.Max, ct) is { } used ? used + 1 : range.Min);
-            if (next < range.Min || (long)next + KeysNeeded(scenario) - 1 > range.Max)
-                return await BlockedAsync(run, p, [$"The reserved synthetic PersonPK range {range.Min}–{range.Max} has fewer than {KeysNeeded(scenario)} unused key(s) left."], ct);
+            var context = await ScenarioContextAsync(request.EnvironmentId, request.IntegrationId, ct);
+            var scenarioProvider = scenarios.FindScenario(scenario.Id, context)
+                ?? throw new ActiveCdcRequestException("The selected scenario provider is no longer applicable to this integration.");
+            var descriptor = scenarios.Scenarios(context).Single(item => item.ScenarioId == scenario.Id && item.ExtensionId == scenarioProvider.ExtensionId);
+            var providerPreparation = await scenarioProvider.PrepareAsync(scenario.Id, context, request.SourceSnapshotId, ct);
+            if (!providerPreparation.Compatible)
+                return await BlockedAsync(run, p, [providerPreparation.Detail.Length == 0 ? "The scenario provider prerequisites are not satisfied." : providerPreparation.Detail], ct);
 
-            List<SyntheticCdcEvent> events;
-            try { (events, run) = BuildFixtures(scenario, run, next, p.Destination); }
+            var trustedTarget = new ActiveEventTrustedTarget
+            {
+                TargetEnvironmentId = request.EnvironmentId,
+                EnvironmentType = p.TrustedTarget?.EnvironmentType ?? "Unknown",
+                IntegrationId = request.IntegrationId,
+                IntegrationType = p.Integration?.Kind.ToString() ?? "",
+                TransportType = descriptor.RequiredTransportType,
+                Endpoint = p.Destination.NamespaceFqdn,
+                Resource = p.Destination.EventHub,
+                Consumer = p.Destination.ConsumerGroup,
+            };
+            IReadOnlyList<GeneratedActiveEvent> events;
+            try
+            {
+                events = (await scenarioProvider.GenerateAsync(scenario.Id, run.RunId, trustedTarget, providerPreparation.Contract, ct)).Events;
+                if (events.Count != descriptor.ExpectedEventCount)
+                    throw new InvalidOperationException("The scenario provider generated an event count different from its descriptor.");
+                run = ProjectGeneratedEvents(run, events);
+            }
             catch (InvalidOperationException ex) { return await BlockedAsync(run, p, [ex.Message], ct); }
 
             var now = clock.GetUtcNow();
@@ -80,17 +115,13 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
                     Step(ActiveCdcStepKind.Destination, ActiveCdcEvidenceState.Observed, $"{p.Destination.EventHub} on {p.Destination.NamespaceFqdn}. {p.Destination.Detail}", "Integration catalog + backend enrollment", now),
                     Step(ActiveCdcStepKind.SourceContract, ActiveCdcEvidenceState.Observed, $"{p.Manifest.Detail} Manifest {p.Manifest.Fingerprint}.", "Bound source snapshot", now),
                     .. scenario.MessageCount > 1
-                        ? new[] { Step(ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcEvidenceState.Observed, scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId
-                            ? $"Valid control V = PersonPK {run.Messages[^1].SyntheticPersonPk}, inside the reserved range {range.Min}–{range.Max} and unused. The invalid event I carries no PersonPK, so no key is allocated for it."
-                            : $"X = {run.Messages[0].SyntheticPersonPk} (A and A2), Y = {run.Messages[^1].SyntheticPersonPk} (B); both inside the reserved range {range.Min}–{range.Max} and unused.", "Reserved synthetic PersonPK range", now) }
+                        ? new[] { Step(ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcEvidenceState.Observed, $"The scenario provider allocated {run.Messages.Select(message => message.SyntheticPersonPk).Where(value => value is not null).Distinct().Count()} distinct synthetic source identity value(s).", $"Scenario provider {scenarioProvider.ExtensionId}", now) }
                         : [],
-                    .. scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId
+                    .. scenario.ReplayKind == ActiveEventReplayKind.ControlAfterInvalid
                         ? new[] { Step(ActiveCdcStepKind.InvalidFixtureReviewed, ActiveCdcEvidenceState.Observed, $"{scenario.InvalidFixture}: {scenario.InvalidCondition} {p.Manifest.InvalidFixtureDetail}", "Reviewed fixture bound to the source archive", now) }
                         : [],
-                    Step(ActiveCdcStepKind.FixtureGenerated, ActiveCdcEvidenceState.Observed, scenario.MessageCount > 1
-                        ? string.Join(" ", run.Messages.Select(m => $"{m.Label}: {(m.SyntheticPersonPk is { } pk ? $"PersonPK {pk}" : "no PersonPK (by design)")}, marker {m.Marker}, {m.PayloadBytes} bytes, SHA-256 {m.PayloadSha256[..16]}…."))
-                        : $"Synthetic PersonPK {run.Fixture!.SyntheticPersonPk}, marker {run.Fixture.Marker}, {run.Fixture.PayloadBytes} bytes, SHA-256 {run.Fixture.PayloadSha256[..16]}….", "BirkNext fixture builder", now),
-                    .. scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId
+                    Step(ActiveCdcStepKind.FixtureGenerated, ActiveCdcEvidenceState.Observed, string.Join(" ", run.Messages.Select(message => $"{message.Label}: {message.PayloadBytes} bytes, SHA-256 {message.PayloadSha256[..16]}…")), $"Scenario provider {scenarioProvider.ExtensionId}", now),
+                    .. scenario.ReplayKind == ActiveEventReplayKind.ExactReplay
                         ? new[] { ReplayEquivalence(events, now) }
                         : [],
                 ],
@@ -101,7 +132,7 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
             var intent = run with { Steps = [.. run.Steps, Step(ActiveCdcStepKind.IntentRecorded, ActiveCdcEvidenceState.Observed, "Run recorded as Running before the send.", "BirkNext run history", now)] };
             if (!await store.InsertAsync(intent, ct))
                 return Finish(run, ActiveCdcRunStatus.Blocked, "The run could not be recorded before sending, so nothing was sent.", stored: false);
-            coordinator.Launch(intent.RunId, key, token => runner.ExecuteAsync(intent, p.Platform, environmentType, targetUrl, events, token));
+            coordinator.Launch(intent.RunId, key, token => runner.ExecuteAsync(intent, p.Platform, p.TrustedTarget?.EnvironmentType, p.TrustedTarget?.TargetUrl, events, token));
             launched = true;
             return intent;
         }
@@ -158,51 +189,47 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         Limitations = stored ? [] : ["This run could not be saved to history."],
     };
 
-    /// <summary>Distinct reserved keys a run allocates: replay needs X and Y; Normal Person and invalid → valid need one (the invalid event has none).</summary>
-    private static int KeysNeeded(ActiveCdcScenario scenario) => scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId ? 2 : 1;
+    private static ActiveCdcStep ReplayEquivalence(IReadOnlyList<GeneratedActiveEvent> events, DateTimeOffset now) =>
+        events[0].Body.AsSpan().SequenceEqual(events[1].Body)
+            ? Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Observed, "The scenario provider generated a byte-identical exact replay.", "Active Event scenario provider", now)
+            : Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Error, "The scenario provider's replay event is not byte-identical to its source event.", "Active Event scenario provider", now);
 
-    private static ActiveCdcStep ReplayEquivalence(IReadOnlyList<SyntheticCdcEvent> events, DateTimeOffset now) => PersonCdcFixtureBuilder.IsExactReplay(events[0], events[1])
-        ? Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Observed, "A2 body is byte-identical to A (same PersonPK, fields, operation and timestamps); only the transport label differs.", "BirkNext fixture builder", now)
-        : Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Error, "A2 differs from A — not a replay.", "BirkNext fixture builder", now);
-
-    /// <summary>Normal Person: one fixture. Same PersonPK replay: A (X), A2 = byte-identical replay of A, B (Y = X + 1, its own marker).</summary>
-    private (List<SyntheticCdcEvent> Events, ActiveCdcRun Run) BuildFixtures(ActiveCdcScenario scenario, ActiveCdcRun run, int x, ActiveCdcDestination destination)
+    private static ActiveCdcRun ProjectGeneratedEvents(ActiveCdcRun run, IReadOnlyList<GeneratedActiveEvent> events)
     {
-        var now = clock.GetUtcNow();
-        if (scenario.MessageCount == 1)
+        static ActiveCdcMessageEvidence Message(GeneratedActiveEvent item)
         {
-            var single = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes);
-            return ([single.Event], run with { Fixture = single.Summary });
-        }
-        if (scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId)
-        {
-            // I: the reviewed invalid fixture (PersonPK omitted, nothing else changed). V: the Normal Person fixture with one reserved key.
-            var invalid = PersonCdcFixtureBuilder.BuildInvalid(run.RunId, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "I");
-            var valid = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "V", "-V");
-            return ([invalid.Event, valid.Event], run with
+            var metadata = item.SafeDisplayMetadata;
+            var label = metadata.GetValueOrDefault("sequenceLabel", "");
+            var pkText = metadata.GetValueOrDefault("syntheticPersonPk", "");
+            var hasPk = int.TryParse(pkText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var pk);
+            var expectedId = Guid.TryParse(metadata.GetValueOrDefault("expectedPersonId"), out var parsedId) ? parsedId : Guid.Empty;
+            return new ActiveCdcMessageEvidence
             {
-                Fixture = valid.Summary,
-                Messages =
-                [
-                    new() { Label = "I", Role = "Controlled invalid Person CDC", SyntheticPersonPk = null, Marker = invalid.Summary.Marker, PayloadSha256 = invalid.Summary.PayloadSha256,
-                        PayloadBytes = invalid.Summary.PayloadBytes, InvalidCondition = scenario.InvalidCondition },
-                    new() { Label = "V", Role = "Valid synthetic Person control", SyntheticPersonPk = valid.Summary.SyntheticPersonPk, ExpectedPersonId = valid.Summary.ExpectedPersonId,
-                        Marker = valid.Summary.Marker, PayloadSha256 = valid.Summary.PayloadSha256, PayloadBytes = valid.Summary.PayloadBytes },
-                ],
-            });
+                Label = label,
+                Role = metadata.GetValueOrDefault("role", "Generated event"),
+                SyntheticPersonPk = hasPk ? pk : null,
+                ExpectedPersonId = expectedId,
+                Marker = metadata.GetValueOrDefault("marker", ""),
+                PayloadSha256 = item.BodySha256,
+                PayloadBytes = item.BodyBytes,
+                InvalidCondition = metadata.GetValueOrDefault("invalidCondition", ""),
+            };
         }
-        var a = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "A", "");
-        var a2 = PersonCdcFixtureBuilder.Replay(a.Event, "A2");
-        var b = PersonCdcFixtureBuilder.Build(run.RunId, x + 1, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "B", "-B");
-        static ActiveCdcMessageEvidence Message(string label, string role, ActiveCdcFixtureSummary f) => new()
+        var orderedEvents = events.OrderBy(item => item.SequenceIndex).ToArray();
+        var messages = orderedEvents.Length > 1 ? orderedEvents.Select(Message).ToList() : [];
+        var summaryEvent = orderedEvents.FirstOrDefault(item => item.SafeDisplayMetadata.GetValueOrDefault("syntheticPersonPk") is { Length: > 0 });
+        var fixture = summaryEvent is null ? null : new ActiveCdcFixtureSummary
         {
-            Label = label, Role = role, SyntheticPersonPk = f.SyntheticPersonPk, ExpectedPersonId = f.ExpectedPersonId, Marker = f.Marker, PayloadSha256 = f.PayloadSha256, PayloadBytes = f.PayloadBytes,
+            SyntheticPersonPk = int.TryParse(summaryEvent.SafeDisplayMetadata.GetValueOrDefault("syntheticPersonPk"), out var parsedPk) ? parsedPk : 0,
+            ExpectedPersonId = Guid.TryParse(summaryEvent.SafeDisplayMetadata.GetValueOrDefault("expectedPersonId"), out var expectedId) ? expectedId : Guid.Empty,
+            Marker = summaryEvent.SafeDisplayMetadata.GetValueOrDefault("marker", ""),
+            PayloadSha256 = summaryEvent.BodySha256,
+            PayloadBytes = summaryEvent.BodyBytes,
+            Fields = summaryEvent.SafeDisplayMetadata.GetValueOrDefault("fields", "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList(),
+            SyntheticBirthDate = DateOnly.TryParse(summaryEvent.SafeDisplayMetadata.GetValueOrDefault("syntheticBirthDate"), out var birthDate) ? birthDate : default,
+            Notes = ["Generated by the registered scenario provider; payload body is not persisted."],
         };
-        return ([a.Event, a2, b.Event], run with
-        {
-            Fixture = a.Summary,
-            Messages = [Message("A", "First create (PersonPK X)", a.Summary), Message("A2", "Exact replay of A (same PersonPK X)", a.Summary), Message("B", "Following valid control (different PersonPK Y)", b.Summary)],
-        });
+        return run with { Fixture = fixture, Messages = messages };
     }
 
     private static ActiveCdcStepKind KindOf(string key) => key switch
@@ -223,10 +250,13 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
 
         Add("enabled", "Active tests enabled", policy.Options.Enabled ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
             policy.Options.Enabled ? "Enabled in backend configuration (ActiveCdcTests:Enabled)." : "Disabled in backend configuration (ActiveCdcTests:Enabled is not true).");
-        var envBlock = ActiveCdcPolicy.EnvironmentBlock(environmentType);
-        Add("environment", "Environment (DEV/QA only)", envBlock is null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked, envBlock ?? $"{environmentType!.Trim()} — non-production.");
+        var trustedTarget = policy.ResolveTrustedTarget(environmentId);
+        var envBlock = trustedTarget is null ? "This environment ID has no trusted server-side ActiveCdcTests:TrustedTargets binding." : ActiveCdcPolicy.EnvironmentBlock(trustedTarget.EnvironmentType);
+        Add("environment", "Environment (DEV/QA only)", envBlock is null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
+            envBlock ?? $"{trustedTarget!.EnvironmentType.Trim()} - server-bound non-production.");
 
-        var configured = await catalog.GetAsync(environmentId, environmentType, targetUrl, ct);
+        // Caller-supplied environment type and URL are ignored; only backend-owned bindings can authorize active execution.
+        var configured = await catalog.GetAsync(environmentId, trustedTarget?.EnvironmentType, trustedTarget?.TargetUrl, ct);
         var integration = configured.Integrations.FirstOrDefault(i => i.Id == integrationId);
         var platform = integration is null ? null : configured.Platforms.FirstOrDefault(pl => pl.Id == integration.PlatformId);
         var source = (integration?.SourceResource ?? "").Split('.');
@@ -247,7 +277,7 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         Add("integration", "CDC integration", integrationProblem is null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
             integrationProblem ?? $"{integration!.DisplayName}: source {integration.SourceResource} → consumer {integration.Consumer.DisplayName ?? "not named"}.");
 
-        var (approved, reason) = integrationProblem is null ? policy.Approve(environmentType, destination.NamespaceFqdn, destination.EventHub, targetUrl) : (null, "Resolve the integration first.");
+        var (approved, reason) = integrationProblem is null ? policy.Approve(trustedTarget?.EnvironmentType, destination.NamespaceFqdn, destination.EventHub, trustedTarget?.TargetUrl) : (null, "Resolve the integration first.");
         destination = destination with { Approved = approved is not null, Detail = reason };
         Add("destination", "Destination approved", approved is null ? ActiveCdcReadinessState.Blocked : ActiveCdcReadinessState.Ready,
             $"{destination.EventHub ?? "No hub"} on {destination.NamespaceFqdn ?? "no namespace"} — {reason}");
@@ -269,22 +299,25 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
             : ActiveCdcContractManifestService.Evaluate(scenario, selected, snapshots.FirstOrDefault()?.Id, policy.Options.InvalidFixtureReviewedArchives);
         Add("contract", "Source contract", manifest.Status == ActiveCdcContractStatus.Compatible ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
             $"{ActiveCdcLabels.Contract(manifest.Status)} — {manifest.Detail}");
-        if (scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId)
+        if (scenario.ReplayKind == ActiveEventReplayKind.ControlAfterInvalid)
             Add("invalid-fixture", "Invalid fixture", manifest.InvalidFixtureStatus == "Reviewed" ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
                 manifest.InvalidFixtureStatus == "Reviewed" ? $"Reviewed — {scenario.InvalidFixture}: {scenario.InvalidCondition}"
                     : $"Needs review — {(manifest.InvalidFixtureDetail.Length > 0 ? manifest.InvalidFixtureDetail : "no source snapshot is bound, so the invalid behavior cannot be checked.")}");
 
-        var range = policy.PersonPkRange(out var rangeReason);
-        if (range is { } r)
+        var providerContext = new ActiveEventProjectEvidenceContext(environmentId, integration, platform);
+        if (scenarios.FindScenario(scenario.Id, providerContext) is { } provider)
         {
-            var next = await store.MaxPersonPkAsync(environmentId, r.Min, r.Max, ct) is { } used ? used + 1 : r.Min;
-            var available = Math.Max(0, (long)r.Max - next + 1);
-            var needed = KeysNeeded(scenario);
-            Add("synthetic-key", "Reserved synthetic PersonPK range", available >= needed ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
-                available >= needed ? $"{rangeReason} {available} unused key(s); this scenario needs {needed}."
-                    : $"{rangeReason} Only {available} unused key(s) left; this scenario needs {needed} distinct keys.");
+            var providerPreparation = await provider.PrepareAsync(scenario.Id, providerContext, snapshotId, ct);
+            foreach (var providerCheck in providerPreparation.Checks)
+                if (checks.All(existing => existing.Key != providerCheck.Key)) checks.Add(new(providerCheck.Key, providerCheck.Label,
+                    providerCheck.State switch
+                    {
+                        ActiveEventReadinessState.Ready => ActiveCdcReadinessState.Ready,
+                        ActiveEventReadinessState.Blocked => ActiveCdcReadinessState.Blocked,
+                        ActiveEventReadinessState.Unknown => ActiveCdcReadinessState.Unknown,
+                        _ => ActiveCdcReadinessState.Optional,
+                    }, providerCheck.Detail));
         }
-        else Add("synthetic-key", "Reserved synthetic PersonPK range", ActiveCdcReadinessState.Blocked, rangeReason);
 
         var checkpoint = platform is null ? null : checkpoints.Describe(platform);
         Add("checkpoint", "Consumer checkpoint evidence (read-only)",
@@ -305,6 +338,29 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
             running is null ? "One run per integration at a time." : $"Run {running:N} is in flight for this integration.");
 
         var canRun = checks.All(c => c.State is ActiveCdcReadinessState.Ready or ActiveCdcReadinessState.Unknown or ActiveCdcReadinessState.Optional);
-        return new(scenario, integration, platform, destination, approved, manifest, checks, canRun && approved is not null, running);
+        return new(scenario, integration, platform, destination, approved, manifest, checks, canRun && approved is not null, running, trustedTarget);
+    }
+
+    private async Task<ActiveCdcScenario> ResolveScenarioAsync(string environmentId, string integrationId, string scenarioId, CancellationToken ct)
+    {
+        var context = await ScenarioContextAsync(environmentId, integrationId, ct);
+        var provider = scenarios.FindScenario(scenarioId, context);
+        // A known scenario with an inapplicable target may still be represented as a blocked readiness/run record.
+        // It cannot reach generation or sending without a registered provider.
+        if (provider is null)
+            return ActiveCdcScenarioCatalog.Find(scenarioId)
+                ?? throw new ActiveCdcRequestException("The requested scenario is not a registered built-in Active Event scenario for this integration.");
+        var descriptor = scenarios.Scenarios(context).Single(item => item.ScenarioId == scenarioId && item.ExtensionId == provider.ExtensionId);
+        var legacyRunProjection = ActiveCdcScenarioCatalog.Find(descriptor.ScenarioId);
+        return legacyRunProjection ?? throw new ActiveCdcRequestException("The registered scenario has no compatible run-history projection.");
+    }
+
+    private async Task<ActiveEventProjectEvidenceContext> ScenarioContextAsync(string environmentId, string integrationId, CancellationToken ct)
+    {
+        var trustedTarget = policy.ResolveTrustedTarget(environmentId);
+        var configured = await catalog.GetAsync(environmentId, trustedTarget?.EnvironmentType, trustedTarget?.TargetUrl, ct);
+        var integration = configured.Integrations.FirstOrDefault(item => item.Id == integrationId);
+        var platform = integration is null ? null : configured.Platforms.FirstOrDefault(item => item.Id == integration.PlatformId);
+        return new(environmentId, integration, platform);
     }
 }

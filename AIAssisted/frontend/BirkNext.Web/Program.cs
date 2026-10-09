@@ -3,7 +3,10 @@ using BirkNext.Web.Configuration;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Services;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+using Microsoft.Authentication.WebAssembly.Msal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,6 +20,25 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
 BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 var backendBase = BackendUrlValidator.BaseAddress(backendUrl);
+
+// Active Event execution is protected by the API's ActiveEventExecute scope. These values are intentionally supplied
+// by deployment configuration; no tenant, client, or API scope is embedded in the application.
+var entraTenantId = builder.Configuration["Authentication:Entra:TenantId"];
+var entraClientId = builder.Configuration["Authentication:Entra:ClientId"];
+var activeEventApiScope = builder.Configuration["Authentication:Entra:ActiveEventApiScope"];
+var entraConfigured = !string.IsNullOrWhiteSpace(entraTenantId)
+    && !string.IsNullOrWhiteSpace(entraClientId)
+    && !string.IsNullOrWhiteSpace(activeEventApiScope);
+if (entraConfigured)
+{
+    builder.Services.AddMsalAuthentication(options =>
+    {
+        options.ProviderOptions.Authentication.Authority = $"https://login.microsoftonline.com/{entraTenantId}";
+        options.ProviderOptions.Authentication.ClientId = entraClientId!;
+        options.ProviderOptions.Authentication.ValidateAuthority = true;
+        options.ProviderOptions.DefaultAccessTokenScopes.Add(activeEventApiScope!);
+    });
+}
 
 builder.Services
     .AddBirkNextClient()
@@ -245,8 +267,17 @@ builder.Services.AddHttpClient<IAiCodeReviewApiService, AiCodeReviewApiService>(
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
     client.BaseAddress = backendBase);
 // IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.
-builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client =>
-    client.BaseAddress = backendBase);
+if (entraConfigured)
+{
+    builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client => client.BaseAddress = backendBase)
+        .AddHttpMessageHandler(sp => new ActiveEventAuthorizationMessageHandler(
+            sp.GetRequiredService<IAccessTokenProvider>(), sp.GetRequiredService<NavigationManager>(), backendBase.ToString(), activeEventApiScope!));
+}
+else
+{
+    // Readiness/history can still explain the configuration state. Protected execution remains blocked by the API.
+    builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client => client.BaseAddress = backendBase);
+}
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);

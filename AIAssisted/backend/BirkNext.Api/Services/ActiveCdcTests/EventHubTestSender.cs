@@ -3,6 +3,7 @@ using Azure.Identity;
 using Azure.Messaging.EventHubs;
 using Azure.Messaging.EventHubs.Producer;
 using BirkNext.Api.Services.Integrations;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.ActiveCdcTests;
@@ -17,7 +18,7 @@ public interface IEventHubTestSender
 {
     /// <summary>Configuration-only: whether an Azure identity is available (the sender's Data Sender right is never probed).</summary>
     string? UnavailableReason { get; }
-    Task<EventHubTestSendOutcome> SendAsync(ApprovedCdcDestination destination, SyntheticCdcEvent synthetic, TimeSpan timeout, CancellationToken ct);
+    Task<EventHubTestSendOutcome> SendAsync(ApprovedCdcDestination destination, GeneratedActiveEvent activeEvent, TimeSpan timeout, CancellationToken ct);
 }
 
 /// <summary>Seam for tests: the real factory opens an <see cref="EventHubProducerClient"/>; a fake records what would have been sent.</summary>
@@ -51,19 +52,19 @@ public sealed class AzureEventHubTestSender(IIntegrationAzureCredential azure, I
 {
     public string? UnavailableReason => azure.Credential is null ? azure.DisabledReason : null;
 
-    public async Task<EventHubTestSendOutcome> SendAsync(ApprovedCdcDestination destination, SyntheticCdcEvent synthetic, TimeSpan timeout, CancellationToken ct)
+    public async Task<EventHubTestSendOutcome> SendAsync(ApprovedCdcDestination destination, GeneratedActiveEvent activeEvent, TimeSpan timeout, CancellationToken ct)
     {
         if (azure.Credential is not { } credential) return new(ActiveCdcEvidenceState.NotAuthorized, false, azure.DisabledReason);
-        var data = new EventData(synthetic.Body)
+        var data = new EventData(activeEvent.Body)
         {
-            MessageId = synthetic.Label.Length == 0 ? synthetic.RunId.ToString("N") : $"{synthetic.RunId:N}-{synthetic.Label}",
-            ContentType = "application/json",
+            MessageId = activeEvent.EventId,
+            ContentType = activeEvent.ContentType,
         };
-        // Metadata only. The Person Adapter reads the body alone, so these are not propagated downstream.
-        data.Properties["BirkNextRunId"] = synthetic.RunId.ToString("N");
-        data.Properties["BirkNextScenario"] = synthetic.ScenarioId;
+        // Transport metadata only. The consumer does not need to propagate these values downstream.
+        data.Properties["BirkNextRunId"] = activeEvent.Correlation.RunId.ToString("N");
+        data.Properties["BirkNextScenario"] = activeEvent.ScenarioId;
         data.Properties["BirkNextSynthetic"] = true;
-        if (synthetic.Label.Length > 0) data.Properties["BirkNextMessage"] = synthetic.Label;
+        foreach (var (key, value) in activeEvent.TransportProperties) data.Properties[key] = value;
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bounded.CancelAfter(timeout);
         try

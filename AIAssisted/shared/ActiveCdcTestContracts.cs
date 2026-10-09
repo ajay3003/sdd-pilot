@@ -44,6 +44,7 @@ public sealed record ActiveCdcScenario
     /// <summary>Debezium source table the scenario writes (payload <c>source.table</c>).</summary>
     public string Table { get; init; } = "";
     public string Operation { get; init; } = "";
+    public ActiveEventReplayKind ReplayKind { get; init; }
     /// <summary>Payload fields the fixture sends (names only), each of which the bound source snapshot must show the adapter reading.</summary>
     public List<string> Fields { get; init; } = [];
     /// <summary>What a Passed result would require — not reachable in Phase 1 (no reliable read-only Person verification exists).</summary>

@@ -10,6 +10,8 @@ namespace BirkNext.Api.Services.ActiveCdcTests;
 public sealed record ActiveCdcOptions
 {
     public bool Enabled { get; init; }
+    /// <summary>Server-owned environment classification and target binding. Caller-supplied type/URL values are never authoritative.</summary>
+    public IReadOnlyList<TrustedTargetBinding> TrustedTargets { get; init; } = [];
     /// <summary>Event Hubs a synthetic event may be sent to — namespace FQDN + hub, both exact (case-insensitive). Empty = none.</summary>
     public IReadOnlyList<ApprovedDestination> AllowedDestinations { get; init; } = [];
     /// <summary>Reserved synthetic PersonPK range agreed for BirkNext test data. Unset = no run (a guessed range could collide with real rows).</summary>
@@ -23,6 +25,7 @@ public sealed record ActiveCdcOptions
     public IReadOnlyList<string> InvalidFixtureReviewedArchives { get; init; } = [];
 
     public sealed record ApprovedDestination(string NamespaceFqdn, string EventHub);
+    public sealed record TrustedTargetBinding(string EnvironmentId, string EnvironmentType, string TargetUrl, string DisplayName);
 
     public static ActiveCdcOptions From(IConfiguration configuration)
     {
@@ -30,6 +33,9 @@ public sealed record ActiveCdcOptions
         return new ActiveCdcOptions
         {
             Enabled = section.GetValue("Enabled", false),
+            TrustedTargets = section.GetSection("TrustedTargets").GetChildren()
+                .Select(c => new TrustedTargetBinding(c["EnvironmentId"] ?? "", c["EnvironmentType"] ?? "Unknown", c["TargetUrl"] ?? "", c["DisplayName"] ?? ""))
+                .Where(t => t.EnvironmentId.Length > 0 && t.TargetUrl.Length > 0 && t.DisplayName.Length > 0).ToList(),
             AllowedDestinations = section.GetSection("AllowedDestinations").GetChildren()
                 .Select(c => new ApprovedDestination(c["NamespaceFqdn"] ?? "", c["EventHub"] ?? ""))
                 .Where(d => d.NamespaceFqdn.Length > 0 && d.EventHub.Length > 0).ToList(),
@@ -63,6 +69,12 @@ public sealed class ActiveCdcPolicy(ActiveCdcOptions options)
     private static readonly string[] ProductionMarkers = ["prod", "prd", "production", "live"];
 
     public ActiveCdcOptions Options => options;
+
+    public ActiveCdcOptions.TrustedTargetBinding? ResolveTrustedTarget(string environmentId)
+    {
+        var matches = options.TrustedTargets.Where(t => string.Equals(t.EnvironmentId, environmentId, StringComparison.Ordinal)).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
 
     /// <summary>Only Development and QA — narrower than Critical E2E automation (which also allows Local/Test/RC), and never Production or unknown.</summary>
     public static string? EnvironmentBlock(string? environmentType)

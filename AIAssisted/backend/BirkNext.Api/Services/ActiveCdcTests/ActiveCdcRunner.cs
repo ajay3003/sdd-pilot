@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.Integrations;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.ActiveCdcTests;
@@ -8,13 +9,13 @@ namespace BirkNext.Api.Services.ActiveCdcTests;
 /// observation. Each stage is recorded on its own — an accepted send is not a consumed event, a checkpoint past the event is not a stored
 /// Person — and the result is conservative: without a verified Person read, the best outcome is Partial.
 /// </summary>
-public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender sender, IEventHubMetadataSource metadata, ICheckpointEvidenceSource checkpoints,
+public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, ActiveEventExecutionRunner eventRunner, IEventHubMetadataSource metadata, ICheckpointEvidenceSource checkpoints,
     ActiveCdcRunStore store, TimeProvider clock, ILogger<ActiveCdcRunner> logger)
 {
     private const string MetadataSource = "Event Hub metadata (read-only properties)";
     private const string CheckpointSource = "Blob checkpoint store (read-only listing)";
 
-    public async Task<ActiveCdcRun> ExecuteAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<SyntheticCdcEvent> events, CancellationToken ct)
+    public async Task<ActiveCdcRun> ExecuteAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<GeneratedActiveEvent> events, CancellationToken ct)
     {
         try
         {
@@ -36,7 +37,7 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         }
     }
 
-    private async Task<ActiveCdcRun> ExecuteCoreAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, SyntheticCdcEvent synthetic, CancellationToken ct)
+    private async Task<ActiveCdcRun> ExecuteCoreAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, GeneratedActiveEvent activeEvent, CancellationToken ct)
     {
         var hub = run.Destination.EventHub!;
         var group = run.Destination.ConsumerGroup;
@@ -62,9 +63,9 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         // 3. Exactly one send. From here on the event may exist in Event Hub — record that before waiting for the answer.
         run = run with { SendAttempted = true };
         await store.UpdateAsync(run, CancellationToken.None);
-        var outcome = await sender.SendAsync(approved, synthetic, TimeSpan.FromSeconds(policy.Options.SendTimeoutSeconds), CancellationToken.None);
+        var outcome = await SendAsync(run, activeEvent, targetUrl, TimeSpan.FromSeconds(policy.Options.SendTimeoutSeconds), ct);
         var sentAt = clock.GetUtcNow();
-        run = Add(run, ActiveCdcStepKind.EventHubSend, outcome.State, outcome.Detail, "Event Hubs producer SDK (one attempt, retries disabled)", sentAt);
+        run = Add(run, ActiveCdcStepKind.EventHubSend, outcome.State, outcome.Detail, "Active Event transport provider", sentAt);
         await store.UpdateAsync(run, CancellationToken.None);
 
         if (outcome.State != ActiveCdcEvidenceState.Observed)
@@ -189,9 +190,9 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         run => EvaluateContinuity(run.Messages[0], run.Messages[1], run.Destination.ConsumerGroupAssumed),
         "Cancelled while observing V. I and V had been sent and cannot be unsent; consumer continuity was not evaluated.");
 
-    private static SequencePlan PlanFor(ActiveCdcRun run) => run.Scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId ? InvalidThenValidPlan : ReplayPlan;
+    private static SequencePlan PlanFor(ActiveCdcRun run) => run.Scenario.ReplayKind == ActiveEventReplayKind.ControlAfterInvalid ? InvalidThenValidPlan : ReplayPlan;
 
-    private async Task<ActiveCdcRun> ExecuteSequenceAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<SyntheticCdcEvent> events, CancellationToken ct)
+    private async Task<ActiveCdcRun> ExecuteSequenceAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<GeneratedActiveEvent> events, CancellationToken ct)
     {
         var plan = PlanFor(run);
         var hub = run.Destination.EventHub!;
@@ -217,12 +218,12 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
 
             run = run with { SendAttempted = true };
             await store.UpdateAsync(run, CancellationToken.None);
-            var outcome = await sender.SendAsync(approved, events[i], TimeSpan.FromSeconds(policy.Options.SendTimeoutSeconds), CancellationToken.None);
+            var outcome = await SendAsync(run, events[i], targetUrl, TimeSpan.FromSeconds(policy.Options.SendTimeoutSeconds), ct);
             var sentAt = clock.GetUtcNow();
             var after = await metadata.GetHubAsync(platform, hub, CancellationToken.None);
             var advanced = Advanced(position, after);
             run = WithMessage(run, i, m => m with { SendState = outcome.State, SendDetail = outcome.Detail, SentAt = sentAt, AdvancedPartitions = advanced });
-            run = Add(run, sendKind, outcome.State, outcome.Detail, "Event Hubs producer SDK (one attempt, retries disabled)", sentAt);
+            run = Add(run, sendKind, outcome.State, outcome.Detail, "Active Event transport provider", sentAt);
             await store.UpdateAsync(run, CancellationToken.None);
             if (outcome.State != ActiveCdcEvidenceState.Observed)
             {
@@ -439,12 +440,12 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         [ActiveCdcStepKind.PersonPersisted, ActiveCdcStepKind.OutboxCreated, ActiveCdcStepKind.ServiceBusDelivered, ActiveCdcStepKind.SubscriberProcessed];
 
     /// <summary>The unobservable domains a scenario records explicitly (Normal Person keeps its Phase 1 set, which its runner already writes).</summary>
-    internal static IReadOnlyCollection<ActiveCdcStepKind> RecordedUnobservable(string scenarioId) => scenarioId switch
+    internal static IReadOnlyCollection<ActiveCdcStepKind> RecordedUnobservable(ActiveEventReplayKind replayKind) => replayKind switch
     {
-        ActiveCdcScenarioCatalog.SamePersonPkReplayId =>
+        ActiveEventReplayKind.ExactReplay =>
             [.. SequenceCommon, ActiveCdcStepKind.DatabaseIdempotency, ActiveCdcStepKind.PersonRowCount, ActiveCdcStepKind.OverwriteBehavior, ActiveCdcStepKind.OutboxDuplication,
              ActiveCdcStepKind.NaturalKeyDuplicate, ActiveCdcStepKind.ReplayHandled, ActiveCdcStepKind.ControlHandled],
-        ActiveCdcScenarioCatalog.InvalidThenValidId =>
+        ActiveEventReplayKind.ControlAfterInvalid =>
             [.. SequenceCommon, ActiveCdcStepKind.InvalidHandledCorrectly, ActiveCdcStepKind.InvalidDiagnostic, ActiveCdcStepKind.FaultQueueOutcome, ActiveCdcStepKind.ConsumerRetry,
              ActiveCdcStepKind.DatabaseEffects, ActiveCdcStepKind.ValidControlHandled],
         _ => [],
@@ -453,7 +454,7 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
     /// <summary>Applies <see cref="Unobservable"/>: the scenario's own set is always recorded; any run's existing step for one of these kinds is forced back to its only allowed state.</summary>
     internal static ActiveCdcRun EnforceBoundaries(ActiveCdcRun run)
     {
-        var recorded = RecordedUnobservable(run.Scenario.Id);
+        var recorded = RecordedUnobservable(run.Scenario.ReplayKind);
         foreach (var (kind, (state, detail)) in Unobservable)
         {
             var step = run.Step(kind);
@@ -463,6 +464,30 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
             run = Add(run, kind, state, detail, step?.Source is { Length: > 0 } source ? source : "Not available", step?.CapturedAt);
         }
         return run;
+    }
+
+    private async Task<EventHubTestSendOutcome> SendAsync(ActiveCdcRun run, GeneratedActiveEvent activeEvent, string? targetUrl, TimeSpan timeout, CancellationToken ct)
+    {
+        var target = new ActiveEventTrustedTarget
+        {
+            TargetEnvironmentId = run.EnvironmentId, EnvironmentType = run.EnvironmentType, IntegrationId = run.IntegrationId,
+            IntegrationType = "EventHub", TransportType = "EventHub", Endpoint = run.Destination.NamespaceFqdn,
+            Resource = run.Destination.EventHub, Consumer = run.Destination.ConsumerGroup,
+            SafeMetadata = new Dictionary<string, string> { ["TargetUrl"] = targetUrl ?? "" },
+        };
+        var result = await eventRunner.ExecuteGeneratedAsync(target, activeEvent, timeout, ct);
+        var accepted = result.LastOrDefault(stage => stage.Stage == ActiveEventEvidenceStage.TransportAccepted);
+        var state = accepted?.Status switch
+        {
+            ActiveEventEvidenceStatus.Observed => ActiveCdcEvidenceState.Observed,
+            ActiveEventEvidenceStatus.Ambiguous => ActiveCdcEvidenceState.TimedOut,
+            ActiveEventEvidenceStatus.SafetyBlocked => ActiveCdcEvidenceState.NotAssessed,
+            ActiveEventEvidenceStatus.Unavailable => ActiveCdcEvidenceState.NotAuthorized,
+            ActiveEventEvidenceStatus.NotVerified => ActiveCdcEvidenceState.NotAssessed,
+            ActiveEventEvidenceStatus.Failed => ActiveCdcEvidenceState.Error,
+            _ => ActiveCdcEvidenceState.NotAssessed,
+        };
+        return new(state, accepted?.Status == ActiveEventEvidenceStatus.Ambiguous, accepted?.Detail ?? "Transport result unavailable.");
     }
 
     private async Task<ActiveCdcRun> CompleteAsync(ActiveCdcRun run, ActiveCdcRunStatus status, string reason)

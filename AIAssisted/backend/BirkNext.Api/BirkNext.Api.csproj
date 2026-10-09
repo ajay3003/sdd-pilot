@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.16" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.83.1" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
@@ -74,6 +75,7 @@
     <Compile Include="../../shared/SecurityExpectationContracts.cs" Link="Models/SecurityExpectationContracts.cs" />
     <Compile Include="../../shared/SecurityConfigurationReview.cs" Link="Models/SecurityConfigurationReview.cs" />
     <Compile Include="../../shared/ActiveCdcTestContracts.cs" Link="Models/ActiveCdcTestContracts.cs" />
+    <Compile Include="../../shared/ActiveEventTestingContracts.cs" Link="Models/ActiveEventTestingContracts.cs" />
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />
     <Compile Include="../../shared/SourceDependencyContracts.cs" Link="Models/SourceDependencyContracts.cs" />

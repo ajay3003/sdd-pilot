@@ -5,6 +5,7 @@ using Azure.Messaging.EventHubs;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.ActiveCdcTests;
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.IntegrationQuality;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
@@ -48,7 +49,8 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
 
     public static ActiveCdcOptions Enabled() => new()
     {
-        Enabled = true, AllowedDestinations = [new(Fqdn, Hub)], SyntheticPersonPkMin = 900_000_000, SyntheticPersonPkMax = 900_000_099,
+        Enabled = true, TrustedTargets = [new(Env, "Development", "https://m2lb-dev.example.test", "M2LB DEV")],
+        AllowedDestinations = [new(Fqdn, Hub)], SyntheticPersonPkMin = 900_000_000, SyntheticPersonPkMax = 900_000_099,
         SendTimeoutSeconds = 5, ObservationSeconds = 0, PollSeconds = 1,
     };
 
@@ -59,8 +61,26 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
         var policy = new ActiveCdcPolicy(Options);
         var loggers = LoggerFactory.Create(b => b.AddProvider(Logs));
         var sender = new AzureEventHubTestSender(Azure, Producers, loggers.CreateLogger<AzureEventHubTestSender>());
-        var runner = new ActiveCdcRunner(policy, sender, Metadata, Checkpoints, Store, TimeProvider.System, loggers.CreateLogger<ActiveCdcRunner>());
-        return new ActiveCdcTestService(Catalog, new IqrSourceStore(Db()), policy, sender, Checkpoints, Store, Coordinator, runner, TimeProvider.System);
+        var transports = new ActiveEventTransportRegistry([new EventHubActiveEventTransportProvider(policy, sender)]);
+        var eventRunner = new ActiveEventExecutionRunner(transports, [], [], [], TimeProvider.System);
+        var runner = new ActiveCdcRunner(policy, eventRunner, Metadata, Checkpoints, Store, TimeProvider.System, loggers.CreateLogger<ActiveCdcRunner>());
+        var sourceStore = new IqrSourceStore(Db());
+        var registry = new ActiveEventScenarioRegistry([new M2lbPersonScenarioProvider(sourceStore, policy, Store, TimeProvider.System)]);
+        return new ActiveCdcTestService(Catalog, sourceStore, policy, registry, sender, Checkpoints, Store, Coordinator, runner, TimeProvider.System);
+    }
+
+    public IActiveEventLifecycleService Lifecycle(params IActiveEventScenarioProvider[] additionalProviders)
+    {
+        var policy = new ActiveCdcPolicy(Options);
+        var loggers = LoggerFactory.Create(builder => builder.AddProvider(Logs));
+        var sender = new AzureEventHubTestSender(Azure, Producers, loggers.CreateLogger<AzureEventHubTestSender>());
+        var transports = new ActiveEventTransportRegistry([new EventHubActiveEventTransportProvider(policy, sender)]);
+        var eventRunner = new ActiveEventExecutionRunner(transports, [], [], [], TimeProvider.System);
+        var sourceStore = new IqrSourceStore(Db());
+        var registry = new ActiveEventScenarioRegistry([new M2lbPersonScenarioProvider(sourceStore, policy, Store, TimeProvider.System), .. additionalProviders]);
+        var genericHistory = new ActiveEventRunStore(_provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<ActiveEventRunStore>.Instance);
+        return new ActiveEventLifecycleService(Catalog, policy, registry, transports, eventRunner, genericHistory, Coordinator,
+            TimeProvider.System, NullLogger<ActiveEventLifecycleService>.Instance);
     }
 
     public Task<IqrSourceSnapshot> AddSnapshotAsync(IEnumerable<string>? cdcFields = null, DateTimeOffset? at = null) =>
