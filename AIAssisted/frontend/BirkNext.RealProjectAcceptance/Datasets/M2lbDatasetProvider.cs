@@ -53,14 +53,18 @@ public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
             ["fqr-runtime"] = RuntimeOnly("no runtime target is paired with this dataset"),
             ["aqr-runtime"] = RuntimeOnly("no runtime target is paired with this dataset"),
         },
-        // Explorer Text Coverage of this exact archive (diagnostic baseline established on 2026-10-08). Only applied when the hash matches.
+        // Explorer Text Coverage of archive-owned documents in this exact archive (2026-10-09).
+        // Re-recorded after making the diagnostic exclude built-in fixtures and reusable .specify/templates
+        // documents from the imported-project comparison. The former 185 / 39,225 baseline mixed those
+        // reusable templates into the project artifact set; current archive-owned coverage is 149 / 35,850.
+        // Only applied when the archive hash matches.
         HashBoundBaselines = new Dictionary<string, long>(StringComparer.Ordinal)
         {
-            ["explorer-coverage.documents"] = 185,
-            ["explorer-coverage.blocks"] = 39_225,
-            ["explorer-coverage.direct"] = 26_750,
-            ["explorer-coverage.structured"] = 11_037,
-            ["explorer-coverage.ignored"] = 1_438,
+            ["explorer-coverage.documents"] = 149,
+            ["explorer-coverage.blocks"] = 35_850,
+            ["explorer-coverage.direct"] = 24_635,
+            ["explorer-coverage.structured"] = 9_921,
+            ["explorer-coverage.ignored"] = 1_294,
             ["explorer-coverage.unsupported"] = 0,
             ["explorer-coverage.missing"] = 0,
         },

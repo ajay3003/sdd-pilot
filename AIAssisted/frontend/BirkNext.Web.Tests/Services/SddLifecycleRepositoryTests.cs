@@ -418,4 +418,32 @@ public sealed class SddLifecycleRepositoryTests
         Assert.Contains(repository.SddLifecycle.Links, x => x.Relationship == "RequirementVerifiedBy");
         Assert.Contains(repository.SddLifecycle.Links, x => x.Relationship == "AcceptanceCriterionVerifiedBy");
     }
+
+    [Fact]
+    public void LifecycleFingerprintIsStableForBidirectionalRequirementAndStoryLinks()
+    {
+        var requirement = new SemanticRequirement { Id = "REQ-1", Text = "Keep linked evidence" };
+        var story = new SemanticUserStory { Id = "US-1", Title = "Review linked evidence" };
+        requirement.LinkedUserStories.Add(story);
+        story.LinkedRequirements.Add(requirement);
+
+        var context = new ReviewContext
+        {
+            Specification = new SpecificationSemanticModel
+            {
+                Requirements = [requirement],
+                UserStories = [story]
+            }
+        };
+        var contextProvider = new Mock<IReviewContextProvider>();
+        contextProvider.Setup(provider => provider.GetCurrent()).Returns(context);
+        var graph = new SddEvidenceGraphService(contextProvider.Object);
+        var workspace = new WorkspaceArtifactRepository();
+
+        var first = graph.Fingerprint(workspace);
+        var second = graph.Fingerprint(workspace);
+
+        Assert.Equal(first, second);
+        Assert.False(string.IsNullOrWhiteSpace(first));
+    }
 }

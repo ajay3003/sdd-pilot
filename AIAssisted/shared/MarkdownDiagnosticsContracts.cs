@@ -79,7 +79,8 @@ public sealed record ExplorerCoverageDocument(string ArtifactRole, string Displa
     int RepresentedDirectlyCount, int RepresentedStructurallyCount, int IntentionallyIgnoredCount,
     int UnsupportedCount, int MissingCount, DiagnosticStatus Status, IReadOnlyList<ExplorerCoverageBlock> Blocks,
     IReadOnlyList<ProjectionRenderVerification>? RenderVerifications = null,
-    string? ExpectedDocumentId = null);
+    string? ExpectedDocumentId = null,
+    string SourceOrigin = "BuiltInFixture");
 public static class ExplorerCoverageRenderEvidence
 {
     /// <summary>Attaches browser evidence to existing structured source accounting; direct blocks remain unverified.</summary>

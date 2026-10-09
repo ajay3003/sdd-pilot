@@ -52,6 +52,8 @@ public sealed class RealProjectAcceptanceTests(ITestOutputHelper output)
             result = await runner.RunAsync(context);
             if (session.ConsoleErrors.Count > 0)
                 output.WriteLine($"Browser console errors ({session.ConsoleErrors.Count}): {string.Join(" | ", session.ConsoleErrors.Distinct().Take(10))}");
+            Assert.Empty(session.ConsoleErrors);
+            output.WriteLine("Browser console errors: 0");
         }
         var (json, html) = AcceptanceReportWriter.Write(result, root);
         output.WriteLine($"Report: {json}");

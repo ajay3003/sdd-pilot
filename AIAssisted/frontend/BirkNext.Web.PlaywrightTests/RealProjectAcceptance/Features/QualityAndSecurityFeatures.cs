@@ -165,6 +165,9 @@ public sealed class DiagnosticFeature(string featureId, string displayName, stri
                 var scenarios = Arr(run, "scenarios").ToList();
                 var failing = scenarios.Where(s => Str(s, "status") is "3" or "Fail").Select(s => Str(s, "name")).ToList();
                 result.Observe("scenarios", scenarios.Count).Observe("failing", string.Join(", ", failing));
+                var markdownMutation = scenarios.FirstOrDefault(s => Str(s, "name") == "Optional real-project Markdown mutation");
+                if (markdownMutation.ValueKind != JsonValueKind.Undefined)
+                    result.Observe("markdown mutation", StatusName(markdownMutation, "status"));
                 foreach (var name in failing) result.Defect("compatibility-scenario-failed", $"Compatibility scenario failed: {name}");
                 result.DataFromCount(scenarios.Count, DataState.NotAssessed);
                 break;
@@ -182,17 +185,10 @@ public sealed class DiagnosticFeature(string featureId, string displayName, stri
             }
             default:
             {
-                var docs = Arr(run, "documents").ToList();
-                long Sum(string p) => docs.Sum(d => long.TryParse(Str(d, p), out var n) ? n : 0);
-                var totals = new Dictionary<string, long>
-                {
-                    ["explorer-coverage.documents"] = docs.Count, ["explorer-coverage.blocks"] = Sum("sourceBlockCount"),
-                    ["explorer-coverage.direct"] = Sum("representedDirectlyCount"), ["explorer-coverage.structured"] = Sum("representedStructurallyCount"),
-                    ["explorer-coverage.ignored"] = Sum("intentionallyIgnoredCount"), ["explorer-coverage.unsupported"] = Sum("unsupportedCount"),
-                    ["explorer-coverage.missing"] = Sum("missingCount"),
-                };
+                var archiveDocuments = ExplorerCoverageScope.ArchiveOwnedDocuments(run);
+                var totals = ExplorerCoverageScope.Aggregate(archiveDocuments);
                 foreach (var (k, v) in totals) result.Observe(k["explorer-coverage.".Length..], v);
-                context.Shared[CoverageExpectedIdsKey] = docs.Select(d => Str(d, "expectedDocumentId")).Where(id => id is { Length: > 0 }).Select(id => id!).ToHashSet(StringComparer.Ordinal);
+                context.Shared[CoverageExpectedIdsKey] = archiveDocuments.Select(d => Str(d, "expectedDocumentId")).Where(id => id is { Length: > 0 }).Select(id => id!).ToHashSet(StringComparer.Ordinal);
                 if (totals["explorer-coverage.missing"] > 0) result.Defect("coverage-missing-text", $"{totals["explorer-coverage.missing"]} source block(s) are not represented by any explorer.");
                 if (context.HashMatched)
                 {
@@ -202,10 +198,39 @@ public sealed class DiagnosticFeature(string featureId, string displayName, stri
                     result.Note("Hash-bound baseline compared (archive hash matched).");
                 }
                 else result.Note("Archive hash differs from the descriptor: baseline not compared.");
-                result.DataFromCount(docs.Count, DataState.NotAssessed);
+                result.DataFromCount(archiveDocuments.Count, DataState.NotAssessed);
                 break;
             }
         }
         result.Provenance = ProvenanceState.Traced;
+    }
+}
+
+/// <summary>Scopes hash-bound Explorer coverage baselines to project artifacts classified from the configured archive, excluding local fixtures.</summary>
+public static class ExplorerCoverageScope
+{
+    public static IReadOnlyList<JsonElement> ArchiveOwnedDocuments(JsonElement run)
+    {
+        if (!run.TryGetProperty("documents", out var documents) || documents.ValueKind != JsonValueKind.Array) return [];
+        return documents.EnumerateArray()
+            .Where(document => document.TryGetProperty("sourceOrigin", out var origin) &&
+                origin.ValueKind == JsonValueKind.String && origin.GetString() == "ConfiguredArchive")
+            .ToArray();
+    }
+
+    public static IReadOnlyDictionary<string, long> Aggregate(IReadOnlyCollection<JsonElement> documents)
+    {
+        long Sum(string property) => documents.Sum(document =>
+            document.TryGetProperty(property, out var value) && value.TryGetInt64(out var count) ? count : 0);
+        return new Dictionary<string, long>
+        {
+            ["explorer-coverage.documents"] = documents.Count,
+            ["explorer-coverage.blocks"] = Sum("sourceBlockCount"),
+            ["explorer-coverage.direct"] = Sum("representedDirectlyCount"),
+            ["explorer-coverage.structured"] = Sum("representedStructurallyCount"),
+            ["explorer-coverage.ignored"] = Sum("intentionallyIgnoredCount"),
+            ["explorer-coverage.unsupported"] = Sum("unsupportedCount"),
+            ["explorer-coverage.missing"] = Sum("missingCount")
+        };
     }
 }

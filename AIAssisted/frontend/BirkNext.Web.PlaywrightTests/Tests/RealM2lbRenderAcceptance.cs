@@ -48,6 +48,15 @@ public sealed class RealM2lbRenderAcceptance
             ?? throw new InvalidOperationException("Explorer Text Coverage returned no result.");
         coverage.RealProjectFixtureUsed.Should().BeTrue("the configured production archive must be used");
 
+        // The archive contains reusable .specify/templates documents as well as project-owned artifacts.
+        // Only documents represented by the production archive-scoped diagnostic are eligible for rendering checks.
+        var archiveDocumentIds = coverage.Documents
+            .Where(document => document.SourceOrigin == "ConfiguredArchive")
+            .Select(document => (document.ArtifactRole, document.ExpectedDocumentId))
+            .ToHashSet();
+        candidates = candidates.Where(candidate => archiveDocumentIds.Contains((candidate.RoleLabel, candidate.DocumentId))).ToList();
+        candidates.Should().NotBeEmpty("the selected render samples must come from archive-owned documents");
+
         foreach (var pick in candidates)
         {
             var matchingCoverageDocuments = coverage.Documents.Where(document =>
@@ -169,11 +178,11 @@ public sealed class RealM2lbRenderAcceptance
             ?? throw new InvalidOperationException("The source coverage regression run returned no result.");
         var fingerprintsByRole = candidates.Select(candidate => (Role: candidate.RoleLabel, candidate.DocumentId)).ToHashSet();
         var realDocuments = after.Documents.Where(document => fingerprintsByRole.Contains((document.ArtifactRole, document.ExpectedDocumentId ?? ""))).ToArray();
-        realDocuments.Should().HaveCount(185);
-        realDocuments.Sum(document => document.SourceBlockCount).Should().Be(39_225);
-        realDocuments.Sum(document => document.RepresentedDirectlyCount).Should().Be(26_750);
-        realDocuments.Sum(document => document.RepresentedStructurallyCount).Should().Be(11_037);
-        realDocuments.Sum(document => document.IntentionallyIgnoredCount).Should().Be(1_438);
+        realDocuments.Should().HaveCount(149);
+        realDocuments.Sum(document => document.SourceBlockCount).Should().Be(35_850);
+        realDocuments.Sum(document => document.RepresentedDirectlyCount).Should().Be(24_635);
+        realDocuments.Sum(document => document.RepresentedStructurallyCount).Should().Be(9_921);
+        realDocuments.Sum(document => document.IntentionallyIgnoredCount).Should().Be(1_294);
         realDocuments.Sum(document => document.UnsupportedCount).Should().Be(0);
         realDocuments.Sum(document => document.MissingCount).Should().Be(0);
         realDocuments.Should().OnlyContain(document => document.MissingCount == 0);
