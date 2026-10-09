@@ -41,7 +41,7 @@ public static class BrowserAcceptanceFeatureRegistry
         new ImplementationTraceabilityFeature(),
         new RenderOnlyFeature("spec-drift", "Spec Drift", "Traceability", "/spec-drift", ".drift-page",
             note: "Spec Drift compares recorded requirement revisions; a first import has no earlier revision to drift from."),
-        new RenderOnlyFeature("impact-analysis", "Impact Analysis", "Traceability", "/impact-analysis", ".ia-mode-selector",
+        new RenderOnlyFeature("impact-analysis", "Impact Analysis", "Traceability", "/impact-analysis", "main.unified-impact",
             note: "Impact Analysis needs a proposed change as input; acceptance does not invent one."),
         // Source Review
         new SourceAnalysisFeature(),

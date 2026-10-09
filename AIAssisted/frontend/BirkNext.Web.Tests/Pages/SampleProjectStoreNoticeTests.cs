@@ -6,6 +6,8 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using System.Net;
+using System.Text;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -23,20 +25,32 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
         Services.AddSingleton<FeatureVisibilityService>();
         Services.AddSingleton(new Mock<IBirkNextClient>().Object);
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
+        Services.AddSingleton(new SourceChangeImpactApiService(new HttpClient(new EmptyImpactEvidenceHandler())
+        {
+            BaseAddress = new Uri("http://localhost/")
+        }));
     }
 
     [Fact]
     public void Imported_project_is_not_assessed_instead_of_asking_for_a_sample_project()
     {
-        _workspace.SddLifecycle.CurrentProjectImportId = "import-0123456789abcdef";
+        const string importId = "import-0123456789abcdef";
+        _workspace.SddLifecycle.CurrentProjectImportId = importId;
+        _workspace.SddLifecycle.ProjectImports.Add(new SddProjectImportRecord
+        {
+            ImportId = importId,
+            ProjectName = "Imported fixture",
+            ArchiveFileName = "fixture.zip"
+        });
         _workspace.Set(WorkspaceArtifactType.Specification, "# Spec\n\n- FR-001: The system shall work.");
 
-        foreach (var markup in new[] { Render<SpecDrift>().Markup, Render<ImpactAnalysis>().Markup })
-        {
-            markup.Should().Contain("data-testid=\"sample-store-notice\"").And.Contain("Not assessed for this workspace");
-            markup.Should().NotContain("Select a Sample Project");
-            markup.Should().NotContain("notification-error");
-        }
+        var specDriftMarkup = Render<SpecDrift>().Markup;
+        specDriftMarkup.Should().Contain("data-testid=\"sample-store-notice\"").And.Contain("Not assessed for this workspace");
+        specDriftMarkup.Should().NotContain("Select a Sample Project").And.NotContain("notification-error");
+
+        var impactMarkup = Render<ImpactAnalysis>().Markup;
+        impactMarkup.Should().Contain("Imported fixture").And.Contain("No persisted requirement records were returned");
+        impactMarkup.Should().NotContain("Select a Sample Project").And.NotContain("notification-error");
     }
 
     [Fact]
@@ -60,5 +74,19 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
         _workspace.CurrentProject = "sample-slug";
 
         SampleProjectStoreNotice.HasNonSampleWorkspace(_workspace).Should().BeFalse();
+    }
+
+    private sealed class EmptyImpactEvidenceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = request.RequestUri?.AbsolutePath.EndsWith("/source-change/snapshots", StringComparison.Ordinal) == true
+                ? "{\"sourceAnalysisEnabled\":false,\"snapshots\":[]}"
+                : "[]";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
     }
 }

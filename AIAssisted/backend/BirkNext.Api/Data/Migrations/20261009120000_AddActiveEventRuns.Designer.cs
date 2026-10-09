@@ -112,6 +112,44 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("active_event_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.AiCodeReviewRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("BaselineSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("baseline_snapshot_id");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("CurrentSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("current_snapshot_id");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("result_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt")
+                        .HasDatabaseName("ix_ai_code_review_runs_completed");
+
+                    b.ToTable("ai_code_review_runs", (string)null);
+                });
+
 
             modelBuilder.Entity("BirkNext.Api.Models.ApplicationMessagingEvidenceRecord", b =>
                 {

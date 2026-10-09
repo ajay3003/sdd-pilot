@@ -122,7 +122,8 @@ public sealed class SampleProjectArtifactDiscoveryTests
         var docs = result!.Role(WorkspaceArtifactType.Specification).Documents;
         docs.Should().HaveCount(2);
         docs.Single(d => d.RelativePath == "spec.md").DuplicateOf.Should().Be("archive/spec.md");
-        docs.Select(d => d.Fingerprint).Distinct().Should().ContainSingle().Which.Should().Be(ArtifactFingerprint.Compute(Spec));
+        docs.Select(d => d.Fingerprint).Distinct().Should().ContainSingle().Which.Should()
+            .Be(ArtifactFingerprint.Compute(ArtifactDocumentDiscovery.Normalize(Spec)));
     }
 
     [Fact]
