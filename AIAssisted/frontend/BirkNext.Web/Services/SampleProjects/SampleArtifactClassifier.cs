@@ -190,7 +190,8 @@ public static class SampleArtifactClassifier
     {
         var parts = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         var folders = parts.SkipLast(1).Where(f => FolderHints.ContainsKey(f) || f.Equals("checklists", StringComparison.OrdinalIgnoreCase)
-            || f.Equals("contracts", StringComparison.OrdinalIgnoreCase));
+            || f.Equals("contracts", StringComparison.OrdinalIgnoreCase)
+            || IsTemplateDirectory(f));
         return string.Join('/', folders.Append(parts.Length == 0 ? "" : parts[^1]));
     }
 
@@ -228,6 +229,10 @@ public static class SampleArtifactClassifier
         if (NonArtifactStems.Contains(stem))
             return new(ArtifactDiscoveryStatus.Unclassified, null, ArtifactConfidence.Unknown,
                 [$"{fileName} is a repository description file, not an artifact role."], []);
+
+        if (folders.Any(IsTemplateDirectory) || IsTemplateFilename(stem))
+            return new(ArtifactDiscoveryStatus.Unclassified, null, ArtifactConfidence.Unknown,
+                [$"{fileName} is a reusable template, not a project artifact."], []);
 
         var tokens = MarkdownTokenizer.Tokenize(body);
         var headings = tokens.Where(t => t.Kind == MarkdownTokenKind.Heading).ToList();
@@ -383,6 +388,15 @@ public static class SampleArtifactClassifier
         var dot = fileName.LastIndexOf('.');
         return dot > 0 ? fileName[..dot] : fileName;
     }
+
+    private static bool IsTemplateDirectory(string name) =>
+        name.Equals("template", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("templates", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTemplateFilename(string stem) =>
+        stem.Equals("template", StringComparison.OrdinalIgnoreCase)
+        || stem.EndsWith("-template", StringComparison.OrdinalIgnoreCase)
+        || stem.EndsWith("_template", StringComparison.OrdinalIgnoreCase);
 
     private static string Shorten(string s)
     {

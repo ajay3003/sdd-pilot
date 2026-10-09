@@ -299,6 +299,27 @@ public sealed class SampleArtifactClassifierTests
         result.Reasons.Single().Should().Contain("Checklist");
     }
 
+    [Theory]
+    [InlineData("project/.specify/templates/spec-template.md", Spec)]
+    [InlineData("project/templates/plan-template.md", Plan)]
+    [InlineData("project/template.md", Tasks)]
+    [InlineData("project/tasks-template.md", Tasks)]
+    public void ReusableTemplates_AreNotClassifiedAsProjectArtifacts(string path, string content)
+    {
+        var result = SampleArtifactClassifier.Classify(path, content);
+
+        result.Status.Should().Be(ArtifactDiscoveryStatus.Unclassified);
+        result.Role.Should().BeNull();
+        result.Reasons.Single().Should().Contain("reusable template");
+    }
+
+    [Fact]
+    public void TemplateDirectoryParticipatesInClassificationCacheKey()
+    {
+        SampleArtifactClassifier.PathKey("project/templates/spec.md")
+            .Should().NotBe(SampleArtifactClassifier.PathKey("project/spec.md"));
+    }
+
     [Fact]
     public void WeakFilenameSynonymAlone_IsNotEnough()
     {
