@@ -1,0 +1,444 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IReportExportService ExportService
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+@* IQR → Integration journeys: one shared view for every registered journey pack. Each journey shows its steps as separate evidence
+   (configured ≠ observed ≠ verified), its prerequisites, scenarios and history. Delegated journeys (e.g. CDC) are executed by Active tests
+   above and only summarized here. Architecture rules are evaluated by the backend on Source Analysis evidence. Nothing here is domain-specific:
+   pack, journey and step labels come from the backend. *@
+@if (Api is null) { return; }
+<section class="ijp" aria-labelledby="ijp-heading" data-testid="ijp-panel">
+    <h2 id="ijp-heading">Integration journeys</h2>
+    @if (_error is { } error) { <p class="ijp-error" role="alert" data-testid="ijp-error">@error</p> }
+    @if (_loading) { <p class="ijp-muted" role="status">Loading journeys…</p> }
+    @if (!_loading && _packs.Count == 0 && _error is null) { <p class="ijp-empty" data-testid="ijp-empty">No journey packs are registered.</p> }
+
+    @if (_packs.Count > 1)
+    {
+        <fieldset class="ijp-packs" data-testid="ijp-packs">
+            <legend>Journey pack</legend>
+            @foreach (var item in _packs)
+            {
+                <label class="ijp-pack-option">
+                    <input type="radio" name="ijp-pack-@_id" checked="@(item.PackId == _packId)" data-testid="@($"ijp-pack-{item.PackId}")" @onchange="() => SelectPack(item.PackId)" />
+                    <span>@item.DisplayName</span>
+                </label>
+            }
+        </fieldset>
+    }
+
+    @if (Pack is { } pack)
+    {
+        <h3 class="ijp-pack-title" data-testid="ijp-pack-title">@pack.DisplayName</h3>
+        <p class="ijp-muted">@pack.Description</p>
+        <p class="ijp-trust" data-testid="ijp-trust" data-trusted="@(pack.EnvironmentTrusted ? "true" : "false")">
+            <span class="ijp-pill ijp-pill-@(pack.EnvironmentTrusted ? "ready" : "neutral")">@(pack.EnvironmentTrusted ? "Trusted environment" : "Environment not trusted for execution")</span>
+            <span class="ijp-muted">@pack.EnvironmentDetail</span>
+        </p>
+
+        <div class="ijp-tabs" role="tablist" aria-label="@($"{pack.DisplayName} views")" data-testid="ijp-tabs">
+            @foreach (var tab in Tabs)
+            {
+                <button type="button" role="tab" id="@TabId(tab.Key)" class="ijp-tab @(_tab == tab.Key ? "ijp-tab-active" : "")" aria-selected="@(_tab == tab.Key ? "true" : "false")"
+                        aria-controls="@($"{_id}-panel")" tabindex="@(_tab == tab.Key ? "0" : "-1")" data-testid="@($"ijp-tab-{tab.Key}")" @ref="_tabRefs[tab.Key]"
+                        @onclick="() => SelectTabAsync(tab.Key)" @onkeydown="e => OnTabKeyAsync(e, tab.Key)">@tab.Label</button>
+            }
+        </div>
+        <div id="@($"{_id}-panel")" role="tabpanel" aria-labelledby="@TabId(_tab)" class="ijp-tabpanel" data-testid="ijp-tabpanel" data-tab="@_tab" tabindex="0">
+            @if (_tab == "overview")
+            {
+                <div class="ijp-table" tabindex="0" role="region" aria-label="Journey overview" data-testid="ijp-overview">
+                    <table>
+                        <thead><tr><th scope="col">Journey</th><th scope="col">Configuration</th><th scope="col">Source evidence</th><th scope="col">Execution readiness</th><th scope="col">Last run</th><th scope="col">Verification</th></tr></thead>
+                        <tbody>
+                            @foreach (var view in pack.Journeys)
+                            {
+                                <tr data-testid="ijp-overview-row" data-journey="@view.Journey.JourneyId" data-readiness="@view.Readiness">
+                                    <th scope="row">@view.Journey.DisplayName</th>
+                                    <td>@IntegrationJourneyPresentation.Configuration(view)</td>
+                                    <td>@IntegrationJourneyPresentation.Source(view)</td>
+                                    <td><span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.ReadinessTone(view.Readiness)">@IntegrationJourneyPresentation.Readiness(view.Readiness)</span></td>
+                                    <td>@(view.LastRun is { } last ? $"{last.StartedAt:yyyy-MM-dd HH:mm} UTC" : "No run")</td>
+                                    <td>@IntegrationJourneyPresentation.Verification(view)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="ijp-muted">Configured ≠ source verified ≠ executable ≠ runtime verified. Accepted or observed is never a pass.</p>
+                @if (pack.Limitations.Count > 0)
+                {
+                    <details class="ijp-details" data-testid="ijp-limitations"><summary>Limitations</summary><ul>@foreach (var item in pack.Limitations) { <li>@item</li> }</ul></details>
+                }
+            }
+            else if (_tab == "rules")
+            {
+                @if (_rulesLoading) { <p class="ijp-muted" role="status">Evaluating architecture rules…</p> }
+                @if (_rules is { } rules)
+                {
+                    <p class="ijp-muted" data-testid="ijp-rules-source">Source: @(rules.SourceArchive ?? "no Source Analysis snapshot") · rules are checked on source dependency evidence, not on names alone.</p>
+                    <ul class="ijp-rules" data-testid="ijp-rules">
+                        @foreach (var finding in rules.Findings)
+                        {
+                            <li class="ijp-rule" data-testid="ijp-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
+                                <span class="ijp-rule-title">@finding.Title</span>
+                                <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span>
+                                <span class="ijp-muted">@finding.SubjectLabel @IntegrationJourneyPresentation.Expectation(finding.Expectation).ToLowerInvariant() @finding.TargetLabel</span>
+                                <span class="ijp-rule-detail">@finding.Detail</span>
+                                @if (finding.Evidence.Count > 0)
+                                {
+                                    <details class="ijp-details"><summary>Source evidence (@finding.Evidence.Count)</summary>
+                                        <ul>@foreach (var item in finding.Evidence) { <li><span class="ijp-mono">@item.File:@item.Line</span> @item.Symbol — @item.Explanation</li> }</ul>
+                                    </details>
+                                }
+                            </li>
+                        }
+                    </ul>
+                    @if (rules.Limitations.Count > 0) { <ul class="ijp-notes">@foreach (var item in rules.Limitations) { <li>@item</li> }</ul> }
+                }
+            }
+            else if (_tab == "history")
+            {
+                <div class="ijp-filters" data-testid="ijp-history-filters">
+                    <label for="@($"{_id}-hj")">Journey</label>
+                    <select id="@($"{_id}-hj")" data-testid="ijp-history-journey" value="@_historyJourney" @onchange="OnHistoryJourneyAsync">
+                        <option value="">All journeys</option>
+                        @foreach (var view in pack.Journeys) { <option value="@view.Journey.JourneyId">@view.Journey.DisplayName</option> }
+                    </select>
+                    <label for="@($"{_id}-hs")">Result</label>
+                    <select id="@($"{_id}-hs")" data-testid="ijp-history-state" value="@(_historyState?.ToString() ?? "")" @onchange="OnHistoryStateAsync">
+                        <option value="">All results</option>
+                        @foreach (var state in Enum.GetValues<JourneyRunState>()) { <option value="@state">@IntegrationJourneyPresentation.Run(state)</option> }
+                    </select>
+                </div>
+                @if (_historyError is { } historyError) { <p class="ijp-empty" data-testid="ijp-history-error">@historyError</p> }
+                else if (_history.Count == 0) { <p class="ijp-empty" data-testid="ijp-history-empty">No journey runs are recorded for this environment.</p> }
+                else
+                {
+                    <div class="ijp-table" tabindex="0" role="region" aria-label="Journey run history" data-testid="ijp-history">
+                        <table>
+                            <thead><tr><th scope="col">Journey</th><th scope="col">Scenario</th><th scope="col">Environment</th><th scope="col">Started</th><th scope="col">Result</th><th scope="col">Evidence completeness</th><th scope="col">Limitations</th></tr></thead>
+                            <tbody>
+                                @foreach (var run in _history)
+                                {
+                                    <tr data-testid="ijp-history-row"><td>@JourneyName(run.JourneyId)</td><td>@run.ScenarioId</td><td>@run.EnvironmentId</td><td>@($"{run.StartedAt:yyyy-MM-dd HH:mm} UTC")</td>
+                                        <td><span class="ijp-pill ijp-pill-neutral">@IntegrationJourneyPresentation.Run(run.State)</span></td><td>@run.VerifiedSteps of @run.TotalSteps steps verified</td><td>@run.LimitationCount</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            else if (pack.Journeys.FirstOrDefault(item => item.Journey.JourneyId == _tab) is { } view)
+            {
+                <div class="ijp-journey" data-testid="ijp-journey" data-journey="@view.Journey.JourneyId" data-readiness="@view.Readiness">
+                    <p>@view.Journey.Description</p>
+                    <p data-testid="ijp-readiness"><span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.ReadinessTone(view.Readiness)">@IntegrationJourneyPresentation.Readiness(view.Readiness)</span> <span class="ijp-muted">@view.ReadinessSummary</span></p>
+                    <ul class="ijp-maturity" data-testid="ijp-maturity" aria-label="Evidence maturity">
+                        <li data-on="@view.Maturity.Configured">Configured: @(view.Maturity.Configured ? "yes" : "no")</li>
+                        <li data-on="@view.Maturity.SourceVerified">Source verified: @(view.Maturity.SourceVerified ? "yes" : "no")</li>
+                        <li data-on="@view.Maturity.Executable">Executable: @(view.Maturity.Executable ? "yes" : "no")</li>
+                        <li data-on="@view.Maturity.RuntimeVerified">Runtime verified: @(view.Maturity.RuntimeVerified ? "yes" : "no")</li>
+                    </ul>
+                    @if (view.Journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent)
+                    {
+                        <p class="ijp-note" role="note" data-testid="ijp-delegated">This journey runs through Active tests (provider <span class="ijp-mono">@view.Journey.DelegatedProviderId</span>). Its scenarios, safety checks, run evidence and history live there; readiness below is taken from it.</p>
+                    }
+
+                    <h4 class="ijp-subheading">Journey steps</h4>
+                    <ol class="ijp-steps" data-testid="ijp-steps">
+                        @foreach (var step in view.Journey.Steps)
+                        {
+                            var status = view.StepStatus.FirstOrDefault(item => item.StepId == step.StepId);
+                            <li class="ijp-step" data-testid="ijp-step" data-step="@step.StepId" data-state="@(status?.State ?? JourneyStepState.NotAssessed)">
+                                <span class="ijp-step-label">@step.Label</span>
+                                <span class="ijp-step-owner">@step.Owner · @IntegrationJourneyPresentation.Kind(step.Kind)</span>
+                                <span class="ijp-step-flags">
+                                    <span>Configured: @(status?.Configured == true ? "yes" : step.IntegrationKey is null ? "n/a" : "no")</span>
+                                    <span>Observed: @(status?.Observable == true ? "possible" : "no source")</span>
+                                    <span>Verified: @(status?.Verifiable == true ? "possible" : "no")</span>
+                                </span>
+                                <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.StepTone(status?.State ?? JourneyStepState.NotAssessed)">@IntegrationJourneyPresentation.Step(status?.State ?? JourneyStepState.NotAssessed)</span>
+                                <span class="ijp-step-limit">@status?.Limitation</span>
+                            </li>
+                        }
+                    </ol>
+
+                    <h4 class="ijp-subheading">Integrations (from Integration Quality Review)</h4>
+                    <ul class="ijp-notes" data-testid="ijp-integrations">@foreach (var item in view.MatchedIntegrations) { <li data-configured="@(item.IntegrationId is not null)">@(item.DisplayName ?? item.RequirementKey) (@item.Kind): @item.Detail</li> }</ul>
+
+                    <h4 class="ijp-subheading">Prerequisites</h4>
+                    <ul class="ijp-checks" data-testid="ijp-prerequisites">
+                        @foreach (var item in view.Prerequisites)
+                        {
+                            <li class="ijp-check" data-testid="ijp-prerequisite" data-key="@item.Key" data-state="@item.State" data-category="@item.Category">
+                                <span class="ijp-check-label">@item.Label <span class="ijp-muted">· @IntegrationJourneyPresentation.Category(item.Category)</span></span>
+                                <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.ReadinessTone(item.State)">@IntegrationJourneyPresentation.Readiness(item.State)</span>
+                                <span class="ijp-check-detail">@item.Detail</span>
+                            </li>
+                        }
+                    </ul>
+
+                    <h4 class="ijp-subheading">Scenarios</h4>
+                    <ul class="ijp-checks" data-testid="ijp-scenarios">
+                        @foreach (var scenario in view.Journey.Scenarios)
+                        {
+                            <li class="ijp-check" data-testid="ijp-scenario" data-scenario="@scenario.ScenarioId" data-support="@scenario.Support">
+                                <span class="ijp-check-label">@scenario.DisplayName</span>
+                                <span class="ijp-pill ijp-pill-@(scenario.Support == JourneyScenarioSupport.Supported ? "neutral" : "attention")">@(scenario.Support == JourneyScenarioSupport.Supported ? "Supported" : "Not assessed")</span>
+                                <span class="ijp-check-detail">@(scenario.NotAssessedBecause ?? scenario.Description)</span>
+                            </li>
+                        }
+                    </ul>
+
+                    @if (view.Journey.ExecutionMode == JourneyExecutionMode.JourneyRunner)
+                    {
+                        var supported = view.Journey.Scenarios.Where(item => item.Support == JourneyScenarioSupport.Supported).ToList();
+                        <div class="ijp-run" data-testid="ijp-run">
+                            @if (supported.Count > 0)
+                            {
+                                <label for="@($"{_id}-scenario-{view.Journey.JourneyId}")">Scenario to run</label>
+                                <select id="@($"{_id}-scenario-{view.Journey.JourneyId}")" data-testid="ijp-run-scenario" value="@SelectedScenario(view)" @onchange="e => SetScenario(view, e)">
+                                    @foreach (var item in supported) { <option value="@item.ScenarioId">@item.DisplayName</option> }
+                                </select>
+                            }
+                            @if (!_confirming)
+                            {
+                                <button type="button" class="btn-primary" data-testid="ijp-start" disabled="@(!CanRun(view))" aria-describedby="@($"{_id}-run-note")" @onclick="() => _confirming = true">Run journey</button>
+                            }
+                            else
+                            {
+                                <div class="ijp-confirm" role="group" aria-labelledby="@($"{_id}-confirm-heading")" data-testid="ijp-confirm">
+                                    <h5 id="@($"{_id}-confirm-heading")">Confirm journey run</h5>
+                                    <p>Environment: @pack.EnvironmentId · Journey: @view.Journey.DisplayName · Scenario: @SelectedScenario(view)</p>
+                                    <p>Integrations: @string.Join(", ", view.MatchedIntegrations.Select(item => item.DisplayName ?? item.RequirementKey))</p>
+                                    <p><strong>This run may change downstream state in the non-production environment. Only synthetic test data is used.</strong></p>
+                                    <label class="ijp-ack"><input type="checkbox" data-testid="ijp-ack" @bind="_acknowledged" /> I confirm this synthetic run against the trusted non-production environment.</label>
+                                    <div class="ijp-actions">
+                                        <button type="button" class="btn-primary" data-testid="ijp-confirm-run" disabled="@(!_acknowledged || _running)" @onclick="() => StartAsync(view)">Confirm and run</button>
+                                        <button type="button" class="btn-secondary" data-testid="ijp-confirm-cancel" @onclick="CancelConfirm">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+                            <p id="@($"{_id}-run-note")" class="ijp-muted" data-testid="ijp-run-note">@RunNote(view)</p>
+                            @if (_lastRun is { } run && run.JourneyId == view.Journey.JourneyId)
+                            {
+                                <div class="ijp-table" tabindex="0" role="region" aria-label="Last journey run" data-testid="ijp-last-run" data-state="@run.OverallState">
+                                    <p><span class="ijp-pill ijp-pill-neutral">@IntegrationJourneyPresentation.Run(run.OverallState)</span> @run.StateReason</p>
+                                    <table>
+                                        <thead><tr><th scope="col">Step</th><th scope="col">State</th><th scope="col">Evidence</th><th scope="col">Reason</th></tr></thead>
+                                        <tbody>@foreach (var step in run.Steps) { <tr><td>@step.Label</td><td>@IntegrationJourneyPresentation.Step(step.State)</td><td>@step.Evidence</td><td>@step.Reason</td></tr> }</tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (view.Journey.Limitations.Count > 0) { <ul class="ijp-notes" data-testid="ijp-journey-limitations">@foreach (var item in view.Journey.Limitations) { <li>@item</li> }</ul> }
+                    <p class="ijp-muted">Evidence basis: @view.Journey.EvidenceBasis</p>
+                </div>
+            }
+        </div>
+        <div class="ijp-actions">
+            <button type="button" class="btn-secondary" data-testid="ijp-export" @onclick="ExportAsync">Export HTML</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
+
+    private readonly string _id = "ijp-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly CancellationTokenSource _disposed = new();
+    private IIntegrationJourneysApiService? _api;
+    private ActiveEventAuthenticationState? _authentication;
+    private List<IntegrationJourneyPackView> _packs = [];
+    private string _packId = "";
+    private string _tab = "overview";
+    private string? _loadedFor;
+    private bool _loading;
+    private string? _error;
+    private ArchitectureRuleReport? _rules;
+    private bool _rulesLoading;
+    private List<IntegrationJourneyRunSummary> _history = [];
+    private string? _historyError;
+    private string _historyJourney = "";
+    private JourneyRunState? _historyState;
+    private readonly Dictionary<string, string> _scenario = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ElementReference> _tabRefs = new(StringComparer.Ordinal);
+    private bool _confirming;
+    private bool _acknowledged;
+    private bool _running;
+    private IntegrationJourneyRun? _lastRun;
+
+    private IIntegrationJourneysApiService? Api => _api ??= Services.GetService<IIntegrationJourneysApiService>();
+    private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private IntegrationJourneyPackView? Pack => _packs.FirstOrDefault(item => item.PackId == _packId);
+
+    private IReadOnlyList<(string Key, string Label)> Tabs => Pack is { } pack
+        ? [("overview", "Overview"), .. pack.Journeys.Select(view => (view.Journey.JourneyId, view.Journey.DisplayName)), ("rules", "Architecture rules"), ("history", "History")]
+        : [];
+
+    private string TabId(string key) => $"{_id}-tab-{key}";
+    private string JourneyName(string journeyId) => Pack?.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId)?.Journey.DisplayName ?? journeyId;
+
+    private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0
+        ? selected : view.Journey.Scenarios.FirstOrDefault(item => item.Support == JourneyScenarioSupport.Supported)?.ScenarioId ?? "";
+
+    private bool CanRun(IntegrationJourneyView view) => view.CanRun && Authentication.Configured && !_running && SelectedScenario(view).Length > 0;
+
+    private string RunNote(IntegrationJourneyView view) => !Authentication.Configured
+        ? "Authentication not configured: real journey execution is disabled in this browser."
+        : !view.CanRun ? $"Not runnable: {view.ReadinessSummary} The backend re-checks every prerequisite before anything runs."
+        : "Ready. The backend re-checks every prerequisite, the trusted environment and your ActiveEventExecute permission before anything runs.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Api is null || Profile is null || _loadedFor == Profile.Id) return;
+        _loadedFor = Profile.Id;
+        _loading = true;
+        _error = null;
+        _rules = null;
+        _history = [];
+        try
+        {
+            var result = await Api.PacksAsync(Profile.Id, _disposed.Token);
+            _packs = result.Value?.ToList() ?? [];
+            _error = result.Error;
+            if (_packs.All(item => item.PackId != _packId)) _packId = _packs.FirstOrDefault()?.PackId ?? "";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _error = "The integration journeys could not be loaded from the backend.";
+        }
+        finally { _loading = false; }
+    }
+
+    private void SelectPack(string packId)
+    {
+        _packId = packId;
+        _tab = "overview";
+        _rules = null;
+        _history = [];
+    }
+
+    private async Task SelectTabAsync(string key)
+    {
+        _tab = key;
+        _confirming = false;
+        _acknowledged = false;
+        if (key == "rules" && _rules is null) await LoadRulesAsync();
+        if (key == "history") await LoadHistoryAsync();
+    }
+
+    private async Task OnTabKeyAsync(KeyboardEventArgs e, string current)
+    {
+        var keys = Tabs.Select(tab => tab.Key).ToList();
+        var index = keys.IndexOf(current);
+        var next = e.Key switch
+        {
+            "ArrowRight" => keys[(index + 1) % keys.Count],
+            "ArrowLeft" => keys[(index - 1 + keys.Count) % keys.Count],
+            "Home" => keys[0],
+            "End" => keys[^1],
+            _ => null,
+        };
+        if (next is null) return;
+        await SelectTabAsync(next);
+        if (_tabRefs.TryGetValue(next, out var element))
+        {
+            try { await element.FocusAsync(); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
+    }
+
+    private async Task LoadRulesAsync()
+    {
+        if (Api is null || Pack is not { } pack) return;
+        _rulesLoading = true;
+        try
+        {
+            var result = await Api.RulesAsync(Profile.Id, pack.PackId, _disposed.Token);
+            _rules = result.Value;
+            if (result.Error is { } error) _error = error;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Architecture rules could not be evaluated."; }
+        finally { _rulesLoading = false; }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (Api is null || Pack is not { } pack) return;
+        _historyError = null;
+        try
+        {
+            var result = await Api.HistoryAsync(Profile.Id, pack.PackId, _historyJourney.Length == 0 ? null : _historyJourney, _historyState, _disposed.Token);
+            _history = result.Value?.ToList() ?? [];
+            _historyError = result.Unauthorized && !Authentication.Configured ? Authentication.Detail : result.Error;
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException) { _historyError = "Sign-in required to read journey history."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _historyError = "Journey history could not be loaded."; }
+    }
+
+    private async Task OnHistoryJourneyAsync(ChangeEventArgs e)
+    {
+        _historyJourney = e.Value?.ToString() ?? "";
+        await LoadHistoryAsync();
+    }
+
+    private async Task OnHistoryStateAsync(ChangeEventArgs e)
+    {
+        _historyState = Enum.TryParse<JourneyRunState>(e.Value?.ToString(), out var state) ? state : null;
+        await LoadHistoryAsync();
+    }
+
+    private void SetScenario(IntegrationJourneyView view, ChangeEventArgs e) => _scenario[view.Journey.JourneyId] = e.Value?.ToString() ?? "";
+
+    private void CancelConfirm()
+    {
+        _confirming = false;
+        _acknowledged = false;
+    }
+
+    private async Task StartAsync(IntegrationJourneyView view)
+    {
+        if (Api is null || Pack is not { } pack || !_acknowledged) return;
+        _running = true;
+        try
+        {
+            var result = await Api.StartAsync(new IntegrationJourneyRunRequest
+            {
+                EnvironmentId = Profile.Id, PackId = pack.PackId, JourneyId = view.Journey.JourneyId, ScenarioId = SelectedScenario(view), Confirmed = true,
+            }, _disposed.Token);
+            _lastRun = result.Value;
+            _error = result.Error;
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException) { _error = "Sign-in required to run a journey."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The journey run could not be started."; }
+        finally
+        {
+            _running = false;
+            _confirming = false;
+            _acknowledged = false;
+        }
+    }
+
+    private async Task ExportAsync()
+    {
+        if (Pack is not { } pack) return;
+        if (_rules is null) await LoadRulesAsync();
+        var html = ExportService.ExportIntegrationJourneys(pack, _rules, _history, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"integration-journeys-{pack.PackId}-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
+    }
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
+}

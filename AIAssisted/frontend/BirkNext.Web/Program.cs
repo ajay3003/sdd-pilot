@@ -274,6 +274,10 @@ builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(
 var activeEventsClient = builder.Services.AddHttpClient<IActiveEventsApiService, ActiveEventsApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     activeEventsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// IQR -> Integration journeys: one shared client for every journey pack; runs/history use the same execution permission and token pipeline.
+var journeysClient = builder.Services.AddHttpClient<IIntegrationJourneysApiService, IntegrationJourneysApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    journeysClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);

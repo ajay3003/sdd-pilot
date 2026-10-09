@@ -2,6 +2,7 @@
 
 Active Event Testing sends bounded, synthetic events to a real non-production destination and records what can be observed afterwards.
 There is one engine for every scenario provider; providers add scenarios, never another runner, sender, safety model, history or export.
+Multi-boundary business flows (e.g. Skolenærvær reporting) are modeled as [integration journeys](integration-journeys.md); a CDC journey there delegates to this engine.
 
 ```
 Shared core (Services/ActiveEventTesting)                     Providers (Services/ActiveEventTesting/Providers)

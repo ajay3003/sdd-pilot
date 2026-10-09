@@ -373,6 +373,7 @@
         @* Active tests last: the component's own heading is the group heading; summary first, runner collapsed, every guard unchanged. *@
         <div class="iqr-group iqr-group-active" data-testid="iqr-group-active-tests">
             <ActiveEventTestingPanel SummaryFirst="true" Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
+            <IntegrationJourneyPanel Profile="profile" />
         </div>
     }
     else if (_result is { } result)

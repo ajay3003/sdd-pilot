@@ -509,6 +509,15 @@ builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEvent
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.ActiveEventRunCoordinator>();
 builder.Services.AddScoped<BirkNext.Api.Services.ActiveEventTesting.IActiveEventLifecycleService, BirkNext.Api.Services.ActiveEventTesting.ActiveEventLifecycleService>();
+// Integration journeys: generic multi-boundary journeys (runner, readiness, history) with compiled domain packs. Packs reuse the IQR catalog,
+// trusted environments, Source Analysis and Active Event readiness; no step executor or observer is registered yet, so no journey can run.
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPack, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
+    sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunGate>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyService>();
 // Legacy (read-only): history of runs recorded by the retired Active CDC runner.
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.LegacyActiveCdcHistory>();
