@@ -1,0 +1,380 @@
+@page "/test-coverage-review"
+@using BirkNext.TestCoverage
+@using BirkNext.Web.Components
+@using P = BirkNext.Web.Services.TestCoveragePresentation
+@implements IDisposable
+@inject ITestCoverageApiService Api
+@inject IWorkspaceSessionService Workspace
+@inject ICurrentWorkspaceProjection CurrentWorkspace
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+<PageTitle>@TestCoverageText.Title</PageTitle>
+
+@* Test Coverage & Overlap Review: one evidence model (tests, journeys, overlaps, gaps) shown as several views. Source comes only from the
+   Source Analysis snapshot; nothing is executed; no coverage percentage. Simple language by default, technical details on demand. *@
+<div class="tco-page" data-testid="tco-page" aria-busy="@(_loaded ? "false" : "true")">
+    <PageHeader Title="@TestCoverageText.Title" Description="@TestCoverageText.Hero">
+        @if (_result is not null)
+        {
+            <div class="tco-exports" role="group" aria-label="Export">
+                <button type="button" class="btn-secondary" data-testid="tco-export-covered" @onclick="() => ExportAsync(ExportKind.CoveredHtml)">Export Covered Tests</button>
+                <button type="button" class="btn-secondary" data-testid="tco-export-scope" @onclick="() => ExportAsync(ExportKind.ScopeMarkdown)">Export Remaining QA Scope</button>
+                <button type="button" class="btn-secondary" data-testid="tco-export-full" @onclick="() => ExportAsync(ExportKind.FullHtml)">Export Full Review</button>
+                <button type="button" class="btn-secondary" data-testid="tco-export-markdown" @onclick="() => ExportAsync(ExportKind.FullMarkdown)">Markdown</button>
+            </div>
+        }
+    </PageHeader>
+
+    <p class="tco-note" role="note" data-testid="tco-subtext">@TestCoverageText.Subtext</p>
+
+    <section class="tco-card" aria-labelledby="tco-inputs-heading" data-testid="tco-inputs">
+        <h2 id="tco-inputs-heading">Review input</h2>
+        <dl class="tco-facts">
+            <div><dt>Current project</dt><dd data-testid="tco-project">@(_projectName ?? "No project loaded — source tests are still reviewed; requirement views need project documents")</dd></div>
+        </dl>
+        <SourceEvidencePrerequisite State="_scope" Prefix="tco" SourceAnalysisEnabled="_sources?.SourceAnalysisEnabled != false" ConsumerName="@TestCoverageText.Title"
+                                    Title="Source Analysis snapshot" LoadError="_loadError" ReturnTo="test-coverage-review"
+                                    OtherSectionsNote="@TestCoverageText.SourceRequired">
+            <div class="tco-selectors">
+                <label class="tco-field">Source snapshot
+                    <select class="form-control" data-testid="tco-current" value="@(_currentId?.ToString() ?? "")" @onchange="CurrentChanged" disabled="@_busy">
+                        @foreach (var s in Snapshots) { <option value="@s.SnapshotId">@Option(s)</option> }
+                    </select>
+                </label>
+                <label class="tco-field">Baseline snapshot <span class="tco-muted">(optional — finds changed code without test changes)</span>
+                    <select class="form-control" data-testid="tco-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="BaselineChanged" disabled="@(_busy || BaselineOptions.Count == 0)">
+                        <option value="">No baseline</option>
+                        @foreach (var s in BaselineOptions) { <option value="@s.SnapshotId">@Option(s)</option> }
+                    </select>
+                </label>
+            </div>
+            @if (CurrentSnapshot is { HasConsumerEvidence: false } stale)
+            {
+                <p class="tco-notice" role="status" data-testid="tco-snapshot-old">@stale.ConsumerEvidenceNote</p>
+            }
+            <div class="tco-actions">
+                <button type="button" class="btn-primary" data-testid="tco-run" disabled="@(BlockedReason is not null)" aria-describedby="tco-run-help" @onclick="RunAsync">
+                    @(_busy ? "Reviewing…" : "Run Test Coverage & Overlap Review")
+                </button>
+                <p id="tco-run-help" class="tco-muted" role="status" data-testid="tco-run-help">@(BlockedReason ?? "Reads the selected snapshot, the project documents and imported test results. Nothing is uploaded or executed.")</p>
+            </div>
+            @if (_busy)
+            {
+                <ol class="tco-phases" data-testid="tco-progress" aria-live="polite">
+                    @foreach (var phase in PhaseNames) { <li>@phase</li> }
+                </ol>
+            }
+            @if (_runError is not null) { <p class="tco-error" role="alert" data-testid="tco-error">@_runError</p> }
+        </SourceEvidencePrerequisite>
+    </section>
+
+    @if (_result is { } r)
+    {
+        <section class="tco-card" aria-labelledby="tco-result-heading" data-testid="tco-result" data-run="@r.RunId">
+            <h2 id="tco-result-heading" tabindex="-1" @ref="_resultHeading">Review result</h2>
+            <p class="tco-muted" data-testid="tco-provenance">
+                Snapshot <code title="@r.Current.Fingerprint">@r.Current.ArchiveName · @Short(r.Current.Fingerprint)</code>
+                @if (r.Baseline is { } b) { <text> · baseline <code title="@b.Fingerprint">@b.ArchiveName · @Short(b.Fingerprint)</code></text> }
+                · @r.CompletedAt.ToLocalTime().ToString("g")
+                @if (r.Partial) { <text> · <strong data-testid="tco-partial">partial review</strong></text> }
+            </p>
+            @if (NewerExists(r)) { <p class="tco-notice" role="status" data-testid="tco-stale">A newer snapshot exists. This review stays bound to the snapshot above; run it again to review the newer one.</p> }
+
+            <ul class="tco-cards" data-testid="tco-overview-cards">
+                <li data-testid="tco-card-tests"><span class="tco-card-value">@r.Inventory.TestsDiscovered</span><span>Tests found</span><span class="tco-muted">@r.Inventory.TestsAnalyzed analyzed · @r.Inventory.TestsWithExecutionEvidence with results</span></li>
+                <li data-testid="tco-card-journeys"><span class="tco-card-value">@r.Journeys.Count</span><span>Journeys found</span><span class="tco-muted">@r.Journeys.Count(j => j.Weakest is ConnectionEvidence.Suggested or ConnectionEvidence.NeedsConfirmation) need confirmation</span></li>
+                <li data-testid="tco-card-duplicates"><span class="tco-card-value">@r.Overlaps.Count(o => o.Kind == OverlapKind.HighConfidenceOverlap)</span><span>Possible duplicates</span><span class="tco-muted">QA tests developer automation may already cover</span></li>
+                <li data-testid="tco-card-gaps"><span class="tco-card-value">@r.Gaps.Count</span><span>Remaining gaps</span><span class="tco-muted">@r.Gaps.Count(g => g.Attention == "Needs attention") need attention</span></li>
+                <li data-testid="tco-card-review"><span class="tco-card-value">@r.QaScope.NeedsReview.Count</span><span>Needs review</span><span class="tco-muted">Tester or test-lead decision</span></li>
+            </ul>
+            <p class="tco-muted" data-testid="tco-execution-note">@r.Inventory.ExecutionEvidence @r.Inventory.CodeCoverage</p>
+
+            <div class="tco-tabs" role="tablist" aria-label="Review views" data-testid="tco-tabs">
+                @foreach (var (key, label) in Views)
+                {
+                    <button type="button" role="tab" id="tco-tab-@key" aria-controls="tco-panel" aria-selected="@(_view == key ? "true" : "false")" tabindex="@(_view == key ? 0 : -1)"
+                            class="tco-tab @(_view == key ? "is-active" : "")" data-testid="tco-tab-@key" @onclick="() => _view = key" @onkeydown="e => TabKey(e, key)">@label</button>
+                }
+            </div>
+            <div id="tco-panel" role="tabpanel" aria-labelledby="tco-tab-@_view" class="tco-panel" data-testid="tco-panel" data-view="@_view">
+                @switch (_view)
+                {
+                    case "overview":
+                        <h3>What the evidence shows</h3>
+                        <ul class="tco-list">
+                            <li>@r.Tests.Count(t => t.Level == TestLevel.Unit) unit-level, @r.Tests.Count(t => t.Level is TestLevel.Api or TestLevel.Integration or TestLevel.Repository) API/integration/database-level, @r.Tests.Count(t => t.Level is TestLevel.E2E or TestLevel.Ui) UI/end-to-end tests; @r.Tests.Count(t => t.Level is TestLevel.Unknown or TestLevel.NeedsReview) whose level could not be determined.</li>
+                            <li>@r.Tests.Count(t => t.Boundaries.Any(b => b.Mode is BoundaryMode.Mocked or BoundaryMode.Fake)) tests replace a dependency with a mock or fake; @r.Tests.Count(t => t.Boundaries.Any(b => b.Mode is BoundaryMode.Real or BoundaryMode.RealContainer)) use a real dependency.</li>
+                            <li>@r.QaTests.Count QA test(s) compared (acceptance scenarios, QA-owned automated tests and Critical E2E flows).</li>
+                            @foreach (var u in r.Inventory.Unsupported) { <li data-testid="tco-unsupported">@u.Files @u.Language test file(s) (@u.Framework) — not analyzed.</li> }
+                        </ul>
+                        <h3>Test projects</h3>
+                        <div class="tco-scroll" role="region" aria-label="Test projects" tabindex="0">
+                            <table class="tco-table" data-testid="tco-projects">
+                                <thead><tr><th scope="col">Project</th><th scope="col">Tests</th><th scope="col">Who owns these tests?</th></tr></thead>
+                                <tbody>
+                                    @foreach (var g in r.Tests.GroupBy(t => t.Project).OrderBy(g => g.Key))
+                                    {
+                                        var project = g.Key;
+                                        <tr data-testid="tco-project-row">
+                                            <th scope="row">@project</th><td>@g.Count()</td>
+                                            <td>
+                                                <select aria-label="Ownership of @project" data-testid="tco-ownership" value="@g.First().Ownership" @onchange="e => DecideAsync(CoverageDecisionKind.ProjectOwnership, project, e.Value?.ToString())">
+                                                    <option value="Unknown">Not declared</option>
+                                                    <option value="DeveloperAutomated">Developer automation</option>
+                                                    <option value="QaAutomated">QA automation</option>
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        break;
+                    case "journeys":
+                        @if (r.Journeys.Count == 0) { <p class="tco-muted" data-testid="tco-no-journeys">No journey was found in the source evidence (no resolved service, messaging or database connections).</p> }
+                        @foreach (var j in r.Journeys.Take(_journeyLimit))
+                        {
+                            <article class="tco-journey" data-testid="tco-journey" data-weakest="@j.Weakest">
+                                <h3>@j.Title</h3>
+                                <ol class="tco-steps">
+                                    @foreach (var s in j.Steps)
+                                    {
+                                        <li class="tco-step" data-testid="tco-step" data-coverage="@s.Developer" data-evidence="@s.Evidence">
+                                            <div class="tco-step-head">
+                                                <span class="tco-step-name">@s.FromName → @s.ToName</span>
+                                                <span class="tco-pill tco-@P.StepTone(s.Developer)">@P.Step(s.Developer)</span>
+                                            </div>
+                                            <p class="tco-muted">@s.DeveloperExplanation Runtime: @s.Runtime.</p>
+                                            <p class="tco-muted" data-testid="tco-connection">Connection: @P.Connection(s.Evidence, s.ReviewerDecision)</p>
+                                            @if (s.Evidence is ConnectionEvidence.Suggested or ConnectionEvidence.NeedsConfirmation)
+                                            {
+                                                <div class="tco-confirm" role="group" aria-label="Confirm connection @s.FromName to @s.ToName">
+                                                    <button type="button" class="btn-secondary" data-testid="tco-confirm" @onclick="() => ToggleConnectionAsync(s)">@(s.ReviewerDecision == "Confirmed" ? "Reject" : "Confirm")</button>
+                                                    @if (s.ReviewerDecision is null) { <button type="button" class="btn-secondary" data-testid="tco-reject" @onclick="() => RejectConnectionAsync(s)">Reject</button> }
+                                                </div>
+                                            }
+                                            <details class="tco-details"><summary>Technical details</summary>
+                                                <p>Boundary: @TestCoverageReviewText.Boundary(s.Boundary). QA: @s.QaExplanation</p>
+                                                <ul>@foreach (var p in s.Provenance) { <li><code>@p</code></li> }</ul>
+                                                @if (s.DeveloperTestIds.Count > 0) { <p>Tests: @string.Join(", ", s.DeveloperTestIds.Select(TestName).Take(8))</p> }
+                                            </details>
+                                        </li>
+                                    }
+                                </ol>
+                                @if (j.FocusForTesters.Count > 0) { <p><strong>What testers should focus on:</strong> @string.Join("; ", j.FocusForTesters)</p> }
+                            </article>
+                        }
+                        @if (r.Journeys.Count > _journeyLimit) { <button type="button" class="btn-secondary" @onclick="() => _journeyLimit += 10">Show more journeys</button> }
+                        break;
+                    case "components":
+                        @foreach (var c in r.Components)
+                        {
+                            <article class="tco-component" data-testid="tco-component">
+                                <h3>@c.Name <span class="tco-muted">(@c.Tests tests@(c.Skipped > 0 ? $", {c.Skipped} skipped" : ""))</span></h3>
+                                <ul class="tco-dims">
+                                    @foreach (var d in c.Dimensions.Where(d => d.Status != DimensionStatus.NotAssessed || _showNotAssessed))
+                                    {
+                                        <li data-testid="tco-dimension" data-status="@d.Status"><span>@d.Dimension</span> <span class="tco-pill tco-@P.DimensionTone(d.Status)">@P.Dimension(d.Status)</span>
+                                            <details class="tco-details"><summary><span class="visually-hidden">@d.Dimension </span>Why</summary><p>@d.Explanation</p></details></li>
+                                    }
+                                </ul>
+                            </article>
+                        }
+                        <label class="tco-toggle"><input type="checkbox" @bind="_showNotAssessed" data-testid="tco-show-not-assessed" /> Show dimensions that were not assessed</label>
+                        break;
+                    case "requirements":
+                        @foreach (var behavior in r.Behaviors.Take(_behaviorLimit))
+                        {
+                            <article class="tco-behavior" data-testid="tco-behavior" data-recommendation="@behavior.Recommendation">
+                                <h3>@behavior.Title <span class="tco-pill">@behavior.Status</span></h3>
+                                @if (behavior.AlreadyTested.Count > 0) { <p class="tco-label">What is already tested</p><ul class="tco-list">@foreach (var t in behavior.AlreadyTested) { <li>@t</li> }</ul> }
+                                @if (behavior.NotVerifiedYet.Count > 0) { <p class="tco-label">What is not verified yet</p><ul class="tco-list">@foreach (var t in behavior.NotVerifiedYet) { <li>@t</li> }</ul> }
+                                <p><strong>For testers:</strong> @behavior.ForTesters</p>
+                                <details class="tco-details"><summary>Technical details</summary>
+                                    <p>@P.Strength(behavior.Strength). Developer tests: @behavior.DeveloperTestIds.Count; QA tests: @behavior.QaTests. @string.Join(" ", behavior.Why)</p>
+                                    @if (behavior.WhereTested.Count > 0) { <p>Where: @string.Join("; ", behavior.WhereTested)</p> }
+                                </details>
+                            </article>
+                        }
+                        @if (r.Behaviors.Count > _behaviorLimit) { <button type="button" class="btn-secondary" @onclick="() => _behaviorLimit += 25">Show more</button> }
+                        break;
+                    case "duplicates":
+                        <p class="tco-muted">QA tests that developer automation may already cover. BirkNext never removes a test; the test lead decides.</p>
+                        @if (r.Overlaps.Count == 0) { <p data-testid="tco-no-overlaps">No QA test was found that overlaps developer automation. Acceptance scenarios from the specification and QA-owned tests are compared.</p> }
+                        @foreach (var o in r.Overlaps.OrderBy(o => o.Kind))
+                        {
+                            <article class="tco-overlap" data-testid="tco-overlap" data-kind="@o.Kind">
+                                <h3>@o.QaTitle <span class="tco-pill">@P.Overlap(o.Kind)</span></h3>
+                                <p>@o.Recommendation</p>
+                                <p class="tco-muted">Remaining risk: @o.RemainingRisk</p>
+                                <div class="tco-compare">
+                                    <div><p class="tco-label">Same</p><p>@(o.Same.Count == 0 ? "—" : string.Join(", ", o.Same))</p></div>
+                                    <div><p class="tco-label">Different</p><p>@(o.Different.Count == 0 ? "—" : string.Join(", ", o.Different))</p></div>
+                                </div>
+                                <details class="tco-details"><summary>Why BirkNext says this</summary>
+                                    <p>@P.Strength(o.Strength)</p><ul>@foreach (var reason in o.Reasons) { <li>@reason</li> }</ul>
+                                    <p>Developer tests: @string.Join(", ", o.DeveloperTestIds.Select(TestName))</p>
+                                </details>
+                            </article>
+                        }
+                        break;
+                    case "scope":
+                        <h3>What testers should focus on</h3>
+                        <ul class="tco-list" data-testid="tco-scope-keep">@foreach (var k in r.QaScope.Keep) { <li>@k</li> }</ul>
+                        <h3>Tests testers probably do not need to repeat</h3>
+                        <ul class="tco-list" data-testid="tco-scope-unnecessary">@if (r.QaScope.ProbablyUnnecessary.Count == 0) { <li>None identified from the current evidence.</li> } @foreach (var k in r.QaScope.ProbablyUnnecessary) { <li>@k</li> }</ul>
+                        <h3>Needs tester review</h3>
+                        <ul class="tco-list" data-testid="tco-scope-review">@foreach (var k in r.QaScope.NeedsReview) { <li>@k</li> }</ul>
+                        <h3>Remaining gaps</h3>
+                        <ul class="tco-list" data-testid="tco-gaps">@foreach (var g in r.Gaps.Take(_gapLimit)) { <li data-testid="tco-gap" data-kind="@g.Kind"><strong>@g.Attention:</strong> @g.Title. <span class="tco-muted">@g.Explanation</span></li> }</ul>
+                        @if (r.Gaps.Count > _gapLimit) { <button type="button" class="btn-secondary" @onclick="() => _gapLimit += 30">Show more gaps</button> }
+                        break;
+                    case "documentation":
+                        <p class="tco-muted">Readable documentation of covered tests and remaining QA scope, bound to this snapshot. Export it as HTML or Markdown above.</p>
+                        <pre class="tco-doc" data-testid="tco-doc-preview" tabindex="0">@Preview(r)</pre>
+                        break;
+                }
+            </div>
+            @if (r.Limitations.Count > 0)
+            {
+                <details class="tco-details" data-testid="tco-limitations"><summary>Limitations of this review</summary><ul>@foreach (var l in r.Limitations.Concat(TestCoverageReviewText.Limitations)) { <li>@l</li> }</ul></details>
+            }
+        </section>
+    }
+
+    @if (_history.Count > 0)
+    {
+        <section class="tco-card" aria-labelledby="tco-history-heading" data-testid="tco-history">
+            <h2 id="tco-history-heading">Earlier reviews</h2>
+            <ul class="tco-list">
+                @foreach (var h in _history)
+                {
+                    <li><button type="button" class="tco-link" @onclick="() => OpenAsync(h.RunId)">@h.CompletedAt.ToLocalTime().ToString("g") · @h.Label</button></li>
+                }
+            </ul>
+        </section>
+    }
+</div>
+
+@code {
+    private enum ExportKind { CoveredHtml, ScopeMarkdown, FullHtml, FullMarkdown }
+    private static readonly (string Key, string Label)[] Views =
+    [
+        ("overview", "Overview"), ("journeys", "By Journey"), ("components", "By Component"), ("requirements", "By Requirement / Risk"),
+        ("duplicates", "Possible Duplicate Tests"), ("scope", "Remaining QA Scope"), ("documentation", "Covered Tests Documentation"),
+    ];
+    private static readonly string[] PhaseNames = ["Discovering test projects", "Analyzing tests", "Finding system journeys", "Mapping tests to journeys", "Checking overlaps", "Finding remaining gaps", "Preparing documentation"];
+    private ReviewSourceOptions? _sources;
+    private readonly ReviewSourceScopeState _scope = new();
+    private string? _loadError, _runError, _projectName, _environmentId;
+    private Guid? _currentId, _baselineId;
+    private TestCoverageReviewResult? _result;
+    private IReadOnlyList<TestCoverageRunSummary> _history = [];
+    private string _view = "overview";
+    private bool _busy, _loaded, _showNotAssessed;
+    private int _journeyLimit = 10, _behaviorLimit = 25, _gapLimit = 30;
+    private ElementReference _resultHeading;
+    private readonly CancellationTokenSource _cts = new();
+
+    private IReadOnlyList<ReviewSourceSnapshot> Snapshots => _sources?.Snapshots.OrderByDescending(s => s.AnalyzedAt).ToList() ?? [];
+    private ReviewSourceSnapshot? CurrentSnapshot => Snapshots.FirstOrDefault(s => s.SnapshotId == _currentId);
+    private List<ReviewSourceSnapshot> BaselineOptions => CurrentSnapshot is { } c ? Snapshots.Where(s => s.RepositoryKey == c.RepositoryKey && s.SnapshotId != c.SnapshotId).ToList() : [];
+    private string? BlockedReason => P.RunBlockedReason(_currentId, _busy);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projectName = (await CurrentWorkspace.GetAsync()).ProjectName;
+        var (options, error) = await Api.SourcesAsync(_cts.Token);
+        _sources = options; _loadError = error;
+        _scope.Options = options ?? (error is null ? null : new ReviewSourceOptions());
+        _currentId = Snapshots.FirstOrDefault()?.SnapshotId;
+        _scope.PickPrimary(_currentId);
+        _history = await Api.HistoryAsync(_cts.Token);
+        // Critical E2E flows of the active Target Environment count as QA automated tests (definitions and recorded runs only).
+        if (Services.GetService<IFrontendAnalysisContextFactory>() is { } contexts)
+        {
+            try { _environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; }
+            catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex) || ex is InvalidOperationException) { _environmentId = null; }
+        }
+        _loaded = true;
+    }
+
+    private static string Short(string fingerprint) => fingerprint.Length > 8 ? fingerprint[..8] + "…" : fingerprint;
+    private static string Option(ReviewSourceSnapshot s) => $"{s.Repository} · {s.ArchiveName} · {s.AnalyzedAt.ToLocalTime():g} · {Short(s.Fingerprint)}{(s.Latest ? " · latest" : "")}{(s.HasConsumerEvidence ? "" : " · needs re-analysis")}";
+    private bool NewerExists(TestCoverageReviewResult r) => Snapshots.FirstOrDefault(s => s.SnapshotId == r.Current.SnapshotId) is { Latest: false };
+    private string TestName(string id) => _result?.Tests.FirstOrDefault(t => t.TestId == id)?.Name ?? id;
+
+    private void CurrentChanged(ChangeEventArgs e)
+    {
+        _currentId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        _scope.PickPrimary(_currentId);
+        if (_baselineId is { } b && BaselineOptions.All(s => s.SnapshotId != b)) _baselineId = null;
+    }
+
+    private void BaselineChanged(ChangeEventArgs e) => _baselineId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    private void TabKey(KeyboardEventArgs e, string key)
+    {
+        var index = Array.FindIndex(Views, v => v.Key == key);
+        if (e.Key == "ArrowRight") _view = Views[(index + 1) % Views.Length].Key;
+        else if (e.Key == "ArrowLeft") _view = Views[(index + Views.Length - 1) % Views.Length].Key;
+        else if (e.Key == "Home") _view = Views[0].Key;
+        else if (e.Key == "End") _view = Views[^1].Key;
+    }
+
+    private async Task RunAsync()
+    {
+        if (BlockedReason is not null) return;
+        _busy = true; _runError = null;
+        try
+        {
+            var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
+            var evidence = P.WorkspaceEvidence(Workspace, context, _projectName);
+            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
+            if (result is null) { _runError = error ?? "The review could not be run."; return; }
+            _result = result; _view = "overview";
+            _history = await Api.HistoryAsync(_cts.Token);
+        }
+        finally { _busy = false; }
+        StateHasChanged();
+        try { await _resultHeading.FocusAsync(); } catch (InvalidOperationException) { } catch (JSException) { }
+    }
+
+    private async Task DecideAsync(CoverageDecisionKind kind, string subject, string? value)
+    {
+        if (_result is null || string.IsNullOrWhiteSpace(value) || CurrentSnapshot is not { } snapshot) return;
+        var (_, error) = await Api.DecideAsync(new CoverageDecision { RepositoryKey = snapshot.RepositoryKey, Kind = kind, SubjectKey = subject, Value = value }, _cts.Token);
+        if (error is not null) { _runError = error; return; }
+        // Decisions are review metadata: re-run so the result shows them next to (never instead of) the source evidence.
+        await RunAsync();
+    }
+
+    private Task ToggleConnectionAsync(JourneyStep step) => DecideAsync(CoverageDecisionKind.JourneyConnection, step.Id, step.ReviewerDecision == "Confirmed" ? "Rejected" : "Confirmed");
+    private Task RejectConnectionAsync(JourneyStep step) => DecideAsync(CoverageDecisionKind.JourneyConnection, step.Id, "Rejected");
+
+    private async Task OpenAsync(Guid runId)
+    {
+        if (await Api.GetAsync(runId, _cts.Token) is { } result) { _result = result; _view = "overview"; }
+    }
+
+    private static string Preview(TestCoverageReviewResult r)
+    {
+        var markdown = P.Markdown(r, coveredOnly: true);
+        return markdown.Length > 6000 ? markdown[..6000] + "\n…" : markdown;
+    }
+
+    private async Task ExportAsync(ExportKind kind)
+    {
+        if (_result is not { } r) return;
+        switch (kind)
+        {
+            case ExportKind.CoveredHtml: await JS.InvokeVoidAsync("downloadHtmlFile", P.FileName(r, "covered-tests", "html"), P.Html(r, coveredOnly: true)); break;
+            case ExportKind.ScopeMarkdown: await JS.InvokeVoidAsync("downloadTextFile", P.FileName(r, "remaining-qa-scope", "md"), P.Markdown(r, scopeOnly: true), "text/markdown"); break;
+            case ExportKind.FullHtml: await JS.InvokeVoidAsync("downloadHtmlFile", P.FileName(r, "test-coverage-review", "html"), P.Html(r)); break;
+            default: await JS.InvokeVoidAsync("downloadTextFile", P.FileName(r, "test-coverage-review", "md"), P.Markdown(r), "text/markdown"); break;
+        }
+    }
+
+    public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+}

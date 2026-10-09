@@ -129,6 +129,29 @@ public class IntegrationMessageFlowRecord
 }
 
 /// <summary>A stored AI-Generated Code Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
+/// <summary>One Test Coverage &amp; Overlap Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
+public class TestCoverageReviewRunRecord
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CompletedAt { get; set; }
+    public Guid CurrentSnapshotId { get; set; }
+    public Guid? BaselineSnapshotId { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string ResultJson { get; set; } = string.Empty;
+}
+
+/// <summary>A reviewer decision for the Test Coverage &amp; Overlap Review (journey connection, project ownership, overlap). Review metadata only.</summary>
+public class TestCoverageDecisionRecord
+{
+    public Guid Id { get; set; }
+    public string RepositoryKey { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
+    public string SubjectKey { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string? Note { get; set; }
+    public DateTimeOffset DecidedAt { get; set; }
+}
+
 public class AiCodeReviewRunRecord
 {
     public Guid Id { get; set; }

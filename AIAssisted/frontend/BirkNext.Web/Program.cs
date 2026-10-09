@@ -242,6 +242,8 @@ builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiServi
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IAiCodeReviewApiService, AiCodeReviewApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<ITestCoverageApiService, TestCoverageApiService>(client =>
+    client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
     client.BaseAddress = backendBase);
 // IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.

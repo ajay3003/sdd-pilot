@@ -32,6 +32,8 @@ public class AppDbContext : DbContext
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
     public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
+    public DbSet<TestCoverageReviewRunRecord> TestCoverageReviewRuns => Set<TestCoverageReviewRunRecord>();
+    public DbSet<TestCoverageDecisionRecord> TestCoverageDecisions => Set<TestCoverageDecisionRecord>();
     public DbSet<PerformanceTestDefinitionRecord> PerformanceTestDefinitions => Set<PerformanceTestDefinitionRecord>();
     public DbSet<PerformanceTestRunRecord> PerformanceTestRuns => Set<PerformanceTestRunRecord>();
     public DbSet<PerformanceBaselineRecord> PerformanceBaselines => Set<PerformanceBaselineRecord>();
@@ -726,6 +728,33 @@ public class AppDbContext : DbContext
             entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
             entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => r.EnvironmentId).HasDatabaseName("ix_performance_test_data_profiles_environment");
+        });
+
+        modelBuilder.Entity<TestCoverageReviewRunRecord>(entity =>
+        {
+            entity.ToTable("test_coverage_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.CurrentSnapshotId).HasColumnName("current_snapshot_id");
+            entity.Property(r => r.BaselineSnapshotId).HasColumnName("baseline_snapshot_id");
+            entity.Property(r => r.Label).HasColumnName("label").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_test_coverage_review_runs_completed");
+        });
+
+        modelBuilder.Entity<TestCoverageDecisionRecord>(entity =>
+        {
+            entity.ToTable("test_coverage_decisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.RepositoryKey).HasColumnName("repository_key").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Kind).HasColumnName("kind").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.SubjectKey).HasColumnName("subject_key").HasMaxLength(600).IsRequired();
+            entity.Property(r => r.Value).HasColumnName("value").HasMaxLength(60).IsRequired();
+            entity.Property(r => r.Note).HasColumnName("note").HasMaxLength(500);
+            entity.Property(r => r.DecidedAt).HasColumnName("decided_at");
+            entity.HasIndex(r => new { r.RepositoryKey, r.Kind, r.SubjectKey }).HasDatabaseName("ix_test_coverage_decisions_subject");
         });
 
         modelBuilder.Entity<AiCodeReviewRunRecord>(entity =>

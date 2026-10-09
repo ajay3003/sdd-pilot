@@ -27,3 +27,15 @@ window.closeDetailsElement = function (elementRef) {
         elementRef.open = false;
     }
 };
+
+window.downloadTextFile = function (filename, content, mimeType) {
+    var blob = new Blob([content], { type: (mimeType || 'text/plain') + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};

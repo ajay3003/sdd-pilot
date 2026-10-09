@@ -59,6 +59,7 @@ public static class BrowserAcceptanceFeatureRegistry
         .. TargetGatedFeature.All(),
         // Source-based review profile in Quality & Testing (needs only the snapshot; runs deterministically).
         new AiGeneratedCodeReviewFeature(),
+        new TestCoverageReviewFeature(),
         // Diagnostics
         .. DiagnosticFeature.All(),
         // Cross-feature checks last: they read what the features above recorded.
