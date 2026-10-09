@@ -49,6 +49,7 @@ public sealed class M2lbDatasetProvider : IRealProjectDatasetProvider
             ["contract-xsd"] = None("the archive contains no .xsd files"),
             ["iac-terraform"] = None("the archive contains no .tf files"),
             ["generated-documentation"] = Real("autodoc/ generated documentation exists"),
+            ["ai-generated-code-review"] = Real("C# source exists: deterministic code-risk rules execute (no expected finding count)"),
             ["fqr-runtime"] = RuntimeOnly("no runtime target is paired with this dataset"),
             ["aqr-runtime"] = RuntimeOnly("no runtime target is paired with this dataset"),
         },

@@ -64,6 +64,7 @@
     <Compile Include="../../shared/TestEvidenceContracts.cs" Link="Models/TestEvidenceContracts.cs" />
     <Compile Include="../../shared/RequirementReferenceParser.cs" Link="Models/RequirementReferenceParser.cs" />
     <Compile Include="../../shared/PipelineReviewContracts.cs" Link="Models/PipelineReviewContracts.cs" />
+    <Compile Include="../../shared/AiCodeReviewContracts.cs" Link="Models/AiCodeReviewContracts.cs" />
     <Compile Include="../../shared/SourceChangeImpactContracts.cs" Link="Models/SourceChangeImpactContracts.cs" />
     <Compile Include="../../shared/AzureEnvironmentContracts.cs" Link="Models/AzureEnvironmentContracts.cs" />
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />

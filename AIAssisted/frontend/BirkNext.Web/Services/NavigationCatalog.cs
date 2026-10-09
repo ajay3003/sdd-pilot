@@ -131,6 +131,7 @@ public static class NavigationCatalog
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review"),
             new("performance-test-review", "Performance Test Review", "nav-icon-constitution-compliance", Always, ReviewId: "performance-test-review"),
             new("critical-e2e-regression", "Critical E2E Regression", "nav-icon-constitution-compliance", f => f.CriticalE2ERegression, ReviewId: "critical-e2e-regression"),
+            new("ai-generated-code-review", "AI-Generated Code Review", "nav-icon-ai-auditor", Always),
         ]),
         // Project-specific domain extensions: shown with their applicability (N/A unless the extension is enabled).
         new("extensions", "Extensions",
