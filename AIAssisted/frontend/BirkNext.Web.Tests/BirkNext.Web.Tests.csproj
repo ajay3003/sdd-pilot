@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BirkNext.Web\BirkNext.Web.csproj" />
+    <ProjectReference Include="..\BirkNext.RealProjectAcceptance\BirkNext.RealProjectAcceptance.csproj" />
   </ItemGroup>
 
   <ItemGroup>

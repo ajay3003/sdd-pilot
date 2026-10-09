@@ -190,14 +190,17 @@
 
 .db-artifact-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* minmax(0, …): a long unbreakable value from a real project (a file path, a role detail) must not widen a column past the page. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.75rem;
 }
 
-@media (max-width: 960px) { .db-artifact-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 960px) { .db-artifact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .db-artifact-grid { grid-template-columns: 1fr; } }
 
 .db-artifact-card {
+    min-width: 0;
+    overflow-wrap: anywhere;
     background: var(--clr-surface-white);
     border: 1px solid var(--clr-border);
     border-left: 3px solid var(--clr-border);
@@ -272,7 +275,8 @@
     background: var(--clr-success-bg-light);
     color: var(--clr-success);
     border-radius: var(--radius-pill);
-    white-space: nowrap;
+    max-width: 100%;
+    white-space: normal;
 }
 
 

@@ -25,6 +25,10 @@
     {
         <p class="loading-state">Loading impact data...</p>
     }
+    else if (_notice is not null)
+    {
+        <div class="notification notification-info" role="status" data-testid="sample-store-notice">@_notice</div>
+    }
     else if (_loadError is not null)
     {
         <div class="notification notification-error" role="alert">@_loadError</div>
@@ -217,6 +221,7 @@
     private bool _isLoading = true;
     private string _mode = "requirement";
     private string? _loadError;
+    private string? _notice;
     private SummaryViewModel _summary = new();
     private IReadOnlyList<RequirementRiskViewModel> _requirements = [];
     private string _riskFilter = string.Empty;
@@ -274,7 +279,7 @@
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
             _isLoading = false;
-            _loadError = "Select a Sample Project to view impact analysis.";
+            _notice = SampleProjectStoreNotice.Message("Impact Analysis", Workspace);
             StateHasChanged();
             return;
         }
@@ -286,7 +291,7 @@
     {
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
-            _loadError = "Select a Sample Project to view impact analysis.";
+            _notice = SampleProjectStoreNotice.Message("Impact Analysis", Workspace);
             _isLoading = false;
             StateHasChanged();
             return;
@@ -294,6 +299,7 @@
 
         _isLoading = true;
         _loadError = null;
+        _notice = null;
         StateHasChanged();
 
         try

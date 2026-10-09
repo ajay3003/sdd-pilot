@@ -98,6 +98,12 @@
     border-color: var(--clr-success-border);
 }
 
+.notification-info {
+    background: var(--clr-info-bg);
+    color: var(--clr-info);
+    border-color: var(--clr-info-border);
+}
+
 .notification-warning {
     background: var(--clr-warning-bg-light);
     color: var(--clr-warning);
