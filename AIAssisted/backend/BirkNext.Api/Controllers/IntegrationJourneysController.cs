@@ -41,7 +41,7 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
     [HttpPost("runs")]
     public async Task<ActionResult<IntegrationJourneyRun>> Start([FromBody] IntegrationJourneyRunRequest request, CancellationToken ct)
     {
-        try { return Ok(await journeys.StartAsync(request, ct)); }
+        try { return Ok(await journeys.StartAsync(request, CallerId(User), ct)); }
         catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
@@ -50,6 +50,10 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
         [FromQuery] string? scenarioId, [FromQuery] JourneyRunState? state, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId is required." })
             : Ok(await journeys.HistoryAsync(new IntegrationJourneyHistoryQuery(environmentId, packId, journeyId, scenarioId, state, from, to), ct));
+
+    /// <summary>The stable caller id of an Entra token (object id), for per-person execution state. Never persisted or logged.</summary>
+    internal static string? CallerId(System.Security.Claims.ClaimsPrincipal user) =>
+        user.FindFirst("oid")?.Value ?? user.FindFirst("sub")?.Value ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
     [HttpGet("runs/{runId:guid}")]
     public async Task<ActionResult<IntegrationJourneyRun>> Get(Guid runId, CancellationToken ct) =>

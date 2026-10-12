@@ -27,7 +27,7 @@ public sealed class IntegrationJourneyRunner(IEnumerable<IJourneyStepExecutor> e
 
     public async Task<IntegrationJourneyRun> ExecuteAsync(IntegrationJourneyRun run, TrustedExecutionEnvironment environment, IntegrationJourneyDefinition journey,
         JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, IntegrationDefinition> integrations, CancellationToken ct,
-        Func<IntegrationJourneyRun, CancellationToken, Task>? persistProgress = null)
+        Func<IntegrationJourneyRun, CancellationToken, Task>? persistProgress = null, IReadOnlyDictionary<string, string>? inputs = null, string? initiator = null)
     {
         var results = new List<JourneyStepResult>();
         string? stopReason = null;
@@ -41,7 +41,7 @@ public sealed class IntegrationJourneyRunner(IEnumerable<IJourneyStepExecutor> e
                 continue;
             }
 
-            var context = new JourneyStepContext(run.RunId, run.EnvironmentId, environment, journey, scenario, step, integration, results.ToArray());
+            var context = new JourneyStepContext(run.RunId, run.EnvironmentId, environment, journey, scenario, step, integration, results.ToArray(), inputs, initiator);
             JourneyStepResult result;
             var executed = false;
             try

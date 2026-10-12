@@ -12,7 +12,14 @@ namespace BirkNext.Api.Tests.Services.IntegrationJourneys;
 /// </summary>
 public sealed class ArchitectureRuleEvaluatorTests
 {
-    private static readonly IReadOnlyList<ArchitectureResponsibilityRule> Rules = new SkoleNaervaerJourneyPack(new IntegrationJourneyHarness.FakeMessageFlows()).Rules;
+    private static readonly IReadOnlyList<ArchitectureResponsibilityRule> Rules = PackRules();
+
+    private static IReadOnlyList<ArchitectureResponsibilityRule> PackRules()
+    {
+        var flows = new IntegrationJourneyHarness.FakeMessageFlows();
+        var kit = new BirkNext.Api.Tests.Services.AltinnTesting.AltinnTestKit();
+        return new SkoleNaervaerJourneyPack(flows, kit.Policy, kit.Contracts(flows)).Rules;
+    }
 
     private static ArchitectureEvidence Evidence(string file, int line, string symbol) =>
         new(ArchitectureEvidenceKind.ApplicationSource, file, line, symbol, "http-client-wiring", "Typed HTTP client registered with AddHttpClient");

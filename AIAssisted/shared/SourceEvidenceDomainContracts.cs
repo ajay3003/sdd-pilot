@@ -446,6 +446,8 @@ public sealed record SourceContract
 public sealed record ContractEvidence : SourceDomainResult
 {
     public List<SourceContract> Contracts { get; init; } = [];
+    /// <summary>Altinn 3 apps whose source is in the snapshot: application metadata, the form data type, its schema and the process tasks.</summary>
+    public List<BirkNext.Integrations.AltinnContractSnapshot> AltinnApps { get; init; } = [];
 }
 
 // ── Cross-domain relationships ──────────────────────────────────────────────────────────────────────────────────────────

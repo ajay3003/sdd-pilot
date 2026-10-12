@@ -109,8 +109,11 @@ public sealed record IntegrationTestReadiness(bool CanRunActiveTest, int Ready, 
 public sealed record ManualIntegrationTestCase(string Name, string Purpose, string EvidenceBasis, IReadOnlyList<string> Preconditions,
     IReadOnlyList<string> Action, IReadOnlyList<string> ExpectedFlow, IReadOnlyList<string> Checkpoints,
     IReadOnlyList<string> EvidenceRequired, string AutomationReadiness, string Limitations);
+/// <summary>The message-flow configuration of one environment. <c>AppContract</c> is Altinn app contract evidence (uploaded app files and/or
+/// public TT02 metadata), written only by the Altinn contract service; an ordinary message-flow save keeps the stored value.</summary>
 public sealed record IntegrationMessageFlowPackage(MessageFlowDefinition Flow, AltinnTestConfiguration AltinnConfiguration,
-    IntegrationTestReadiness Readiness, IReadOnlyList<string> ManualTestPlan, IReadOnlyList<ManualIntegrationTestCase> TestCases);
+    IntegrationTestReadiness Readiness, IReadOnlyList<string> ManualTestPlan, IReadOnlyList<ManualIntegrationTestCase> TestCases,
+    AltinnAppContractRecord? AppContract = null);
 public sealed record MessageFlowSourceContractOptions(Guid SnapshotId, string ArchiveName, string Fingerprint,
     IReadOnlyList<BirkNext.SourceDomains.SourceContract> Contracts);
 

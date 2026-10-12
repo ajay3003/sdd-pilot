@@ -144,6 +144,7 @@ public static class IntegrationJourneyPresentation
     public static string Kind(JourneyStepKind kind) => kind switch
     {
         JourneyStepKind.SourceChange => "Source change",
+        JourneyStepKind.ExternalAuthentication => "External authentication",
         JourneyStepKind.ExternalSubmission => "External submission",
         JourneyStepKind.ExternalAcceptance => "External acceptance",
         JourneyStepKind.MessageTransport => "Message transport",

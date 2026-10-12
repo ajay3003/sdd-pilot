@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BirkNext.Api.Services.IntegrationJourneys;
+using BirkNext.Api.Tests.Services.AltinnTesting;
 using BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 using BirkNext.Api.Tests.Services.ActiveEventTesting;
 using BirkNext.Integrations;
@@ -10,12 +11,19 @@ using FluentAssertions;
 namespace BirkNext.Api.Tests.Services.IntegrationJourneys;
 
 /// <summary>
-/// Skolenærvær Testing journeys on the shared engine. The evidence BirkNext has today contains no MU, MM, Skolenærværsrapport, Bufdata or
-/// Altinn source, contract, executor or observer, so every journey must be truthfully not runnable — without disabling the other journeys.
+/// Skolenærvær Testing journeys on the shared engine. The evidence BirkNext has contains no MU, MM, Skolenærværsrapport or Bufdata source,
+/// contract or observer; Rapportmottak's Altinn steps become runnable only with a complete app contract and configuration (see
+/// AltinnTestingTests). Without them every journey is truthfully not runnable — without disabling the other journeys.
 /// </summary>
 public sealed class SkoleNaervaerJourneyPackTests
 {
-    private static SkoleNaervaerJourneyPack Pack(IntegrationJourneyHarness harness) => new(harness.MessageFlows);
+    private static SkoleNaervaerJourneyPack Pack(IntegrationJourneyHarness harness)
+    {
+        var kit = new AltinnTestKit();
+        return new(harness.MessageFlows, kit.Policy, kit.Contracts(harness.MessageFlows, harness.Sources));
+    }
+
+    private static SkoleNaervaerJourneyPack Pack() => Pack(new IntegrationJourneyHarness());
 
     private static IntegrationDefinition AltinnIntake => new()
     {
@@ -39,7 +47,7 @@ public sealed class SkoleNaervaerJourneyPackTests
     [Fact]
     public void Pack_ModelsThreeSeparateJourneys_WithResponsibilitiesFromTheArchitecture()
     {
-        var pack = new SkoleNaervaerJourneyPack(new IntegrationJourneyHarness.FakeMessageFlows());
+        var pack = Pack();
         _ = new IntegrationJourneyPackRegistry([pack]);
         pack.Journeys.Select(journey => journey.JourneyId).Should().Equal("utdanningsdata", "rapportmottak", "periodeavslutning");
 
@@ -51,7 +59,8 @@ public sealed class SkoleNaervaerJourneyPackTests
         cdc.Steps.Should().NotContain(step => step.Owner == "Altinn", "Altinn is not part of the CDC flow");
 
         var report = pack.Journeys[1];
-        report.Steps.Select(step => step.Owner).Distinct().Should().Equal("External reporter", "Altinn", "MU", "MM", "Skolenærværsrapport");
+        report.Steps.Select(step => step.Owner).Distinct().Should().Equal("Tester (TestID)", "Altinn", "MU", "MM", "Skolenærværsrapport");
+        report.Steps.Select(step => step.StepId).Should().ContainInOrder("altinn-auth", "altinn-instance", "altinn-data", "altinn-validate", "altinn-submit", "altinn-receipt", "mu-receive");
         report.Steps.Single(step => step.Kind == JourneyStepKind.StructuralValidation).Owner.Should().Be("MM", "XSD validation belongs to the MM intake path");
         report.Steps.Single(step => step.Kind == JourneyStepKind.IdentityLookup).Owner.Should().Be("Skolenærværsrapport");
         report.Steps.Should().NotContain(step => step.Owner == "MM" && step.Kind == JourneyStepKind.IdentityLookup);
@@ -64,11 +73,11 @@ public sealed class SkoleNaervaerJourneyPackTests
     [Fact]
     public void UnsupportedScenarios_AreNotAssessed_WithAReason_AndNoneIsInvented()
     {
-        var pack = new SkoleNaervaerJourneyPack(new IntegrationJourneyHarness.FakeMessageFlows());
+        var pack = Pack();
         var report = pack.Journeys.Single(journey => journey.JourneyId == "rapportmottak");
-        report.Scenarios.Where(scenario => scenario.Support == JourneyScenarioSupport.Supported).Select(scenario => scenario.ScenarioId).Should().Equal("valid-report");
+        report.Scenarios.Where(scenario => scenario.Support == JourneyScenarioSupport.Supported).Select(scenario => scenario.ScenarioId).Should().Equal("valid-report", "person-not-found", "overlapping-report");
         report.Scenarios.Where(scenario => scenario.Support != JourneyScenarioSupport.Supported).Should().OnlyContain(scenario => !string.IsNullOrWhiteSpace(scenario.NotAssessedBecause));
-        report.Scenarios.Select(scenario => scenario.ScenarioId).Should().Contain(["invalid-xsd", "person-not-found", "period-locked", "duplicate-report", "retrieval-decrypt-failure"]);
+        report.Scenarios.Select(scenario => scenario.ScenarioId).Should().Contain(["correction", "multiple-reporters", "invalid-xsd", "period-locked", "duplicate-report", "retrieval-decrypt-failure"]);
         pack.Journeys.Single(journey => journey.JourneyId == "periodeavslutning").Scenarios.Single(scenario => scenario.ScenarioId == "pii-absent")
             .NotAssessedBecause.Should().StartWith("Not verified");
     }
@@ -98,9 +107,9 @@ public sealed class SkoleNaervaerJourneyPackTests
         var report = views["rapportmottak"];
         report.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == AltinnIntake.Id);
         report.Prerequisites.Single(item => item.Key == "integration:report-intake").State.Should().Be(JourneyReadinessState.Ready);
-        report.Prerequisites.Single(item => item.Key == "altinn-auth").Detail.Should().StartWith("Authentication not configured");
+        report.Prerequisites.Single(item => item.Key == "altinn-auth").Detail.Should().StartWith("Authentication type is not ID-porten");
         report.Prerequisites.Single(item => item.Key == "submission-contract").State.Should().Be(JourneyReadinessState.NotReady);
-        report.Prerequisites.Single(item => item.Key == "executor").State.Should().Be(JourneyReadinessState.NotAvailable);
+        report.Prerequisites.Single(item => item.Key == "executor").State.Should().Be(JourneyReadinessState.NotAvailable, "no Altinn executor is registered in this harness");
         report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Not source verified");
         report.Readiness.Should().Be(JourneyReadinessState.Partial);
         report.CanRun.Should().BeFalse();
@@ -131,20 +140,25 @@ public sealed class SkoleNaervaerJourneyPackTests
         var run = await service.StartAsync(new IntegrationJourneyRunRequest
         {
             EnvironmentId = ActiveEventTestHarness.Env, PackId = "skolenaervaer", JourneyId = "rapportmottak", ScenarioId = "valid-report", Confirmed = true,
-        }, default);
+            Inputs = new Dictionary<string, string>
+            {
+                ["identitySource"] = "registered", ["childIdentifier"] = SyntheticPersonIdentifier.Generate(), ["periodFrom"] = "2026-10-01", ["periodTo"] = "2026-10-31",
+                ["plannedHours"] = "100", ["actualHours"] = "90",
+            },
+        }, null, default);
         run.OverallState.Should().Be(JourneyRunState.Blocked);
-        run.StateReason.Should().Contain("Authentication not configured").And.Contain("Submission contract");
+        run.StateReason.Should().Contain("Authentication type is not ID-porten").And.Contain("Altinn app contract");
         run.Steps.Should().OnlyContain(step => step.State == JourneyStepState.NotAssessed);
 
         (await service.StartAsync(new IntegrationJourneyRunRequest
         {
             EnvironmentId = ActiveEventTestHarness.Env, PackId = "skolenaervaer", JourneyId = "periodeavslutning", ScenarioId = "close-valid-period", Confirmed = true,
-        }, default)).StateReason.Should().Contain("Safe period-closure trigger");
+        }, null, default)).StateReason.Should().Contain("Safe period-closure trigger");
 
         await service.Invoking(item => item.StartAsync(new IntegrationJourneyRunRequest
         {
             EnvironmentId = ActiveEventTestHarness.Env, PackId = "skolenaervaer", JourneyId = "utdanningsdata", ScenarioId = "active-event-scenarios", Confirmed = true,
-        }, default)).Should().ThrowAsync<IntegrationJourneyRequestException>().WithMessage("*Active Event Testing*");
+        }, null, default)).Should().ThrowAsync<IntegrationJourneyRequestException>().WithMessage("*Active Event Testing*");
 
         (await service.HistoryAsync(new IntegrationJourneyHistoryQuery(ActiveEventTestHarness.Env, "skolenaervaer"), default))
             .Should().HaveCount(2).And.OnlyContain(item => item.State == JourneyRunState.Blocked);
@@ -173,7 +187,7 @@ public sealed class SkoleNaervaerJourneyPackTests
     [Fact]
     public void PackDefinitions_ContainNoPersonalData()
     {
-        var json = JsonSerializer.Serialize(new SkoleNaervaerJourneyPack(new IntegrationJourneyHarness.FakeMessageFlows()).Journeys);
+        var json = JsonSerializer.Serialize(Pack().Journeys);
         Regex.IsMatch(json, @"\b\d{11}\b").Should().BeFalse("no national identity numbers");
         Regex.IsMatch(json, @"\b\d{6,}\b").Should().BeFalse("no identifiers or account numbers at all");
         json.Should().NotContain("@", "no contact data");

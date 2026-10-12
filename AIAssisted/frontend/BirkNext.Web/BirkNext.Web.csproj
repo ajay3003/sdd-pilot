@@ -52,6 +52,7 @@
     <Compile Include="../../shared/ActiveCdcTestContracts.cs" Link="Models/ActiveCdcTestContracts.cs" />
     <Compile Include="../../shared/ActiveEventTestingContracts.cs" Link="Models/ActiveEventTestingContracts.cs" />
     <Compile Include="../../shared/IntegrationJourneyContracts.cs" Link="Models/IntegrationJourneyContracts.cs" />
+    <Compile Include="../../shared/AltinnAppTestingContracts.cs" Link="Models/AltinnAppTestingContracts.cs" />
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />
     <Compile Include="../../shared/SourceDependencyContracts.cs" Link="Models/SourceDependencyContracts.cs" />

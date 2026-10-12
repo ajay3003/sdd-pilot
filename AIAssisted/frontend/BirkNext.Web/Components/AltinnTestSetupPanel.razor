@@ -1,0 +1,226 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject NavigationManager Navigation
+
+@* Altinn TT02 submission setup for one environment: the app contract (uploaded app files or public TT02 metadata, never guessed) and the
+   tester's own ID-porten TEST sign-in with TestID. Running the submission is done by the shared Integration Journey panel; this component
+   only prepares it. No token, secret or identifier is ever shown or kept here. *@
+@if (Api is null) { return; }
+<section class="atp" aria-labelledby="atp-heading" data-testid="atp-panel">
+    <h3 id="atp-heading">Altinn TT02 submission</h3>
+    <p class="atp-semantics" data-testid="atp-semantics">An Altinn submission is only the first part of Rapportmottak. <strong>Altinn submitted</strong> does not mean MU received it;
+        MU received does not mean MM processed it; MM processed does not mean Skolenærværsrapport stored it; and none of these means Bufdata received anything.</p>
+    @if (_signInOutcome is { } outcome)
+    {
+        <p class="atp-status" role="status" data-testid="atp-sign-in-outcome">@(outcome == "complete" ? "ID-porten TEST sign-in completed." : "ID-porten TEST sign-in did not complete. Start it again.")</p>
+    }
+    @if (_error is { } error) { <p class="atp-error" role="alert" data-testid="atp-error">@error</p> }
+
+    <h4 class="atp-subheading">1. App contract</h4>
+    @if (_contract is { } contract)
+    {
+        <p data-testid="atp-app"><span class="atp-pill atp-pill-@(contract.AppApproved ? "ready" : "neutral")">@(contract.AppApproved ? "Approved app" : "App not ready")</span>
+            <span class="atp-mono">@(contract.ConfiguredAppId ?? "no app id")</span> <span class="atp-muted">@contract.AppDetail</span></p>
+        <fieldset class="atp-source" data-testid="atp-source">
+            <legend>Contract source</legend>
+            <label class="atp-option"><input type="radio" name="@($"{_id}-source")" checked="@(_source == "source")" data-testid="atp-source-analysis" @onchange="@(() => _source = "source")" />
+                <span>The Altinn app's source in Source Analysis (authoritative): applicationmetadata.json, the form model's *.schema.json and process.bpmn from the uploaded app repository</span></label>
+            <label class="atp-option"><input type="radio" name="@($"{_id}-source")" checked="@(_source == "public")" data-testid="atp-source-public" @onchange="@(() => _source = "public")" />
+                <span>Public TT02 metadata of the configured app (read-only; the process is not published, so the app source is still needed for it)</span></label>
+        </fieldset>
+        @if (_source == "source")
+        {
+            @if (contract.SourceCandidates.Count == 0)
+            {
+                <p class="atp-muted" data-testid="atp-no-source">No Source Analysis snapshot of this environment contains the source of @(contract.ConfiguredAppId ?? "the configured app").
+                    <a href="/source-analysis">Upload the Altinn app repository in Source Analysis</a>, then come back here.</p>
+            }
+            else
+            {
+                <label for="@($"{_id}-snapshot")">Source Analysis snapshot</label>
+                <select id="@($"{_id}-snapshot")" data-testid="atp-snapshot" value="@_snapshotId" @onchange="e => _snapshotId = e.Value?.ToString() ?? string.Empty" disabled="@_busy">
+                    @foreach (var candidate in contract.SourceCandidates) { <option value="@candidate.SnapshotId">@candidate.ArchiveName · @($"{candidate.AnalyzedAt:yyyy-MM-dd HH:mm}") UTC</option> }
+                </select>
+                <div class="atp-actions">
+                    <button type="button" class="btn-secondary" data-testid="atp-use-source" disabled="@_busy" @onclick="UseSourceAsync">Use this app source</button>
+                </div>
+            }
+            <p class="atp-muted">Source Analysis owns uploaded source; only the app's contract facts and a fingerprint are kept here. Nothing is sent to Altinn.</p>
+        }
+        else
+        {
+            <div class="atp-actions">
+                <button type="button" class="btn-secondary" data-testid="atp-read-public" disabled="@(_busy || !contract.AppApproved)" @onclick="ReadPublicAsync">Read public TT02 metadata</button>
+            </div>
+            <p class="atp-muted">Two read-only GETs (application metadata and the form's JSON schema). Nothing is submitted and nobody signs in.</p>
+        }
+
+        <div class="atp-table" tabindex="0" role="region" aria-label="App contract parts" data-testid="atp-parts">
+            <table>
+                <thead><tr><th scope="col">Part</th><th scope="col">Status</th><th scope="col">Source</th><th scope="col">Detail</th></tr></thead>
+                <tbody>
+                    @foreach (var part in contract.Parts)
+                    {
+                        <tr data-testid="atp-part" data-part="@part.Part" data-present="@(part.Present ? "true" : "false")">
+                            <th scope="row">@PartLabel(part.Part)</th>
+                            <td><span class="atp-pill atp-pill-@(part.Present ? "ready" : "attention")">@(part.Present ? "Present" : "Missing")</span></td>
+                            <td>@(part.Source switch { AltinnContractSourceKind.SourceAnalysisSnapshot => "App source (Source Analysis)", AltinnContractSourceKind.PublicTt02Metadata => "Public TT02 metadata", _ => "—" })</td>
+                            <td>@part.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (contract.Bindings.Count > 0)
+        {
+            <h5 class="atp-minor">Form fields BirkNext fills</h5>
+            <ul class="atp-list" data-testid="atp-bindings">
+                @foreach (var binding in contract.Bindings)
+                {
+                    <li data-present="@(binding.Present ? "true" : "false")"><span class="atp-pill atp-pill-@(binding.Present ? "ready" : "attention")">@(binding.Present ? "Verified" : "Not verified")</span>
+                        @binding.Label <span class="atp-mono">@binding.ExpectedPath</span> <span class="atp-muted">@binding.Detail</span></li>
+                }
+            </ul>
+        }
+        @if (contract.RequiredUnboundFields.Count > 0)
+        {
+            <p class="atp-note" role="note" data-testid="atp-required-unbound">The app's schema requires @contract.RequiredUnboundFields.Count field(s) BirkNext does not fill
+                (@string.Join(", ", contract.RequiredUnboundFields.Take(8).Select(field => field.Path))@(contract.RequiredUnboundFields.Count > 8 ? ", …" : "")).
+                Altinn's own validation step will show whether the app fills them.</p>
+        }
+        <p data-testid="atp-contract-state"><span class="atp-pill atp-pill-@(contract.Complete ? "ready" : "attention")">@(contract.Complete ? "Contract complete" : "Contract incomplete")</span></p>
+        @if (!contract.Complete)
+        {
+            <ul class="atp-list atp-missing" data-testid="atp-missing" aria-label="Missing contract information">@foreach (var item in contract.Missing) { <li>@item</li> }</ul>
+        }
+    }
+    else if (_loading) { <p class="atp-muted" role="status">Loading the app contract…</p> }
+
+    <h4 class="atp-subheading">2. Tester sign-in (ID-porten TEST, TestID)</h4>
+    @if (!Authentication.Configured)
+    {
+        <p class="atp-muted" data-testid="atp-sign-in-unavailable">@Authentication.Detail Sign-in with TestID needs an authenticated BirkNext session.</p>
+    }
+    else if (_signIn is { } status)
+    {
+        <p data-testid="atp-sign-in-state"><span class="atp-pill atp-pill-@(status.SignedIn ? "ready" : "neutral")">@(status.SignedIn ? "Signed in" : status.Configured ? "Not signed in" : "Not configured")</span>
+            <span class="atp-muted">@status.Detail@(status.ExpiresAt is { } expires ? $" Expires {expires:HH:mm} UTC." : "")</span></p>
+        @if (status.ConfigurationProblems.Count > 0)
+        {
+            <ul class="atp-list atp-missing" data-testid="atp-sign-in-problems" aria-label="Missing sign-in configuration">@foreach (var item in status.ConfigurationProblems) { <li>@item</li> }</ul>
+        }
+        <div class="atp-actions">
+            @if (status.SignedIn)
+            {
+                <button type="button" class="btn-secondary" data-testid="atp-sign-out" disabled="@_busy" @onclick="SignOutAsync">Sign out of ID-porten TEST</button>
+            }
+            else
+            {
+                <button type="button" class="btn-primary" data-testid="atp-sign-in" disabled="@(_busy || !status.Configured)" @onclick="SignInAsync">Sign in with TestID</button>
+            }
+        </div>
+        <p class="atp-muted">You choose or enter the synthetic person in TestID yourself (BirkNext sends no identity hint). The resulting Altinn TT02 token stays in backend memory for you and this environment only.</p>
+    }
+
+    <h4 class="atp-subheading">3. Run the submission</h4>
+    <p class="atp-muted">Choose a report scenario, enter the synthetic child and period, and run it in Integration journeys → Rapportmottak. Each Altinn step is recorded on its own; MU, MM and Skolenærværsrapport steps stay Not assessed.</p>
+    @if (OnOpenJourney.HasDelegate)
+    {
+        <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-journey" @onclick="() => OnOpenJourney.InvokeAsync()">Open the Rapportmottak run</button></div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter] public EventCallback OnOpenJourney { get; set; }
+
+    private readonly string _id = "atp-" + Guid.NewGuid().ToString("N")[..8];
+    private IAltinnTestingApiService? _api;
+    private ActiveEventAuthenticationState? _authentication;
+    private AltinnAppContractView? _contract;
+    private AltinnSignInStatus? _signIn;
+    private string _source = "source";
+    private string _snapshotId = "";
+    private string? _error;
+    private string? _signInOutcome;
+    private string? _loadedFor;
+    private bool _loading;
+    private bool _busy;
+
+    private IAltinnTestingApiService? Api => _api ??= Services.GetService<IAltinnTestingApiService>();
+    private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Api is null || string.IsNullOrWhiteSpace(EnvironmentId) || _loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        _signInOutcome = query.TryGetValue("altinn-sign-in", out var value) && value.ToString() is "complete" or "failed" ? value.ToString() : null;
+        _loading = true;
+        try
+        {
+            var contract = await Api.ContractAsync(EnvironmentId);
+            _contract = contract.Value;
+            _snapshotId = _contract?.SourceCandidates.FirstOrDefault()?.SnapshotId.ToString() ?? "";
+            _error = contract.Error;
+            if (Authentication.Configured)
+            {
+                var status = await Api.SignInStatusAsync(EnvironmentId);
+                _signIn = status.Value;
+                _error ??= status.Error;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The Altinn setup could not be loaded from the backend."; }
+        finally { _loading = false; }
+    }
+
+    private async Task UseSourceAsync() => await RunAsync(async () =>
+    {
+        var result = await Api!.UseSourceAnalysisAsync(EnvironmentId, Guid.TryParse(_snapshotId, out var id) ? id : null);
+        if (result.Value is { } contract) _contract = contract;
+        _error = result.Error;
+    });
+
+    private async Task ReadPublicAsync() => await RunAsync(async () =>
+    {
+        var result = await Api!.ReadPublicMetadataAsync(EnvironmentId);
+        if (result.Value is { } contract) _contract = contract;
+        _error = result.Error;
+    });
+
+    private async Task SignInAsync() => await RunAsync(async () =>
+    {
+        var result = await Api!.StartSignInAsync(EnvironmentId);
+        _error = result.Error;
+        // Only an ID-porten TEST address built by the backend is followed; anything else is refused here as well.
+        if (result.Value is { } start && Uri.TryCreate(start.AuthorizationUrl, UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps && url.Host == "login.test.idporten.no")
+            Navigation.NavigateTo(url.ToString(), forceLoad: true);
+        else if (result.Value is not null) _error = "The sign-in address was not an ID-porten TEST address and was not opened.";
+    });
+
+    private async Task SignOutAsync() => await RunAsync(async () =>
+    {
+        var result = await Api!.SignOutAsync(EnvironmentId);
+        _error = result.Error;
+        _signIn = (await Api.SignInStatusAsync(EnvironmentId)).Value ?? _signIn;
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        _error = null;
+        try { await action(); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or IOException) { _error = "The backend could not complete the request."; }
+        finally { _busy = false; }
+    }
+
+    private static string PartLabel(AltinnContractPartKind part) => part switch
+    {
+        AltinnContractPartKind.ApplicationMetadata => "Application metadata",
+        AltinnContractPartKind.FormDataType => "Form data type",
+        AltinnContractPartKind.DataModelSchema => "Data model schema",
+        _ => "Process definition",
+    };
+}

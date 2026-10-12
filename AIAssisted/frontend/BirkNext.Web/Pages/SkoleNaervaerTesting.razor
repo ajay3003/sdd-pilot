@@ -6,6 +6,7 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IIntegrationCatalogApiService IntegrationApi
 @inject IWorkspaceSessionService Workspace
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 <PageTitle>Skolenærvær Testing</PageTitle>
@@ -40,7 +41,7 @@
         </p>
         <div class="snt-journeys">
             <article><h3>Utdanningsdata</h3><p>BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning</p><p>Readiness comes from Active Event Testing. Event Hub configuration and safety checks are shared.</p></article>
-            <article><h3>Rapportmottak</h3><p>Privat institusjon/fosterhjem → Altinn → MU → MM → Skolenærværsrapport</p><p>Altinn is Not ready when endpoint, authentication or required integration configuration is missing.</p></article>
+            <article><h3>Rapportmottak</h3><p>Privat institusjon/fosterhjem → Altinn → MU → MM → Skolenærværsrapport</p><p>The Altinn steps run through the Altinn TT02 App API after the tester signs in with TestID. They stay Not ready until the app contract, sign-in configuration and synthetic test data are in place.</p></article>
             <article><h3>Periodeavslutning</h3><p>Skolenærværsrapport → Service Bus → Bufdata</p><p>Service Bus acceptance does not establish that Bufdata processed the event.</p></article>
         </div>
     </section>
@@ -60,6 +61,14 @@
     <section id="snt-rapport" aria-labelledby="snt-rapport-heading">
         <h2 id="snt-rapport-heading" tabindex="-1">Rapportmottak</h2>
         <p>Altinn → MU → MM → Skolenærværsrapport. The shared journey engine reports each step's configuration, observation, verification and limitation separately.</p>
+        @if (_profile is null)
+        {
+            <p role="status" data-testid="snt-altinn-not-ready">Not ready: select a Target Environment to prepare an Altinn TT02 submission.</p>
+        }
+        else
+        {
+            <AltinnTestSetupPanel EnvironmentId="@_profile.Id" OnOpenJourney="OpenRapportmottakAsync" />
+        }
     </section>
     <section id="snt-period" aria-labelledby="snt-period-heading">
         <h2 id="snt-period-heading" tabindex="-1">Periodeavslutning</h2>
@@ -81,7 +90,7 @@
 
     @if (_profile is not null)
     {
-        <IntegrationJourneyPanel Profile="_profile" />
+        <IntegrationJourneyPanel @ref="_journeys" Profile="_profile" InitialJourneyId="@_initialJourney" />
     }
     else
     {
@@ -99,6 +108,13 @@
     private FrontendAnalysisProfile? _profile;
     private IReadOnlyList<IntegrationDefinition> _integrations = [];
     private string _sourceSummary = "Not available";
+    private IntegrationJourneyPanel? _journeys;
+    private string? _initialJourney;
+
+    private async Task OpenRapportmottakAsync()
+    {
+        if (_journeys is not null) await _journeys.ShowJourneyAsync("rapportmottak");
+    }
 
     private async Task GoToSectionAsync(string id)
     {
@@ -108,6 +124,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Back from ID-porten TEST: open the Rapportmottak run directly.
+        if (new Uri(Navigation.Uri).Query.Contains("altinn-sign-in=", StringComparison.Ordinal)) _initialJourney = "rapportmottak";
         var context = await ContextFactory.GetActiveContextAsync();
         _profile = context.ActiveProfileOrNull;
         if (_profile is null)

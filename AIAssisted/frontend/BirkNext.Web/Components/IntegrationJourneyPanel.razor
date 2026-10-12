@@ -207,6 +207,42 @@
                                     @foreach (var item in supported) { <option value="@item.ScenarioId">@item.DisplayName</option> }
                                 </select>
                             }
+                            @if (ScenarioOf(view) is { Inputs.Count: > 0 } withInputs)
+                            {
+                                <fieldset class="ijp-inputs" data-testid="ijp-inputs" disabled="@_running">
+                                    <legend>Scenario inputs</legend>
+                                    @foreach (var input in withInputs.Inputs!)
+                                    {
+                                        var inputId = $"{_id}-in-{view.Journey.JourneyId}-{input.Key}";
+                                        var helpId = $"{inputId}-help";
+                                        var value = InputValue(view, input.Key);
+                                        <div class="ijp-input" data-testid="ijp-input" data-key="@input.Key">
+                                            <label for="@inputId">@input.Label@(input.Required ? " (required)" : "")</label>
+                                            @switch (input.Kind)
+                                            {
+                                                case JourneyScenarioInputKind.Choice:
+                                                    <select id="@inputId" value="@value" aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)">
+                                                        <option value="">Choose…</option>
+                                                        @foreach (var option in input.Options ?? []) { <option value="@option.Value">@option.Label</option> }
+                                                    </select>
+                                                    break;
+                                                case JourneyScenarioInputKind.Date:
+                                                    <input id="@inputId" type="date" value="@value" aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
+                                                    break;
+                                                case JourneyScenarioInputKind.Number:
+                                                    <input id="@inputId" type="number" min="0" step="any" inputmode="decimal" value="@value" aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
+                                                    break;
+                                                default:
+                                                    <input id="@inputId" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="11" value="@value"
+                                                           aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
+                                                    break;
+                                            }
+                                            @if (input.Help.Length > 0) { <span id="@helpId" class="ijp-muted">@input.Help</span> }
+                                        </div>
+                                    }
+                                    <p class="ijp-muted">Inputs are validated by the backend, used for this run only and never stored; history keeps a redacted summary.</p>
+                                </fieldset>
+                            }
                             @if (!_confirming)
                             {
                                 <button type="button" class="btn-primary" data-testid="ijp-start" disabled="@(!CanRun(view))" aria-describedby="@($"{_id}-run-note")" @onclick="() => _confirming = true">Run journey</button>
@@ -226,10 +262,12 @@
                                 </div>
                             }
                             <p id="@($"{_id}-run-note")" class="ijp-muted" data-testid="ijp-run-note">@RunNote(view)</p>
+                            @if (_running) { <p class="ijp-muted" role="status" data-testid="ijp-running">Running… each step is recorded separately as its evidence arrives.</p> }
                             @if (_lastRun is { } run && run.JourneyId == view.Journey.JourneyId)
                             {
                                 <div class="ijp-table" tabindex="0" role="region" aria-label="Last journey run" data-testid="ijp-last-run" data-state="@run.OverallState">
                                     <p><span class="ijp-pill ijp-pill-neutral">@IntegrationJourneyPresentation.Run(run.OverallState)</span> @run.StateReason</p>
+                                    @if (run.InputSummary.Count > 0) { <ul class="ijp-notes" data-testid="ijp-run-inputs" aria-label="Run inputs (redacted)">@foreach (var item in run.InputSummary) { <li>@item</li> }</ul> }
                                     <table>
                                         <thead><tr><th scope="col">Step</th><th scope="col">State</th><th scope="col">Evidence</th><th scope="col">Reason</th></tr></thead>
                                         <tbody>@foreach (var step in run.Steps) { <tr><td>@step.Label</td><td>@IntegrationJourneyPresentation.Step(step.State)</td><td>@step.Evidence</td><td>@step.Reason</td></tr> }</tbody>
@@ -251,6 +289,8 @@
 
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
+    /// <summary>A journey tab to open first (e.g. from a domain page section). Unknown ids leave the overview open.</summary>
+    [Parameter] public string? InitialJourneyId { get; set; }
 
     private readonly string _id = "ijp-" + Guid.NewGuid().ToString("N")[..8];
     private readonly CancellationTokenSource _disposed = new();
@@ -289,7 +329,36 @@
     private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0
         ? selected : view.Journey.Scenarios.FirstOrDefault(item => item.Support == JourneyScenarioSupport.Supported)?.ScenarioId ?? "";
 
-    private bool CanRun(IntegrationJourneyView view) => view.CanRun && Authentication.Configured && !_running && SelectedScenario(view).Length > 0;
+    private bool CanRun(IntegrationJourneyView view) => view.CanRun && Authentication.Configured && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
+
+    private readonly Dictionary<string, Dictionary<string, string>> _inputs = new(StringComparer.Ordinal);
+
+    private JourneyScenarioDescriptor? ScenarioOf(IntegrationJourneyView view) => view.Journey.Scenarios.FirstOrDefault(item => item.ScenarioId == SelectedScenario(view));
+
+    private Dictionary<string, string> Inputs(IntegrationJourneyView view) =>
+        _inputs.TryGetValue(view.Journey.JourneyId, out var values) ? values : _inputs[view.Journey.JourneyId] = new(StringComparer.Ordinal);
+
+    private string InputValue(IntegrationJourneyView view, string key) => Inputs(view).GetValueOrDefault(key) ?? "";
+
+    private void SetInput(IntegrationJourneyView view, string key, ChangeEventArgs e) => Inputs(view)[key] = e.Value?.ToString() ?? "";
+
+    /// <summary>Client-side convenience only: required inputs present. The backend validates every value again.</summary>
+    private bool InputsComplete(IntegrationJourneyView view) =>
+        (ScenarioOf(view)?.Inputs ?? []).All(input => !input.Required || InputValue(view, input.Key).Trim().Length > 0);
+
+    /// <summary>Opens a journey's tab and moves focus to it (used by domain pages that link to one journey).</summary>
+    public async Task ShowJourneyAsync(string journeyId)
+    {
+        if (Pack is null || Pack.Journeys.All(item => item.Journey.JourneyId != journeyId)) return;
+        await SelectTabAsync(journeyId);
+        StateHasChanged();
+        if (_tabRefs.TryGetValue(journeyId, out var element))
+        {
+            try { await element.FocusAsync(); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
+    }
 
     private string RunNote(IntegrationJourneyView view) => !Authentication.Configured
         ? "Authentication not configured: real journey execution is disabled in this browser."
@@ -310,6 +379,7 @@
             _packs = result.Value?.ToList() ?? [];
             _error = result.Error;
             if (_packs.All(item => item.PackId != _packId)) _packId = _packs.FirstOrDefault()?.PackId ?? "";
+            if (InitialJourneyId is { } initial && Pack?.Journeys.Any(item => item.Journey.JourneyId == initial) == true) _tab = initial;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -397,7 +467,11 @@
         await LoadHistoryAsync();
     }
 
-    private void SetScenario(IntegrationJourneyView view, ChangeEventArgs e) => _scenario[view.Journey.JourneyId] = e.Value?.ToString() ?? "";
+    private void SetScenario(IntegrationJourneyView view, ChangeEventArgs e)
+    {
+        _scenario[view.Journey.JourneyId] = e.Value?.ToString() ?? "";
+        _inputs.Remove(view.Journey.JourneyId);
+    }
 
     private void CancelConfirm()
     {
@@ -414,7 +488,12 @@
             var result = await Api.StartAsync(new IntegrationJourneyRunRequest
             {
                 EnvironmentId = Profile.Id, PackId = pack.PackId, JourneyId = view.Journey.JourneyId, ScenarioId = SelectedScenario(view), Confirmed = true,
+                Inputs = (ScenarioOf(view)?.Inputs ?? []).Where(input => InputValue(view, input.Key).Trim().Length > 0)
+                    .ToDictionary(input => input.Key, input => InputValue(view, input.Key).Trim()),
             }, _disposed.Token);
+            // Identifiers are not kept in the browser after a run; the redacted summary comes back with the run.
+            foreach (var input in ScenarioOf(view)?.Inputs ?? [])
+                if (input.Kind == JourneyScenarioInputKind.SyntheticPersonIdentifier) Inputs(view).Remove(input.Key);
             _lastRun = result.Value;
             _error = result.Error;
         }

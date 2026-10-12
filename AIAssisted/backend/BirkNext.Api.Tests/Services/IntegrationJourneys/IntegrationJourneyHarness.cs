@@ -22,6 +22,7 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
     public ActiveEventTestHarness Active { get; } = new();
     public FakeSources Sources { get; } = new();
     public FakeMessageFlows MessageFlows { get; } = new();
+    public FakeTokens Tokens { get; } = new();
     public List<IJourneyStepExecutor> Executors { get; } = [];
     public List<IJourneyStepObserver> Observers { get; } = [];
     public IntegrationJourneyRunStore Store { get; }
@@ -61,11 +62,25 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
         public Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult(Snapshots.FirstOrDefault(item => item.Id == snapshotId));
     }
 
+    /// <summary>Stands in for a completed ID-porten TEST sign-in (a held Altinn token per person and environment).</summary>
+    internal sealed class FakeTokens : BirkNext.Api.Services.AltinnTesting.IAltinnTestTokens
+    {
+        private readonly Dictionary<(string, string), string> _held = [];
+        public void Hold(string initiator, string environmentId, string token) => _held[(initiator, environmentId)] = token;
+        public string? Get(string initiator, string environmentId) => _held.GetValueOrDefault((initiator, environmentId));
+    }
+
     internal sealed class FakeMessageFlows : IIntegrationMessageFlowStore
     {
         public AltinnTestConfiguration Configuration { get; set; } = MessageFlowReviewExamples.SkolenærværInitialConfiguration;
+        public AltinnAppContractRecord? Contract { get; set; }
         public Task<IntegrationMessageFlowPackage> GetAsync(string environmentId, CancellationToken ct = default) =>
-            Task.FromResult(new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = environmentId }, Configuration, new(false, 0, 0, [], []), [], []));
+            Task.FromResult(new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = environmentId }, Configuration, new(false, 0, 0, [], []), [], [], Contract));
+        public Task SaveAppContractAsync(string environmentId, AltinnAppContractRecord contract, CancellationToken ct = default)
+        {
+            Contract = contract;
+            return Task.CompletedTask;
+        }
         public Task<(IntegrationMessageFlowPackage? Package, string? Error)> SaveAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default) =>
             throw new NotSupportedException();
     }

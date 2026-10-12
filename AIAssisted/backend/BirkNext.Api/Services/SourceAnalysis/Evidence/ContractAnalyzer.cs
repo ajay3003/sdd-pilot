@@ -44,6 +44,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             new(SourceEvidenceDomain.Contracts, "Protobuf", DomainSupport.Partial, "Messages, fields and services by pattern."),
             new(SourceEvidenceDomain.Contracts, "Message contracts (C#)", DomainSupport.Partial, "Event classes found by the integration-path analyzer (implementation contracts, not formal schemas)."),
             new(SourceEvidenceDomain.Contracts, "Generated clients", DomainSupport.Partial, "Strawberry Shake, NSwag, OpenAPI Generator and OpenApiReference configuration."),
+            new(SourceEvidenceDomain.Contracts, "Altinn 3 app", DomainSupport.Partial, "applicationmetadata.json, the form data type's *.schema.json and a sequential process.bpmn in the same app folder; consumed by Altinn app testing."),
         ]);
         var contracts = new List<SourceContract>();
         var diagnostics = new List<SourceDomainDiagnostic>();
@@ -99,6 +100,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             StatusReason = contracts.Count == 0 ? "No source contract detected. The API may still have a contract generated at runtime (e.g. served OpenAPI or GraphQL introspection)." : null,
             Technologies = [.. contracts.Select(c => SourceDomainText.Label(c.Type)).Distinct().Order(StringComparer.Ordinal)],
             Contracts = [.. contracts.OrderBy(c => c.Type).ThenBy(c => c.File, StringComparer.Ordinal)], Diagnostics = diagnostics,
+            AltinnApps = AltinnTesting.AltinnAppSourceExtractor.Extract(context.Files.Select(file => (file.Path, file.Content)).ToArray(), context.SourceSnapshotId, context.ExtractedAt),
             Limitations = [SourceDomainText.SourceBoundary, "A contract in source does not prove the deployed API or message flow is compatible with it; runtime schemas stay primary in API Quality Review.",
                 "Breaking-change classification needs compatibility rules; changes are classified, never judged here."],
         }, SourceEvidenceDomain.Contracts, Version);

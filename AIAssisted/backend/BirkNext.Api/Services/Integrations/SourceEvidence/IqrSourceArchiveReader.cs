@@ -85,7 +85,7 @@ public static class IqrSourceArchiveReader
     {
         var file = Path.GetFileName(path);
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".xsd" or ".properties"
+        return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".xsd" or ".bpmn" or ".properties"
             || file.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase) || file.Equals(".env", StringComparison.OrdinalIgnoreCase)
             || file.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
     }

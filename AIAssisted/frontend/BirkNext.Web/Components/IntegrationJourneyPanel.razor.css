@@ -48,6 +48,14 @@
 .ijp label { display: block; margin-top: .5rem; font-weight: 600; font-size: .86rem; }
 .ijp select { max-width: 100%; width: 100%; box-sizing: border-box; padding: .45rem; margin: .3rem 0; }
 .ijp-run { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--clr-border, #aaa6); min-width: 0; }
+.ijp-inputs { border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); padding: .5rem .75rem .75rem; margin: .75rem 0; min-width: 0;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 0 1rem; }
+.ijp-inputs legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
+.ijp-inputs > .ijp-muted { grid-column: 1 / -1; }
+.ijp-input { display: flex; flex-direction: column; min-width: 0; }
+.ijp-input input { width: 100%; box-sizing: border-box; padding: .45rem; margin: .3rem 0 .15rem; font: inherit; }
+/* Date inputs move focus into their own date segments, where :focus-visible does not reach the host: keep the indicator on the field. */
+.ijp-input input:focus, .ijp-input input:focus-within, .ijp-input select:focus { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
 .ijp-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 .25rem; }
 .ijp-confirm { margin: .75rem 0 0; padding: .75rem; border: 2px solid #f59e0b; border-radius: var(--radius-md, .5rem); background: #fffbeb; }
 .ijp-confirm h5 { margin: 0 0 .35rem; font-size: .95rem; }

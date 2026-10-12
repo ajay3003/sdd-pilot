@@ -13,7 +13,8 @@ public interface IIntegrationJourneyService
     Task<IReadOnlyList<IntegrationJourneyPackView>> PacksAsync(string environmentId, CancellationToken ct);
     Task<ArchitectureRuleReport> RulesAsync(string environmentId, string packId, Guid? snapshotId, CancellationToken ct);
     IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog();
-    Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct);
+    /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
+    Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
     Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct);
     Task<IReadOnlyList<IntegrationJourneyRunSummary>> HistoryAsync(IntegrationJourneyHistoryQuery query, CancellationToken ct);
 }
@@ -84,7 +85,10 @@ public sealed class IntegrationJourneyService(
         new IntegrationJourneyCatalogEntry(pack.PackId, journey.JourneyId, journey.DisplayName, journey.Steps
             .Select(step => new JourneyEdge(step.StepId, step.Label, step.Kind, step.FromComponent ?? step.Owner, step.ToComponent ?? step.Owner, step.Owner)).ToArray()))).ToArray();
 
-    public async Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct)
+    private const int MaxInputs = 20;
+    private const int MaxInputLength = 200;
+
+    public async Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct)
     {
         var pack = packs.Find(request.PackId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
         var journey = pack.Journeys.FirstOrDefault(item => item.JourneyId == request.JourneyId) ?? throw new IntegrationJourneyRequestException("Unknown journey.");
@@ -92,6 +96,7 @@ public sealed class IntegrationJourneyService(
         if (journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent)
             throw new IntegrationJourneyRequestException("This journey is executed by Active Event Testing; start it from that panel.");
         if (!request.Confirmed) throw new IntegrationJourneyRequestException("Confirm the journey run before execution.");
+        var inputs = PrepareInputs(pack, journey, scenario, request.Inputs ?? new Dictionary<string, string>());
 
         var context = await ContextAsync(request.EnvironmentId, ct);
         var view = await ViewAsync(pack, journey, context, ct);
@@ -102,7 +107,7 @@ public sealed class IntegrationJourneyService(
             ScenarioId = scenario.ScenarioId, ScenarioName = scenario.DisplayName, EnvironmentId = request.EnvironmentId,
             EnvironmentName = context.TrustedEnvironment?.DisplayName ?? request.EnvironmentId, StartedAt = started,
             Steps = journey.Steps.Select(step => new JourneyStepResult { StepId = step.StepId, Label = step.Label, State = JourneyStepState.NotAssessed, Reason = "Not started." }).ToArray(),
-            Limitations = journey.Limitations,
+            Limitations = journey.Limitations, InputSummary = inputs.Summary,
         };
 
         var blockers = new List<string>();
@@ -126,7 +131,7 @@ public sealed class IntegrationJourneyService(
             try
             {
                 completed = await runner.ExecuteAsync(run, context.TrustedEnvironment!, journey, scenario, integrations, bounded.Token,
-                    async (progress, token) => await history.UpdateAsync(progress, token));
+                    async (progress, token) => await history.UpdateAsync(progress, token), inputs.Values, initiator);
             }
             catch (OperationCanceledException)
             {
@@ -141,6 +146,22 @@ public sealed class IntegrationJourneyService(
             return completed;
         }
         finally { gate.Release(key, run.RunId); }
+    }
+
+    /// <summary>Generic checks (declared keys only, bounded size, required present), then the pack's typed validation. Nothing here is stored.</summary>
+    private static JourneyInputPreparation PrepareInputs(IIntegrationJourneyPack pack, IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario,
+        IReadOnlyDictionary<string, string> inputs)
+    {
+        var declared = scenario.Inputs ?? [];
+        if (inputs.Count > MaxInputs || inputs.Any(item => item.Key.Length > 64 || (item.Value?.Length ?? 0) > MaxInputLength))
+            throw new IntegrationJourneyRequestException("The run inputs exceed the supported size.");
+        if (inputs.Keys.FirstOrDefault(key => declared.All(item => item.Key != key)) is { } unknown)
+            throw new IntegrationJourneyRequestException($"The scenario does not declare the input \"{unknown}\".");
+        if (declared.FirstOrDefault(item => item.Required && string.IsNullOrWhiteSpace(inputs.GetValueOrDefault(item.Key))) is { } missing)
+            throw new IntegrationJourneyRequestException($"{missing.Label} is required.");
+        var prepared = pack.PrepareInputs(journey, scenario, inputs);
+        if (!prepared.Valid) throw new IntegrationJourneyRequestException(string.Join(" ", prepared.Errors));
+        return prepared;
     }
 
     public Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct) => history.GetAsync(runId, ct);
@@ -210,10 +231,13 @@ public sealed class IntegrationJourneyService(
             prerequisites.Add(new("executor", "Journey trigger", JourneyPrerequisiteCategory.Executor,
                 firstExecutable ? JourneyReadinessState.Ready : JourneyReadinessState.NotAvailable,
                 firstExecutable ? "A registered executor can start the journey." : $"No registered executor can perform the first step (\"{journey.Steps.FirstOrDefault()?.Label}\"); the journey cannot be started."));
+            // Not a gate: a step without an executor or observer is reported Not assessed in the run, and because Completed needs every
+            // mandatory step Verified, a run with uncovered mandatory steps can reach Partial at most. It is shown, never hidden.
             prerequisites.Add(new("observation", "Step evidence coverage", JourneyPrerequisiteCategory.Observation,
-                uncovered.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotAvailable,
+                uncovered.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
                 uncovered.Count == 0 ? "Every mandatory step has a registered executor or observer."
-                    : $"{uncovered.Count} of {journey.Steps.Count(step => step.Mandatory)} mandatory steps have no executor or observer: {string.Join("; ", uncovered)}."));
+                    : $"{uncovered.Count} of {journey.Steps.Count(step => step.Mandatory)} mandatory steps have no executor or observer, so a run can reach Partial at most: {string.Join("; ", uncovered)}.",
+                Mandatory: false));
         }
 
         prerequisites.AddRange(await pack.PrerequisitesAsync(journey, context, ct));

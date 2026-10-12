@@ -288,6 +288,10 @@ if (entra.Configured)
 var journeysClient = builder.Services.AddHttpClient<IIntegrationJourneysApiService, IntegrationJourneysApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     journeysClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Altinn app testing (Skolenærvær Rapportmottak): app contract + the tester's ID-porten TEST sign-in; same token pipeline, no token in the browser.
+var altinnTestingClient = builder.Services.AddHttpClient<IAltinnTestingApiService, AltinnTestingApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    altinnTestingClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);

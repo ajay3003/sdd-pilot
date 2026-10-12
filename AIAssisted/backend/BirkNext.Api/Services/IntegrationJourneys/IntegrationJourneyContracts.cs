@@ -29,6 +29,21 @@ public interface IIntegrationJourneyPack
     /// <summary>Whether a configured IQR integration fulfils one of this pack's integration requirements.</summary>
     bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration);
     Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct);
+
+    /// <summary>
+    /// Validates and normalizes a run's typed inputs (declared by the scenario) before anything executes, and describes them safely for
+    /// history. The default accepts only a scenario without inputs.
+    /// </summary>
+    JourneyInputPreparation PrepareInputs(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs) =>
+        inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
+}
+
+/// <summary>Normalized run inputs (memory only, for the executors) and the redacted summary history keeps instead of them.</summary>
+public sealed record JourneyInputPreparation(IReadOnlyDictionary<string, string> Values, IReadOnlyList<string> Errors, IReadOnlyList<string> Summary)
+{
+    public static JourneyInputPreparation None { get; } = new(new Dictionary<string, string>(), [], []);
+    public static JourneyInputPreparation Invalid(params string[] errors) => new(new Dictionary<string, string>(), errors, []);
+    public bool Valid => Errors.Count == 0;
 }
 
 /// <summary>Input to a step executor/observer. <see cref="Environment"/> is null for readiness probes (nothing is executed then).</summary>
@@ -40,7 +55,13 @@ public sealed record JourneyStepContext(
     JourneyScenarioDescriptor? Scenario,
     JourneyStepDefinition Step,
     IntegrationDefinition? Integration,
-    IReadOnlyList<JourneyStepResult> Previous);
+    IReadOnlyList<JourneyStepResult> Previous,
+    IReadOnlyDictionary<string, string>? Inputs = null,
+    string? Initiator = null)
+{
+    /// <summary>The run's normalized inputs (never persisted).</summary>
+    public IReadOnlyDictionary<string, string> InputValues => Inputs ?? new Dictionary<string, string>();
+}
 
 /// <summary>Performs an active step (e.g. a submission through the shared gateway). Must be read-only or explicitly state-changing by scenario.</summary>
 public interface IJourneyStepExecutor

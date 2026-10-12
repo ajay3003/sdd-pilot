@@ -91,7 +91,7 @@ public sealed class IntegrationJourneyAuthorizationTests
         public Task<IReadOnlyList<IntegrationJourneyPackView>> PacksAsync(string environmentId, CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationJourneyPackView>>([]);
         public Task<ArchitectureRuleReport> RulesAsync(string environmentId, string packId, Guid? snapshotId, CancellationToken ct) => Task.FromResult(new ArchitectureRuleReport(packId, null, null, [], []));
         public IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog() => [];
-        public Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct) => Task.FromResult(new IntegrationJourneyRun { OverallState = JourneyRunState.Blocked });
+        public Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct) => Task.FromResult(new IntegrationJourneyRun { OverallState = JourneyRunState.Blocked });
         public Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct) => Task.FromResult<IntegrationJourneyRun?>(null);
         public Task<IReadOnlyList<IntegrationJourneyRunSummary>> HistoryAsync(IntegrationJourneyHistoryQuery query, CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationJourneyRunSummary>>([]);
     }

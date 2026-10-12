@@ -11,6 +11,8 @@ public interface IIntegrationMessageFlowStore
 {
     Task<IntegrationMessageFlowPackage> GetAsync(string environmentId, CancellationToken ct = default);
     Task<(IntegrationMessageFlowPackage? Package, string? Error)> SaveAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default);
+    /// <summary>Stores the Altinn app contract evidence with this environment's configuration (only the Altinn contract service writes it).</summary>
+    Task SaveAppContractAsync(string environmentId, AltinnAppContractRecord contract, CancellationToken ct = default);
 }
 
 public sealed class IntegrationMessageFlowStore(AppDbContext db, TimeProvider? timeProvider = null) : IIntegrationMessageFlowStore
@@ -47,17 +49,32 @@ public sealed class IntegrationMessageFlowStore(AppDbContext db, TimeProvider? t
         var config = suppliedConfig with { ProductionBlocked = true, VerificationState = FlowEvidenceState.NotAssessed,
             TargetEnvironmentId = environmentId, VerifiedScopes = [],
             ConfigurationState = configuredValues.Any(v => !string.IsNullOrWhiteSpace(v)) ? AltinnConfigurationState.Configured : AltinnConfigurationState.NeedsConfiguration };
+        // The app contract is evidence written only by the Altinn contract service: whatever the request carries, the stored value is kept.
         var package = Recalculate(request with { Flow = Unverified(request.Flow) with { EnvironmentId = environmentId, TargetEnvironmentReference = environmentId, UpdatedAt = _clock.GetUtcNow() },
-            AltinnConfiguration = config });
+            AltinnConfiguration = config, AppContract = null });
         var json = JsonSerializer.Serialize(package, Json);
         if (json.Length > 1_000_000) return (null, "Message flow configuration exceeds the 1 MB limit.");
         if (ContainsCredentialLikeValue(json)) return (null, "Credential-like or raw personal-identifier-like values are not accepted. Store references only; do not enter tokens, passwords, private keys, connection strings or personal identifiers.");
 
         var row = await db.IntegrationMessageFlows.SingleOrDefaultAsync(r => r.EnvironmentId == environmentId, ct);
+        var storedContract = row is null ? null : JsonSerializer.Deserialize<IntegrationMessageFlowPackage>(row.DocumentJson, Json)?.AppContract;
+        package = package with { AppContract = storedContract };
+        json = JsonSerializer.Serialize(package, Json);
         if (row is null) db.IntegrationMessageFlows.Add(new IntegrationMessageFlowRecord { EnvironmentId = environmentId, DocumentJson = json, UpdatedAt = _clock.GetUtcNow() });
         else { row.DocumentJson = json; row.UpdatedAt = _clock.GetUtcNow(); }
         await db.SaveChangesAsync(ct);
         return (package, null);
+    }
+
+    public async Task SaveAppContractAsync(string environmentId, AltinnAppContractRecord contract, CancellationToken ct = default)
+    {
+        var package = (await GetAsync(environmentId, ct)) with { AppContract = contract };
+        var json = JsonSerializer.Serialize(package, Json);
+        if (json.Length > 1_000_000) throw new InvalidOperationException("The Altinn app contract exceeds the configuration size limit.");
+        var row = await db.IntegrationMessageFlows.SingleOrDefaultAsync(r => r.EnvironmentId == environmentId, ct);
+        if (row is null) db.IntegrationMessageFlows.Add(new IntegrationMessageFlowRecord { EnvironmentId = environmentId, DocumentJson = json, UpdatedAt = _clock.GetUtcNow() });
+        else { row.DocumentJson = json; row.UpdatedAt = _clock.GetUtcNow(); }
+        await db.SaveChangesAsync(ct);
     }
 
     private static IntegrationMessageFlowPackage Recalculate(IntegrationMessageFlowPackage package) => package with

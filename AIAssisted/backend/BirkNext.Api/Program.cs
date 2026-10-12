@@ -55,6 +55,12 @@ builder.Host.UseSerilog((ctx, lc) =>
     Directory.CreateDirectory(absoluteLogPath);
 
     lc.MinimumLevel.Is(level)
+      // Altinn testing: request URIs of the Altinn client carry instance/party ids, and the ID-porten TEST callback's query can carry an
+      // authorization code — neither is ever written to a log.
+      .MinimumLevel.Override("System.Net.Http.HttpClient." + BirkNext.Api.Services.AltinnTesting.AltinnTestingRequestGuard.ClientName, LogEventLevel.Warning)
+      .Filter.ByExcluding(e => e.Properties.TryGetValue("RequestPath", out var path)
+          && path.ToString().Contains(BirkNext.Api.Services.AltinnTesting.AltinnTestingPolicy.CallbackPath, StringComparison.Ordinal)
+          && (e.Properties.ContainsKey("QueryString") || e.Properties.ContainsKey("Path")))
       .Enrich.FromLogContext()
       .WriteTo.Console(new JsonFormatter())
       .WriteTo.File(
@@ -538,6 +544,22 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
+// Altinn app testing (Skolenærvær Rapportmottak): TT02 App API steps executed by the shared journey runner after the tester's own
+// ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)
+    .Get<BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions>() ?? new BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions());
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestingPolicy>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnTestTokens>(sp => sp.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnTestSessionCache>());
+builder.Services.AddTransient<BirkNext.Api.Services.AltinnTesting.AltinnTestingRequestGuard>();
+builder.Services.AddHttpClient(BirkNext.Api.Services.AltinnTesting.AltinnTestingRequestGuard.ClientName, client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false })
+    .AddHttpMessageHandler<BirkNext.Api.Services.AltinnTesting.AltinnTestingRequestGuard>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnAppApiClient>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnFormBinding, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnForm>();
+builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnAppContractService>();
+builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.IdPortenTestSignIn>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnExecutor>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunGate>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyService>();
 // Legacy (read-only): history of runs recorded by the retired Active CDC runner.

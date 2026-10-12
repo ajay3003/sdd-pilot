@@ -45,7 +45,7 @@ public sealed class IntegrationJourneyEngineTests
         view.Readiness.Should().Be(JourneyReadinessState.Ready);
         view.CanRun.Should().BeTrue();
 
-        var run = await service.StartAsync(Request(), default);
+        var run = await service.StartAsync(Request(), null, default);
         run.OverallState.Should().Be(JourneyRunState.Completed);
         run.Steps.Select(step => step.StepId).Should().Equal("submit", "ingest", "process", "publish", "consume", "verify");
         executor.Executed.Should().Equal("submit");
@@ -63,7 +63,7 @@ public sealed class IntegrationJourneyEngineTests
     {
         await using var harness = new IntegrationJourneyHarness();
         Wire(harness, submit: JourneyStepState.Accepted, verify: JourneyStepState.NotVerified);
-        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default);
+        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
 
         run.OverallState.Should().Be(JourneyRunState.Partial);
         run.Steps.Single(step => step.StepId == "submit").State.Should().Be(JourneyStepState.Accepted);
@@ -76,7 +76,7 @@ public sealed class IntegrationJourneyEngineTests
     {
         await using var harness = new IntegrationJourneyHarness();
         var (executor, _) = Wire(harness, submit: JourneyStepState.Unavailable);
-        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default);
+        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
 
         executor.Executed.Should().Equal("submit");
         run.Steps.Skip(1).Should().OnlyContain(step => step.State == JourneyStepState.NotAssessed && step.Reason.StartsWith("Not reached", StringComparison.Ordinal));
@@ -96,7 +96,7 @@ public sealed class IntegrationJourneyEngineTests
             ["ingest"] = JourneyStepState.UnexpectedResult, ["process"] = JourneyStepState.Observed, ["publish"] = JourneyStepState.Observed,
             ["consume"] = JourneyStepState.Observed, ["verify"] = JourneyStepState.Verified,
         }));
-        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default);
+        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
 
         run.OverallState.Should().Be(JourneyRunState.Failed);
         run.Steps.Single(step => step.StepId == "process").State.Should().Be(JourneyStepState.NotAssessed);
@@ -114,9 +114,16 @@ public sealed class IntegrationJourneyEngineTests
         var service = harness.Service(new ExampleOrdersJourneyPack());
 
         var view = (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single();
-        view.Prerequisites.Single(item => item.Key == "observation").State.Should().Be(JourneyReadinessState.NotAvailable);
-        view.CanRun.Should().BeFalse("a journey whose mandatory steps cannot produce evidence is not runnable");
-        (await service.StartAsync(Request(), default)).OverallState.Should().Be(JourneyRunState.Blocked);
+        var coverage = view.Prerequisites.Single(item => item.Key == "observation");
+        coverage.State.Should().Be(JourneyReadinessState.Partial, "the gap is shown, never hidden");
+        coverage.Mandatory.Should().BeFalse("an uncovered step is reported Not assessed in the run instead of blocking the steps that can run");
+        coverage.Detail.Should().Contain("Partial at most");
+        view.CanRun.Should().BeTrue();
+
+        var run = await service.StartAsync(Request(), null, default);
+        run.Steps.Where(step => step.State == JourneyStepState.NotAssessed).Should().NotBeEmpty();
+        run.Steps.Where(step => step.State == JourneyStepState.NotAssessed).Should().OnlyContain(step => step.Reason.Contains("No executor or observer"));
+        run.OverallState.Should().NotBe(JourneyRunState.Completed, "a mandatory step without evidence can never be verified");
     }
 
     [Theory]
@@ -128,7 +135,7 @@ public sealed class IntegrationJourneyEngineTests
         await using var harness = new IntegrationJourneyHarness();
         var (executor, _) = Wire(harness, everyStepVerified: true);
         harness.Active.Settings["TargetEnvironments:Trusted:0:EnvironmentType"] = environmentType;
-        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default);
+        var run = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
 
         run.OverallState.Should().Be(JourneyRunState.Blocked);
         executor.Executed.Should().BeEmpty();
@@ -141,15 +148,15 @@ public sealed class IntegrationJourneyEngineTests
         await using var harness = new IntegrationJourneyHarness();
         var (executor, _) = Wire(harness, everyStepVerified: true);
         harness.Active.Settings["TargetEnvironments:Trusted:0:TargetUrl"] = "https://orders-prod.example.test";
-        (await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default)).OverallState.Should().Be(JourneyRunState.Blocked);
+        (await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default)).OverallState.Should().Be(JourneyRunState.Blocked);
 
         harness.Active.Settings["TargetEnvironments:Trusted:0:TargetUrl"] = "https://orders-dev.example.test";
-        var untrusted = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request() with { EnvironmentId = "browser-guid-not-enrolled" }, default);
+        var untrusted = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request() with { EnvironmentId = "browser-guid-not-enrolled" }, null, default);
         untrusted.OverallState.Should().Be(JourneyRunState.Blocked);
         untrusted.StateReason.Should().Contain("TargetEnvironments:Trusted");
 
         foreach (var key in harness.Active.Settings.Keys.Where(key => harness.Active.Settings[key] == ExampleOrdersJourneyPack.BusId).ToList()) harness.Active.Settings.Remove(key);
-        var unenrolled = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), default);
+        var unenrolled = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
         unenrolled.OverallState.Should().Be(JourneyRunState.Blocked);
         unenrolled.StateReason.Should().Contain("not enrolled");
         executor.Executed.Should().BeEmpty();
@@ -163,11 +170,11 @@ public sealed class IntegrationJourneyEngineTests
         var pack = new ExampleOrdersJourneyPack();
         var service = harness.Service(pack);
 
-        await service.Invoking(item => item.StartAsync(Request(confirmed: false), default)).Should().ThrowAsync<IntegrationJourneyRequestException>();
-        (await service.StartAsync(Request("duplicate"), default)).OverallState.Should().Be(JourneyRunState.Blocked);
+        await service.Invoking(item => item.StartAsync(Request(confirmed: false), null, default)).Should().ThrowAsync<IntegrationJourneyRequestException>();
+        (await service.StartAsync(Request("duplicate"), null, default)).OverallState.Should().Be(JourneyRunState.Blocked);
 
         pack.Extra.Add(new("pack-check", "Pack-only prerequisite", JourneyPrerequisiteCategory.Contract, JourneyReadinessState.NotReady, "A pack can only add blockers."));
-        (await service.StartAsync(Request(), default)).OverallState.Should().Be(JourneyRunState.Blocked);
+        (await service.StartAsync(Request(), null, default)).OverallState.Should().Be(JourneyRunState.Blocked);
         executor.Executed.Should().BeEmpty();
         (await service.HistoryAsync(new IntegrationJourneyHistoryQuery(ActiveEventTestHarness.Env, State: JourneyRunState.Blocked), default)).Should().HaveCount(2);
     }

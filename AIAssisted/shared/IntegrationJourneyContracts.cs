@@ -20,7 +20,7 @@ public enum JourneyReadinessState { Ready, Partial, NotReady, NotConfigured, Not
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum JourneyStepKind
 {
-    SourceChange, ExternalSubmission, ExternalAcceptance, MessageTransport, PayloadRetrieval, Decryption, StructuralValidation, Mapping,
+    SourceChange, ExternalAuthentication, ExternalSubmission, ExternalAcceptance, MessageTransport, PayloadRetrieval, Decryption, StructuralValidation, Mapping,
     DomainIntake, IdentityLookup, DomainState, Publication, BrokerDelivery, ConsumerProcessing, DownstreamVerification,
 }
 
@@ -61,7 +61,26 @@ public sealed record JourneyScenarioDescriptor(
     string Description,
     JourneyScenarioSupport Support,
     string? NotAssessedBecause = null,
-    bool StateChanging = true);
+    bool StateChanging = true,
+    IReadOnlyList<JourneyScenarioInput>? Inputs = null);
+
+/// <summary>Kinds of typed scenario input. There is deliberately no free-form payload, URL or endpoint kind.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyScenarioInputKind { Choice, Date, Number, SyntheticPersonIdentifier }
+
+public sealed record JourneyScenarioInputOption(string Value, string Label);
+
+/// <summary>
+/// One typed input a scenario asks the tester for. The pack validates and normalizes every value server-side before anything runs; values
+/// are held in memory for the run only and never persisted — history keeps the pack's redacted summary instead.
+/// </summary>
+public sealed record JourneyScenarioInput(
+    string Key,
+    string Label,
+    JourneyScenarioInputKind Kind,
+    bool Required,
+    string Help = "",
+    IReadOnlyList<JourneyScenarioInputOption>? Options = null);
 
 public sealed record IntegrationJourneyDefinition
 {
@@ -131,6 +150,8 @@ public sealed record IntegrationJourneyRunRequest
     public string JourneyId { get; init; } = "";
     public string ScenarioId { get; init; } = "";
     public bool Confirmed { get; init; }
+    /// <summary>Typed scenario inputs by <see cref="JourneyScenarioInput.Key"/>. Unknown keys are refused; nothing here is persisted.</summary>
+    public IReadOnlyDictionary<string, string> Inputs { get; init; } = new Dictionary<string, string>();
 }
 
 public sealed record JourneyStepResult
@@ -164,6 +185,8 @@ public sealed record IntegrationJourneyRun
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public IReadOnlyList<string> Limitations { get; init; } = [];
+    /// <summary>Redacted description of the run's inputs (e.g. a hashed synthetic identifier and the period) — never the values themselves.</summary>
+    public IReadOnlyList<string> InputSummary { get; init; } = [];
 }
 
 public sealed record IntegrationJourneyRunSummary(Guid RunId, string PackId, string JourneyId, string ScenarioId, string EnvironmentId, JourneyRunState State,
