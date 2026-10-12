@@ -78,30 +78,41 @@ public sealed class IqrSourceStore(AppDbContext db)
     /// fingerprint shared with the imported artifacts); a standalone upload passes none. A Source Analysis snapshot needs no Target Environment
     /// and is stored without one (<see cref="NoEnvironment"/>); only the legacy per-integration snapshots keep the environment they were uploaded for.</summary>
     internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string? environmentId, string integrationId, string name, byte[] bytes,
-        IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default, BirkNext.ProjectImport.ProjectImportProvenance? projectImport = null)
+        IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default, BirkNext.ProjectImport.ProjectImportProvenance? projectImport = null,
+        Func<BirkNext.ProjectImport.ProjectImportCommitEvent, Task>? reportProgress = null)
     {
         ct.ThrowIfCancellationRequested();
         environmentId = integrationId == SourceAnalysisOwner ? NoEnvironment : environmentId ?? NoEnvironment;
+        var reportedStage = 0;
+        await ReportProgressAsync("Analyzing source structure", "Parsing project and source files into Source Analysis evidence.");
         var snapshot = IqrSourceAnalyzer.Analyze(integrationId, workspace, DateTimeOffset.UtcNow, ct);
+        await ReportProgressAsync("Analyzing database architecture", "Inspecting source database and persistence evidence.");
         snapshot = snapshot with { DatabaseArchitecture = await DatabaseArchitecture.DatabaseArchitectureAnalyzer.AnalyzeAsync(snapshot.Id, workspace, snapshot.AnalyzedAt, ct) };
         // Source architecture (components, dependencies, messaging, datastores): its own model; datastores only link to the Database analysis above.
+        await ReportProgressAsync("Analyzing source architecture", "Building component, dependency, messaging and datastore evidence.");
         snapshot = snapshot with { Architecture = SourceArchitecture.SourceArchitectureAnalyzer.Analyze(snapshot.Id, workspace, snapshot.AnalyzedAt, snapshot.DatabaseArchitecture, ct,
             out var architectureInput, out var architectureResults) };
         // Observability (correlation/tracing, logging quality, telemetry configuration): analysed once here over the same workspace and Architecture model.
+        await ReportProgressAsync("Analyzing observability evidence", "Inspecting source logging, tracing and telemetry configuration.");
         snapshot = snapshot with { Observability = SourceAnalysis.Observability.ObservabilitySourceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.Architecture, snapshot.AnalyzedAt, ct) };
         // Reusable source-evidence domains (Infrastructure as Code, Configuration, CI/CD, Contracts, cross-domain links): analysed once here over the
         // same workspace, Architecture input and models — consumers read them from the snapshot, never by rescanning the archive.
+        await ReportProgressAsync("Analyzing source evidence domains", "Reviewing infrastructure, configuration, pipeline and contract evidence.");
         snapshot = snapshot with { EvidenceDomains = SourceAnalysis.Evidence.SourceEvidenceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.AnalyzedAt, snapshot.Architecture,
             snapshot.DatabaseArchitecture, snapshot.Observability, snapshot.IntegrationPath, ct, out var configuration) };
         // Security Expectations reads identity/endpoint candidates from the normalized Configuration evidence (raw public identifiers in memory only).
+        await ReportProgressAsync("Analyzing security expectations", "Deriving source-based identity and endpoint expectations.");
         snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
             architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct, configuration) };
         // Source integration discovery signals (capture-technology markers, orchestration-declared channels): identifiers only, read from the same workspace.
+        await ReportProgressAsync("Detecting integration signals", "Reading integration markers from the validated source inventory.");
         snapshot = snapshot with { IntegrationSignals = SourceDiscovery.SourceIntegrationSignalExtractor.Extract(workspace, snapshot.Architecture) };
         // Technology inventory: every technology the archive shows, with the capabilities it implies — unsupported ones are reported, not dropped.
+        await ReportProgressAsync("Calculating technology coverage", "Matching detected technologies to supported analysis capabilities.");
         snapshot = snapshot with { TechnologyCoverage = SourceAnalysis.Technology.TechnologyInventory.Detect(workspace, snapshot.Architecture, snapshot.EvidenceDomains) };
         // Source Analysis owns this snapshot-scoped path inventory. Paths are exhaustive for non-ignored
         // archive entries; content fingerprints are included only for files already read by this analysis.
+        await ReportProgressAsync("Indexing source files", "Building the snapshot-scoped path inventory and fingerprints.");
         var indexedFiles = workspace.AllPaths?.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Select(path => new SourceFileTarget(path.Replace('\\', '/'), FingerprintFile(workspace, path))).ToList() ?? [];
         snapshot = snapshot with { TargetIndex = new SourceTargetIndex
@@ -113,20 +124,26 @@ public sealed class IqrSourceStore(AppDbContext db)
         }};
         // Repository identity and the dependency evidence Dependency Review consumes (manifests, redacted Renovate configs, automation summaries):
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
+        await ReportProgressAsync("Analyzing dependency evidence", "Extracting repository identity and dependency manifests from the uploaded archive.");
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
         snapshot = snapshot with { Repository = repository, DependencyEvidence = DependencyReview.SourceDependencyEvidenceExtractor.Extract(repository.DisplayName, bytes, name).Evidence };
         // Source test definitions (test projects, [Fact]/[Theory], traits, explicit requirement references): discovery only, consumed when execution
         // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
+        await ReportProgressAsync("Discovering test definitions", "Finding test projects and declared test cases in source.");
         snapshot = snapshot with { TestInventory = DiscoverTests(snapshot, repository.DisplayName, workspace, ct) };
         // Code-risk observations for the AI-Generated Code Review profile (placeholders, error handling, authorization metadata, duplicates,
         // test assertions): syntax facts captured once here; the review reads them from the snapshot and never rescans the archive.
+        await ReportProgressAsync("Analyzing code-risk evidence", "Extracting source-level code-risk signals.");
         snapshot = snapshot with { CodeRiskEvidence = AnalyzeCodeRisk(snapshot, workspace, ct) };
         // Per-test facts for the Test Coverage & Overlap Review (boundary signals, assertions, targets): read once here, never by rescanning the archive.
+        await ReportProgressAsync("Analyzing test behavior", "Extracting test assertions and boundary signals.");
         snapshot = snapshot with { TestBehaviorEvidence = AnalyzeTestBehavior(snapshot, workspace, ct) };
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
+        await ReportProgressAsync("Analyzing security classification evidence", "Extracting source references used by Security Classification.");
         snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };
         // Integration Quality Review's application-messaging and SCIM observations of this snapshot, read by their own analyzers.
+        await ReportProgressAsync("Extracting integration evidence", "Capturing messaging and SCIM source evidence.");
         snapshot = snapshot with
         {
             ApplicationMessagingEvidence = ApplicationMessaging.ApplicationMessagingStore.ExtractSnapshotEvidence(environmentId, name, bytes),
@@ -135,14 +152,22 @@ public sealed class IqrSourceStore(AppDbContext db)
         snapshot = snapshot with { ProjectImport = projectImport };
         // Generated documentation (its own evidence type): detection, provenance, module-scoped freshness and generated-vs-source comparisons over
         // the same workspace and the models above. A failure never fails the snapshot; it is recorded as a limitation.
+        await ReportProgressAsync("Analyzing generated documentation", "Comparing generated documentation evidence with the source snapshot.");
         snapshot = snapshot with { GeneratedDocumentation = AnalyzeGeneratedDocumentation(snapshot, workspace, architectureInput, architectureResults.SelectMany(r => r.Facts).ToList(), ct) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
+        await ReportProgressAsync("Saving source snapshot", "Persisting one immutable Source Analysis snapshot.");
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
         try { await db.SaveChangesAsync(ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new SourceSnapshotPersistenceException(); }
         return snapshot;
+
+        Task ReportProgressAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new BirkNext.ProjectImport.ProjectImportCommitEvent
+        {
+            Kind = BirkNext.ProjectImport.ProjectImportCommitEventKind.Progress, StageNumber = ++reportedStage,
+            StageCount = 17, Stage = stage, Detail = detail,
+        });
     }
 
     internal static BirkNext.TestCoverage.TestBehaviorSourceEvidence AnalyzeTestBehavior(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)

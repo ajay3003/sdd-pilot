@@ -68,14 +68,34 @@
     {
         <section class="pi-card" aria-labelledby="pi-progress-heading" data-testid="pi-progress" aria-busy="true">
             <h2 id="pi-progress-heading">@(_phase == Phase.Importing ? "Importing the project" : "Checking the archive")</h2>
-            <p class="pi-status" role="status" data-testid="pi-status">
+            <p class="pi-status" role="status" aria-live="polite" aria-atomic="true" data-testid="pi-status">
                 @(_phase switch
                 {
                     Phase.Validating => $"Uploading and validating {_fileName}, then detecting document roles and source…",
                     Phase.Classifying => $"Archive accepted. Detecting document roles: {_classified} of {_classifyTotal} Markdown documents…",
-                    _ => _preview?.Source.Detected == true ? "Activating project documents and analyzing source… Source analysis can take up to a minute for a large project." : "Activating project documents…",
+                    _ => _progress?.Stage ?? "Starting the project import…",
                 })
             </p>
+            @if (_phase == Phase.Importing && _progress is { StageNumber: { } stageNumber, StageCount: { } stageCount })
+            {
+                <p class="pi-muted" data-testid="pi-stage-count">Source Analysis stage @stageNumber of @stageCount</p>
+            }
+            @if (_phase is Phase.Validating or Phase.Importing)
+            {
+                <progress class="pi-progress pi-progress-indeterminate" aria-label="Project import in progress"></progress>
+            }
+            @if (_phase is Phase.Validating or Phase.Classifying or Phase.Importing)
+            {
+                @if (_phase == Phase.Importing && _progress is { Detail.Length: > 0 } currentProgress)
+                {
+                    <p class="pi-muted" data-testid="pi-stage-detail">@currentProgress.Detail</p>
+                }
+                @if (_preview is { } activePreview)
+                {
+                    <p class="pi-muted" data-testid="pi-progress-detail">Documents: @activePreview.Documents.Count · Source files: @activePreview.Source.SourceFiles</p>
+                }
+                <p class="pi-muted" data-testid="pi-elapsed">Elapsed: @ElapsedText(_elapsed)</p>
+            }
             @if (_phase == Phase.Classifying && _classifyTotal > 0)
             {
                 <progress class="pi-progress" max="@_classifyTotal" value="@_classified" aria-label="Documents classified">@_classified of @_classifyTotal</progress>
@@ -116,9 +136,18 @@
             </section>
         }
         <div class="pi-actions">
-            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery))" @onclick="ImportAsync">Import project</button>
+            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery))" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
             <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
         </div>
+        @if (_failure is { } commitFailure)
+        {
+            <section class="pi-card pi-tone-rejected" role="alert" data-testid="pi-commit-failure" data-code="@commitFailure.Code">
+                <h2>The import did not return a result</h2>
+                <p>@commitFailure.Message</p>
+                <p>The workspace did not finish updating. Source Analysis may already have saved its snapshot. Retrying this staged archive reuses a completed snapshot.</p>
+                @if (!string.IsNullOrWhiteSpace(commitFailure.CorrelationId)) { <p>Reference: <code>@commitFailure.CorrelationId</code></p> }
+            </section>
+        }
     }
     else if (_phase == Phase.Result && _preview is { } done && _discovery is { } doneDiscovery)
     {
@@ -185,6 +214,10 @@
     private bool _hasTarget;
     private bool _saveWarning;
     private bool _retrying;
+    private ProjectImportCommitEvent? _progress;
+    private DateTimeOffset? _importStartedAt;
+    private TimeSpan _elapsed;
+    private System.Threading.Timer? _elapsedTimer;
     private string? _focusId;
 
     protected override async Task OnInitializedAsync() => await LoadEnvironmentAsync();
@@ -204,11 +237,13 @@
         _failure = null;
         _fileName = args.File.Name;
         _phase = Phase.Validating;
+        _progress = new ProjectImportCommitEvent { Stage = "Uploading and validating the archive", Detail = "Reading the ZIP and checking its entries." };
+        StartElapsedTimer();
         try
         {
             await using var stream = args.File.OpenReadStream(50 * 1024 * 1024);
             var (preview, error) = await Api.PreviewAsync(args.File.Name, stream);
-            if (preview is null) { _failure = error; _phase = Phase.Choose; return; }
+            if (preview is null) { _failure = error; _phase = Phase.Choose; StopElapsedTimer(); return; }
             _preview = preview;
             _phase = Phase.Classifying;
             _classified = 0;
@@ -222,37 +257,67 @@
             }));
             await LoadEnvironmentAsync();
             _phase = Phase.Preview;
+            StopElapsedTimer();
             _focusId = "pi-archive-heading";
         }
         catch (IOException) { Fail(new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024)); }
         catch (HttpRequestException ex) { Fail(new("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was imported.")); }
         catch (TaskCanceledException) { Fail(new("IMPORT_TIMEOUT", "upload", "The archive check did not finish before the request timed out. Nothing was imported; retry.")); }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { Fail(new("IMPORT_PREVIEW_FAILED", "validation", BackendRequestClassifier.FromException("Project import", ex).UserMessage)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Fail(new("IMPORT_PREVIEW_FAILED", "validation", "The archive could not be previewed. Nothing was imported; choose it again and retry.")); }
     }
 
     private async Task ImportAsync()
     {
         if (_preview is not { } preview || _discovery is not { } discovery) return;
+        _failure = null;
+        _progress = new ProjectImportCommitEvent { Stage = "Starting the project import", Detail = "Sending the staged archive to the existing import service." };
+        StartElapsedTimer();
         _phase = Phase.Importing;
         ProjectImportCommitResult? commit;
         SourceUploadFailure? error;
-        try { (commit, error) = await Api.CommitAsync(preview.StagingId); }
+        var progress = new Progress<ProjectImportCommitEvent>(update =>
+        {
+            if (_phase == Phase.Importing)
+            {
+                _progress = update;
+                _ = InvokeAsync(StateHasChanged);
+            }
+        });
+        try { (commit, error) = await Api.CommitWithProgressAsync(preview.StagingId, progress); }
         catch (HttpRequestException ex) { (commit, error) = (null, new SourceUploadFailure("IMPORT_UNAVAILABLE", "upload", $"{BackendRequestClassifier.FromException("Project import", ex).UserMessage} Nothing was activated; retry.")); }
         catch (TaskCanceledException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_TIMEOUT", "upload", "The import did not finish before the request timed out. Nothing was activated in this workspace; retry — the same archive reuses a snapshot that was already created.")); }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { (commit, error) = (null, new SourceUploadFailure("IMPORT_RESPONSE_INVALID", "commit", BackendRequestClassifier.FromException("Project import", ex).UserMessage)); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { (commit, error) = (null, new SourceUploadFailure("IMPORT_FAILED", "commit", "The import stopped before a result was returned. Retry the staged archive; a completed source snapshot will be reused.")); }
         if (commit is null)
         {
             // Nothing is activated without a commit result: the workspace never holds half an import.
+            StopElapsedTimer();
             _failure = error;
             _phase = error?.Code == "IMPORT_STAGING_EXPIRED" ? Phase.Choose : Phase.Preview;
             if (_phase == Phase.Choose) { _preview = null; _discovery = null; }
             return;
         }
         _commit = commit;
-        Activation.Activate(preview, discovery, commit);
-        _saveWarning = !await AutoSave.SaveNowAsync();
-        if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
-        _failure = null;
-        _phase = Phase.Result;
-        _focusId = "pi-outcome-heading";
+        try
+        {
+            _progress = new ProjectImportCommitEvent { Stage = "Activating project documents", Detail = "Applying the classified candidates to the Shared Artifact Repository." };
+            StateHasChanged();
+            Activation.Activate(preview, discovery, commit);
+            _progress = new ProjectImportCommitEvent { Stage = "Saving the workspace", Detail = "Saving the import selection and provenance." };
+            StateHasChanged();
+            _saveWarning = !await AutoSave.SaveNowAsync();
+            if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
+            _failure = null;
+            _phase = Phase.Result;
+            _focusId = "pi-outcome-heading";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _failure = new("PROJECT_IMPORT_ACTIVATION_FAILED", "workspace", "The workspace update did not finish. Source Analysis may already have saved its snapshot; retry this staged archive to continue.", CorrelationId: null);
+            _phase = Phase.Preview;
+        }
+        finally { StopElapsedTimer(); }
     }
 
     private async Task RetrySourceAsync()
@@ -286,7 +351,9 @@
 
     private void Reset()
     {
+        StopElapsedTimer();
         _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false;
+        _progress = null;
         _phase = Phase.Choose;
         _focusId = "pi-choose-heading";
     }
@@ -297,7 +364,7 @@
         _ = AutoSave.SaveNowAsync();
     }
 
-    private void Fail(SourceUploadFailure failure) { _failure = failure; _phase = Phase.Choose; }
+    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _phase = Phase.Choose; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -306,7 +373,33 @@
         try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
     }
 
-    public void Dispose() { }
+    public void Dispose() => _elapsedTimer?.Dispose();
+
+    private void StartElapsedTimer()
+    {
+        _importStartedAt = DateTimeOffset.UtcNow;
+        _elapsed = TimeSpan.Zero;
+        _elapsedTimer?.Dispose();
+        _elapsedTimer = new System.Threading.Timer(_ => _ = InvokeAsync(() =>
+        {
+            if (_importStartedAt is { } started && _phase is Phase.Validating or Phase.Classifying or Phase.Importing)
+            {
+                _elapsed = DateTimeOffset.UtcNow - started;
+                StateHasChanged();
+            }
+        }), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void StopElapsedTimer()
+    {
+        _elapsedTimer?.Dispose();
+        _elapsedTimer = null;
+        _importStartedAt = null;
+    }
+
+    private static string ElapsedText(TimeSpan elapsed) => elapsed.TotalHours >= 1
+        ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}"
+        : $"{(int)elapsed.TotalMinutes}:{elapsed.Seconds:00}";
 
     private static IReadOnlyList<string> Warnings(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery)
     {

@@ -6,7 +6,7 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 public sealed record SourceUploadFailure(string Code, string Stage, string Message, string? EntryPath = null,
-    long? Actual = null, long? Limit = null)
+    long? Actual = null, long? Limit = null, string? CorrelationId = null)
 {
     public string Guidance => Code switch
     {

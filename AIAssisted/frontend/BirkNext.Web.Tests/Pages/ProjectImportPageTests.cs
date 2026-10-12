@@ -35,6 +35,8 @@ public sealed class ProjectImportPageTests : BunitContext
             .ReturnsAsync(() => { _previews++; return (_preview, _previewFailure); });
         _api.Setup(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => (_commit, (SourceUploadFailure?)null));
+        _api.Setup(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => (_commit, (SourceUploadFailure?)null));
         _autoSave.Setup(a => a.SaveNowAsync()).ReturnsAsync(true);
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(() => _profile is null ? new FrontendAnalysisContext() : new FrontendAnalysisContext { ActiveProfile = _profile });
@@ -98,7 +100,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected");
         cut.FindAll("[data-testid=pi-technology]").Select(t => t.TextContent).Should().Contain(["C#", "Terraform"]);
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty("the preview activates nothing");
-        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -124,6 +126,58 @@ public sealed class ProjectImportPageTests : BunitContext
         _previews.Should().Be(1, "the archive is uploaded once");
         _repository.SddLifecycle.ProjectImports.Single().SourceSnapshotId.Should().Be(snapshot);
         _autoSave.Verify(a => a.SaveNowAsync(), Times.Once);
+    }
+
+    [Fact]
+    public void CommitShowsLiveStageAndIndeterminateProgressUntilTheServerCompletes()
+    {
+        _preview = WithSource(ProjectImportActivationTests.Preview(new string('a', 64), source: true, Docs));
+        _commit = ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid());
+        var response = new TaskCompletionSource<(ProjectImportCommitResult? Result, SourceUploadFailure? Error)>();
+        _api.Setup(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, IProgress<ProjectImportCommitEvent>?, CancellationToken>((_, progress, _) => progress?.Report(new ProjectImportCommitEvent
+            {
+                Kind = ProjectImportCommitEventKind.Progress, Sequence = 3, StageNumber = 3, StageCount = 17, Stage = "Analyzing source architecture",
+                Detail = "Building component and dependency evidence.",
+            }))
+            .Returns(response.Task);
+        var cut = ChooseArchive();
+
+        cut.Find("[data-testid=pi-import]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-progress]").Should().NotBeNull());
+        cut.Find("[data-testid=pi-progress] progress").HasAttribute("value").Should().BeFalse("an active analysis has no truthful percentage");
+        cut.Find("[data-testid=pi-status]").TextContent.Should().Contain("Analyzing source architecture");
+        cut.Find("[data-testid=pi-stage-detail]").TextContent.Should().Contain("component and dependency evidence");
+        cut.Find("[data-testid=pi-stage-count]").TextContent.Should().Contain("stage 3 of 17");
+        cut.Find("[data-testid=pi-elapsed]").TextContent.Should().Contain("Elapsed:");
+        cut.FindAll("[data-testid=pi-result]").Should().BeEmpty("backend completion has not arrived");
+
+        response.SetResult((_commit, null));
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-result]").Should().NotBeNull());
+    }
+
+    [Fact]
+    public void CommitFailureLeavesTheStagedPreviewRetryableAndShowsCorrelation()
+    {
+        _preview = WithSource(ProjectImportActivationTests.Preview(new string('b', 64), source: true, Docs));
+        _api.SetupSequence(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((null, new SourceUploadFailure("PROJECT_IMPORT_FAILED", "Analyzing source architecture", "The import could not be completed.", CorrelationId: "trace-safe-123")))
+            .ReturnsAsync((ProjectImportActivationTests.Commit(_preview, ProjectImportSourceState.Created, Guid.NewGuid()), (SourceUploadFailure?)null));
+        var cut = ChooseArchive();
+
+        cut.Find("[data-testid=pi-import]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-commit-failure]").Should().NotBeNull());
+        cut.Find("[data-testid=pi-commit-failure]").TextContent.Should().Contain("trace-safe-123").And.Contain("reuses a completed snapshot");
+        cut.Find("[data-testid=pi-import]").TextContent.Should().Contain("Retry import");
+        _repository.SddLifecycle.ProjectImports.Should().BeEmpty("a failed commit result does not activate a partial workspace");
+
+        cut.Find("[data-testid=pi-import]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-result]").Should().NotBeNull());
+        _previews.Should().Be(1, "retry reuses the staged archive");
     }
 
     [Fact]
@@ -193,7 +247,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.FindAll("[data-testid=pi-notes] li").Select(n => n.TextContent).Should().NotContain(n => n.Contains("Target Environment"));
         cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Not configured");
         _repository.SddLifecycle.ProjectImports.Single().SourceState.Should().Be("Created");
-        _api.Verify(a => a.CommitAsync(_preview.StagingId, It.IsAny<CancellationToken>()), Times.Once);
+        _api.Verify(a => a.CommitWithProgressAsync(_preview.StagingId, It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -232,7 +286,7 @@ public sealed class ProjectImportPageTests : BunitContext
         failure.GetAttribute("role").Should().Be("alert");
         failure.TextContent.Should().Contain("Archive rejected").And.Contain("Nothing was imported");
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty();
-        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

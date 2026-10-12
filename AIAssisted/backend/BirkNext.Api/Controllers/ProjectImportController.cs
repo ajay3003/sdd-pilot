@@ -2,6 +2,7 @@ using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.ProjectImport;
 using BirkNext.ProjectImport;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace BirkNext.Api.Controllers;
 
@@ -29,12 +30,78 @@ public sealed class ProjectImportController(ProjectImportService imports, ILogge
     /// <summary>Creates (or reuses) the source snapshot of a staged archive. No Target Environment is needed: a target is runtime context and
     /// never owns source snapshots. An environmentId query value sent by an older client is ignored.</summary>
     [HttpPost("{stagingId:guid}/commit")]
-    public async Task<ActionResult<ProjectImportCommitResult>> Commit(Guid stagingId, CancellationToken ct)
+    public async Task<IActionResult> Commit(Guid stagingId, CancellationToken ct)
     {
-        var result = await imports.CommitAsync(stagingId, ct);
-        return result is null
-            ? Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Re-import the project: the staged archive is no longer available (it expired after 30 minutes or was discarded). Choose the ZIP again."))
-            : Ok(result);
+        // Preserve the existing JSON response for older clients. The current frontend opts into the streamed event representation.
+        if (!Request.Headers.Accept.ToString().Contains("application/x-ndjson", StringComparison.OrdinalIgnoreCase))
+        {
+            var legacyResult = await imports.CommitAsync(stagingId, ct);
+            return legacyResult is null
+                ? Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Re-import the project: the staged archive is no longer available (it expired after 30 minutes or was discarded). Choose the ZIP again."))
+                : Ok(legacyResult);
+        }
+
+        var sequence = 0;
+        var currentStage = "Preparing the staged project";
+        var stageClock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await imports.CommitAsync(stagingId, ct, async update =>
+            {
+                if (!string.Equals(currentStage, update.Stage, StringComparison.Ordinal))
+                {
+                    logger.LogInformation("Project import stage completed. Stage {Stage}; elapsed {ElapsedMs} ms; trace {TraceId}", currentStage, stageClock.ElapsedMilliseconds, HttpContext.TraceIdentifier);
+                    currentStage = update.Stage;
+                    stageClock.Restart();
+                }
+                await WriteEventAsync(update with { Sequence = ++sequence }, ct);
+            });
+            if (result is null)
+                return Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Re-import the project: the staged archive is no longer available (it expired after 30 minutes or was discarded). Choose the ZIP again."));
+
+            logger.LogInformation("Project import stage completed. Stage {Stage}; elapsed {ElapsedMs} ms; trace {TraceId}", currentStage, stageClock.ElapsedMilliseconds, HttpContext.TraceIdentifier);
+            await WriteEventAsync(new ProjectImportCommitEvent
+            {
+                Kind = ProjectImportCommitEventKind.Completed, Sequence = ++sequence, Stage = "Import result received",
+                Detail = "Source Analysis returned its result. Project documents are activated in the workspace next.", Result = result,
+            }, ct);
+            return new EmptyResult();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The request owner disconnected/cancelled. Source Analysis receives the same token and checks it between work units.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var correlationId = HttpContext.TraceIdentifier;
+            logger.LogError("Project import commit failed. Code {Code}; stage {Stage}; exception type {ExceptionType}; trace {TraceId}",
+                "PROJECT_IMPORT_FAILED", currentStage, ex.GetType().Name, correlationId);
+            if (!Response.HasStarted)
+                return Failure(StatusCodes.Status500InternalServerError, new("PROJECT_IMPORT_FAILED", "commit", "The import could not be completed. Retry the import; the staged archive may still be available."));
+            await WriteEventAsync(new ProjectImportCommitEvent
+            {
+                Kind = ProjectImportCommitEventKind.Failed, Sequence = ++sequence, Stage = currentStage,
+                Detail = "The import stopped before the backend returned a result.", ErrorCode = "PROJECT_IMPORT_FAILED",
+                ErrorStage = currentStage, ErrorMessage = "The import could not be completed. Retry the import; the staged archive may still be available.",
+                CorrelationId = correlationId,
+            }, ct);
+            return new EmptyResult();
+        }
+    }
+
+    private async Task WriteEventAsync(ProjectImportCommitEvent update, CancellationToken ct)
+    {
+        if (!Response.HasStarted)
+        {
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "application/x-ndjson; charset=utf-8";
+            Response.Headers.CacheControl = "no-store, no-transform";
+            Response.Headers["X-Accel-Buffering"] = "no";
+            await Response.StartAsync(ct);
+        }
+        await Response.WriteAsync(JsonSerializer.Serialize(update, new JsonSerializerOptions(JsonSerializerDefaults.Web)) + "\n", ct);
+        await Response.Body.FlushAsync(ct);
     }
 
     [HttpDelete("{stagingId:guid}")]

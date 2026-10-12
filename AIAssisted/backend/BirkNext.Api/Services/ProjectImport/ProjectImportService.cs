@@ -80,10 +80,12 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
     /// released and only the result is kept until expiry, so a repeated commit returns it; a genuine failure (analysis or save) keeps the bytes
     /// so the source part can be retried without choosing the archive again. Stages survive a backend restart (see ProjectImportStagingStore).
     /// </summary>
-    public async Task<ProjectImportCommitResult?> CommitAsync(Guid stagingId, CancellationToken ct = default)
+    public async Task<ProjectImportCommitResult?> CommitAsync(Guid stagingId, CancellationToken ct = default,
+        Func<ProjectImportCommitEvent, Task>? reportProgress = null)
     {
         var staged = staging.Find(stagingId);
         if (staged is null) return null;
+        await ReportAsync("Preparing the staged project", "Checking the staged archive and serializing this import.");
         await staged.Gate.WaitAsync(ct);
         try
         {
@@ -95,18 +97,24 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
                 ImportId = staged.ImportId, ArchiveFileName = staged.Workspace.Archive.FileName, ArchiveSha256 = staged.Workspace.Archive.Sha256,
                 ImportedAt = staging.Now,
             };
-            var source = await SourceAsync(staged, provenance, ct);
+            var source = await SourceAsync(staged, provenance, ct, reportProgress);
             var settled = !source.CanRetry;
             var result = new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
             if (settled) staging.MarkCommitted(staged, result);
             return result;
         }
         finally { staged.Gate.Release(); }
+
+        Task ReportAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new ProjectImportCommitEvent
+        {
+            Kind = ProjectImportCommitEventKind.Progress, Stage = stage, Detail = detail,
+        });
     }
 
     public bool Discard(Guid stagingId) => staging.Remove(stagingId);
 
-    private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, ProjectImportProvenance provenance, CancellationToken ct)
+    private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, ProjectImportProvenance provenance, CancellationToken ct,
+        Func<ProjectImportCommitEvent, Task>? reportProgress)
     {
         var detection = staged.Source;
         if (!detection.Detected)
@@ -116,13 +124,14 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         // Idempotent re-import: the same archive bytes that are already the workspace's current Source Analysis snapshot are reused, not
         // analysed again. Any other case inserts a new immutable snapshot, which becomes current (history is never rewritten). Whether a
         // Target Environment is selected changes neither the archive identity nor this decision.
+        await ReportAsync("Checking for an existing source snapshot", "Looking for this archive's current immutable Source Analysis snapshot.");
         var current = (await store.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
         if (current?.ProjectImport is { } previous && previous.ImportId == staged.ImportId && current.Archive.Sha256 == staged.Workspace.Archive.Sha256)
             return Snapshot(ProjectImportSourceState.Reused, current);
 
         try
         {
-            var snapshot = await store.AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance);
+            var snapshot = await store.AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance, reportProgress);
             return Snapshot(ProjectImportSourceState.Created, snapshot);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -136,6 +145,11 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
                 "SOURCE_ANALYSIS_FAILED", staged.Bytes.Length, ex.GetType().Name);
             return Failed(detection, "SOURCE_ANALYSIS_FAILED", "The archive passed validation, but source analysis could not complete. No snapshot was created; retry without choosing the archive again.");
         }
+
+        Task ReportAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new ProjectImportCommitEvent
+        {
+            Kind = ProjectImportCommitEventKind.Progress, Stage = stage, Detail = detail,
+        });
     }
 
     private static ProjectImportSourceResult Snapshot(ProjectImportSourceState state, IqrSourceSnapshot snapshot) => new()

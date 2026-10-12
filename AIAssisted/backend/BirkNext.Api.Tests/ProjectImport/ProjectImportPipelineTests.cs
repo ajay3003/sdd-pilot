@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using BirkNext.Api.Data;
+using BirkNext.ProjectImport;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -97,6 +98,35 @@ public sealed class ProjectImportPipelineTests : IAsyncLifetime
         using var listAgain = JsonDocument.Parse(await _client.GetStringAsync("/api/source-analysis"));
         listAgain.RootElement.GetArrayLength().Should().Be(1, "no second snapshot");
         Directory.EnumerateFiles(_staging, "*.zip").Should().BeEmpty("a settled stage keeps only its result, not the archive");
+    }
+
+    [Fact]
+    public async Task StreamedCommitReportsRealAnalysisStagesBeforeItsTerminalResult()
+    {
+        using var preview = await PreviewAsync(ProjectImportServiceTests.Zip([.. ProjectImportServiceTests.Documents, .. ProjectImportServiceTests.Source]), "shop.zip");
+        var stagingId = preview.RootElement.GetProperty("stagingId").GetString();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/project-import/{stagingId}/commit");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/x-ndjson"));
+
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/x-ndjson");
+        var events = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => System.Text.Json.JsonSerializer.Deserialize<ProjectImportCommitEvent>(line, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)))
+            .Where(item => item is not null).Cast<ProjectImportCommitEvent>().ToList();
+        events.Should().NotBeEmpty();
+        events.Select(e => e.Sequence).Should().Equal(Enumerable.Range(1, events.Count));
+        events.Should().Contain(e => e.Kind == ProjectImportCommitEventKind.Progress && e.Stage == "Analyzing source structure");
+        events.Should().Contain(e => e.Kind == ProjectImportCommitEventKind.Progress && e.Stage == "Saving source snapshot");
+        events.Where(e => e.StageCount is not null).Select(e => (e.StageNumber, e.StageCount)).Should()
+            .Equal(Enumerable.Range(1, 17).Select(stage => ((int?)stage, (int?)17)), "the source-analysis updates reflect the 17 real analyzer stages");
+        events[^1].Kind.Should().Be(ProjectImportCommitEventKind.Completed);
+        events[^1].Result!.Source.State.Should().Be(ProjectImportSourceState.Created);
+        events.Take(events.Count - 1).Should().OnlyContain(e => e.Kind == ProjectImportCommitEventKind.Progress,
+            "the terminal success event is sent only after source analysis and persistence return");
+        (await _factory.Services.GetRequiredService<AppDbContext>().IqrSourceSnapshots.CountAsync()).Should().Be(1);
     }
 
     [Fact]

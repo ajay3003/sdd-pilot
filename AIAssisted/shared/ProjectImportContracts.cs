@@ -117,3 +117,25 @@ public sealed record ProjectImportCommitResult
     public ProjectImportSourceResult Source { get; init; } = new();
     public DateTimeOffset? StagedUntil { get; init; }
 }
+
+/// <summary>
+/// A real update from the existing Project Import commit pipeline. Progress updates identify the stage currently executing; they never
+/// estimate completion from time. Terminal events carry either the existing commit result or a safe failure summary.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ProjectImportCommitEventKind { Progress, Completed, Failed }
+
+public sealed record ProjectImportCommitEvent
+{
+    public ProjectImportCommitEventKind Kind { get; init; }
+    public int Sequence { get; init; }
+    public int? StageNumber { get; init; }
+    public int? StageCount { get; init; }
+    public string Stage { get; init; } = "";
+    public string Detail { get; init; } = "";
+    public ProjectImportCommitResult? Result { get; init; }
+    public string? ErrorCode { get; init; }
+    public string? ErrorStage { get; init; }
+    public string? ErrorMessage { get; init; }
+    public string? CorrelationId { get; init; }
+}
