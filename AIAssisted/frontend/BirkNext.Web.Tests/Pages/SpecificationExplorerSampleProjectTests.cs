@@ -161,7 +161,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         var cut = Render<SpecificationExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project project a"));
+            cut.Markup.Should().Contain("Demo Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -171,7 +171,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
         });
     }
 
@@ -183,7 +183,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
             markup.Should().NotContain("No Specification artifact was detected in");
         });
     }
@@ -483,7 +483,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             cut.Find("[data-testid='artifact-explorer-empty'] h2").TextContent.Should().Be("No project is currently loaded");
             cut.Find("[data-testid='artifact-explorer-import-project']").GetAttribute("href").Should().Be("project-import");
             cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import specification only");
-            cut.Find("[data-testid='artifact-explorer-empty'] a[href='sample-projects']").TextContent.Should().Be("Load Sample Project");
+            cut.Find("[data-testid='artifact-explorer-empty'] a[href='demo-projects']").TextContent.Should().Be("Open a Demo Project");
             cut.Markup.Should().NotContain("No Sample Project selected");
             cut.Markup.Should().NotContain("specification.md files");
         });

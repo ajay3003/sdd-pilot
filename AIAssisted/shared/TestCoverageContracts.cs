@@ -283,6 +283,10 @@ public sealed record TestCoverageReviewResult
     public Guid RunId { get; init; } = Guid.NewGuid();
     public DateTimeOffset CompletedAt { get; init; }
     public string? ProjectName { get; init; }
+    /// <summary>The document scope the requirements came from (e.g. "Module Person"); null for older results and projects without modules.</summary>
+    public string? ArtifactScope { get; init; }
+    /// <summary>The specification artifact(s) the requirement views were built from; empty for older results or when none was selected.</summary>
+    public List<CoverageArtifactRef> SpecificationArtifacts { get; init; } = [];
     public CoverageSnapshotRef Current { get; init; } = new(Guid.Empty, "", "", "", default);
     public CoverageSnapshotRef? Baseline { get; init; }
     public CoverageInventory Inventory { get; init; } = new();
@@ -305,6 +309,10 @@ public sealed record TestCoverageReviewResult
 public sealed record CoverageWorkspaceEvidence
 {
     public string? ProjectName { get; init; }
+    /// <summary>Which project documents were read, e.g. "Module Person" in a monorepo; null for a project without modules.</summary>
+    public string? ArtifactScope { get; init; }
+    /// <summary>The selected specification artifact(s) the requirements came from (id, path, module, content fingerprint).</summary>
+    public List<CoverageArtifactRef> SpecificationArtifacts { get; init; } = [];
     public bool SpecificationAvailable { get; init; }
     public List<CoverageRequirement> Requirements { get; init; } = [];
     public List<QaTestCandidate> AcceptanceScenarios { get; init; } = [];
@@ -312,6 +320,9 @@ public sealed record CoverageWorkspaceEvidence
 }
 
 public sealed record CoverageRequirement(string Id, string Text, string? Priority);
+
+/// <summary>One project artifact a review read, bound by its content fingerprint so a stored result names exactly what it reviewed.</summary>
+public sealed record CoverageArtifactRef(string ArtifactId, string Path, string? Module, string Fingerprint);
 
 /// <summary>An imported execution result (TRX via the SDD lifecycle). TestId is the correlated test definition id when known.</summary>
 public sealed record CoverageExecution(string TestId, string TestName, string Result);

@@ -6,7 +6,7 @@ namespace BirkNext.Web.PlaywrightTests.RealProjectAcceptance.Features;
 /// <summary>
 /// One document explorer over the imported workspace: the shared host must load the role's artifact from the CURRENT workspace (never
 /// "no workspace", never a Sample Project), show its file/source, render explorer content, and expose the rendered document identity
-/// that Explorer Text Coverage later cross-checks. Artifact choice is made through the production chooser when several exist.
+/// that Explorer Text Coverage later cross-checks. Module and artifact choices are made through the production choosers when several exist.
 /// </summary>
 public sealed class ExplorerFeature(string featureId, string displayName, string route, string role, string contentSelector, string contentLabel, bool hasExport = false) : AcceptanceFeature
 {
@@ -37,6 +37,19 @@ public sealed class ExplorerFeature(string featureId, string displayName, string
         var status = await session.AttrAsync("[data-testid=artifact-explorer]", "data-status");
         var hostRole = await session.AttrAsync("[data-testid=artifact-explorer]", "data-role");
         result.Observe("host role", hostRole).Observe("initial status", status);
+
+        if (status == "SelectionRequired" && await session.ExistsAsync("[data-testid=artifact-explorer-choose-module]"))
+        {
+            // A monorepo: the role resolves per module. Choose the first module that has this role, through the production module chooser.
+            var modules = await session.CountAsync("[data-testid=artifact-explorer-module-choice]");
+            var module = session.Page.Locator("[data-testid=artifact-explorer-module-choice]").Filter(new() { HasNotTextRegex = new System.Text.RegularExpressions.Regex("^no ", System.Text.RegularExpressions.RegexOptions.Multiline) }).First;
+            var moduleName = (await module.GetAttributeAsync("data-module")) ?? "";
+            result.Observe("modules", modules).Note($"{modules} modules: module {moduleName} was chosen through the production module chooser.");
+            await module.ClickAsync();
+            await session.Page.WaitForFunctionAsync("() => { const h = document.querySelector('[data-testid=artifact-explorer]'); return h && h.getAttribute('data-status') !== 'Loading' && !document.querySelector('[data-testid=artifact-explorer-choose-module]'); }", null, new() { Timeout = 120_000 });
+            status = await session.AttrAsync("[data-testid=artifact-explorer]", "data-status");
+            result.Observe("status after module choice", status);
+        }
 
         if (status == "SelectionRequired")
         {

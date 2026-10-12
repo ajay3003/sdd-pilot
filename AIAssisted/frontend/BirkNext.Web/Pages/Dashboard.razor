@@ -65,9 +65,9 @@
         {
             <div class="db-workspace-content">
                 <div class="db-workspace-empty">
-                    <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or load a sample project to populate dashboard metrics.</p>
+                    <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or open a Demo Project to populate dashboard metrics.</p>
                     <a href="project-import" class="btn-secondary db-workspace-action" data-testid="db-import-project">Import Project →</a>
-                    <a href="sample-projects" class="btn-secondary db-workspace-action">Open Sample Projects →</a>
+                    <a href="demo-projects" class="btn-secondary db-workspace-action">Open Demo Projects →</a>
                 </div>
             </div>
         }
@@ -89,6 +89,14 @@
                     {
                         <span class="db-workspace-count" data-testid="db-workspace-roles">@_workspace.RoleSummary</span>
                     }
+                    @if (_workspace.HasModules)
+                    {
+                        <span class="db-workspace-count" data-testid="db-workspace-modules">
+                            @(_workspace.ModuleLabel is { } reviewModule
+                                ? $"{_workspace.ModuleCount} modules · reviewing module {reviewModule}"
+                                : $"{_workspace.ModuleCount} modules · needs selection: choose the module to review in a document Explorer")
+                        </span>
+                    }
                 </div>
 
                 <div class="db-workspace-badges">
@@ -106,7 +114,7 @@
 
                 @if (_workspace.WorkspaceLoaded && _workspace.AvailableRoleCount == 0)
                 {
-                    <a href="@(_workspace.IsImportedProject ? "project-import" : "sample-projects")" class="btn-secondary db-workspace-action">@(_workspace.IsImportedProject ? "Open Import Project →" : "Add artifacts →")</a>
+                    <a href="@(_workspace.IsImportedProject ? "project-import" : "demo-projects")" class="btn-secondary db-workspace-action">@(_workspace.IsImportedProject ? "Open Import Project →" : "Add artifacts →")</a>
                 }
                 else if (_workspace.WorkspaceLoaded)
                 {
@@ -842,7 +850,7 @@
                 <span class="db-badge db-badge-loaded">Available@(status.ArtifactCount > 1 ? $" · {status.ArtifactCount}" : "")</span>
                 if (status.Selection == ArtifactRoleSelection.SelectionRequired)
                 {
-                    <span class="db-badge db-badge-empty">Selection required</span>
+                    <span class="db-badge db-badge-empty">Needs selection</span>
                 }
                 if (_workflowReadiness?.ReviewFor(role) is { } review)
                 {
@@ -862,7 +870,7 @@
                 <span class="db-badge db-badge-empty">Availability unknown</span>
                 break;
             default:
-                <span class="db-badge db-badge-empty">Missing</span>
+                <span class="db-badge db-badge-empty">@(status is { HasModules: true, DetectedCount: > 0, Module: { } m } ? $"Not detected in module {ArtifactModules.Label(m)}" : "Missing")</span>
                 break;
         }
     };
@@ -871,6 +879,10 @@
     private RenderFragment RoleStats(WorkspaceArtifactType role) => __builder =>
     {
         var status = _workspace?.Role(role);
+        if (status?.ModuleSummary is { } moduleSummary)
+        {
+            <div class="db-artifact-stats"><span class="db-stat-pill" data-testid="db-artifact-modules">@moduleSummary</span></div>
+        }
         if (status is not { IsAvailable: true }) return;
         <div class="db-artifact-stats">
             @if (status.SelectedArtifact is { } selected)

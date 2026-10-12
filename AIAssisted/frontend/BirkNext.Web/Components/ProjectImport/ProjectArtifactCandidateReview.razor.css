@@ -1,0 +1,126 @@
+/* Artifact candidates by role and module. Lists, not tables, so long paths wrap on narrow screens. */
+.pac h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.5rem;
+}
+
+.pac-muted {
+    color: var(--clr-text-muted);
+    font-size: 0.875rem;
+}
+
+.pac-focus {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.pac-focus label {
+    font-weight: 600;
+}
+
+.pac-select {
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface, #fff);
+    color: inherit;
+}
+
+.pac-select:focus-visible,
+.pac summary:focus-visible {
+    outline: 2px solid var(--clr-primary, #1d4ed8);
+    outline-offset: 2px;
+}
+
+.pac-roles,
+.pac-candidates {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.pac-role {
+    border-top: 1px solid var(--clr-border);
+    padding: 0.5rem 0;
+}
+
+.pac summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    cursor: pointer;
+    min-height: 2.75rem;
+}
+
+.pac-role-name {
+    font-weight: 600;
+    min-width: 8rem;
+}
+
+.pac-review {
+    margin-left: auto;
+    color: var(--clr-primary, #1d4ed8);
+    text-decoration: underline;
+}
+
+.pac-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    border: 1px solid var(--clr-border);
+}
+
+.pac-badge-attention {
+    background: var(--clr-warning-bg, #fff7e6);
+    border-color: var(--clr-warning-border, #b45309);
+    color: var(--clr-text-heading);
+}
+
+.pac-badge-clear {
+    background: var(--clr-success-bg, #ecfdf3);
+    border-color: var(--clr-success-border, #15803d);
+    color: var(--clr-text-heading);
+}
+
+.pac-module {
+    margin: 0.5rem 0 0.75rem 0.5rem;
+}
+
+.pac-module-name {
+    font-size: 0.95rem;
+    margin: 0.25rem 0;
+}
+
+.pac-candidate {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    padding: 0.35rem 0;
+}
+
+.pac-path {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+    min-width: 0;
+    flex: 1 1 18rem;
+}
+
+.pac-meta {
+    color: var(--clr-text-muted);
+    font-size: 0.85rem;
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
+.pac-warning {
+    color: var(--clr-danger);
+}

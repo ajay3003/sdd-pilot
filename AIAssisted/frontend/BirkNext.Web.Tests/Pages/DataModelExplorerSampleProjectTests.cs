@@ -127,7 +127,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         var cut = Render<DataModelExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project project a"));
+            cut.Markup.Should().Contain("Demo Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -137,7 +137,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
         });
     }
 
@@ -149,7 +149,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
             markup.Should().NotContain("No Data Model artifact was detected in");
         });
     }

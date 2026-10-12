@@ -89,7 +89,7 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
             empty.QuerySelector("h2")!.TextContent.Should().Be("No project is currently loaded");
             empty.QuerySelector("a.btn-primary")!.GetAttribute("href").Should().Be("project-import");
             empty.QuerySelector("a.btn-primary")!.TextContent.Should().Be("Import Project");
-            empty.QuerySelector("a[href='sample-projects']")!.TextContent.Should().Be("Load Sample Project");
+            empty.QuerySelector("a[href='demo-projects']")!.TextContent.Should().Be("Open a Demo Project");
             empty.QuerySelector("[data-testid='artifact-explorer-import-toggle']")!.TextContent.Trim().Should().Be($"Import {label.ToLowerInvariant()} only");
             cut.Markup.Should().NotContain($"No {label} artifact is loaded");
             cut.Markup.Should().NotContain("No Sample Project selected");
@@ -329,7 +329,7 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
             empty.GetAttribute("data-state").Should().Be("RoleUnavailable");
             empty.QuerySelector("h2")!.TextContent.Should().Be("No Constitution artifact was detected in shop");
             cut.Find("[data-testid='artifact-explorer-review-artifacts']").GetAttribute("href").Should().Be("project-import");
-            empty.QuerySelectorAll("a[href='sample-projects']").Should().BeEmpty();
+            empty.QuerySelectorAll("a[href='demo-projects']").Should().BeEmpty();
             cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import constitution only");
             cut.Markup.Should().NotContain("No project is currently loaded");
         });
@@ -339,8 +339,9 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
     public void ImportedProject_WithSeveralCandidates_RequiresSelection_NeverSaysNotLoaded()
     {
         ImportProject(new string('b', 64),
-            ("a/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution),
-            ("b/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution.Replace("Test first", "Review first")));
+            // Two candidates in one module (no Spec-Kit roots: project-level), so the role itself needs a choice.
+            ("a/docs/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution),
+            ("b/docs/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution.Replace("Test first", "Review first")));
 
         var cut = RenderExplorer(WorkspaceArtifactType.Constitution);
 
@@ -352,6 +353,34 @@ public sealed class ExplorerPageSourceOfTruthTests : BunitContext
             cut.FindAll("[data-testid='artifact-explorer-choice']").Should().HaveCount(2);
             cut.FindAll("[data-testid='artifact-explorer-empty']").Should().BeEmpty();
             cut.Markup.Should().NotContain("is loaded").And.NotContain("No project is currently loaded");
+        });
+    }
+
+    [Fact]
+    public void ImportedMonorepo_AsksForTheModule_ThenShowsProjectModuleAndArtifact()
+    {
+        ImportProject(new string('7', 64),
+            ("cart/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution),
+            ("billing/.specify/memory/constitution.md", BirkNext.Web.Tests.Services.ProjectImportActivationTests.Constitution.Replace("Test first", "Review first")));
+
+        var cut = RenderExplorer(WorkspaceArtifactType.Constitution);
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer-choose-module'] h2").TextContent.Should().Be("Choose a module");
+            cut.FindAll("[data-testid='artifact-explorer-module-choice']").Select(b => b.GetAttribute("data-module")).Should().Equal("billing", "cart");
+            cut.FindAll("[data-testid='artifact-explorer-choice']").Should().BeEmpty("no artifact is offered for the whole project");
+        });
+
+        cut.FindAll("[data-testid='artifact-explorer-module-choice']").Single(b => b.GetAttribute("data-module") == "cart").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer']").GetAttribute("data-status").Should().Be("Loaded");
+            cut.Find("[data-testid='artifact-explorer-project']").TextContent.Should().Be("shop");
+            cut.Find("[data-testid='artifact-explorer-module']").TextContent.Should().Be("cart");
+            cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("cart/.specify/memory/constitution.md");
+            cut.Find("[data-testid='artifact-explorer-module-selector']").GetAttribute("value").Should().Be("cart");
         });
     }
 

@@ -327,10 +327,19 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
             return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
 
+        // A monorepo without a chosen module needs selection (not an error, not ready): reviews read one module's documents.
+        if (workspace.ModuleRequired && workspace.Roles.FirstOrDefault(r => r.ModuleRequired && r.DetectedCount > 0) is { } moduleRole)
+        {
+            return Synthetic(ChooseArtifactsKey, "Needs selection: choose the module to review",
+                $"The project has {workspace.ModuleCount} modules with their own documents. Choose the module to review; a module with one artifact per role uses it automatically.",
+                ExplorerRoute(moduleRole.Role), $"Open {moduleRole.Label} Explorer");
+        }
+
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
         {
-            return Synthetic(ChooseArtifactsKey, $"Choose the {unresolved.Label} to review",
-                $"The workspace has {unresolved.ArtifactCount} {unresolved.Label} artifacts and none is selected. Reviews read the selected one.",
+            var where = workspace.ModuleLabel is { } module ? $"Module {module} has" : "The workspace has";
+            return Synthetic(ChooseArtifactsKey, $"Needs selection: choose the {unresolved.Label} to review",
+                $"{where} {unresolved.ArtifactCount} {unresolved.Label} artifacts and none is selected. Reviews read the selected one.",
                 ExplorerRoute(unresolved.Role), $"Open {unresolved.Label} Explorer");
         }
 

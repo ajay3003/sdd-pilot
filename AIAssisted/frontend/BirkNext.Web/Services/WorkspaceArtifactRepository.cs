@@ -117,7 +117,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 
     /// <summary>
     /// Adds imported content as an artifact revision of <paramref name="type"/> in <paramref name="workspaceScope"/>.
-    /// Content already present for that role and scope reuses its revision. Revisions are numbered per document
+    /// The same content for the same document (role, scope and file name) reuses its revision. Revisions are numbered per document
     /// (scope, role and file name). Authority starts as Unknown: importing never approves or baselines anything.
     /// </summary>
     public SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
@@ -131,7 +131,10 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         var role = type.ToString();
         var name = string.IsNullOrWhiteSpace(fileName) ? role : fileName.Trim();
         var fingerprint = ArtifactFingerprint.Compute(text);
-        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope == workspaceScope && x.Fingerprint == fingerprint);
+        // Same document (scope, role, file name) and same content reuses its revision. Identical content at another path stays its own
+        // document: two modules of a monorepo may carry byte-identical files, and neither candidate may disappear.
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope == workspaceScope && x.Fingerprint == fingerprint
+            && string.Equals(x.FileName, name, StringComparison.Ordinal));
         if (revision is null)
         {
             revision = new SddArtifactRevision

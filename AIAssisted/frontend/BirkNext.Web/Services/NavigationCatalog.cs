@@ -82,8 +82,8 @@ public static class NavigationCatalog
         [
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
                 Hint: "primary input: one project ZIP becomes project artifacts and a Source Analysis snapshot"),
-            new("sample-projects", "Sample Projects", "nav-icon-sample-projects", f => f.SampleProjects,
-                Hint: "optional example projects"),
+            new("demo-projects", "Demo Projects", "nav-icon-sample-projects", f => f.SampleProjects,
+                Hint: "optional built-in example projects"),
             new(TargetEnvironmentsRoute, "Target Environments", "nav-icon-target", f => f.AdminSystemSettings,
                 Hint: "runtime configuration of the deployed system, used by runtime reviews (opens System Settings)", FeatureId: "target-environments"),
         ]),

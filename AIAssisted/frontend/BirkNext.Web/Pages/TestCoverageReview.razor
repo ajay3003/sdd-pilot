@@ -32,6 +32,10 @@
         <h2 id="tco-inputs-heading">Review input</h2>
         <dl class="tco-facts">
             <div><dt>Current project</dt><dd data-testid="tco-project">@(_projectName ?? "No project loaded — source tests are still reviewed; requirement views need project documents")</dd></div>
+            @if (_specification is { } spec && (spec.Artifacts.Count > 0 || spec.HasModules))
+            {
+                <div><dt>Specification</dt><dd data-testid="tco-specification">@P.SpecificationScope(spec)</dd></div>
+            }
         </dl>
         <SourceEvidencePrerequisite State="_scope" Prefix="tco" SourceAnalysisEnabled="_sources?.SourceAnalysisEnabled != false" ConsumerName="@TestCoverageText.Title"
                                     Title="Source Analysis snapshot" LoadError="_loadError" ReturnTo="test-coverage-review"
@@ -73,6 +77,12 @@
     {
         <section class="tco-card" aria-labelledby="tco-result-heading" data-testid="tco-result" data-run="@r.RunId">
             <h2 id="tco-result-heading" tabindex="-1" @ref="_resultHeading">Review result</h2>
+            @if (r.SpecificationArtifacts.Count > 0 || r.ArtifactScope is not null)
+            {
+                <p class="tco-muted" data-testid="tco-artifact-provenance">
+                    Requirements from @(r.ArtifactScope is { } artifactScope ? $"{artifactScope}: " : "")@string.Join(", ", r.SpecificationArtifacts.Select(a => a.Path))
+                </p>
+            }
             <p class="tco-muted" data-testid="tco-provenance">
                 Snapshot <code title="@r.Current.Fingerprint">@r.Current.ArchiveName · @Short(r.Current.Fingerprint)</code>
                 @if (r.Baseline is { } b) { <text> · baseline <code title="@b.Fingerprint">@b.ArchiveName · @Short(b.Fingerprint)</code></text> }
@@ -270,6 +280,7 @@
     private string? _loadError, _runError, _projectName, _environmentId;
     private Guid? _currentId, _baselineId;
     private TestCoverageReviewResult? _result;
+    private BirkNext.Web.Services.Explorers.ArtifactExplorerState? _specification;
     private IReadOnlyList<TestCoverageRunSummary> _history = [];
     private string _view = "overview";
     private bool _busy, _loaded, _showNotAssessed;
@@ -284,13 +295,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Captured once: leaving the page disposes the source, and reading _cts.Token after that throws.
+        var token = _cts.Token;
         _projectName = (await CurrentWorkspace.GetAsync()).ProjectName;
-        var (options, error) = await Api.SourcesAsync(_cts.Token);
+        await LoadSpecificationAsync(token);
+        if (token.IsCancellationRequested) return;
+        var (options, error) = await Api.SourcesAsync(token);
         _sources = options; _loadError = error;
         _scope.Options = options ?? (error is null ? null : new ReviewSourceOptions());
         _currentId = Snapshots.FirstOrDefault()?.SnapshotId;
         _scope.PickPrimary(_currentId);
-        _history = await Api.HistoryAsync(_cts.Token);
+        _history = await Api.HistoryAsync(token);
         // Critical E2E flows of the active Target Environment count as QA automated tests (definitions and recorded runs only).
         if (Services.GetService<IFrontendAnalysisContextFactory>() is { } contexts)
         {
@@ -298,6 +313,14 @@
             catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex) || ex is InvalidOperationException) { _environmentId = null; }
         }
         _loaded = true;
+    }
+
+    /// <summary>The specification the requirement views read: the focused module's selected specification in a monorepo, never a template or the first file.</summary>
+    private async Task LoadSpecificationAsync(CancellationToken token)
+    {
+        if (Services.GetService<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>() is not { } artifacts) return;
+        try { _specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification, token); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _specification = null; }
     }
 
     private static string Short(string fingerprint) => fingerprint.Length > 8 ? fingerprint[..8] + "…" : fingerprint;
@@ -330,7 +353,8 @@
         try
         {
             var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
-            var evidence = P.WorkspaceEvidence(Workspace, context, _projectName);
+            await LoadSpecificationAsync(_cts.Token);
+            var evidence = P.WorkspaceEvidence(Workspace, context, _projectName, _specification);
             var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
             _result = result; _view = "overview";

@@ -250,7 +250,7 @@ public sealed class ProjectInputWorkflowTests
         var r = await ReadinessAsync();
 
         r.Inputs.Documents.Status.Should().Be(ProjectInputStatus.NeedsAttention);
-        r.Inputs.Documents.StatusLabel.Should().Be("Selection required");
+        r.Inputs.Documents.StatusLabel.Should().Be("Needs selection");
         r.Inputs.Documents.Facts.Should().Equal("Specification (3)");
         r.NextRecommendedAction!.Key.Should().Be(WorkflowReadinessService.ChooseArtifactsKey);
     }

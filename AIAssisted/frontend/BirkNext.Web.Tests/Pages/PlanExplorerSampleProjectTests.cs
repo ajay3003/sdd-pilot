@@ -126,7 +126,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         var cut = Render<PlanExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project project a"));
+            cut.Markup.Should().Contain("Demo Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -136,7 +136,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
         });
     }
 
@@ -148,7 +148,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("Demo Project project a");
             markup.Should().NotContain("No Plan artifact was detected in");
         });
     }

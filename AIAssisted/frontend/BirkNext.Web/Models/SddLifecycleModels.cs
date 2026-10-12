@@ -21,6 +21,8 @@ public sealed class SddLifecycleState
     public List<SddRequirementChange> RequirementChanges { get; set; } = [];
     public List<SddBaselineManifest> Baselines { get; set; } = [];
     public List<SddExplorerSelection> ExplorerSelections { get; set; } = [];
+    /// <summary>Which module (Spec-Kit sub-project) reviews and explorers focus on, per workspace scope. Only used when the scope has several modules.</summary>
+    public List<SddModuleFocus> ModuleFocus { get; set; } = [];
     /// <summary>Project archives imported into this workspace (one record per import identity, i.e. per exact archive). History only.</summary>
     public List<SddProjectImportRecord> ProjectImports { get; set; } = [];
     /// <summary>The imported project the workspace currently shows (artifact scope <c>import:{id}</c>), or null. Mutually exclusive with a selected Sample Project.</summary>
@@ -163,6 +165,21 @@ public sealed class SddExplorerSelection
     public string? WorkspaceScope { get; set; }
     public string Role { get; set; } = "";
     public string ArtifactId { get; set; } = "";
+    /// <summary>
+    /// The module the selection applies to (a module root path, "" for project-level). Null in selections saved before module scoping,
+    /// which are read as project-level. Selecting for one module never changes another module's selection.
+    /// </summary>
+    public string? Module { get; set; }
+    /// <summary>When the selection was made (history only; null for older selections).</summary>
+    public DateTimeOffset? SelectedAt { get; set; }
+}
+
+/// <summary>The module a workspace scope's reviews focus on. A viewing scope only: it never changes authority, selection or source snapshots.</summary>
+public sealed class SddModuleFocus
+{
+    public string? WorkspaceScope { get; set; }
+    /// <summary>Module root path, or "" for the project-level group.</summary>
+    public string Module { get; set; } = "";
 }
 
 public sealed class SddClarification

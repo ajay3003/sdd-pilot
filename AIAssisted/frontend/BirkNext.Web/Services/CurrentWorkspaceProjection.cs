@@ -36,9 +36,39 @@ public sealed record ArtifactRoleStatus(
     ArtifactRoleSelection Selection,
     ExplorerArtifact? SelectedArtifact,
     string? Error,
-    string? Fingerprint = null)
+    string? Fingerprint = null,
+    IReadOnlyList<ArtifactModuleRoleState>? Modules = null,
+    string? Module = null)
 {
     public bool IsAvailable => Availability == ArtifactRoleAvailability.Available;
+
+    /// <summary>The project has several modules: <see cref="ArtifactCount"/> and the selection describe the focused module only.</summary>
+    public bool HasModules => Modules is { Count: > 1 };
+
+    /// <summary>Several modules and none focused: the user chooses the module to review.</summary>
+    public bool ModuleRequired => HasModules && Module is null;
+
+    /// <summary>Candidates of the role across the whole project (all modules); equals <see cref="ArtifactCount"/> without modules.</summary>
+    public int DetectedCount => HasModules ? Modules!.Sum(m => m.Candidates) : ArtifactCount;
+
+    /// <summary>
+    /// "23 detected across 11 modules · 2 selected · 9 need selection" for a monorepo; null without modules. Detected is not selected, and
+    /// one artifact per role is never "complete".
+    /// </summary>
+    public string? ModuleSummary
+    {
+        get
+        {
+            if (!HasModules) return null;
+            var withCandidates = Modules!.Count(m => m.Candidates > 0);
+            var text = $"{DetectedCount} detected across {withCandidates} module{(withCandidates == 1 ? "" : "s")}";
+            var selected = Modules!.Count(m => m.SelectedId is not null);
+            var needs = Modules!.Count(m => m.NeedsSelection);
+            if (selected > 0) text += $" · {selected} selected";
+            if (needs > 0) text += $" · {needs} need{(needs == 1 ? "s" : "")} selection";
+            return text;
+        }
+    }
     public string Label => ArtifactExplorerRoles.Label(Role);
     /// <summary>The selected artifact's repository authority (Approved, Baseline, …), or null when none is selected.</summary>
     public string? Authority => SelectedArtifact?.Authority;
@@ -101,6 +131,17 @@ public sealed record CurrentWorkspaceSnapshot(
         ?? new ArtifactRoleStatus(role, ArtifactRoleAvailability.Missing, 0, ArtifactRoleSelection.None, null, null);
 
     public bool Has(WorkspaceArtifactType role) => Role(role).IsAvailable;
+
+    /// <summary>The project has several modules (Spec-Kit sub-projects); roles resolve per module.</summary>
+    public bool HasModules => Roles.Any(r => r.HasModules);
+
+    /// <summary>The module reviews currently read, or null (no modules, or none chosen yet).</summary>
+    public string? ModuleLabel => Roles.Select(r => r.HasModules && r.Module is not null ? ArtifactModules.Label(r.Module) : null).FirstOrDefault(m => m is not null);
+
+    /// <summary>Several modules and none chosen: "Needs selection" — not an error and not ready.</summary>
+    public bool ModuleRequired => Roles.Any(r => r.ModuleRequired);
+
+    public int ModuleCount => Roles.Where(r => r.HasModules).Select(r => r.Modules!.Count).DefaultIfEmpty(0).Max();
 
     /// <summary>
     /// The selected revision of every available role that has one: what review decisions are bound to. The artifact id is
@@ -293,7 +334,7 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         };
         // The fingerprint of the content the explorers show for the role: the same function the repository uses for revisions.
         var fingerprint = state.Selected is not null && !string.IsNullOrEmpty(state.Content) ? ArtifactFingerprint.Compute(state.Content) : null;
-        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint);
+        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint, state.Modules, state.Module);
     }
 
     /// <summary>An imported project is persisted without a Sample Project identity (its import is in the lifecycle), so it matches a blank project name.</summary>

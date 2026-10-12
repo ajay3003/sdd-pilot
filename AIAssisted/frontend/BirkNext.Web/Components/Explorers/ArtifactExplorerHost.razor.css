@@ -326,3 +326,22 @@
     font-size: 0.875rem;
 }
 .axh-advanced:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }
+
+/* Module selector of a monorepo (several Spec-Kit sub-projects). Wraps on narrow screens. */
+.axh-module-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.axh-module-bar .axh-select {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.axh-module-note {
+    color: var(--clr-text-muted);
+    font-size: 0.875rem;
+}

@@ -94,7 +94,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-project-name]").TextContent.Should().Contain("shop").And.Contain("root folder");
         cut.FindAll("[data-testid=pi-role][data-state=Detected]").Select(r => r.GetAttribute("data-role"))
             .Should().BeEquivalentTo(["Constitution", "Specification", "Plan", "Tasks"]);
-        cut.Find("[data-testid=pi-role][data-role=DataModel]").TextContent.Should().Contain("Not found").And.Contain("Optional");
+        cut.Find("[data-testid=pi-role][data-role=DataModel]").TextContent.Should().Contain("Not detected").And.Contain("Optional");
         cut.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected");
         cut.FindAll("[data-testid=pi-technology]").Select(t => t.TextContent).Should().Contain(["C#", "Terraform"]);
         _repository.SddLifecycle.ProjectImports.Should().BeEmpty("the preview activates nothing");
@@ -171,7 +171,7 @@ public sealed class ProjectImportPageTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-result]"));
         cut.Find("[data-testid=pi-result]").GetAttribute("data-outcome").Should().Be(nameof(ProjectImportOutcome.ImportedWithNotes));
-        cut.Find("[data-testid=pi-notes]").TextContent.Should().Contain("Specification").And.Contain("Choose one");
+        cut.Find("[data-testid=pi-notes]").TextContent.Should().Contain("Specification").And.Contain("all are kept");
         cut.Find("[data-testid=pi-source]").GetAttribute("data-state").Should().Be("Created");
     }
 

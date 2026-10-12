@@ -1,0 +1,168 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Services.ProjectImport
+@implements IDisposable
+@inject IServiceProvider Services
+@* Every artifact candidate of the current project by role, grouped by module (Spec-Kit sub-project). Discovery is not selection: all candidates
+   are kept; a module with one candidate uses it automatically; several need an explicit choice ("Use for <module>"). A simple project
+   (one module) shows one list and no module wording. *@
+@if (Explorer is not null)
+{
+<section class="pac" aria-labelledby="pac-heading" data-testid="pac" data-has-modules="@(_overview?.HasModules == true ? "true" : "false")">
+    <h2 id="pac-heading">Artifact candidates</h2>
+    @if (_overview is null)
+    {
+        <p class="pac-muted" role="status">Loading artifact candidates…</p>
+    }
+    else if (_overview.Error is not null)
+    {
+        <p class="pac-muted" role="status" data-testid="pac-error">The project's documents could not be read: @_overview.Error</p>
+    }
+    else if (_overview.Roles.All(r => r.Candidates.Count == 0))
+    {
+        <p class="pac-muted" role="status" data-testid="pac-none">No supported project documents detected.</p>
+    }
+    else
+    {
+        @if (_overview.HasModules)
+        {
+            <p class="pac-muted">
+                This project has @_overview.Modules.Count modules with their own documents. Each module keeps its own selection; documents are never
+                merged across modules.
+            </p>
+            <div class="pac-focus">
+                <label for="@($"{_id}-focus")">Module to review</label>
+                <select id="@($"{_id}-focus")" class="pac-select" data-testid="pac-focus" value="@(_overview.Focus ?? NoFocus)" @onchange="FocusChanged">
+                    @if (_overview.Focus is null) { <option value="@NoFocus">Needs selection — choose a module</option> }
+                    @foreach (var module in _overview.Modules) { <option value="@module">@ArtifactModules.Label(module)</option> }
+                </select>
+                <span class="pac-muted">Explorers, Requirements Traceability, Document Quality Review and Test Coverage &amp; Overlap read this module.</span>
+            </div>
+        }
+        <ul class="pac-roles">
+            @foreach (var role in _overview.Roles.Where(r => r.Candidates.Count > 0))
+            {
+                var label = ArtifactExplorerRoles.Label(role.Role);
+                <li class="pac-role" data-testid="pac-role" data-role="@role.Role">
+                    <details>
+                        <summary>
+                            <span class="pac-role-name">@label</span>
+                            <span class="pac-role-count" data-testid="pac-role-count">@CountText(role)</span>
+                            <span class="pac-badge pac-badge-@(role.ModulesNeedingSelection > 0 ? "attention" : "clear")" data-testid="pac-role-state">@StateText(role)</span>
+                            <span class="pac-review">Review</span>
+                        </summary>
+                        @foreach (var module in role.Modules.Where(m => m.Candidates > 0))
+                        {
+                            var candidates = role.Candidates.Where(c => !_overview.HasModules || c.Module == module.Module).ToList();
+                            <div class="pac-module" data-testid="pac-module" data-module="@module.Module">
+                                @if (_overview.HasModules)
+                                {
+                                    <h3 class="pac-module-name">@module.Label <span class="pac-muted">· @ModuleText(module)</span></h3>
+                                }
+                                <ul class="pac-candidates">
+                                    @foreach (var candidate in candidates)
+                                    {
+                                        var selected = module.SelectedId == candidate.Id;
+                                        <li class="pac-candidate @(selected ? "is-selected" : "")" data-testid="pac-candidate">
+                                            <span class="pac-path">@(candidate.SourcePath ?? candidate.FileName)</span>
+                                            <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · feature {f}" : "")</span>
+                                            @if (selected)
+                                            {
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(module.Reason == ExplorerSelectionReason.OnlyArtifact ? "Selected · only candidate" : "Selected")</span>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn-secondary pac-use" data-testid="pac-use" @onclick="() => UseAsync(role.Role, candidate.Id, module.Module)">
+                                                    @(_overview.HasModules ? $"Use for {module.Label}" : $"Use this {label}")
+                                                </button>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </details>
+                </li>
+            }
+        </ul>
+        @if (_saveWarning is not null) { <p class="pac-warning" role="alert" data-testid="pac-save-warning">@_saveWarning</p> }
+    }
+</section>
+}
+
+@code {
+    private const string NoFocus = "__none__";
+    private readonly string _id = "pac-" + Guid.NewGuid().ToString("N")[..8];
+    private ArtifactModuleOverview? _overview;
+    private string? _saveWarning;
+    private bool _disposed;
+    /// <summary>The workspace's artifact context; absent only in hosts that render the import page without a workspace (nothing is shown).</summary>
+    private IArtifactExplorerContext? Explorer { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Explorer = Services.GetService(typeof(IArtifactExplorerContext)) as IArtifactExplorerContext;
+        if (Explorer is null) return;
+        Explorer.Changed += OnChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Explorer is null) return;
+        try { _overview = await Explorer.GetModuleOverviewAsync(); }
+        catch (Exception ex) { _overview = ArtifactModuleOverview.Empty(Explorer.CurrentScope) with { Error = ex.Message }; }
+    }
+
+    private void OnChanged(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+    }
+
+    private async Task FocusChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (Explorer is null) return;
+        await Explorer.SelectModuleAsync(value is null or NoFocus ? null : value);
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    private async Task UseAsync(WorkspaceArtifactType role, string artifactId, string module)
+    {
+        if (Explorer is null) return;
+        // Without modules the selection is project-level (module null = the project's only group).
+        Explorer.Select(role, artifactId, _overview?.HasModules == true ? module : null);
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    private async Task PersistAsync()
+    {
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is not IWorkspaceAutoSaveService autoSave) return;
+        _saveWarning = await autoSave.SaveNowAsync()
+            ? null
+            : "The selection is shown in this session but could not be saved to the workspace, so it will be lost on reload. Check that the BirkNext backend is running.";
+    }
+
+    private string CountText(ArtifactRoleOverview role) => _overview!.HasModules
+        ? $"{role.Candidates.Count} candidate{(role.Candidates.Count == 1 ? "" : "s")} in {role.ModulesWithCandidates} module{(role.ModulesWithCandidates == 1 ? "" : "s")}"
+        : $"{role.Candidates.Count} candidate{(role.Candidates.Count == 1 ? "" : "s")}";
+
+    private string StateText(ArtifactRoleOverview role) => _overview!.HasModules
+        ? role.ModulesNeedingSelection > 0
+            ? $"{role.SelectedModules} selected · {role.ModulesNeedingSelection} need{(role.ModulesNeedingSelection == 1 ? "s" : "")} selection"
+            : $"{role.SelectedModules} selected"
+        : role.ModulesNeedingSelection > 0 ? "Needs selection" : "Selected";
+
+    private static string ModuleText(ArtifactModuleRoleState module) => module.NeedsSelection
+        ? $"{module.Candidates} candidates · needs selection"
+        : module.Candidates == 1 ? "1 candidate · selected automatically" : $"{module.Candidates} candidates · selected";
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (Explorer is not null) Explorer.Changed -= OnChanged;
+    }
+}

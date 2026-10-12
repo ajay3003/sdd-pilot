@@ -33,7 +33,7 @@ public sealed class ArtifactExplorerDocumentIdentityTests : BunitContext
         public event EventHandler? Changed;
         public string? CurrentScope => null;
         public Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default) => Task.FromResult(state);
-        public void Select(WorkspaceArtifactType role, string artifactId) => Changed?.Invoke(this, EventArgs.Empty);
+        public void Select(WorkspaceArtifactType role, string artifactId, string? module = null) => Changed?.Invoke(this, EventArgs.Empty);
         public ArtifactImportResult Import(ArtifactImportRequest request) => new("workspace:imported.md", null, null);
     }
 }

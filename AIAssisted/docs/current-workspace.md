@@ -44,6 +44,9 @@ There is no polling. Concurrent readers share one computation, and a snapshot co
   artifacts. Several Specifications are one available role.
 - **Selection**: which artifact of a role reviews read. Set explicitly, or by single authority, or because it is the only
   artifact. `SelectionRequired` means several artifacts and no choice. Selection never changes availability.
+- **Modules**: in a monorepo every role resolves within the module under review (`ArtifactRoleStatus.Module`, `Modules`); the Dashboard
+  reports "N detected across M modules · K selected · J need selection" and *Needs selection* until a module is chosen. See
+  [project-modules-and-artifact-selection.md](project-modules-and-artifact-selection.md).
 - **Authority**: the selected artifact's repository authority (Approved, Baseline, …). It never changes availability.
 - **Save state**: `NotSaved`, `AutoSaved`, `Saved`, `UnsavedChanges`. It never decides existence: an unsaved workspace is
   loaded. Backend save state and resume metadata are used only when they hold the same project slug as the session.

@@ -37,7 +37,7 @@ public class NavMenuTests : BunitContext
         navText.Should().NotContain("Specification Deltas");
 
         navText.IndexOf("Dashboard", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal));
-        navText.IndexOf("Sample Projects", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal),
+        navText.IndexOf("Demo Projects", StringComparison.Ordinal).Should().BeLessThan(navText.IndexOf("Specification Explorer", StringComparison.Ordinal),
             "project inputs come before the pages that consume them");
 
         cut.Find("a[href='dashboard']").Should().NotBeNull();

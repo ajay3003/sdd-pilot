@@ -33,7 +33,7 @@ public sealed class ProjectImportPresentationTests
 
         ProjectImportPresentation.Outcome(preview, discovery, new ProjectImportSourceResult { State = ProjectImportSourceState.Created, SnapshotStatus = SourceAnalysisStatus.Ready })
             .Should().Be(ProjectImportOutcome.Imported);
-        ProjectImportPresentation.Roles(discovery).Should().OnlyContain(r => r.Tone == ProjectImportTone.Neutral && r.Status == "Not found");
+        ProjectImportPresentation.Roles(discovery).Should().OnlyContain(r => r.Tone == ProjectImportTone.Neutral && r.Status == "Not detected");
     }
 
     [Fact]
@@ -94,6 +94,6 @@ public sealed class ProjectImportPresentationTests
         ProjectImportPresentation.Notes(preview, discovery, null).Should()
             .Contain(n => n.StartsWith("Research: 2 documents were detected and kept")).And.NotContain(n => n.Contains("Research Explorer"));
         ProjectImportPresentation.Roles(discovery).Single(r => r.Role == BirkNext.Web.Services.WorkspaceArtifactType.Research).Detail
-            .Should().Be("Imported without a selection");
+            .Should().Be("Imported without a selection — needs selection after import");
     }
 }

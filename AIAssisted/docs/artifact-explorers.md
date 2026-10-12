@@ -39,7 +39,16 @@ The scope is the selected Sample Project slug, or *manual workspace* when no pro
 Revisions with the same file name in one scope and role are one document's history. The document shows its current
 selection, or else its newest revision that is not superseded. Different file names are different artifacts.
 
+## Modules
+
+A project whose artifacts sit in several Spec-Kit sub-projects (folders holding `.specify/` or `specs/`) has **modules**. Every role then
+resolves within the module under review: the host shows a *Module* selector, a *Choose a module* state before one is chosen, and
+*Project · Module · File* in the context bar. Selections are kept per module. A project with one group shows none of this. See
+[project-modules-and-artifact-selection.md](project-modules-and-artifact-selection.md).
+
 ## Preferred artifact
+
+Within the module under review (or the whole scope without modules):
 
 1. **Explicit**: the Explorer selection (`SddLifecycleState.ExplorerSelections`, per scope and role, persisted), the choice
    on Sample Projects, or the repository's current selection for the role (set by an import or by selecting).

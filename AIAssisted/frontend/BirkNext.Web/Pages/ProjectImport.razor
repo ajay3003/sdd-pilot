@@ -18,7 +18,7 @@
    Source Analysis snapshot. The two stay separate evidence domains; they share only the import identity and the archive fingerprint. *@
 <PageTitle>Import Project</PageTitle>
 <div class="pi-page">
-    <PageHeader Title="Import Project" Description="Choose one project archive to populate project documents and source evidence. Both keep their own owner: documents go to the artifact repository, source to Source Analysis." />
+    <PageHeader Title="Import Project" Description="Import a real project. Upload one ZIP containing source code, supported project documents, or both." />
 
     @if (_phase == Phase.Choose)
     {
@@ -40,12 +40,14 @@
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
                 </div>
                 <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history.</p>
+                <ProjectArtifactCandidateReview />
             </section>
         }
 
         <section class="pi-card pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
             <h2 id="pi-choose-heading">@(Activation.Current is null ? "Choose a project archive" : "Import another project")</h2>
             <p>One ZIP of the project folder. BirkNext finds what it contains and shows it before anything is imported.</p>
+            <p data-testid="pi-candidates-note">BirkNext detects all supported artifacts. If several documents can fill the same role, you can review and select the relevant artifact for each module.</p>
             <ul class="pi-outcomes" data-testid="pi-outcomes">
                 <li><strong>Project documents</strong> — constitution, specification, plan, tasks, data model and research, detected by content and file name.</li>
                 <li><strong>Source</strong> — code, project files, dependencies, pipelines, infrastructure and contracts, analyzed once into a Source Analysis snapshot.</li>
@@ -58,7 +60,7 @@
                 </label>
                 <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
             </div>
-            <p class="pi-muted">Sample Projects remain available as ready-made examples. Source-only archives can still be added directly in <a href="source-analysis">Source Analysis</a>.</p>
+            <p class="pi-muted"><a href="demo-projects">Demo Projects</a> remain available as optional examples. Source-only archives can still be added directly in <a href="source-analysis">Source Analysis</a>.</p>
         </section>
         @if (_failure is { } failure) { <ProjectImportFailure Failure="failure" /> }
     }
@@ -152,6 +154,11 @@
                 </ProjectImportSource>
             }
         </div>
+
+        @if (doneDiscovery.HasArtifacts)
+        {
+            <section class="pi-card" data-testid="pi-candidate-review"><ProjectArtifactCandidateReview /></section>
+        }
 
         @TargetEnvironmentFact
 

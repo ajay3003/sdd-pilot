@@ -30,10 +30,46 @@ public sealed record ExplorerArtifact(
     string Authority,
     ExplorerArtifactCurrentness Currentness,
     DateTimeOffset? CapturedAt,
-    string? DocumentIdentity = null)
+    string? DocumentIdentity = null,
+    string Module = ArtifactModules.ProjectLevel,
+    string? Feature = null)
 {
     /// <summary>Approved or Baseline. Explicit repository authority only; never inferred from being latest or first.</summary>
     public bool IsAuthoritative => Authority is "Approved" or "Baseline";
+
+    public string ModuleLabel => ArtifactModules.Label(Module);
+}
+
+/// <summary>One module's resolution of a role: how many candidates it has and which one is selected (and why), or none.</summary>
+public sealed record ArtifactModuleRoleState(string Module, int Candidates, string? SelectedId, ExplorerSelectionReason? Reason)
+{
+    public string Label => ArtifactModules.Label(Module);
+    public bool NeedsSelection => Candidates > 1 && SelectedId is null;
+}
+
+/// <summary>Every candidate of one role in the current scope, with each module's selection. Discovery is not selection.</summary>
+public sealed record ArtifactRoleOverview(WorkspaceArtifactType Role, IReadOnlyList<ExplorerArtifact> Candidates, IReadOnlyList<ArtifactModuleRoleState> Modules)
+{
+    public int ModulesWithCandidates => Modules.Count(m => m.Candidates > 0);
+    public int SelectedModules => Modules.Count(m => m.SelectedId is not null);
+    public int ModulesNeedingSelection => Modules.Count(m => m.NeedsSelection);
+}
+
+/// <summary>
+/// All artifact candidates of the current scope by role and module. <see cref="Modules"/> has one entry (project-level) when the scope has no
+/// separate modules, so a simple project is summarized exactly as before.
+/// </summary>
+public sealed record ArtifactModuleOverview(
+    string? Scope,
+    string? ProjectName,
+    string? Focus,
+    IReadOnlyList<string> Modules,
+    IReadOnlyList<ArtifactRoleOverview> Roles,
+    string? Error = null)
+{
+    public bool HasModules => Modules.Count > 1;
+    public ArtifactRoleOverview? Role(WorkspaceArtifactType role) => Roles.FirstOrDefault(r => r.Role == role);
+    public static ArtifactModuleOverview Empty(string? scope) => new(scope, null, null, [ArtifactModules.ProjectLevel], []);
 }
 
 public enum ExplorerArtifactStatus
@@ -68,9 +104,19 @@ public sealed record ArtifactExplorerState(
     ExplorerArtifact? Selected = null,
     ExplorerSelectionReason? Reason = null,
     string? Content = null,
-    string? Error = null)
+    string? Error = null,
+    IReadOnlyList<ArtifactModuleRoleState>? Modules = null,
+    string? Module = null)
 {
     public bool HasProject => ProjectSlug is not null;
+
+    /// <summary>The scope has several modules (Spec-Kit sub-projects): this role resolves per module, never across the whole project.</summary>
+    public bool HasModules => Modules is { Count: > 1 };
+
+    /// <summary>Several modules and none chosen to focus on: the user chooses a module first. Nothing is picked automatically.</summary>
+    public bool ModuleRequired => HasModules && Module is null;
+
+    public string? ModuleLabel => HasModules && Module is not null ? ArtifactModules.Label(Module) : null;
 }
 
 public sealed record ArtifactImportRequest(WorkspaceArtifactType Role, string Content, string? FileName, string Origin);
@@ -95,8 +141,18 @@ public interface IArtifactExplorerContext
 
     Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default);
 
-    /// <summary>Chooses which artifact the explorers show for the role. Not authority: approval and baselines do not change.</summary>
-    void Select(WorkspaceArtifactType role, string artifactId);
+    /// <summary>
+    /// Chooses which artifact the explorers show for the role in <paramref name="module"/> (default: the focused module, or project-level).
+    /// Not authority: approval and baselines do not change. A selection for one module never changes another module's selection.
+    /// </summary>
+    void Select(WorkspaceArtifactType role, string artifactId, string? module = null);
+
+    /// <summary>The module that explorers and reviews focus on when the scope has several modules; null clears the focus.</summary>
+    Task SelectModuleAsync(string? module, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Every candidate of every role, grouped by module, with each module's selection.</summary>
+    Task<ArtifactModuleOverview> GetModuleOverviewAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(ArtifactModuleOverview.Empty(CurrentScope));
 
     /// <summary>Adds a file, dropped file or pasted text to the workspace as an artifact revision of the role, and shows it.</summary>
     ArtifactImportResult Import(ArtifactImportRequest request);
@@ -126,6 +182,13 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     private readonly ISampleProjectArtifactDiscovery _discovery;
     private readonly IWorkspaceUpdateCoordinator? _updates;
     private readonly IWorkspaceStateManager? _stateManager;
+    // Title and content identity per document, computed once: every role is listed on every read (modules span roles), and hashing every
+    // document of a large monorepo on each read stalls the WebAssembly UI thread. Keys include the content identity, so a change re-computes.
+    private readonly Dictionary<(Guid RevisionId, string Fingerprint, int Length, string FileName), (string DisplayName, string Identity)> _revisionMeta = new();
+    private readonly Dictionary<(string Slug, string Path), (string Content, string DisplayName, string Identity)> _sampleMeta = new();
+    private readonly object _metaGate = new();
+    /// <summary>While a module switch mirrors several roles, the repository's per-role events are coalesced into one Changed.</summary>
+    private int _coalescing;
 
     public event EventHandler? Changed;
 
@@ -154,11 +217,160 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
 
     public async Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default)
     {
+        var model = await LoadScopeAsync(cancellationToken);
+        if (model.Failure is { } failure)
+            return new ArtifactExplorerState(role, failure, model.Scope, model.ProjectName, [], Error: model.Error);
+
+        var all = model.Roles[role];
+        if (!model.HasModules)
+            return Build(role, model, all, ArtifactModules.ProjectLevel, anyModule: true, modules: null, focus: null);
+
+        // Several modules: a role resolves within one module, never across the whole project.
+        var modules = model.Modules.Select(m => ModuleState(role, model, m)).ToList();
+        var focus = FocusOf(model);
+        if (focus is null)
+        {
+            var listed = all.Select(e => e.Artifact).ToList();
+            return new ArtifactExplorerState(role, listed.Count == 0 ? ExplorerArtifactStatus.Empty : ExplorerArtifactStatus.SelectionRequired,
+                model.Scope, model.ProjectName, listed, Modules: modules);
+        }
+        return Build(role, model, all.Where(e => e.Artifact.Module == focus).ToList(), focus, anyModule: false, modules, focus);
+    }
+
+    public async Task<ArtifactModuleOverview> GetModuleOverviewAsync(CancellationToken cancellationToken = default)
+    {
+        var model = await LoadScopeAsync(cancellationToken);
+        if (model.Failure is not null)
+            return ArtifactModuleOverview.Empty(model.Scope) with { ProjectName = model.ProjectName, Error = model.Error ?? model.Failure.ToString() };
+        var modules = model.HasModules ? model.Modules : [ArtifactModules.ProjectLevel];
+        var roles = SampleArtifactClassifier.RoleOrder.Select(role => new ArtifactRoleOverview(role,
+            model.Roles[role].Select(e => e.Artifact).ToList(),
+            modules.Select(m => ModuleState(role, model, m)).ToList())).ToList();
+        return new ArtifactModuleOverview(model.Scope, model.ProjectName, model.HasModules ? FocusOf(model) : null, modules, roles);
+    }
+
+    public void Select(WorkspaceArtifactType role, string artifactId, string? module = null)
+    {
         var scope = CurrentScope;
-        var imported = WorkspaceArtifacts(role, scope);
-        var artifacts = new List<(ExplorerArtifact Artifact, Func<string?> Content, bool IsRepositoryCurrent)>();
-        string? chosenSamplePath = null;
+        var focus = StoredFocus(scope);
+        var key = module ?? focus ?? ArtifactModules.ProjectLevel;
+        var selections = _workspace.SddLifecycle.ExplorerSelections;
+        selections.RemoveAll(s => s.WorkspaceScope == scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == key);
+        selections.Add(new SddExplorerSelection { WorkspaceScope = scope, Role = role.ToString(), ArtifactId = artifactId, Module = key, SelectedAt = DateTimeOffset.UtcNow });
+
+        // Only the focused module (or a project without modules) is mirrored into the repository's current selection and the Sample
+        // Project document choice, which older consumers read. Another module's selection is kept but changes nothing they see.
+        if (module is null || module == focus)
+        {
+            Interlocked.Increment(ref _coalescing);
+            try { MirrorSelection(scope, role, artifactId); }
+            finally { Interlocked.Decrement(ref _coalescing); }
+        }
+
+        _updates?.NotifyMutation();
+        OnRepositoryChanged(this, EventArgs.Empty);
+    }
+
+    public async Task SelectModuleAsync(string? module, CancellationToken cancellationToken = default)
+    {
+        var scope = CurrentScope;
+        var focus = _workspace.SddLifecycle.ModuleFocus;
+        focus.RemoveAll(f => f.WorkspaceScope == scope);
+        if (module is not null) focus.Add(new SddModuleFocus { WorkspaceScope = scope, Module = module });
+
+        // Mirror the focused module's resolution into the repository's current selection (session artifacts) and the Sample Project
+        // choice, so older consumers read the same module. A role the module does not resolve has no current artifact.
+        Interlocked.Increment(ref _coalescing);
+        try
+        {
+            foreach (var role in SampleArtifactClassifier.RoleOrder)
+            {
+                var state = await GetStateAsync(role, cancellationToken);
+                if (state is { Status: ExplorerArtifactStatus.Loaded, Selected: { } selected }) MirrorSelection(scope, role, selected.Id);
+                else if (ProjectImportScope.IsImport(scope)) _workspace.Clear(role);
+                else if (scope is not null) _discovery.ChooseDocument(scope, role, null);
+            }
+        }
+        finally { Interlocked.Decrement(ref _coalescing); }
+
+        _updates?.NotifyMutation();
+        OnRepositoryChanged(this, EventArgs.Empty);
+    }
+
+    private void MirrorSelection(string? scope, WorkspaceArtifactType role, string artifactId)
+    {
+        if (artifactId.StartsWith(SamplePrefix, StringComparison.Ordinal) && scope is not null)
+        {
+            // Keep the analysis pages that resolve Sample Project documents on the same document as the explorer.
+            _discovery.ChooseDocument(scope, role, artifactId[SamplePrefix.Length..]);
+        }
+        else if (WorkspaceArtifacts(role, scope).FirstOrDefault(i => i.Artifact.Id == artifactId) is { } imported)
+        {
+            _workspace.SelectRevision(imported.Revision.RevisionId);
+        }
+    }
+
+    private ArtifactExplorerState Build(WorkspaceArtifactType role, ScopeModel model, List<ScopeEntry> entries, string module, bool anyModule,
+        IReadOnlyList<ArtifactModuleRoleState>? modules, string? focus)
+    {
+        var listed = entries.Select(e => e.Artifact).ToList();
+        if (listed.Count == 0)
+            return new ArtifactExplorerState(role, ExplorerArtifactStatus.Empty, model.Scope, model.ProjectName, listed, Modules: modules, Module: focus);
+
+        var (selectedId, reason) = Resolve(role, model, entries, module, anyModule);
+        if (selectedId is null)
+            return new ArtifactExplorerState(role, ExplorerArtifactStatus.SelectionRequired, model.Scope, model.ProjectName, listed, Modules: modules, Module: focus);
+
+        var selected = entries.First(a => a.Artifact.Id == selectedId);
+        var text = selected.Content();
+        if (string.IsNullOrEmpty(text))
+            return new ArtifactExplorerState(role, ExplorerArtifactStatus.Error, model.Scope, model.ProjectName, listed, selected.Artifact, reason,
+                Error: $"{selected.Artifact.SourcePath ?? selected.Artifact.FileName} could not be read.", Modules: modules, Module: focus);
+
+        return new ArtifactExplorerState(role, ExplorerArtifactStatus.Loaded, model.Scope, model.ProjectName, listed, selected.Artifact, reason, text,
+            Modules: modules, Module: focus);
+    }
+
+    private ArtifactModuleRoleState ModuleState(WorkspaceArtifactType role, ScopeModel model, string module)
+    {
+        var entries = model.HasModules ? model.Roles[role].Where(e => e.Artifact.Module == module).ToList() : model.Roles[role];
+        if (entries.Count == 0) return new ArtifactModuleRoleState(module, 0, null, null);
+        var (id, reason) = Resolve(role, model, entries, module, anyModule: !model.HasModules);
+        return new ArtifactModuleRoleState(module, entries.Count, id, reason);
+    }
+
+    private string? StoredFocus(string? scope) => _workspace.SddLifecycle.ModuleFocus.LastOrDefault(f => f.WorkspaceScope == scope)?.Module;
+
+    /// <summary>The focused module, if it still exists in the scope.</summary>
+    private string? FocusOf(ScopeModel model) => StoredFocus(model.Scope) is { } focus && model.Modules.Contains(focus, StringComparer.Ordinal) ? focus : null;
+
+    private sealed record ScopeEntry(ExplorerArtifact Artifact, Func<string?> Content, bool IsRepositoryCurrent);
+
+    private sealed record ScopeModel(
+        string? Scope,
+        string? ProjectName,
+        IReadOnlyDictionary<WorkspaceArtifactType, List<ScopeEntry>> Roles,
+        IReadOnlyDictionary<WorkspaceArtifactType, string?> ChosenSamplePaths,
+        IReadOnlyList<string> Modules,
+        ExplorerArtifactStatus? Failure = null,
+        string? Error = null)
+    {
+        /// <summary>Artifacts in more than one module group: roles resolve per module.</summary>
+        public bool HasModules => Modules.Count > 1;
+    }
+
+    /// <summary>
+    /// Every artifact of every role in the current scope, each with its module (from the Spec-Kit roots that the scope's document paths
+    /// evidence) and feature folder. Module identity is structural only; a document under no root is project-level.
+    /// </summary>
+    private async Task<ScopeModel> LoadScopeAsync(CancellationToken cancellationToken)
+    {
+        var scope = CurrentScope;
+        var roles = SampleArtifactClassifier.RoleOrder.ToDictionary(r => r, _ => new List<ScopeEntry>());
+        var chosen = new Dictionary<WorkspaceArtifactType, string?>();
+        var paths = new List<string?>();
         string? projectName = null;
+        IReadOnlyDictionary<WorkspaceArtifactType, List<ScopeEntry>> NoRoles() => SampleArtifactClassifier.RoleOrder.ToDictionary(r => r, _ => new List<ScopeEntry>());
 
         if (ProjectImportScope.IsImport(scope))
         {
@@ -176,64 +388,50 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             }
             catch (Exception ex)
             {
-                return new ArtifactExplorerState(role, ExplorerArtifactStatus.Error, scope, await namesTask, [],
-                    Error: $"The documents of project '{scope}' could not be read: {ex.Message}");
+                return new ScopeModel(scope, await namesTask, NoRoles(), chosen, [], ExplorerArtifactStatus.Error,
+                    $"The documents of project '{scope}' could not be read: {ex.Message}");
             }
             projectName = await namesTask;
             if (discovery is null)
-                return new ArtifactExplorerState(role, ExplorerArtifactStatus.ProjectUnavailable, scope, projectName, []);
+                return new ScopeModel(scope, projectName, NoRoles(), chosen, [], ExplorerArtifactStatus.ProjectUnavailable);
             if (discovery.Error is not null && discovery.Documents.Count == 0)
-                return new ArtifactExplorerState(role, ExplorerArtifactStatus.Error, scope, projectName, [], Error: discovery.Error);
+                return new ScopeModel(scope, projectName, NoRoles(), chosen, [], ExplorerArtifactStatus.Error, discovery.Error);
 
-            var summary = discovery.Role(role);
-            chosenSamplePath = summary.ChosenPath;
-            foreach (var document in summary.Documents)
+            foreach (var role in SampleArtifactClassifier.RoleOrder)
             {
-                var content = _discovery.GetContent(discovery.ProjectSlug, document.RelativePath);
-                artifacts.Add((new ExplorerArtifact(
-                    SamplePrefix + document.RelativePath, role, DisplayNameOf(content, document.FileName), document.FileName,
-                    document.RelativePath, ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown",
-                    ExplorerArtifactCurrentness.Current, null, content is null ? null : MarkdownTokenizer.DocumentFingerprint(content)), () => content, false));
+                var summary = discovery.Role(role);
+                chosen[role] = summary.ChosenPath;
+                foreach (var document in summary.Documents)
+                {
+                    var content = _discovery.GetContent(discovery.ProjectSlug, document.RelativePath);
+                    var (displayName, identity) = SampleMeta(discovery.ProjectSlug, document.RelativePath, document.FileName, content);
+                    roles[role].Add(new ScopeEntry(new ExplorerArtifact(
+                        SamplePrefix + document.RelativePath, role, displayName, document.FileName,
+                        document.RelativePath, ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown",
+                        ExplorerArtifactCurrentness.Current, null, identity), () => content, false));
+                }
             }
         }
 
-        artifacts.AddRange(imported.Select(i => (i.Artifact, (Func<string?>)(() => i.Revision.Content), i.Revision.IsCurrentSelection)));
-        var listed = artifacts.Select(a => a.Artifact).ToList();
-        if (listed.Count == 0)
-            return new ArtifactExplorerState(role, ExplorerArtifactStatus.Empty, scope, projectName, listed);
+        foreach (var role in SampleArtifactClassifier.RoleOrder)
+            roles[role].AddRange(WorkspaceArtifacts(role, scope).Select(i => new ScopeEntry(i.Artifact, () => i.Revision.Content, i.Revision.IsCurrentSelection)));
+        // Module roots come from the artifacts' own paths (every role, every revision of the scope) — the same evidence before and after an
+        // import and for Demo Projects. A stray specs/ folder among unclassified documents does not create a module.
+        paths.AddRange(roles.Values.SelectMany(l => l).Select(e => e.Artifact.SourcePath ?? e.Artifact.FileName));
+        paths.AddRange(_workspace.SddLifecycle.Revisions.Where(r => r.WorkspaceScope == scope).Select(r => r.SourceReference ?? r.FileName));
 
-        var (selectedId, reason) = Resolve(role, scope, artifacts.Select(a => (a.Artifact, a.IsRepositoryCurrent)).ToList(), chosenSamplePath);
-        if (selectedId is null)
-            return new ArtifactExplorerState(role, ExplorerArtifactStatus.SelectionRequired, scope, projectName, listed);
+        var roots = ArtifactModules.RootsOf(paths);
+        foreach (var role in SampleArtifactClassifier.RoleOrder)
+            roles[role] = roles[role].Select(e =>
+            {
+                var path = e.Artifact.SourcePath ?? e.Artifact.FileName;
+                return e with { Artifact = e.Artifact with { Module = ArtifactModules.ModuleOf(path, roots), Feature = ArtifactModules.FeatureOf(path) } };
+            }).ToList();
 
-        var selected = artifacts.First(a => a.Artifact.Id == selectedId);
-        var text = selected.Content();
-        if (string.IsNullOrEmpty(text))
-            return new ArtifactExplorerState(role, ExplorerArtifactStatus.Error, scope, projectName, listed, selected.Artifact, reason,
-                Error: $"{selected.Artifact.SourcePath ?? selected.Artifact.FileName} could not be read.");
-
-        return new ArtifactExplorerState(role, ExplorerArtifactStatus.Loaded, scope, projectName, listed, selected.Artifact, reason, text);
-    }
-
-    public void Select(WorkspaceArtifactType role, string artifactId)
-    {
-        var scope = CurrentScope;
-        var selections = _workspace.SddLifecycle.ExplorerSelections;
-        selections.RemoveAll(s => s.WorkspaceScope == scope && s.Role == role.ToString());
-        selections.Add(new SddExplorerSelection { WorkspaceScope = scope, Role = role.ToString(), ArtifactId = artifactId });
-
-        if (artifactId.StartsWith(SamplePrefix, StringComparison.Ordinal) && scope is not null)
-        {
-            // Keep the analysis pages that resolve Sample Project documents on the same document as the explorer.
-            _discovery.ChooseDocument(scope, role, artifactId[SamplePrefix.Length..]);
-        }
-        else if (WorkspaceArtifacts(role, scope).FirstOrDefault(i => i.Artifact.Id == artifactId) is { } imported)
-        {
-            _workspace.SelectRevision(imported.Revision.RevisionId);
-        }
-
-        _updates?.NotifyMutation();
-        OnRepositoryChanged(this, EventArgs.Empty);
+        // Named modules in path order; the project-level group (if any) last.
+        var modules = roles.Values.SelectMany(l => l).Select(e => e.Artifact.Module).Distinct(StringComparer.Ordinal)
+            .OrderBy(m => m.Length == 0 ? 1 : 0).ThenBy(m => m, StringComparer.Ordinal).ToList();
+        return new ScopeModel(scope, projectName, roles, chosen, modules);
     }
 
     public ArtifactImportResult Import(ArtifactImportRequest request)
@@ -275,29 +473,46 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         if (_stateManager is not null) _stateManager.WorkspaceChanged -= OnWorkspaceChanged;
     }
 
-    private void OnRepositoryChanged(object? sender, EventArgs e) => Changed?.Invoke(this, EventArgs.Empty);
+    private void OnRepositoryChanged(object? sender, EventArgs e)
+    {
+        if (sender != this && Volatile.Read(ref _coalescing) > 0) return; // raised once by the caller when it is done
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     private void OnWorkspaceChanged(Guid? workspaceId) => Changed?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// The artifact a role resolves to among <paramref name="entries"/> (one module's candidates, or all of a project without modules):
+    /// explicit selection for the module → the Demo Project choice and the repository's current selection (projects without modules only;
+    /// with modules they mirror the focused module) → the only authoritative artifact → the only artifact. Otherwise none.
+    /// </summary>
     private (string? Id, ExplorerSelectionReason? Reason) Resolve(
-        WorkspaceArtifactType role, string? scope, IReadOnlyList<(ExplorerArtifact Artifact, bool IsRepositoryCurrent)> artifacts, string? chosenSamplePath)
+        WorkspaceArtifactType role, ScopeModel model, IReadOnlyList<ScopeEntry> entries, string module, bool anyModule)
     {
-        bool Exists(string? id) => id is not null && artifacts.Any(a => a.Artifact.Id == id);
+        bool Exists(string? id) => id is not null && entries.Any(a => a.Artifact.Id == id);
 
+        // Without modules every stored selection of the role counts (older selections have no module).
         var stored = _workspace.SddLifecycle.ExplorerSelections
-            .LastOrDefault(s => s.WorkspaceScope == scope && s.Role == role.ToString())?.ArtifactId;
-        if (Exists(stored)) return (stored, ExplorerSelectionReason.Explicit);
+            .LastOrDefault(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString()
+                && (anyModule || (s.Module ?? ArtifactModules.ProjectLevel) == module) && Exists(s.ArtifactId))?.ArtifactId;
+        if (stored is not null) return (stored, ExplorerSelectionReason.Explicit);
 
-        var chosenSample = chosenSamplePath is null ? null : SamplePrefix + chosenSamplePath;
-        if (Exists(chosenSample)) return (chosenSample, ExplorerSelectionReason.Explicit);
+        // The Demo Project document choice and the repository's current selection are project-wide. With modules they only mirror the
+        // focused module's resolution, so they are not read back as a choice.
+        if (anyModule)
+        {
+            var chosenSamplePath = model.ChosenSamplePaths.GetValueOrDefault(role);
+            var chosenSample = chosenSamplePath is null ? null : SamplePrefix + chosenSamplePath;
+            if (Exists(chosenSample)) return (chosenSample, ExplorerSelectionReason.Explicit);
 
-        var repositoryCurrent = artifacts.Where(a => a.IsRepositoryCurrent).Select(a => a.Artifact.Id).ToList();
-        if (repositoryCurrent.Count == 1) return (repositoryCurrent[0], ExplorerSelectionReason.Explicit);
+            var repositoryCurrent = entries.Where(a => a.IsRepositoryCurrent).Select(a => a.Artifact.Id).ToList();
+            if (repositoryCurrent.Count == 1) return (repositoryCurrent[0], ExplorerSelectionReason.Explicit);
+        }
 
-        var authoritative = artifacts.Where(a => a.Artifact.IsAuthoritative).Select(a => a.Artifact.Id).ToList();
+        var authoritative = entries.Where(a => a.Artifact.IsAuthoritative).Select(a => a.Artifact.Id).ToList();
         if (authoritative.Count == 1) return (authoritative[0], ExplorerSelectionReason.Authoritative);
 
-        return artifacts.Count == 1 ? (artifacts[0].Artifact.Id, ExplorerSelectionReason.OnlyArtifact) : (null, null);
+        return entries.Count == 1 ? (entries[0].Artifact.Id, ExplorerSelectionReason.OnlyArtifact) : (null, null);
     }
 
     /// <summary>
@@ -314,14 +529,39 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                 var revision = g.FirstOrDefault(r => r.IsCurrentSelection)
                                ?? g.Where(r => CurrentnessOf(r) == ExplorerArtifactCurrentness.Current).MaxBy(r => r.Revision)
                                ?? g.MaxBy(r => r.Revision)!;
+                var (displayName, identity) = RevisionMeta(revision, g.Key);
                 var artifact = new ExplorerArtifact(
-                    WorkspacePrefix + g.Key, role, DisplayNameOf(revision.Content, g.Key), g.Key, revision.SourceReference,
+                    WorkspacePrefix + g.Key, role, displayName, g.Key, revision.SourceReference,
                     ExplorerArtifactSource.Workspace, revision.Origin, revision.Revision, g.Count(),
                     string.IsNullOrWhiteSpace(revision.Authority) ? "Unknown" : revision.Authority, CurrentnessOf(revision), revision.CapturedAt,
-                    MarkdownTokenizer.DocumentFingerprint(revision.Content));
+                    identity);
                 return (artifact, revision);
             })
             .ToList();
+
+    private (string DisplayName, string Identity) RevisionMeta(SddArtifactRevision revision, string fileName)
+    {
+        var key = (revision.RevisionId, revision.Fingerprint ?? "", revision.Content?.Length ?? 0, fileName);
+        lock (_metaGate)
+        {
+            if (_revisionMeta.TryGetValue(key, out var cached)) return cached;
+        }
+        var meta = (DisplayNameOf(revision.Content, fileName), MarkdownTokenizer.DocumentFingerprint(revision.Content));
+        lock (_metaGate) _revisionMeta[key] = meta;
+        return meta;
+    }
+
+    private (string DisplayName, string? Identity) SampleMeta(string slug, string path, string fileName, string? content)
+    {
+        if (content is null) return (DisplayNameOf(null, fileName), null);
+        lock (_metaGate)
+        {
+            if (_sampleMeta.TryGetValue((slug, path), out var cached) && ReferenceEquals(cached.Content, content)) return (cached.DisplayName, cached.Identity);
+        }
+        var meta = (Content: content, DisplayName: DisplayNameOf(content, fileName), Identity: MarkdownTokenizer.DocumentFingerprint(content));
+        lock (_metaGate) _sampleMeta[(slug, path)] = meta;
+        return (meta.DisplayName, meta.Identity);
+    }
 
     private static ExplorerArtifactCurrentness CurrentnessOf(SddArtifactRevision revision) =>
         revision.Authority == "Superseded" || revision.SupersededByRevisionId is not null ? ExplorerArtifactCurrentness.Superseded

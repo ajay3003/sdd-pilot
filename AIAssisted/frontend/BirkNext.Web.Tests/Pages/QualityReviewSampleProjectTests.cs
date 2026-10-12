@@ -46,7 +46,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Sample Project:");
+            cut.Markup.Should().Contain("Demo Project:");
             cut.Markup.Should().Contain("Project A");
             cut.FindAll(".artifact-card").Should().HaveCount(5);
             cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(5);
@@ -378,7 +378,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         // Assert: All five documents loaded from resolver, not Workspace
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Sample Project:");
+            cut.Markup.Should().Contain("Demo Project:");
             cut.Markup.Should().Contain("Project A");
             cut.Markup.Should().Contain("5 artifacts available");
             cut.FindAll(".artifact-status.is-loaded").Should().HaveCount(5);

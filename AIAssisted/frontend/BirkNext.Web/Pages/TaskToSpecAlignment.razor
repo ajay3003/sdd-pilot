@@ -36,7 +36,7 @@
             <p>Import a project ZIP to discover its Specification and Task artifacts automatically.</p>
             <p class="ir-empty-actions">
                 <a class="btn-primary" href="project-import" data-testid="ir-import-project">Import Project</a>
-                <a class="btn-secondary" href="sample-projects">Load Sample Project</a>
+                <a class="btn-secondary" href="demo-projects">Open a Demo Project</a>
             </p>
         </section>
     }
@@ -494,7 +494,7 @@
     private string OriginLabel => Origin switch
     {
         WorkspaceArtifactOrigin.ProjectImport => "imported project",
-        WorkspaceArtifactOrigin.SampleProject => "Sample Project",
+        WorkspaceArtifactOrigin.SampleProject => "Demo Project",
         _ => "manual workspace",
     };
 

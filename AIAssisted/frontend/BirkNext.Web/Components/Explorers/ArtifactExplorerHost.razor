@@ -18,6 +18,21 @@
     }
     else
     {
+        @if (_state.HasModules && !_state.ModuleRequired && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
+        {
+            @* A monorepo: every role resolves within one module. The selector says which module this explorer (and every review) reads. *@
+            <div class="axh-module-bar" data-testid="artifact-explorer-module-bar">
+                <label class="axh-select-label" for="@($"{_id}-module")">Module</label>
+                <select id="@($"{_id}-module")" class="axh-select" data-testid="artifact-explorer-module-selector"
+                        value="@_state.Module" @onchange="OnModuleChanged">
+                    @foreach (var module in _state.Modules!)
+                    {
+                        <option value="@module.Module">@ModuleOptionText(module)</option>
+                    }
+                </select>
+                <span class="axh-module-note">Reviews read the selected artifacts of this module.</span>
+            </div>
+        }
         switch (_state.Status)
         {
             case ExplorerArtifactStatus.Error:
@@ -35,12 +50,12 @@
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
                     <h2 class="axh-title">The selected project is not available</h2>
                     <p class="axh-text">
-                        Project <strong>@(_state.ProjectName ?? _state.ProjectSlug)</strong> is no longer in the Sample Projects catalog,
+                        Project <strong>@(_state.ProjectName ?? _state.ProjectSlug)</strong> is no longer among the installed Demo Projects,
                         so its documents cannot be read.
                     </p>
                     <div class="axh-actions">
                         <a class="btn-primary" href="project-import" data-testid="artifact-explorer-import-project">Import Project</a>
-                        <a class="btn-secondary axh-link-button" href="sample-projects">Open Sample Projects</a>
+                        <a class="btn-secondary axh-link-button" href="demo-projects">Open Demo Projects</a>
                     </div>
                 </div>
                 break;
@@ -53,7 +68,7 @@
                     <p class="axh-text">Import a project ZIP to discover project artifacts and source evidence automatically.</p>
                     <div class="axh-actions">
                         <a class="btn-primary" href="project-import" data-testid="artifact-explorer-import-project">Import Project</a>
-                        <a class="btn-secondary axh-link-button" href="sample-projects" data-testid="artifact-explorer-sample-projects">Load Sample Project</a>
+                        <a class="btn-secondary axh-link-button" href="demo-projects" data-testid="artifact-explorer-sample-projects">Open a Demo Project</a>
                         <button type="button" class="axh-link axh-advanced" aria-expanded="@(_importOpen ? "true" : "false")"
                                 data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
                             Import @Label.ToLowerInvariant() only
@@ -66,7 +81,7 @@
                 @* A workspace exists and this role has no artifact in it: neutral, never a failure. *@
                 <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="RoleUnavailable">
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
-                    <h2 class="axh-title">No @Label artifact was detected in @WorkspaceName</h2>
+                    <h2 class="axh-title">No @Label artifact was detected in @(_state.ModuleLabel is { } emptyModule ? $"module {emptyModule} of {WorkspaceName}" : WorkspaceName)</h2>
                     <p class="axh-text">
                         @(Origin == WorkspaceArtifactOrigin.ManualWorkspace
                             ? $"The documents imported into the workspace do not include a {Label} artifact. Every artifact role is optional."
@@ -85,11 +100,35 @@
                 </div>
                 break;
 
+            case ExplorerArtifactStatus.SelectionRequired when _state.ModuleRequired:
+                @* Several modules and none focused: the user chooses a module; nothing is picked for the whole project. *@
+                <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose-module">
+                    <h2 class="axh-title">Choose a module</h2>
+                    <p class="axh-text" data-testid="artifact-explorer-module-candidates">
+                        @WorkspaceName has @_state.Modules!.Count modules with their own project documents. @_state.Artifacts.Count @Label artifacts were
+                        found across them. Choose the module to review: a module with one @Label artifact uses it automatically, a module with
+                        several asks you to choose.
+                    </p>
+                    <ul class="axh-choices">
+                        @foreach (var module in _state.Modules!)
+                        {
+                            <li>
+                                <button type="button" class="axh-choice" data-testid="artifact-explorer-module-choice" data-module="@module.Module"
+                                        @onclick="() => SelectModuleAsync(module.Module)">
+                                    <span class="axh-choice-name">@module.Label</span>
+                                    <span class="axh-choice-meta">@ModuleStateText(module)</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                break;
+
             case ExplorerArtifactStatus.SelectionRequired:
                 <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose">
                     <h2 class="axh-title">Choose a @Label artifact</h2>
                     <p class="axh-text" data-testid="artifact-explorer-candidates">
-                        @_state.Artifacts.Count candidate @Label artifacts were discovered in @WorkspaceLabel. No current @Label artifact is selected
+                        @_state.Artifacts.Count candidate @Label artifacts were discovered in @ScopeLabel. No current @Label artifact is selected
                         and none is marked authoritative, so BirkNext does not pick one. Choose which @Label artifact represents the current workspace.
                     </p>
                     <ul class="axh-choices">
@@ -100,7 +139,7 @@
                                         data-birknext-document-id="@artifact.DocumentIdentity"
                                         @onclick="() => SelectAsync(artifact.Id)">
                                     <span class="axh-choice-name">@artifact.DisplayName</span>
-                                    <span class="axh-choice-meta">@MetaLine(artifact)</span>
+                                    <span class="axh-choice-meta">@MetaLine(artifact)@(artifact.Feature is { } feature ? $" · feature {feature}" : "")</span>
                                     <span class="axh-badges">@Badges(artifact)</span>
                                 </button>
                             </li>
@@ -124,6 +163,14 @@
                             <strong class="axh-name" data-testid="artifact-explorer-name">@selected.DisplayName</strong>
                         </div>
                         <dl class="axh-meta">
+                            @if (_state.HasProject)
+                            {
+                                <div><dt>Project</dt><dd data-testid="artifact-explorer-project">@WorkspaceName</dd></div>
+                            }
+                            @if (_state.ModuleLabel is { } moduleLabel)
+                            {
+                                <div><dt>Module</dt><dd data-testid="artifact-explorer-module">@moduleLabel</dd></div>
+                            }
                             <div><dt>File</dt><dd data-testid="artifact-explorer-file">@selected.FileName</dd></div>
                             @if (!string.IsNullOrWhiteSpace(selected.SourcePath) && selected.SourcePath != selected.FileName)
                             {
@@ -140,7 +187,7 @@
                     <div class="axh-context-actions">
                         @if (_state.Artifacts.Count > 1)
                         {
-                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts</label>
+                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts@(_state.ModuleLabel is { } m ? $" in {m}" : "")</label>
                             <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
                                     value="@selected.Id" @onchange="OnSelectorChanged">
                                 @foreach (var artifact in _state.Artifacts)
@@ -209,6 +256,7 @@
         : null;
     private string WorkspaceLabel => _state?.HasProject == true ? $"project {_state.ProjectName ?? _state.ProjectSlug}" : "the current workspace";
     private string WorkspaceName => _state?.HasProject == true ? (_state.ProjectName ?? _state.ProjectSlug)! : "the current workspace";
+    private string ScopeLabel => _state?.ModuleLabel is { } module ? $"module {module} of {WorkspaceLabel}" : WorkspaceLabel;
     /// <summary>Whether the manual workspace holds any artifact (decides "no project loaded" vs "this role has none" without a project).</summary>
     private bool _workspaceHasArtifacts;
     private WorkspaceArtifactState ArtifactState => _state is null ? WorkspaceArtifactState.NoWorkspace : WorkspaceArtifactStates.Of(_state, _workspaceHasArtifacts);
@@ -314,6 +362,29 @@
         if (e.Value?.ToString() is { Length: > 0 } id) await SelectAsync(id);
     }
 
+    private async Task OnModuleChanged(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { } module) await SelectModuleAsync(module);
+    }
+
+    private async Task SelectModuleAsync(string module)
+    {
+        _suggestedRole = null;
+        await Explorer.SelectModuleAsync(module);
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    private string ModuleOptionText(ArtifactModuleRoleState module) => $"{module.Label} — {ModuleStateText(module)}";
+
+    private string ModuleStateText(ArtifactModuleRoleState module) => module switch
+    {
+        { Candidates: 0 } => $"no {Label} artifact",
+        { SelectedId: not null, Candidates: 1 } => $"1 {Label} artifact",
+        { SelectedId: not null } => $"{module.Candidates} {Label} artifacts · selected",
+        _ => $"{module.Candidates} {Label} artifacts · needs selection",
+    };
+
     private async Task SelectAsync(string id)
     {
         _suggestedRole = null;
@@ -324,7 +395,7 @@
 
     private string SourceText(ExplorerArtifact artifact) => artifact.Source switch
     {
-        ExplorerArtifactSource.SampleProject => $"Sample Project {_state?.ProjectName ?? _state?.ProjectSlug}",
+        ExplorerArtifactSource.SampleProject => $"Demo Project {_state?.ProjectName ?? _state?.ProjectSlug}",
         _ => (artifact.Origin switch { "File" => "Imported file", "Drop" => "Dropped file", "Paste" => "Pasted text", _ => "Workspace" })
              + (_state?.HasProject == true ? $" in project {_state.ProjectName ?? _state.ProjectSlug}" : " in the manual workspace"),
     };
@@ -342,7 +413,7 @@
 
     private RenderFragment Badges(ExplorerArtifact artifact) => __builder =>
     {
-        <span class="axh-badge axh-badge-source">@(artifact.Source == ExplorerArtifactSource.SampleProject ? "Sample Project" : "Imported")</span>
+        <span class="axh-badge axh-badge-source">@(artifact.Source == ExplorerArtifactSource.SampleProject ? "Demo Project" : "Imported")</span>
         if (artifact.IsAuthoritative)
         {
             <span class="axh-badge axh-badge-authority" data-testid="artifact-explorer-authoritative">Authoritative · @artifact.Authority</span>

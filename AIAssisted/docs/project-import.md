@@ -85,7 +85,9 @@ duplicated — the duplication was the user's second upload.
   - clears a selected Sample Project (one current project), upserts the `SddProjectImportRecord`, sets `CurrentProjectImportId`;
   - adds every detected document as a revision in scope `import:{importId}`, origin `ProjectImport`, file name = archive-relative
     path (two `spec.md` in different folders stay two documents), authority `Unknown`;
-  - selects a role with exactly one document; a role with several is imported without a selection (`SelectionRequired`);
+  - selects a role with exactly one document; a role with several is imported without a selection (`SelectionRequired`). In a monorepo
+    every candidate is grouped by module and resolved per module — see
+    [project-modules-and-artifact-selection.md](project-modules-and-artifact-selection.md);
   - `RefreshSessionArtifacts` rebuilds session artifacts from the import scope only, so no role of a previous import or of the
     manual workspace stays behind.
 - Scope precedence (`ArtifactExplorerContext.CurrentScope`): selected Sample Project slug → current import scope → manual (null).
@@ -107,6 +109,7 @@ duplicated — the duplication was the user's second upload.
 | docs only | roles detected | No source detected (neutral) | Imported |
 | source only | No supported project artifacts detected (neutral) | snapshot created | Imported |
 | two candidate specs | both imported, choose one | unaffected | Imported with notes |
+| monorepo (several Spec-Kit modules) | all candidates imported, grouped by module; one per module auto-selected, several → needs selection | unaffected | Imported with notes |
 | unsupported language | — | snapshot created, `Partial`/`Failed` coverage, technology marked "not analyzed" | Imported with notes |
 | no Target Environment | imported | snapshot created (target shown as *Not configured — required only for runtime reviews*) | Imported |
 | nothing supported | — | — | Nothing to import (neutral, Import disabled) |
@@ -141,8 +144,10 @@ There was no foreign key and no analyzer that needed the target; it was only the
 - Backend preview: ~0.2–0.4 s (validation, document capture, source detection). 640 Markdown candidates; source detected
   (980 files; C#, SQL, ASP.NET Core, Blazor WebAssembly, Service Bus, Event Hubs, SQL Server, NuGet, containers, xUnit; JavaScript,
   Python, browser frontend and TRX reported as *not analyzed*).
-- It is a monorepo of ~20 Spec-Kit projects, so every role has 18–35 candidates: all are imported, none is selected, and each
-  explorer asks the user to choose (never the first or latest). 50 documents need review (two roles fit), 421 are other documents.
+- It is a monorepo of 9 Spec-Kit modules plus project-level documents (`docs/`): 173 artifact documents (Constitution 10, Specification 32,
+  Data Model 27, Plan 55, Tasks 25, Research 24), grouped into 10 module groups. One constitution per module is selected automatically;
+  every other role needs a selection in most modules, made per module (never the first or latest). See
+  [project-modules-and-artifact-selection.md](project-modules-and-artifact-selection.md).
 - Commit (full Source Analysis): ~96 s; snapshot `Partial` coverage; Source Analysis shows it as current with the same import id.
 - Name derived from the archive file name (`M2LB (2).zip` → `M2LB`); nothing about M2LB is hardcoded.
 

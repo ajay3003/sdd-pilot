@@ -1,5 +1,9 @@
 # Sample Project document discovery
 
+Sample Projects are shown to users as **Demo Projects** (`/demo-projects`; `/sample-projects` still works): optional built-in examples that
+use the same artifact context, module grouping and selection model as an imported project
+([project-modules-and-artifact-selection.md](project-modules-and-artifact-selection.md)).
+
 Sample Projects no longer assumes a fixed set of root-level files (`constitution.md`, `spec.md`, `data-model.md`,
 `plan.md`, `tasks.md`). Any safe folder structure and any filenames work, and every artifact role is optional.
 

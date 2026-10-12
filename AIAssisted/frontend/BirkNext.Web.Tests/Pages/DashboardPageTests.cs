@@ -498,7 +498,7 @@ public class DashboardPageTests : BunitContext
         {
             Text(cut, "db-workspace-roles").Should().Be("2 artifact roles available · 3 artifacts");
             var spec = cut.Find("[data-testid=db-artifact-card][data-role=Specification]").TextContent;
-            spec.Should().Contain("Available · 2").And.Contain("Selection required");
+            spec.Should().Contain("Available · 2").And.Contain("Needs selection");
         });
     }
 

@@ -58,7 +58,7 @@ public static class ProjectImportPresentation
         var notes = new List<string>();
         foreach (var role in discovery.AmbiguousRoles)
             notes.Add(HasExplorer(role.Role)
-                ? $"{ArtifactExplorerRoles.Label(role.Role)}: {role.Documents.Count} documents were detected. Choose one in the {ArtifactExplorerRoles.Label(role.Role)} Explorer."
+                ? $"{ArtifactExplorerRoles.Label(role.Role)}: {role.Documents.Count} documents were detected and all are kept. Review them under Artifact candidates or in the {ArtifactExplorerRoles.Label(role.Role)} Explorer."
                 : $"{ArtifactExplorerRoles.Label(role.Role)}: {role.Documents.Count} documents were detected and kept; none is selected.");
         if (discovery.NeedsReview.Count > 0)
             notes.Add($"{Count(discovery.NeedsReview.Count, "document")} could fit more than one role and were not imported as artifacts.");
@@ -77,16 +77,37 @@ public static class ProjectImportPresentation
         return notes;
     }
 
-    /// <summary>One row per supported role: detected, several to choose from, or not found (neutral — every role is optional).</summary>
-    public static IReadOnlyList<ProjectImportRoleRow> Roles(ProjectImportArtifactDiscovery discovery) =>
-        discovery.Roles.Select(role => role.State switch
+    /// <summary>
+    /// One row per supported role: detected, several candidates, or not found (neutral — every role is optional). Candidates are counted per
+    /// module (Spec-Kit sub-project) when the archive has several: a module with one candidate is selected automatically, a module with
+    /// several waits for the user. One artifact per role is never reported as "complete".
+    /// </summary>
+    public static IReadOnlyList<ProjectImportRoleRow> Roles(ProjectImportArtifactDiscovery discovery)
+    {
+        // Same evidence as the workspace after import: the paths of the detected artifact documents.
+        var roots = ArtifactModules.RootsOf(discovery.ArtifactDocuments.Select(d => d.RelativePath));
+        var moduleCount = discovery.ArtifactDocuments.Select(d => ArtifactModules.ModuleOf(d.RelativePath, roots)).Distinct(StringComparer.Ordinal).Count();
+        return discovery.Roles.Select(role =>
         {
-            SampleRoleState.Detected => new ProjectImportRoleRow(role.Role, ArtifactExplorerRoles.Label(role.Role), ProjectImportTone.Available, "Detected",
-                role.Documents[0].RelativePath),
-            SampleRoleState.Multiple => new ProjectImportRoleRow(role.Role, ArtifactExplorerRoles.Label(role.Role), ProjectImportTone.Partial, $"{role.Documents.Count} candidates",
-                HasExplorer(role.Role) ? "Imported without a selection — choose one in the explorer" : "Imported without a selection"),
-            _ => new ProjectImportRoleRow(role.Role, ArtifactExplorerRoles.Label(role.Role), ProjectImportTone.Neutral, "Not found", "Optional"),
+            var label = ArtifactExplorerRoles.Label(role.Role);
+            if (role.State == SampleRoleState.NotFound)
+                return new ProjectImportRoleRow(role.Role, label, ProjectImportTone.Neutral, "Not detected", "Optional");
+            var byModule = role.Documents.GroupBy(d => ArtifactModules.ModuleOf(d.RelativePath, roots), StringComparer.Ordinal).ToList();
+            if (moduleCount > 1)
+            {
+                var ambiguous = byModule.Count(g => g.Count() > 1);
+                var detail = ambiguous == 0
+                    ? $"One per module — selected automatically for each of {byModule.Count} module{(byModule.Count == 1 ? "" : "s")}"
+                    : $"{byModule.Count - ambiguous} module{(byModule.Count - ambiguous == 1 ? "" : "s")} selected automatically · {ambiguous} need{(ambiguous == 1 ? "s" : "")} selection";
+                return new ProjectImportRoleRow(role.Role, label, ambiguous == 0 ? ProjectImportTone.Available : ProjectImportTone.Partial,
+                    $"{Count(role.Documents.Count, "candidate")} in {byModule.Count} module{(byModule.Count == 1 ? "" : "s")}", detail);
+            }
+            return role.State == SampleRoleState.Detected
+                ? new ProjectImportRoleRow(role.Role, label, ProjectImportTone.Available, "Detected", role.Documents[0].RelativePath)
+                : new ProjectImportRoleRow(role.Role, label, ProjectImportTone.Partial, $"{role.Documents.Count} candidates",
+                    "Imported without a selection — needs selection after import");
         }).ToList();
+    }
 
     /// <summary>The source part before the import runs.</summary>
     public static ProjectImportSourceRow SourcePreview(ProjectImportSourceDetection source, bool sourceAnalysisAvailable = true)

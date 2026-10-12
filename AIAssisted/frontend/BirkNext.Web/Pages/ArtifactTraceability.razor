@@ -28,6 +28,10 @@
     {
         <dl class="at-workspace-context" data-testid="at-workspace-context">
             <div><dt>Current project</dt><dd>@(_inputs.ProjectDisplay ?? "None (manual workspace)")</dd></div>
+            @if (_inputs.ModuleLabel is { } traceModule)
+            {
+                <div><dt>Module</dt><dd data-testid="at-module">@traceModule</dd></div>
+            }
             <div><dt>Artifact source</dt><dd>@_inputs.SourceLabel</dd></div>
         </dl>
 
@@ -51,7 +55,7 @@
             <section class="at-state" role="status" data-testid="at-no-documents">
                 <h2>No document artifacts are available for traceability</h2>
                 <p>The current workspace has no Constitution, Specification, Plan or Task artifact. Traceability is not assessed, and no coverage figure is shown.</p>
-                <p><a href="project-import">Import Project</a>, <a href="sample-projects">choose a Sample Project</a> or import a document in an explorer.</p>
+                <p><a href="project-import">Import Project</a>, <a href="demo-projects">open a Demo Project</a> or import a document in an explorer.</p>
             </section>
         }
         else
@@ -69,6 +73,13 @@
 
                 @if (_inputs.Status == BirkNext.Web.Services.Explorers.TraceabilityInputStatus.SelectionRequired)
                 {
+                    @if (_inputs.ModuleRequired)
+                    {
+                        <p role="status" class="at-selection-note" data-testid="at-module-required">
+                            This project has several modules with their own documents. Choose the module to trace in any document Explorer;
+                            requirements are traced within one module, never across unrelated modules.
+                        </p>
+                    }
                     <p role="status" class="at-selection-note" data-testid="at-selection-required">
                         Several artifacts are available for @string.Join(", ", _inputs.SelectionRequired.Select(r => r.Label)).
                         Choose one in its Explorer; Requirements Traceability never picks one for you.

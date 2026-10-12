@@ -11,8 +11,15 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class TestCoveragePresentation
 {
-    public static CoverageWorkspaceEvidence WorkspaceEvidence(IWorkspaceSessionService workspace, ReviewContext? context, string? projectName)
+    /// <param name="specification">
+    /// The Specification role as the explorers resolve it (the focused module's selected specification in a monorepo). When given, it decides
+    /// whether a specification is available and is recorded on the result; the requirements come from the review context built from it.
+    /// </param>
+    public static CoverageWorkspaceEvidence WorkspaceEvidence(IWorkspaceSessionService workspace, ReviewContext? context, string? projectName,
+        Explorers.ArtifactExplorerState? specification = null)
     {
+        var selected = specification is { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } artifact, Content: { } text } ? artifact : null;
+        if (specification is not null && selected is null) context = null; // no selected specification: no requirement is attributed to one
         var spec = context?.Specification;
         var requirements = (spec?.Requirements ?? []).Where(r => !string.IsNullOrWhiteSpace(r.Id)).GroupBy(r => r.Id, StringComparer.Ordinal).Select(g => g.First())
             .Select(r => new CoverageRequirement(r.Id, r.Text, null)).ToList();
@@ -26,9 +33,24 @@ public static class TestCoveragePresentation
         var executions = workspace.SddLifecycle.TestExecutions.Select(e => new CoverageExecution(e.TestId, e.TestName, e.Result)).ToList();
         return new CoverageWorkspaceEvidence
         {
-            ProjectName = projectName, SpecificationAvailable = workspace.Specification is not null, Requirements = requirements, AcceptanceScenarios = scenarios, Executions = executions,
+            ProjectName = projectName,
+            ArtifactScope = specification?.ModuleLabel is { } module ? $"Module {module}" : null,
+            SpecificationArtifacts = selected is null ? [] :
+                [new CoverageArtifactRef(selected.Id, selected.SourcePath ?? selected.FileName, specification!.HasModules ? selected.Module : null, ArtifactFingerprint.Compute(specification.Content!))],
+            SpecificationAvailable = specification is null ? workspace.Specification is not null : selected is not null,
+            Requirements = requirements, AcceptanceScenarios = scenarios, Executions = executions,
         };
     }
+
+    /// <summary>Which specification the requirement views read, in plain words.</summary>
+    public static string SpecificationScope(Explorers.ArtifactExplorerState specification) => specification switch
+    {
+        { ModuleRequired: true } => $"Needs selection — {specification.Modules!.Count} modules have their own documents; choose the module to review in the Specification Explorer. Requirement views stay empty until then.",
+        { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } s } => (specification.ModuleLabel is { } m ? $"Module {m}: " : "") + (s.SourcePath ?? s.FileName),
+        { Status: Explorers.ExplorerArtifactStatus.SelectionRequired } => $"Needs selection — {specification.Artifacts.Count} candidates{(specification.ModuleLabel is { } m ? $" in module {m}" : "")}; choose one in the Specification Explorer.",
+        { Status: Explorers.ExplorerArtifactStatus.Empty } => specification.ModuleLabel is { } m ? $"Not detected in module {m}" : "Not detected",
+        _ => "Unable to read",
+    };
 
     public static string Step(StepCoverage coverage) => coverage switch
     {

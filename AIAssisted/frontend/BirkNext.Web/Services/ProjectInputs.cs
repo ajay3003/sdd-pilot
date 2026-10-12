@@ -45,7 +45,7 @@ public sealed record ProjectInputs(ProjectInput Documents, ProjectInput Source, 
 /// </summary>
 public static class ProjectInputPresentation
 {
-    public const string SampleProjectsRoute = "sample-projects";
+    public const string SampleProjectsRoute = "demo-projects";
     public const string SourceAnalysisRoute = "source-analysis";
     /// <summary>One project ZIP for both documents and source: the recommended way to provide your own project.</summary>
     public const string ProjectImportRoute = "project-import";
@@ -60,28 +60,33 @@ public static class ProjectInputPresentation
         const string requirement = "Recommended start";
         if (workspace.State == CurrentWorkspaceState.Error)
             return new(ProjectInputKind.Documents, ProjectInputStatus.Unknown, title, requirement, "Unavailable",
-                "The workspace documents could not be read.", "Open Sample Projects", SampleProjectsRoute, []);
+                "The workspace documents could not be read.", "Open Demo Projects", SampleProjectsRoute, []);
         if (workspace.AvailableRoleCount == 0)
         {
             var detail = workspace.IsImportedProject
                 ? $"No supported project documents were detected in the imported project {workspace.ProjectDisplay}. Source can still be reviewed; documents can also be imported in an explorer."
                 : workspace.WorkspaceLoaded
-                ? $"Workspace {workspace.WorkspaceName} has no documents yet. Import the project ZIP, choose a Sample Project, or import a specification, plan or other document in an explorer."
-                : "Import your project ZIP — one upload provides documents and source — or choose a Sample Project for a quick start. Specification, Constitution, Plan, Tasks and Data Model are all optional.";
+                ? $"Workspace {workspace.WorkspaceName} has no documents yet. Import the project ZIP, open a Demo Project, or import a specification, plan or other document in an explorer."
+                : "Import your project ZIP — one upload provides documents and source — or open a Demo Project for a quick start. Specification, Constitution, Plan, Tasks and Data Model are all optional.";
             return new(ProjectInputKind.Documents, ProjectInputStatus.Absent, title, requirement, "Not provided", detail,
                 "Import Project", ProjectImportRoute, []);
         }
 
         var facts = workspace.AvailableRoles.Select(r => r.ArtifactCount > 1 ? $"{r.Label} ({r.ArtifactCount})" : r.Label).ToList();
+        if (workspace.ModuleRequired && workspace.Roles.FirstOrDefault(r => r.ModuleRequired && r.DetectedCount > 0) is { } moduleRole)
+            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
+                $"{workspace.ModuleCount} modules have their own documents. Choose the module to review; documents are never merged across modules.",
+                "Choose module", ExplorerRoute(moduleRole.Role), facts);
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
-            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Selection required",
-                $"{workspace.RoleSummary}. Several {unresolved.Label} documents and none is selected.", $"Choose {unresolved.Label}", ExplorerRoute(unresolved.Role), facts);
+            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
+                $"{workspace.RoleSummary}{(workspace.ModuleLabel is { } m ? $" in module {m}" : "")}. Several {unresolved.Label} documents and none is selected.",
+                $"Choose {unresolved.Label}", ExplorerRoute(unresolved.Role), facts);
         return workspace.IsImportedProject
             ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
                 $"{workspace.RoleSummary} in the imported project {workspace.ProjectDisplay}.", "Open Import Project", ProjectImportRoute, facts)
             : workspace.ProjectLoaded
             ? new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
-                $"{workspace.RoleSummary} in {workspace.ProjectDisplay}.", "Open Sample Projects", SampleProjectsRoute, facts)
+                $"{workspace.RoleSummary} in {workspace.ProjectDisplay}.", "Open Demo Projects", SampleProjectsRoute, facts)
             // The manual workspace has no project to open: importing the project ZIP is the way to a full project.
             : new(ProjectInputKind.Documents, ProjectInputStatus.Ready, title, requirement, "Available",
                 $"{workspace.RoleSummary} in the manual workspace.", "Import Project", ProjectImportRoute, facts);

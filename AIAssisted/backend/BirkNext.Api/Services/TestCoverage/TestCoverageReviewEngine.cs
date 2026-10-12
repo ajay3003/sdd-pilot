@@ -123,7 +123,8 @@ public static partial class TestCoverageReviewEngine
         var tests = devs.Select(d => d.Test).ToList();
         return new TestCoverageReviewResult
         {
-            CompletedAt = now, ProjectName = workspace.ProjectName, Current = Ref(current), Baseline = baseline is null ? null : Ref(baseline),
+            CompletedAt = now, ProjectName = workspace.ProjectName, ArtifactScope = workspace.ArtifactScope, SpecificationArtifacts = workspace.SpecificationArtifacts,
+            Current = Ref(current), Baseline = baseline is null ? null : Ref(baseline),
             Inventory = InventoryOf(inventory, facts, tests, current),
             Tests = tests, QaTests = qaTests, Components = componentCoverage, Journeys = journeys, Behaviors = behaviors, Overlaps = overlaps, Gaps = gaps, QaScope = scope,
             Phases = phases, Limitations = limitations.Distinct(StringComparer.Ordinal).ToList(),

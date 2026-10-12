@@ -1,3 +1,4 @@
+@page "/demo-projects"
 @page "/sample-projects"
 @using System.Runtime.CompilerServices
 @using BirkNext.Web.Models
@@ -21,8 +22,8 @@
 
 <div class="sp-page">
     <div class="sp-page-header">
-        <h1 class="sp-page-title">Sample Projects</h1>
-        <p class="sp-page-desc">Ready-made example projects. BirkNext scans each folder recursively and detects supported artifacts (constitution, specification, data model, plan, tasks, research) by their content — any filename or folder structure works, and every role is optional. For your own project, use <a href="project-import" data-testid="sp-import-project-link">Import Project</a>: one ZIP provides both the documents and the source.</p>
+        <h1 class="sp-page-title">Demo Projects</h1>
+        <p class="sp-page-desc">Demo Projects are optional built-in examples for exploring BirkNext without uploading your own project. Their documents are detected the same way as an imported project's, and every review reads them through the same workspace. For real work, use <a href="project-import" data-testid="sp-import-project-link">Import Project</a>. One ZIP can contain source code, project documents, or both.</p>
     </div>
 
     @if (string.IsNullOrWhiteSpace(Workspace.CurrentProject)
@@ -32,7 +33,7 @@
         @* An imported project is the current project. Its artifacts come from the imported archive, not from this catalog. *@
         <div class="sp-workspace-banner" role="status" data-testid="sp-imported-project">
             Current project: <strong>@imported.ProjectName</strong> — artifact source: imported project archive <code>@imported.ArchiveFileName</code>.
-            Selecting a Sample Project below makes it the current project instead; the import stays available as history.
+            Opening a Demo Project below makes it the current project instead; the import stays available as history.
             <a href="project-import" data-testid="sp-open-import">Open Import Project</a>
         </div>
     }
@@ -43,7 +44,7 @@
         if (selectedProject is not null)
         {
             <div class="sp-workspace-banner" role="status" aria-live="polite" data-testid="sp-selected-project">
-                Selected Sample Project: <strong>@selectedProject.Name</strong>
+                Current Demo Project: <strong>@selectedProject.Name</strong>
             </div>
         }
         else if (!_loading)
@@ -51,8 +52,8 @@
             @* The persisted selection points to a project that is no longer in the catalog. Say so explicitly;
                never substitute another project. The user chooses a replacement or clears the selection. *@
             <div class="sp-workspace-banner sp-workspace-banner-stale" role="alert" data-testid="sp-selection-unavailable">
-                Previously selected Sample Project <strong>@Workspace.CurrentProject</strong> is unavailable (not found in the catalog).
-                Select a Sample Project below or clear the selection.
+                Previously opened Demo Project <strong>@Workspace.CurrentProject</strong> is unavailable (not found in the catalog).
+                Open a Demo Project below or clear the selection.
                 <button type="button" class="sp-btn sp-btn-secondary" @onclick="ClearSelectionAsync" disabled="@_clearingSelection" data-testid="sp-clear-selection">Clear selection</button>
             </div>
         }
@@ -66,7 +67,7 @@
     {
         <div class="sp-loading">
             <div class="sp-spinner" aria-label="Loading…"></div>
-            <span>Discovering sample projects…</span>
+            <span>Discovering demo projects…</span>
         </div>
     }
     else if (_projects.Count == 0)
@@ -74,11 +75,11 @@
         @* Sample Projects are optional demo content: an instance without them is not misconfigured. The configuration key is a technical detail. *@
         <section class="sp-empty" aria-labelledby="sp-empty-title" data-testid="sp-empty">
             <div class="sp-empty-icon" aria-hidden="true">📂</div>
-            <h2 class="sp-empty-title" id="sp-empty-title">No sample projects are configured</h2>
-            <p class="sp-empty-hint">Sample Projects are optional examples. For your own project, use Import Project: one ZIP provides the project documents and the source.</p>
+            <h2 class="sp-empty-title" id="sp-empty-title">No demo projects are installed.</h2>
+            <p class="sp-empty-hint">Use Import Project to review your own project.</p>
             <a class="sp-btn sp-btn-primary sp-empty-action" href="project-import" data-testid="sp-empty-import">Import Project</a>
             <details class="sp-empty-details" data-testid="sp-empty-details">
-                <summary>Technical details for administrators</summary>
+                <summary>Technical details</summary>
                 @if (_meta?.Source == "config")
                 {
                     <p>The configured sample-project folder was not found. Check <code>SampleProjects:BaseDirectory</code> in <code>appsettings.Local.json</code>.</p>

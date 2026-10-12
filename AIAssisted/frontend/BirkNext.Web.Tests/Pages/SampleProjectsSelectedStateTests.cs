@@ -63,7 +63,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             // Banner not shown (no selected project)
-            cut.Markup.Should().NotContain("Selected Sample Project:");
+            cut.Markup.Should().NotContain("Current Demo Project:");
 
             // No "✓ Selected" badges
             cut.Markup.Should().NotContain("✓ Selected");
@@ -89,7 +89,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Autorisasjon");
-            cut.Markup.Should().Contain("Selected Sample Project:");
+            cut.Markup.Should().Contain("Current Demo Project:");
         }, TimeSpan.FromSeconds(5));
 
         // Assert: Selected project is visually obvious
@@ -97,7 +97,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         {
             // Banner shows human display name (split by strong tag in HTML)
             var bannerText = cut.Find(".sp-workspace-banner").TextContent;
-            bannerText.Should().Contain("Selected Sample Project:");
+            bannerText.Should().Contain("Current Demo Project:");
             bannerText.Should().Contain("Autorisasjon");
 
             // Banner does NOT show "0 artifacts loaded"
@@ -145,7 +145,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         {
             // Banner updated with display name
             var bannerText = cut.Find(".sp-workspace-banner").TextContent;
-            bannerText.Should().Contain("Selected Sample Project:");
+            bannerText.Should().Contain("Current Demo Project:");
             bannerText.Should().Contain("Autorisasjon");
 
             // Active card shows "✓ Selected"
@@ -189,7 +189,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
 
             // Banner shows new project display name
             var bannerText = cut.Find(".sp-workspace-banner").TextContent;
-            bannerText.Should().Contain("Selected Sample Project:");
+            bannerText.Should().Contain("Current Demo Project:");
             bannerText.Should().Contain("Person Module");
 
             // Exactly one "✓ Selected" badge exists

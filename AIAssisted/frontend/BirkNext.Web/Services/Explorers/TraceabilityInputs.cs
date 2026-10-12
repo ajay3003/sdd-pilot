@@ -103,6 +103,15 @@ public sealed record TraceabilityInputs(string? Scope, string? ProjectName, IRea
         : LoadedCount < 2 ? TraceabilityInputStatus.Insufficient
         : TraceabilityInputStatus.Ready;
 
-    /// <summary>The scope plus each role's selected artifact id and content fingerprint.</summary>
-    public string Key => string.Join("|", new[] { Scope ?? "manual" }.Concat(Roles.Select(r => $"{r.Role}={r.State.Selected?.Id}@{r.Fingerprint}")));
+    /// <summary>The focused module of a monorepo (its documents are traced together, never with another module's); null without modules.</summary>
+    public string? Module => Roles.Select(r => r.State.HasModules ? r.State.Module : null).FirstOrDefault(m => m is not null);
+
+    public string? ModuleLabel => Module is null ? null : ArtifactModules.Label(Module);
+
+    /// <summary>A monorepo without a focused module: the user chooses the module before anything is traced.</summary>
+    public bool ModuleRequired => Roles.Any(r => r.State.ModuleRequired);
+
+    /// <summary>The scope, the focused module, and each role's selected artifact id and content fingerprint.</summary>
+    public string Key => string.Join("|", new[] { Scope ?? "manual", "module=" + (Module ?? "") }
+        .Concat(Roles.Select(r => $"{r.Role}={r.State.Selected?.Id}@{r.Fingerprint}")));
 }

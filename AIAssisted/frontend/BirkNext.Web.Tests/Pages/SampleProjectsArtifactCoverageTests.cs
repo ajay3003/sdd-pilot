@@ -48,8 +48,8 @@ public sealed class SampleProjectsArtifactCoverageTests : BunitContext
         var cut = Render<SampleProjects>();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=sp-empty]"));
-        cut.Find("#sp-empty-title").TextContent.Should().Be("No sample projects are configured");
-        cut.Find("[data-testid=sp-empty]").TextContent.Should().Contain("Sample Projects are optional examples").And.Contain("use Import Project");
+        cut.Find("#sp-empty-title").TextContent.Should().Be("No demo projects are installed.");
+        cut.Find("[data-testid=sp-empty]").TextContent.Should().Contain("No demo projects are installed.").And.Contain("Use Import Project to review your own project.");
         cut.Find("[data-testid=sp-empty-import]").GetAttribute("href").Should().Be("project-import");
         // The configuration key is a technical detail for administrators, not the message.
         cut.Find("[data-testid=sp-empty-details]").TextContent.Should().Contain("SampleProjects:BaseDirectory");
