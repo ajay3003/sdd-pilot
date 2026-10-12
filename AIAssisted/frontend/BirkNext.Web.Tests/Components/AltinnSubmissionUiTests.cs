@@ -92,6 +92,19 @@ public sealed class AltinnSubmissionUiTests : BunitContext
     }
 
     [Fact]
+    public void Setup_OffersReadOnlyInstanceEvidence_ThatOpensTheJourneyWithTheReadScenarioSelected()
+    {
+        var opened = new List<string?>();
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env").Add(c => c.OnOpenJourney, (string? scenario) => opened.Add(scenario)));
+
+        cut.Find("[data-testid=atp-instance-evidence]").TextContent.Should().Contain("Read-only: no data is submitted or changed.")
+            .And.Contain("instance endpoint is not used").And.Contain("not an MU blob").And.Contain("not a verified submission");
+        cut.Find("[data-testid=atp-open-instance-evidence]").Click();
+        cut.Find("[data-testid=atp-open-journey]").Click();
+        opened.Should().Equal("instance-evidence", null);
+    }
+
+    [Fact]
     public void Setup_UsesTheAppSourceFromASourceAnalysisSnapshot_WithoutAnyUploadOfItsOwn()
     {
         var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));

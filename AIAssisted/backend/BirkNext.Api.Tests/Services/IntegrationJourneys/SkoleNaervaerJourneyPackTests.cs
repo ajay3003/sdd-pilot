@@ -75,7 +75,7 @@ public sealed class SkoleNaervaerJourneyPackTests
     {
         var pack = Pack();
         var report = pack.Journeys.Single(journey => journey.JourneyId == "rapportmottak");
-        report.Scenarios.Where(scenario => scenario.Support == JourneyScenarioSupport.Supported).Select(scenario => scenario.ScenarioId).Should().Equal("valid-report", "person-not-found", "overlapping-report");
+        report.Scenarios.Where(scenario => scenario.Support == JourneyScenarioSupport.Supported).Select(scenario => scenario.ScenarioId).Should().Equal("valid-report", "person-not-found", "overlapping-report", "instance-evidence");
         report.Scenarios.Where(scenario => scenario.Support != JourneyScenarioSupport.Supported).Should().OnlyContain(scenario => !string.IsNullOrWhiteSpace(scenario.NotAssessedBecause));
         report.Scenarios.Select(scenario => scenario.ScenarioId).Should().Contain(["correction", "multiple-reporters", "invalid-xsd", "period-locked", "duplicate-report", "retrieval-decrypt-failure"]);
         pack.Journeys.Single(journey => journey.JourneyId == "periodeavslutning").Scenarios.Single(scenario => scenario.ScenarioId == "pii-absent")

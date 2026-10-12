@@ -124,17 +124,26 @@
         <p class="atp-muted">You choose or enter the synthetic person in TestID yourself (BirkNext sends no identity hint). The resulting Altinn TT02 token stays in backend memory for you and this environment only.</p>
     }
 
-    <h4 class="atp-subheading">3. Run the submission</h4>
+    <h4 class="atp-subheading">3. Altinn instance evidence (read-only)</h4>
+    <p class="atp-muted" data-testid="atp-instance-evidence">Read one existing Altinn instance — process state and data-element metadata — from Altinn Storage. <strong>Read-only: no data is submitted or changed.</strong>
+        The app's own instance endpoint is not used, because it marks the instance as read. An Altinn storage path is Altinn's own storage, not an MU blob, and an observed instance is not a verified submission.</p>
+    @if (OnOpenJourney.HasDelegate)
+    {
+        <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-instance-evidence" @onclick="@(() => OnOpenJourney.InvokeAsync("instance-evidence"))">Check an Altinn instance</button></div>
+    }
+
+    <h4 class="atp-subheading">4. Run the submission</h4>
     <p class="atp-muted">Choose a report scenario, enter the synthetic child and period, and run it in Integration journeys → Rapportmottak. Each Altinn step is recorded on its own; MU, MM and Skolenærværsrapport steps stay Not assessed.</p>
     @if (OnOpenJourney.HasDelegate)
     {
-        <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-journey" @onclick="() => OnOpenJourney.InvokeAsync()">Open the Rapportmottak run</button></div>
+        <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-journey" @onclick="@(() => OnOpenJourney.InvokeAsync(null))">Open the Rapportmottak run</button></div>
     }
 </section>
 
 @code {
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
-    [Parameter] public EventCallback OnOpenJourney { get; set; }
+    /// <summary>Opens Rapportmottak in the shared journey panel, optionally with a scenario selected.</summary>
+    [Parameter] public EventCallback<string?> OnOpenJourney { get; set; }
 
     private readonly string _id = "atp-" + Guid.NewGuid().ToString("N")[..8];
     private IAltinnTestingApiService? _api;

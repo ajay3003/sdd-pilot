@@ -53,6 +53,10 @@
 .ijp-inputs legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
 .ijp-inputs > .ijp-muted { grid-column: 1 / -1; }
 .ijp-input { display: flex; flex-direction: column; min-width: 0; }
+.ijp-facts { display: grid; gap: .1rem; margin: .35rem 0 0; font-size: .8rem; }
+.ijp-facts div { display: flex; flex-wrap: wrap; gap: 0 .4rem; }
+.ijp-facts dt { color: var(--clr-text-muted, #4b5563); }
+.ijp-facts dd { margin: 0; overflow-wrap: anywhere; }
 .ijp-input input { width: 100%; box-sizing: border-box; padding: .45rem; margin: .3rem 0 .15rem; font: inherit; }
 /* Date inputs move focus into their own date segments, where :focus-visible does not reach the host: keep the indicator on the field. */
 .ijp-input input:focus, .ijp-input input:focus-within, .ijp-input select:focus { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }

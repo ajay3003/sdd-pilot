@@ -560,6 +560,9 @@ builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnFormBin
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnAppContractService>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.IdPortenTestSignIn>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnExecutor>();
+// Read-only Altinn instance evidence: Altinn Storage GET (no side effect), observed — never executed — by the shared journey runner.
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnStorageInstanceReader>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnInstanceObserver>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunGate>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyService>();
 // Legacy (read-only): history of runs recorded by the retired Active CDC runner.

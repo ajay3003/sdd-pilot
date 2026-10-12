@@ -25,6 +25,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public const string RapportmottakId = "rapportmottak";
     public const string PeriodeavslutningId = "periodeavslutning";
     public const string PeriodClosedEvent = "SkolenaervaersperiodeLukket";
+    /// <summary>Read-only observation of an existing Altinn instance (Altinn Storage GET); sends and changes nothing.</summary>
+    public const string InstanceEvidenceScenario = "instance-evidence";
+    /// <summary>The scenarios that create and submit a report; only these need the submission contract and the test-data references.</summary>
+    public static readonly IReadOnlyList<string> SubmissionScenarios = ["valid-report", "person-not-found", "overlapping-report"];
 
     private const string EducationCdc = "education-cdc";
     private const string ReportIntake = "report-intake";
@@ -109,6 +113,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         new JourneyScenarioInput(SkoleNaervaerReportInput.PriorReportKey, "Earlier overlapping report", JourneyScenarioInputKind.Choice, true,
                             "Required: a report for this child with an overlapping period was submitted earlier (for example by a previous run).",
                             [new("declared", "Yes — an earlier overlapping report exists for this child")]))),
+                new(InstanceEvidenceScenario, "Altinn instance evidence (read-only)",
+                    "Reads one existing Altinn instance from Altinn Storage (TT02) and records its process state and data-element metadata. Read-only: nothing is created, submitted or changed. An observed instance is not a verified submission, and Altinn's storage path is not an MU blob.",
+                    JourneyScenarioSupport.Supported, StateChanging: false, Inputs:
+                    [
+                        new(SkoleNaervaerInstanceReference.PartyKey, "Instance owner party id", JourneyScenarioInputKind.Reference, true,
+                            "The numeric Altinn party id from the instance id (partyId/instanceGuid). Used for this read only; never stored."),
+                        new(SkoleNaervaerInstanceReference.InstanceKey, "Instance GUID", JourneyScenarioInputKind.Reference, true,
+                            "The instance GUID from the instance id. History keeps only a short reference."),
+                    ]),
                 new("correction", "E2E-07 · Correction", "A corrected report replaces an earlier one and the earlier version is kept as history.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: how a correction is expressed in the Altinn form (a new instance, or OppfolgingAvMelding/Oppdatering) is not in any verified app contract."),
                 new("multiple-reporters", "E2E-09 · Several reporters", "Two reporters report for the same child and period; both reports are kept.", JourneyScenarioSupport.NotAssessed,
@@ -187,7 +200,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     ];
 
     public JourneyInputPreparation PrepareInputs(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs) =>
-        scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs)
+        scenario.ScenarioId == InstanceEvidenceScenario ? SkoleNaervaerInstanceReference.Prepare(inputs)
+        : scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs)
             : inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
 
     public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key switch
@@ -244,7 +258,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     new("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract,
                         contract.Complete ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
                         contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, {contract.ProcessTasks.Count} data task(s)."
-                            : $"Incomplete — {string.Join(" ", contract.Missing)}"),
+                            : $"Incomplete — {string.Join(" ", contract.Missing)}", Scenarios: SubmissionScenarios),
                     new("report-xsd", "Report XSD (MM validation)", JourneyPrerequisiteCategory.Contract,
                         xsdBound ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
                         xsdBound ? "An XML Schema from Source Analysis is bound to the message flow. XSD exists ≠ runtime payload validated."
@@ -252,11 +266,13 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                             : $"XSD {config.ContractVersion ?? "(version unknown)"} is documented only; not source verified.", Mandatory: false),
                     new("test-reporter", "Approved test reporter", JourneyPrerequisiteCategory.SyntheticData,
                         !string.IsNullOrWhiteSpace(config.ReporterReference) && config.ReporterApprovedForTest ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        !string.IsNullOrWhiteSpace(config.ReporterReference) && config.ReporterApprovedForTest ? "An approved test reporter reference is configured." : "No approved synthetic test reporter (institution/foster home test actor) is configured."),
+                        !string.IsNullOrWhiteSpace(config.ReporterReference) && config.ReporterApprovedForTest ? "An approved test reporter reference is configured." : "No approved synthetic test reporter (institution/foster home test actor) is configured.",
+                        Scenarios: SubmissionScenarios),
                     new("synthetic-data", "Synthetic test identity set", JourneyPrerequisiteCategory.SyntheticData,
                         config.ApprovedSyntheticData && !string.IsNullOrWhiteSpace(config.SyntheticIdentitySetReference) ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         config.ApprovedSyntheticData && !string.IsNullOrWhiteSpace(config.SyntheticIdentitySetReference)
-                            ? "An approved synthetic identity set reference is configured." : "No approved synthetic child identity set is configured; real national ids, names and institution data are never used."),
+                            ? "An approved synthetic identity set reference is configured." : "No approved synthetic child identity set is configured; real national ids, names and institution data are never used.",
+                        Scenarios: SubmissionScenarios),
                     // Downstream steps (MU, MM, Skolenærværsrapport) are shown but do not gate the Altinn submission: without them those steps stay
                     // Not assessed, so a run can reach Partial at most.
                     Source("MU", ["MU", "Meldingsutveksleren"]) with { Mandatory = false },

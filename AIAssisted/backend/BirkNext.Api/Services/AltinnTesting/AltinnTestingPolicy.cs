@@ -35,6 +35,13 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     public const string IdPortenTestDiscovery = "https://test.idporten.no/.well-known/openid-configuration";
     public const string AltinnTokenExchange = "https://platform.tt02.altinn.no/authentication/api/v1/exchange/id-porten";
     public const string CallbackPath = "/api/altinn-testing/sign-in/callback";
+    /// <summary>Altinn Storage (TT02). Its GET instance is read-only; the app's own GET instance marks the instance read for person callers.</summary>
+    public const string Tt02StorageInstances = "https://platform.tt02.altinn.no/storage/api/v1/instances/";
+
+    /// <summary>The Storage read of one instance, built only from the fixed TT02 base, a positive numeric party id and a GUID.</summary>
+    public static Uri StorageInstance(long instanceOwnerPartyId, Guid instanceGuid) =>
+        instanceOwnerPartyId > 0 ? new Uri($"{Tt02StorageInstances}{instanceOwnerPartyId.ToString(System.Globalization.CultureInfo.InvariantCulture)}/{instanceGuid:D}")
+            : throw new ArgumentOutOfRangeException(nameof(instanceOwnerPartyId));
 
     private static readonly string[] IdPortenTestHosts = ["test.idporten.no", "login.test.idporten.no"];
     private static readonly string[] ProductionHosts = ["idporten.no", "login.idporten.no", "altinn.no", "www.altinn.no", "platform.altinn.no"];

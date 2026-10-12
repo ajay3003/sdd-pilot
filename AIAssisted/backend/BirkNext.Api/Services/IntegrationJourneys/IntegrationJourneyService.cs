@@ -112,8 +112,10 @@ public sealed class IntegrationJourneyService(
 
         var blockers = new List<string>();
         if (scenario.Support != JourneyScenarioSupport.Supported) blockers.Add(scenario.NotAssessedBecause ?? "The scenario is not supported.");
-        if (!view.CanRun)
-            blockers.AddRange(view.Prerequisites.Where(item => item.Mandatory && item.State != JourneyReadinessState.Ready).Select(item => $"{item.Label}: {item.Detail}"));
+        if (!view.RunnableScenarios.Contains(scenario.ScenarioId, StringComparer.Ordinal))
+            blockers.AddRange(view.Prerequisites.Where(item => item.Mandatory && item.AppliesTo(scenario.ScenarioId) && item.State != JourneyReadinessState.Ready)
+                .Select(item => $"{item.Label}: {item.Detail}"));
+        if (journey.ExecutionMode != JourneyExecutionMode.JourneyRunner) blockers.Add("This journey is not executed by the journey runner.");
         if (TrustProblem(context) is { } trust) blockers.Add(trust);
         if (blockers.Count > 0) return await BlockedAsync(run, blockers.Distinct().ToArray(), ct);
 
@@ -243,21 +245,26 @@ public sealed class IntegrationJourneyService(
         prerequisites.AddRange(await pack.PrerequisitesAsync(journey, context, ct));
         var readiness = Readiness(prerequisites);
         var lastRun = (await history.ListAsync(new IntegrationJourneyHistoryQuery(context.EnvironmentId, pack.PackId, journey.JourneyId), 1, ct)).FirstOrDefault();
-        var canRun = readiness == JourneyReadinessState.Ready && journey.ExecutionMode == JourneyExecutionMode.JourneyRunner
-            && journey.Scenarios.Any(scenario => scenario.Support == JourneyScenarioSupport.Supported);
+        // Per scenario: a read-only observation does not need what a state-changing submission needs (pack-scoped prerequisites).
+        var runnable = journey.ExecutionMode != JourneyExecutionMode.JourneyRunner ? []
+            : journey.Scenarios.Where(scenario => scenario.Support == JourneyScenarioSupport.Supported
+                    && prerequisites.Where(item => item.Mandatory && item.AppliesTo(scenario.ScenarioId)).All(item => item.State == JourneyReadinessState.Ready))
+                .Select(scenario => scenario.ScenarioId).ToArray();
+        var canRun = runnable.Length > 0;
         var sourceItems = prerequisites.Where(item => item.Category is JourneyPrerequisiteCategory.SourceEvidence or JourneyPrerequisiteCategory.Contract).ToArray();
         var configuredAll = journey.Integrations.Count > 0 && prerequisites.Where(item => item.Key.StartsWith(IntegrationKeyPrefix, StringComparison.Ordinal)).All(item => item.State == JourneyReadinessState.Ready);
         var sourceVerified = sourceItems.Length > 0 && sourceItems.All(item => item.State == JourneyReadinessState.Ready);
         var runtimeVerified = lastRun?.OverallState == JourneyRunState.Completed;
         return new IntegrationJourneyView
         {
-            Journey = journey, Readiness = readiness, Prerequisites = prerequisites, MatchedIntegrations = matched, StepStatus = stepStatus, CanRun = canRun,
+            Journey = journey, Readiness = readiness, Prerequisites = prerequisites, MatchedIntegrations = matched, StepStatus = stepStatus, CanRun = canRun, RunnableScenarios = runnable,
             LastRun = lastRun is null ? null : Summary(lastRun),
             ReadinessSummary = readiness switch
             {
                 JourneyReadinessState.Ready => "Ready to run after confirmation.",
                 JourneyReadinessState.NotConfigured => "Not configured: a required integration is missing from Integration Quality Review.",
-                _ => $"{prerequisites.Count(item => item.Mandatory && item.State == JourneyReadinessState.Ready)} of {prerequisites.Count(item => item.Mandatory)} mandatory prerequisites are ready.",
+                _ => $"{prerequisites.Count(item => item.Mandatory && item.State == JourneyReadinessState.Ready)} of {prerequisites.Count(item => item.Mandatory)} mandatory prerequisites are ready."
+                    + (runnable.Length > 0 ? $" Runnable now: {string.Join(", ", journey.Scenarios.Where(item => runnable.Contains(item.ScenarioId)).Select(item => item.DisplayName))}." : ""),
             },
             Maturity = new JourneyMaturity(configuredAll, sourceVerified, canRun, runtimeVerified,
                 $"Configured: {(configuredAll ? "yes" : "no")} · Source verified: {(sourceVerified ? "yes" : "no")} · Executable: {(canRun ? "yes" : "no")} · Runtime verified: {(runtimeVerified ? "yes" : "no")}."),

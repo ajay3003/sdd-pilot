@@ -143,6 +143,8 @@ internal sealed class FakeAltinn : HttpMessageHandler
     /// <summary>Status overrides per stage: discovery, token, exchange, metadata, schema, party, instance, data, validate, next, read.</summary>
     public Dictionary<string, HttpStatusCode> Fail { get; } = new(StringComparer.Ordinal);
     public string ValidationJson { get; set; } = "[]";
+    /// <summary>The Altinn Storage GET instance answer (read-only evidence). Defaults to an instance at Task_1.</summary>
+    public string StorageInstanceJson { get; set; } = StorageInstances.ActiveTask();
     public string DiscoveryIssuer { get; set; } = "https://test.idporten.no";
     public string AuthorizationEndpoint { get; set; } = "https://login.test.idporten.no/authorize";
 
@@ -167,12 +169,13 @@ internal sealed class FakeAltinn : HttpMessageHandler
             ("GET", var u) when u == $"{instance}/validate" => ("validate", ValidationJson),
             ("PUT", var u) when u == $"{instance}/process/next" => ("next", """{"currentTask":null,"ended":"2026-10-12T10:00:00Z","endEvent":"EndEvent_1"}"""),
             ("GET", var u) when u == instance => ("read", Instance(ended: true)),
+            ("GET", var u) when u == $"{AltinnTestingPolicy.Tt02StorageInstances}{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}" => ("storage", StorageInstanceJson),
             _ => ("unknown", ""),
         };
         if (stage == "unknown") return new HttpResponseMessage(HttpStatusCode.NotFound);
         if (Fail.TryGetValue(stage, out var status)) return new HttpResponseMessage(status) { Content = new StringContent("""{"title":"failure with a SECRET-LOOKING body"}""") };
         if ((stage is "exchange") && request.Headers.Authorization?.Parameter != AltinnTestKit.IdPortenToken) return new HttpResponseMessage(HttpStatusCode.Unauthorized);
-        if (stage is "party" or "instance" or "data" or "validate" or "next" or "read" && request.Headers.Authorization?.Parameter != AltinnTestKit.AltinnToken)
+        if (stage is "party" or "instance" or "data" or "validate" or "next" or "read" or "storage" && request.Headers.Authorization?.Parameter != AltinnTestKit.AltinnToken)
             return new HttpResponseMessage(HttpStatusCode.Unauthorized);
         return new HttpResponseMessage(stage == "instance" ? HttpStatusCode.Created : HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
     }
@@ -201,4 +204,48 @@ internal sealed class ManualClock(DateTimeOffset start) : TimeProvider
     private DateTimeOffset _now = start;
     public override DateTimeOffset GetUtcNow() => _now;
     public void Advance(TimeSpan by) => _now += by;
+}
+
+/// <summary>
+/// Altinn Storage instance documents shaped like Storage's Instance model (synthetic values only). Owner fields are present on purpose, with
+/// synthetic marker values, so tests can prove they never reach evidence or history.
+/// </summary>
+internal static class StorageInstances
+{
+    public const string OwnerPersonNumber = "01821599999";
+    public const string OwnerOrganisationNumber = "991234567";
+    public const string OwnerUsername = "synthetic-owner-user";
+    public const string OwnerExternalId = "urn:altinn:person:idporten-email:synthetic@example.test";
+    public const string ContentHash = "md5:c3ludGhldGljLWNvbnRlbnQtaGFzaA==";
+    public static readonly Guid AttachmentGuid = Guid.Parse("8c3d4e5f-0000-4000-8000-000000000003");
+
+    private static string Owner => $$"""
+        "instanceOwner": { "partyId": "{{AltinnTestKit.PartyId}}", "personNumber": "{{OwnerPersonNumber}}", "organisationNumber": "{{OwnerOrganisationNumber}}",
+                           "username": "{{OwnerUsername}}", "externalIdentifier": "{{OwnerExternalId}}" }
+        """;
+
+    private static string Data(Guid id, string dataType, string contentType, long size, bool locked, string? refs = null) => $$"""
+        { "id": "{{id:D}}", "instanceGuid": "{{AltinnTestKit.InstanceGuid:D}}", "dataType": "{{dataType}}", "filename": "{{OwnerPersonNumber}}.xml", "contentType": "{{contentType}}",
+          "blobStoragePath": "buf/skolenaervaer/{{AltinnTestKit.InstanceGuid:D}}/data/{{id:D}}", "size": {{size}}, "contentHash": "{{ContentHash}}", "locked": {{(locked ? "true" : "false")}},
+          "refs": [{{refs ?? ""}}], "isRead": true, "metadata": [ { "key": "source", "value": "{{OwnerPersonNumber}}" } ],
+          "created": "2026-10-12T09:00:00Z", "lastChanged": "2026-10-12T09:05:00Z" }
+        """;
+
+    public static string ActiveTask(string dataType = "model", string id = "") => $$"""
+        { "id": "{{(id.Length > 0 ? id : $"{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}")}}", "appId": "buf/skolenaervaer", "org": "buf", {{Owner}},
+          "created": "2026-10-12T09:00:00Z", "lastChanged": "2026-10-12T09:05:00Z", "status": { "isArchived": false, "readStatus": "Unread" },
+          "process": { "started": "2026-10-12T09:00:01Z", "startEvent": "StartEvent_1",
+            "currentTask": { "flow": 2, "started": "2026-10-12T09:00:01Z", "elementId": "Task_1", "name": "Utfylling", "altinnTaskType": "data",
+                             "ended": null, "validated": { "timestamp": "2026-10-12T09:04:00Z", "canCompleteTask": true }, "flowType": "CompleteCurrentMoveToNext" },
+            "ended": null, "endEvent": null },
+          "data": [ {{Data(AltinnTestKit.DataGuid, dataType, "application/xml", 1532, false)}} ] }
+        """;
+
+    public static string Completed() => $$"""
+        { "id": "{{AltinnTestKit.PartyId}}/{{AltinnTestKit.InstanceGuid:D}}", "appId": "buf/skolenaervaer", "org": "buf", {{Owner}},
+          "created": "2026-10-12T09:00:00Z", "lastChanged": "2026-10-12T09:10:00Z",
+          "process": { "started": "2026-10-12T09:00:01Z", "startEvent": "StartEvent_1", "currentTask": null, "ended": "2026-10-12T09:10:00Z", "endEvent": "EndEvent_1" },
+          "data": [ {{Data(AltinnTestKit.DataGuid, "model", "application/xml", 1532, true)}},
+                    {{Data(AttachmentGuid, "ref-data-as-pdf", "application/pdf", 48211, true, $"\"{AltinnTestKit.DataGuid:D}\"")}} ] }
+        """;
 }

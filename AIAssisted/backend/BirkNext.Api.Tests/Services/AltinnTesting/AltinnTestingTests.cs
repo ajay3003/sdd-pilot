@@ -646,7 +646,7 @@ public sealed class AltinnTestingTests
     {
         var journey = Pack(new IntegrationJourneyHarness(), new AltinnTestKit()).Journeys.Single(item => item.JourneyId == "rapportmottak");
         journey.Scenarios.Where(item => item.Support == JourneyScenarioSupport.Supported).Select(item => item.ScenarioId)
-            .Should().Equal("valid-report", "person-not-found", "overlapping-report");
+            .Should().Equal("valid-report", "person-not-found", "overlapping-report", "instance-evidence");
         journey.Scenarios.Single(item => item.ScenarioId == "correction").NotAssessedBecause.Should().Contain("verified app contract");
         journey.Scenarios.Single(item => item.ScenarioId == "multiple-reporters").NotAssessedBecause.Should().Contain("reporter identities");
         journey.Scenarios.Single(item => item.ScenarioId == "valid-report").Inputs!.Single(item => item.Key == SkoleNaervaerReportInput.IdentitySourceKey).Options!

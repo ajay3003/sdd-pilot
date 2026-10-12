@@ -165,6 +165,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAltinnTestTokens tokens, AltinnAppApiClient altinn, TimeProvider clock) : IJourneyStepExecutor
 {
     public const string AuthStep = "altinn-auth";
+    internal static IReadOnlyList<string> AltinnSteps => Steps;
     public const string InstanceStep = "altinn-instance";
     public const string DataStep = "altinn-data";
     public const string ValidateStep = "altinn-validate";
@@ -194,7 +195,9 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAl
 
     public bool CanExecute(JourneyStepContext context, out string reason)
     {
-        var mine = context.Journey.PackId == SkoleNaervaerJourneyPack.Id && context.Journey.JourneyId == SkoleNaervaerJourneyPack.RapportmottakId && Steps.Contains(context.Step.StepId);
+        // The read-only instance-evidence scenario is never executed: its steps are only observed (SkoleNaervaerAltinnInstanceObserver).
+        var mine = context.Journey.PackId == SkoleNaervaerJourneyPack.Id && context.Journey.JourneyId == SkoleNaervaerJourneyPack.RapportmottakId && Steps.Contains(context.Step.StepId)
+            && context.Scenario?.ScenarioId != SkoleNaervaerJourneyPack.InstanceEvidenceScenario;
         reason = mine ? "Performed through the Altinn TT02 App API after ID-porten TEST sign-in." : "Not an Altinn step of Rapportmottak.";
         return mine;
     }

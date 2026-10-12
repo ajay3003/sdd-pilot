@@ -66,7 +66,7 @@ public sealed record JourneyScenarioDescriptor(
 
 /// <summary>Kinds of typed scenario input. There is deliberately no free-form payload, URL or endpoint kind.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum JourneyScenarioInputKind { Choice, Date, Number, SyntheticPersonIdentifier }
+public enum JourneyScenarioInputKind { Choice, Date, Number, SyntheticPersonIdentifier, Reference }
 
 public sealed record JourneyScenarioInputOption(string Value, string Label);
 
@@ -100,7 +100,13 @@ public sealed record IntegrationJourneyDefinition
     public IReadOnlyList<string> Limitations { get; init; } = [];
 }
 
-public sealed record JourneyPrerequisite(string Key, string Label, JourneyPrerequisiteCategory Category, JourneyReadinessState State, string Detail, bool Mandatory = true);
+/// <summary>A readiness condition. <c>Scenarios</c> limits it to those scenario ids (e.g. only state-changing submissions need a
+/// complete submission contract); null applies it to every scenario of the journey.</summary>
+public sealed record JourneyPrerequisite(string Key, string Label, JourneyPrerequisiteCategory Category, JourneyReadinessState State, string Detail, bool Mandatory = true,
+    IReadOnlyList<string>? Scenarios = null)
+{
+    public bool AppliesTo(string scenarioId) => Scenarios is null || Scenarios.Contains(scenarioId, StringComparer.Ordinal);
+}
 
 /// <summary>Separate maturity levels: a configured integration is not source verified, executable or runtime verified.</summary>
 public sealed record JourneyMaturity(bool Configured, bool SourceVerified, bool Executable, bool RuntimeVerified, string Detail);
@@ -120,6 +126,8 @@ public sealed record IntegrationJourneyView
     public IReadOnlyList<JourneyStepStatus> StepStatus { get; init; } = [];
     public JourneyMaturity Maturity { get; init; } = new(false, false, false, false, "");
     public bool CanRun { get; init; }
+    /// <summary>Supported scenarios whose applicable mandatory prerequisites are all ready.</summary>
+    public IReadOnlyList<string> RunnableScenarios { get; init; } = [];
     public IntegrationJourneyRunSummary? LastRun { get; init; }
 }
 
@@ -167,7 +175,11 @@ public sealed record JourneyStepResult
     public string? Correlation { get; init; }
     public string EvidenceSource { get; init; } = "";
     public DateTimeOffset? CapturedAt { get; init; }
+    /// <summary>Safe, labelled facts behind the evidence (e.g. a task id or a masked reference) — never payloads or personal identifiers.</summary>
+    public IReadOnlyList<JourneyEvidenceFact> Facts { get; init; } = [];
 }
+
+public sealed record JourneyEvidenceFact(string Label, string Value);
 
 public sealed record IntegrationJourneyRun
 {

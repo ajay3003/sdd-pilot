@@ -232,6 +232,10 @@
                                                 case JourneyScenarioInputKind.Number:
                                                     <input id="@inputId" type="number" min="0" step="any" inputmode="decimal" value="@value" aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
                                                     break;
+                                                case JourneyScenarioInputKind.Reference:
+                                                    <input id="@inputId" type="text" autocomplete="off" spellcheck="false" maxlength="64" value="@value"
+                                                           aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
+                                                    break;
                                                 default:
                                                     <input id="@inputId" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="11" value="@value"
                                                            aria-describedby="@(input.Help.Length > 0 ? helpId : null)" @onchange="e => SetInput(view, input.Key, e)" />
@@ -253,7 +257,14 @@
                                     <h5 id="@($"{_id}-confirm-heading")">Confirm journey run</h5>
                                     <p>Environment: @pack.EnvironmentId · Journey: @view.Journey.DisplayName · Scenario: @SelectedScenario(view)</p>
                                     <p>Integrations: @string.Join(", ", view.MatchedIntegrations.Select(item => item.DisplayName ?? item.RequirementKey))</p>
-                                    <p><strong>This run may change downstream state in the non-production environment. Only synthetic test data is used.</strong></p>
+                                    @if (ScenarioOf(view)?.StateChanging == false)
+                                    {
+                                        <p data-testid="ijp-confirm-read-only"><strong>Read-only: this run reads existing data and submits or changes nothing.</strong></p>
+                                    }
+                                    else
+                                    {
+                                        <p><strong>This run may change downstream state in the non-production environment. Only synthetic test data is used.</strong></p>
+                                    }
                                     <label class="ijp-ack"><input type="checkbox" data-testid="ijp-ack" @bind="_acknowledged" /> I confirm this synthetic run against the trusted non-production environment.</label>
                                     <div class="ijp-actions">
                                         <button type="button" class="btn-primary" data-testid="ijp-confirm-run" disabled="@(!_acknowledged || _running)" @onclick="() => StartAsync(view)">Confirm and run</button>
@@ -270,7 +281,16 @@
                                     @if (run.InputSummary.Count > 0) { <ul class="ijp-notes" data-testid="ijp-run-inputs" aria-label="Run inputs (redacted)">@foreach (var item in run.InputSummary) { <li>@item</li> }</ul> }
                                     <table>
                                         <thead><tr><th scope="col">Step</th><th scope="col">State</th><th scope="col">Evidence</th><th scope="col">Reason</th></tr></thead>
-                                        <tbody>@foreach (var step in run.Steps) { <tr><td>@step.Label</td><td>@IntegrationJourneyPresentation.Step(step.State)</td><td>@step.Evidence</td><td>@step.Reason</td></tr> }</tbody>
+                                        <tbody>@foreach (var step in run.Steps)
+                                        {
+                                            <tr data-testid="ijp-last-run-step" data-step="@step.StepId" data-state="@step.State"><td>@step.Label</td><td>@IntegrationJourneyPresentation.Step(step.State)</td>
+                                                <td>@step.Evidence
+                                                    @if (step.Facts.Count > 0)
+                                                    {
+                                                        <dl class="ijp-facts" data-testid="ijp-step-facts">@foreach (var fact in step.Facts) { <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div> }</dl>
+                                                    }
+                                                </td><td>@step.Reason</td></tr>
+                                        }</tbody>
                                     </table>
                                 </div>
                             }
@@ -329,7 +349,7 @@
     private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0
         ? selected : view.Journey.Scenarios.FirstOrDefault(item => item.Support == JourneyScenarioSupport.Supported)?.ScenarioId ?? "";
 
-    private bool CanRun(IntegrationJourneyView view) => view.CanRun && Authentication.Configured && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
+    private bool CanRun(IntegrationJourneyView view) => ScenarioRunnable(view) && Authentication.Configured && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
 
     private readonly Dictionary<string, Dictionary<string, string>> _inputs = new(StringComparer.Ordinal);
 
@@ -347,9 +367,14 @@
         (ScenarioOf(view)?.Inputs ?? []).All(input => !input.Required || InputValue(view, input.Key).Trim().Length > 0);
 
     /// <summary>Opens a journey's tab and moves focus to it (used by domain pages that link to one journey).</summary>
-    public async Task ShowJourneyAsync(string journeyId)
+    public async Task ShowJourneyAsync(string journeyId, string? scenarioId = null)
     {
-        if (Pack is null || Pack.Journeys.All(item => item.Journey.JourneyId != journeyId)) return;
+        if (Pack is null || Pack.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId) is not { } target) return;
+        if (scenarioId is not null && target.Journey.Scenarios.Any(item => item.ScenarioId == scenarioId && item.Support == JourneyScenarioSupport.Supported))
+        {
+            _scenario[journeyId] = scenarioId;
+            _inputs.Remove(journeyId);
+        }
         await SelectTabAsync(journeyId);
         StateHasChanged();
         if (_tabRefs.TryGetValue(journeyId, out var element))
@@ -360,9 +385,13 @@
         }
     }
 
+    /// <summary>Whether the selected scenario's own prerequisites are ready (a read-only observation needs less than a submission).</summary>
+    private bool ScenarioRunnable(IntegrationJourneyView view) =>
+        view.RunnableScenarios.Count > 0 ? view.RunnableScenarios.Contains(SelectedScenario(view), StringComparer.Ordinal) : view.CanRun;
+
     private string RunNote(IntegrationJourneyView view) => !Authentication.Configured
         ? "Authentication not configured: real journey execution is disabled in this browser."
-        : !view.CanRun ? $"Not runnable: {view.ReadinessSummary} The backend re-checks every prerequisite before anything runs."
+        : !ScenarioRunnable(view) ? $"Not runnable: {view.ReadinessSummary} The backend re-checks every prerequisite before anything runs."
         : "Ready. The backend re-checks every prerequisite, the trusted environment and your ActiveEventExecute permission before anything runs.";
 
     protected override async Task OnParametersSetAsync()

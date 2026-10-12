@@ -111,9 +111,9 @@
     private IntegrationJourneyPanel? _journeys;
     private string? _initialJourney;
 
-    private async Task OpenRapportmottakAsync()
+    private async Task OpenRapportmottakAsync(string? scenarioId)
     {
-        if (_journeys is not null) await _journeys.ShowJourneyAsync("rapportmottak");
+        if (_journeys is not null) await _journeys.ShowJourneyAsync("rapportmottak", scenarioId);
     }
 
     private async Task GoToSectionAsync(string id)
