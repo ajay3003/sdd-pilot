@@ -1,0 +1,65 @@
+.snt-page {
+    display: grid;
+    gap: 1.25rem;
+    min-width: 0;
+}
+
+.snt-tabs,
+.snt-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem 1rem;
+}
+
+.snt-tabs a,
+.snt-links a {
+    color: var(--link-color, #155eef);
+    text-decoration: underline;
+    text-underline-offset: .15em;
+}
+
+.snt-tabs a:focus-visible,
+.snt-links a:focus-visible {
+    outline: 3px solid var(--focus-color, #155eef);
+    outline-offset: 3px;
+}
+
+.snt-context,
+.snt-journeys {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .9rem;
+}
+
+.snt-context > div,
+.snt-journeys article {
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid var(--border-color, #d0d5dd);
+    border-radius: .65rem;
+    overflow-wrap: anywhere;
+}
+
+.snt-context dt {
+    font-weight: 650;
+}
+
+.snt-context dd {
+    margin: .35rem 0 0;
+}
+
+.snt-page section {
+    scroll-margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+    .snt-context,
+    .snt-journeys {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.snt-rules {
+    margin: 0;
+    padding-left: 1.25rem;
+}

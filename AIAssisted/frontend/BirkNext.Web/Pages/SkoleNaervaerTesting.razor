@@ -1,0 +1,132 @@
+@page "/extensions/skolenaervaer"
+@using BirkNext.Integrations
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject IIntegrationCatalogApiService IntegrationApi
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+<PageTitle>Skolenærvær Testing</PageTitle>
+
+<div class="snt-page">
+    <PageHeader Title="Skolenærvær Testing"
+                Description="Review and test Skolenærvær integrations using BirkNext's shared CDC, integration journey and source-evidence engines." />
+    <p>Skolenærvær Testing brings together the CDC, Altinn/MU/MM and Service Bus/Bufdata journeys for Skolenærvær. It reuses the shared BirkNext integration configuration, source evidence, execution safety and history.</p>
+    <p>Some journeys cannot be executed yet. BirkNext shows which source, integration or authentication prerequisites are missing.</p>
+
+    <nav class="snt-tabs" aria-label="Skolenærvær Testing sections">
+        @foreach (var (id, label) in Sections)
+        {
+            @* Path-qualified href (with <base href="/"> a bare "#id" leaves the page); the click moves focus to the section heading,
+               because Blazor's same-page fragment handling does not reliably scroll. *@
+            <a href="@($"extensions/skolenaervaer#{id}")" @onclick="() => GoToSectionAsync(id)" @onclick:preventDefault>@label</a>
+        }
+    </nav>
+
+    <section id="snt-overview" aria-labelledby="snt-overview-heading">
+        <h2 id="snt-overview-heading" tabindex="-1">Overview</h2>
+        <dl class="snt-context">
+            <div><dt>Project</dt><dd>@(Workspace.ProjectName ?? "No project selected")</dd></div>
+            <div><dt>Target Environment</dt><dd>@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
+            <div><dt>Source snapshot</dt><dd>@_sourceSummary</dd></div>
+        </dl>
+        <p class="snt-links">
+            <a href="/integration-quality-review">Open Integration Quality Review</a>
+            <a href="/admin/system-settings?section=target-environments">Open Target Environments</a>
+            <a href="/source-analysis">Open Source Analysis</a>
+            <a href="/test-coverage-review">Open Test Coverage &amp; Overlap Review</a>
+        </p>
+        <div class="snt-journeys">
+            <article><h3>Utdanningsdata</h3><p>BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning</p><p>Readiness comes from Active Event Testing. Event Hub configuration and safety checks are shared.</p></article>
+            <article><h3>Rapportmottak</h3><p>Privat institusjon/fosterhjem → Altinn → MU → MM → Skolenærværsrapport</p><p>Altinn is Not ready when endpoint, authentication or required integration configuration is missing.</p></article>
+            <article><h3>Periodeavslutning</h3><p>Skolenærværsrapport → Service Bus → Bufdata</p><p>Service Bus acceptance does not establish that Bufdata processed the event.</p></article>
+        </div>
+    </section>
+
+    <section id="snt-education" aria-labelledby="snt-education-heading">
+        <h2 id="snt-education-heading" tabindex="-1">Utdanningsdata</h2>
+        @if (_profile is null)
+        {
+            <p role="status">Not ready: select a Target Environment to load shared Active Event readiness. Source Analysis remains available without a target.</p>
+        }
+        else
+        {
+            <ActiveEventTestingPanel SummaryFirst="true" Profile="_profile" Integrations="_integrations" />
+        }
+    </section>
+
+    <section id="snt-rapport" aria-labelledby="snt-rapport-heading">
+        <h2 id="snt-rapport-heading" tabindex="-1">Rapportmottak</h2>
+        <p>Altinn → MU → MM → Skolenærværsrapport. The shared journey engine reports each step's configuration, observation, verification and limitation separately.</p>
+    </section>
+    <section id="snt-period" aria-labelledby="snt-period-heading">
+        <h2 id="snt-period-heading" tabindex="-1">Periodeavslutning</h2>
+        <p>Skolenærværsrapport → Service Bus → Bufdata. Service Bus accepted is not the same as Bufdata processed.</p>
+    </section>
+    <section id="snt-rules" aria-labelledby="snt-rules-heading">
+        <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>
+        <p>Rule outcomes are evaluated from Source Analysis evidence by the shared journey service. Without a source snapshot, rules are Not assessed.</p>
+        <ul class="snt-rules" data-testid="snt-person-lookup">
+            <li>MM performs transport and intake only; it does not perform the Person lookup.</li>
+            <li>Skolenærværsrapport performs the Person lookup for submitted reports.</li>
+            <li>Utdanning performs the Person lookup for BiRK education data.</li>
+        </ul>
+    </section>
+    <section id="snt-history" aria-labelledby="snt-history-heading">
+        <h2 id="snt-history-heading" tabindex="-1">History</h2>
+        <p>Run history and exports are provided by the shared Active Event and Integration Journey panels.</p>
+    </section>
+
+    @if (_profile is not null)
+    {
+        <IntegrationJourneyPanel Profile="_profile" />
+    }
+    else
+    {
+        <p role="status" data-testid="snt-journeys-not-ready">Integration journeys, architecture rule results and history: not available until a Target Environment is selected. Nothing has been run or assessed.</p>
+    }
+</div>
+
+@code {
+    private static readonly (string Id, string Label)[] Sections =
+    [
+        ("snt-overview", "Overview"), ("snt-education", "Utdanningsdata"), ("snt-rapport", "Rapportmottak"),
+        ("snt-period", "Periodeavslutning"), ("snt-rules", "Architecture Rules"), ("snt-history", "History"),
+    ];
+
+    private FrontendAnalysisProfile? _profile;
+    private IReadOnlyList<IntegrationDefinition> _integrations = [];
+    private string _sourceSummary = "Not available";
+
+    private async Task GoToSectionAsync(string id)
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", $"{id}-heading"); }
+        catch (JSException) { }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var context = await ContextFactory.GetActiveContextAsync();
+        _profile = context.ActiveProfileOrNull;
+        if (_profile is null)
+        {
+            _sourceSummary = "Not available without an active Target Environment; use Source Analysis to inspect source evidence.";
+            return;
+        }
+
+        try
+        {
+            var catalog = await IntegrationApi.GetCatalogAsync(_profile);
+            _integrations = catalog.Integrations;
+            var snapshots = await IntegrationApi.ListSourceSnapshotsAsync(_profile.Id);
+            var latest = snapshots.OrderByDescending(snapshot => snapshot.AnalyzedAt).FirstOrDefault();
+            _sourceSummary = latest is null ? "No source snapshot · architecture rules Not assessed" : $"{latest.Archive.FileName} · {latest.Status}";
+        }
+        catch (HttpRequestException)
+        {
+            _sourceSummary = "Unavailable · open Source Analysis to inspect evidence";
+        }
+    }
+}

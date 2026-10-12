@@ -139,6 +139,8 @@ public static class NavigationCatalog
         [
             new("security-classification-review", "Security Classification", "nav-icon-constitution-compliance", Always, ReviewId: "security-classification-review",
                 Hint: "domain extension (M2LB child security classification), not a generic security review"),
+            new("extensions/skolenaervaer", "Skolenærvær Testing", "nav-icon-constitution-compliance", Always,
+                Hint: "domain view over the shared CDC and integration journey engines"),
         ]),
         new("ai-review", "AI Review",
         [

@@ -90,6 +90,7 @@ public static class DocumentationCatalog
         ["integration-quality-review"] = new("Reviews configured integrations using available source/runtime evidence.", "Integration registry, selected source snapshots and observed evidence.", "Configured is not observed; listed types have unequal support."),
         ["performance-test-review"] = new("Defines and runs controlled performance workloads and comparisons.", "Scenario, workload, thresholds, engine readiness and selected target.", "Latest run is not baseline automatically; comparisons require comparability."),
         ["security-classification-review"] = new("Runs project-specific child security classification checks.", "M2LB extension and its supported project evidence.", "Extension-specific; not a generic security review or runtime verification."),
+        ["extensions/skolenaervaer"] = new("Brings the Skolenærvær CDC and integration journeys into one domain-oriented view.", "Shared Active Event readiness and runs, Integration Journey readiness and history, IQR configuration, Target Environment and Source Analysis evidence.", "A navigation and composition shell only; execution, configuration, history, exports and architecture rule evaluation remain in shared services."),
         ["dependency-review"] = new("Reviews supported dependency inventory/SBOM evidence.", "Source Analysis inventory and supported ecosystem/source mode.", "Unsupported package ecosystems remain tool limitations."),
         ["pipeline-review"] = new("Interprets CI/CD definitions and pipeline structure.", "CI/CD evidence from the selected Source Analysis snapshot.", "A definition does not prove execution, success or deployment."),
         ["critical-e2e-regression"] = new("Runs configured safety-gated critical browser journeys.", "Configured journeys, target and browser/runtime readiness.", "A journey covers only its recorded steps and cannot prove full correctness."),
@@ -235,6 +236,7 @@ public static class DocumentationCatalog
             ("test-coverage-review","Test Coverage & Overlap Review","/test-coverage-review","test-coverage-review","Quality & Testing",null,null),
             ("ai-generated-code-review","AI-Generated Code Review","/ai-generated-code-review","ai-generated-code-review","Quality & Testing",null,null),
             ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
+            ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","integration-journeys","Extensions",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
         };
