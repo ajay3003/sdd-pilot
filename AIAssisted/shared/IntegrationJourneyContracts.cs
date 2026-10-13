@@ -257,3 +257,26 @@ public enum ExecutionAccessMode { None, Authenticated, LocalTrusted }
 
 /// <summary>What the backend says about the current caller's execution permission. No identity, claim or token is included.</summary>
 public sealed record ExecutionAccessView(ExecutionAccessMode Mode, bool CanExecute, string Detail);
+
+// ── Run validation (dry run) ────────────────────────────────────────────────────────────────────────────────────────
+
+/// <summary>One check of a dry run. A non-blocking check is a stated risk (e.g. a schema field the app is expected to fill), not a pass.</summary>
+public sealed record JourneyValidationCheck(string Key, string Label, bool Passed, string Detail, bool Blocking = true);
+
+/// <summary>
+/// The result of validating a run WITHOUT executing it: no external call, no token, no instance, no history record. The preview holds only
+/// safe, redacted facts (structure, masked values) — never a payload, identifier, token or secret.
+/// </summary>
+public sealed record JourneyRunValidation
+{
+    public string PackId { get; init; } = "";
+    public string JourneyId { get; init; } = "";
+    public string ScenarioId { get; init; } = "";
+    public string EnvironmentId { get; init; } = "";
+    /// <summary>True when every blocking check passed. Valid is not executed, and not a prediction that the external system accepts it.</summary>
+    public bool Valid { get; init; }
+    public IReadOnlyList<JourneyValidationCheck> Checks { get; init; } = [];
+    public IReadOnlyList<JourneyEvidenceFact> Preview { get; init; } = [];
+    public IReadOnlyList<string> InputSummary { get; init; } = [];
+    public string Note { get; init; } = "Validated without any external call: nothing was authenticated, created, sent or recorded.";
+}

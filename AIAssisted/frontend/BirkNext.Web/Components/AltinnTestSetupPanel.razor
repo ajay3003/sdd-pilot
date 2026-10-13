@@ -106,6 +106,10 @@
     @if (_readiness.Count > 0)
     {
         <ul class="atp-list atp-readiness" data-testid="atp-unattended-readiness" aria-label="Unattended run readiness">
+            <li data-testid="atp-readiness-item" data-key="local-execution" data-state="@(CanExecute ? "Ready" : "NotReady")">
+                <span class="atp-pill atp-pill-@(CanExecute ? "ready" : "attention")">@(CanExecute ? "Ready" : "Not ready")</span>
+                <strong>Local execution</strong> <span class="atp-muted">@ExecutionGate.Detail(Authentication, _access)</span>
+            </li>
             @foreach (var item in _readiness)
             {
                 <li data-testid="atp-readiness-item" data-key="@item.Key" data-state="@item.State">
@@ -113,6 +117,13 @@
                     <strong>@item.Label</strong> <span class="atp-muted">@item.Detail</span>
                 </li>
             }
+            <li data-testid="atp-readiness-item" data-key="real-execution" data-state="@(RealExecutionReady ? "Ready" : "NotReady")">
+                <span class="atp-pill atp-pill-@(RealExecutionReady ? "ready" : "attention")">@(RealExecutionReady ? "Ready" : "Not ready")</span>
+                <strong>Real external execution (E2E-01)</strong>
+                <span class="atp-muted">@(RealExecutionReady
+                    ? "Every prerequisite is met. A run is a real call to ID-porten TEST and Altinn TT02: validate it first, then confirm it explicitly. One attempt; nothing is retried."
+                    : "Not ready: resolve the items marked Not ready, Missing or Not confirmed. Scenario input is checked when you validate or run.")</span>
+            </li>
         </ul>
     }
     else if (_readinessError is { } readinessError) { <p class="atp-muted" data-testid="atp-readiness-unavailable">@readinessError</p> }
@@ -177,7 +188,10 @@
     private IReadOnlyList<JourneyPrerequisite> _readiness = [];
     private string? _readinessError;
     /// <summary>The Rapportmottak prerequisites this section explains, in the order a tester resolves them.</summary>
-    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth"];
+    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-profile", "reporter-auth"];
+    private bool _realScenarioRunnable;
+    /// <summary>The backend's own verdict for the first real scenario (E2E-01) plus this browser's execution access; the backend re-checks on Run.</summary>
+    private bool RealExecutionReady => _realScenarioRunnable && CanExecute;
     private string _source = "source";
     private string _snapshotId = "";
     private string? _error;
@@ -233,12 +247,14 @@
         var view = packs.Value?.SelectMany(pack => pack.Journeys).FirstOrDefault(item => item.Journey.JourneyId == "rapportmottak");
         _readiness = view is null ? [] : ReadinessKeys.Select(key => view.Prerequisites.FirstOrDefault(item => item.Key == key)).OfType<JourneyPrerequisite>().ToArray();
         _readinessError = view is null ? packs.Error ?? "Rapportmottak readiness is not available." : null;
+        _realScenarioRunnable = view?.RunnableScenarios.Contains("valid-report", StringComparer.Ordinal) == true;
     }
 
     private static string ReadinessLabel(JourneyPrerequisite item) => item.Key switch
     {
         "app-policy" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
         "unattended-provider" => item.State == JourneyReadinessState.Ready ? "Available" : "Disabled",
+        "reporter-profile" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
         "client-secret" => item.State == JourneyReadinessState.Ready ? "Available" : "Missing",
         "idporten-client" or "synthetic-reporter" => item.State == JourneyReadinessState.Ready ? "Configured" : "Missing",
         "altinn-environment" => item.State == JourneyReadinessState.Ready ? "Ready" : "Blocked",

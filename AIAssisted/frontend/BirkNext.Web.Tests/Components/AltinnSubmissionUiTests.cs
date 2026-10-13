@@ -131,7 +131,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         cut.Find("[data-testid=atp-unattended-intro]").TextContent.Should().Contain("No sign-in step").And.Contain("No browser opens").And.Contain("child in the report is separate");
         var rows = cut.FindAll("[data-testid=atp-readiness-item]").ToDictionary(row => row.GetAttribute("data-key")!, row => row.TextContent);
-        rows.Keys.Should().Equal("altinn-environment", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth");
+        rows.Keys.Should().Equal("local-execution", "altinn-environment", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth", "real-execution");
         rows["app-policy"].Should().Contain("Not confirmed").And.Contain("App authorization policy not confirmed");
         rows["client-secret"].Should().Contain("Missing").And.Contain("not available to the backend");
         rows["idporten-client"].Should().Contain("Missing");
@@ -166,6 +166,54 @@ public sealed class AltinnSubmissionUiTests : BunitContext
     }
 
     [Fact]
+    public void ValidateRun_ShowsEachCheck_AndARedactedPreview_WithoutStartingARun()
+    {
+        var cut = Render<IntegrationJourneyPanel>(p => p.Add(c => c.Profile, Profile).Add(c => c.InitialJourneyId, "rapportmottak"));
+        cut.Find("[data-testid=ijp-validate]").HasAttribute("disabled").Should().BeTrue("inputs are empty");
+        Fill(cut);
+        cut.Find("[data-testid=ijp-validate]").TextContent.Should().Be("Validate run (no external calls)");
+        cut.Find("[data-testid=ijp-validate]").Click();
+
+        _journeys.Validated.Should().ContainSingle().Which.Confirmed.Should().BeFalse("validation is not a confirmed run");
+        _journeys.Started.Should().BeEmpty();
+        var section = cut.Find("[data-testid=ijp-validation]");
+        section.GetAttribute("data-valid").Should().Be("false");
+        section.TextContent.Should().Contain("Not valid").And.Contain("Validated without any external call");
+        cut.FindAll("[data-testid=ijp-validation-check]").Select(li => (li.GetAttribute("data-key"), li.GetAttribute("data-passed"), li.GetAttribute("data-blocking")))
+            .Should().Equal(("endpoints", "true", "true"), ("process-plan", "false", "true"), ("unfilled-required", "false", "false"));
+        cut.Find("[data-key=unfilled-required]").TextContent.Should().StartWith("Risk:");
+        cut.Find("[data-testid=ijp-validation-preview]").TextContent.Should().Contain("#1a2b3c4d").And.NotContain(Identifier);
+    }
+
+    [Fact]
+    public void TheConfirmation_StatesThatTheRunIsARealExternalCall_WithOneAttempt()
+    {
+        var cut = Render<IntegrationJourneyPanel>(p => p.Add(c => c.Profile, Profile).Add(c => c.InitialJourneyId, "rapportmottak"));
+        Fill(cut);
+        cut.Find("[data-testid=ijp-start]").Click();
+        cut.Find("[data-testid=ijp-confirm-external]").TextContent.Should().Contain("real external call").And.Contain("one attempt, nothing is retried");
+    }
+
+    [Fact]
+    public void Readiness_ShowsLocalExecution_ReporterProfile_AndTheRealExecutionVerdict()
+    {
+        _journeys.Prerequisites.Add(new("reporter-profile", "Reporter Altinn profile", JourneyPrerequisiteCategory.SyntheticData, JourneyReadinessState.NotConfigured,
+            "Not confirmed for 1 reporter alias(es).", Mandatory: false));
+        var notReady = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        var keys = notReady.FindAll("[data-testid=atp-readiness-item]").Select(li => li.GetAttribute("data-key")).ToList();
+        keys.First().Should().Be("local-execution");
+        keys.Last().Should().Be("real-execution");
+        keys.Should().Contain("reporter-profile");
+        notReady.Find("[data-key=reporter-profile]").TextContent.Should().Contain("Not confirmed");
+        notReady.Find("[data-key=real-execution]").GetAttribute("data-state").Should().Be("NotReady");
+
+        _journeys.Runnable.Add("valid-report");
+        var ready = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        ready.Find("[data-key=real-execution]").GetAttribute("data-state").Should().Be("Ready");
+        ready.Find("[data-key=real-execution]").TextContent.Should().Contain("validate it first").And.Contain("One attempt");
+    }
+
+    [Fact]
     public void FullyReadyUnattendedReadiness_IsShownAsReady()
     {
         _journeys.Prerequisites.Clear();
@@ -176,7 +224,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
             new("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.Ready, "Unattended."),
         ]);
         var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
-        cut.FindAll("[data-testid=atp-readiness-item]").Should().OnlyContain(row => row.GetAttribute("data-state") == "Ready");
+        cut.FindAll("[data-testid=atp-readiness-item]").Where(row => row.GetAttribute("data-key") != "real-execution").Should().OnlyContain(row => row.GetAttribute("data-state") == "Ready");
         cut.Find("[data-key=app-policy]").TextContent.Should().Contain("Confirmed");
     }
 
@@ -293,6 +341,24 @@ public sealed class AltinnSubmissionUiTests : BunitContext
     private sealed class FakeJourneys : IIntegrationJourneysApiService
     {
         public List<IntegrationJourneyRunRequest> Started { get; } = [];
+        public List<IntegrationJourneyRunRequest> Validated { get; } = [];
+        public List<string> Runnable { get; } = [];
+
+        public Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)
+        {
+            Validated.Add(request);
+            return Task.FromResult(new ActiveEventApiResult<JourneyRunValidation>(new JourneyRunValidation
+            {
+                PackId = request.PackId, JourneyId = request.JourneyId, ScenarioId = request.ScenarioId, EnvironmentId = request.EnvironmentId, Valid = false,
+                Checks =
+                [
+                    new("endpoints", "Endpoint allowlist", true, "5 endpoints (ID-porten TEST, Altinn TT02 exchange, the approved app) all pass the request guard."),
+                    new("process-plan", "Process plan", false, "Not known: the app's process definition (process.bpmn) is not in the contract, so process/next is never called."),
+                    new("unfilled-required", "Required schema fields BirkNext does not fill", false, "6 required field(s) are not filled by BirkNext (Meldingshode.Id, …).", false),
+                ],
+                Preview = [new("XML root", "Skolenaervaer"), new("Klient.Identifikator.Fodselsnummer", "synthetic identifier #1a2b3c4d (masked)")],
+            }, null, HttpStatusCode.OK));
+        }
 
         private static IReadOnlyList<JourneyScenarioInput> Inputs =>
         [
@@ -329,6 +395,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                         Scenarios = [new("valid-report", "E2E-01 / MU-01 · Valid report", "Typed report.", JourneyScenarioSupport.Supported, Inputs: Inputs)],
                     },
                     Readiness = JourneyReadinessState.Ready, CanRun = true, ReadinessSummary = "Ready to run after confirmation.", Prerequisites = Prerequisites,
+                    RunnableScenarios = Runnable,
                 },
             ],
         };

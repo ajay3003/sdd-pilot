@@ -36,6 +36,19 @@ public interface IIntegrationJourneyPack
     /// </summary>
     JourneyInputPreparation PrepareInputs(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs) =>
         inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
+
+    /// <summary>
+    /// Pack-specific dry-run checks for a run with validated inputs: configuration, payload construction, endpoint allowlist and plan —
+    /// strictly without any network call, token or state change. The default adds nothing (generic readiness checks still apply).
+    /// </summary>
+    Task<JourneyPackValidation> ValidateRunAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> values,
+        JourneyPackContext context, CancellationToken ct) => Task.FromResult(JourneyPackValidation.None);
+}
+
+/// <summary>A pack's dry-run checks and its redacted preview.</summary>
+public sealed record JourneyPackValidation(IReadOnlyList<JourneyValidationCheck> Checks, IReadOnlyList<JourneyEvidenceFact> Preview)
+{
+    public static JourneyPackValidation None { get; } = new([], []);
 }
 
 /// <summary>Normalized run inputs (memory only, for the executors) and the redacted summary history keeps instead of them.</summary>

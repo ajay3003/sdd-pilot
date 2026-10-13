@@ -51,6 +51,10 @@ public sealed class SyntheticReporterOptions
     public string AcrValue { get; set; } = "idporten-loa-substantial";
     /// <summary>Only the TT02 test environment is ever allowed.</summary>
     public string AllowedEnvironment { get; set; } = "TT02";
+    /// <summary>Set only after confirming the synthetic person has an Altinn TT02 profile (Altinn's token exchange requires one).</summary>
+    public bool AltinnProfileConfirmed { get; set; }
+    /// <summary>The Altinn role the reporter acts in. A run's instance owner is the reporter's own current party, so only PRIV is supported.</summary>
+    public string AltinnRole { get; set; } = "PRIV";
 }
 
 public sealed class AltinnAppPolicyConfirmation
@@ -60,6 +64,14 @@ public sealed class AltinnAppPolicyConfirmation
     public string Reference { get; set; } = "";
     public string ConfirmedBy { get; set; } = "";
     public DateOnly? ConfirmedOn { get; set; }
+    /// <summary>Optional, verified facts read from the deployed policy. Empty lists mean "not recorded", never "anything allowed".</summary>
+    public string? PolicySource { get; set; }
+    public string? PolicySha256 { get; set; }
+    /// <summary>Altinn role codes the end-user rule grants (e.g. PRIV, DAGL).</summary>
+    public List<string> EndUserRoles { get; set; } = [];
+    /// <summary>XACML actions the end-user rule grants (e.g. read, write, instantiate). A data task's process/next is authorized by "write".</summary>
+    public List<string> EndUserActions { get; set; } = [];
+    public int? MinimumAuthenticationLevel { get; set; }
 }
 
 public sealed class IdPortenTestOptions
@@ -177,7 +189,26 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
             ? $"Reporter {reporter.Alias}: the TestID identifier is missing or not a synthetic Test-Norge identifier (month + 80)."
         : !AcrValues.Contains(reporter.AcrValue, StringComparer.Ordinal) ? $"Reporter {reporter.Alias}: the security level must be one of {string.Join(", ", AcrValues)}."
         : !string.Equals(reporter.AllowedEnvironment, "TT02", StringComparison.Ordinal) ? $"Reporter {reporter.Alias}: only the TT02 test environment is allowed."
+        : !string.Equals(reporter.AltinnRole, "PRIV", StringComparison.OrdinalIgnoreCase)
+            ? $"Reporter {reporter.Alias}: only the Altinn role PRIV (the person's own party) is supported; acting for an organisation is not part of this run."
+        : !reporter.AltinnProfileConfirmed ? $"Reporter {reporter.Alias}: the Altinn TT02 profile of the synthetic person is not confirmed (AltinnProfileConfirmed)."
         : null;
+
+    /// <summary>Whether the reporter has a confirmed Altinn TT02 profile (reported separately so it is never hidden among other problems).</summary>
+    public int ReportersAwaitingProfile => options.UnattendedIdPortenTest.Reporters.Count(item => !item.AltinnProfileConfirmed);
+
+    /// <summary>
+    /// When the confirmation records verified policy facts, they must allow what a submission does: an end user in the reporter's role may
+    /// instantiate and write (write also authorizes process/next on a data task). Unrecorded facts are not assumed either way.
+    /// </summary>
+    public static string? PolicyProblem(AltinnAppPolicyConfirmation confirmation, string reporterRole)
+    {
+        if (confirmation.EndUserRoles.Count > 0 && !confirmation.EndUserRoles.Contains(reporterRole, StringComparer.OrdinalIgnoreCase))
+            return $"The confirmed app policy grants end users with the roles {string.Join(", ", confirmation.EndUserRoles)}, not {reporterRole}.";
+        if (confirmation.EndUserActions.Count > 0 && new[] { "instantiate", "write" }.FirstOrDefault(action => !confirmation.EndUserActions.Contains(action, StringComparer.OrdinalIgnoreCase)) is { } missing)
+            return $"The confirmed app policy does not grant end users the action {missing}, which a submission needs.";
+        return null;
+    }
 
     /// <summary>What is missing for unattended reporter authentication, each problem on its own (no value is ever echoed).</summary>
     public IReadOnlyList<string> UnattendedProblems(AltinnTestConfiguration config)
@@ -215,7 +246,12 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
             && !string.IsNullOrWhiteSpace(item.Reference) && !string.IsNullOrWhiteSpace(item.ConfirmedBy) && item.ConfirmedOn is not null);
         detail = confirmation is null
             ? $"App authorization policy not confirmed: no service-owner confirmation that {appId ?? "the app"}'s XACML policy lets the synthetic TEST reporter instantiate, write and complete (backend {AltinnTestingOptions.Section}:ConfirmedAppPolicies). Real submissions stay disabled."
-            : $"App authorization policy confirmed by the service owner ({confirmation.ConfirmedOn:yyyy-MM-dd}, reference {confirmation.Reference}). The policy itself is not read by BirkNext.";
+            : $"App authorization policy confirmed ({confirmation.ConfirmedOn:yyyy-MM-dd}, {confirmation.ConfirmedBy}, reference {confirmation.Reference})"
+              + (confirmation.EndUserRoles.Count > 0 ? $"; end-user roles {string.Join(", ", confirmation.EndUserRoles)}" : "")
+              + (confirmation.EndUserActions.Count > 0 ? $"; end-user actions {string.Join(", ", confirmation.EndUserActions)}" : "")
+              + (confirmation.MinimumAuthenticationLevel is { } level ? $"; minimum authentication level {level}" : "")
+              + (confirmation.PolicySha256 is { Length: > 0 } sha ? $"; policy sha256 {sha[..Math.Min(12, sha.Length)]}…" : "")
+              + ". BirkNext does not read the policy at run time; re-confirm when the app's policy changes.";
         return confirmation;
     }
 

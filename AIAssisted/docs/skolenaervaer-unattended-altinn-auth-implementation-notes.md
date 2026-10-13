@@ -114,3 +114,77 @@ grants it, X-Forwarded-For is never consulted (no forwarded-headers middleware),
 `RequireAuthenticatedUser()` because the handler enforces both paths; anonymous requests outside local trust still get 401.
 Execution actor: `local-session:loopback` or `authenticated-user:<16 hex of SHA-256(iss|oid/sub)>`, persisted as `IntegrationJourneyRun.InitiatedBy`.
 `GET /api/execution-access` returns `{mode, canExecute, detail}` only; the frontend uses it to enable Run and the backend re-checks every run.
+
+## 10. First supervised TT02 run — preparation audit (2026-10-13)
+
+The only external requests were three anonymous, read-only GETs: no token, cookie or identity; no instance, Storage, process or ID-porten call.
+
+### 10.1 App authorization policy — FOUND (decision A, compatible for the person/PRIV path)
+
+| Fact | Value | Basis |
+|---|---|---|
+| Source | `GET https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy` (HTTP 200, `text/xml`, sha256 `f8f418aa794af4f79403f578c5d29356b3b92fdb1d40bd077f722e511ee2b370`) | Read 2026-10-13. Altinn Resource Registry `ResourceController.GetPolicy`: no `[Authorize]`, no fallback policy (official source) |
+| Rule 1 (end user) | Roles `PRIV` (Privatperson) or `DAGL` (Daglig leder) → actions `read`, `write`, `delete`, `instantiate` on `buf/skolenaervaer` | Proven (policy.xml) |
+| Rule 2 (service owner) | org `buf` → `read`, `write`, `instantiate`, `complete` (confirm received) | Proven (policy.xml) |
+| Minimum authentication level | 1 for persons; 3 for organisation tokens | Proven (policy obligations) |
+| process/next on a data task | authorized by `write` (`ProcessEngineAuthorizer.GetActionsThatAllowProcessNextForTaskType`: Data → `["write"]`) | Proven (Altinn app-lib source) |
+| `complete` | Service owner's "confirm received", not needed for a submission | Proven |
+| Party types allowed | person, organisation, subUnit, bankruptcyEstate; `disallowUserInstantiation: false`; app lib 8.12.7 | Proven (public applicationmetadata) |
+| Child identifier | Form data only; the policy has no attribute on form content | Proven |
+| Reporter = instance owner | Yes in BirkNext: the instance is created for the reporter's current party (`parties/current`), so the actor is the person for their own party (PRIV) | Proven (code) |
+| Acting for an organisation (DAGL) | Allowed by the policy, but NOT what the current run does; design intent DEC-52 says institutions typically report as organisations | Policy proven; out of scope for the first run |
+
+**Ready-to-apply configuration (not committed).** The automated reviewer blocked committing a confirmation that opens the real-execution gate, so the service owner or operator decides whether to apply it (backend configuration, e.g. `appsettings.Development.json` or environment variables):
+
+```json
+"ConfirmedAppPolicies": [
+  {
+    "AppId": "buf/skolenaervaer",
+    "Reference": "TT02 Resource Registry GET resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy (anonymous, read-only)",
+    "ConfirmedBy": "BirkNext audit of the deployed TT02 app policy",
+    "ConfirmedOn": "2026-10-13",
+    "PolicySource": "https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy",
+    "PolicySha256": "f8f418aa794af4f79403f578c5d29356b3b92fdb1d40bd077f722e511ee2b370",
+    "EndUserRoles": [ "PRIV", "DAGL" ],
+    "EndUserActions": [ "read", "write", "delete", "instantiate" ],
+    "MinimumAuthenticationLevel": 1
+  }
+]
+```
+
+### 10.2 Remaining first-run facts
+
+- **App source:** `buf/skolenaervaer` is not in any Source Analysis snapshot. `Tiltak 2` is the Meldingsutveksler (MU) source, which consumes this app as service owner; it is not the app's policy.
+- **Process contract:** `process.bpmn` is not published. Only public metadata shows the form data type on `Task_1`. The contract therefore stays incomplete, the submission prerequisite stays Not ready, and the executor never calls process/next. This is the blocking item (decision D below).
+- **Meldingshode:** the real schema requires `Id`, `MeldingstypeNmsp`, `FagsystemAvsender` (`Leverandor`, `Navn`, `Versjon`), `SendtTidspunkt`, `Avsender` and `Mottaker`. BirkNext fills none of them. Because form users never enter them, the app is expected to fill them, but that is unproven. Altinn validation in the first live run is the first evidence.
+- **Reporter:** a configured synthetic TestID person with `AltinnRole: PRIV` and `AltinnProfileConfirmed: true` (Altinn's exchange requires an Altinn TT02 profile). The identifier is kept outside committed files.
+- **Client:** ID-porten TEST client id and `openid` plus the Altinn instance scopes come from Integration Quality Review. The registered redirect URI and client secret come from backend config or a secret store.
+
+### 10.3 Dry run
+
+`POST /api/integration-journeys/runs/validate` (UI: "Validate run (no external calls)") checks:
+
+- scenario, inputs, trusted environment and every mandatory prerequisite;
+- reporter resolution and unattended configuration (secret presence only);
+- Production safety and the endpoint allowlist;
+- app policy against the reporter's role and the contract;
+- the typed form and its XML (size only);
+- unfilled required fields (a risk, not a blocker);
+- the process plan.
+
+It makes no network call, holds no token and records no history. Its preview is redacted (masked child reference, no XML).
+
+### 10.4 First supervised run (separate, explicit step)
+
+1. Skolenærvær Testing → Rapportmottak → E2E-01.
+2. Choose the approved reporter alias and an approved registered synthetic child.
+3. Enter the period and whole hours.
+4. Validate the run until it shows **Valid — not executed**.
+5. Confirm the real external call.
+6. The backend then performs, in order:
+   - unattended ID-porten TEST authentication and the Altinn exchange;
+   - create instance, upload XML, validate;
+   - process/next (only with a complete process contract);
+   - read the receipt.
+7. Optionally read the Storage evidence with the same token.
+8. Stop. One attempt; nothing is retried. MU, MM, report and Bufdata are observed later.

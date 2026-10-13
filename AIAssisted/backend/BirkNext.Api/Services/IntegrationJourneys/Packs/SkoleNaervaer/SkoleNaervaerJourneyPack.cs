@@ -219,6 +219,89 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         : scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs)
             : inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
 
+    /// <summary>
+    /// Dry run of a Rapportmottak submission: everything the executor checks and builds before its first call — reporter, unattended
+    /// configuration (secret presence only), endpoint allowlist, Production safety, app policy for the reporter's role, contract, the typed
+    /// form and its XML, and the process plan — without any network call, token, instance or history. The preview is redacted.
+    /// </summary>
+    public async Task<JourneyPackValidation> ValidateRunAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> values,
+        JourneyPackContext context, CancellationToken ct)
+    {
+        if (journey.JourneyId != RapportmottakId || !SubmissionScenarios.Contains(scenario.ScenarioId, StringComparer.Ordinal)) return JourneyPackValidation.None;
+        var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
+        var config = flow.AltinnConfiguration;
+        var contract = altinnContracts.Evaluate(context.EnvironmentId, config.AppIdentifier, flow.AppContract);
+        var checks = new List<JourneyValidationCheck>();
+        var preview = new List<JourneyEvidenceFact>();
+
+        var reporter = values.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) ?? "";
+        var role = "PRIV";
+        if (reporter == AltinnTestingPolicy.InteractiveReporter)
+            checks.Add(new("reporter", "Reporter", true, "Interactive fallback: the tester's own TestID sign-in is used (checked when the run starts, not here)."));
+        else
+        {
+            var resolved = altinnPolicy.Reporter(reporter, out var reporterReason);
+            role = resolved?.AltinnRole ?? role;
+            checks.Add(new("reporter", "Reporter", resolved is not null, resolved is not null ? $"Synthetic TEST reporter alias {reporter} resolved (identifier not shown); role {role}." : reporterReason));
+            var problems = altinnPolicy.UnattendedProblems(config);
+            checks.Add(new("unattended-configuration", "Unattended ID-porten TEST configuration", problems.Count == 0,
+                problems.Count == 0 ? "Client id, openid scope, registered redirect URI and client secret are present (secret value not read out)." : string.Join(" ", problems)));
+        }
+
+        var environment = AltinnTestingPolicy.AltinnEnvironmentBlock(config);
+        checks.Add(new("production-safety", "Production safety", environment is null, environment ?? "Altinn TT02 only; Production hosts are refused by name on every request."));
+        var app = altinnPolicy.ApprovedApp(config.AppIdentifier, out _);
+        var endpoints = new List<Uri>
+        {
+            new(AltinnTestingPolicy.IdPortenTestDiscovery), new("https://login.test.idporten.no/authorize"), new("https://test.idporten.no/token"), new(AltinnTestingPolicy.AltinnTokenExchange),
+        };
+        if (app is { } a) endpoints.Add(new Uri(AltinnTestingPolicy.AppBase(a.Org, a.App), "instances"));
+        var blocked = endpoints.Select(uri => (uri, reason: AltinnTestingPolicy.RequestBlock(uri))).Where(item => item.reason is not null).ToList();
+        checks.Add(new("endpoints", "Endpoint allowlist", blocked.Count == 0 && app is not null,
+            app is null ? "No approved app: the app endpoint cannot be built." : blocked.Count == 0
+                ? $"{endpoints.Count} endpoints (ID-porten TEST, Altinn TT02 exchange, the approved app) all pass the request guard."
+                : string.Join(" ", blocked.Select(item => item.reason))));
+
+        var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail);
+        var policyProblem = confirmation is null ? null : AltinnTestingPolicy.PolicyProblem(confirmation, role);
+        checks.Add(new("app-policy", "App authorization policy for the reporter", confirmation is not null && policyProblem is null, policyProblem ?? policyDetail));
+        checks.Add(new("contract", "App contract", contract.Complete, contract.Complete ? "Complete." : $"Incomplete — {string.Join(" ", contract.Missing)}"));
+
+        if (contract.Fields.Count > 0 && contract.FormDataTypeId is { } dataType)
+        {
+            var input = SkoleNaervaerReportInput.Read(values);
+            var (model, problem) = SkoleNaervaerAltinnExecutor.BuildModel(input, contract.Fields);
+            var xml = model is not null && contract.SubmissionContentType == "application/xml" && contract.XmlRootElement is { } rootElement && contract.XmlNamespace is { } ns
+                ? SkoleNaervaerAltinnExecutor.ToXml(model, contract.Fields, rootElement, ns, contract.XmlElementsQualified) : null;
+            checks.Add(new("form", "Typed form data", model is not null, problem ?? (xml is not null
+                ? $"Form built at the verified schema paths and serialized as XML ({System.Text.Encoding.UTF8.GetByteCount(xml)} bytes, not shown)."
+                : "Form built at the verified schema paths.")));
+            preview.Add(new("Data type", dataType));
+            preview.Add(new("Content type", contract.SubmissionContentType ?? "(unknown)"));
+            if (contract.XmlRootElement is { } root) preview.Add(new("XML root", root));
+            if (contract.XmlNamespace is { } xmlNamespace) preview.Add(new("XML namespace", xmlNamespace));
+            foreach (var binding in contract.Bindings.Where(item => item.Present))
+                preview.Add(new(binding.ExpectedPath, binding.Key switch
+                {
+                    SkoleNaervaerAltinnForm.ChildIdentifier => $"synthetic identifier {SyntheticPersonIdentifier.Reference(input.ChildIdentifier)} (masked)",
+                    SkoleNaervaerAltinnForm.PeriodFrom => input.From.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    SkoleNaervaerAltinnForm.PeriodTo => input.To.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                    SkoleNaervaerAltinnForm.PlannedHours => input.PlannedHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    _ => input.ActualHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                }));
+        }
+        else checks.Add(new("form", "Typed form data", false, "The app's form schema is not known, so the form cannot be built."));
+
+        checks.Add(new("unfilled-required", "Required schema fields BirkNext does not fill", contract.RequiredUnboundFields.Count == 0,
+            contract.RequiredUnboundFields.Count == 0 ? "None."
+                : $"{contract.RequiredUnboundFields.Count} required field(s) are not filled by BirkNext ({string.Join(", ", contract.RequiredUnboundFields.Take(10).Select(field => field.Path))}). They must come from the app itself — not verified; Altinn's validation step of the first live run will show it.",
+            Blocking: false));
+        checks.Add(new("process-plan", "Process plan", contract.ProcessTasks.Count > 0, contract.ProcessTasks.Count > 0
+            ? $"process/next × {contract.ProcessTasks.Count} ({string.Join(" → ", contract.ProcessTasks.Select(task => $"{task.TaskId} ({task.TaskType})"))} → end); a data task's process/next is authorized by \"write\"."
+            : "Not known: the app's process definition (process.bpmn) is not in the contract, so process/next is never called."));
+        return new JourneyPackValidation(checks, preview);
+    }
+
     public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key switch
     {
         EducationCdc => integration.Kind == IntegrationKind.EventHub && (integration.SourceResource?.Trim() ?? "").Split('.') is { Length: 3 } parts
@@ -263,7 +346,12 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var clientReady = config.AuthenticationType == ExternalAuthenticationType.IDPorten && !string.IsNullOrWhiteSpace(config.ClientReference)
                     && config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal) && altinnPolicy.UnattendedRedirect() is not null;
                 var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterProblem(item) is null);
-                var policyConfirmed = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail) is not null;
+                var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail);
+                // A confirmed policy must also allow the roles the configured reporters act in (unattended aliases, or PRIV for the fallback).
+                var roles = options.Reporters.Select(item => item.AltinnRole).Append("PRIV").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var policyProblem = confirmation is null ? null : roles.Select(role => AltinnTestingPolicy.PolicyProblem(confirmation, role)).FirstOrDefault(item => item is not null);
+                var policyConfirmed = confirmation is not null && policyProblem is null;
+                var awaitingProfile = altinnPolicy.ReportersAwaitingProfile;
                 return
                 [
                     new("altinn-environment", "Altinn TT02 environment", JourneyPrerequisiteCategory.TrustedEnvironment,
@@ -296,8 +384,14 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     new("altinn-auth", "Interactive TestID sign-in (fallback)", JourneyPrerequisiteCategory.Authentication,
                         signIn.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         signIn.Count == 0 ? "Optional fallback configured: a tester can sign in with TestID in the browser instead." : $"Optional fallback not configured: {string.Join(" ", signIn)}", Mandatory: false),
+                    new("reporter-profile", "Reporter Altinn profile", JourneyPrerequisiteCategory.SyntheticData,
+                        options.Reporters.Count > 0 && awaitingProfile == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        options.Reporters.Count == 0 ? "Not applicable until a synthetic reporter alias is configured."
+                            : awaitingProfile == 0 ? "Confirmed: every configured synthetic reporter has an Altinn TT02 profile (Altinn's token exchange requires one)."
+                            : $"Not confirmed for {awaitingProfile} reporter alias(es): Altinn's token exchange fails for a person without an Altinn TT02 profile (AltinnProfileConfirmed).", Mandatory: false),
                     new("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization,
-                        policyConfirmed ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady, policyDetail, Scenarios: SubmissionScenarios),
+                        policyConfirmed ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady, policyProblem is null ? policyDetail : $"{policyDetail} Not compatible: {policyProblem}",
+                        Scenarios: SubmissionScenarios),
                     new("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract,
                         contract.Complete ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
                         contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, {contract.ProcessTasks.Count} data task(s)."

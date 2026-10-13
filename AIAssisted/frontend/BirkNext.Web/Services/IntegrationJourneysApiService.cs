@@ -15,6 +15,9 @@ public interface IIntegrationJourneysApiService
     Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>> PacksAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<ArchitectureRuleReport>> RulesAsync(string environmentId, string packId, CancellationToken ct = default);
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
+    /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
+    Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<JourneyRunValidation>(null, "Run validation is not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> GetAsync(Guid runId, CancellationToken ct = default);
     Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyRunSummary>>> HistoryAsync(string environmentId, string packId, string? journeyId, JourneyRunState? state, CancellationToken ct = default);
 }
@@ -34,6 +37,12 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
     {
         using var response = await http.PostAsJsonAsync("api/integration-journeys/runs", request, Json, ct);
         return await ReadAsync<IntegrationJourneyRun>(response, ct);
+    }
+
+    public async Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/integration-journeys/runs/validate", request, Json, ct);
+        return await ReadAsync<JourneyRunValidation>(response, ct);
     }
 
     public Task<ActiveEventApiResult<IntegrationJourneyRun>> GetAsync(Guid runId, CancellationToken ct = default) =>

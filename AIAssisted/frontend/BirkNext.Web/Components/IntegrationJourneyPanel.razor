@@ -249,7 +249,10 @@
                             }
                             @if (!_confirming)
                             {
-                                <button type="button" class="btn-primary" data-testid="ijp-start" disabled="@(!CanRun(view))" aria-describedby="@($"{_id}-run-note")" @onclick="() => _confirming = true">Run journey</button>
+                                <div class="ijp-actions">
+                                    <button type="button" class="btn-secondary" data-testid="ijp-validate" disabled="@(!CanValidate(view))" @onclick="() => ValidateAsync(view)">Validate run (no external calls)</button>
+                                    <button type="button" class="btn-primary" data-testid="ijp-start" disabled="@(!CanRun(view))" aria-describedby="@($"{_id}-run-note")" @onclick="() => _confirming = true">Run journey</button>
+                                </div>
                             }
                             else
                             {
@@ -264,6 +267,7 @@
                                     else
                                     {
                                         <p><strong>This run may change downstream state in the non-production environment. Only synthetic test data is used.</strong></p>
+                                        <p data-testid="ijp-confirm-external">This is a real external call to the configured test environment: one attempt, nothing is retried. Validate the run first if you have not.</p>
                                     }
                                     <label class="ijp-ack"><input type="checkbox" data-testid="ijp-ack" @bind="_acknowledged" /> I confirm this synthetic run against the trusted non-production environment.</label>
                                     <div class="ijp-actions">
@@ -273,6 +277,26 @@
                                 </div>
                             }
                             <p id="@($"{_id}-run-note")" class="ijp-muted" data-testid="ijp-run-note">@RunNote(view)</p>
+                            @if (_validating) { <p class="ijp-muted" role="status" data-testid="ijp-validating">Validating… no external call is made.</p> }
+                            @if (_validation is { } validation && validation.JourneyId == view.Journey.JourneyId)
+                            {
+                                <section class="ijp-validation" aria-labelledby="@($"{_id}-validation-heading")" data-testid="ijp-validation" data-valid="@(validation.Valid ? "true" : "false")">
+                                    <h5 id="@($"{_id}-validation-heading")">Run validation <span class="ijp-pill ijp-pill-neutral">@(validation.Valid ? "Valid — not executed" : "Not valid")</span></h5>
+                                    <p class="ijp-muted">@validation.Note</p>
+                                    <ul class="ijp-notes" aria-label="Validation checks">
+                                        @foreach (var check in validation.Checks)
+                                        {
+                                            <li data-testid="ijp-validation-check" data-key="@check.Key" data-passed="@(check.Passed ? "true" : "false")" data-blocking="@(check.Blocking ? "true" : "false")">
+                                                <strong>@(check.Passed ? "Passed" : check.Blocking ? "Not passed" : "Risk"):</strong> @check.Label — @check.Detail
+                                            </li>
+                                        }
+                                    </ul>
+                                    @if (validation.Preview.Count > 0)
+                                    {
+                                        <dl class="ijp-facts" data-testid="ijp-validation-preview" aria-label="Redacted payload preview">@foreach (var fact in validation.Preview) { <div><dt>@fact.Label</dt><dd>@fact.Value</dd></div> }</dl>
+                                    }
+                                </section>
+                            }
                             @if (_running) { <p class="ijp-muted" role="status" data-testid="ijp-running">Running… each step is recorded separately as its evidence arrives.</p> }
                             @if (_lastRun is { } run && run.JourneyId == view.Journey.JourneyId)
                             {
@@ -358,6 +382,33 @@
 
     private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0
         ? selected : view.Journey.Scenarios.FirstOrDefault(item => item.Support == JourneyScenarioSupport.Supported)?.ScenarioId ?? "";
+
+    private JourneyRunValidation? _validation;
+    private bool _validating;
+
+    /// <summary>Validation needs the same execution capability as a run (it reveals configuration readiness) but never executes anything.</summary>
+    private bool CanValidate(IntegrationJourneyView view) => CanExecute && !_running && !_validating && SelectedScenario(view).Length > 0 && InputsComplete(view)
+        && view.Journey.ExecutionMode == JourneyExecutionMode.JourneyRunner;
+
+    private async Task ValidateAsync(IntegrationJourneyView view)
+    {
+        if (Api is null || Profile is null || _packs.FirstOrDefault(item => item.PackId == _packId) is not { } pack) return;
+        _validating = true;
+        _error = null;
+        try
+        {
+            var result = await Api.ValidateAsync(new IntegrationJourneyRunRequest
+            {
+                EnvironmentId = Profile.Id, PackId = pack.PackId, JourneyId = view.Journey.JourneyId, ScenarioId = SelectedScenario(view),
+                Inputs = (ScenarioOf(view)?.Inputs ?? []).Where(input => InputValue(view, input.Key).Trim().Length > 0)
+                    .ToDictionary(input => input.Key, input => InputValue(view, input.Key).Trim()),
+            });
+            _validation = result.Value;
+            _error = result.Error;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The backend could not validate the run."; }
+        finally { _validating = false; }
+    }
 
     private bool CanRun(IntegrationJourneyView view) => ScenarioRunnable(view) && CanExecute && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
 

@@ -255,7 +255,13 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is not { } app) return Blocked(context, appReason);
         if (!contract.Complete) return Blocked(context, $"The Altinn app contract is incomplete: {string.Join(" ", contract.Missing)}");
         // A state-changing submission needs the service owner's confirmation of the app's authorization policy: re-checked here, not only in readiness.
-        if (context.Scenario?.StateChanging != false && policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, out var policyDetail) is null) return Blocked(context, policyDetail);
+        if (context.Scenario?.StateChanging != false)
+        {
+            if (policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, out var policyDetail) is not { } confirmation) return Blocked(context, policyDetail);
+            var role = context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is { } selected && selected != AltinnTestingPolicy.InteractiveReporter
+                ? policy.Reporter(selected, out _)?.AltinnRole ?? "PRIV" : "PRIV";
+            if (AltinnTestingPolicy.PolicyProblem(confirmation, role) is { } policyProblem) return Blocked(context, policyProblem);
+        }
         if (context.InputValues.Count == 0) return Blocked(context, "The run has no validated report inputs.");
         if (contract.SubmissionContentType is not { } contentType) return Blocked(context, "The form's submission format is not known.");
         // The form is built (and checked against the schema's types) before anything is sent, so an unusable input never leaves an instance behind.

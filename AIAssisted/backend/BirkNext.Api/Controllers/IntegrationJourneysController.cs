@@ -45,6 +45,14 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
         catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    /// <summary>Validates a run without executing it (no external call, no token, no history). Same execution capability as starting a run.</summary>
+    [HttpPost("runs/validate")]
+    public async Task<ActionResult<JourneyRunValidation>> Validate([FromBody] IntegrationJourneyRunRequest request, CancellationToken ct)
+    {
+        try { return Ok(await journeys.ValidateAsync(request, ct)); }
+        catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [HttpGet("runs")]
     public async Task<ActionResult<IReadOnlyList<IntegrationJourneyRunSummary>>> History([FromQuery] string environmentId, [FromQuery] string? packId, [FromQuery] string? journeyId,
         [FromQuery] string? scenarioId, [FromQuery] JourneyRunState? state, [FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, CancellationToken ct) =>

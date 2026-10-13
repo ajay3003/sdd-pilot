@@ -42,12 +42,12 @@ internal sealed class AltinnTestKit
 
     /// <summary>Approved synthetic reporter, ID-porten TEST client secret and registered redirect for unattended authentication; optionally the
     /// service owner's app-policy confirmation (without it, submissions stay Not ready).</summary>
-    public AltinnTestKit ConfigureUnattended(bool confirmPolicy = true, bool enabled = true, bool secret = true, bool reporter = true)
+    public AltinnTestKit ConfigureUnattended(bool confirmPolicy = true, bool enabled = true, bool secret = true, bool reporter = true, bool profile = true)
     {
         Options.UnattendedIdPortenTest = new UnattendedIdPortenTestOptions
         {
             Enabled = enabled, RedirectUri = HeadlessRedirect, ClientSecret = secret ? ClientSecret : null,
-            Reporters = reporter ? [new SyntheticReporterOptions { Alias = ReporterAlias, Label = "Skolenærvær reporter A", TestIdPersonIdentifier = ReporterIdentifier }] : [],
+            Reporters = reporter ? [new SyntheticReporterOptions { Alias = ReporterAlias, Label = "Skolenærvær reporter A", TestIdPersonIdentifier = ReporterIdentifier, AltinnProfileConfirmed = profile }] : [],
         };
         Options.ConfirmedAppPolicies = confirmPolicy
             ? [new AltinnAppPolicyConfirmation { AppId = AppId, Reference = "TEST-POLICY-1", ConfirmedBy = "service owner (test)", ConfirmedOn = new DateOnly(2026, 10, 13) }]

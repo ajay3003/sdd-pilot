@@ -314,6 +314,19 @@ public sealed class LocalTrustedExecutionTests
     }
 
     [Fact]
+    public async Task RunValidation_NeedsTheSameExecutionCapability_AndStartsNothing()
+    {
+        await using var factory = Host();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
+        var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
+
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs/validate", body: Start)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Send(client, HttpMethod.Post, "/api/integration-journeys/runs/validate", origin: "https://evil.example", body: Start)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        journeys.Validations.Should().Be(1);
+        journeys.Initiators.Should().BeEmpty("validation never starts a run");
+    }
+
+    [Fact]
     public async Task ConfigurationWrites_AreNotGrantedByLocalTrustedExecution()
     {
         await using var factory = Host();
@@ -351,6 +364,12 @@ public sealed class LocalTrustedExecutionTests
         {
             Initiators.Add(initiator);
             return Task.FromResult(new IntegrationJourneyRun { OverallState = JourneyRunState.Blocked, InitiatedBy = IntegrationJourneyService.SafeInitiator(initiator) });
+        }
+        public int Validations { get; private set; }
+        public Task<JourneyRunValidation> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct)
+        {
+            Validations++;
+            return Task.FromResult(new JourneyRunValidation { PackId = request.PackId, JourneyId = request.JourneyId, ScenarioId = request.ScenarioId, Valid = false });
         }
         public Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct) => Task.FromResult<IntegrationJourneyRun?>(null);
         public Task<IReadOnlyList<IntegrationJourneyRunSummary>> HistoryAsync(IntegrationJourneyHistoryQuery query, CancellationToken ct) => Task.FromResult<IReadOnlyList<IntegrationJourneyRunSummary>>([]);

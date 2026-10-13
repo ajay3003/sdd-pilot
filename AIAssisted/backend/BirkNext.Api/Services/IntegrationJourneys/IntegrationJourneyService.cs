@@ -15,6 +15,8 @@ public interface IIntegrationJourneyService
     IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog();
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
+    /// <summary>Validates a run without executing it: no external call, no gate, no runner, no history. Every gate StartAsync applies is reported.</summary>
+    Task<JourneyRunValidation> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct) => throw new NotSupportedException();
     Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct);
     Task<IReadOnlyList<IntegrationJourneyRunSummary>> HistoryAsync(IntegrationJourneyHistoryQuery query, CancellationToken ct);
 }
@@ -148,6 +150,38 @@ public sealed class IntegrationJourneyService(
             return completed;
         }
         finally { gate.Release(key, run.RunId); }
+    }
+
+    public async Task<JourneyRunValidation> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct)
+    {
+        var pack = packs.Find(request.PackId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
+        var journey = pack.Journeys.FirstOrDefault(item => item.JourneyId == request.JourneyId) ?? throw new IntegrationJourneyRequestException("Unknown journey.");
+        var scenario = journey.Scenarios.FirstOrDefault(item => item.ScenarioId == request.ScenarioId) ?? throw new IntegrationJourneyRequestException("Unknown scenario.");
+        var result = new JourneyRunValidation { PackId = pack.PackId, JourneyId = journey.JourneyId, ScenarioId = scenario.ScenarioId, EnvironmentId = request.EnvironmentId };
+        var checks = new List<JourneyValidationCheck>
+        {
+            new("scenario", "Scenario supported", scenario.Support == JourneyScenarioSupport.Supported, scenario.Support == JourneyScenarioSupport.Supported ? scenario.DisplayName : scenario.NotAssessedBecause ?? "The scenario is not supported."),
+            new("execution-mode", "Executed by the journey runner", journey.ExecutionMode == JourneyExecutionMode.JourneyRunner,
+                journey.ExecutionMode == JourneyExecutionMode.JourneyRunner ? "Yes." : "This journey is executed elsewhere (Active Event Testing)."),
+        };
+        JourneyInputPreparation inputs;
+        try { inputs = PrepareInputs(pack, journey, scenario, request.Inputs ?? new Dictionary<string, string>()); }
+        catch (IntegrationJourneyRequestException ex)
+        {
+            checks.Add(new("inputs", "Scenario input", false, ex.Message));
+            return result with { Valid = false, Checks = checks };
+        }
+        checks.Add(new("inputs", "Scenario input", true, "Valid typed inputs (validated by the backend; values are not kept)."));
+
+        var context = await ContextAsync(request.EnvironmentId, ct);
+        if (TrustProblem(context) is { } trust) checks.Add(new("trusted-environment", "Trusted non-production environment", false, trust));
+        var view = await ViewAsync(pack, journey, context, ct);
+        checks.AddRange(view.Prerequisites.Where(item => item.Mandatory && item.AppliesTo(scenario.ScenarioId))
+            .Select(item => new JourneyValidationCheck($"prerequisite:{item.Key}", item.Label, item.State == JourneyReadinessState.Ready, item.Detail)));
+        var packChecks = journey.ExecutionMode == JourneyExecutionMode.JourneyRunner && scenario.Support == JourneyScenarioSupport.Supported
+            ? await pack.ValidateRunAsync(journey, scenario, inputs.Values, context, ct) : JourneyPackValidation.None;
+        checks.AddRange(packChecks.Checks);
+        return result with { Valid = checks.All(item => item.Passed || !item.Blocking), Checks = checks, Preview = packChecks.Preview, InputSummary = inputs.Summary };
     }
 
     /// <summary>History keeps the initiator only in its derived, safe form (local-session:… or authenticated-user:&lt;hash&gt;); anything else — a raw

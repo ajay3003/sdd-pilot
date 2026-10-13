@@ -225,7 +225,7 @@ public sealed class UnattendedAltinnAuthenticationTests
     public async Task HeldTokens_Expire_AreNeverSharedAcrossReporters_AndConcurrentRunsLogInOnce()
     {
         var kit = new AltinnTestKit().ConfigureUnattended();
-        kit.Options.UnattendedIdPortenTest.Reporters.Add(new SyntheticReporterOptions { Alias = "reporter-b", Label = "B", TestIdPersonIdentifier = AltinnTestKit.ReporterIdentifier });
+        kit.Options.UnattendedIdPortenTest.Reporters.Add(new SyntheticReporterOptions { Alias = "reporter-b", Label = "B", TestIdPersonIdentifier = AltinnTestKit.ReporterIdentifier, AltinnProfileConfirmed = true });
         var clock = new ManualClock(Start);
         var cache = new AltinnTestSessionCache(clock);
         var provider = kit.Unattended(cache, clock);
