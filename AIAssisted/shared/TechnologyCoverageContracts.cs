@@ -70,7 +70,7 @@ public static class TechnologySupportRegistry
             "Basic CREATE/ALTER TABLE and CREATE INDEX; dialect extensions, PL/SQL, T-SQL procedures and dynamic SQL are not assessed."),
         new("source.observability.dotnet", "C# observability", TechnologyArea.Language, P, ["lang.csharp"],
             "Correlation, logging and telemetry configuration from C# and appsettings."),
-        new("source.iac.terraform", "Terraform", TechnologyArea.Cloud, F, ["cloud.azure", "cloud.aws", "cloud.gcp"],
+        new("source.iac.terraform", "Terraform", TechnologyArea.Cloud, F, ["iac.terraform", "cloud.azure", "cloud.aws", "cloud.gcp"],
             "Static HCL structure: resources, modules, variables, providers, backends. No plan, state or provider calls."),
         new("source.iac.bicep-arm", "Bicep / ARM", TechnologyArea.Cloud, P, ["cloud.azure"], "Declarations by pattern; expressions not evaluated."),
         new("source.iac.kubernetes", "Kubernetes / Helm", TechnologyArea.Cloud, P, ["cloud.kubernetes"], "Manifests via a YAML subset reader; Helm templates not rendered."),
@@ -178,6 +178,8 @@ public static class TechnologySupportRegistry
         new("pipeline.jenkins", "Jenkins", TechnologyArea.Pipeline, N, P, N, U, N, N, ["pipeline.jenkins"], "Pattern-based; Groovy not evaluated; no run history.", [Capability.Pipeline]),
 
         // Cloud.
+        new("iac.terraform", "Terraform", TechnologyArea.Cloud, N, F, N, N, N, N, ["source.iac.terraform"],
+            "Static HCL structure only: no plan, state, provider call or expression evaluation; external modules are not fetched.", [Capability.InfrastructureAsCode]),
         new("cloud.azure", "Microsoft Azure", TechnologyArea.Cloud, N, F, N, P, N, N, ["source.iac.terraform", "source.iac.bicep-arm", "cloud.azure"], "Runtime is read-only ARM inventory.", [Capability.CloudHosted]),
         new("cloud.aws", "Amazon Web Services", TechnologyArea.Cloud, N, P, N, U, N, N, ["source.iac.terraform"],
             "Terraform resources are inventoried generically; CloudFormation/CDK are detected only; no AWS runtime access.", [Capability.CloudHosted]),

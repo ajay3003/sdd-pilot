@@ -245,6 +245,35 @@ public sealed class TechnologyIndependenceTests : IDisposable
     }
 
     [Fact]
+    public async Task TerraformSource_IsADetectedTechnology_AnalyzedBySourceAnalysis()
+    {
+        var s = await Analyze("Infra.zip", Zip(
+            ("infra/main.tf", """
+                terraform {
+                  required_providers {
+                    azurerm = { source = "hashicorp/azurerm", version = "~> 4.0" }
+                  }
+                }
+                resource "azurerm_resource_group" "rg" {
+                  name     = "rg-example"
+                  location = "norwayeast"
+                }
+                """),
+            ("infra/variables.tf", """
+                variable "environment" {
+                  type = string
+                }
+                """)));
+        var terraform = s.TechnologyCoverage!.Technologies.Single(t => t.TechnologyId == "iac.terraform");
+        terraform.DisplayName.Should().Be("Terraform");
+        terraform.Files.Should().Be(2);
+        TechnologySupportRegistry.Find("iac.terraform")!.SourceAnalysis.Should().Be(SupportLevel.Full);
+        TechnologySupportRegistry.Find("iac.terraform")!.ProviderIds.Should().Equal("source.iac.terraform");
+        Ids(s).Should().Contain("cloud.azure", "the azurerm provider still identifies the cloud separately");
+        s.TechnologyCoverage.Capabilities.Should().Contain(c => c.Capability == Capability.InfrastructureAsCode);
+    }
+
+    [Fact]
     public void Registry_HasStableUniqueIds_AndEveryProviderReferenceResolves()
     {
         TechnologySupportRegistry.Technologies.Select(t => t.TechnologyId).Should().OnlyHaveUniqueItems();

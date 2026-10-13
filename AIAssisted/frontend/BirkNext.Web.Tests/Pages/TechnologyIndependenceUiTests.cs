@@ -101,6 +101,23 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     }
 
     [Fact]
+    public void CoveragePage_TerraformRow_LinksToTheSourceAnalysisInfrastructureArea()
+    {
+        var coverage = PaymentHub();
+        coverage = coverage with { Source = coverage.Source! with { Technologies = [.. coverage.Source.Technologies,
+            new("iac.terraform", "Terraform", TechnologyArea.Cloud, BirkNext.Applicability.DetectionConfidence.Confirmed, 1, ["PaymentHub/infra/main.tf"])] } };
+        Register(coverage);
+        var cut = Render<TechnologyCoverage>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-tech-iac\\.terraform]"));
+
+        var link = cut.Find("[data-testid=tc-terraform-source-analysis]");
+        link.GetAttribute("href").Should().Be("source-analysis?area=Infrastructure");
+        link.TextContent.Should().Be("Terraform");
+        cut.Find("[data-testid=tc-tech-iac\\.terraform]").GetAttribute("data-overall").Should().Be("Full");
+        cut.FindAll("[data-testid=tc-terraform-source-analysis]").Should().ContainSingle("only the Terraform row links to the Infrastructure as Code area");
+    }
+
+    [Fact]
     public void CoveragePage_WithoutAnActiveTarget_SaysSo_InsteadOfBlamingTheBackend()
     {
         Services.AddSingleton<FeatureVisibilityService>();

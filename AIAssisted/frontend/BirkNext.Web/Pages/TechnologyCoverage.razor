@@ -91,7 +91,7 @@
                                     var descriptor = TechnologySupportRegistry.Find(t.TechnologyId);
                                     <tr data-testid="tc-tech-@t.TechnologyId" data-overall="@descriptor?.Overall">
                                         <th scope="row">
-                                            @if (t.TechnologyId == "source.iac.terraform")
+                                            @if (t.TechnologyId == "iac.terraform")
                                             {
                                                 <a href="source-analysis?area=Infrastructure" data-testid="tc-terraform-source-analysis">@t.DisplayName</a>
                                             }
