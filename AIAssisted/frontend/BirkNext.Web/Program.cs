@@ -141,6 +141,7 @@ builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkfl
     client.BaseAddress = backendBase);
 // The one current-workspace read model: Dashboard, Recommended Workflow and navigation applicability all read it.
 builder.Services.AddScoped<ICurrentWorkspaceProjection, CurrentWorkspaceProjection>();
+builder.Services.AddScoped<SourceAnalysisSnapshotState>();
 builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
@@ -276,8 +277,6 @@ builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiServi
 builder.Services.AddHttpClient<IAiCodeReviewApiService, AiCodeReviewApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITestCoverageApiService, TestCoverageApiService>(client =>
-    client.BaseAddress = backendBase);
-builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
     client.BaseAddress = backendBase);
 // IQR → Active tests: one shared client for every scenario provider; every gate is the backend's. With Entra configured, protected calls
 // get the access token from the normal authenticated pipeline; readiness metadata stays readable without it.

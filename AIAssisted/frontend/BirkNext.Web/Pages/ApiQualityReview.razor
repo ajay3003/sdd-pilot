@@ -37,249 +37,176 @@
         var readiness = ApiReviewPresentation.Readiness(Eligibility, _context, _targets, _selected, _capabilities, contracts);
         var scope = ApiReviewPresentation.Scope(_targets, _selected);
         var domains = ApiReviewPresentation.Domains(scope, contracts, access.Availability);
+        var selectedTargets = _targets.Where(t => _selected.Contains(t.TargetId)).ToList();
+        var targetAccess = ApiReviewPresentation.TargetAccess(_targets, _selected, access.Availability);
+        var readyTargets = targetAccess.Count(t => t.Ready);
+        var targetSummary = _context is null ? null : ApiReviewPresentation.TargetSummary(_context, _capabilities, _targets);
     }
 
     @if (_report is null)
     {
+        <div data-testid="aqr-decide">
         @*
             1. Decide: what am I reviewing, what scope, what access do I have, can it run — then run it.
             Nothing diagnostic here; every technical surface is one disclosure away under Review details.
         *@
-        <section class="aqr-decide" data-testid="aqr-decide" aria-label="Review setup">
-            <div class="aqr-decide-cards">
-
-                <section class="aqr-card aqr-target-card" data-testid="aqr-environment" aria-labelledby="aqr-target-heading">
-                    <div class="aqr-card-head">
-                        <h2 id="aqr-target-heading">Target</h2>
-                        <a class="aqr-link" href="@ApiReviewPresentation.TargetEnvironmentsHref" data-testid="aqr-change-target">Change target</a>
-                    </div>
-                    @if (_context is null)
+        <section class="aqr-overview" data-testid="aqr-overview" aria-label="Review readiness">
+            <div class="aqr-overview-grid">
+                <section class="aqr-overview-item" data-testid="aqr-environment" aria-labelledby="aqr-target-heading">
+                    <h2 id="aqr-target-heading">Target</h2>
+                    @if (_context is null) { <p class="aqr-muted">Loading the active Target Environment...</p> }
+                    else if (_context.ActiveTargetError is { Length: > 0 } activeError) { <p class="aqr-error-inline" role="alert" data-testid="aqr-active-target-error">@activeError</p> }
+                    else if (targetSummary is not null)
                     {
-                        <p class="aqr-muted">Loading the active Target Environment…</p>
+                        <strong data-testid="aqr-env-name">@targetSummary.Environment</strong>
+                        <span class="aqr-pill aqr-pill-muted">@targetSummary.EnvironmentType</span>
+                        <p class="aqr-mono aqr-overview-host" data-testid="aqr-env-url">@targetSummary.FrontendUrl</p>
+                        <p class="aqr-muted" data-testid="aqr-env-auth" aria-describedby="aqr-frontend-signin-help">Authentication: <span data-testid="aqr-target-authentication">@targetSummary.Authentication</span></p>
+                        <span class="aqr-visually-hidden" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">Frontend access does not require sign-in; selected APIs may still require authenticated access.</span>
                     }
-                    else if (_context.ActiveTargetError is { Length: > 0 } activeError)
-                    {
-                        <p class="aqr-error-inline" role="alert" data-testid="aqr-active-target-error">@activeError</p>
-                    }
-                    else
-                    {
-                        var summary = ApiReviewPresentation.TargetSummary(_context, _capabilities, _targets);
-                        @* Review status belongs to Readiness and access to API access; repeating either here said the
-                           same thing in slightly different words. *@
-                        @* Label above value: a quarter-width card cannot hold a fixed label column and still show the value. *@
-                        <dl class="aqr-dl aqr-dl-stacked">
-                            <div><dt>Environment</dt><dd><strong data-testid="aqr-env-name">@summary.Environment</strong> <span class="aqr-pill aqr-pill-muted">@summary.EnvironmentType</span></dd></div>
-                            <div><dt>Frontend</dt><dd class="aqr-mono" data-testid="aqr-env-url">@summary.FrontendUrl</dd></div>
-                            <div>
-                                <dt>Frontend sign-in</dt>
-                                <dd data-testid="aqr-env-auth" aria-describedby="@(scope.AuthRequired > 0 ? "aqr-frontend-signin-help" : null)">@summary.Authentication</dd>
-                                @if (scope.AuthRequired > 0)
-                                {
-                                    @* Frontend sign-in and API authentication are separate facts; say so where both are visible. *@
-                                    <dd class="aqr-help" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">@(_context.RequiresAuthentication
-                                        ? "Applies to the frontend only. Selected APIs may still require authenticated access independently."
-                                        : "Frontend access does not require sign-in; selected APIs may still require authenticated access.")</dd>
-                                }
-                            </div>
-                        </dl>
-                        <ReviewDisclosure Text="View target details" CollapseText="Hide target details" TestId="aqr-target-details" Class="disclosure-inline">
-                            <dl class="aqr-dl aqr-dl-technical">
-                                @foreach (var field in summary.Technical)
-                                {
-                                    <div><dt>@field.Label</dt><dd>@field.Value</dd></div>
-                                }
-                            </dl>
-                        </ReviewDisclosure>
-                    }
+                    else { <p class="aqr-muted">No Target Environment selected.</p> }
+                    <a class="aqr-link" href="@ApiReviewPresentation.TargetEnvironmentsHref" data-testid="aqr-change-target">Change target</a>
                 </section>
 
-                <section class="aqr-card aqr-scope-card" data-testid="aqr-scope" aria-labelledby="aqr-scope-heading">
-                    <div class="aqr-card-head"><h2 id="aqr-scope-heading">Review scope</h2></div>
+                <section class="aqr-overview-item aqr-overview-scope" data-testid="aqr-scope" aria-labelledby="aqr-scope-heading">
+                    <h2 id="aqr-scope-heading">API scope</h2>
                     <p class="aqr-scope-headline" data-testid="aqr-scope-headline">@scope.Headline</p>
-                    @if (scope.Protocols is { Length: > 0 } protocols)
-                    {
-                        <p class="aqr-muted" data-testid="aqr-scope-protocols">@protocols</p>
-                    }
-                    @if (scope.AuthNote is { } authNote)
-                    {
-                        <p class="aqr-muted" data-testid="aqr-scope-auth">@authNote</p>
-                    }
-                </section>
-
-                <section class="aqr-card aqr-access-card" data-testid="aqr-access" aria-labelledby="aqr-access-heading">
-                    <div class="aqr-card-head"><h2 id="aqr-access-heading">API access</h2></div>
-                    @* One vocabulary for the two access paths; the exact internal state stays in the details disclosure. *@
-                    <ul class="aqr-access-rows">
-                        <li class="aqr-access-row">
-                            <span class="aqr-access-label">Authenticated API context</span>
-                            <span class="aqr-pill aqr-pill-@ApiReviewAccessAvailabilities.Tone(access.Availability)" data-testid="aqr-access-mode" data-availability="@access.Availability">@ApiReviewAccessAvailabilities.Label(access.Availability)</span>
-                        </li>
-                        @* Readiness is judged per selected target against ITS requirement: public reachability never stands in for an
-                           authenticated target, and "Public access: Available" was a constant with no evidence behind it. *@
-                        @if (ApiReviewPresentation.TargetAccess(_targets, _selected, access.Availability) is { Count: > 0 } targetAccess)
+                    <p class="aqr-muted" data-testid="aqr-scope-protocols">@scope.Protocols</p>
+                    @if (scope.AuthNote is { } authNote) { <p class="aqr-muted" data-testid="aqr-scope-auth">@authNote</p> }
+                    <ul class="aqr-scope-endpoints" data-testid="aqr-scope-endpoints">
+                        @foreach (var target in selectedTargets.Take(3))
                         {
-                            var ready = targetAccess.Count(t => t.Ready);
-                            <li class="aqr-access-row">
-                                <span class="aqr-access-label">Selected target access</span>
-                                <span class="aqr-pill aqr-pill-@(ready == targetAccess.Count ? "ready" : "attention")" data-testid="aqr-target-access-summary">@ready of @targetAccess.Count ready</span>
-                            </li>
-                            <li class="aqr-access-targets">
-                                <ul class="aqr-target-access-list" data-testid="aqr-target-access-list">
-                                    @foreach (var t in targetAccess)
-                                    {
-                                        <li data-testid="aqr-target-access-row" data-ready="@(t.Ready ? "true" : "false")"><span class="aqr-target-access-name">@t.Name</span> <span class="aqr-muted">@t.Type · @t.Requirement</span> <span class="aqr-state aqr-state-@(t.Ready ? "pass" : "blocked")">@t.State</span></li>
-                                    }
-                                </ul>
+                            var endpoint = ApiReviewPresentation.SafeEndpointUrl(target);
+                            var targetReady = !target.AuthRequired || access.Availability == ApiReviewAccessAvailability.Available;
+                            <li data-testid="aqr-scope-endpoint" data-type="@target.ApiType">
+                                <strong>@ApiReviewPresentation.DisplayName(target)</strong>
+                                <span class="aqr-mono">@(endpoint ?? $"Relative endpoint: {ApiReviewPresentation.SafeEndpointPath(target)}")</span>
+                                <span class="aqr-scope-access">@(target.AuthRequired ? targetReady ? "Authenticated · Ready" : "Authenticated · Not ready" : "Public · Ready")</span>
                             </li>
                         }
                     </ul>
-                    @* How many targets need it is Review scope's fact, and while the readiness card offers the way to
-                       Authentication, this card does not offer it a second time. *@
-                    @if (access.ActionText is not null && readiness.ActionHref is null)
-                    {
-                        <p class="aqr-card-actions">
-                            <a class="@(access.Availability == ApiReviewAccessAvailability.Available ? "aqr-link aqr-link-quiet" : "aqr-link")" href="@access.ActionHref" data-testid="aqr-access-action">@access.ActionText</a>
-                        </p>
-                    }
+                    @if (selectedTargets.Count > 3) { <a class="aqr-link" href="#aqr-targets-section">View all @scope.Selected API targets</a> }
                 </section>
 
-                <section class="aqr-card aqr-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" aria-labelledby="aqr-readiness-heading" role="@(readiness.Level == ApiReviewReadinessLevel.Blocked ? "alert" : "status")">
-                    <div class="aqr-card-head">
-                        <h2 id="aqr-readiness-heading"><span class="aqr-readiness-icon" aria-hidden="true">@ReadinessIcon(readiness.Level)</span> @readiness.Title</h2>
-                    </div>
+                <section class="aqr-overview-item" data-testid="aqr-access" aria-labelledby="aqr-access-heading">
+                    <h2 id="aqr-access-heading">Access</h2>
+                    <strong class="aqr-access-count" data-testid="aqr-target-access-summary" data-ready="@readyTargets" data-count="@targetAccess.Count">@readyTargets of @targetAccess.Count ready</strong>
+                    <span class="aqr-muted" data-testid="aqr-access-mode">@(targetAccess.Count == 0 ? "No API targets selected" : ApiReviewPresentation.ApiAccessLabel(access.Availability, targetAccess.Any(t => t.Requirement == "Authenticated")))</span>
+                    @if (targetAccess.Count == 0) { <p class="aqr-muted">Select an API target to check access.</p> }
+                    else if (readyTargets < targetAccess.Count) { <p class="aqr-muted">One or more selected APIs need an authenticated API context.</p> }
+                    else { <p class="aqr-muted">Selected API access is available.</p> }
+                </section>
+
+                <section class="aqr-overview-item aqr-overview-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" aria-labelledby="aqr-readiness-heading" role="@(readiness.Level == ApiReviewReadinessLevel.Blocked ? "alert" : "status")">
+                    <h2 id="aqr-readiness-heading"><span aria-hidden="true">@ReadinessIcon(readiness.Level)</span> @readiness.Title</h2>
                     <p class="aqr-readiness-message" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</p>
-                    @if (readiness.Items.Count > 0 && readiness.Level != ApiReviewReadinessLevel.Blocked)
+                    @if (readiness.Items.Count > 0)
                     {
-                        @* While the review can still run, the individual limitations are what the reader opens. *@
-                        <ReviewDisclosure Text="View limitation details" CollapseText="Hide limitation details" TestId="aqr-readiness-limitations" Class="disclosure-inline disclosure-small">
-                            <ul class="aqr-readiness-items" data-testid="aqr-readiness-items">
-                                @foreach (var item in readiness.Items)
-                                {
-                                    <li class="aqr-readiness-item aqr-readiness-item-@item.State.ToString().ToLowerInvariant()"><span aria-hidden="true">@ApiReviewReadinessItemStates.Glyph(item.State)</span> @item.Label</li>
-                                }
-                            </ul>
-                        </ReviewDisclosure>
-                        @if (readiness.ActionText is not null && readiness.ActionHref is not null)
-                        {
-                            <p class="aqr-card-actions"><a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a></p>
-                        }
+                        <ul class="aqr-readiness-items" data-testid="aqr-readiness-items">
+                            @foreach (var item in readiness.Items.Where(i => i.State != ApiReviewReadinessItemState.Ok).Take(3))
+                            {
+                                <li class="aqr-readiness-item aqr-readiness-item-@item.State.ToString().ToLowerInvariant()"><span aria-hidden="true">@ApiReviewReadinessItemStates.Glyph(item.State)</span> @item.Label</li>
+                            }
+                        </ul>
                     }
-                    @if (readiness.Level == ApiReviewReadinessLevel.Blocked)
-                    {
-                        @* While it is blocked they stay visible: they are why the reader cannot proceed. *@
-                        @if (readiness.Items.Count > 0)
-                        {
-                            <ul class="aqr-readiness-items" data-testid="aqr-readiness-items">
-                                @foreach (var item in readiness.Items)
-                                {
-                                    <li class="aqr-readiness-item aqr-readiness-item-@item.State.ToString().ToLowerInvariant()"><span aria-hidden="true">@ApiReviewReadinessItemStates.Glyph(item.State)</span> @item.Label</li>
-                                }
-                            </ul>
-                        }
-                        @if (readiness.ActionText is not null && readiness.ActionHref is not null)
-                        {
-                            @* The one action that unblocks the run: a button-styled link, never a disabled control. *@
-                            <p class="aqr-card-actions">
-                                <a class="aqr-cta" data-testid="aqr-run-action" href="@readiness.ActionHref"
-                                   aria-describedby="@(readiness.Help is not null ? "aqr-readiness-help" : null)">@readiness.ActionText</a>
-                            </p>
-                        }
-                        @if (readiness.Help is not null)
-                        {
-                            <p class="aqr-help" id="aqr-readiness-help" data-testid="aqr-readiness-help">@readiness.Help</p>
-                        }
-                    }
+                    @if (readiness.ActionText is not null && readiness.ActionHref is not null) { <a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a> }
+                    @if (readiness.Help is not null) { <p class="aqr-help" data-testid="aqr-readiness-help">@readiness.Help</p> }
                 </section>
             </div>
-
-            <div class="aqr-run-row" data-testid="aqr-run-row">
-                @* Disabled Run carries its reason programmatically, so it does not depend on seeing the blocker card. *@
-                <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run"
-                               aria-describedby="@(!Eligibility.Enabled ? (readiness.RunUnavailableReason is not null ? "aqr-run-unavailable" : "aqr-run-reason") : null)">
-                    @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
-                    @(_running ? "Reviewing…" : "Run API Quality Review")
-                </PrimaryButton>
-                @if (!Eligibility.Enabled && readiness.RunUnavailableReason is { } runUnavailable)
-                {
-                    <span class="aqr-visually-hidden" id="aqr-run-unavailable" data-testid="aqr-run-unavailable">@runUnavailable</span>
-                }
-                @if (_running)
-                {
-                    <p class="aqr-progress" role="status" aria-live="polite">@_progressMessage</p>
-                }
-            </div>
-            @if (_errorMessage is not null)
-            {
-                <div class="aqr-error" role="alert" data-testid="aqr-error">@_errorMessage</div>
-            }
         </section>
 
-        @* Safe fuzzing: bounded, contract-derived invalid input for non-production APIs (same targets and access as the review). *@
-        <ApiSafeFuzzingPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
-        <ApiAuthorizationScenariosPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
+        <div class="aqr-run-row" data-testid="aqr-run-row">
+            <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run"
+                           aria-describedby="@(!Eligibility.Enabled ? (readiness.RunUnavailableReason is not null ? "aqr-run-unavailable" : "aqr-run-reason") : null)">
+                @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
+                @(_running ? "Reviewing..." : "Run API Quality Review")
+            </PrimaryButton>
+            @if (!Eligibility.Enabled && readiness.RunUnavailableReason is { } runUnavailable) { <span class="aqr-visually-hidden" id="aqr-run-unavailable" data-testid="aqr-run-unavailable">@runUnavailable</span> }
+            @if (_running) { <p class="aqr-progress" role="status" aria-live="polite">@_progressMessage</p> }
+        </div>
+        @if (_errorMessage is not null) { <div class="aqr-error" role="alert" data-testid="aqr-error">@_errorMessage</div> }
 
-        @* 2. Scope: what the review covers, in review words rather than access or configuration words. *@
         <section class="aqr-section aqr-domains" data-testid="aqr-domains" aria-labelledby="aqr-domains-heading">
             <h2 id="aqr-domains-heading">What will be reviewed</h2>
             <ul class="aqr-domain-grid">
                 @foreach (var domain in domains)
                 {
-                    <li>
-                        <article class="aqr-card aqr-domain" data-testid="aqr-domain" data-domain="@domain.Key" data-state="@domain.State">
-                            <div class="aqr-domain-head">
-                                <h3>@domain.Title</h3>
-                                <span class="aqr-pill aqr-pill-@ApiReviewDomainStates.Tone(domain.State)" data-testid="aqr-domain-state">@ApiReviewDomainStates.Label(domain.State)</span>
-                            </div>
-                            <p class="aqr-domain-purpose">@domain.Purpose</p>
-                            @if (domain.Limitation is { Length: > 0 } limitation)
-                            {
-                                <p class="aqr-domain-limitation" data-testid="aqr-domain-limitation">@limitation</p>
-                            }
-                        </article>
-                    </li>
+                    <li><article class="aqr-card aqr-domain" data-testid="aqr-domain" data-domain="@domain.Key" data-state="@domain.State">
+                        <div class="aqr-domain-head"><h3>@domain.Title</h3><span class="aqr-pill aqr-pill-@ApiReviewDomainStates.Tone(domain.State)" data-testid="aqr-domain-state">@ApiReviewDomainStates.Label(domain.State)</span></div>
+                        @if (domain.Limitation is { Length: > 0 } limitation) { <p class="aqr-domain-limitation" data-testid="aqr-domain-limitation">@limitation</p> }
+                        else { <p class="aqr-domain-purpose">@domain.Purpose</p> }
+                    </article></li>
                 }
             </ul>
         </section>
 
-        @* 3. Review details: the configuration behind the decision, collapsed. Nothing here changes the scope above. *@
-        <section class="aqr-section aqr-details" data-testid="aqr-details" aria-labelledby="aqr-details-heading">
-            <div class="aqr-card-head"><h2 id="aqr-details-heading">Review details</h2></div>
-
-            @* Open by default and bound, so a re-render never re-opens it after the reader collapsed it. *@
-            <ReviewDisclosure Text="API targets" CollapseText="Hide API targets" Hint="@ScopeHint(scope)" TestId="aqr-targets-disclosure" Class="aqr-detail-disclosure"
-                              @bind-Expanded="_targetsExpanded">
-                <ApiReviewTargetPicker Targets="_targets" Selected="_selected" Toggle="OnToggleTarget" LastReport="_history?.LastReport" />
+        <section class="aqr-section aqr-target-section" id="aqr-targets-section" data-testid="aqr-target-section" aria-labelledby="aqr-targets-heading">
+            <div class="aqr-card-head"><h2 id="aqr-targets-heading">API targets</h2><span class="aqr-muted">@scope.Selected selected · @scope.Protocols</span></div>
+            <ReviewDisclosure Text="Targets" CollapseText="Targets" Hint="@scope.Protocols" TestId="aqr-targets-disclosure" Class="aqr-targets-disclosure" @bind-Expanded="_targetsExpanded">
+                <ApiReviewTargetPicker Targets="_targets" Selected="_selected" Toggle="OnToggleTarget" LastReport="_history?.LastReport" AccessAvailability="@access.Availability"
+                                       EnvironmentId="@(_context?.ActiveProfile.Id)" SchemaArtifacts="_schemaArtifacts" AddSchemaArtifact="ShowSchemaArtifacts" />
             </ReviewDisclosure>
+        </section>
 
-            <ReviewDisclosure Text="Contracts" CollapseText="Hide contracts" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
+        <section class="aqr-section aqr-additional-checks" data-testid="aqr-additional-checks" aria-labelledby="aqr-additional-heading">
+            <h2 id="aqr-additional-heading">Additional active checks</h2>
+            <div class="aqr-check-grid">
+                <ReviewDisclosure Text="Safe fuzzing" CollapseText="Safe fuzzing" Hint="@FuzzingHint" TestId="aqr-fuzzing-disclosure" Class="aqr-check-disclosure">
+                    <p class="aqr-check-summary">Bounded non-production fuzzing with predefined request limits.</p>
+                    <ApiSafeFuzzingPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" LevelChanged="OnFuzzingLevelChanged" />
+                </ReviewDisclosure>
+                <div class="aqr-check-card" data-testid="aqr-authorization-card">
+                    <ReviewDisclosure Text="Authorization scenarios" CollapseText="Authorization scenarios" Hint="@AuthorizationHint" TestId="aqr-authorization-disclosure" Class="aqr-check-disclosure">
+                        <p class="aqr-check-summary">Explicit Allow/Deny expectations for configured identities and safe requests.</p>
+                        <ApiAuthorizationScenariosPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" />
+                    </ReviewDisclosure>
+                    @if (_context?.ActiveProfileOrNull is { } profile)
+                    {
+                        <a class="aqr-link" data-testid="aqr-configure-authorization" href="@AuthorizationConfigurationHref(profile.Id)">Configure authorization scenarios</a>
+                    }
+                    else { <span class="aqr-muted" data-testid="aqr-configure-authorization-disabled">Select a Target Environment to configure authorization scenarios.</span> }
+                </div>
+            </div>
+        </section>
+
+        <section class="aqr-section aqr-details" data-testid="aqr-details" aria-labelledby="aqr-details-heading">
+            <h2 id="aqr-details-heading">Evidence &amp; advanced details</h2>
+            <ReviewDisclosure Text="Contract details" CollapseText="Contract details" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
                 <ApiReviewContractPanel Contracts="contracts" />
             </ReviewDisclosure>
             @if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl))
             {
                 var gqlTargets = _targets.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList();
                 var configured = gqlTargets.Count(t => _schemaArtifacts.ContainsKey(t.TargetId));
-                <ReviewDisclosure Text="GraphQL schema artifacts" CollapseText="Hide GraphQL schema artifacts" Hint="@(configured == 0 ? "None configured" : $"{configured} of {gqlTargets.Count} configured")" TestId="aqr-schema-artifacts-disclosure" Class="aqr-detail-disclosure">
-                    <GraphQlSchemaArtifactPanel EnvironmentId="@_context.ActiveProfile.Id" Targets="gqlTargets" Artifacts="_schemaArtifacts" LoadError="@_schemaArtifactsError" Changed="OnSchemaArtifactsChanged" />
-                </ReviewDisclosure>
+                <div id="aqr-schema-artifacts" tabindex="-1" @ref="_schemaArtifactsElement">
+                    <ReviewDisclosure Text="GraphQL schema artifacts" CollapseText="GraphQL schema artifacts" Hint="@(configured == 0 ? "None configured" : $"{configured} of {gqlTargets.Count} configured")" TestId="aqr-schema-artifacts-disclosure" Class="aqr-detail-disclosure" @bind-Expanded="_schemaArtifactsExpanded">
+                        <GraphQlSchemaArtifactPanel EnvironmentId="@_context.ActiveProfile.Id" Targets="gqlTargets" Artifacts="_schemaArtifacts" LoadError="@_schemaArtifactsError" Changed="OnSchemaArtifactsChanged" />
+                    </ReviewDisclosure>
+                </div>
             }
-
-
-            <ReviewDisclosure Text="Authentication details" CollapseText="Hide authentication details" Hint="@ApiReviewAccessAvailabilities.Label(access.Availability)" TestId="aqr-access-details" Class="aqr-detail-disclosure">
+            <ReviewDisclosure Text="Execution &amp; authentication evidence" CollapseText="Execution &amp; authentication evidence" Hint="@ApiReviewAccessAvailabilities.Label(access.Availability)" TestId="aqr-access-details" Class="aqr-detail-disclosure">
                 <ApiReviewAccessDetails Access="access" />
             </ReviewDisclosure>
-
-            <ReviewDisclosure Text="Read-only review" CollapseText="Hide read-only review" Hint="Safe requests only" TestId="aqr-readonly-disclosure" Class="aqr-detail-disclosure">
-                @* The safe-method allowlist is the review's, not this page's; this only states it. *@
+            <ReviewDisclosure Text="Read-only execution policy" CollapseText="Read-only execution policy" Hint="Safe requests only · REST GET/HEAD/OPTIONS · GraphQL queries" TestId="aqr-readonly-disclosure" Class="aqr-detail-disclosure">
+                <p class="aqr-muted">Safe requests only: authenticated requests are executed by the backend gateway. The review does not receive a token; credentials remain memory-only.</p>
                 <dl class="aqr-dl aqr-readonly-methods" data-testid="aqr-readonly-summary">
-                    <div><dt>REST</dt><dd>GET, HEAD, OPTIONS</dd></div>
-                    <div><dt>GraphQL</dt><dd>Queries only</dd></div>
+                    <div><dt>REST</dt><dd>GET, HEAD, OPTIONS</dd></div><div><dt>GraphQL</dt><dd>Queries only</dd></div>
                     <div><dt>Never executed</dt><dd>Mutations, write operations and destructive operations</dd></div>
                     <div><dt>Timing note</dt><dd class="aqr-muted" data-testid="aqr-timing-scope">@ApiReviewPresentation.TimingScopeShort</dd></div>
                 </dl>
             </ReviewDisclosure>
+            @if (targetSummary is not null)
+            {
+                <ReviewDisclosure Text="Target details" CollapseText="Target details" Hint="@targetSummary.Environment" TestId="aqr-target-details" Class="aqr-detail-disclosure">
+                    <dl class="aqr-dl aqr-dl-technical">
+                        @foreach (var field in targetSummary.Technical) { <div><dt>@field.Label</dt><dd>@field.Value</dd></div> }
+                    </dl>
+                </ReviewDisclosure>
+            }
         </section>
-    }
 
+        </div>
+    }
     @* ── Results (only once a review exists) ── *@
     @if (_report is { } report)
     {
@@ -650,8 +577,15 @@
     private ApiReviewHistory? _history;
     private ApiReviewReport? _report;
     private bool _running;
-    /// <summary>API targets is the one pre-run detail open by default; everything else under Review details starts collapsed.</summary>
+    private bool _schemaArtifactsExpanded;
     private bool _targetsExpanded = true;
+    private bool _focusSchemaArtifacts;
+    private ElementReference _schemaArtifactsElement;
+    private ApiFuzzingLevel _fuzzingLevel = ApiFuzzingLevel.Off;
+    private string FuzzingHint => $"{ApiFuzzingPresentation.LevelLabel(_fuzzingLevel)} · optional";
+    private string AuthorizationHint => _context?.SecuritySettings.RuntimeSecurity?.AuthorizationScenarios is { } scenarios
+        ? scenarios.Count == 0 ? "Not configured · 0 scenarios" : $"{scenarios.Count} configured"
+        : "Not configured · 0 scenarios";
     private string _progressMessage = "";
     private string? _errorMessage;
     private string _tab = "Overview";
@@ -704,6 +638,18 @@
 
     private async Task OnSchemaArtifactsChanged() => await LoadSchemaArtifactsAsync();
 
+    private Task ShowSchemaArtifacts()
+    {
+        _schemaArtifactsExpanded = true;
+        _focusSchemaArtifacts = true;
+        return Task.CompletedTask;
+    }
+
+    private static string AuthorizationConfigurationHref(string profileId) =>
+        $"{ApiReviewPresentation.TargetEnvironmentsHref}&tab=endpoint&profile={Uri.EscapeDataString(profileId)}";
+
+    private void OnFuzzingLevelChanged(ApiFuzzingLevel level) => _fuzzingLevel = level;
+
     private ElementReference _reviewDetailsHeading;
     private bool _focusReviewDetails;
     private void ShowReviewDetails() { _tab = "Overview"; _focusReviewDetails = true; }
@@ -713,6 +659,11 @@
         {
             _focusReviewDetails = false;
             await _reviewDetailsHeading.FocusAsync();
+        }
+        if (_focusSchemaArtifacts)
+        {
+            _focusSchemaArtifacts = false;
+            await _schemaArtifactsElement.FocusAsync();
         }
     }
 
@@ -826,7 +777,7 @@
         if (exposures.Count > 0)
         {
             <h3>API documentation exposure</h3>
-            <p class="aqr-muted">Anonymous GETs of a few same-origin documentation paths, judged against Target Environment → Security Expectations. Public documentation is not a defect by itself; exposure evidence is not the review's contract source.</p>
+            <p class="aqr-muted">Anonymous GETs of a few same-origin documentation paths, judged against the selected Target Environment's API review safety settings. Public documentation is not a defect by itself; exposure evidence is not the review's contract source.</p>
             <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="API documentation exposure">
                 <table class="aqr-table" data-testid="aqr-docs-exposure">
                     <thead><tr><th scope="col">API origin</th><th scope="col">Probes</th><th scope="col">Observed</th><th scope="col">Expectation</th><th scope="col">Assessment</th></tr></thead>
@@ -879,7 +830,7 @@
         if (headerTargets.Count > 0)
         {
             <h3>Security headers vs Target Environment expectations</h3>
-            <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates Security Expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required headers come from Target Environment → Security Expectations (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR Static Security.")</p>
+            <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates saved response-header expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required header names come from the selected Target Environment's API review safety settings (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR Static Security.")</p>
             @foreach (var t in headerTargets)
             {
                 <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="@($"Security headers · {ApiReviewPresentation.DisplayName(t.Target)}")">
@@ -927,7 +878,7 @@
                 CompressionMinimumBytes = context.PerformanceThresholds.CompressionMinPayloadBytes,
                 RestPayloadWarningBytes = context.PerformanceThresholds.MaxRestPayloadBytes, GraphQlPayloadWarningBytes = context.PerformanceThresholds.MaxGraphQlPayloadBytes,
                 LargePayloadBytes = context.PerformanceThresholds.MaxRestPayloadBytes,
-                // Security Expectations own the header policy; the review evaluates presence of exactly these headers.
+                // Target Environment API review settings own the header policy; only presence is evaluated.
                 ExpectedSecurityHeaders = [.. context.SecuritySettings.ExpectedSecurityHeaders],
                 // Runtime security expectations (documentation exposure, CORS) are copied into the run: history never re-binds to newer settings.
                 RuntimeSecurity = BirkNext.RuntimeSecurity.ApiRuntimeSecurityPolicy.From(context.SecuritySettings.RuntimeSecurity),

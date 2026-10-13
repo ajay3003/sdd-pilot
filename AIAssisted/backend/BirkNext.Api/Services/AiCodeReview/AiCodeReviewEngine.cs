@@ -40,7 +40,6 @@ public static class AiCodeReviewEngine
         ("AIC-SEC-002", AiCodeReviewCategory.Security, "Endpoint without authorization metadata among protected siblings", [AiEvidenceSource.Source]),
         ("AIC-SEC-003", AiCodeReviewCategory.Security, "Permissive CORS policy in source", [AiEvidenceSource.Source]),
         ("AIC-SEC-004", AiCodeReviewCategory.Security, "Developer exception page without environment condition", [AiEvidenceSource.Source]),
-        ("AIC-SEC-005", AiCodeReviewCategory.Security, "Security Configuration Review findings", [AiEvidenceSource.Configuration, AiEvidenceSource.Runtime]),
         ("AIC-VAL-001", AiCodeReviewCategory.ValidationErrorHandling, "Empty catch block", [AiEvidenceSource.Source]),
         ("AIC-VAL-002", AiCodeReviewCategory.ValidationErrorHandling, "Broad catch returns success", [AiEvidenceSource.Source]),
         ("AIC-VAL-003", AiCodeReviewCategory.ValidationErrorHandling, "Exception details returned to the client", [AiEvidenceSource.Source]),
@@ -394,7 +393,6 @@ public static class AiCodeReviewEngine
 
         private void Security()
         {
-            State("AIC-SEC-005", AiRuleExecutionState.NotAssessed, "Security Configuration Review runs per Target Environment; its findings are reviewed there and are not duplicated here.");
             if (!RequireRisk("AIC-SEC-001", "AIC-SEC-002", "AIC-SEC-003", "AIC-SEC-004")) return;
             const string sourceOnly = "Source authorization metadata only — runtime enforcement is not verified (run API Quality Review against a target for that).";
             if (!ChangeMode) State("AIC-SEC-001", AiRuleExecutionState.NotApplicable, "Needs a baseline snapshot.");

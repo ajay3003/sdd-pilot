@@ -9,6 +9,9 @@
 @inject IIntegrationCatalogApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject ProjectApplicabilityState Applicability
+@inject ICurrentWorkspaceProjection CurrentWorkspace
+@inject SourceAnalysisSnapshotState SnapshotState
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 @* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database, Observability), so no
@@ -318,14 +321,25 @@
     private static readonly (string Group, string[] Areas)[] AreaGroups = DocumentationCatalog.SourceAnalysisGroups
         .Select(group => (group.Label, group.Areas.ToArray())).ToArray();
     private static string AreaSlug(string area) => area.Replace("/", "");
+    private static readonly string[] ValidAreas = ["Infrastructure", "Configuration", "CI/CD", "Contracts", "Architecture", "Observability", "Database", "Overview"];
     private string _area = "Overview";
     private string? _focusDatabase;
     private string? _databaseTab;
     private string? _focusId;
     private bool _loaded;
     private string? _pendingArchive;
+    private SourceAnalysisSnapshotKey? _snapshotKey;
 
-    private void OpenArea(string area) { _area = area; _focusDatabase = null; _databaseTab = null; }
+    protected override void OnParametersSet()
+    {
+        if (Area is { } area && ValidAreas.Contains(area, StringComparer.Ordinal)) _area = area;
+        else if (Area is null) _area = "Overview";
+    }
+    private void OpenArea(string area)
+    {
+        _area = area; _focusDatabase = null; _databaseTab = null;
+        if (ValidAreas.Contains(area, StringComparer.Ordinal)) Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("area", area));
+    }
     /// <summary>From an Overview card: the same selected snapshot, the matching area; Open Database Diagram lands on the diagram.</summary>
     private void OpenFromCard(string area)
     {
@@ -335,7 +349,12 @@
     }
     private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
     // A new or reselected snapshot changes the source input: applicability (sidebar, Recommended Workflow) re-reads it now.
-    private void SnapshotChanged() { _focusDatabase = null; _databaseTab = null; _ = Applicability.RefreshAsync(); }
+    private void SnapshotChanged()
+    {
+        _focusDatabase = null; _databaseTab = null;
+        if (_snapshotKey is { } key) SnapshotState.SelectSnapshot(key, _selected);
+        _ = Applicability.RefreshAsync();
+    }
     private async Task FocusSelectorAsync() { try { await JS.InvokeVoidAsync("birknextFocusElement", "sa-snapshot-select"); } catch (JSException) { } }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -356,12 +375,33 @@
     /// <summary>No snapshot is shown (none stored, or none chosen) and no upload is running: the empty state offers the actions once.</summary>
     private bool NoSnapshotSelected => !_busy && _snapshots.All(s => s.Id.ToString() != _selected);
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
-    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; await Load(); if (Area is "Infrastructure" or "Configuration" or "CI/CD" or "Contracts" or "Architecture" or "Observability" or "Database" or "Overview") _area = Area; _loaded = true; }
-    private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile?.Id ?? ""); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
+    protected override async Task OnInitializedAsync()
+    {
+        var context = await ContextFactory.GetActiveContextAsync();
+        _profile = context.ActiveProfileOrNull;
+        var workspace = await CurrentWorkspace.GetAsync();
+        _snapshotKey = new(_profile?.Id ?? "", workspace.WorkspaceId, workspace.ProjectSlug, workspace.Version);
+        await Load();
+        _loaded = true;
+    }
+    private async Task Load()
+    {
+        if (_snapshotKey is not { } key) return;
+        try
+        {
+            _snapshots = await SnapshotState.GetOrLoadAsync(key, () => Api.ListSourceSnapshotsAsync(key.EnvironmentId));
+            var remembered = SnapshotState.SelectedSnapshotId(key);
+            _selected = remembered is not null && _snapshots.Any(s => s.Id.ToString() == remembered)
+                ? remembered
+                : _snapshots.FirstOrDefault()?.Id.ToString() ?? "";
+            SnapshotState.SelectSnapshot(key, _selected);
+        }
+        catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); }
+    }
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null; _pendingArchive = args.File.Name;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { SnapshotState.Invalidate(); await Load(); _selected = snapshot.Id.ToString(); SnapshotChanged(); _area = "Overview"; Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("area", (string?)null)); _focusId = "sa-current-heading"; } }
         catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
         catch (HttpRequestException ex) when (BackendRequestClassifier.FromException("Source upload", ex).IsTransportFailure) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
         catch (HttpRequestException ex) { _error = new("SOURCE_UPLOAD_FAILED", "upload", $"{BackendRequestClassifier.FromException("Source upload", ex).UserMessage} Existing snapshots are unchanged."); }

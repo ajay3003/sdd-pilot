@@ -881,6 +881,19 @@
                 <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus"
                                       CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())"
                                       OnOpenAuthentication='() => _activeTab = "auth"' />
+
+                <details class="fa-endpoint-review-settings" data-testid="endpoint-api-review-settings">
+                    <summary>API review safety settings</summary>
+                    <p>These settings constrain API Quality Review and frontend security checks. They do not approve discovered source values.</p>
+                    <RuntimeSecurityExpectationsEditor Settings="@EndpointSecuritySettings.RuntimeSecurity" Editable="_isEditMode" />
+                    <dl class="fa-endpoint-security-summary">
+                        @SecurityListField("Expected response headers", "headers", EndpointSecuritySettings.ExpectedSecurityHeaders)
+                        @SecurityListField("Allowed backend domains", "backend", EndpointSecuritySettings.AllowedBackendDomains)
+                        @SecurityListField("Allowed CDN hosts", "cdn", EndpointSecuritySettings.AllowedCdnHosts)
+                        @SecurityListField("REST hosts for proxy scope", "rest", EndpointSecuritySettings.AllowedRestHosts)
+                        @SecurityListField("GraphQL hosts for proxy scope", "graphql", EndpointSecuritySettings.AllowedGraphQlHosts)
+                    </dl>
+                </details>
             }
 
             @* ── Performance Thresholds ── *@
@@ -1209,18 +1222,6 @@
                 }
             }
 
-            @* ── Security Expectations: approved settings and separately reviewed source candidates ── *@
-            @if (_activeTab == "security")
-            {
-                <SecurityExpectationsPanel EnvironmentId="@profile.Id" Settings="@(_isEditMode && _editProfile is not null ? _editProfile.Security : profile.Security)"
-                    Editable="_isEditMode" ApprovedChanged="@(approved => SaveSecurityApprovalAsync(profile.Id, approved))" @key="profile.Id">
-                    <Defaults>
-                        <SecondaryButton OnClick="RestoreSecurityExpectationsAsync" Class="fa-btn-sm">Restore Default Security Expectations</SecondaryButton>
-                        <SecondaryButton OnClick="RestoreSecurityHostsAsync" Class="fa-btn-sm">Restore Default Allowed Hosts</SecondaryButton>
-                        <SecondaryButton OnClick="RestoreSecurityHeadersAsync" Class="fa-btn-sm">Restore Default Expected Headers</SecondaryButton>
-                    </Defaults>
-                </SecurityExpectationsPanel>
-            }
             @* ── Frontend Review Engines ── *@
             @if (_activeTab == "features")
             {
@@ -1533,7 +1534,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         <div class="modal-panel" @onclick:stopPropagation="true">
             <h2 id="fa-reset-title" class="modal-title">Reset Profile</h2>
             <div class="notification notification-warning">
-                This resets Performance Thresholds, Core Web Vitals, Security Expectations, and Feature Toggles to defaults.
+                This resets Performance Thresholds, Core Web Vitals, and Feature Toggles to defaults.
                 Profile Name, Environment Type, Target URL, and Notes are kept.
             </div>
             <div class="modal-actions">
@@ -1570,6 +1571,41 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private string                   _activeTab = "general";
     private string?                  _appliedInitialTab;
+    private FrontendSecuritySettings EndpointSecuritySettings
+    {
+        get
+        {
+            var settings = (_isEditMode && _editProfile is not null ? _editProfile : SelectedProfile)?.Security ?? new();
+            settings.RuntimeSecurity ??= new();
+            return settings;
+        }
+    }
+    private static string DisplayValues(IEnumerable<string>? values) =>
+        values is null || !values.Any() ? "None configured" : string.Join(", ", values);
+    private RenderFragment SecurityListField(string label, string key, IReadOnlyCollection<string> values) => @<div>
+        <dt>@label</dt><dd>
+            @if (_isEditMode)
+            {
+                <label class="visually-hidden" for="@($"endpoint-security-{key}")">@label (one value per line)</label>
+                <textarea id="@($"endpoint-security-{key}")" class="form-control" rows="2" value="@string.Join(Environment.NewLine, values)"
+                          @onchange="e => SetSecurityValues(key, e.Value?.ToString())"></textarea>
+            }
+            else { @DisplayValues(values) }
+        </dd>
+    </div>;
+    private void SetSecurityValues(string key, string? raw)
+    {
+        var values = (raw ?? "").Split(['\r', '\n', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        switch (key)
+        {
+            case "headers": EndpointSecuritySettings.ExpectedSecurityHeaders = values; break;
+            case "backend": EndpointSecuritySettings.AllowedBackendDomains = values; break;
+            case "cdn": EndpointSecuritySettings.AllowedCdnHosts = values; break;
+            case "rest": EndpointSecuritySettings.AllowedRestHosts = values; break;
+            case "graphql": EndpointSecuritySettings.AllowedGraphQlHosts = values; break;
+        }
+    }
 
     private string? _saveSuccess;
     private string? _saveError;
@@ -1840,7 +1876,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (ServiceProvider.GetService<IFrontendQualityEngineStatusApiService>() is not { } statusApi) return;
         var report = await statusApi.GetStatusAsync(ReviewAuthenticationModeDto.Anonymous, new ReviewEngineSelectionDto
         {
-            ReadinessEngines = [],
+            ReadinessEngines = [FrontendQualityEngineIdDto.PassiveSecurity],
             Target = new ReviewEngineTargetDto { ProfileId = profile.Id, TargetUrl = profile.TargetUrl ?? "", EnvironmentType = profile.EnvironmentType.ToString() },
         });
         _passiveSecurityServerStatus = report?.Engines.FirstOrDefault(e => e.EngineId == FrontendQualityEngineIdDto.PassiveSecurity);
@@ -1903,7 +1939,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _appliedInitialProfileId = requested;
         if (_selectedProfileId != requested) SelectProfile(requested);
         _appliedInitialTab = null;   // SelectProfile resets the tab; re-apply the requested one.
-        if (InitialTab is { Length: > 0 } tab && Tabs.Any(t => t.Key == tab)) { _activeTab = tab; _appliedInitialTab = tab; }
+        if (InitialTab is { Length: > 0 } tab)
+        {
+            var normalized = NormalizeTab(tab);
+            if (Tabs.Any(t => t.Key == normalized)) { _activeTab = normalized; _appliedInitialTab = tab; }
+        }
     }
 
     protected override void OnParametersSet()
@@ -1912,9 +1952,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (InitialTab is { Length: > 0 } requested && _appliedInitialTab != requested)
         {
             _appliedInitialTab = requested;
-            if (Tabs.Any(t => t.Key == requested)) _activeTab = requested;
+            var normalized = NormalizeTab(requested);
+            if (Tabs.Any(t => t.Key == normalized)) _activeTab = normalized;
         }
     }
+
+    private static string NormalizeTab(string tab) =>
+        string.Equals(tab, "security", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(tab, "security-expectations", StringComparison.OrdinalIgnoreCase)
+            ? "endpoint" : tab;
 
     // ── Profile selection ────────────────────────────────────────────────────
 
@@ -2818,43 +2864,6 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         FaSettings.RestoreDefaultCoreWebVitals(_selectedProfileId);
         await FaSettings.SaveAsync(JS);
         _confirmRestoreCwv = false;
-    }
-
-    private async Task RestoreSecurityExpectationsAsync()
-    {
-        if (_selectedProfileId is null) return;
-        FaSettings.RestoreDefaultSecurityExpectations(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
-    }
-
-    private async Task SaveSecurityApprovalAsync(string environmentId, BirkNext.SecurityExpectations.ApprovedSecurityExpectations approved)
-    {
-        var target = SelectedProfile;
-        if (target is null || target.Id != environmentId || _isEditMode) throw new InvalidOperationException("Target Environment or manual edits changed; refresh review before accepting.");
-        var old = target.Security;
-        target.Security = FrontendSecuritySettings.FromApproved(approved);
-        try { await FaSettings.SaveAsync(JS); }
-        catch { target.Security = old; throw; }
-    }
-
-    private async Task RestoreSecurityHostsAsync()
-    {
-        if (SelectedProfile is null) return;
-        SelectedProfile.Security.AllowedBackendDomains  = [];
-        SelectedProfile.Security.AllowedRestHosts       = [];
-        SelectedProfile.Security.AllowedGraphQlHosts    = [];
-        SelectedProfile.Security.AllowedCdnHosts        = [];
-        SelectedProfile.Security.AllowedRedirectUrls    = [];
-        await FaSettings.SaveAsync(JS);
-    }
-
-    private async Task RestoreSecurityHeadersAsync()
-    {
-        if (SelectedProfile is null) return;
-        SelectedProfile.Security.ExpectedSecurityHeaders = FaSettings.GetDefaultSecuritySettings().ExpectedSecurityHeaders;
-        SelectedProfile.Security.Origins.RemoveAll(p => p.FieldType == BirkNext.SecurityExpectations.SecurityExpectationField.SecurityHeader);
-        SelectedProfile.Security.Origins.AddRange(FaSettings.GetDefaultSecuritySettings().Origins);
-        await FaSettings.SaveAsync(JS);
     }
 
     /// <summary>Opens the restore confirmation of the Frontend Review Engines tab (nothing changes until confirmed).</summary>

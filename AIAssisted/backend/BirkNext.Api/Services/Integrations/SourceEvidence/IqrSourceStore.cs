@@ -100,7 +100,7 @@ public sealed class IqrSourceStore(AppDbContext db)
         await ReportProgressAsync("Analyzing source evidence domains", "Reviewing infrastructure, configuration, pipeline and contract evidence.");
         snapshot = snapshot with { EvidenceDomains = SourceAnalysis.Evidence.SourceEvidenceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.AnalyzedAt, snapshot.Architecture,
             snapshot.DatabaseArchitecture, snapshot.Observability, snapshot.IntegrationPath, ct, out var configuration) };
-        // Security Expectations reads identity/endpoint candidates from the normalized Configuration evidence (raw public identifiers in memory only).
+        // Source security configuration evidence reads identity/endpoint candidates from normalized Configuration (raw public identifiers in memory only).
         await ReportProgressAsync("Analyzing security expectations", "Deriving source-based identity and endpoint expectations.");
         snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
             architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct, configuration) };

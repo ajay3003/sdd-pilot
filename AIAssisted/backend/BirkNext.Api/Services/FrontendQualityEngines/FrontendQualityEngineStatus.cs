@@ -13,6 +13,7 @@ public enum FrontendQualityEngineUnavailableReason
     NotActiveForReview,
     /// <summary>The target is not a server-registered trusted profile (Passive Security: FrontendPassiveSecurity:TrustedProfiles).</summary>
     TargetNotTrusted,
+    ProductionBlocked,
 }
 
 public sealed record FrontendQualityEngineStatus(

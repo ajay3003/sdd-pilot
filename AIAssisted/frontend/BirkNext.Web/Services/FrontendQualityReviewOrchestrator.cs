@@ -1058,7 +1058,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             { "High" => FrontendQualitySeverity.High, "Medium" => FrontendQualitySeverity.Medium, "Low" => FrontendQualitySeverity.Low, _ => FrontendQualitySeverity.Info },
             Category = FrontendQualityCategory.Security, Description = f.Description, Recommendation = f.Solution,
             Evidence = string.IsNullOrWhiteSpace(f.Evidence) ? [$"URL: {f.Url}; confidence: {f.Confidence}; instances: {f.InstancesCount}"] : [$"URL: {f.Url}; confidence: {f.Confidence}; instances: {f.InstancesCount}", f.Evidence],
-            SourceSystem = "ZAP Passive", Status = CheckExecutionStatus.Failed
+            SourceSystem = "ZAP Passive", Status = CheckExecutionStatus.NotAssessed
             , EngineId = FrontendQualityEngineId.PassiveSecurity, SourceRuleId = f.PluginId
         }) : [];
         return new FrontendQualityReviewReport
@@ -1170,8 +1170,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             .ToList();
 
         var clientIds = new List<string>();
-        if (!string.IsNullOrWhiteSpace(ctx.SecuritySettings.ExpectedClientId))
-            clientIds.Add(ctx.SecuritySettings.ExpectedClientId);
+        if (!string.IsNullOrWhiteSpace(ctx.ActiveProfile.Authentication.ExpectedClientId))
+            clientIds.Add(ctx.ActiveProfile.Authentication.ExpectedClientId);
 
         var knownSafe = ctx.AllowedGraphQlEndpoints
             .Concat(ctx.AllowedCdnHosts)
@@ -1183,7 +1183,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             EnvironmentName = ctx.ActiveProfile.EnvironmentType.ToString(),
             ExpectedApiGatewayBasePath = ctx.ActiveProfile.ExpectedApiGateway,
             AllowedBackendHostnames = allowedHosts,
-            AllowedAuthority = ctx.SecuritySettings.ExpectedAuthority,
+            AllowedAuthority = ctx.ActiveProfile.Authentication.ExpectedAuthority,
             AllowedClientIds = clientIds,
             KnownSafeDomains = knownSafe,
             // Static Security evaluates exactly the headers this Target Environment expects (presence only).

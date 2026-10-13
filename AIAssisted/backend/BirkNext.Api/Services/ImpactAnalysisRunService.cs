@@ -260,7 +260,7 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
                 AddFinding(findings, new($"security:{candidate.Id}", ImpactAnalysisFindingKind.Security, $"Security configuration: {candidate.FieldType}",
                     ImpactAnalysisClassification.NeedsReview, state, 1,
                     "Changed source file also contains security/authentication expectation evidence. Review the policy and related tests; this is source evidence, not a runtime security result.",
-                    matchingChanges.Select(path => new ImpactAnalysisEvidence("Security Expectations source evidence",
+                    matchingChanges.Select(path => new ImpactAnalysisEvidence("Source security configuration evidence",
                         $"{candidate.FieldType} candidate at line {candidate.SourceLine}; candidate state {candidate.CandidateState}, evidence {state}.", path, snapshot.Id)).ToList()));
             }
         }
@@ -295,8 +295,8 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
             source is { RecommendedTests.Count: > 0 } || linkedRequirementTests > 0 ? new("Tests", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Only explicit links are included. Tests were not executed and behavior coverage is not proven.") : new("Tests", ImpactAnalysisEvidenceStatus.NotEvaluated, "No linked tests were available; absence of links does not mean no tests are affected."),
             snapshot is { SecurityExpectationsEvidence: { } securityEvidence } && source is not null &&
                 securityEvidence.SourceSnapshotId == snapshot.Id && string.Equals(securityEvidence.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase)
-                ? new("Security/authentication", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Security Expectations source candidates were checked against changed source paths for this exact snapshot. Runtime policy behavior and vulnerability status are not evaluated.")
-                : new("Security/authentication", ImpactAnalysisEvidenceStatus.NotEvaluated, snapshot is null ? "No source snapshot comparison was selected." : "Security Expectations source evidence is unavailable for this snapshot."),
+                ? new("Security/authentication", ImpactAnalysisEvidenceStatus.PartiallyEvaluated, "Source-declared security configuration evidence was checked against changed source paths for this exact snapshot. Runtime policy behavior and vulnerability status are not evaluated.")
+                : new("Security/authentication", ImpactAnalysisEvidenceStatus.NotEvaluated, snapshot is null ? "No source snapshot comparison was selected." : "Source-declared security configuration evidence is unavailable for this snapshot."),
             SourceStatus(source, "Deployment", "CI/CD", "Source CI/CD and infrastructure evidence is partial and does not verify deployment."),
             snapshot is { GeneratedDocumentation: { } documentationEvidence } && documentationEvidence.SourceSnapshotId == snapshot.Id &&
                 string.Equals(documentationEvidence.SourceFingerprint, snapshot.Archive.Sha256, StringComparison.OrdinalIgnoreCase)

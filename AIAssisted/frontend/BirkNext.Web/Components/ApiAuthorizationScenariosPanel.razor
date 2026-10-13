@@ -22,7 +22,7 @@
         <div><dt>Environment</dt><dd>@(Context?.ActiveProfile.Name ?? "No active Target Environment") <span class="aas-pill aas-pill-muted">@(Context?.ActiveProfile.EnvironmentType.ToString() ?? "Unknown")</span></dd></div>
         <div><dt>Server registration</dt><dd data-testid="aqr-authorization-trust" data-state="@(_execution?.Trust.State.ToString() ?? "Unknown")">@TrustText</dd></div>
         <div><dt>Sign-in</dt><dd data-testid="aqr-authorization-signin">@SignInText</dd></div>
-        <div><dt>Scenarios</dt><dd data-testid="aqr-authorization-count">@Scenarios.Count configured (Target Environment → Security Expectations → Authorization scenarios)</dd></div>
+        <div><dt>Scenarios</dt><dd data-testid="aqr-authorization-count">@Scenarios.Count configured for this Target Environment</dd></div>
     </dl>
 
     @if (_execution is { ProtectedExecutionAvailable: false })
@@ -128,7 +128,7 @@
 
     private string RunHelp => _busy ? "Running…"
         : ClientBlocked is { } blocked ? $"Run is disabled: {blocked}"
-        : Scenarios.Count == 0 ? "Add authorization scenarios under Target Environment → Security Expectations to run them."
+        : Scenarios.Count == 0 ? "Configure authorization scenarios in Target Environments → Endpoint Discovery → API review safety settings."
         : _execution is null ? "Run is disabled: the backend could not be asked whether this environment is registered."
         : !_execution.ProtectedExecutionAvailable ? $"Run is disabled: {SecurityExecutionStatus.AuthenticationRequiredMessage}"
         : !_execution.Trust.Allowed ? $"Run is disabled: {_execution.Trust.Reason}"

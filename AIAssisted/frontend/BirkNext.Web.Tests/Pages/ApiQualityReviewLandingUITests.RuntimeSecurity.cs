@@ -46,7 +46,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-authorization]"));
         page.Find("[data-testid=aqr-authorization-warning]").TextContent.Should().Be(RuntimeSecurityWording.NotAPenetrationTest);
         page.Find("[data-testid=aqr-authorization-run]").HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=aqr-authorization-run-help]").TextContent.Should().Contain("Add authorization scenarios");
+        page.Find("[data-testid=aqr-authorization-run-help]").TextContent.Should().Contain("Configure authorization scenarios in Target Environments → Endpoint Discovery");
     }
 
     [Fact]

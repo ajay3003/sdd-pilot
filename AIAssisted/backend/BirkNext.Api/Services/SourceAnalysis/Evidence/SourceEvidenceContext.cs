@@ -24,7 +24,7 @@ internal sealed record EvidenceFile(string Path, string Content, SourceFileRole 
 }
 
 /// <summary>One configuration value as read from source, kept in memory during ingestion only (never persisted). Consumers that need the raw
-/// public identifier (Security Expectations) read it from here at ingestion time; everything persisted is the redacted <see cref="ConfigurationEntry"/>.</summary>
+/// public identifier (security configuration evidence) read it from here at ingestion time; everything persisted is the redacted <see cref="ConfigurationEntry"/>.</summary>
 internal sealed record RawConfigurationValue(string File, string Key, string Raw, string Technology, SourceEnvironmentLabel Environment, string? ProjectPath, ConfigurationEntry Entry);
 
 /// <summary>The normalized configuration of one snapshot, in memory: redacted entries plus raw values for ingestion-time consumers.</summary>

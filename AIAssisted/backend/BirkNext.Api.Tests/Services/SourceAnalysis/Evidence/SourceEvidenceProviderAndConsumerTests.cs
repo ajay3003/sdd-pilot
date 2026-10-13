@@ -15,7 +15,7 @@ using static BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceF
 namespace BirkNext.Api.Tests.Services.SourceAnalysis.Evidence;
 
 /// <summary>The evidence domains as part of Source Analysis ingestion (same immutable snapshot, analyzer versions, no rescans) and their
-/// consumers: the shared query API, IQR, Security Expectations, Security Classification and Dependency Review — each keeping its own semantics.</summary>
+/// consumers: the shared query API, IQR, source security configuration analysis, Security Classification and Dependency Review — each keeping its own semantics.</summary>
 public sealed class SourceEvidenceProviderAndConsumerTests
 {
     private static async Task<IqrSourceSnapshot> Ingest(params (string Path, string Content)[] files)

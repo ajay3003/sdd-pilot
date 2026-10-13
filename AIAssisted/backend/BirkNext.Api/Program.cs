@@ -492,8 +492,6 @@ builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTes
 // Shared read-only access to Source Analysis snapshots for every source-aware review (Source Analysis owns ingestion; reviews own meaning).
 builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(sp => BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.FromConfiguration(
     sp.GetRequiredService<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>(), sp.GetRequiredService<IConfiguration>()));
-builder.Services.AddScoped<BirkNext.Api.Services.SecurityExpectations.ISecurityExpectationDiscoveryService>(sp => new BirkNext.Api.Services.SecurityExpectations.SecurityExpectationDiscoveryService(
-    sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceDiscovery.SourceIntegrationService>();
 // Azure Environment Analysis: the person's own interactive sign-in (dedicated Edge profile / device code; MFA and PIM are theirs), token in
 // memory only, read-only Azure Resource Manager GETs + predefined Resource Graph queries. Off unless AzureEnvironment:Enabled and a ClientId.

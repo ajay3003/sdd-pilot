@@ -14,6 +14,7 @@ public class PassiveSecurityLifecycleTests
         var runner=new LifecycleRunner(timeoutOnLaunch:true); var result=await Service(runner).ReviewAsync(Request());
         result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.TimedOut); result.Findings.Should().BeEmpty(); result.HighCount.Should().Be(0);
         runner.Commands.Should().Contain(c=>c.Contains("rm --force birknext-zap-passive-"));
+        runner.Commands.Should().Contain(c=>c.Contains("container exists birknext-zap-passive-"));
     }
 
     [Fact]
@@ -29,12 +30,22 @@ public class PassiveSecurityLifecycleTests
     public async Task Launch_failure_still_force_removes_container()
     {
         var runner=new LifecycleRunner(failLaunch:true); var result=await Service(runner).ReviewAsync(Request());
-        result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.EngineError); runner.Commands.Last().Should().Contain("rm --force");
+        result.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatus.EngineError); runner.Commands.Should().Contain(c=>c.Contains("rm --force"));
     }
 
-    private static PassiveSecurityReviewRequest Request()=>new("https://example.com/","trusted","https://example.com","Public",TimeoutSeconds:10);
+    private static PassiveSecurityReviewRequest Request()=>new("https://example.com/","trusted","https://example.com","Development",TimeoutSeconds:10);
     private static FrontendZapPassiveReviewService Service(IZapProcessRunner runner)
-    { var cfg=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"FrontendPassiveSecurity:Enabled","true"},{"FrontendPassiveSecurity:TrustedProfiles:trusted:BaseUrl","https://example.com"},{"FrontendPassiveSecurity:TrustedProfiles:trusted:EnvironmentType","Public"}}).Build(); return new(NullLogger<FrontendZapPassiveReviewService>.Instance,new(new BrowserTargetValidator(),cfg),new(),cfg,runner); }
+    { var cfg=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"FrontendQualityCapabilities:PassiveSecurityAllowed","true"},{"FrontendPassiveSecurity:Enabled","true"},{"FrontendPassiveSecurity:TrustedProfiles:trusted:BaseUrl","https://example.com"},{"FrontendPassiveSecurity:TrustedProfiles:trusted:EnvironmentType","Development"}}).Build(); return new(NullLogger<FrontendZapPassiveReviewService>.Instance,new(new BrowserTargetValidator(),cfg),new(),cfg,runner); }
+
+    [Fact]
+    public void ContainerArguments_AreBoundedAndDoNotExposeHostResources()
+    {
+        var args = FrontendZapPassiveReviewService.BuildContainerArguments("birknext-zap-passive-test", 32123, new string('A', 64),
+            controllers: new HashSet<string>(["cpu", "memory", "pids"], StringComparer.OrdinalIgnoreCase));
+        args.Should().Contain("--read-only").And.Contain("--cap-drop=ALL").And.Contain("--memory=768m").And.Contain("--cpus=1").And.Contain("--pids-limit=512").And.Contain("--pull=never");
+        args.Should().NotContain("--privileged").And.NotContain("/var/run/docker.sock").And.NotContain("--network=host");
+        args.Should().NotContain("zap-api-scan.py").And.NotContain("-cmd").And.NotContain("-quickurl");
+    }
 
     private sealed class LifecycleRunner(bool timeoutOnLaunch=false,bool cancelOnLaunch=false,bool failLaunch=false) : IZapProcessRunner
     {

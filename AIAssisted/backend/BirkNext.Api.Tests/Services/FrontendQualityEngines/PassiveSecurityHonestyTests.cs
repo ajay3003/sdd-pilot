@@ -79,6 +79,26 @@ public sealed class PassiveSecurityHonestyTests
         Assert.Contains(FrontendQualityEngineUnavailableReason.BlockedByDeploymentPolicy, status.Reasons);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-boolean")]
+    public async Task MissingOrMalformedInstallationPolicy_DoesNotInheritLegacyEnablement(string? policy)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["FrontendPassiveSecurity:Enabled"] = "true",
+            ["FrontendQualityEnginePreferences:PassiveSecurityEnabled"] = "true",
+            [$"FrontendPassiveSecurity:TrustedProfiles:{TrustedProfile}:BaseUrl"] = TrustedUrl,
+            [$"FrontendPassiveSecurity:TrustedProfiles:{TrustedProfile}:EnvironmentType"] = "LoopbackLocalTest",
+        };
+        if (policy is not null) values["FrontendQualityCapabilities:PassiveSecurityAllowed"] = policy;
+
+        var status = await PassiveStatus(new ConfigurationBuilder().AddInMemoryCollection(values).Build());
+
+        Assert.False(status.Available);
+        Assert.Contains(FrontendQualityEngineUnavailableReason.BlockedByDeploymentPolicy, status.Reasons);
+    }
+
     [Fact]
     public async Task UntrustedProfile_IsNotAvailable_EvenWhenRuntimeIsReady()
     {
@@ -113,10 +133,27 @@ public sealed class PassiveSecurityHonestyTests
     public async Task ServiceReadiness_WhenDisabled_StartsNoContainer()
     {
         var runner = new CountingRunner();
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["FrontendPassiveSecurity:Enabled"] = "false" }).Build();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["FrontendQualityCapabilities:PassiveSecurityAllowed"] = "true", ["FrontendPassiveSecurity:Enabled"] = "false" }).Build();
         var service = new FrontendZapPassiveReviewService(NullLogger<FrontendZapPassiveReviewService>.Instance, new PassiveSecurityTargetAuthorizer(new BrowserTargetValidator(), config), new PassiveSecurityEvidenceSanitizer(), config, runner);
         var readiness = await service.CheckReadinessAsync();
         Assert.Equal(PassiveSecurityReadinessState.Disabled, readiness.State);
+        Assert.False(readiness.Available);
+        Assert.Equal(0, runner.Calls);
+    }
+
+    [Fact]
+    public async Task InstallationPolicyBlocked_DoesNotStartContainerEvenWhenEnginePreferenceIsEnabled()
+    {
+        var runner = new CountingRunner();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["FrontendQualityCapabilities:PassiveSecurityAllowed"] = "not-a-boolean",
+            ["FrontendQualityEnginePreferences:PassiveSecurityEnabled"] = "true"
+        }).Build();
+        var service = new FrontendZapPassiveReviewService(NullLogger<FrontendZapPassiveReviewService>.Instance,
+            new PassiveSecurityTargetAuthorizer(new BrowserTargetValidator(), config), new PassiveSecurityEvidenceSanitizer(), config, runner);
+        var readiness = await service.CheckReadinessAsync();
+        Assert.Equal(PassiveSecurityReadinessState.InstallationPolicyBlocked, readiness.State);
         Assert.False(readiness.Available);
         Assert.Equal(0, runner.Calls);
     }

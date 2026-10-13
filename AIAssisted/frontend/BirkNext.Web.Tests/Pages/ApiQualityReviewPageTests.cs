@@ -124,8 +124,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
 
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy");
         page.FindAll("[data-testid=aqr-target]").Should().HaveCount(2).And.OnlyContain(t => t.GetAttribute("data-auth") == "true");
-        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("WaitingForAuthenticatedTraffic");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         page.Find("[data-testid=aqr-decide]").TextContent.Should().NotContain("Not connected");
     }
 
@@ -136,8 +135,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         var review = Register(context, authenticated: true, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
-        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("Available");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
 
         await page.InvokeAsync(() => RunButton(page).Click());
 

@@ -54,8 +54,8 @@ public sealed partial class ApiQualityReviewLandingUITests
         Register(Context(), true, WithDocuments(AutorisasjonEndpoints()));
         var page = Render<ApiQualityReview>();
 
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness-items]").TextContent
-            .Should().Contain("runtime introspection will be attempted first; configured SDL m2lb-schema.graphql is available as fallback — compatibility can be assessed"));
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-domain][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent
+            .Should().Contain("Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility."));
         page.Find("[data-testid=aqr-domain][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent.Should().Be("Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility.");
         page.Find("[data-testid=aqr-contract-row][data-protocol='GraphQL']").GetAttribute("data-state").Should().Be("ArtifactFallback");
         page.Markup.Should().NotContain("Compatible", "pre-run never shows a compatibility result");

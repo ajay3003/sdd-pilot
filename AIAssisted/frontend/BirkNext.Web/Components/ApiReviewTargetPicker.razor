@@ -1,9 +1,9 @@
 @using BirkNext.ApiReview
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@inject IJSRuntime JS
 
-@* The API targets that make up the review scope, grouped by protocol, each selectable. Collapsed by its host: this is the
-   detail behind the scope summary, not something the user must read before deciding to run. *@
+@* The selectable API targets that make up the review scope. Exact selected endpoints are also summarized before Run. *@
 <div class="aqr-targets" data-testid="aqr-targets">
     @if (Targets.Count == 0)
     {
@@ -15,13 +15,15 @@
         var rows = new[] { ApiReviewTargetType.Rest, ApiReviewTargetType.GraphQl }.SelectMany(type => ApiReviewPresentation.TargetCards(Targets, type, LastReport)).ToList();
         <div class="aqr-tablewrap aqr-targets-tablewrap">
             <table class="aqr-table aqr-targets-table" data-testid="aqr-targets-table" aria-label="API targets in this review">
-                <thead><tr><th scope="col">API</th><th scope="col">Type</th><th scope="col">Access</th><th scope="col">Operations</th><th scope="col">Contract / schema</th></tr></thead>
+                <thead><tr><th scope="col">API</th><th scope="col">Type</th><th scope="col">Full endpoint</th><th scope="col">Access</th><th scope="col">Operations</th><th scope="col">Contract / schema</th><th scope="col">Action</th></tr></thead>
                 <tbody>
                     @foreach (var card in rows)
                     {
                         var t = card.Target;
                         var checkboxId = $"aqr-target-{t.TargetId}";
                         var rest = t.ApiType == ApiReviewTargetType.Rest;
+                        var endpoint = ApiReviewPresentation.SafeEndpointUrl(t);
+                        var contractConfigured = rest ? t.ContractSource is not null : SchemaArtifacts?.ContainsKey(t.TargetId) == true;
                         <tr class="aqr-target-row @(Selected.Contains(t.TargetId) ? "aqr-target-selected" : "")" data-testid="aqr-target" data-target-id="@t.TargetId" data-type="@t.ApiType" data-auth="@t.AuthRequired.ToString().ToLowerInvariant()">
                             <th scope="row" class="aqr-target-cell">
                                 <div class="aqr-target-main">
@@ -30,21 +32,48 @@
                                            data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
                                     <div class="aqr-target-text">
                                         <label for="@checkboxId" class="aqr-target-name" data-testid="aqr-target-name">@card.DisplayName</label>
-                                        <span class="aqr-mono aqr-target-path" title="@t.Url" data-testid="aqr-target-path">@card.PathLabel</span>
                                         @if (card.ConfidenceLabel != "Verified") { <span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span> }
                                     </div>
                                 </div>
                             </th>
                             <td data-label="Type" data-testid="aqr-target-type">@(rest ? "REST" : "GraphQL")</td>
-                            <td data-label="Access"><span class="aqr-pill @(t.AuthRequired ? "aqr-pill-attention" : "aqr-pill-ready")" data-testid="aqr-target-access">@(t.AuthRequired ? "Auth required" : "Public")</span></td>
+                            <td data-label="Full endpoint" class="aqr-target-endpoint-cell" data-testid="aqr-target-path">
+                                @if (endpoint is not null)
+                                {
+                                    <span class="aqr-mono aqr-target-endpoint">@endpoint</span>
+                                    <button type="button" class="aqr-copy-url" aria-label="@($"Copy {(rest ? "REST" : "GraphQL")} endpoint URL")" data-testid="aqr-copy-url" @onclick="() => CopyUrlAsync(t)">@(_copiedTargetId == t.TargetId ? "Copied" : "Copy URL")</button>
+                                    <span class="aqr-visually-hidden" role="status" aria-live="polite">@(_copiedTargetId == t.TargetId ? "Endpoint URL copied" : "")</span>
+                                }
+                                else { <span class="aqr-mono aqr-target-endpoint" data-testid="aqr-relative-endpoint">Relative endpoint: @t.BasePath</span> }
+                            </td>
+                            <td data-label="Access"><span class="aqr-pill @(t.AuthRequired ? (AccessAvailability == ApiReviewAccessAvailability.Available ? "aqr-pill-ready" : "aqr-pill-attention") : "aqr-pill-ready")" data-testid="aqr-target-access">@(t.AuthRequired ? AccessAvailability == ApiReviewAccessAvailability.Available ? "Authenticated · Ready" : "Authenticated · Not ready" : "Public · Ready")</span></td>
                             <td data-label="Operations" data-testid="aqr-target-operations">@card.OperationCount@(card.WriteCount > 0 ? $" · {card.WriteCount} write (not executed)" : "")</td>
-                            <td data-label="Contract / schema" data-testid="aqr-target-contract">@card.ContractSummary</td>
+                            <td data-label="Contract / schema" data-testid="aqr-target-contract">
+                                @if (rest)
+                                {
+                                    @(contractConfigured ? "OpenAPI contract" : "No OpenAPI contract")
+                                }
+                                else
+                                {
+                                    @(contractConfigured ? "SDL fallback configured" : card.SchemaLabel ?? "Runtime schema retrieval pending")
+                                }
+                            </td>
+                            <td data-label="Action" data-testid="aqr-target-action">
+                                @if (rest && !contractConfigured && EnvironmentId is { Length: > 0 } environmentId)
+                                {
+                                    <a class="aqr-link" data-testid="aqr-add-openapi" href="@TargetEndpointSettingsHref(environmentId)">Configure OpenAPI URL</a>
+                                }
+                                else if (!rest && !contractConfigured)
+                                {
+                                    <button type="button" class="aqr-link-button" data-testid="aqr-add-schema" @onclick="() => AddSchemaArtifact.InvokeAsync()">Add schema artifact</button>
+                                }
+                                else { <span class="aqr-muted">@(rest ? "Configured" : "Available as fallback")</span> }
+                            </td>
                         </tr>
                         @if (card.Operations.Count > 0)
                         {
-                            <tr class="aqr-target-ops-row"><td colspan="5">
+                            <tr class="aqr-target-ops-row"><td colspan="7">
                                 <ReviewDisclosure Text="View operations" CollapseText="Hide operations" Hint="@($"{card.OperationCount} · {card.SourceLabel}")" TestId="@($"aqr-ops-{t.TargetId}")" Class="disclosure-inline disclosure-small">
-                                    <p class="aqr-muted aqr-target-fullurl"><span class="aqr-meta-label">Endpoint</span> <span class="aqr-mono">@t.Url</span></p>
                                     @OperationsTable((card, t.ApiType))
                                 </ReviewDisclosure>
                             </td></tr>
@@ -108,8 +137,23 @@
     [Parameter, EditorRequired] public IReadOnlyCollection<string> Selected { get; set; } = [];
     [Parameter] public EventCallback<(string TargetId, bool Include)> Toggle { get; set; }
     [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public ApiReviewAccessAvailability AccessAvailability { get; set; }
+    [Parameter] public string? EnvironmentId { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, GraphQlSchemaArtifact>? SchemaArtifacts { get; set; }
+    [Parameter] public EventCallback AddSchemaArtifact { get; set; }
     /// <summary>The latest review, only so a GraphQL target can say its schema was unavailable last time.</summary>
     [Parameter] public ApiReviewReport? LastReport { get; set; }
+    private string? _copiedTargetId;
+
+    private static string TargetEndpointSettingsHref(string environmentId) =>
+        $"/admin/system-settings?section=target-environments&tab=endpoint&profile={Uri.EscapeDataString(environmentId)}";
+
+    private async Task CopyUrlAsync(ApiReviewTarget target)
+    {
+        if (ApiReviewPresentation.SafeEndpointUrl(target) is not { } url) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", url); _copiedTargetId = target.TargetId; }
+        catch { _copiedTargetId = null; }
+    }
 
     /// <summary>The per-target operations table, shared by the pre-run table and the read-only result list.</summary>
     private RenderFragment OperationsTable((ApiReviewTargetCardModel Card, ApiReviewTargetType Type) args) => __builder =>

@@ -416,7 +416,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Add(targetFindings, findings, Finding(target, "sec-no-tls", ApiReviewSeverity.High, ApiReviewFindingType.Security, target.Origin, "TLS", "API served over plain HTTP", "Unencrypted API traffic exposes tokens and data.", "Serve the API over HTTPS only.", [target.Origin]));
 
         var configured = request.Policy.ExpectedSecurityHeaders;
-        var source = configured is null ? "BirkNext default (no Target Environment expectations in this request)" : "Target Environment → Security Expectations";
+        var source = configured is null ? "BirkNext default (no Target Environment expectations in this request)" : "Target Environment API review safety settings";
         headerEvaluations = SecurityHeaderExpectations.Evaluate(h, configured ?? [.. LegacyExpectedHeaders], apiResponse: true, https);
         foreach (var e in headerEvaluations)
         {
@@ -1315,7 +1315,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 DocumentationExposure = new ApiDocumentationExposureResult
                 {
                     TargetId = target.TargetId, Origin = target.Origin, Observed = ApiDocumentationProbeState.NotVerified, Assessment = ApiDocumentationAssessment.NotVerified,
-                    Reason = "Not probed: set an API documentation exposure expectation (or documentation paths) under Security Expectations to probe this API's documentation endpoints.",
+                    Reason = "Not probed: set an API documentation exposure expectation (or documentation paths) in the Target Environment API review safety settings to probe this API's documentation endpoints.",
                 },
                 Checks = [.. result.Checks, Check("api-docs-exposure", ApiReviewFindingType.Security, "API documentation exposure", ApiReviewCheckResult.NotTested, "Not probed: no API documentation exposure expectation is set for this Target Environment.")],
             };

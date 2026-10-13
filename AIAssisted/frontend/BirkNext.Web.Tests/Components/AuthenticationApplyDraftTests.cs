@@ -143,7 +143,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         var original = System.Text.Json.JsonSerializer.Serialize(Persisted());
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        foreach (var tab in new[] { "Target Application", "Authentication", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Security Expectations", "Integrations" })
+        foreach (var tab in new[] { "Target Application", "Authentication", "Endpoint Discovery", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Integrations" })
         {
             OpenTab(cut, tab);
             // Settings form stays read-only; the managed Edge runtime panel has no editable control either (no runtime trust opt-in).

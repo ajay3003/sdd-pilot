@@ -1,8 +1,9 @@
 namespace BirkNext.Api.Services.FrontendPassiveSecurity;
 
 public enum PassiveSecurityExecutionStatus { NotAssessed, Assessed, EngineError, TimedOut, Skipped, AuthenticationRequired }
-public enum PassiveSecurityOutcomeReason { None, DisabledInSystemSettings, ReadinessUnavailable, AuthenticationModeUnsupported, TargetPolicyRejected, EngineUnavailable, EngineError, Cancelled }
-public enum PassiveSecurityReadinessState { Disabled, Ready, DockerUnavailable, ZapImageUnavailable, ZapLaunchFailed, ConfigurationInvalid }
+public enum PassiveSecurityResultOutcome { NotAssessed, Findings, NoFindings }
+public enum PassiveSecurityOutcomeReason { None, InstallationPolicyBlocked, DisabledInSystemSettings, ReadinessUnavailable, AuthenticationModeUnsupported, TargetPolicyRejected, EngineUnavailable, EngineError, Cancelled }
+public enum PassiveSecurityReadinessState { InstallationPolicyBlocked, Disabled, Ready, ContainerRuntimeUnavailable, ZapImageUnavailable, ZapLaunchFailed, ConfigurationInvalid }
 
 public sealed record PassiveSecurityFinding(string PluginId, string? AlertRef, string Name, string Risk,
     string Confidence, string Description, string Url, string? Parameter, string? Evidence, string Solution,
@@ -22,10 +23,14 @@ public sealed record PassiveSecurityResult(PassiveSecurityExecutionStatus Execut
 {
     public List<PassiveSecurityFinding> Findings { get; init; } = Findings ?? [];
     public List<string> Limitations { get; init; } = Limitations ?? [FrontendZapPassiveReviewService.PassiveLimitation];
+    public PassiveSecurityResultOutcome Outcome => ExecutionStatus != PassiveSecurityExecutionStatus.Assessed
+        ? PassiveSecurityResultOutcome.NotAssessed
+        : Findings.Count > 0 ? PassiveSecurityResultOutcome.Findings : PassiveSecurityResultOutcome.NoFindings;
 }
 
 public sealed record PassiveSecurityReadiness(PassiveSecurityReadinessState State, bool Available,
-    string? ZapVersion = null, string ExecutionMode = "Passive", string? Image = null, string? ImageDigest = null, string? Error = null);
+    string? ZapVersion = null, string ExecutionMode = "Passive", string? Image = null, string? ImageDigest = null,
+    string? Error = null, List<string>? Limitations = null);
 
 public sealed record PassiveSecurityReviewRequest(string TargetUrl, string EnvironmentProfileId,
     string ConfiguredBaseUrl, string EnvironmentType, bool RequiresAuthentication = false, int TimeoutSeconds = 120);

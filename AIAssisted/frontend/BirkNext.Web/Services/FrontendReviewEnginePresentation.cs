@@ -121,9 +121,11 @@ public static class FrontendReviewEnginePresentation
     /// </summary>
     public static string? ServerUnavailableReason(FrontendQualityEngineId id, FrontendQualityEngineStatusDto? status) =>
         id != FrontendQualityEngineId.PassiveSecurity || status is null ? null
-        : !status.Layer1Allowed ? "Unavailable — not allowed on this BirkNext installation"
-        : !status.Layer2Enabled ? "Unavailable — not enabled on server"
-        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted) ? "Unavailable — target not registered as trusted on the server"
+        : !status.Layer1Allowed ? "Installation policy does not allow container security engines."
+        : !status.Layer2Enabled ? "Passive Security is disabled in System Settings."
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.ProductionBlocked) ? "Passive Security is blocked for Production targets."
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted) ? "This target is not registered for passive scanning by the server."
+        : status.Layer3Readiness?.IsAvailable == false ? status.Layer3Readiness.StatusReason ?? "The ZAP runtime is unavailable on the server."
         : null;
 
     /// <summary>Applies a toggle change for one engine to the draft. Mirrors <see cref="FrontendQualityActiveEngines.IsEnabled"/>.</summary>

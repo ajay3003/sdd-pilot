@@ -10,7 +10,7 @@ OWASP compliance. This page describes what each review actually executes and whe
 
 | Area | State | Where | Evidence |
 |---|---|---|---|
-| Security headers | Runnable | FQR Static Security (frontend document), AQR (API responses) | Runtime response headers vs Target Environment → Security Expectations (presence only) |
+| Security headers | Runnable | FQR Static Security (frontend document), AQR (API responses) | Runtime response headers vs Target Environment → Endpoint Discovery → API review safety settings (presence only) |
 | CORS | Runnable with bounded configured-origin tests | AQR → Security | Anonymous preflights: frontend origin, up to 3 configured allowed origins, one synthetic foreign origin (`https://foreign.birknext.invalid`) |
 | Cookies | Runnable metadata inspection | FQR Static Security → Cookie security | Set-Cookie attributes of the frontend document; Local HTTPS proxy observed attributes. Never values |
 | Swagger/OpenAPI exposure | Runnable | AQR → Security | Anonymous GETs of ≤ 6 same-origin documentation paths vs the exposure expectation |
@@ -58,9 +58,9 @@ For each target that requires authentication and was reviewed with the proxy cre
 
 Authenticated ≠ authorized: this check never claims anything about what an identity may access.
 
-## Security headers and Security Expectations
+## Security headers and API review safety settings
 
-`ExpectedSecurityHeaders` (Target Environment → Security Expectations) drives both reviews; the model stores names only, so evaluation
+`ExpectedSecurityHeaders` (Target Environment → Endpoint Discovery → API review safety settings) drives both reviews; the model stores names only, so evaluation
 is **presence only** (X-Content-Type-Options must be `nosniff`).
 
 - FQR Static Security evaluates the frontend document: an expected header that is absent is a finding (`HDR-MISSING-*`, now including
@@ -69,9 +69,9 @@ is **presence only** (X-Content-Type-Options must be `nosniff`).
   Referrer-Policy, Permissions-Policy) are recorded as "not applicable on API responses".
 - HSTS on plain HTTP is not applicable. Requests from older clients without an expectation list keep each engine's historical defaults.
 
-Security Expectations fields and their consumers are labelled in the editor: Authority, Allowed backend domains and CDN hosts → FQR
-Static Security; REST/GraphQL hosts → Local HTTPS proxy scope; Expected security headers → FQR + AQR; Tenant, Redirect URLs and Client
-IDs → Configuration Review only.
+Authentication owns authority, tenant, client IDs and redirect URLs. Endpoint Discovery owns API review settings: backend domains and CDN
+hosts are consumed by FQR Static Security, REST/GraphQL host allowlists constrain Local HTTPS proxy scope, and expected security headers
+are consumed by FQR + AQR. Source-declared candidates remain evidence in Source Analysis; they are not manually approved in a separate review.
 
 ## Safe fuzzing (API Quality Review → Safe fuzzing)
 
@@ -110,7 +110,7 @@ IDs → Configuration Review only.
   Runs are kept in API review history (latest five per Target Environment) with their environment, settings and contract fingerprints;
   old runs are never re-evaluated against a newer contract.
 
-## Runtime security expectations (Target Environment → Security Expectations)
+## Runtime security expectations (Target Environment → Endpoint Discovery → API review safety settings)
 
 Manual expectations only — source discovery never fills them. Each field shows the review that reads it ("Used by"):
 
@@ -233,12 +233,22 @@ authenticated execution service both require a server-built approval before any 
 - **Static Security** (default on): anonymous HTTP review of the deployed frontend — exposed configuration, boot/debug assets, source
   maps, MSAL configuration, endpoint exposure, token-storage *text patterns* in fetched files (not runtime storage), expected security
   headers and a wildcard CORS header on the document.
-- **Passive Security (OWASP ZAP)** is optional and off by default for new Target Environments. It runs only when the server enables it
-  (`FrontendPassiveSecurity:Enabled` / `FrontendQualityEnginePreferences:PassiveSecurityEnabled`), the deployment allows it
-  (`FrontendQualityCapabilities:PassiveSecurityAllowed`), the target is registered in `FrontendPassiveSecurity:TrustedProfiles` and the
-  pinned image is available to the container runtime. Engine status reports an untrusted target as unavailable; the engine settings
-  never offer a usable switch for an engine the server cannot run. Readiness allows up to 75 s for the ZAP JVM start. The real ZAP
-  integration tests are reported as **skipped** unless `RUN_EXTERNAL_FRONTEND_QUALITY_TESTS=true`.
+- **Passive Security (OWASP ZAP)** is optional and off by default for new Target Environments. Four separate facts govern it: installation
+  policy (`FrontendQualityCapabilities:PassiveSecurityAllowed`, false by default), the server's engine preference
+  (`FrontendQualityEnginePreferences:PassiveSecurityEnabled`), runtime/image readiness, and the target's saved engine selection. The
+  server also requires an exact profile ID and origin in `FrontendPassiveSecurity:TrustedProfiles`, with a registered non-production
+  environment type (`Local`, `Development`, `QA`, `Test`, `RC`, or explicitly approved `Internal`/`LoopbackLocalTest`). Production and
+  unknown environment types are rejected server-side, regardless of browser labels. Configure `FrontendPassiveSecurity:ContainerRuntime`
+  as `podman` or `docker` (defaults to Podman); the image is pinned to `ghcr.io/zaproxy/zaproxy:2.16.1` and is never pulled during a run.
+  A run sends one bounded GET through the proxy, does not spider/crawl or active-scan, caps captured body and alert data, uses a 512 MiB
+  writable temporary area and 512 MiB JVM heap, and deletes the ephemeral container/session. CPU, memory and process-count cgroup flags
+  are added only when the selected runtime reports those controllers; unsupported host limits are disclosed as a readiness limitation.
+  Engine startup and the review request have separate bounded timeouts (`FrontendPassiveSecurity:StartupTimeoutSeconds`, default 30 s;
+  request timeout is capped at 600 s). The control API uses a random per-run API key and does not disable API authentication. It does not
+  support authenticated target traffic. Raw response bodies are not saved; alert URLs lose query
+  and fragment values, and ZAP alerts remain candidates for manual verification. Container cleanup is checked after every run. Readiness
+  allows up to 120 s for container/image checks, the network-isolated ZAP JVM startup probe and bounded cleanup. Real ZAP integration tests are **skipped** unless
+  `RUN_EXTERNAL_FRONTEND_QUALITY_TESTS=true`.
 - Browser Runtime and Browser Quality collect no cookie, token or storage evidence; cookie metadata comes from Static Security and the Local HTTPS proxy only.
 
 ## OWASP references

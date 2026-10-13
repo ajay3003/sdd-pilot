@@ -203,7 +203,7 @@ public sealed record ApiReviewPolicy
     /// <summary>Introspection enabled is a policy question: warn only for production-like environments.</summary>
     public bool IntrospectionExpectedDisabled { get; init; }
     /// <summary>
-    /// Target Environment → Security Expectations → expected security headers at Run (presence only; no values are stored). Null in
+    /// Target Environment → Endpoint Discovery API review safety settings → expected security headers at Run (presence only; no values are stored). Null in
     /// reports recorded before expectations were consumed and in requests from older clients: the review then applies its historical
     /// defaults (HSTS and X-Content-Type-Options) and says so.
     /// </summary>

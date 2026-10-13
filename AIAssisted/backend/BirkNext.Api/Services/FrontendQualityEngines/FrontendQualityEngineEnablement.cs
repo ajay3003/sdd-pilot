@@ -13,7 +13,7 @@ public static class FrontendQualityEngineEnablement
     {
         var key = $"{FrontendQualityEnginePreferences.SectionName}:{GetPreferenceKey(engineId)}";
         return configuration.GetSection(key).Exists()
-            ? configuration.GetValue(key, false)
+            ? bool.TryParse(configuration[key], out var enabled) && enabled
             : legacyEnabled;
     }
 

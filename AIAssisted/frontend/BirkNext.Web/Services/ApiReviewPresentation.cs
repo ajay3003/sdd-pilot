@@ -337,6 +337,18 @@ public static class ApiReviewPresentation
     public static IReadOnlyList<ApiReviewTargetCardModel> TargetCards(IReadOnlyList<ApiReviewTarget> targets, ApiReviewTargetType type, ApiReviewReport? lastReport = null) =>
         targets.Where(t => t.ApiType == type).Select(t => TargetCard(t, SchemaUnavailablePreviously(t, lastReport))).ToList();
 
+    /// <summary>Full endpoint only when the normalized target is an absolute HTTP(S) URL without credentials or query/fragment data.</summary>
+    public static string? SafeEndpointUrl(ApiReviewTarget target)
+    {
+        var url = target.Url;
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && (uri.Scheme is "http" or "https")
+            && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment)
+            ? url : null;
+    }
+
+    public static string SafeEndpointPath(ApiReviewTarget target) => target.BasePath.Split(['?', '#'], 2)[0];
+
     /// <summary>The latest review recorded this GraphQL target's introspection as rejected (a policy observation, not a failure).</summary>
     public static bool SchemaUnavailablePreviously(ApiReviewTarget target, ApiReviewReport? lastReport) =>
         target.ApiType == ApiReviewTargetType.GraphQl

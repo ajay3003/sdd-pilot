@@ -53,6 +53,22 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     }
 
     [Fact]
+    public async Task Orchestrate_ZapPassiveAlert_RemainsAnUnverifiedCandidate()
+    {
+        var passive = new SpyPassiveSecurity
+        {
+            Result = Passive(PassiveSecurityExecutionStatusDto.Assessed) with
+            {
+                Findings = [new("10021", "10021-1", "Missing header", "Low", "Medium", "Review manually", "https://example.com/", null, null, "Add header", [], "693", "15", 1, "ZAP Passive")]
+            }
+        };
+        var result = await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(), new SpyPerformanceService(), new FakePreflightService(), new MockQualityService(), passiveSecurity: passive)
+            .RunAsync("https://example.com", PassiveContext(true));
+        result.QualityReport!.Findings.Single(f => f.SourceSystem == "ZAP Passive").Status.Should().Be(CheckExecutionStatus.NotAssessed);
+        passive.Result.Outcome.Should().Be(PassiveSecurityResultOutcomeDto.Findings);
+    }
+
+    [Fact]
     public async Task Orchestrate_PreflightBlocked_PassiveSecurityCallCountZero()
     {
         var passive=new SpyPassiveSecurity(); var preflight=new FakePreflightService { Status=PreflightStatus.InvalidTarget };

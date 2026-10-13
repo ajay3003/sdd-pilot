@@ -9,7 +9,7 @@ namespace BirkNext.Web.Tests.Services;
 /// <summary>
 /// Labels and exports of safe fuzzing and the security foundation: the client mirror of the backend environment policy, honest outcome
 /// wording (4xx is handled validation), no secrets in exports, Passive Security never shown as a usable switch when the server cannot run
-/// it, and Security Expectations fields labelled by who actually reads them.
+/// it, and API review safety fields labelled by who actually reads them.
 /// </summary>
 public sealed class ApiSafeFuzzingPresentationTests
 {
@@ -114,9 +114,13 @@ public sealed class ApiSafeFuzzingPresentationTests
         {
             EngineId = FrontendQualityEngineIdDto.PassiveSecurity, Layer1Allowed = l1, Layer2Enabled = l2, Reasons = [.. reasons],
         };
-        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, false)).Should().Be("Unavailable — not enabled on server");
-        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(false, true)).Should().Contain("not allowed on this BirkNext installation");
-        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true, FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted)).Should().Contain("not registered as trusted");
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, false)).Should().Be("Passive Security is disabled in System Settings.");
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(false, true)).Should().Contain("Installation policy does not allow");
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true, FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted)).Should().Contain("not registered for passive scanning");
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true, FrontendQualityEngineUnavailableReasonDto.ProductionBlocked)).Should().Contain("blocked for Production");
+        var runtimeUnavailable = Status(true, true);
+        runtimeUnavailable.Layer3Readiness = new FrontendQualityEngineReadinessDto { IsAvailable = false, StatusReason = "Pinned ZAP image is unavailable." };
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, runtimeUnavailable).Should().Be("Pinned ZAP image is unavailable.");
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true)).Should().BeNull();
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, null).Should().BeNull("unknown is not claimed as unavailable");
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.Lighthouse, Status(true, false)).Should().BeNull();

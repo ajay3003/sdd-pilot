@@ -10,6 +10,24 @@ public sealed class FrontendAnalysisSettingsServiceTests
     // Each test gets a fresh service instance with no profiles (not yet loaded).
     private readonly FrontendAnalysisSettingsService _sut = new();
 
+    [Fact]
+    public void LegacySecurityAuthenticationExpectationsMoveToAuthenticationWithoutOverwritingExistingValues()
+    {
+        var profile = new FrontendAnalysisProfile();
+        profile.Security.ExpectedAuthority = "https://legacy.example.test/authority";
+        profile.Security.ExpectedTenant = "legacy-tenant";
+        profile.Security.ExpectedClientId = "legacy-client";
+        profile.Security.AllowedRedirectUrls = ["https://legacy.example.test/callback"];
+        profile.Authentication.ExpectedClientId = "configured-client";
+
+        FrontendAnalysisSettingsService.MigrateLegacyAuthenticationExpectations(new() { Profiles = [profile] });
+
+        profile.Authentication.ExpectedAuthority.Should().Be(profile.Security.ExpectedAuthority);
+        profile.Authentication.ExpectedTenant.Should().Be(profile.Security.ExpectedTenant);
+        profile.Authentication.ExpectedClientId.Should().Be("configured-client");
+        profile.Authentication.AllowedRedirectUrls.Should().Equal("https://legacy.example.test/callback");
+    }
+
     // ── Default profile creation ───────────────────────────────────────────────
 
     [Fact]

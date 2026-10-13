@@ -80,7 +80,7 @@ public sealed class SecurityHeaderResult
     public required string Status { get; init; }
     public string? Value { get; init; }
     public required string Recommendation { get; init; }
-    /// <summary>The Target Environment expects this header (Security Expectations).</summary>
+    /// <summary>The Target Environment expects this header in its API review safety settings.</summary>
     public bool Expected { get; init; }
 }
 
@@ -126,8 +126,8 @@ public sealed class WasmScanRequest
     public string? AllowedAuthority { get; init; }
     public List<string> AllowedClientIds { get; init; } = [];
     public List<string> KnownSafeDomains { get; init; } = [];
-    /// <summary>Target Environment → Security Expectations → expected security headers. Null = historical default list (older clients).</summary>
+    /// <summary>Target Environment API review safety settings → expected security headers. Null = historical default list (older clients).</summary>
     public List<string>? ExpectedSecurityHeaders { get; init; }
-    /// <summary>Target Environment → Security Expectations → cookie expectations. Null = cookies are observations only.</summary>
+    /// <summary>Target Environment runtime policy → cookie expectations. Null = cookies are observations only.</summary>
     public BirkNext.RuntimeSecurity.CookieSecurityExpectations? CookieExpectations { get; init; }
 }

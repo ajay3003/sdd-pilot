@@ -23,7 +23,8 @@ public sealed class FrontendQualityEngineConfigurationIntegrationTests
         config.GetValue<bool>("FrontendQualityCapabilities:BrowserRuntimeAllowed").Should().BeTrue();
         config.GetValue<bool>("FrontendQualityCapabilities:AccessibilityAllowed").Should().BeTrue();
         config.GetValue<bool>("FrontendQualityCapabilities:LighthouseAllowed").Should().BeTrue();
-        config.GetValue<bool>("FrontendQualityCapabilities:PassiveSecurityAllowed").Should().BeFalse();
+        config.GetValue<bool>("FrontendQualityCapabilities:PassiveSecurityAllowed").Should().BeTrue();
+        config["FrontendPassiveSecurity:ContainerRuntime"].Should().Be("podman");
     }
 
     [Fact]

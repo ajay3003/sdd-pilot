@@ -209,6 +209,7 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         var cut = Render<SourceAnalysis>();
 

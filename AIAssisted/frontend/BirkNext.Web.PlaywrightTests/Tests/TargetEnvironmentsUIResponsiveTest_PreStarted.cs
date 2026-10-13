@@ -214,7 +214,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     [Theory]
     [InlineData("General")]
     [InlineData("Target Application")]
-    [InlineData("Security Expectations")]
+    [InlineData("Endpoint Discovery")]
     [InlineData("Diagnostics")]
     public async Task TabActivation_WorksCorrectlyAfterWrap(string tabName)
     {

@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace BirkNext.RuntimeSecurity;
 
 // Bounded runtime security checks that extend API Quality Review (documentation exposure, cross-origin CORS, authorization scenarios,
-// opt-in body fuzzing) and Frontend Quality Review (cookie metadata). Expectations live in Target Environment → Security Expectations;
+// opt-in body fuzzing) and Frontend Quality Review (cookie metadata). Expectations live in Target Environment → Endpoint Discovery API review safety settings;
 // every rule here is pure and deterministic so the backend, the UI and the export read the same semantics. None of these checks is a
 // penetration test, and none of them proves that an application is secure.
 
@@ -17,7 +17,7 @@ public static class RuntimeSecurityWording
         "BirkNext performs bounded non-production security checks. These checks are not a penetration test and do not establish that an application is secure.";
 }
 
-// ── Expectations (Target Environment → Security Expectations) ─────────────────────────────────────────────────────────────────────
+// ── Expectations (Target Environment → Endpoint Discovery API review safety settings) ──────────────────────────────────────────────
 
 /// <summary>What the target owner says about API documentation (Swagger UI / OpenAPI document) reachability. Never inferred.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -185,7 +185,7 @@ public enum ApiDocumentationAssessment { NoExpectation, AsExpected, UnexpectedEx
 public sealed record ApiDocumentationProbe
 {
     public string Path { get; init; } = "";
-    /// <summary>Configured (Security Expectations), Contract source (the target's OpenAPI URL) or Default candidate.</summary>
+    /// <summary>Configured runtime policy, contract source (the target's OpenAPI URL) or a default candidate.</summary>
     public string Source { get; init; } = "";
     public int? StatusCode { get; init; }
     public ApiDocumentationProbeState State { get; init; } = ApiDocumentationProbeState.NotVerified;
@@ -562,7 +562,7 @@ public static class CookieSecurityEvaluator
                 findings.Add(new("cookie-auth-persistent", "Low", c.Name, "Persistent auth/session cookie", "The declared auth/session cookie has Max-Age/Expires and survives browser restarts."));
         }
         if (authNames.Count == 0)
-            notes.Add("No auth/session cookie names are declared in Security Expectations: cookies are reported as observations; only SameSite=None without Secure is assessed.");
+            notes.Add("No auth/session cookie names are declared in the Target Environment runtime policy: cookies are reported as observations; only SameSite=None without Secure is assessed.");
         else if (!cookies.Any(c => c.Classification == CookieClassification.DeclaredAuthOrSession))
             notes.Add("None of the declared auth/session cookies was observed in the inspected responses; they were not assessed.");
         return new CookieSecurityAssessment { Cookies = cookies, Findings = findings, Notes = notes };

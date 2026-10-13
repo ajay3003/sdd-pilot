@@ -158,7 +158,8 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
                 AuthenticationType = profile.Authentication.AuthenticationType,
                 UseExistingBrowserSession = profile.Authentication.UseExistingBrowserSession,
                 AutomaticallyOpenLoginPage = profile.Authentication.AutomaticallyOpenLoginPage,
-                ExpectedAuthority = profile.Authentication.ExpectedAuthority,
+                // Keep authority/client identifiers on the saved profile. The review context is a
+                // data-minimized snapshot and must not serialize identity configuration.
                 AllowedRedirectUrls = [.. profile.Authentication.AllowedRedirectUrls],
                 BrowserDeliveryTrust = profile.Authentication.BrowserDeliveryTrust,
                 AuthenticatedTestingMethod = profile.Authentication.AuthenticatedTestingMethod,

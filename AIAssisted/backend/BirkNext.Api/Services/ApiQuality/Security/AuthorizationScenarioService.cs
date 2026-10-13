@@ -51,7 +51,7 @@ public sealed class AuthorizationScenarioService(HttpClient publicClient, IAuthe
             Trust = decision, Safety = safety, Scenarios = scenarios, Observations = observations, ExpectationFingerprint = expectations.Fingerprint(),
             StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, BlockedReason = blocked, Limitations = Limitations(),
         };
-        if (scenarios.Count == 0) return Report([], "No authorization scenario is configured for this Target Environment (Security Expectations → Authorization scenarios).");
+        if (scenarios.Count == 0) return Report([], "No authorization scenario is configured for this Target Environment (Endpoint Discovery API review safety settings).");
         if (!safety.ActiveTestingAllowed) return Report(Unavailable(scenarios, $"Blocked by safety policy: {safety.Reason}"), $"Blocked by safety policy: {safety.Reason}");
         if (!decision.Allowed) return Report(Unavailable(scenarios, decision.Reason), decision.Reason);
 

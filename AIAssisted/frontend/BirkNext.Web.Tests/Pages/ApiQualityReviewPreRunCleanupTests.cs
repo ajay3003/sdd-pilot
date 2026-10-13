@@ -141,7 +141,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy").And.Contain("authenticated action");
 
         // Not a network state, not a failure.
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         // Per-target readiness, never a constant "Public access: Available" standing in for an authenticated target.
         page.FindAll("[data-testid=aqr-public-access]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-target-access-row]").Should().OnlyContain(r => r.GetAttribute("data-ready") == "false" && r.TextContent.Contains("Authenticated context unavailable"));
@@ -165,7 +165,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         page.FindAll("[data-testid=aqr-readiness-help]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-run-action]").Should().BeEmpty();
 
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
         var manage = page.Find("[data-testid=aqr-access-action]");
         manage.TextContent.Should().Be("Manage authentication");
         manage.GetAttribute("href").Should().Be(AuthHref);
@@ -182,7 +182,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(status);
 
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be(label);
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain(reason);
         Toggle(page, "aqr-access-details").TextContent.Should().Contain(label);
         page.Markup.Should().NotContain("Not connected");
@@ -195,11 +195,11 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         var page = Render(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic);
 
         var signIn = page.Find("[data-testid=aqr-env-auth]");
-        signIn.TextContent.Should().Be("Not required for frontend entry point", "a fact about the frontend, never read as the APIs' requirement");
+        signIn.TextContent.Should().Be("Authentication: Not required for frontend entry point", "a fact about the frontend, never read as the APIs' requirement");
         signIn.GetAttribute("aria-describedby").Should().Be("aqr-frontend-signin-help");
         page.Find("#aqr-frontend-signin-help").TextContent.Should().Be("Frontend access does not require sign-in; selected APIs may still require authenticated access.");
         page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("Access requirements: 2 authenticated · 0 public");
-        page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(a => a.TextContent == "Auth required");
+        page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(a => a.TextContent.Contains("Authenticated") && a.TextContent.Contains("Not ready"));
     }
 
     // 52. The link only navigates.
@@ -248,14 +248,14 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         var page = Render(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic);
         Toggle(page, "aqr-targets-disclosure").Click();
 
-        // One table row per target: API | Type | Access | Operations | Contract/schema.
-        page.FindAll("[data-testid=aqr-targets-table] > thead th").Select(th => th.TextContent).Should().Equal("API", "Type", "Access", "Operations", "Contract / schema");
+        // Exact endpoint and row action are first-class scope evidence.
+        page.FindAll("[data-testid=aqr-targets-table] > thead th").Select(th => th.TextContent).Should().Equal("API", "Type", "Full endpoint", "Access", "Operations", "Contract / schema", "Action");
         var rest = page.Find("[data-testid=aqr-target][data-type=Rest]");
-        rest.QuerySelectorAll("td").Select(td => td.GetAttribute("data-label")).Should().Equal("Type", "Access", "Operations", "Contract / schema");
+        rest.QuerySelectorAll("td").Select(td => td.GetAttribute("data-label")).Should().Equal("Type", "Full endpoint", "Access", "Operations", "Contract / schema", "Action");
         rest.QuerySelector("[data-testid=aqr-target-type]")!.TextContent.Should().Be("REST");
-        rest.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Auth required");
+        rest.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Contain("Authenticated").And.Contain("Not ready");
         rest.QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("2 · 1 write (not executed)");
-        rest.QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("No contract");
+        rest.QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("No OpenAPI contract");
 
         var ops = Toggle(page, $"aqr-ops-{rest.GetAttribute("data-target-id")}");
         ops.GetAttribute("aria-expanded").Should().Be("false");
@@ -268,8 +268,8 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
     // 55. GraphQL schema copy: one label, attempt-based value.
     [Theory]
-    [InlineData(false, "Schema retrieval pending")]
-    [InlineData(true, "Schema unavailable previously")]
+    [InlineData(false, "Retrieval will be attempted during review")]
+    [InlineData(true, "Unavailable previously; retrieval will be attempted again")]
     public void GraphQlSchemaIsLabelledOnceAndNeverPromised(bool rejectedPreviously, string expected)
     {
         var page = Render(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic, rejectedPreviously);
@@ -310,7 +310,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         fields["Resolution"].Should().Contain("perform an authenticated action");
         fields["Execution"].Should().Contain("backend gateway").And.Contain("does not receive a token");
         body.QuerySelector("[data-testid=aqr-memory-only-help]")!.TextContent.Should().Contain("held only in the backend runtime");
-        body.QuerySelector("[data-testid=aqr-access-details-action]")!.GetAttribute("href").Should().Be(AuthHref);
+        body.QuerySelector("[data-testid=aqr-access-details-action]").Should().BeNull("the readiness panel owns the configuration action");
         body.TextContent.Should().NotContainAny("Bearer ", "eyJ", "token value", "authentication failed");
         page.FindAll("input[type=password], textarea").Should().BeEmpty("no credential entry on this page");
     }
@@ -354,7 +354,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
     // ── Final polish ──────────────────────────────────────────────────────────────────────────────────────────────
 
-    // The procedure is in Authentication details, in order, with one secondary link to the same owner.
+    // The procedure is in advanced details; the readiness summary owns the single configuration link.
     [Fact]
     public void AuthenticationProcedureLivesInDetailsNotInTheBlocker()
     {
@@ -368,8 +368,8 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
             "Open the dedicated Edge browser.",
             "Sign in and perform an authenticated action against the target.",
             "Return to API Quality Review once authenticated traffic is observed.");
-        page.Find("[data-testid=aqr-access-details-action]").GetAttribute("href").Should().Be(AuthHref);
-        page.FindAll("[data-testid=aqr-decide] .aqr-cta").Should().ContainSingle("one primary action");
+        page.Find("[data-testid=aqr-run-action]").GetAttribute("href").Should().Be(AuthHref);
+        page.FindAll("[data-testid=aqr-access-details-action]").Should().BeEmpty();
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().NotContainAny("Local HTTPS Proxy", "dedicated Edge", "Sign in");
     }
 
@@ -430,7 +430,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
     // ── Density cleanup ───────────────────────────────────────────────────────────────────────────────────────────
 
-    // The limitation card says each limitation once, in one short sentence; the reasons are one disclosure away.
+    // Concrete reasons are visible in the readiness summary without an extra disclosure.
     [Fact]
     public void LimitationCardIsACompactSummaryWithDetailsOnDemand()
     {
@@ -439,17 +439,10 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
             "2 targets ready. REST contract validation is unavailable. GraphQL schema retrieval will be retried during the review.");
 
-        var toggle = Toggle(page, "aqr-readiness-limitations");
-        toggle.TextContent.Should().Contain("View limitation details");
-        toggle.GetAttribute("aria-expanded").Should().Be("false");
-        toggle.Click();
-        var items = Body(page, "aqr-readiness-limitations").QuerySelectorAll("li").Select(li => li.TextContent.Trim()).ToList();
-        items.Should().Contain(i => i.Contains("1 REST target selected"));
-        items.Should().Contain(i => i.Contains("1 GraphQL target selected"));
-        items.Should().Contain(i => i.Contains("Read-only review available"));
-        items.Should().Contain(i => i.Contains("Authenticated requests available for 2 targets"));
-        items.Should().Contain(i => i.Contains("REST contract validation unavailable — responses reviewed structurally"));
-        items.Should().Contain(i => i.Contains("GraphQL schema unavailable on the previous attempt") && i.Contains("retried during this review"));
+        var items = page.Find("[data-testid=aqr-readiness-items]").TextContent;
+        items.Should().Contain("REST contract validation unavailable — responses reviewed structurally");
+        items.Should().Contain("GraphQL schema unavailable on the previous attempt").And.Contain("retried during this review");
+        page.FindAll("[data-testid=aqr-readiness-limitations-toggle]").Should().BeEmpty();
     }
 
     // A previous refusal is history, not this review's result; and manual review is only for unmatched operations.
@@ -457,7 +450,6 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     public void GraphQlSchemaIsDescribedAsAPreviousAttemptWithARetry_AndManualReviewStaysNarrow()
     {
         var page = Render(AuthenticatedApiContextStatus.Available, introspectionRejectedPreviously: true);
-        Toggle(page, "aqr-readiness-limitations").Click();
         Toggle(page, "aqr-contracts-disclosure").Click();
         Toggle(page, "aqr-contract-details").Click();
 
@@ -488,7 +480,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
         Run(page).ClassList.Should().Contain("btn-primary");
         Run(page).TextContent.Trim().Should().Be("Run API Quality Review");
-        page.FindAll("[data-testid=aqr-decide] .btn-primary, [data-testid=aqr-decide] .aqr-cta").Should().HaveCount(1, "Run is the only strong action while nothing blocks it");
+        page.FindAll("[data-testid=aqr-decide] [data-testid=aqr-run]").Should().ContainSingle("Run remains the primary action while nothing blocks it");
     }
 
     // Collapsed is not removed: every detail is still there once expanded.
@@ -497,8 +489,8 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available, introspectionRejectedPreviously: true);
         // Collapsed headers still state each section's status.
-        Toggle(page, "aqr-access-details").TextContent.Should().Contain("Authentication details").And.Contain("Available");
-        Toggle(page, "aqr-readonly-disclosure").TextContent.Should().Contain("Read-only review").And.Contain("Safe requests only");
+        Toggle(page, "aqr-access-details").TextContent.Should().Contain("Execution & authentication evidence").And.Contain("Available");
+        Toggle(page, "aqr-readonly-disclosure").TextContent.Should().Contain("Read-only execution policy").And.Contain("Safe requests only");
         foreach (var id in new[] { "aqr-contracts-disclosure", "aqr-access-details", "aqr-readonly-disclosure" }) Toggle(page, id).Click();
 
         var contracts = Body(page, "aqr-contracts-disclosure").TextContent;
@@ -523,7 +515,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available);
         page.Find("[data-testid=aqr-frontend-signin-help]").TextContent.Should().Contain("selected APIs may still require authenticated access");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
         page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2 of 2 ready");
     }
 }

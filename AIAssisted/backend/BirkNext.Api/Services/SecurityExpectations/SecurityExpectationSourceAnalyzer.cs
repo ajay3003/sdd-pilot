@@ -188,7 +188,7 @@ public static class SecurityExpectationSourceAnalyzer
         };
     }
 
-    /// <summary>Application-configuration technologies whose keys Security Expectations reads (IaC and pipeline variables are not application settings).</summary>
+    /// <summary>Application-configuration technologies whose security keys this source analyzer recognizes (IaC and pipeline variables are not application settings).</summary>
     private static readonly HashSet<string> ApplicationConfiguration = new(StringComparer.Ordinal)
         { "ASP.NET Core appsettings", "Frontend appsettings", "GraphQL client configuration", "launchSettings", "Docker Compose", "Environment file", "Azure Functions settings" };
 

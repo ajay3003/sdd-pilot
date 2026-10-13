@@ -223,7 +223,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing();
 
         Collapsed(page, "aqr-targets-disclosure").Should().BeFalse("API targets is the main pre-run detail section");
-        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("Hide API targets").And.Contain("2 selected").And.Contain("1 REST · 1 GraphQL");
+        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("Targets").And.Contain("1 REST · 1 GraphQL");
 
         var body = Body(page, "aqr-targets-disclosure");
         body.HasAttribute("hidden").Should().BeFalse();
@@ -244,13 +244,13 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
 
         var accessCard = page.Find("[data-testid=aqr-access]");
-        accessCard.TextContent.Should().Contain("Authenticated API context").And.Contain("Selected target access");
+        accessCard.TextContent.Should().Contain("need an authenticated API context");
         // Mixed scope: the public target is ready, the authenticated one is not — public reachability never makes it ready.
         page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1 of 2 ready");
-        var rows = page.FindAll("[data-testid=aqr-target-access-row]");
-        rows.Single(r => r.TextContent.Contains("· Public")).GetAttribute("data-ready").Should().Be("true");
-        rows.Single(r => r.TextContent.Contains("· Authenticated")).GetAttribute("data-ready").Should().Be("false");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        var rows = page.FindAll("[data-testid=aqr-targets-table] tbody tr[data-testid=aqr-target]");
+        rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Public", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Public · Ready");
+        rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Authenticated", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Authenticated · Not ready");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         accessCard.TextContent.Should().NotContain("Not connected", "there is no connection concept behind this state");
         // The readiness card owns the one action toward Authentication; the access card does not repeat it.
         page.FindAll("[data-testid=aqr-access-action]").Should().BeEmpty();
@@ -282,7 +282,8 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             "Open the dedicated Edge browser.",
             "Sign in and perform an authenticated action against the target.",
             "Return to API Quality Review once authenticated traffic is observed.");
-        steps.QuerySelector("[data-testid=aqr-access-details-action]")!.GetAttribute("href").Should().Contain("tab=auth");
+        page.Find("[data-testid=aqr-run-action]").GetAttribute("href").Should().Contain("tab=auth");
+        page.FindAll("[data-testid=aqr-access-details-action]").Should().BeEmpty("the blocker action belongs in the readiness summary");
         body.TextContent.Should().Contain("backend gateway").And.Contain("does not receive a token");
     }
 
@@ -297,20 +298,14 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     // ── §11, §12. Readiness ───────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ReadinessIsStatedOnceWithItsLimitationsCollapsedWhileTheReviewCanStillRun()
+    public void ReadinessShowsLimitationsBeforeRunAndKeepsTheReviewAvailable()
     {
         var page = Landing(authenticated: false);
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
         page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
-        Collapsed(page, "aqr-readiness-limitations").Should().BeTrue();
         page.Find("[data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
-
-        Toggle(page, "aqr-readiness-limitations").Click();
-        var body = Body(page, "aqr-readiness-limitations");
-        body.TextContent.Should().Contain("Authenticated API context unavailable");
-        // The action stays visible outside the collapsed list: collapsing the detail must not hide the way forward.
-        body.QuerySelector("[data-testid=aqr-run-action]").Should().BeNull();
+        page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated API context unavailable");
         page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be("Open Authentication setup");
     }
 
@@ -324,7 +319,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.Find("[data-testid=aqr-details]").QuerySelector("[data-testid=aqr-contracts-disclosure]").Should().NotBeNull();
         Collapsed(page, "aqr-contracts-disclosure").Should().BeTrue();
-        Toggle(page, "aqr-contracts-disclosure").TextContent.Should().Contain("Contracts").And.Contain("No previous baseline");
+        Toggle(page, "aqr-contracts-disclosure").TextContent.Should().Contain("Contract details").And.Contain("No previous baseline");
 
         Toggle(page, "aqr-contracts-disclosure").Click();
 
@@ -399,7 +394,6 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing();
 
         var errors = page.Find("[data-testid=aqr-domain][data-domain='errors']");
-        errors.QuerySelector(".aqr-domain-purpose")!.TextContent.Should().Be("Safe, read-only error behaviour is reviewed.");
         errors.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent
             .Should().Be("Write and destructive operations are never executed.");
     }
@@ -524,7 +518,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.FindAll("h1").Should().ContainSingle();
         var h2 = page.FindAll("h2").Select(h => h.TextContent.Trim()).ToList();
-        h2.Should().Contain(["Target", "Review scope", "API access", "What will be reviewed", "Review details"]);
+        h2.Should().Contain(["Target", "API scope", "Access", "What will be reviewed", "API targets", "Additional active checks", "Evidence & advanced details"]);
         h2.Should().OnlyHaveUniqueItems();
 
         foreach (var toggle in page.FindAll(".disclosure-toggle"))

@@ -11,10 +11,10 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
 
     /// <summary>
     /// Readiness includes a real <c>zap.sh -version</c> container start (JVM), after the runtime and image checks (15 s + 15 s + 30 s
-    /// budgets in the service). The previous 5 s budget timed out before the JVM started, so a working installation reported
-    /// "status unknown". Bounded, never infinite.
+    /// budgets in the service plus bounded probe cleanup). The previous 5 s budget timed out before the JVM started, so a working
+    /// installation reported "status unknown". Bounded, never infinite.
     /// </summary>
-    public static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(75);
+    public static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(120);
 
     public PassiveSecurityReadinessProvider(
         IFrontendZapPassiveReviewService service,
@@ -39,7 +39,7 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
             return new(
                 EngineId,
                 result.Available,
-                SafeReason(result.State),
+                SafeReason(result.State) ?? (result.Limitations is { Count: > 0 } ? string.Join(" ", result.Limitations) : null),
                 DateTime.UtcNow,
                 MapReason(result.State));
         }
@@ -60,8 +60,9 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
     private static FrontendQualityEngineReadinessReason MapReason(PassiveSecurityReadinessState state) => state switch
     {
         PassiveSecurityReadinessState.Ready => FrontendQualityEngineReadinessReason.None,
+        PassiveSecurityReadinessState.InstallationPolicyBlocked => FrontendQualityEngineReadinessReason.EngineUnavailable,
         PassiveSecurityReadinessState.Disabled => FrontendQualityEngineReadinessReason.DisabledInSystemSettings,
-        PassiveSecurityReadinessState.DockerUnavailable => FrontendQualityEngineReadinessReason.ContainerRuntimeUnavailable,
+        PassiveSecurityReadinessState.ContainerRuntimeUnavailable => FrontendQualityEngineReadinessReason.ContainerRuntimeUnavailable,
         PassiveSecurityReadinessState.ZapImageUnavailable => FrontendQualityEngineReadinessReason.RuntimePrerequisiteUnavailable,
         _ => FrontendQualityEngineReadinessReason.EngineUnavailable
     };
@@ -69,8 +70,9 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
     private static string? SafeReason(PassiveSecurityReadinessState state) => state switch
     {
         PassiveSecurityReadinessState.Ready => null,
+        PassiveSecurityReadinessState.InstallationPolicyBlocked => "Installation policy does not allow container security engines.",
         PassiveSecurityReadinessState.Disabled => "Passive Security is disabled in System Settings.",
-        PassiveSecurityReadinessState.DockerUnavailable => "Container runtime is unavailable.",
+        PassiveSecurityReadinessState.ContainerRuntimeUnavailable => "Container runtime is unavailable.",
         PassiveSecurityReadinessState.ZapImageUnavailable => "Passive Security runtime image is unavailable.",
         PassiveSecurityReadinessState.ZapLaunchFailed => "Passive Security runtime could not be started.",
         _ => "Passive Security runtime is unavailable."

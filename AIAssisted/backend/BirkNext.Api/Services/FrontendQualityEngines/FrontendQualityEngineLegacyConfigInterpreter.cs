@@ -44,13 +44,13 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
         _logger.LogInformation("Layer1Key: {Layer1Key}, Exists: {Layer1Present}", layer1Key, layer1Present);
         if (layer1Present)
         {
-            var layer1Value = _config.GetValue(layer1Key, false);
+            var layer1Value = ReadBoolean(layer1Key);
             _logger.LogInformation("  Layer1 raw value: {Layer1Value}", layer1Value);
         }
         _logger.LogInformation("Layer2Key: {Layer2Key}, Exists: {Layer2Present}", layer2Key, layer2Present);
         if (layer2Present)
         {
-            var layer2Value = _config.GetValue(layer2Key, false);
+            var layer2Value = ReadBoolean(layer2Key);
             _logger.LogInformation("  Layer2 raw value: {Layer2Value}", layer2Value);
         }
         _logger.LogInformation("LegacySection: {LegacySection}, Exists: {HasLegacy}", legacySection, hasLegacy);
@@ -74,11 +74,14 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
 
         var legacyEnabled = hasLegacy && GetLegacyEnabledValue(engineId);
 
-        // Layer 1 remains fail-closed once either new layer is configured. A
-        // legacy-only installation migrates its old value into both layers.
-        var allowed = layer1Present
-            ? _config.GetValue(layer1Key, false)
-            : !layer2Present && legacyEnabled;
+        // Passive Security is a container capability. It never inherits
+        // installation permission from the old per-engine enabled flag.
+        // Missing or malformed installation policy must remain unavailable.
+        var allowed = engineId == FrontendQualityEngineId.PassiveSecurity
+            ? ReadBoolean(layer1Key)
+            : layer1Present
+                ? ReadBoolean(layer1Key)
+                : !layer2Present && legacyEnabled;
 
         // Layer 2 has one authority: the System Settings preference when it is
         // present, with the old per-engine flag retained only for migration.
@@ -93,6 +96,8 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
 
         return (allowed, enabled);
     }
+
+    private bool ReadBoolean(string key) => bool.TryParse(_config[key], out var value) && value;
 
     private static string GetLayer2Suffix(FrontendQualityEngineId engineId) => engineId switch
     {

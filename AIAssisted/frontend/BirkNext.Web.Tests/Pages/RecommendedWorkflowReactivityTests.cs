@@ -42,6 +42,7 @@ public sealed class RecommendedWorkflowReactivityTests : BunitContext
         Services.AddSingleton(coverage.Object);
         Services.AddSingleton(WorkspaceSnapshots.Projection(WorkspaceSnapshots.AllRoles("Person Module", "person-module")).Object);
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton(_workflowApi.Object);
         Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
         Services.AddSingleton(Mock.Of<IWorkspacePersistenceApiService>());
@@ -136,6 +137,7 @@ public sealed class SourceAnalysisApplicabilityRefreshTests : BunitContext
         Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
         var cut = Render<SourceAnalysis>();

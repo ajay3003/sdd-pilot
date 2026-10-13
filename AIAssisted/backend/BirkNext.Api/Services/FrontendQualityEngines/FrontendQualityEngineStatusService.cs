@@ -111,7 +111,9 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
                 target.TargetUrl, target.ProfileId, target.TargetUrl, target.EnvironmentType ?? ""));
             targetTrusted = authorization.IsValid;
             if (!targetTrusted)
-                reasons.Add(FrontendQualityEngineUnavailableReason.TargetNotTrusted);
+                reasons.Add(authorization.BlockReason?.Contains("Production", StringComparison.OrdinalIgnoreCase) == true
+                    ? FrontendQualityEngineUnavailableReason.ProductionBlocked
+                    : FrontendQualityEngineUnavailableReason.TargetNotTrusted);
         }
 
         var available = layer1Allowed && layer2Enabled && layer3Available && authSupported && targetTrusted;

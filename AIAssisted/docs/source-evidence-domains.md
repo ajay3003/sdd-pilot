@@ -7,7 +7,7 @@ upload (POST api/source-analysis/snapshots)
   → IqrSourceArchiveReader: bounded in-memory workspace (nothing written to disk)
   → Architecture → Database → Observability
   → SourceEvidenceAnalyzer: Infrastructure · CI/CD · Configuration · Contracts → cross-domain links
-  → Security Expectations, Classification, Dependency, messaging and SCIM capture
+  → security configuration evidence, Classification, Dependency, messaging and SCIM capture
   → Generated documentation (snapshot.GeneratedDocumentation — its own evidence type, see generated-documentation-evidence.md)
   → one immutable IqrSourceSnapshot (snapshot.EvidenceDomains)
 ```
@@ -63,14 +63,14 @@ Two further rules:
   - the value itself is shaped like a credential (PEM, JWT, `AccountKey=`, SAS, long opaque tokens).
 - Sensitive values are classified, for example "Connection string detected". They are never stored, not even as a hash.
 - The host of a connection string is kept only as a normalized reference, for linking.
-- Raw values exist only in memory, in `SourceConfigurationModel`, during ingestion. Security Expectations consumes them there.
+- Raw values exist only in memory, in `SourceConfigurationModel`, during ingestion. Source Analysis extracts the structured evidence there.
 
 ## Consumers (`Services/SourceAnalysis/SourceEvidenceQueries.cs`)
 
 Each consumer asks for a typed slice of one snapshot together with its provenance:
 
 - **IQR** (`IqrSourceDomainsReview`) adds "Configured/Declared in source" lines to the Configuration, Connectivity, Contract, Message flow, Observability and Security domains. Runtime evidence is never replaced.
-- **Security Expectations** reads candidates from the normalized configuration, including a project's `.env`, launchSettings and Compose. Dedupe, approval and snapshot binding are unchanged.
+- **Security configuration evidence** is extracted from normalized configuration, including a project's `.env`, launchSettings and Compose. Source Analysis owns the immutable evidence; consumers interpret it without candidate approval.
 - **Security Classification** and **Dependency Review** get context summaries only.
 - **API Quality Review** is not wired to source contracts, because it has no source scope. Its priority order between runtime and trusted schemas is unchanged.
 
@@ -129,7 +129,7 @@ Guard tests (`SourceIngestionOwnershipTests`, plus the Terraform guard) fail the
 | Source Analysis (Architecture, Database, Observability, Infrastructure, Configuration, CI/CD, Contracts) | canonical | COMPLIANT |
 | Dependency Review | snapshot scope (primary + related). The SBOM/lock and Renovate-override inputs are not source repositories. `RunAsync(archives)` is a documented test harness. | COMPLIANT |
 | Security Classification | snapshot scope. Its specialized Roslyn analyzer gets the validated upload bytes at ingestion. | COMPLIANT / JUSTIFIED SPECIALIZED |
-| Security Expectations | `SecurityExpectationsEvidence` plus normalized Configuration. The legacy fallback reads the same snapshot's stored Architecture. | COMPLIANT |
+| Security configuration evidence | `SecurityExpectationsEvidence` plus normalized Configuration. The legacy fallback reads the same snapshot's stored Architecture. | COMPLIANT |
 | IQR | shared domains via `IqrSourceDomainsReview`; configured-vs-source comparison; runs embed their exact snapshots. Its Wolverine/SCIM/path analyzers are specialized. | COMPLIANT / JUSTIFIED SPECIALIZED |
 | Application messaging and SCIM (IQR) | snapshot scope only | MIGRATED: the dormant raw-archive `AnalyzeAsync(archives)` overloads were removed |
 | Target Environment, Authentication, Endpoint/Browser Discovery | runtime/configured. URL-type classification is not a source environment. Event Hub settings hints use the shared suggestions. | RUNTIME-ONLY / CONFIGURED-STATE |

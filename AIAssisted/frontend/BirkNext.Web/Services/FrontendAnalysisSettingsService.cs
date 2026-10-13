@@ -91,6 +91,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
                             field.Value.ValueKind == JsonValueKind.True)) > 1)
                         loaded.ActiveResolutionError = "Multiple active Target Environments were found in saved settings. Select a Target Environment and choose Set as Active.";
                     _settings = loaded;
+                    MigrateLegacyAuthenticationExpectations(loaded);
                     IsLoaded  = true;
                     return;
                 }
@@ -104,6 +105,21 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
         _settings = BuildSeedSettings();
         IsLoaded  = true;
+    }
+
+    /// <summary>Move legacy auth expectations into Authentication without overriding values users already configured there.</summary>
+    internal static void MigrateLegacyAuthenticationExpectations(FrontendAnalysisSettings settings)
+    {
+        foreach (var profile in settings.Profiles)
+        {
+            var authentication = profile.Authentication;
+            var legacy = profile.Security;
+            authentication.ExpectedAuthority ??= legacy.ExpectedAuthority;
+            authentication.ExpectedTenant ??= legacy.ExpectedTenant;
+            authentication.ExpectedClientId ??= legacy.ExpectedClientId;
+            if (authentication.AllowedRedirectUrls.Count == 0 && legacy.AllowedRedirectUrls.Count > 0)
+                authentication.AllowedRedirectUrls = [.. legacy.AllowedRedirectUrls];
+        }
     }
 
     public event Action? Changed;

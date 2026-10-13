@@ -63,6 +63,7 @@ public enum FrontendQualityEngineUnavailableReasonDto
     NotActiveForReview = 7,
     /// <summary>Passive Security: the target is not a server-registered trusted profile, so every scan would be skipped.</summary>
     TargetNotTrusted = 8,
+    ProductionBlocked = 9,
 }
 
 /// <summary>Layer 3 runtime readiness status for one engine.</summary>

@@ -22,8 +22,22 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     {
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_detection.Object);
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult(SettingsJson);
         JSInterop.SetupVoid("birkNextStorage.setItem", _ => true).SetVoidResult();
+    }
+
+    [Fact]
+    public void SecurityExpectationsTabIsRemovedAndLegacyDeepLinkFallsBackToEndpointDiscovery()
+    {
+        DocumentationCatalog.TargetEnvironmentTabs.Should().NotContain("Security Expectations");
+        DocumentationCatalog.DocumentedTargetEnvironmentTabs.Should().NotContain("Security Expectations");
+
+        var cut = Render<TargetSettingsComponent>(p => p.Add(x => x.InitialTab, "security"));
+
+        cut.Find("[data-testid=endpoint-api-review-settings]").Should().NotBeNull();
+        cut.FindAll("[role=tab]").Should().NotContain(tab => tab.TextContent.Contains("Security Expectations"));
+        cut.Markup.Should().NotContain("Security Configuration Review");
     }
 
     /// <summary>

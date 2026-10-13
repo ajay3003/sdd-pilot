@@ -119,7 +119,7 @@ public sealed class WasmScanRequest
     [JsonPropertyName("allowedAuthority")]         public string?      AllowedAuthority          { get; init; }
     [JsonPropertyName("allowedClientIds")]         public List<string> AllowedClientIds           { get; init; } = [];
     [JsonPropertyName("knownSafeDomains")]         public List<string> KnownSafeDomains          { get; init; } = [];
-    /// <summary>Target Environment → Security Expectations → expected security headers (presence only).</summary>
+    /// <summary>Target Environment → Endpoint Discovery → API review safety settings (presence only).</summary>
     [JsonPropertyName("expectedSecurityHeaders")]  public List<string>? ExpectedSecurityHeaders  { get; init; }
     [JsonPropertyName("cookieExpectations")]       public BirkNext.RuntimeSecurity.CookieSecurityExpectations? CookieExpectations { get; init; }
 }

@@ -164,17 +164,17 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
     {
         Register(Context(), authenticated: true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("Available"));
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Authenticated available"));
 
         page.Find("[data-testid=aqr-env-name]").TextContent.Should().Be("M2LB DEV");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().Contain("Dev");
         page.Find("[data-testid=aqr-env-url]").TextContent.Should().Be(Origin + "/");
         // The Target card states the environment's own sign-in policy. It is labelled as such, because "Authentication"
         // next to an API access card reporting authenticated access available read as a contradiction.
-        page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Be("Required (Microsoft Entra ID)");
-        page.Find("[data-testid=aqr-environment]").TextContent.Should().Contain("Frontend sign-in");
+        page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Be("Authentication: Required (Microsoft Entra ID)");
+        page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Contain("Authentication:");
         // API access owns the access state and Readiness owns the review state; the Target card repeats neither.
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().NotContain("Authenticated available");
         page.FindAll("[data-testid=aqr-status-pill]").Should().BeEmpty();
         // Discovered REST traffic carries no published contract, so the review runs without contract validation.
@@ -205,11 +205,11 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
             .And.NotContain("Authenticated requests cannot be sent", "nothing selected needs authentication");
 
         page.FindAll("[data-testid=aqr-scope-auth]").Should().BeEmpty("no selected API needs authentication, so the scope says nothing about it");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
-        page.FindAll("[data-testid=aqr-frontend-signin-help]").Should().BeEmpty("no selected API needs authentication, so there is nothing to distinguish");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Public only");
+        page.Find("[data-testid=aqr-frontend-signin-help]").TextContent.Should().Contain("selected APIs may still require authenticated access");
         page.FindAll("[data-testid=aqr-auth-missing]").Should().BeEmpty("no selected API needs authentication, so no warning block");
-        page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("No selected API requires authentication").And.Contain("Read-only review available");
-        page.Find("[data-testid=aqr-target-access]").TextContent.Should().Be("Public");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Public only");
+        page.Find("[data-testid=aqr-target-access]").TextContent.Should().Be("Public · Ready");
         Run(page).HasAttribute("disabled").Should().BeFalse();
     }
 
@@ -221,8 +221,8 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked"));
 
-        page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(e => e.TextContent == "Auth required");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(e => e.TextContent == "Authenticated · Not ready");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().NotContain("Authenticated unavailable", "the access card states this once");
         var steps = page.Find("[data-testid=aqr-auth-missing]");
         steps.QuerySelectorAll("li").Should().HaveCount(5);
@@ -264,10 +264,10 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         // Limited, not Ready: these targets come from discovered traffic and have no published REST contract.
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
-        page.Find("[data-testid=aqr-access]").TextContent.Should().Contain("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated available");
+        page.Find("[data-testid=aqr-access]").TextContent.Should().Contain("Selected API access is available");
         page.FindAll("[data-testid=aqr-auth-missing]").Should().BeEmpty("no selected API needs authentication");
-        page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated requests available for 2 targets");
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2 of 2 ready");
         // The panel legitimately explains that no token is received, so the bare words cannot be
         // the assertion. What must never appear is an actual credential value.
         page.Find("[data-testid=aqr-access]").TextContent.Should()
@@ -287,19 +287,18 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         rows.Select(g => g.GetAttribute("data-type")).Should().Equal("Rest", "GraphQl");
         rows.Select(r => r.QuerySelector("[data-testid=aqr-target-type]")!.TextContent).Should().Equal("REST", "GraphQL");
         rows[0].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon API");
-        rows[0].QuerySelector("[data-testid=aqr-target-path]")!.TextContent.Should().Be("/api/autorisasjon");
-        rows[0].QuerySelector("[data-testid=aqr-target-path]")!.GetAttribute("title").Should().Be($"https://{ApiHost}/api/autorisasjon");
+        rows[0].QuerySelector("[data-testid=aqr-target-path]")!.TextContent.Should().Contain($"https://{ApiHost}/api/autorisasjon");
         rows[0].QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("3 · 1 write (not executed)");
         rows[1].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon GraphQL");
         // Pre-run this is a plan. The schema has not been fetched yet, so the row does not say it is available.
-        rows[1].QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("Schema retrieval pending");
+        rows[1].QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("Retrieval will be attempted during review");
 
         var opsToggle = page.Find($"[data-testid='aqr-ops-{RestId}-toggle']");
         opsToggle.GetAttribute("aria-expanded").Should().Be("false");
         var body = page.Find($"[data-testid='aqr-ops-{RestId}-body']");
         body.HasAttribute("hidden").Should().BeTrue();
         body.QuerySelectorAll("[data-testid=aqr-op-row]").Should().HaveCount(3);
-        body.TextContent.Should().Contain("Not executed · manual review").And.Contain($"https://{ApiHost}/api/autorisasjon");
+        body.TextContent.Should().Contain("Not executed · manual review").And.Contain("/api/autorisasjon/brukere");
         opsToggle.Click();
         page.Find($"[data-testid='aqr-ops-{RestId}-body']").HasAttribute("hidden").Should().BeFalse();
         var gqlBody = page.Find($"[data-testid='aqr-ops-{GqlId}-body']");
@@ -369,7 +368,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         // Limited, not Ready: these targets come from discovered traffic and have no published REST contract.
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
-        page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Read-only review available");
+        page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("REST contract validation unavailable");
         page.FindAll("[data-testid=aqr-results]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-export]").Should().BeEmpty("export needs a report");
         page.FindAll("[data-testid=aqr-finding-counts]").Should().BeEmpty();

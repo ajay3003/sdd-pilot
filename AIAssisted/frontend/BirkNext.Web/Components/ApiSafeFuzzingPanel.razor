@@ -55,7 +55,7 @@
     </div>
 
     <div class="asf-actions">
-        <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-analyze" disabled="@(!CanAnalyze)" @onclick="AnalyzeAsync">Analyze eligibility</button>
+        <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-analyze" disabled="@(!CanAnalyze)" @onclick="AnalyzeAsync">Check what can be tested</button>
         <button type="button" class="btn-primary" data-testid="aqr-fuzzing-run" disabled="@(!CanRun)" aria-describedby="aqr-fuzzing-run-help" @onclick="RunAsync">Run safe fuzzing</button>
         @if (_running)
         {
@@ -200,6 +200,7 @@
     /// <summary>The same immutable review snapshot API Quality Review sends (targets, identity, environment); null when nothing is selected.</summary>
     [Parameter] public Func<ApiReviewRunRequest?>? BuildReviewRequest { get; set; }
     [Parameter] public string? ProjectName { get; set; }
+    [Parameter] public EventCallback<ApiFuzzingLevel> LevelChanged { get; set; }
     /// <summary>Poll interval of a running fuzz run (tests use a short one).</summary>
     [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
@@ -220,7 +221,7 @@
     private ApiFuzzingSettings Settings => new() { Level = _level, BodyFuzzing = _bodyFuzzing };
     private List<BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn> BodyOptIns => Context?.SecuritySettings.RuntimeSecurity?.BodyFuzzOperations ?? [];
     private string BodyOptInSummary => BodyOptIns.Count == 0
-        ? "No operation is opted in (Target Environment → Security Expectations → Request-body fuzzing opt-ins)."
+        ? "No operation is opted in. Configure request-body opt-ins in the selected Target Environment's API review safety settings."
         : $"{BodyOptIns.Count(o => o.Policy == BirkNext.RuntimeSecurity.BodyFuzzingPolicy.ReadOnlyBodySafe)} read-only opt-in(s); {BodyOptIns.Count(o => o.Policy == BirkNext.RuntimeSecurity.BodyFuzzingPolicy.StateChangingWithCleanup)} state-changing (blocked without a cleanup contract).";
 
     private void SetBodyFuzzing(bool value)
@@ -232,8 +233,8 @@
     private bool CanAnalyze => !_busy && !_running && _clientBlocked is null && _level != ApiFuzzingLevel.Off && BuildReviewRequest?.Invoke() is { Targets.Count: > 0 };
     private bool CanRun => !_busy && !_running && _clientBlocked is null && _plan is { CanRun: true } plan && plan.Level == _level;
     private string RunHelp => _clientBlocked is not null ? "Run is disabled: blocked by safety policy."
-        : _level == ApiFuzzingLevel.Off ? "Choose a level, then analyze eligibility."
-        : _plan is null || _plan.Level != _level ? "Analyze eligibility first: the run executes exactly the planned cases."
+        : _level == ApiFuzzingLevel.Off ? "Choose a level, then check what can be tested."
+        : _plan is null || _plan.Level != _level ? "Check what can be tested first: the run executes exactly the planned cases."
         : _plan.CanRun ? $"Runs {_plan.Cases.Count} planned case{(_plan.Cases.Count == 1 ? "" : "s")} against {Context?.ActiveProfile.Name}."
         : $"Run is disabled: {_plan.NotAvailableReason ?? "nothing to run."}";
 
@@ -250,11 +251,12 @@
         }
     }
 
-    private void SetLevel(ApiFuzzingLevel level)
+    private async Task SetLevel(ApiFuzzingLevel level)
     {
         _level = level;
         if (_plan?.Level != level) _plan = null;
-        _status = level == ApiFuzzingLevel.Off ? "Safe fuzzing is off." : $"{ApiFuzzingPresentation.LevelLabel(level)} selected. Analyze eligibility to preview the cases.";
+        _status = level == ApiFuzzingLevel.Off ? "Safe fuzzing is off." : $"{ApiFuzzingPresentation.LevelLabel(level)} selected. Check what can be tested to preview the cases.";
+        await LevelChanged.InvokeAsync(level);
     }
 
     private ApiFuzzingRunRequest? Request() => BuildReviewRequest?.Invoke() is { } review

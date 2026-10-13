@@ -12,7 +12,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Runtime security UI pieces: the Security Expectations editor (every field states its consumer), cookie metadata (never values,
+/// Runtime security UI pieces: the API review safety editor (every field states its consumer), cookie metadata (never values,
 /// proxy observation), the exports (sections present, nothing secret) and the sign-in hooks (no secret, token only on protected calls).
 /// </summary>
 public sealed class RuntimeSecurityComponentTests : BunitContext

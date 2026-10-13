@@ -1,4 +1,4 @@
-/* Security Expectations → Runtime security expectations. */
+/* Target Environment → Endpoint Discovery → API review safety settings. */
 .rse { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--clr-border); min-width: 0; }
 .rse h4 { margin: 0 0 0.35rem; font-size: 1rem; color: var(--clr-text-heading); }
 .rse-muted { color: var(--clr-text-subtle); font-size: 0.88rem; line-height: 1.5; margin: 0.25rem 0 0.5rem; }

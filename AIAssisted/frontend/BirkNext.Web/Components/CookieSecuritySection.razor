@@ -3,7 +3,7 @@
 @inject IServiceProvider Services
 
 @* Frontend Quality Review → Static Security → Cookie security. Names and attributes only: a cookie value is never received, stored or
-   shown. Auth/session cookies are evaluated strictly only when Security Expectations declare their names; other cookies are observations. *@
+   shown. Auth/session cookies are evaluated strictly only when runtime policy declares their names; other cookies are observations. *@
 <div class="csec" data-testid="fqr-cookies">
     <p class="csec-muted">Set-Cookie attributes of the anonymous frontend document response. Values are never read. Cookies set after sign-in are visible through the Local HTTPS proxy observation below.</p>
     @if (Assessment is null)

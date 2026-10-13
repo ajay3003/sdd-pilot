@@ -423,7 +423,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
     };
 
     /// <summary>
-    /// Missing-header findings for the headers the Target Environment expects (Security Expectations → expected security headers).
+    /// Missing-header findings for the headers the Target Environment expects (API review safety settings).
     /// A header the environment does not require is never a finding; null expectations (older clients) fall back to the historical list.
     /// Presence only: the expectation model stores names, not values.
     /// </summary>
@@ -441,7 +441,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
                 Severity    = severity,
                 Category    = WasmSecurityCategory.SecurityHeaders,
                 Status      = WasmSecurityStatus.Fail,
-                Description = $"{impact} The Target Environment expects this header (Security Expectations); presence only, no value policy is stored.",
+                Description = $"{impact} The Target Environment expects this header; presence only, no value policy is stored.",
                 Recommendation = $"Add the '{e.Header}' response header to your hosting configuration or CDN.",
                 ConstitutionRule  = "GL-26",
                 ConstitutionRuleTitle = "Security headers must be set on all public-facing services",

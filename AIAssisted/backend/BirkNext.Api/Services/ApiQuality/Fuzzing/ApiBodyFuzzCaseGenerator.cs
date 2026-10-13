@@ -53,7 +53,7 @@ public static class ApiBodyFuzzCaseGenerator
             {
                 operations.Add(Row(ApiFuzzSafetyClassification.BodyFuzzNotOptedIn, optIn?.Policy == BodyFuzzingPolicy.NotAllowed
                     ? "Body fuzzing is explicitly not allowed for this operation."
-                    : "No body-fuzzing opt-in for this operation (Security Expectations → Body fuzzing); unknown operation safety is blocked."));
+                    : "No body-fuzzing opt-in for this operation (Target Environment API review safety settings); unknown operation safety is blocked."));
                 continue;
             }
             if (optIn.Policy == BodyFuzzingPolicy.StateChangingWithCleanup)

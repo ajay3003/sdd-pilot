@@ -92,6 +92,7 @@ public sealed class ReadinessStatusIntegrityTests
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["FrontendQualityEnginePreferences:PassiveSecurityEnabled"] = "true",
+            ["FrontendQualityCapabilities:PassiveSecurityAllowed"] = "true",
             ["FrontendPassiveSecurity:Enabled"] = "false"
         }).Build();
         var service = new FrontendZapPassiveReviewService(
@@ -105,12 +106,47 @@ public sealed class ReadinessStatusIntegrityTests
         var result = await new PassiveSecurityReadinessProvider(service, NullLogger<PassiveSecurityReadinessProvider>.Instance)
             .CheckAsync(CancellationToken.None);
 
-        direct.State.Should().Be(PassiveSecurityReadinessState.DockerUnavailable);
+        direct.State.Should().Be(PassiveSecurityReadinessState.ContainerRuntimeUnavailable);
         direct.Error.Should().Be("Container runtime is unavailable.");
         result.Reason.Should().Be(FrontendQualityEngineReadinessReason.ContainerRuntimeUnavailable);
         result.StatusReason.Should().Be("Container runtime is unavailable.");
         AssertSafe(direct.Error);
         AssertSafe(result.StatusReason);
+    }
+
+    [Fact]
+    public async Task PassiveSecurityRuntimeLimitsNotDelegated_AreShownWithoutMarkingRuntimeUnavailable()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["FrontendQualityEnginePreferences:PassiveSecurityEnabled"] = "true",
+            ["FrontendQualityCapabilities:PassiveSecurityAllowed"] = "true",
+            ["FrontendPassiveSecurity:Enabled"] = "true"
+        }).Build();
+        var service = new FrontendZapPassiveReviewService(NullLogger<FrontendZapPassiveReviewService>.Instance,
+            new PassiveSecurityTargetAuthorizer(new BrowserTargetValidator(), config), new PassiveSecurityEvidenceSanitizer(), config,
+            new ReadyPodmanRunner());
+
+        var result = await new PassiveSecurityReadinessProvider(service, NullLogger<PassiveSecurityReadinessProvider>.Instance)
+            .CheckAsync(CancellationToken.None);
+
+        Assert.True(result.IsAvailable);
+        Assert.Equal(FrontendQualityEngineReadinessReason.None, result.Reason);
+        Assert.Contains("Container memory limits are not delegated", result.StatusReason);
+        Assert.Contains("process-count limits are not delegated", result.StatusReason);
+    }
+
+    private sealed class ReadyPodmanRunner : IZapProcessRunner
+    {
+        public Task<ZapProcessResult> RunAsync(string file, IReadOnlyList<string> args, int timeoutMs, CancellationToken cancellationToken)
+        {
+            if (args.FirstOrDefault() == "version") return Task.FromResult(new ZapProcessResult(0, "5.4.2", ""));
+            if (args.FirstOrDefault() == "image") return Task.FromResult(new ZapProcessResult(0, "ghcr.io/zaproxy/zaproxy@sha256:test", ""));
+            if (args.FirstOrDefault() == "info") return Task.FromResult(new ZapProcessResult(0, "[]", ""));
+            if (args.Contains("-version")) return Task.FromResult(new ZapProcessResult(0, "ZAP 2.16.1", ""));
+            if (args.FirstOrDefault() == "container") return Task.FromResult(new ZapProcessResult(1, "", ""));
+            return Task.FromResult(new ZapProcessResult(0, "", ""));
+        }
     }
 
     private static WebApplicationFactory<Program> FactoryWith(Dictionary<string, string?> values) =>

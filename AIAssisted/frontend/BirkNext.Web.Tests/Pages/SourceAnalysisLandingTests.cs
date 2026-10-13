@@ -46,6 +46,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<SourceAnalysisSnapshotState>();
         Services.AddSingleton<IReportExportService, ReportExportService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -140,6 +141,31 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     }
 
     [Fact]
+    public void RevisitReusesSnapshotsAndSelection_AreaDeepLinkChangesWithoutReloadingEvidence()
+    {
+        var latest = Snapshot("shop-api.zip", new string('a', 64), DateTimeOffset.Parse("2026-09-30T08:00:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0));
+        var older = Snapshot("shop-api.zip", new string('b', 64), DateTimeOffset.Parse("2026-09-29T08:00:00Z"), Arch(ArchitectureStatus.Complete, 1), Db(DatabaseAnalysisStatus.Complete, 1, 0));
+        _snapshots = [latest, older];
+
+        var first = Render<SourceAnalysis>();
+        first.Find("[data-testid=source-snapshot]").Change(older.Id.ToString());
+        first.Find("[data-testid=area-infrastructure]").Click();
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.Should().Contain("area=Infrastructure");
+        first.Dispose();
+
+        var navigation = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        navigation.NavigateTo("source-analysis");
+        var revisit = Render<SourceAnalysis>();
+        revisit.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(older.Id.ToString());
+        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        navigation.NavigateTo("source-analysis?area=Infrastructure");
+        var deepLink = Render<SourceAnalysis>();
+        deepLink.Find("[data-testid=area-infrastructure]").GetAttribute("aria-pressed").Should().Be("true");
+        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public void SelectedSnapshot_ShowsSummaryAndBothCardsFromThatSnapshot()
     {
         var current = Snapshot("shop-api.zip", "c850a1b2" + new string('0', 56), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Partial, 3, unresolved: 1), Db(DatabaseAnalysisStatus.Partial, 4, unresolved: 5),
@@ -183,6 +209,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-reason]").TextContent.Should().Be("No EF Core model, migration or SQL DDL was found.");
 
         _snapshots = [Snapshot("legacy.zip", new string('b', 64), DateTimeOffset.Parse("2026-08-01T08:15:00Z"), null, Db(DatabaseAnalysisStatus.Complete, 2, 0))];
+        Services.GetRequiredService<SourceAnalysisSnapshotState>().Invalidate();
         cut = Render<SourceAnalysis>();
 
         Status(cut, "Architecture").Should().Be("Not analyzed");
@@ -233,6 +260,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
         _uploads.Should().Be(1);
         cut.WaitForAssertion(() => cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip"));
+        _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "the successful new analysis invalidates and refreshes the prior cached response");
         cut.Find("[data-testid=area-overview]").GetAttribute("aria-pressed").Should().Be("true");
         Status(cut, "Architecture").Should().Be("Complete");
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "sa-current-heading");

@@ -83,10 +83,6 @@ public sealed class TargetGatedFeature(
             ["[data-testid=sc-no-target]", "[data-testid=sc-summary]"], ["[data-testid=sc-run]"],
             s => (Has(s, "securityClassificationEvidence") ? 1 : 0, "classification evidence block on the snapshot"),
             type: AcceptanceType.Source, note: "Classification source evidence was extracted at import; the review is scoped by Target Environment and was not run."),
-        new("security-configuration", "Security Configuration Review", "Security", "/admin/system-settings?section=target-environments&tab=security",
-            ["[data-testid=te-environment]", ".fa-profile-chip", "main"], ["[data-testid=sec-accept]", "[data-testid=sec-reject]"],
-            s => (Has(s, "securityExpectationsEvidence") ? 1 : 0, "security-expectation evidence block on the snapshot"),
-            type: AcceptanceType.Source, note: "Security configuration is reviewed per selected Target Environment profile; none exists in an acceptance run."),
     ];
 }
 

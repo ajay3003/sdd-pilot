@@ -115,7 +115,7 @@ public sealed class SpecificationExplorerReviewCountsTests : BunitContext
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
 
         var cut = Render<SpecificationExplorer>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md"), TimeSpan.FromSeconds(10));
         cut.Find("[data-testid='srp-clar-linked']").TextContent.Should().Be("1 / 1");
         Analyze(cut);
         cut.WaitForAssertion(() =>

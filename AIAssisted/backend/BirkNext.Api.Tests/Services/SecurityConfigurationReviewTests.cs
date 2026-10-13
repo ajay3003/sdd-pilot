@@ -373,41 +373,4 @@ public sealed class SecurityConfigurationReviewTests
         ("Shop.Api/appsettings.json", """{"AzureAd":{"ClientId":"33333333-3333-3333-3333-333333333333","TenantId":"11111111-1111-1111-1111-111111111111"}}"""),
     ];
 
-    [Fact]
-    public async Task EndToEnd_GenericProject_ScopesClientIds_AndScopedApprovalMakesTheReviewConsistent()
-    {
-        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var snapshot = Analyze(Shop);
-        db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = "qa", IntegrationId = "source-analysis", AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
-        await db.SaveChangesAsync();
-        var service = new SecurityExpectationDiscoveryService(db);
-        var approved = new ApprovedSecurityExpectations { ExpectedAuthority = "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111", ExpectedTenant = Tenant };
-
-        var discovery = await service.DiscoverAsync("qa", new(snapshot.Id, approved));
-        var review = SecurityConfigurationReviewEngine.Review(discovery, approved, new("QA", snapshot.Id));
-        var clients = review.Checks.Single(c => c.Field == SecurityExpectationField.ClientId);
-        clients.Scopes.Should().HaveCount(2).And.OnlyContain(s => s.EndsWith(" · AzureAd", StringComparison.Ordinal), "one client registration per component");
-        clients.Findings.Should().NotContain(f => f.Type == SecurityConfigurationFindingType.ConfigurationConflict);
-        clients.Findings.Should().Contain(f => f.Type == SecurityConfigurationFindingType.PlaceholderValue && !f.RequiresAttention, "the zero GUID is Local-only");
-        review.Checks.Single(c => c.Field == SecurityExpectationField.Authority).Assessment.Should().Be(SecurityConfigurationAssessmentState.Consistent);
-
-        // Approve each component's value through the service (scoped approval), as the UI does.
-        foreach (var group in clients.ValueGroups.Where(g => g.AppliesToSelectedEnvironment && g.ApprovalCandidateId is not null))
-        {
-            var response = await service.ReviewAsync("qa", new(discovery.Id, group.ApprovalCandidateId!, discovery.Revision, approved, Scope: group.Scope), true);
-            approved = response.Approved;
-            discovery = response.Discovery;
-        }
-        approved.ExpectedClientId.Should().BeNull("scoped approvals never write the legacy project-wide value");
-        var after = SecurityConfigurationReviewEngine.Review(discovery, approved, new("QA", snapshot.Id));
-        after.Checks.Single(c => c.Field == SecurityExpectationField.ClientId).Assessment.Should().Be(SecurityConfigurationAssessmentState.Consistent);
-
-        // Refresh five times: same values, evidence, findings and approvals.
-        var baseline = JsonSerializer.Serialize(after with { }, Json);
-        for (var i = 0; i < 5; i++)
-        {
-            var refreshed = await service.DiscoverAsync("qa", new(snapshot.Id, approved));
-            JsonSerializer.Serialize(SecurityConfigurationReviewEngine.Review(refreshed, approved, new("QA", snapshot.Id)), Json).Should().Be(baseline);
-        }
-    }
 }

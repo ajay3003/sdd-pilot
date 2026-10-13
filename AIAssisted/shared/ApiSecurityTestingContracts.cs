@@ -471,7 +471,7 @@ public sealed record ApiFuzzingRunRequest
     public ApiFuzzingSettings Settings { get; init; } = new();
     /// <summary>Optional subset of eligible operation ids; null = every eligible operation (within budget). Unknown ids are ignored.</summary>
     public List<string>? OperationIds { get; init; }
-    /// <summary>Body-fuzzing opt-ins from Target Environment → Security Expectations at Run (the backend re-checks trust and cleanup).</summary>
+    /// <summary>Body-fuzzing opt-ins from Target Environment API review safety settings at Run (the backend re-checks trust and cleanup).</summary>
     public List<BirkNext.RuntimeSecurity.BodyFuzzOperationOptIn> BodyOperations { get; init; } = [];
 }
 
@@ -483,5 +483,5 @@ public static class ApiFuzzingWording
     public const string Scope =
         "REST GET/HEAD/OPTIONS on operations of the published OpenAPI contract and GraphQL queries from the schema only. No GraphQL mutations, no attack dictionaries, never Production.";
     public const string BodyScope =
-        "Request-body cases run only for operations explicitly opted in under Security Expectations, on a server-registered trusted non-production target; state-changing operations additionally need a registered cleanup strategy. DELETE and GraphQL mutations are never fuzzed.";
+        "Request-body cases run only for operations explicitly opted in in Target Environment API review safety settings, on a server-registered trusted non-production target; state-changing operations additionally need a registered cleanup strategy. DELETE and GraphQL mutations are never fuzzed.";
 }
