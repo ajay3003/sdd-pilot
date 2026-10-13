@@ -4,10 +4,15 @@
 @inject IIntegrationCatalogApiService Api
 @inject IServiceProvider Services
 
-<section class="am" aria-labelledby="am-heading" data-testid="am">
+@* Two owners, one component. Configuration (Target Environment → Integrations): which source scope this environment's messaging evidence is
+   built from, and which analyzed application is linked to which IQR consumer. Evidence (Source Analysis): what the source declares — Wolverine
+   usage, handlers, routes, retry, outbox, telemetry. Full shows both (component tests). *@
+<section class="am" aria-labelledby="am-heading" data-testid="am" data-view="@View">
     <div class="am-title">
-        <h3 id="am-heading">Application messaging</h3>
+        <h3 id="am-heading">@(View == ApplicationMessagingView.Configuration ? "Messaging evidence scope and IQR links" : "Application messaging")</h3>
     </div>
+    @if (View != ApplicationMessagingView.Evidence)
+    {
     <div class="am-snapshot" data-testid="am-source-snapshots">
         <SourceEvidencePrerequisite State="_scope" Prefix="am" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" Title="Messaging source"
                                     ConsumerName="Application messaging" EmptyHeadingLevel="4"
@@ -21,6 +26,31 @@
             </div>
         </SourceEvidencePrerequisite>
     </div>
+    }
+    @if (View == ApplicationMessagingView.Configuration)
+    {
+        <p class="am-status" role="status" aria-live="polite" data-testid="am-status">@_status</p>
+        @if (_error is { } configError) { <p class="am-error" role="alert" data-testid="am-error">@configError</p> }
+        @if (Evidence is null) { <p class="am-muted" data-testid="am-empty">No messaging evidence built for this environment yet.</p> }
+        else
+        {
+            <p class="am-muted" data-testid="am-config-summary">@Evidence.Applications.Count analyzed application(s). Wolverine usage, handlers, routes, retry and telemetry are shown in
+                <a href="/source-analysis/application-messaging" data-testid="am-open-source-evidence">Source Analysis → Application messaging</a>.</p>
+            <div class="am-links" role="group" aria-label="IQR integration links">
+                @foreach (var app in Evidence.Applications.OrderBy(a => a.ApplicationId, StringComparer.OrdinalIgnoreCase))
+                {
+                    <label class="am-bind" data-testid="am-link-row" data-application="@app.ApplicationId">@app.ApplicationId
+                        <select class="form-control" data-testid="am-binding" value="@(app.BoundConsumer ?? "")" disabled="@_busy" @onchange="e => BindAsync(app, e.Value?.ToString())">
+                            <option value="">Not linked</option>
+                            @foreach (var consumer in ApplicationMessagingPresentation.Consumers(Catalog)) { <option value="@consumer">@consumer</option> }
+                        </select>
+                    </label>
+                }
+            </div>
+        }
+    }
+    else
+    {
     <dl class="am-overview" data-testid="am-overview">
         @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence))
         {
@@ -88,23 +118,21 @@
                     <div><dt>IQR integration link</dt><dd>@(selected.BoundConsumer ?? "Not linked")</dd></div>
                     <div><dt>Runtime processing</dt><dd>Not assessed</dd></div>
                 </dl>
+                @if (View == ApplicationMessagingView.Full)
+                {
                 <label class="am-bind">IQR integration link
                     <select class="form-control" data-testid="am-binding" value="@(selected.BoundConsumer ?? "")" disabled="@_busy" @onchange="e => BindAsync(selected, e.Value?.ToString())">
                         <option value="">Not linked</option>
                         @foreach (var consumer in ApplicationMessagingPresentation.Consumers(Catalog)) { <option value="@consumer">@consumer</option> }
                     </select>
                 </label>
-                <div class="am-title">
-                    @foreach (var platform in Catalog.Platforms.Where(p => p.Kind is IntegrationKind.ServiceBus or IntegrationKind.EventHub))
-                    {
-                        <a href="@($"#ip-platform-{Slug(platform.Id)}")">Open @platform.Name transport evidence</a>
-                    }
-                </div>
+                }
                 <ApplicationMessagingDetail Application="selected" Catalog="Catalog" />
             </section>
         }
         else { <p class="am-muted">Select an application to inspect messaging evidence.</p> }
         </div>
+    }
     }
 </section>
 
@@ -113,6 +141,8 @@
     [Parameter, EditorRequired] public IntegrationCatalog Catalog { get; set; } = new();
     [Parameter] public ApplicationMessagingEvidenceSet? Evidence { get; set; }
     [Parameter] public EventCallback<ApplicationMessagingEvidenceSet?> EvidenceChanged { get; set; }
+    /// <summary>Configuration for Target Environment → Integrations, Evidence for Source Analysis, Full for both.</summary>
+    [Parameter] public ApplicationMessagingView View { get; set; } = ApplicationMessagingView.Full;
 
     private bool _busy;
     private string _status = "";
@@ -140,9 +170,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (View == ApplicationMessagingView.Evidence) return;
         _scope.Restore(Evidence?.SourceScope);
         await ReloadScopeAsync();
-
     }
 
     private async Task ReloadScopeAsync()
@@ -194,5 +224,4 @@
         finally { _busy = false; }
     }
 
-    private static string Slug(string value) => new string(value.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
 }

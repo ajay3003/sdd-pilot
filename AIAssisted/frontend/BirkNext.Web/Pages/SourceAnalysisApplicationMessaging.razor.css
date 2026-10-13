@@ -1,0 +1,6 @@
+.sam { min-width: 0; padding: 1rem 0; overflow-wrap: anywhere; }
+.sam h2 { margin: .25rem 0 .5rem; font-size: 1.25rem; }
+.sam-crumbs { font-size: .85rem; margin-bottom: .25rem; }
+.sam-crumbs a:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.sam-muted { color: var(--clr-text-muted, #4b5563); font-size: .88rem; margin: .25rem 0 .5rem; max-width: 70rem; }
+.sam-error { margin: .5rem 0; padding: .55rem .75rem; border-radius: var(--radius-md, .5rem); border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; font-size: .88rem; }

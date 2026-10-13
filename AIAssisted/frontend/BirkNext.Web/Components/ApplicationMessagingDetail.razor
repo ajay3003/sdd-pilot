@@ -78,7 +78,7 @@
     <p>Application messaging evidence and Event Hub / Service Bus transport runtime evidence are reviewed separately.</p>
     @foreach (var platform in Catalog.Platforms.Where(p => p.Kind is IntegrationKind.ServiceBus or IntegrationKind.EventHub))
     {
-        <p>@platform.Name · Reviewed separately <a href="@($"#ip-platform-{Slug(platform.Id)}")">Open @platform.Name transport evidence</a></p>
+        <p>@platform.Name · Reviewed separately <a href="/integration-quality-review">Open @platform.Name transport evidence in Integration Quality Review</a></p>
     }
 </ReviewDisclosure>
 <ReviewDisclosure Text="Runtime evidence" TestId="am-runtime-section">
@@ -103,5 +103,4 @@
     [Parameter, EditorRequired] public ApplicationMessagingEvidence Application { get; set; } = new();
     [Parameter, EditorRequired] public IntegrationCatalog Catalog { get; set; } = new();
     private static string Location(SourceLocation? location) => location is null ? "Source location not available" : $"{location.File}:{location.Line}";
-    private static string Slug(string value) => new string(value.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
 }

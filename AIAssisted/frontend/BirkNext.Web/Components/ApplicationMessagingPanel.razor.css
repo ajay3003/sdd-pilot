@@ -69,3 +69,4 @@
     .am-master td::before { content:attr(data-label) ": "; font-weight:600; }
     .am-mobile { display:block; font-size:.75rem; margin-top:.2rem; }
 }
+.am-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .5rem 1rem; margin: .4rem 0; }

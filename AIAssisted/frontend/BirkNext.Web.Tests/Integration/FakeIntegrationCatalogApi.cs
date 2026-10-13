@@ -27,6 +27,13 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("discover-source-integrations");
         return Task.FromResult(SourceReport?.Invoke(Catalog));
     }
+    // Terraform comparison (read-only). Null = not loaded (the pane says nothing about Terraform).
+    public Func<IntegrationCatalog, IntegrationTerraformComparison?>? Terraform { get; set; }
+    public Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
+    {
+        Calls.Add("terraform-comparison");
+        return Task.FromResult(Terraform?.Invoke(Catalog));
+    }
     // SCIM identity provisioning (records calls; no HTTP).
     public ScimEvidenceOverview ScimOverview { get; set; } = new();
     public Func<string, ScimEvidenceCheck?>? ScimCheck { get; set; }
@@ -92,6 +99,8 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Exception? LoadFailure { get; set; }
     public List<string> Calls { get; } = [];
     public List<IntegrationDefinition> Saved { get; } = [];
+    /// <summary>Definitions exactly as the UI asked to create them (before the fake assigns an id).</summary>
+    public List<IntegrationDefinition> Created { get; } = [];
     public List<IntegrationContractArtifact> Contracts { get; } = [];
     public List<IntegrationPlatform> SavedPlatforms { get; } = [];
     /// <summary>When set, every mutation fails with this exception (Save failed path).</summary>
@@ -110,19 +119,27 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     /// <summary>The catalog after an explicit template apply (null = the fake keeps the current catalog and only records the call).</summary>
     public IntegrationCatalog? AfterTemplate { get; set; }
 
-    public Task<IntegrationCatalog> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default)
+    /// <summary>When set, the fake refuses every template apply with this server message (409).</summary>
+    public string? RefuseTemplate { get; set; }
+
+    public Task<IntegrationCatalog> ApplyTemplateAsync(FrontendAnalysisProfile profile, string templateId, CancellationToken ct = default)
     {
+        var environmentId = profile.Id;
+        if (RefuseTemplate is { } refused) { Calls.Add("apply-template-refused:" + templateId); return Task.FromException<IntegrationCatalog>(new IntegrationTemplateRefusedException(refused)); }
         Calls.Add("apply-template:" + templateId);
         Mutating();
         if (AfterTemplate is not null) Catalog = AfterTemplate;
-        return Task.FromResult(Catalog with { EnvironmentId = environmentId, Notices = ["Applied the M2LB DEV template: 19 records added. Existing records were left unchanged."] });
+        return Task.FromResult(Catalog with { EnvironmentId = environmentId, Notices = ["Applied the M2LB DEV helper: 4 records added. Existing records were left unchanged."] });
     }
 
     public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default)
     {
         Calls.Add("create");
         Mutating();
-        var created = definition with { Id = $"{environmentId}:manual:{Catalog.Integrations.Count + 1}", EnvironmentId = environmentId, Origin = IntegrationRecordOrigin.Manual };
+        Created.Add(definition);
+        // Like the backend: a record added from a source suggestion keeps that origin; anything else is Manual.
+        var created = definition with { Id = $"{environmentId}:manual:{Catalog.Integrations.Count + 1}", EnvironmentId = environmentId,
+            Origin = definition.Origin == IntegrationRecordOrigin.SourceSuggestion ? IntegrationRecordOrigin.SourceSuggestion : IntegrationRecordOrigin.Manual };
         Catalog = Catalog with { Integrations = [.. Catalog.Integrations, created] };
         Saved.Add(created);
         return Task.FromResult(created);

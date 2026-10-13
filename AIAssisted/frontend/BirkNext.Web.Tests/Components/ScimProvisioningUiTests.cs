@@ -411,7 +411,7 @@ public sealed class ScimProvisioningUiTests : BunitContext
     public void IntegrationsPaneRendersScimPanelWithoutEventHubRuntimeFields()
     {
         _api.Catalog = M2lbFixture.Catalog() with { Platforms = [M2lbFixture.Platform(), Platform()] };
-        var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development }));
+        var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development })).WithAdvancedOpen();
 
         cut.WaitForElement("[data-testid='scim']");
         var section = cut.FindAll("[data-testid='ip-platform']").Single(s => s.TextContent.Contains("M2LB Entra SCIM Provisioning"));

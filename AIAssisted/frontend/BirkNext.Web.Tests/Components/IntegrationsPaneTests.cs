@@ -29,17 +29,18 @@ public sealed class IntegrationsPaneTests : BunitContext
     {
         var cut = Open();
         cut.Find("[data-testid=ip-summary-configured]").TextContent.Should().Be("16");
-        cut.Find("[data-testid=ip-summary-enabled]").TextContent.Should().Be("16");
-        cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("1");
-        cut.Find("[data-testid=ip-summary-confirm]").TextContent.Should().Be("15");
-        cut.Find("[data-testid=ip-summary-platform]").TextContent.Should().Contain("M2LB DEV Event Hubs");
-        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16);
+        var rows = cut.FindAll("[data-testid=ip-row]");
+        rows.Should().HaveCount(16);
+        rows.Count(r => r.GetAttribute("data-configuration") == "Ready").Should().Be(1);
+        rows.Count(r => r.GetAttribute("data-configuration") == "NeedsConfirmation").Should().Be(15);
+        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("15 mappings need confirmation");
+        cut.Find("[data-testid=ip-summary-env]").TextContent.Should().Be("Development · m2lbdev.bufetat.no");
     }
 
     [Fact]
     public void PlatformValuesAreShownOnceOnThePlatformCard()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         cut.FindAll("[data-testid=ip-platform]").Should().ContainSingle();
         cut.Find("[data-testid=ip-platform-namespace]").TextContent.Should().Be("evhns-m2lb-dev-nwe-001");
         cut.Find("[data-testid=ip-platform-producer-auth]").TextContent.Should().Contain("SAS");
@@ -81,7 +82,7 @@ public sealed class IntegrationsPaneTests : BunitContext
     [Fact]
     public void TechnicalTopicsAreCollapsedAndSeparate()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         cut.Find("[data-testid=ip-technical] button").GetAttribute("aria-expanded").Should().Be("false");
         cut.Find("[data-testid=ip-technical] .disclosure-body").HasAttribute("hidden").Should().BeTrue("technical infrastructure starts collapsed");
         cut.Find("[data-testid=ip-technical] button").Click();
@@ -123,7 +124,7 @@ public sealed class IntegrationsPaneTests : BunitContext
         var cut = Open();
         cut.FindAll("[data-testid=ip-row-view]")[1].Click();
         cut.Find("[data-testid=ip-row-toggle-enabled]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-summary-enabled]").TextContent.Should().Be("15"));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=ip-row]").Count(r => r.GetAttribute("data-configuration") == "Disabled").Should().Be(1));
         _api.Calls.Should().Contain(c => c.StartsWith("enabled:") && c.EndsWith(":False"));
     }
 

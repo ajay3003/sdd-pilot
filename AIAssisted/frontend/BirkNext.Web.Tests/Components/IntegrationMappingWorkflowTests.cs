@@ -32,8 +32,9 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     {
         var cut = Open();
         cut.FindAll(".ip-summary > div").Should().HaveCount(4);
-        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Sources configured: 0/4");
-        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("Review 15 mappings");
+        cut.FindAll(".ip-summary dt").Select(d => d.TextContent).Should().Equal("Environment", "Configured integrations", "Source suggestions", "Runtime evidence");
+        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("15 mappings need confirmation");
         cut.Find("[data-testid=ip-review-mappings]").Click();
         cut.FindAll("[data-testid=ip-row]").Should().HaveCount(15);
         cut.Find("[data-testid=ip-filter-state]").GetAttribute("value").Should().Be(nameof(IntegrationConfigurationState.NeedsConfirmation));
@@ -45,7 +46,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     [Fact]
     public void PlayHasContextAndUnknownConsumerIsNotDuplicated()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         var play = Row(cut).QuerySelector("[data-testid=ip-test-mapping]")!;
         play.GetAttribute("aria-label").Should().Contain("Tiltak").And.Contain("Tjeneste API");
         play.TextContent.Trim().Should().Be("Test mapping", "the action is labelled, not an unlabelled play icon");
@@ -84,8 +85,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         Row(cut).QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Confirmed");
         _api.Saved.Single().Consumer.MappingConfirmedAt.Should().NotBeNull();
         _api.Saved.Single().Consumer.MappingEvidence.Should().Contain("suggested by:");
-        cut.Find("[data-testid=ip-summary-ready]").TextContent.Should().Be("2");
-        cut.Find("[data-testid=ip-summary-confirm]").TextContent.Should().Be("14");
+        cut.FindAll("[data-testid=ip-row]").Count(r => r.GetAttribute("data-configuration") == "Ready").Should().Be(2);
+        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("14 mappings need confirmation");
     }
 
     [Fact]
@@ -107,7 +108,10 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     public void RuntimeCtaOpensExistingEditorAndIqrRemainsAvailable()
     {
         var cut = Open();
-        cut.Find("[data-testid=ip-configure-runtime]").Click();
+        cut.FindAll("[data-testid=ip-advanced-body]").Should().BeEmpty("runtime setup sits under Advanced until it is needed");
+        Row(cut).QuerySelector("[data-testid=ip-row-runtime]")!.TextContent.Should().Contain("Not configured");
+        Row(cut).QuerySelector("[data-testid=ip-row-runtime-configure]")!.Click();
+        cut.Find("[data-testid=ip-advanced-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Find("[data-testid=ip-runtime-form]");
         cut.Find("[data-testid=ip-runtime-section-a] legend").TextContent.Should().Be("A · Azure runtime access");
         cut.Find("[data-testid=ip-open-iqr]").GetAttribute("href").Should().Be("/integration-quality-review");
@@ -137,7 +141,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         _api.Saved.Should().BeEmpty("opening the confirmation saves nothing");
         cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=ip-row]").Should().HaveCount(14));
-        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("Review 14 mappings");
+        cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("14 mappings need confirmation");
     }
 
     [Fact]
@@ -214,17 +218,14 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     }
 
     [Fact]
-    public void ReviewReadinessFilterUsesExistingStatesAndClears()
+    public void ReviewReadinessIsIqrContext_InTheRowDetail_NotAConfigurationFilter()
     {
         var cut = Open();
-        var options = cut.FindAll("[data-testid=ip-filter-readiness] option").Select(o => o.TextContent).ToList();
-        options.Should().Equal("All", "Partial (16)");
-        cut.Find("[data-testid=ip-filter-readiness]").Change("Partial");
-        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16);
-        cut.Find("[data-testid=ip-active-filter]").TextContent.Should().Contain("Review readiness: Partial");
-        cut.Find("[data-testid=ip-row-readiness]").TextContent.Should().Contain("Configuration is usable, but some runtime, checkpoint, consumer or contract evidence is unavailable.");
-        cut.Find("[data-testid=ip-clear-filters]").Click();
-        cut.FindAll("[data-testid=ip-active-filter]").Should().BeEmpty();
+        cut.FindAll("[data-testid=ip-filter-readiness]").Should().BeEmpty("review readiness belongs to Integration Quality Review");
+        Row(cut).QuerySelector("[data-testid=ip-row-view]")!.Click();
+        cut.Find("[data-testid=ip-row-detail]").TextContent.Should().Contain("Review readiness (IQR)")
+            .And.Contain("Configuration is usable, but some runtime, checkpoint, consumer or contract evidence is unavailable.");
+        Row(cut).QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().Be("/integration-quality-review");
     }
 
     [Fact]
@@ -235,7 +236,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var configuration = cut.FindAll("[data-testid=ip-row-configuration]").Select(b => b.TextContent.Trim()).Distinct().ToList();
         configuration.Should().Contain(["Ready", "Needs confirmation", "Needs configuration", "Disabled"]);
         cut.FindAll("[data-testid=ip-row-consumer] .ip-pill").Select(b => b.TextContent.Trim()).Distinct().Should().BeEquivalentTo(["Suggested", "Confirmed", "Unassigned"]);
-        cut.FindAll("[data-testid=ip-row-readiness] .ip-pill").Select(b => b.TextContent.Trim()).Should().Contain("Partial");
+        cut.FindAll("[data-testid=ip-row-runtime] .ip-pill").Select(b => b.TextContent.Trim()).Should().Contain("Not configured");
+        cut.FindAll("[data-testid=ip-row-origin]").Select(b => b.TextContent.Trim()).Should().OnlyContain(o => o == "Seed" || o == "Seed · modified" || o == "Manual" || o == "Imported" || o == "Source suggestion");
         cut.FindAll("[data-testid=ip-row-consumer]").Should().NotContain(c => c.TextContent.Contains("(suggested)"));
     }
 
@@ -266,7 +268,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     [Fact]
     public void TechnicalTopicsAreCollapsedAndExcludedFromBusinessCounts()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         cut.Find("[data-testid=ip-technical] .disclosure-body").HasAttribute("hidden").Should().BeTrue();
         cut.Find("[data-testid=ip-technical]").TextContent.Should().Contain("excluded from business integration counts");
         cut.Find("[data-testid=ip-technical-toggle]").TextContent.Should().Contain("Technical integration channels").And.NotContain("Event Hub");

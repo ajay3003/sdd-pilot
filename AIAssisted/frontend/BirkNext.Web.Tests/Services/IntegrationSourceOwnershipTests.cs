@@ -41,23 +41,6 @@ public sealed class IntegrationSourceOwnershipTests
     // ── 2–3. The reachable sources behave ───────────────────────────────────
 
     [Fact]
-    public void AcceptingAKnownTemplateMarksTheIntegrationAsSuggestedFromAuditedSource()
-    {
-        var target = new IntegrationConfig { Id = "i1", Name = "Custom", Type = IntegrationType.EventHub };
-
-        IntegrationConfigPresenter.ApplyTemplate(target, new KnownIntegrationTemplate
-        {
-            Id = "t1", DisplayName = "M2LB Person events", IntegrationType = IntegrationType.EventHub,
-        }, new IntegrationEnvironmentValues("person-events", "sb://m2lb.servicebus.windows.net", null));
-
-        target.ConfigurationSource.Should().Be(IntegrationConfigurationSource.CodeSuggested);
-        IntegrationConfigPresenter.SourceLabel(target.ConfigurationSource)
-            .Should().Be("Suggested from audited M2LB source", "the catalogue is audited source, not runtime evidence");
-        IntegrationConfigPresenter.SourceLabel(target.ConfigurationSource)
-            .Should().NotContainAny("Verified", "Runtime", "Discovered");
-    }
-
-    [Fact]
     public void ManualIsTheHighestAuthorityAndLegacyConfigurationStaysUnknown()
     {
         IntegrationConfigPresenter.SourceLabel(IntegrationConfigurationSource.Manual).Should().Be("Manual");

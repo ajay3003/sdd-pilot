@@ -2,6 +2,9 @@ using BirkNext.Integrations;
 
 namespace BirkNext.Web.Services;
 
+/// <summary>Which owner an Application messaging panel serves: Integrations (scope + IQR links), Source Analysis (evidence), or both.</summary>
+public enum ApplicationMessagingView { Full, Configuration, Evidence }
+
 /// <summary>
 /// Presentation of application-messaging (Wolverine) evidence. Source facts read as Detected / Configured / Available; runtime
 /// processing is Not assessed until an Integration Quality Review run reads handler telemetry. Tones are cosmetic: every state is a word.

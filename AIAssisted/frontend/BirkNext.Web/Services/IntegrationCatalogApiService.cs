@@ -75,8 +75,9 @@ public interface IIntegrationCatalogApiService
     /// <summary>Read-only "Test Service Bus" of one Service Bus platform (topology, code routes and — when configured — runtime metadata).</summary>
     Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default);
     Task<IntegrationCatalog> GetCatalogAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
-    /// <summary>Explicitly applies a project integration template (add-missing only). The only way template records reach an environment.</summary>
-    Task<IntegrationCatalog> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default) =>
+    /// <summary>Explicitly applies a project integration template (add-missing only). The only way template records reach an environment. The
+    /// server decides whether the template fits the environment and refuses it otherwise (<see cref="IntegrationTemplateRefusedException"/>).</summary>
+    Task<IntegrationCatalog> ApplyTemplateAsync(FrontendAnalysisProfile profile, string templateId, CancellationToken ct = default) =>
         Task.FromException<IntegrationCatalog>(new NotSupportedException("Integration templates are unavailable."));
     Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition> UpdateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
@@ -105,6 +106,8 @@ public interface IIntegrationCatalogApiService
     Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
     /// <summary>"Discover from source": re-runs discovery on the stored source snapshot (no runtime call, no archive re-processing).</summary>
     Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
+    /// <summary>Configured environment values compared with Terraform in Source Analysis (read-only; nothing is written).</summary>
+    Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) => Task.FromResult<IntegrationTerraformComparison?>(null);
     /// <summary>Uploads repository archives for read-only SCIM source analysis.</summary>
     /// <summary>Source Analysis snapshots for SCIM provisioning (read-only metadata).</summary>
     Task<ReviewSourceOptions> ScimSourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
@@ -347,6 +350,9 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
     }
 
+    public async Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<IntegrationTerraformComparison>($"api/integrations/terraform-comparison?{Env(profile.Id)}&environmentName={Uri.EscapeDataString(profile.Name ?? "")}", Json, ct);
+
     public async Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<SourceIntegrationsReport>($"api/integrations/source-integrations?{Env(environmentId)}", Json, ct);
 
@@ -402,8 +408,16 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     public async Task<IntegrationCatalog> GetCatalogAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<IntegrationCatalog>($"api/integrations?{Scope(profile)}", Json, ct) ?? new IntegrationCatalog { EnvironmentId = profile.Id };
 
-    public async Task<IntegrationCatalog> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default) =>
-        await Read<IntegrationCatalog>(await http.PostAsync($"api/integrations/templates/{Uri.EscapeDataString(templateId)}/apply?{Env(environmentId)}", null, ct), ct);
+    public async Task<IntegrationCatalog> ApplyTemplateAsync(FrontendAnalysisProfile profile, string templateId, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsync($"api/integrations/templates/{Uri.EscapeDataString(templateId)}/apply?{Scope(profile)}", null, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);
+            throw new IntegrationTemplateRefusedException(body.TryGetProperty("message", out var message) ? message.GetString() ?? "The template does not fit this environment." : "The template does not fit this environment.");
+        }
+        return await Read<IntegrationCatalog>(response, ct);
+    }
 
     public async Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) =>
         await Read<IntegrationDefinition>(await http.PostAsJsonAsync($"api/integrations?{Env(environmentId)}", definition, Json, ct), ct);
@@ -485,3 +499,6 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         return (await response.Content.ReadFromJsonAsync<T>(Json, ct))!;
     }
 }
+
+/// <summary>The server refused a template because it does not fit the environment (for example the M2LB DEV helper on QA or Production).</summary>
+public sealed class IntegrationTemplateRefusedException(string message) : HttpRequestException(message);

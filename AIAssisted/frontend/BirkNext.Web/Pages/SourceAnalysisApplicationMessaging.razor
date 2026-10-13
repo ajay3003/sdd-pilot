@@ -1,0 +1,54 @@
+@page "/source-analysis/application-messaging"
+@using BirkNext.Integrations
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IIntegrationCatalogApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+
+@* Source Analysis owns detected source evidence: this is where an environment's application messaging evidence (Wolverine usage, handlers,
+   routes, retry, outbox, telemetry declarations) is read. Read-only — the evidence scope and the IQR links are configured in Target
+   Environment → Integrations, and runtime evidence belongs to Integration Quality Review. *@
+<PageTitle>Application messaging · Source Analysis</PageTitle>
+<div class="sam" data-testid="sam-page">
+    <nav class="sam-crumbs" aria-label="Breadcrumb"><a href="/source-analysis" data-testid="sam-back">Source Analysis</a> <span aria-hidden="true">›</span> Application messaging</nav>
+    <h2>Application messaging</h2>
+    <p class="sam-muted" data-testid="sam-intro">What the analyzed source declares about messaging. Source evidence is not runtime evidence: it shows what is configured, not that a handler ran.
+        The scope this evidence is built from, and the link to IQR integrations, are set in Target Environment → Integrations.</p>
+    @if (_error is { } error)
+    {
+        <p class="sam-error" role="alert" data-testid="sam-error">@error</p>
+    }
+    else if (_catalog is null)
+    {
+        <p class="sam-muted" role="status" data-testid="sam-loading">Loading application messaging evidence…</p>
+    }
+    else
+    {
+        <p class="sam-muted" data-testid="sam-environment">Environment: @(string.IsNullOrWhiteSpace(_profile?.Name) ? _profile?.Id : _profile!.Name)</p>
+        <ApplicationMessagingPanel EnvironmentId="@_profile!.Id" Catalog="_catalog" Evidence="_messaging" View="ApplicationMessagingView.Evidence" />
+    }
+</div>
+
+@code {
+    private FrontendAnalysisProfile? _profile;
+    private IntegrationCatalog? _catalog;
+    private ApplicationMessagingEvidenceSet? _messaging;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            if (context.ActiveTargetError is { } targetError) { _error = targetError; return; }
+            _profile = context.ActiveProfile;
+            _catalog = await Api.GetCatalogAsync(_profile);
+            _messaging = await Api.ApplicationMessagingAsync(_profile.Id);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _error = $"{BackendRequestClassifier.FromException("Application messaging evidence", ex).UserMessage}";
+        }
+    }
+}

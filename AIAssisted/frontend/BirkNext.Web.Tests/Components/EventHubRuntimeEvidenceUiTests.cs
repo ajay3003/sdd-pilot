@@ -27,7 +27,7 @@ public sealed class EventHubRuntimeEvidenceUiTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
-    private IRenderedComponent<IntegrationsPane> Open() => Render<IntegrationsPane>(p => p.Add(c => c.Profile, _profile));
+    private IRenderedComponent<IntegrationsPane> Open() => Render<IntegrationsPane>(p => p.Add(c => c.Profile, _profile)).WithAdvancedOpen();
 
     private void UseRuntime(Func<IntegrationRuntimeEvidenceSettings, IntegrationRuntimeEvidenceSettings> change, bool azureEnabled = false) =>
         _api.Catalog = M2lbFixture.SeededCatalog(azureEnabled) with { Platforms = [M2lbFixture.SeededCatalog().Platforms.Single() with { RuntimeEvidence = change(M2lbFixture.SeededRuntime()) }] };
@@ -51,7 +51,7 @@ public sealed class EventHubRuntimeEvidenceUiTests : BunitContext
         var cut = Open();
         Text(cut, "ip-runtime-sources-status").Should().Be("Sources configured: 4/4");
         Text(cut, "ip-runtime-execution-status").Should().Be("Runtime execution: Not available");
-        Text(cut, "ip-summary-runtime").Should().Be("Sources configured: 4/4");
+        Text(cut, "ip-summary-runtime").Should().Be("Configured", "the compact summary states configuration only; execution availability is its own statement");
         Text(cut, "ip-summary-azure").Should().Be("Runtime execution: Not available");
         Text(cut, "ip-runtime-execution-value").Should().Be("Not available");
         Text(cut, "ip-runtime-execution-summary").Should().Be("Azure access is not enabled for this BirkNext instance.");

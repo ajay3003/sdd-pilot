@@ -11,9 +11,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Source integrations section (Target Environment → Integrations): a generic title, model-derived disjoint counts, filters, source/channel/
-/// capture/mapping columns, source evidence kept apart from runtime evidence, explicit confirmation of source suggestions, and the same UI for
-/// Debezium CDC, a custom CDC publisher, HTTP and GraphQL — no source system or technology is special-cased.
+/// Target Environment → Integrations with Source Analysis as the owner of source evidence: generic section titles, model-derived disjoint
+/// counts, compact filters, source/channel/capture/mapping columns, a link to Source Analysis instead of repeated source evidence, explicit
+/// confirmation of source suggestions, secondary suggestions that are added — never confirmed — on request, and the same UI for Debezium CDC,
+/// a custom CDC publisher, HTTP and GraphQL — no source system or technology is special-cased.
 /// </summary>
 public sealed class SourceIntegrationsUiTests : BunitContext
 {
@@ -70,14 +71,13 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     private static AngleSharp.Dom.IElement Row(IRenderedComponent<IntegrationsPane> cut, string idSuffix) => cut.FindAll("[data-testid=ip-row]").Single(r => r.GetAttribute("data-integration-id")!.EndsWith(idSuffix));
 
     [Fact]
-    public void TheSectionIsGeneric_NoSourceSystemOrTechnologyInItsTitle()
+    public void TheSectionsAreGeneric_NoSourceSystemOrTechnologyInTheirTitles()
     {
         var cut = Open();
-        cut.Find("[data-testid=ip-sources-title]").TextContent.Should().Be("Source integrations");
-        cut.Find("[data-testid=ip-sources-subtitle]").TextContent.Should().Be("Source-to-consumer integrations detected or configured from source analysis.");
+        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Suggestions from Source Analysis", "Source evidence"]);
         cut.FindAll("h3").Select(h => h.TextContent).Should().NotContain(h => h.Contains("Debezium") || h.Contains("BIRK CDC"));
         cut.FindAll("[data-testid=ip-group]").Should().BeEmpty("the configured group name is no longer a section title");
-        cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Source", "Channel", "Producer / capture", "Consumer mapping", "Configuration", "Review", "Actions");
+        cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Integration", "Type", "Producer / source", "Consumer / destination", "Configuration", "Runtime evidence", "Actions");
     }
 
     [Fact]
@@ -85,12 +85,10 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     {
         var cut = Open();
         var business = SourceIntegrationsPresentation.Business(_api.Catalog);
-        Int(cut, "ip-sources-count").Should().Be(business.Count);
-        var mapping = cut.FindAll("[data-testid=ip-sources-mapping] [data-category]").ToDictionary(e => e.GetAttribute("data-category")!, e => int.Parse(e.TextContent.Split(' ', StringSplitOptions.RemoveEmptyEntries).Last()));
-        mapping.Should().BeEquivalentTo(new Dictionary<string, int> { ["Confirmed"] = 1, ["Suggested"] = 8, ["NeedsConfirmation"] = 0, ["Unassigned"] = 7 });
+        Int(cut, "ip-summary-configured").Should().Be(business.Count);
+        var mapping = cut.FindAll("[data-testid=ip-row]").Select(r => r.GetAttribute("data-mapping-category")).GroupBy(c => c).ToDictionary(g => g.Key!, g => g.Count());
+        mapping.Should().BeEquivalentTo(new Dictionary<string, int> { ["Confirmed"] = 1, ["Suggested"] = 8, ["Unassigned"] = 7 });
         mapping.Values.Sum().Should().Be(business.Count, "mapping categories never overlap");
-        cut.FindAll("[data-testid=ip-row]").Select(r => r.GetAttribute("data-mapping-category")).GroupBy(c => c).ToDictionary(g => g.Key!, g => g.Count())
-            .Should().BeEquivalentTo(mapping.Where(m => m.Value > 0).ToDictionary());
     }
 
     private static int Int(IRenderedComponent<IntegrationsPane> cut, string id) => int.Parse(cut.Find($"[data-testid={id}]").TextContent.Trim());
@@ -107,7 +105,8 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         unassigned.QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Not assigned");
         unassigned.QuerySelector("[data-testid=ip-row-mapping]")!.TextContent.Should().Be("Unassigned");
         unassigned.QuerySelector("[data-testid=ip-row-mapping]")!.GetAttribute("title").Should().Be("No consumer mapping has been established.");
-        Row(cut, "dbo.Tiltak").QuerySelector("[data-testid=ip-row-readiness] summary")!.TextContent.Should().Be("Why partial?");
+        Row(cut, "dbo.Tiltak").QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().Be("/integration-quality-review", "review readiness is Integration Quality Review's");
+        cut.FindAll("[data-testid=ip-row-readiness]").Should().BeEmpty("review readiness is not a configuration column");
         cut.Markup.Should().NotContain("Failed");
     }
 
@@ -123,12 +122,16 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     }
 
     [Fact]
-    public void WithoutSourceAnalysisTheSectionSaysNotAnalyzed()
+    public void WithoutSourceAnalysis_SuggestionsAreUnavailable_AndConfiguredIntegrationsStillWork()
     {
         var cut = Open();
-        cut.Find("[data-testid=ip-source-analysis-state]").TextContent.Should().Be("Source analysis: Not analyzed");
+        cut.Find("[data-testid=ip-summary-suggestions]").TextContent.Should().Be("Unavailable");
+        cut.Find("[data-testid=ip-suggestions-unavailable]").TextContent.Should().Contain("Unavailable.").And.Contain("No source snapshot is linked").And.Contain("work without it");
         cut.Find("[data-testid=ip-open-source-analysis]").GetAttribute("href").Should().Be("/source-analysis");
+        cut.Find("[data-testid=ip-source-summary]").TextContent.Should().Be("No source snapshot is linked to this environment.");
+        cut.FindAll("[data-testid=ip-review-suggestions]").Should().BeEmpty();
         cut.FindAll("[data-testid=ip-row-source-note]").Should().BeEmpty();
+        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16, "configured integrations work without Source Analysis");
     }
 
     [Fact]
@@ -136,47 +139,45 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     {
         UseM2lbReport();
         var cut = Open();
-        cut.Find("[data-testid=ip-source-analysis-state]").TextContent.Should().Be("Source analysis: Partial");
+        cut.Find("[data-testid=ip-source-archive]").TextContent.Should().Be("source.zip");
+        cut.Find("[data-testid=ip-source-status]").TextContent.Should().Be("Partial");
         var producer = Row(cut, "dbo.Person").QuerySelector("[data-testid=ip-row-producer]")!;
         producer.TextContent.Should().Contain("CDC").And.Contain("Debezium").And.Contain("detected from source");
         producer.QuerySelector(".ip-detected")!.GetAttribute("title").Should().Be("Detected from source");
     }
 
     [Fact]
-    public void FiltersNarrowByMappingPatternTransportAndSource_AndClearResetsAll()
+    public void CompactFiltersNarrowByMappingAndConfiguration_AndClearResetsAll()
     {
         UseM2lbReport();
         var cut = Open();
         cut.Find("[data-testid=ip-filter-mapping]").Change(nameof(MappingCategory.Suggested));
         cut.FindAll("[data-testid=ip-row]").Should().HaveCount(8).And.OnlyContain(r => r.GetAttribute("data-mapping-category") == "Suggested");
-        cut.Find("[data-testid=ip-filter-mapping]").Change("");
-        cut.FindAll("[data-testid=ip-filter-pattern] option").Select(o => o.GetAttribute("value")).Should().Equal("", "CDC");
-        cut.Find("[data-testid=ip-filter-pattern]").Change("CDC");
-        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16);
-        cut.Find("[data-testid=ip-filter-transport]").Change(nameof(IntegrationTransport.EventHub));
-        cut.Find("[data-testid=ip-filter-source]").Change("BIRK");
-        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16);
-        cut.Find("[data-testid=ip-active-filter]").TextContent.Should().Contain("Pattern: CDC").And.Contain("Transport: Event Hub").And.Contain("Source: BIRK");
+        cut.Find("[data-testid=ip-filter-state]").Change(nameof(IntegrationConfigurationState.NeedsConfirmation));
+        cut.Find("[data-testid=ip-search]").Input("Tiltak");
+        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(2);
+        cut.Find("[data-testid=ip-active-filter]").TextContent.Should().Contain("Mapping: Suggested").And.Contain("Needs confirmation").And.Contain("Search: Tiltak");
         cut.Find("[data-testid=ip-clear-filters]").Click();
         cut.FindAll("[data-testid=ip-active-filter]").Should().BeEmpty();
-        foreach (var id in new[] { "ip-filter-mapping", "ip-filter-pattern", "ip-filter-transport", "ip-filter-source" })
+        cut.FindAll("[data-testid=ip-row]").Should().HaveCount(16);
+        foreach (var id in new[] { "ip-filter-mapping", "ip-filter-state", "ip-search" })
             cut.Find($"[data-testid={id}]").Closest("label").Should().NotBeNull("every filter has a visible label");
+        foreach (var removed in new[] { "ip-filter-pattern", "ip-filter-transport", "ip-filter-source", "ip-filter-readiness" })
+            cut.FindAll($"[data-testid={removed}]").Should().BeEmpty("source-analysis facets belong to Source Analysis, not to the configuration list");
     }
 
     [Fact]
-    public void RowDetailsShowProvenance_AndKeepSourceAndRuntimeEvidenceApart()
+    public void RowDetailsLinkToSourceAnalysis_InsteadOfRepeatingItsEvidence()
     {
         UseM2lbReport();
         var cut = Open();
         Row(cut, "dbo.Kommune").QuerySelector("[data-testid=ip-row-view]")!.Click();
-        var detail = cut.Find("[data-testid=ip-source-detail]");
-        detail.QuerySelector("[data-testid=ip-detail-pattern]")!.TextContent.Should().Be("Change Data Capture");
-        detail.QuerySelector("[data-testid=ip-detail-capture]")!.TextContent.Should().Be("Debezium");
-        detail.QuerySelector("[data-testid=ip-detail-candidate]")!.TextContent.Should().Be("PersonBiRKAdapter.Worker · Inferred");
-        var source = detail.QuerySelector("[data-testid=ip-detail-source-evidence]")!.TextContent;
-        source.Should().Contain("Detected from source").And.Contain("Shop/Worker/Program.cs:12").And.Contain("architecture-bridge");
-        var runtime = detail.QuerySelector("[data-testid=ip-detail-runtime-evidence]")!.TextContent;
-        runtime.Should().Contain("Not assessed here").And.NotContain("Detected from source");
+        var detail = cut.Find("[data-testid=ip-row-detail]");
+        detail.QuerySelector("[data-testid=ip-detail-source]")!.TextContent.Should().Contain("Source suggestion").And.Contain("PersonBiRKAdapter.Worker").And.Contain("not been confirmed");
+        detail.QuerySelector("[data-testid=ip-detail-open-source]")!.GetAttribute("href").Should().Be("/source-analysis");
+        detail.QuerySelector("[data-testid=ip-detail-origin]")!.TextContent.Should().NotBeNullOrWhiteSpace();
+        cut.FindAll("[data-testid=ip-source-detail]").Should().BeEmpty("detailed source evidence belongs to Source Analysis");
+        detail.TextContent.Should().NotContain("Shop/Worker/Program.cs:12").And.NotContain("architecture-bridge");
     }
 
     [Fact]
@@ -191,7 +192,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         var panel = cut.Find("[data-testid=ip-confirm-panel]");
         panel.GetAttribute("role").Should().Be("group");
         cut.Find("[data-testid=ip-confirm-consumer]").TextContent.Should().Be("PersonBiRKAdapter.Worker");
-        cut.Find("[data-testid=ip-confirm-evidence]").TextContent.Should().Contain("Inferred").And.Contain("Shop/Worker/Program.cs:12");
+        cut.Find("[data-testid=ip-confirm-evidence]").TextContent.Should().Contain("Inferred").And.Contain("source.zip");
         _api.Saved.Should().BeEmpty("reviewing a suggestion saves nothing");
         cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
@@ -236,8 +237,8 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     public void DiscoverFromSourceShowsACompactSourceOnlyResult()
     {
         UseM2lbReport();
-        var cut = Open();
-        cut.Find("[data-testid=ip-discover]").TextContent.Should().Be("Discover from source");
+        var cut = Open().WithAdvancedOpen();
+        cut.Find("[data-testid=ip-discover]").TextContent.Should().Be("Re-run source discovery");
         cut.Find("[data-testid=ip-discover]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-discovery-report]").GetAttribute("role").Should().Be("status"));
         _api.Calls.Should().Contain("discover-source-integrations");
@@ -250,14 +251,14 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     [Fact]
     public void TechnicalChannelsAreGeneric_CollapsedAndExcluded()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         var toggle = cut.Find("[data-testid=ip-technical-toggle]");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
         toggle.TextContent.Should().Contain("Technical integration channels").And.Contain("5 excluded");
         cut.Find("[data-testid=ip-technical-subtitle]").TextContent.Should().Be("Platform/support channels excluded from business integration counts.");
         cut.FindAll("[data-testid=ip-technical-row]").Should().HaveCount(5);
         cut.Find("[data-testid=ip-technical-list] thead").TextContent.Should().Contain("Transport").And.Contain("Reason excluded");
-        Int(cut, "ip-sources-count").Should().Be(16, "technical channels never count as business integrations");
+        Int(cut, "ip-summary-configured").Should().Be(16, "technical channels never count as business integrations");
     }
 
     [Fact]
@@ -279,7 +280,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         row.QuerySelector("[data-testid=ip-row-source]")!.TextContent.Should().Be("Orders");
         row.QuerySelector("[data-testid=ip-row-channel]")!.TextContent.Should().Contain("Service Bus topic").And.Contain("orders.changes");
         row.QuerySelector("[data-testid=ip-row-producer]")!.TextContent.Should().Contain("CDC").And.Contain("Custom publisher");
-        cut.Find("[data-testid=ip-sources]").TextContent.Should().NotContain("Debezium");
+        cut.Find("[data-testid=ip-configured]").TextContent.Should().NotContain("Debezium");
     }
 
     [Fact]
@@ -302,8 +303,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         row.QuerySelector("[data-testid=ip-row-channel]")!.TextContent.Should().Contain("HTTP");
         row.QuerySelector("[data-testid=ip-row-producer]")!.TextContent.Should().Contain("API").And.Contain("Partner.Gateway");
         row.QuerySelector("[data-testid=ip-row-mapping]")!.TextContent.Should().Be("Confirmed");
-        cut.FindAll("[data-testid=ip-filter-pattern] option").Select(o => o.GetAttribute("value")).Should().Equal("", "API");
-        cut.Find("[data-testid=ip-sources]").TextContent.Should().NotContain("CDC").And.NotContain("Debezium").And.NotContain("Event Hub");
+        cut.Find("[data-testid=ip-configured]").TextContent.Should().NotContain("CDC").And.NotContain("Debezium").And.NotContain("Event Hub");
     }
 
     [Fact]
@@ -316,10 +316,80 @@ public sealed class SourceIntegrationsUiTests : BunitContext
             return Report(catalog, [gql], _ => null, gql.Id);
         };
         var cut = Open();
-        cut.Find("[data-testid=ip-unconfigured-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        var row = cut.Find("[data-testid=ip-unconfigured-row]");
-        row.TextContent.Should().Contain("Shop.Web").And.Contain("GraphQL").And.Contain("/graphql").And.Contain("Strawberry Shake").And.Contain("Server: Hot Chocolate").And.Contain("Catalog.Graph").And.Contain("Suggested from source");
-        row.GetAttribute("data-pattern").Should().Be(nameof(IntegrationPattern.ApiCall));
-        Int(cut, "ip-sources-count").Should().Be(16, "an unconfigured candidate is never counted as a configured business integration");
+        Int(cut, "ip-suggestions-total").Should().Be(1);
+        Int(cut, "ip-suggestions-strong").Should().Be(1);
+        cut.Find("[data-testid=ip-suggestions-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        cut.FindAll("[data-testid=ip-suggestion]").Should().BeEmpty("suggestions are secondary: listed only on request");
+        cut.Find("[data-testid=ip-suggestions-toggle]").Click();
+        var row = cut.Find("[data-testid=ip-suggestion]");
+        row.TextContent.Should().Contain("Shop.Web").And.Contain("GraphQL").And.Contain("/graphql").And.Contain("Catalog.Graph").And.Contain("Strongly supported");
+        row.TextContent.Should().NotContain("Strawberry Shake", "technology detail is Source Analysis evidence");
+        Int(cut, "ip-summary-configured").Should().Be(16, "an unconfigured candidate is never counted as a configured business integration");
+    }
+
+    // ── Suggestions from Source Analysis: secondary, prioritized, added on request and never confirmed ──────────────────
+
+    private void UseSuggestions()
+    {
+        _api.SourceReport = catalog =>
+        {
+            var strong = Candidate("m2lb-cdc-dev.birkm2lb.dbo.barn_n_hjemmstedskommune", IntegrationPattern.ChangeDataCapture, IntegrationTransport.EventHub, "Debezium", "PersonBiRKAdapter.Worker", ArchitectureEvidenceState.StronglySupported) with { SourceEntity = "barn_n_hjemmstedskommune", SourceDatabase = "birkm2lb", SourceSchema = "dbo" };
+            var inferred = Candidate("orders.created", IntegrationPattern.Messaging, IntegrationTransport.ServiceBusTopic, null, "Orders.Worker") with { SourceEntity = "Orders" };
+            var unassigned = Candidate("audit.events", IntegrationPattern.Messaging, IntegrationTransport.ServiceBusQueue, null, null) with { SourceEntity = "Audit" };
+            var conflicting = Candidate("leselogg", IntegrationPattern.Messaging, IntegrationTransport.ServiceBusQueue, null, "Revisjon", ArchitectureEvidenceState.Conflict) with { SourceEntity = "Leselogg" };
+            return Report(catalog, [strong, inferred, unassigned, conflicting], _ => null, strong.Id, inferred.Id, unassigned.Id, conflicting.Id);
+        };
+    }
+
+    [Fact]
+    public void Suggestions_AreSummarized_AndTheDefaultListShowsStronglySupportedAndConflictsOnly()
+    {
+        UseSuggestions();
+        var cut = Open();
+        Int(cut, "ip-summary-suggestions").Should().Be(4);
+        (Int(cut, "ip-suggestions-total"), Int(cut, "ip-suggestions-strong"), Int(cut, "ip-suggestions-suggested"), Int(cut, "ip-suggestions-unassigned"), Int(cut, "ip-suggestions-conflicts"))
+            .Should().Be((4, 1, 1, 1, 1));
+        cut.Find("[data-testid=ip-review-suggestions]").Click();
+        cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("Conflict", "StronglySupported");
+        cut.Find("[data-testid=ip-suggestion-filter]").TextContent.Should().Contain("strongly supported mappings and conflicts (2 of 4)");
+        cut.Find("[data-testid=ip-suggestions-all]").Click();
+        cut.FindAll("[data-testid=ip-suggestion]").Should().HaveCount(4);
+        cut.Find("[data-testid=ip-suggestions-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+    }
+
+    [Fact]
+    public void AddingASuggestion_CreatesASourceSuggestionRecord_ThatIsNotConfirmed()
+    {
+        UseSuggestions();
+        var cut = Open();
+        cut.Find("[data-testid=ip-review-suggestions]").Click();
+        cut.FindAll("[data-testid=ip-suggestion]").Single(r => r.GetAttribute("data-strength") == "StronglySupported").QuerySelector("[data-testid=ip-suggestion-add]")!.Click();
+        cut.WaitForAssertion(() => _api.Created.Should().ContainSingle());
+        var created = _api.Created.Single();
+        created.Origin.Should().Be(IntegrationRecordOrigin.SourceSuggestion);
+        created.EndpointOrTopic.Should().Be("m2lb-cdc-dev.birkm2lb.dbo.barn_n_hjemmstedskommune");
+        created.Kind.Should().Be(IntegrationKind.EventHub);
+        created.SourceResource.Should().Be("birkm2lb.dbo.barn_n_hjemmstedskommune");
+        created.Consumer.DisplayName.Should().Be("PersonBiRKAdapter.Worker");
+        created.Consumer.MappingState.Should().Be(ConsumerMappingState.Suggested, "strongly supported in source is still not a confirmed mapping");
+        created.Consumer.MappingSource.Should().Contain("strongly supported");
+        created.Consumer.MappingSourceSnapshotId.Should().Be(Snapshot);
+        cut.Find("[data-testid=ip-save-status]").TextContent.Should().Contain("not confirmed");
+    }
+
+    [Fact]
+    public void ASuggestionWhoseChannelIsAlreadyConfigured_CannotBeAddedAgain()
+    {
+        _api.SourceReport = catalog =>
+        {
+            var person = catalog.Integrations.Single(i => i.Id.EndsWith("dbo.Person"));
+            var duplicate = Candidate(person.EndpointOrTopic!.ToUpperInvariant(), IntegrationPattern.ChangeDataCapture, IntegrationTransport.EventHub, "Debezium", "Person.Adapter", ArchitectureEvidenceState.StronglySupported) with { SourceEntity = "Person (other id)" };
+            return Report(catalog, [duplicate], _ => null, duplicate.Id);
+        };
+        var cut = Open();
+        cut.Find("[data-testid=ip-review-suggestions]").Click();
+        var row = cut.Find("[data-testid=ip-suggestion]");
+        row.QuerySelector("[data-testid=ip-suggestion-configured]")!.TextContent.Should().Be("Already configured");
+        row.QuerySelectorAll("[data-testid=ip-suggestion-add]").Should().BeEmpty();
     }
 }

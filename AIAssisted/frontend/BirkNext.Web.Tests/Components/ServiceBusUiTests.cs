@@ -77,7 +77,7 @@ public sealed class ServiceBusUiTests : BunitContext
     }
 
     private IRenderedComponent<IntegrationsPane> Pane(string? focus = null) =>
-        Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development }).Add(c => c.Focus, focus));
+        Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development }).Add(c => c.Focus, focus)).WithAdvancedOpen();
 
     private void UsePlatform(Func<IntegrationPlatform, IntegrationPlatform> change, bool azureEnabled = false) =>
         _api.Catalog = M2lbFixture.Catalog() with { Platforms = [.. M2lbFixture.Catalog().Platforms, change(ServiceBusPlatform)], AzureRuntimeEnabled = azureEnabled };

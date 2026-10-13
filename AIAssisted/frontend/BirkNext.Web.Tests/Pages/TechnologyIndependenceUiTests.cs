@@ -155,31 +155,60 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     {
         var api = new FakeIntegrationCatalogApi
         {
-            Catalog = new IntegrationCatalog { Templates = [new("m2lb-dev-eventhub", "M2LB DEV integration template", "Project-specific.", true, "The target is the M2LB DEV frontend (m2lbdev.bufetat.no).")] },
+            Catalog = new IntegrationCatalog { Templates = [new("m2lb-dev-eventhub", "M2LB DEV helper", "Adds only environment-specific configuration that cannot be reliably discovered from source.", true, "The target is the M2LB DEV frontend (m2lbdev.bufetat.no).")
+                { Items = [new("Integration", "BIRK Person CDC → Person Adapter", "Topic m2lb-cdc-dev.BirkM2LB.dbo.Person; consumer mapping confirmed for M2LB DEV.", IntegrationTemplateProvenance.ConfirmedMapping),
+                           new("Runtime evidence", "Expected consumer group $Default", "A configured assumption.", IntegrationTemplateProvenance.ConfiguredAssumption)] }] },
             AfterTemplate = new IntegrationCatalog { AppliedTemplateId = "m2lb-dev-eventhub", DomainExtensions = [DomainExtensionIds.M2lbChildSecurityClassification] },
         };
         Services.AddSingleton<IIntegrationCatalogApiService>(api);
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
         var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.bufetat.no/" }));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-suggestion]").TextContent.Should().Contain("not applied automatically"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template]").TextContent.Should().Contain("never applied automatically").And.Contain("cannot be reliably discovered from source"));
+        cut.Find("[data-testid=ip-template]").TextContent.Should().NotContain("complete M2LB configuration");
         api.Calls.Should().NotContain(c => c.StartsWith("apply-template"), "loading never applies a template");
 
+        cut.FindAll("[data-testid=ip-template-item]").Should().BeEmpty("the exact records are listed on request, before applying");
+        cut.Find("[data-testid=ip-template-review]").Click();
+        cut.FindAll("[data-testid=ip-template-item]").Select(i => i.GetAttribute("data-provenance")).Should().Equal("ConfirmedMapping", "ConfiguredAssumption");
+        cut.Find("[data-testid=ip-template-items]").TextContent.Should().Contain("Confirmed mapping").And.Contain("Assumption");
+        cut.Find("[data-testid=ip-template]").TextContent.Should().Contain("never overwritten").And.Contain("are not added");
+
         cut.Find("[data-testid=ip-template-apply]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-applied]").TextContent.Should().Contain("M2LB DEV integration template"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-applied]").TextContent.Should().Contain("M2LB DEV helper applied").And.Contain("not discovered evidence"));
         api.Calls.Should().Contain("apply-template:m2lb-dev-eventhub");
-        cut.FindAll("[data-testid=ip-template-suggestion]").Should().BeEmpty();
+        cut.FindAll("[data-testid=ip-template]").Should().BeEmpty("an applied helper is not offered again");
     }
 
     [Fact]
-    public void GenericProject_GetsNoSuggestion_OnlyACollapsedTemplateList()
+    public void AServerRefusal_IsShownWithItsReason_AndNothingIsApplied()
     {
-        var api = new FakeIntegrationCatalogApi { Catalog = new IntegrationCatalog { Templates = [new("m2lb-dev-eventhub", "M2LB DEV integration template", "Project-specific.", false)] } };
+        var api = new FakeIntegrationCatalogApi
+        {
+            Catalog = new IntegrationCatalog { Templates = [new("m2lb-dev-eventhub", "M2LB DEV helper", "Adds only environment-specific configuration.", true)] },
+            RefuseTemplate = "The M2LB DEV helper is never applied to a Production environment.",
+        };
+        Services.AddSingleton<IIntegrationCatalogApiService>(api);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
+        var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "prod", Name = "Prod", EnvironmentType = FrontendEnvironmentType.Production, TargetUrl = "https://m2lbdev.bufetat.no/" }));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-apply]"));
+        cut.Find("[data-testid=ip-template-apply]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-save-status]").TextContent.Should().Be("Not applied: The M2LB DEV helper is never applied to a Production environment."));
+        cut.Find("[data-testid=ip-save-status]").GetAttribute("data-state").Should().Be("Failed");
+        api.Calls.Should().Contain("apply-template-refused:m2lb-dev-eventhub");
+        cut.FindAll("[data-testid=ip-template-applied]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GenericProject_SeesNoProjectHelper()
+    {
+        // The server offers the M2LB DEV helper only to the M2LB DEV environment; a generic project's catalog carries no offer.
+        var api = new FakeIntegrationCatalogApi { Catalog = new IntegrationCatalog() };
         Services.AddSingleton<IIntegrationCatalogApiService>(api);
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
         var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "pay", Name = "PaymentHub", TargetUrl = "https://paymenthub.example.test/" }));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-templates]"));
-        cut.FindAll("[data-testid=ip-template-suggestion]").Should().BeEmpty();
-        cut.Find("[data-testid=ip-templates]").HasAttribute("open").Should().BeFalse();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-empty]"));
+        cut.FindAll("[data-testid=ip-template]").Should().BeEmpty();
+        cut.Markup.Should().NotContain("M2LB");
     }
 
     [Fact]

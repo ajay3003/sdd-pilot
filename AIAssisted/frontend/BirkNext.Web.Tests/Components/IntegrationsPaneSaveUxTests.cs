@@ -42,7 +42,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     public void ThePaneStatesThatChangesAreSavedImmediately()
     {
         var cut = Open();
-        cut.Find("[data-testid=ip-save-note]").TextContent.Should().Be("Integration changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.");
+        cut.Find("[data-testid=ip-save-note]").TextContent.Should().Be("Changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.");
         var status = cut.Find("[data-testid=ip-save-status]");
         status.GetAttribute("role").Should().Be("status");
         status.GetAttribute("aria-live").Should().Be("polite");
@@ -69,7 +69,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         cut.Find("[data-testid=ip-row-toggle-enabled]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-save-status]").GetAttribute("data-state").Should().Be("Failed"));
         cut.Find("[data-testid=ip-save-status]").TextContent.Should().StartWith("Save failed");
-        cut.Find("[data-testid=ip-summary-enabled]").TextContent.Should().Be("16", "the failed change is not shown as applied");
+        cut.FindAll("[data-testid=ip-row]").Should().NotContain(r => r.GetAttribute("data-configuration") == "Disabled", "the failed change is not shown as applied");
     }
 
     [Fact]
@@ -157,7 +157,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     [Fact]
     public void RuntimeEvidenceSourcesAreEditedAsIdentifiersAndASasUrlIsRejected()
     {
-        var cut = Open();
+        var cut = Open().WithAdvancedOpen();
         cut.Find("[data-testid=ip-runtime-sources-toggle]").Click();
         cut.Find("[data-testid=ip-runtime-summary]").TextContent.Should().Contain("Not configured");
         cut.Find("[data-testid=ip-runtime-policy-lag]").TextContent.Should().Be("Not configured");

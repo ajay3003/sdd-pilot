@@ -11,7 +11,10 @@ using Moq;
 
 namespace BirkNext.Web.Tests.Components;
 
-/// <summary>Application messaging (Wolverine) presentation: compact, text badges, configuration never shown as runtime, explicit binding.</summary>
+/// <summary>
+/// Application messaging (Wolverine). Source Analysis owns the evidence (Source Analysis → Application messaging: compact text badges,
+/// configuration never shown as runtime); Target Environment → Integrations owns the evidence scope and the explicit IQR binding (Advanced).
+/// </summary>
 public sealed class ApplicationMessagingUiTests : BunitContext
 {
     private readonly FakeIntegrationCatalogApi _api = new() { Catalog = M2lbFixture.Catalog(), Readiness = M2lbFixture.Readiness(), Result = M2lbFixture.Result() };
@@ -47,13 +50,26 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     {
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development } });
+        Services.AddSingleton(context.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
-    private IRenderedComponent<IntegrationsPane> Pane() =>
-        Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development }));
+    /// <summary>The evidence, where Source Analysis shows it.</summary>
+    private IRenderedComponent<SourceAnalysisApplicationMessaging> Pane()
+    {
+        var cut = Render<SourceAnalysisApplicationMessaging>();
+        cut.WaitForState(() => cut.FindAll("[data-testid=am]").Count > 0 || cut.FindAll("[data-testid=sam-error]").Count > 0);
+        return cut;
+    }
 
-    private static string Overview(IRenderedComponent<IntegrationsPane> cut, string key) => cut.Find($"[data-testid=am-overview-{key}] .am-badge").TextContent;
+    /// <summary>The environment's evidence scope and IQR links, where Target Environment → Integrations configures them (Advanced).</summary>
+    private IRenderedComponent<IntegrationsPane> Config() =>
+        Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development })).WithAdvancedOpen();
+
+    private static string Overview<TComponent>(IRenderedComponent<TComponent> cut, string key) where TComponent : Microsoft.AspNetCore.Components.IComponent =>
+        cut.Find($"[data-testid=am-overview-{key}] .am-badge").TextContent;
 
     [Fact]
     public void WithoutAnalyzedSourceEverythingIsNotAssessedAndNothingIsAbsent()
@@ -73,16 +89,19 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     [Fact]
     public void SourceComesFromSourceAnalysisSnapshotsNotAnUpload()
     {
-        var cut = Pane();
+        var cut = Config();
         cut.FindAll("[data-testid=am] input[type=file]").Should().BeEmpty("source is uploaded only in Source Analysis");
         cut.Find("[data-testid=am-source-gate]").TextContent.Should().Contain("Messaging source").And.Contain("Required for source checks");
         cut.Find("[data-testid=am-primary]").Id.Should().Be(ServiceBusPlatformPanel.MessagingUploadId);
         cut.Find("[data-testid=am-use-scope]").HasAttribute("disabled").Should().BeTrue("nothing is chosen until the user picks a snapshot");
         cut.Find("[data-testid=am-use-scope]").TextContent.Should().Be("Use messaging evidence from this snapshot");
-        cut.Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only").And.Contain("Source Analysis snapshots");
+        Pane().Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only").And.Contain("Source Analysis snapshots");
 
         _api.Messaging = Set();
-        Pane().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence from this scope");
+        Config().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence from this scope");
+        var evidence = Pane();
+        evidence.FindAll("[data-testid=am-use-scope]").Should().BeEmpty("Source Analysis shows the evidence; the scope is configured in Integrations");
+        evidence.FindAll("[data-testid=am-binding]").Should().BeEmpty("the IQR link is configured in Integrations");
     }
 
     [Fact]
@@ -156,30 +175,33 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     }
 
     [Fact]
-    public void BindingIsExplicitSavedImmediatelyAndShownOnTheIntegration()
+    public void BindingIsExplicitSavedImmediately_AndTheWolverineDetailStaysInSourceAnalysis()
     {
         _api.Messaging = Set();
         var consumer = _api.Catalog.Integrations.First(i => i.Consumer.DisplayName?.Contains("Hendelse", StringComparison.Ordinal) == true).Consumer.DisplayName!;
-        var cut = Pane();
+        var cut = Config();
+        cut.FindAll("[data-testid=am-link-row]").Select(r => r.GetAttribute("data-application")).Should().Equal("M2LB.Hendelse.BiRK.Adapter", "M2LB.Person.Api", "M2LB.Revisjon.Worker");
         cut.FindAll("[data-testid=am-binding]")[0].Change(consumer);
         _api.Bindings.Should().Equal(("M2LB.Hendelse.BiRK.Adapter", consumer));
         cut.Find("[data-testid=am-status]").TextContent.Should().StartWith("Saved.");
+        cut.Find("[data-testid=am-open-source-evidence]").GetAttribute("href").Should().Be("/source-analysis/application-messaging");
         var row = cut.FindAll("[data-testid=ip-row]").First(r => _api.Catalog.Integrations.Single(i => i.Id == r.GetAttribute("data-integration-id")).Consumer.DisplayName == consumer);
         row.QuerySelector("[data-testid=ip-row-view]")!.Click();
-        cut.Find("[data-testid=ip-detail-messaging]").TextContent.Should().Contain("M2LB.Hendelse.BiRK.Adapter · Wolverine Confirmed").And.Contain("Runtime processing Not assessed");
+        cut.FindAll("[data-testid=ip-detail-messaging]").Should().BeEmpty("Wolverine usage, handlers and retry are Source Analysis evidence, not integration configuration");
+        cut.Find("[data-testid=am]").TextContent.Should().NotContainAny("Wolverine package", "Handler evidence", "Retry policy");
     }
 
     [Fact]
     public void UsingASnapshotBuildsTheEvidenceFromExactlyThatSnapshot()
     {
         _api.Messaging = null;
-        var cut = Pane();
+        var cut = Config();
         _api.Messaging = Set();
         var snapshot = _api.SourceOptions.Snapshots[0];
         cut.Find("[data-testid=am-use-current]").Click();
         cut.Find("[data-testid=am-primary-fingerprint]").TextContent.Should().Be("c850a1b2…");
         cut.Find("[data-testid=am-use-scope]").Click();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=am-app]").Should().HaveCount(3));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=am-link-row]").Should().HaveCount(3));
         _api.UsedScopes.Should().ContainSingle(s => s.PrimarySnapshotId == snapshot.SnapshotId && s.RelatedSnapshotIds.Count == 0);
         cut.Find("[data-testid=am-status]").TextContent.Should().StartWith("Saved.");
     }
@@ -223,7 +245,7 @@ public sealed class ApplicationMessagingUiTests : BunitContext
         cut.Find("[data-testid=am-detection]").TextContent.Should().Be("Likely");
         cut.Find("[data-testid=am-mapping]").TextContent.Should().Be("Not assessed");
         cut.Find("[data-testid=am-meaning]").TextContent.Should().Contain("AddM2LBWolverine").And.Contain("outside the analyzed source");
-        cut.Find("[data-testid=am-binding]").TextContent.Should().Contain("Not linked").And.NotContain("Not bound");
+        cut.Find("[data-testid=am-detail]").TextContent.Should().Contain("Not linked").And.NotContain("Not bound");
         _api.Messaging.Applications[0].BoundConsumer.Should().BeNull();
         cut.Find("[data-testid=am-limitations]").TextContent.Should().Contain("Cross-service message identity");
         cut.Find("[data-testid=am-runtime-evidence]").TextContent.Should().NotContainAny("0 executions", "0 retries", "0 ms");
@@ -251,9 +273,6 @@ public sealed class ApplicationMessagingUiTests : BunitContext
 
     private IRenderedComponent<IntegrationQualityReview> Iqr()
     {
-        var context = new Mock<IFrontendAnalysisContextFactory>();
-        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development } });
-        Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
         Services.AddSingleton<IReportExportService, ReportExportService>();
         Services.AddSingleton<RuntimeReviewSessionService>();
