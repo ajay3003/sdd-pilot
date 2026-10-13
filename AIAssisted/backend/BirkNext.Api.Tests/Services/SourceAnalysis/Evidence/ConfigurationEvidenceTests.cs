@@ -17,8 +17,9 @@ public sealed class ConfigurationEvidenceTests
     public void Entries_are_categorized_with_safe_previews_for_non_sensitive_values_only()
     {
         var c = Acme();
-        Entry(c, "Web/appsettings.json", "AzureAd:ClientId").Should().Match<ConfigurationEntry>(e => e.Category == ConfigurationCategory.Authentication && e.ValueKind == ConfigurationValueKind.Identifier
-            && e.ValuePreviewSafe == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" && e.Component == "Web");
+        // Tenant, subscription, object, principal and client ids are identifiers that are never previewed (same rule for every environment).
+        Entry(c, "Web/appsettings.json", "AzureAd:ClientId").Should().Match<ConfigurationEntry>(e => e.Category == ConfigurationCategory.Authentication
+            && e.Sensitivity == ConfigurationSensitivity.Sensitive && e.ValuePreviewSafe == null && e.Component == "Web");
         Entry(c, "Web/appsettings.json", "ServiceBus:Topic").Should().Match<ConfigurationEntry>(e => e.Category == ConfigurationCategory.Messaging && e.ValueKind == ConfigurationValueKind.EntityName && e.ValuePreviewSafe == "orders-created");
         Entry(c, "Web/appsettings.json", "Payments:BaseUrl").Should().Match<ConfigurationEntry>(e => e.ValueKind == ConfigurationValueKind.Url && e.ValuePreviewSafe == "https://payments.example.com/v2");
         Entry(c, "Web/appsettings.json", "FeatureManagement:NewCheckout").Category.Should().Be(ConfigurationCategory.FeatureFlags);

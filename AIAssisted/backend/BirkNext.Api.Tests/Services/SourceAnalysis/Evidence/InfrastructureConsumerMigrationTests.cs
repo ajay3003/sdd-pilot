@@ -204,6 +204,7 @@ public sealed class InfrastructureConsumerMigrationTests
             ["Services/Integrations/M2lbDevIntegrationSeed.cs"] = "DEV seed of configured values from a developer-side audit (comments only; nothing parsed)",
             ["Services/Integrations/M2lbDevScimSeed.cs"] = "DEV seed of configured values from a developer-side audit (comments only; nothing parsed)",
             ["Services/Integrations/M2lbDevServiceBusSeed.cs"] = "DEV seed of configured values from a developer-side audit (comments only; nothing parsed)",
+            ["Services/PipelineReview/PipelineReviewBuilder.cs"] = "interprets CI/CD step evidence (terraform plan/apply steps detected by the Source Analysis pipeline analyzer); finding text only, nothing parsed",
         };
         var offenders = Directory.GetFiles(api, "*.cs", SearchOption.AllDirectories)
             .Select(f => (Full: f, Rel: Path.GetRelativePath(api, f).Replace('\\', '/')))
