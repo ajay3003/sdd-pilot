@@ -296,10 +296,38 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             contract.RequiredUnboundFields.Count == 0 ? "None."
                 : $"{contract.RequiredUnboundFields.Count} required field(s) are not filled by BirkNext ({string.Join(", ", contract.RequiredUnboundFields.Take(10).Select(field => field.Path))}). They must come from the app itself — not verified; Altinn's validation step of the first live run will show it.",
             Blocking: false));
-        checks.Add(new("process-plan", "Process plan", contract.ProcessTasks.Count > 0, contract.ProcessTasks.Count > 0
-            ? $"process/next × {contract.ProcessTasks.Count} ({string.Join(" → ", contract.ProcessTasks.Select(task => $"{task.TaskId} ({task.TaskType})"))} → end); a data task's process/next is authorized by \"write\"."
-            : "Not known: the app's process definition (process.bpmn) is not in the contract, so process/next is never called."));
+        var process = contract.Process;
+        checks.Add(new("process-plan", "Process contract", process.Confirmed, process.Confirmed
+            ? $"{ProcessStatusLabel(process.Status)}: process/next × {process.Transitions} ({string.Join(" → ", process.PlannedTasks.Select(task => $"{task.TaskId} ({task.TaskType})"))}), {process.Operation.ToLowerInvariant()}; maximum {process.MaxTransitions} process transition(s). {process.ExpectedPostCondition} A data task's process/next is authorized by \"write\"."
+            : $"{ProcessStatusLabel(process.Status)} — {string.Join(" ", process.Reasons.Count > 0 ? process.Reasons : [process.Summary])} process/next is never called."));
+        preview.AddRange(ProcessFacts(process));
         return new JourneyPackValidation(checks, preview);
+    }
+
+    internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
+    {
+        AltinnProcessContractStatus.ConfirmedForCurrentOperation => "Confirmed for current operation",
+        AltinnProcessContractStatus.Partial => "Partial",
+        AltinnProcessContractStatus.Conflict => "Conflict",
+        _ => "Not confirmed",
+    };
+
+    /// <summary>The process contract as a tester reads it: what is known for the one intended operation, and what is not (the full topology).</summary>
+    internal static IReadOnlyList<JourneyEvidenceFact> ProcessFacts(AltinnProcessAssessment process)
+    {
+        var facts = new List<JourneyEvidenceFact>
+        {
+            new("Process contract", ProcessStatusLabel(process.Status)),
+            new("Process source", process.Sources.Count > 0 ? string.Join(" + ", process.Sources) : "None"),
+        };
+        if (process.DeclaredTaskCount is { } count) facts.Add(new("Declared process tasks", count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        if (process.PlannedTasks.Count > 0) facts.Add(new("Task", string.Join(" → ", process.PlannedTasks.Select(AltinnProcessContractEvaluator.Describe))));
+        facts.Add(new("Process action", process.Operation));
+        facts.Add(new("Execution bound", $"Maximum {process.MaxTransitions} process transition(s)"));
+        facts.Add(new("Expected verification", "Returned AppProcessState must indicate process completion; otherwise stop."));
+        facts.Add(new("BPMN topology", process.TopologyKnown ? "Known from process.bpmn" : "Not known (not needed for this operation)"));
+        facts.Add(new("process.bpmn", process.StaticDefinition));
+        return facts;
     }
 
     public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key switch
@@ -394,8 +422,18 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         Scenarios: SubmissionScenarios),
                     new("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract,
                         contract.Complete ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
-                        contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, {contract.ProcessTasks.Count} data task(s)."
+                        contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, process confirmed for {contract.Process.Transitions} bounded transition(s)."
                             : $"Incomplete — {string.Join(" ", contract.Missing)}", Scenarios: SubmissionScenarios),
+                    // Shown on its own so the tester sees what is known for the one intended operation; the contract row above already gates it.
+                    new("process-contract", "Process contract (current operation)", JourneyPrerequisiteCategory.Contract,
+                        contract.Process.Status switch
+                        {
+                            AltinnProcessContractStatus.ConfirmedForCurrentOperation => JourneyReadinessState.Ready,
+                            AltinnProcessContractStatus.Partial => JourneyReadinessState.Partial,
+                            _ => JourneyReadinessState.NotReady,
+                        },
+                        contract.Process.Confirmed ? contract.Process.Summary : $"{ProcessStatusLabel(contract.Process.Status)} — {string.Join(" ", contract.Process.Reasons)}",
+                        Scenarios: SubmissionScenarios, Mandatory: false),
                     new("report-xsd", "Report XSD (MM validation)", JourneyPrerequisiteCategory.Contract,
                         xsdBound ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
                         xsdBound ? "An XML Schema from Source Analysis is bound to the message flow. XSD exists ≠ runtime payload validated."

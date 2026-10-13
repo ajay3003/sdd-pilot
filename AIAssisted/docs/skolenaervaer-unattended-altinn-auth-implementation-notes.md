@@ -155,7 +155,7 @@ The only external requests were three anonymous, read-only GETs: no token, cooki
 ### 10.2 Remaining first-run facts
 
 - **App source:** `buf/skolenaervaer` is not in any Source Analysis snapshot. `Tiltak 2` is the Meldingsutveksler (MU) source, which consumes this app as service owner; it is not the app's policy.
-- **Process contract:** `process.bpmn` is not published. Only public metadata shows the form data type on `Task_1`. The contract therefore stays incomplete, the submission prerequisite stays Not ready, and the executor never calls process/next. This is the blocking item (decision D below).
+- **Process contract:** superseded by §11. `process.bpmn` is optional. The app's deployed OpenAPI contract confirms the one bounded process/next BirkNext performs.
 - **Meldingshode:** the real schema requires `Id`, `MeldingstypeNmsp`, `FagsystemAvsender` (`Leverandor`, `Navn`, `Versjon`), `SendtTidspunkt`, `Avsender` and `Mottaker`. BirkNext fills none of them. Because form users never enter them, the app is expected to fill them, but that is unproven. Altinn validation in the first live run is the first evidence.
 - **Reporter:** a configured synthetic TestID person with `AltinnRole: PRIV` and `AltinnProfileConfirmed: true` (Altinn's exchange requires an Altinn TT02 profile). The identifier is kept outside committed files.
 - **Client:** ID-porten TEST client id and `openid` plus the Altinn instance scopes come from Integration Quality Review. The registered redirect URI and client secret come from backend config or a secret store.
@@ -184,7 +184,79 @@ It makes no network call, holds no token and records no history. Its preview is 
 6. The backend then performs, in order:
    - unattended ID-porten TEST authentication and the Altinn exchange;
    - create instance, upload XML, validate;
-   - process/next (only with a complete process contract);
+   - read the live instance, check it is at `Task_1` (data) and completable, then exactly one process/next (§11);
    - read the receipt.
 7. Optionally read the Storage evidence with the same token.
 8. Stop. One attempt; nothing is retried. MU, MM, report and Bufdata are observed later.
+
+## 11. Process contract without process.bpmn (2026-10-13)
+
+The requirement is a **verified process execution contract** for the one operation BirkNext performs, not the `process.bpmn` file. `process.bpmn` stays supported and optional: when uploaded through Source Analysis it is parsed, compared with the deployed contract, and makes the BPMN topology known.
+
+### 11.1 Evidence: the deployed OpenAPI contract
+
+- **Document:** app-lib serves it at `https://buf.apps.tt02.altinn.no/buf/skolenaervaer/v1/customOpenapi.json`.
+  - Read on 2026-10-13 with one anonymous GET: HTTP 200, 83,851 bytes, sha256 `4f8b4ba04c1a034ac21437a42560ab40ef389409e05ac306cab5591378263654`, app-lib 8.12.7.264.
+  - It matches the copy the user supplied.
+  - BirkNext reads it from the TT02 app host itself, with the public metadata ("Read public TT02 metadata"), so the evidence is tied to `buf/skolenaervaer` in TT02.
+  - Only normalized facts and the fingerprint are kept, never the document.
+- **Generated task table** (`CustomOpenApiController.GetIntroDoc`):
+  - It lists `IProcessReader.GetProcessTasks()`, which is every BPMN `task` plus every `serviceTask`. Gateways and events are not listed.
+  - The Type column is `taskExtension.taskType`, falling back to the task name. Actions is `taskExtension.actions`: an empty cell means an empty list, and `[no actions]` means no list at all.
+  - For this app it shows exactly one task: `Task_1 · Utfylling · data`, with no actions.
+  - The Type `data` comes from `taskType`, because the fallback would have shown "Utfylling".
+- **Data types:** `bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn`, FormData (AutoCreate), application/xml, on `Task_1`. The application metadata (`dataTypes[].taskId`) says the same.
+- **Operation:**
+  - `PUT /buf/skolenaervaer/instances/{instanceOwnerPartyId}/{instanceGuid}/process/next`.
+  - The `ProcessNext` body (`action`, `actionOnBehalfOf`) is optional.
+  - A 200 returns `AppProcessState` (`started`, `startEvent`, `currentTask`, `ended`, `endEvent`, `actions`).
+
+### 11.2 Altinn semantics (app-lib 8.12.7 source)
+
+- **Only tasks and service tasks are executed.** `ProcessReader` models only start events, tasks, service tasks, exclusive gateways, end events and sequence flows.
+  - With one listed task, no second task or service task can exist.
+  - A gateway or event after `Task_1` can exist and is not listed. Its only possible targets are an end event or `Task_1` again.
+- **An omitted body is the normal completion of the task.** `ProcessEngine.ProcessNext` uses `request.Action ?? ConvertTaskTypeToAction(taskType)`, which is `write` for a data task.
+  - `ProcessEngineAuthorizer` authorizes it with `write`, which the confirmed policy grants PRIV.
+- **Validation runs inside process/next.** `ValidateInstanceAtTask` counts error-severity issues; any error returns `Conflict`, which the controller maps to 409.
+  - A process that has ended or not started is also 409.
+  - An authorization failure is 403.
+- **Service tasks run automatically, user tasks do not.** The loop continues only while the new current task is a service task, so one call never passes another user task.
+- **Reaching an end event sets three fields together:** `CurrentTask = null`, `Ended = now` and `EndEvent = <id>`. So only all three count as "process ended".
+
+### 11.3 What BirkNext does
+
+- **Assessment:** `AltinnProcessContractEvaluator`:
+  - **ConfirmedForCurrentOperation** when all of these hold:
+    - the planned tasks are known (from process.bpmn, or a single deployed task);
+    - the form's data type belongs to the first task;
+    - every planned task is a data task with no declared actions;
+    - the deployed contract (when present) declares process/next with an optional body and a response with `currentTask`, `ended` and `endEvent`;
+    - the plan needs no more transitions than `AltinnTesting:MaxProcessTransitions`. The default is 1, and values outside 1–10 are treated as 1. A longer plan is refused, never truncated.
+  - **Partial**: a specific fact is missing, and the reason is stated. Examples: more than one deployed task with no order, declared actions, a required body, a missing response field, a non-data task, or a plan over the bound.
+  - **NotConfirmed**: there is no deployed task table and no process.bpmn.
+  - **Conflict**: process.bpmn and the deployed tasks differ, or the metadata and the deployed contract disagree on the form's task.
+- **Before process/next:** the executor reads the live instance (GET).
+  - It must not have ended, must be at the planned task, of the planned type (`altinnTaskType`), and `validated.canCompleteTask` must not be false.
+  - Altinn's validation earlier in the run must have reported 0 errors.
+  - The executor then makes exactly one process/next. It is never retried.
+- **After process/next:** the returned `AppProcessState` is classified.
+  - **ProcessEnded**: `currentTask` null, `ended` set and `endEvent` set. Only this, or the planned next task inside a verified multi-task plan, continues.
+  - **UnexpectedNextTask**: a current task is returned, including `Task_1` again. The run stops.
+  - **UnexpectedProcessState**: anything else. The run stops.
+  - No second process/next is made.
+- **History facts:** each is recorded separately: `Validated`, `Live task before transition`, `Process advanced`, `Process ended`, `Submitted` (Altinn only) and `Receipt confirmed`.
+
+### 11.4 Conclusion for E2E-01
+
+- **Process contract:** confirmed for one bounded transition, because the TT02 deployed contract, the metadata, the live-state checks and the post-condition all line up. That was decision A of this audit.
+- **The BPMN topology is not known, and this operation does not need it.**
+- **process.bpmn is no longer a blocker.**
+- **Still open before the first real run (decision B, configuration):**
+  - apply the policy confirmation (§10.1);
+  - configure the ID-porten TEST client, its redirect URI and the secret;
+  - configure the synthetic reporter alias, with a confirmed profile;
+  - set up the IQR Altinn test configuration;
+  - approve the synthetic child;
+  - read the public TT02 metadata once in the target environment, so that the deployed contract is stored for it.
+- **Meldingshode** (§10.2) remains a first-run risk.

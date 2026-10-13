@@ -134,6 +134,9 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                             var schema = ParseSchema(respSchemaEl, new Dictionary<string, NormalizedSchema>());
                             if (schema != null)
                                 operation.ResponseSchemas[respProp.Name] = schema;
+                            if (respSchemaEl.TryGetProperty("$ref", out var respRef) && respRef.GetString() is { } respPointer
+                                && respPointer.StartsWith("#/components/schemas/", StringComparison.Ordinal))
+                                operation.ResponseSchemaRefs[respProp.Name] = respPointer["#/components/schemas/".Length..];
                         }
                     }
                 }

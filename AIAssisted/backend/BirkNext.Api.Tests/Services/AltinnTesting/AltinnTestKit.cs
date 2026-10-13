@@ -75,7 +75,8 @@ internal sealed class AltinnTestKit
     }
 
     public AltinnAppContractService Contracts(IntegrationJourneyHarness.FakeMessageFlows flows, IntegrationJourneyHarness.FakeSources? sources = null, TimeProvider? clock = null) =>
-        new(Factory, Policy, flows, sources ?? new IntegrationJourneyHarness.FakeSources(), new SkoleNaervaerAltinnForm(), clock ?? TimeProvider.System);
+        new(Factory, Policy, flows, sources ?? new IntegrationJourneyHarness.FakeSources(), new SkoleNaervaerAltinnForm(), clock ?? TimeProvider.System,
+            new BirkNext.Api.Services.ContractAnalysis.OpenApiExtractor(NullLogger<BirkNext.Api.Services.ContractAnalysis.OpenApiExtractor>.Instance));
 
     public IdPortenTestSignIn SignIn(IntegrationJourneyHarness.FakeMessageFlows flows, AltinnTestSessionCache cache, TimeProvider? clock = null, ListLogger<IdPortenTestSignIn>? logger = null) =>
         new(Factory, Policy, flows, cache, clock ?? TimeProvider.System, logger ?? new ListLogger<IdPortenTestSignIn>());
@@ -119,6 +120,43 @@ internal sealed class AltinnTestKit
                 "IdentifikatorType": { "properties": { "Fodselsnummer": { "type": "string", "pattern": "\\d{11}" } } } } }
             """;
         return doubleEncoded ? System.Text.Json.JsonSerializer.Serialize(schema) : schema;
+    }
+
+    /// <summary>The data type id the real buf/skolenaervaer app binds its form to (public TT02 metadata and deployed OpenAPI, read 2026-10-13).</summary>
+    public const string RealFormDataType = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
+
+    /// <summary>One process-task row exactly as app-lib's generated OpenAPI writes it (an empty action list is an empty cell).</summary>
+    public const string RealTaskRow = "| Task_1 | Utfylling | data |  |";
+
+    /// <summary>
+    /// An app's deployed OpenAPI document (v1/customOpenapi.json) in the shape app-lib 8 generates: the data-type and process-task tables in
+    /// info.description and the process/next operation with its AppProcessState response. Defaults mirror the facts of the real
+    /// buf/skolenaervaer TT02 document (one data task Task_1 · Utfylling, no actions, optional body); only what BirkNext reads is included.
+    /// </summary>
+    public static string DeployedOpenApi(string dataType = "model", string taskRows = RealTaskRow, bool processNext = true, bool bodyRequired = false,
+        string stateFields = "\"started\": {}, \"startEvent\": {}, \"currentTask\": {}, \"ended\": {}, \"endEvent\": {}, \"actions\": {}", string app = AppId, bool taskTable = true)
+    {
+        var next = processNext ? $$"""
+            ,"/{{app}}/instances/{instanceOwnerPartyId}/{instanceGuid}/process/next": { "put": { "summary": "Move instance to next process step",
+                "requestBody": { "description": "Optional body with specification of the action to perform", {{(bodyRequired ? "\"required\": true," : "")}}
+                  "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProcessNext" } } } },
+                "responses": { "200": { "description": "Instance moved to next process step. Returns the new process state",
+                  "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AppProcessState" } } } }, "409": { "description": "Problem details" } } } }
+            """ : "";
+        // JSON escapes (\r\n), not control characters: the table lives inside the description string.
+        var rows = taskRows.Replace("\n", @"\n", StringComparison.Ordinal);
+        var tasks = taskTable ? @"\r\n## This app has the following process tasks:\r\n| TaskId | Name | Type | Actions |\r\n|--------|------|------|---------|\r\n" + rows + @"\n" : "";
+        return $$"""
+            { "openapi": "3.0.4",
+              "info": { "title": "Altinn 3 App API for School attendance", "version": "8.12.7.264",
+                "description": "App API description\r\n\nThis app has the following data types:\n| DataTypeId | Type | Allowed number | MimeTypes | TaskId |\n|------------|------|----------------|-----------|--------|\n|ref-data-as-pdf|Attachment|-|application/pdf||\n|{{dataType}}|FormData (AutoCreate)|1|application/xml|Task_1|\n{{tasks}}" },
+              "paths": {
+                "/{{app}}/instances": { "post": { "summary": "Create new instance", "responses": { "201": { "description": "Instance created" } } } }
+                {{next}} },
+              "components": { "schemas": {
+                "ProcessNext": { "type": "object", "properties": { "action": { "type": "string", "nullable": true }, "actionOnBehalfOf": { "type": "string", "nullable": true } }, "additionalProperties": false },
+                "AppProcessState": { "type": "object", "properties": { {{stateFields}} }, "additionalProperties": false } } } }
+            """;
     }
 
     public static string Process(string secondTaskType = "") => $$"""
@@ -184,6 +222,14 @@ internal sealed class FakeAltinn : HttpMessageHandler
     /// <summary>Status overrides per stage: discovery, token, exchange, metadata, schema, party, instance, data, validate, next, read.</summary>
     public Dictionary<string, HttpStatusCode> Fail { get; } = new(StringComparer.Ordinal);
     public string ValidationJson { get; set; } = "[]";
+    /// <summary>The app's deployed OpenAPI document (v1/customOpenapi.json); null answers 404 like an app that does not serve one.</summary>
+    public string? OpenApiJson { get; set; } = AltinnTestKit.DeployedOpenApi();
+    /// <summary>The live instance read before process/next (defaults to an active instance at Task_1, a completable data task).</summary>
+    public string? LiveInstanceJson { get; set; }
+    /// <summary>The AppProcessState process/next returns (defaults to an ended process).</summary>
+    public string NextJson { get; set; } = """{"started":"2026-10-12T09:00:01Z","currentTask":null,"ended":"2026-10-12T10:00:00Z","endEvent":"EndEvent_1"}""";
+    /// <summary>Set once process/next has answered successfully: later instance reads return the completed instance.</summary>
+    public bool Advanced { get; private set; }
     /// <summary>The Altinn Storage GET instance answer (read-only evidence). Defaults to an instance at Task_1.</summary>
     public string StorageInstanceJson { get; set; } = StorageInstances.ActiveTask();
     public string DiscoveryIssuer { get; set; } = "https://test.idporten.no";
@@ -214,11 +260,13 @@ internal sealed class FakeAltinn : HttpMessageHandler
             ("GET", AltinnTestingPolicy.AltinnTokenExchange) => ("exchange", $"\"{AltinnTestKit.AltinnToken}\""),
             ("GET", $"{AltinnTestKit.AppBase}api/v1/applicationmetadata") => ("metadata", AltinnTestKit.ApplicationMetadata()),
             ("GET", $"{AltinnTestKit.AppBase}api/jsonschema/model") => ("schema", AltinnTestKit.Schema(doubleEncoded: true)),
+            ("GET", $"{AltinnTestKit.AppBase}v1/customOpenapi.json") when OpenApiJson is not null => ("openapi", OpenApiJson),
             ("GET", $"{AltinnTestKit.AppBase}api/authorization/parties/current?returnPartyObject=true") => ("party", $$"""{"partyId":{{AltinnTestKit.PartyId}},"name":"Synthetic reporter"}"""),
             ("POST", var u) when u == $"{AltinnTestKit.AppBase}instances?instanceOwnerPartyId={AltinnTestKit.PartyId}" => ("instance", Instance(ended: false)),
             ("PUT", var u) when u == $"{instance}/data/{AltinnTestKit.DataGuid:D}" => ("data", "{}"),
             ("GET", var u) when u == $"{instance}/validate" => ("validate", ValidationJson),
-            ("PUT", var u) when u == $"{instance}/process/next" => ("next", """{"currentTask":null,"ended":"2026-10-12T10:00:00Z","endEvent":"EndEvent_1"}"""),
+            ("PUT", var u) when u == $"{instance}/process/next" => ("next", NextJson),
+            ("GET", var u) when u == instance && !Advanced => ("live", LiveInstanceJson ?? Instance(ended: false)),
             ("GET", var u) when u == instance => ("read", Instance(ended: true)),
             ("GET", var u) when u == $"{AltinnTestingPolicy.Tt02StorageInstances}{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}" => ("storage", StorageInstanceJson),
             _ => ("unknown", ""),
@@ -228,8 +276,10 @@ internal sealed class FakeAltinn : HttpMessageHandler
         if (stage == "token" && request.Headers.Authorization?.Scheme == "Basic" && !Fail.ContainsKey(stage)) return HeadlessToken(request.Headers.Authorization.Parameter, body ?? "");
         if (Fail.TryGetValue(stage, out var status)) return new HttpResponseMessage(status) { Content = new StringContent("""{"title":"failure with a SECRET-LOOKING body"}""") };
         if ((stage is "exchange") && request.Headers.Authorization?.Parameter != AltinnTestKit.IdPortenToken) return new HttpResponseMessage(HttpStatusCode.Unauthorized);
-        if (stage is "party" or "instance" or "data" or "validate" or "next" or "read" or "storage" && request.Headers.Authorization?.Parameter != AltinnTestKit.AltinnToken)
+        if (stage is "party" or "instance" or "data" or "validate" or "next" or "live" or "read" or "storage" && request.Headers.Authorization?.Parameter != AltinnTestKit.AltinnToken)
             return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        if (stage == "next") Advanced = true;
+        if (stage == "instance") Advanced = false;
         return new HttpResponseMessage(stage == "instance" ? HttpStatusCode.Created : HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
     }
 
@@ -280,10 +330,19 @@ internal sealed class FakeAltinn : HttpMessageHandler
         };
     }
 
+    /// <summary>An active process at a task, shaped like Altinn's ProcessState (elementId, name, altinnTaskType, validated).</summary>
+    public static string ActiveProcess(string task = "Task_1", string type = "data", bool? canComplete = true) =>
+        $$"""{"started":"2026-10-12T09:00:01Z","startEvent":"StartEvent_1","currentTask":{"elementId":"{{task}}","name":"Utfylling","altinnTaskType":"{{type}}"{{(canComplete is { } can ? $$""","validated":{"canCompleteTask":{{(can ? "true" : "false")}}}""" : "")}}},"ended":null,"endEvent":null}""";
+
+    /// <summary>The live instance with the given process JSON (for pre-transition checks).</summary>
+    public static string InstanceWith(string process) => $$"""
+        {"id":"{{AltinnTestKit.PartyId}}/{{AltinnTestKit.InstanceGuid:D}}","data":[{"id":"{{AltinnTestKit.DataGuid:D}}","dataType":"model"}],"process":{{process}},"lastChanged":"2026-10-12T10:00:00Z"}
+        """;
+
     private static string Instance(bool ended) => $$"""
         {"id":"{{AltinnTestKit.PartyId}}/{{AltinnTestKit.InstanceGuid:D}}","instanceOwner":{"partyId":"{{AltinnTestKit.PartyId}}"},
          "data":[{"id":"{{AltinnTestKit.DataGuid:D}}","dataType":"model"}],
-         "process":{{(ended ? """{"currentTask":null,"ended":"2026-10-12T10:00:00Z","endEvent":"EndEvent_1"}""" : """{"currentTask":{"elementId":"Task_1"}}""")}},
+         "process":{{(ended ? """{"currentTask":null,"ended":"2026-10-12T10:00:00Z","endEvent":"EndEvent_1"}""" : ActiveProcess())}},
          "lastChanged":"2026-10-12T10:00:00Z"}
         """;
 }

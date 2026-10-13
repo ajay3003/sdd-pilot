@@ -201,10 +201,17 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         public string? XmlNamespace { get; init; }
         public bool XmlElementsQualified { get; init; }
         public required IReadOnlyList<AltinnSchemaField> Fields { get; init; }
-        public required IReadOnlyList<AltinnProcessTask> Tasks { get; init; }
+        /// <summary>The tasks process/next transitions from, in order, as the confirmed process contract plans them.</summary>
+        public required IReadOnlyList<AltinnDeclaredProcessTask> Plan { get; init; }
+        /// <summary>The execution bound on process/next calls for this run.</summary>
+        public required int MaxTransitions { get; init; }
         public required DateTimeOffset Created { get; init; }
         public long PartyId { get; set; }
         public AltinnInstanceState? Instance { get; set; }
+        /// <summary>Set only when Altinn's validation of this run's instance returned no errors.</summary>
+        public bool Validated { get; set; }
+        /// <summary>process/next calls made in this run (never more than <see cref="MaxTransitions"/>).</summary>
+        public int Transitions { get; set; }
     }
 
     private readonly ConcurrentDictionary<Guid, Session> _sessions = new();
@@ -254,6 +261,9 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } environment) return Blocked(context, environment);
         if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is not { } app) return Blocked(context, appReason);
         if (!contract.Complete) return Blocked(context, $"The Altinn app contract is incomplete: {string.Join(" ", contract.Missing)}");
+        // The process operation must be confirmed and bounded: a declared task alone never opens process/next.
+        if (!contract.Process.Confirmed || contract.Process.Transitions < 1 || contract.Process.Transitions > policy.MaxProcessTransitions)
+            return Blocked(context, $"The process operation is not confirmed within the execution bound: {contract.Process.Summary}");
         // A state-changing submission needs the service owner's confirmation of the app's authorization policy: re-checked here, not only in readiness.
         if (context.Scenario?.StateChanging != false)
         {
@@ -290,7 +300,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         _sessions[context.RunId] = new Session
         {
             AppBase = appBase, Token = token, FormDataTypeId = contract.FormDataTypeId!, Fields = contract.Fields, ContentType = contentType,
-            XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, Tasks = contract.ProcessTasks, Created = clock.GetUtcNow(), PartyId = party.Value,
+            XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, Plan = contract.Process.PlannedTasks, MaxTransitions = policy.MaxProcessTransitions,
+            Created = clock.GetUtcNow(), PartyId = party.Value,
         };
         return Result(context, JourneyStepState.Verified, $"{Http(result)} · app {app.Org}/{app.App} (TT02)",
             $"Authenticated: {auth.Detail} Altinn TT02 accepted the token and resolved the reporter's party. Not a submission.",
@@ -325,29 +336,67 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var (result, summary) = await altinn.ValidateAsync(session.AppBase, session.Token, session.Instance!, ct);
         if (!result.Success || summary is null) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
         var codes = summary.Codes.Count > 0 ? $" · codes {string.Join(", ", summary.Codes)}" : "";
+        session.Validated = summary.Errors == 0;
         return summary.Errors == 0
-            ? Result(context, JourneyStepState.Verified, $"{Http(result)} · 0 errors, {summary.Warnings} warning(s){codes}", "Altinn's app validation found no errors. Not yet submitted.", Reference(session.Instance!))
+            ? Result(context, JourneyStepState.Verified, $"{Http(result)} · 0 errors, {summary.Warnings} warning(s){codes}", "Altinn's app validation found no errors. Not yet submitted.", Reference(session.Instance!),
+                [new("Validated", $"0 errors, {summary.Warnings} warning(s)")])
             : Result(context, JourneyStepState.UnexpectedResult, $"{Http(result)} · {summary.Errors} error(s), {summary.Warnings} warning(s){codes}",
                 "Altinn's app validation reported errors; the report was not submitted.", Reference(session.Instance!));
     }
 
+    /// <summary>
+    /// The bounded process operation: for each planned task (one for a first run), read the live instance and check it is at that task, of
+    /// that type and completable; make exactly one process/next; classify the returned AppProcessState. Only "process ended" (or, inside a
+    /// verified multi-task plan, the planned next task) continues. Anything else stops the run; process/next is never repeated or retried.
+    /// </summary>
     private async Task<JourneyStepResult> SubmitAsync(JourneyStepContext context, Session session, CancellationToken ct)
     {
-        DateTimeOffset? ended = null;
-        for (var index = 0; index < session.Tasks.Count; index++)
+        if (!session.Validated)
+            return Result(context, JourneyStepState.Unavailable, "", "Not executed: Altinn's validation of this instance did not pass in this run, so process/next was not called.", Reference(session.Instance!));
+        if (session.Plan.Count < 1 || session.Plan.Count > session.MaxTransitions)
+            return Result(context, JourneyStepState.Unavailable, "", $"Not executed: the process plan ({session.Plan.Count} transition(s)) is outside the execution bound of {session.MaxTransitions}.", Reference(session.Instance!));
+        var facts = new List<JourneyEvidenceFact>();
+        for (var index = 0; index < session.Plan.Count; index++)
         {
-            var (result, current, end) = await altinn.ProcessNextAsync(session.AppBase, session.Token, session.Instance!, ct);
-            if (!result.Success) return Result(context, JourneyStepState.NotVerified, $"{Http(result)} · after {index} of {session.Tasks.Count} process step(s)", result.Detail, Reference(session.Instance!));
-            var expected = index + 1 < session.Tasks.Count ? session.Tasks[index + 1].TaskId : null;
-            if (expected is not null && current != expected)
-                return Result(context, JourneyStepState.UnexpectedResult, $"{Http(result)} · process at {current ?? "(none)"}", $"The process did not move to {expected} as the contract says.", Reference(session.Instance!));
-            ended = end;
+            var expected = session.Plan[index];
+            // The contract says which task the process should be at; only the live instance says where it is.
+            var (read, live) = await altinn.GetInstanceAsync(session.AppBase, session.Token, session.Instance!, session.FormDataTypeId, ct);
+            if (!read.Success || live is null)
+                return Result(context, JourneyStepState.NotVerified, Http(read), $"The live process state could not be read, so process/next was not called. {read.Detail}", Reference(session.Instance!), facts);
+            if (AltinnProcessContractEvaluator.PreTransitionProblem(live, expected) is { } problem)
+                return Result(context, JourneyStepState.UnexpectedResult, $"{Http(read)} · live task {live.CurrentTaskId ?? "(none)"} ({live.CurrentTaskType ?? "type not given"})",
+                    $"Not advanced: {problem} process/next was not called.", Reference(live), facts);
+            facts.Add(new("Live task before transition", $"{expected.TaskId} · {expected.TaskType}"));
+            if (session.Transitions >= session.MaxTransitions)
+                return Result(context, JourneyStepState.UnexpectedResult, "", $"Not advanced: the execution bound of {session.MaxTransitions} process transition(s) is reached.", Reference(live), facts);
+
+            session.Transitions++;
+            var (result, state) = await altinn.ProcessNextAsync(session.AppBase, session.Token, live, ct);
+            if (!result.Success || state is null)
+                return Result(context, JourneyStepState.NotVerified, $"{Http(result)} · process/next {session.Transitions} of {session.Plan.Count}",
+                    $"{result.Detail} Not retried; nothing further was sent.", Reference(live), facts);
+            facts.Add(new("Process advanced", $"{session.Transitions} of at most {session.MaxTransitions} transition(s)"));
+            var nextTask = index + 1 < session.Plan.Count ? session.Plan[index + 1].TaskId : null;
+            switch (AltinnProcessContractEvaluator.Classify(state, nextTask))
+            {
+                case AltinnTransitionOutcome.ProcessEnded:
+                    facts.Add(new("Process ended", $"end event {state.EndEvent} · {state.Ended:yyyy-MM-dd HH:mm:ss} UTC"));
+                    facts.Add(new("Submitted", "process ended (Altinn only)"));
+                    return Result(context, JourneyStepState.Verified, $"{Http(result)} · process/next × {session.Transitions} · ended {state.Ended:yyyy-MM-dd HH:mm:ss} UTC · end event {state.EndEvent}",
+                        "Submitted in Altinn: the returned process state shows the process ended. Not received by MU and not processed by MM or Skolenærværsrapport.", Reference(live), facts);
+                case AltinnTransitionOutcome.MovedToExpectedTask:
+                    continue;
+                case AltinnTransitionOutcome.UnexpectedNextTask:
+                    facts.Add(new("Unexpected next task", $"{state.CurrentTaskId} ({state.CurrentTaskType ?? "type not given"})"));
+                    return Result(context, JourneyStepState.UnexpectedResult, $"{Http(result)} · process at {state.CurrentTaskId} ({state.CurrentTaskType ?? "type not given"})",
+                        $"Stopped: after process/next the instance is at {state.CurrentTaskId}, and no further transition is approved. No second process/next was made.", Reference(live), facts);
+                default:
+                    facts.Add(new("Unexpected process state", "neither ended nor at a task"));
+                    return Result(context, JourneyStepState.UnexpectedResult, $"{Http(result)} · ended {(state.Ended is null ? "not set" : "set")} · end event {state.EndEvent ?? "not set"}",
+                        "Stopped: the returned process state shows neither a completed process (ended, endEvent, no current task) nor a current task. Nothing further was sent.", Reference(live), facts);
+            }
         }
-        return ended is not null
-            ? Result(context, JourneyStepState.Verified, $"Process advanced {session.Tasks.Count} time(s) · ended {ended:yyyy-MM-dd HH:mm:ss} UTC",
-                "Submitted in Altinn: the instance process has ended. Not received by MU and not processed by MM or Skolenærværsrapport.", Reference(session.Instance!),
-                [new("Process advanced", $"{session.Tasks.Count} time(s)"), new("Submitted", "process ended (Altinn only)")])
-            : Result(context, JourneyStepState.UnexpectedResult, $"Process advanced {session.Tasks.Count} time(s) · not ended", "The process did not end after the contract's tasks.", Reference(session.Instance!));
+        return Result(context, JourneyStepState.UnexpectedResult, "", "Stopped: the process plan finished without the process ending.", Reference(session.Instance!), facts);
     }
 
     private async Task<JourneyStepResult> ReceiptAsync(JourneyStepContext context, Session session, CancellationToken ct)
@@ -357,7 +406,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         return instance.Ended is { } ended
             ? Result(context, JourneyStepState.Verified,
                 $"{Http(result)} · receipt: instance {Reference(instance)} · completed {ended:yyyy-MM-dd HH:mm:ss} UTC · end event {instance.EndEvent ?? "(not given)"}",
-                "Altinn receipt: the instance is completed in Altinn. This is not evidence that MU received, MM processed or Skolenærværsrapport stored the report.", Reference(instance))
+                "Altinn receipt: the instance is completed in Altinn. This is not evidence that MU received, MM processed or Skolenærværsrapport stored the report.", Reference(instance),
+                [new("Receipt confirmed", "instance completed in Altinn (read back)")])
             : Result(context, JourneyStepState.NotVerified, $"{Http(result)} · instance {Reference(instance)} · not completed (current task {instance.CurrentTaskId ?? "none"})",
                 "Altinn does not show the instance as completed.", Reference(instance));
     }

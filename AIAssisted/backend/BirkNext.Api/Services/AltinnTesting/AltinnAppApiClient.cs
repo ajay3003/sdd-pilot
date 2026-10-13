@@ -9,7 +9,16 @@ namespace BirkNext.Api.Services.AltinnTesting;
 /// <summary>One Altinn App API answer reduced to safe facts: HTTP status, and for instances only ids/process state — never the body.</summary>
 public sealed record AltinnCallResult(bool Success, HttpStatusCode Status, string Detail);
 
-public sealed record AltinnInstanceState(long PartyId, Guid InstanceGuid, Guid? FormDataGuid, string? CurrentTaskId, DateTimeOffset? Ended, string? EndEvent, DateTimeOffset? LastChanged);
+public sealed record AltinnInstanceState(long PartyId, Guid InstanceGuid, Guid? FormDataGuid, string? CurrentTaskId, DateTimeOffset? Ended, string? EndEvent, DateTimeOffset? LastChanged)
+{
+    /// <summary>process.currentTask.altinnTaskType (e.g. data).</summary>
+    public string? CurrentTaskType { get; init; }
+    /// <summary>process.currentTask.validated.canCompleteTask, when Altinn reported it.</summary>
+    public bool? CanCompleteTask { get; init; }
+}
+
+/// <summary>The process state a process/next returned (AppProcessState), reduced to the fields BirkNext verifies.</summary>
+public sealed record AltinnProcessStateResult(string? CurrentTaskId, string? CurrentTaskType, DateTimeOffset? Ended, string? EndEvent);
 
 public sealed record AltinnValidationSummary(int Errors, int Warnings, IReadOnlyList<string> Codes);
 
@@ -74,13 +83,17 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         return (new AltinnCallResult(true, response.StatusCode, "Validation returned."), new AltinnValidationSummary(issues.Count(issue => Severity(issue) == 1), issues.Count(issue => Severity(issue) == 2), codes));
     }
 
-    public async Task<(AltinnCallResult Result, string? CurrentTaskId, DateTimeOffset? Ended)> ProcessNextAsync(Uri appBase, string token, AltinnInstanceState instance, CancellationToken ct)
+    /// <summary>One normal process/next (no body, so no action: app-lib uses the data task's "write"). Never retried here.</summary>
+    public async Task<(AltinnCallResult Result, AltinnProcessStateResult? State)> ProcessNextAsync(Uri appBase, string token, AltinnInstanceState instance, CancellationToken ct)
     {
         using var response = await SendAsync(HttpMethod.Put, new Uri(appBase, $"{InstancePath(instance)}/process/next"), token, null, ct);
-        if (!response.IsSuccessStatusCode) return (Fail(response, "advancing the process"), null, null);
+        if (!response.IsSuccessStatusCode)
+            return (response.StatusCode == HttpStatusCode.Conflict
+                ? new AltinnCallResult(false, response.StatusCode, "Altinn refused to advance the process (HTTP 409): the task did not validate, or the process is not at a task.")
+                : Fail(response, "advancing the process"), null);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        var (task, ended, _) = Process(json.RootElement);
-        return (new AltinnCallResult(true, response.StatusCode, "Process advanced."), task, ended);
+        var state = Process(json.RootElement);
+        return (new AltinnCallResult(true, response.StatusCode, "Process advanced."), new AltinnProcessStateResult(state.Task, state.TaskType, state.Ended, state.EndEvent));
     }
 
     public async Task<(AltinnCallResult Result, AltinnInstanceState? Instance)> GetInstanceAsync(Uri appBase, string token, AltinnInstanceState instance, string formDataTypeId, CancellationToken ct)
@@ -104,17 +117,19 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
             foreach (var element in elements.EnumerateArray())
                 if (element.TryGetProperty("dataType", out var type) && type.GetString() == formDataTypeId && element.TryGetProperty("id", out var dataId) && Guid.TryParse(dataId.GetString(), out var parsed))
                 { data = parsed; break; }
-        var (task, ended, endEvent) = root.TryGetProperty("process", out var process) ? Process(process) : (null, null, null);
+        var state = root.TryGetProperty("process", out var process) && process.ValueKind == JsonValueKind.Object ? Process(process) : default;
         DateTimeOffset? lastChanged = root.TryGetProperty("lastChanged", out var changed) && changed.TryGetDateTimeOffset(out var at) ? at : null;
-        return new AltinnInstanceState(party, guid, data, task, ended, endEvent, lastChanged);
+        return new AltinnInstanceState(party, guid, data, state.Task, state.Ended, state.EndEvent, lastChanged) { CurrentTaskType = state.TaskType, CanCompleteTask = state.CanComplete };
     }
 
-    private static (string? Task, DateTimeOffset? Ended, string? EndEvent) Process(JsonElement process)
+    private static (string? Task, string? TaskType, bool? CanComplete, DateTimeOffset? Ended, string? EndEvent) Process(JsonElement process)
     {
-        var task = process.TryGetProperty("currentTask", out var current) && current.ValueKind == JsonValueKind.Object && current.TryGetProperty("elementId", out var element) ? element.GetString() : null;
+        var current = process.TryGetProperty("currentTask", out var currentElement) && currentElement.ValueKind == JsonValueKind.Object ? currentElement : default;
+        string? Text(JsonElement owner, string name) => owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        bool? canComplete = current.ValueKind == JsonValueKind.Object && current.TryGetProperty("validated", out var validated) && validated.ValueKind == JsonValueKind.Object
+            && validated.TryGetProperty("canCompleteTask", out var can) && can.ValueKind is JsonValueKind.True or JsonValueKind.False ? can.GetBoolean() : null;
         DateTimeOffset? ended = process.TryGetProperty("ended", out var end) && end.ValueKind == JsonValueKind.String && end.TryGetDateTimeOffset(out var at) ? at : null;
-        var endEvent = process.TryGetProperty("endEvent", out var endEventElement) && endEventElement.ValueKind == JsonValueKind.String ? endEventElement.GetString() : null;
-        return (task, ended, endEvent);
+        return (Text(current, "elementId"), Text(current, "altinnTaskType"), canComplete, ended, Text(process, "endEvent"));
     }
 
     private static string InstancePath(AltinnInstanceState instance) => $"instances/{instance.PartyId.ToString(CultureInfo.InvariantCulture)}/{instance.InstanceGuid:D}";

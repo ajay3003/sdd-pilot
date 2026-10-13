@@ -330,6 +330,7 @@ public sealed class UnattendedAltinnAuthenticationTests
             "POST buf.apps.tt02.altinn.no/buf/skolenaervaer/instances",
             $"PUT buf.apps.tt02.altinn.no/buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/data/{{d}}",
             $"GET buf.apps.tt02.altinn.no/buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/validate",
+            $"GET buf.apps.tt02.altinn.no/buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}",
             $"PUT buf.apps.tt02.altinn.no/buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/process/next",
             $"GET buf.apps.tt02.altinn.no/buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}");
 

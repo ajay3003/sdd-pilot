@@ -36,3 +36,11 @@
 .atp-fallback { margin: .75rem 0; border: 1px solid #e5e7eb; border-radius: 6px; padding: .4rem .75rem; }
 .atp-fallback summary { cursor: pointer; font-size: .9rem; }
 .atp-fallback summary:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.atp-process { margin: .75rem 0; padding: .5rem .75rem; border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); min-width: 0; }
+.atp-facts { display: grid; gap: .3rem; margin: .35rem 0; font-size: .85rem; }
+.atp-facts > div { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: .5rem; align-items: baseline; }
+.atp-facts dt { font-weight: 600; color: var(--clr-text-muted, #4b5563); }
+.atp-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+    .atp-facts > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+}

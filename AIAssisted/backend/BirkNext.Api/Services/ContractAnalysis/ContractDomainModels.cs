@@ -58,6 +58,10 @@ public sealed class NormalizedOperation
     [JsonPropertyName("response_codes")]
     public List<string> ResponseCodes { get; set; } = [];
 
+    /// <summary>Per response status code, the component schema name a JSON response refers to ("#/components/schemas/{name}").</summary>
+    [JsonPropertyName("response_schema_refs")]
+    public Dictionary<string, string> ResponseSchemaRefs { get; set; } = [];
+
     /// <summary>Path, query and header parameters (path-level and operation-level, operation-level wins). Cookie parameters are not modelled.</summary>
     [JsonPropertyName("parameters")]
     public List<NormalizedParameter> Parameters { get; set; } = [];

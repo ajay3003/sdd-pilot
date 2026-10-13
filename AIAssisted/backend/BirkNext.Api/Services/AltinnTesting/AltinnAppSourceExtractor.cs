@@ -66,7 +66,7 @@ public static class AltinnAppSourceExtractor
                 if (tasks is null) notes.Add($"The process definition could not be used: {note}");
                 else documents.Add((processes[0].Path, processes[0].Text));
             }
-            else notes.Add(processes.Length == 0 ? "No process.bpmn in the app folder." : "Several process.bpmn files in the app folder; none is used.");
+            else notes.Add(processes.Length == 0 ? "No process.bpmn in the app folder (optional: the app's deployed OpenAPI contract can establish the process operation)." : "Several process.bpmn files in the app folder; none is used.");
 
             apps.Add(parsed with
             {

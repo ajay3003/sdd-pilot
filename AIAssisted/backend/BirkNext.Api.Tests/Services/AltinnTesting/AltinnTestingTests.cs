@@ -212,21 +212,43 @@ public sealed class AltinnTestingTests
     // ── App contract ──────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task PublicMetadata_IsReadWithTwoAnonymousGets_AndLeavesTheProcessMissing()
+    public async Task PublicMetadata_IsReadWithThreeAnonymousGets_AndTheDeployedOpenApiConfirmsTheProcessOperation_WithoutProcessBpmn()
     {
         var kit = new AltinnTestKit();
         var flows = new IntegrationJourneyHarness.FakeMessageFlows { Configuration = AltinnTestKit.ReadyConfiguration };
         var view = await kit.Contracts(flows).DiscoverPublicAsync(Env, default);
 
         kit.Http.Calls.Select(call => $"{call.Method} {call.Uri.AbsolutePath}").Should().Equal(
-            "GET /buf/skolenaervaer/api/v1/applicationmetadata", "GET /buf/skolenaervaer/api/jsonschema/model");
+            "GET /buf/skolenaervaer/api/v1/applicationmetadata", "GET /buf/skolenaervaer/api/jsonschema/model", "GET /buf/skolenaervaer/v1/customOpenapi.json");
         kit.Http.Calls.Should().OnlyContain(call => call.Authorization == null, "discovery never authenticates");
         view.FormDataTypeId.Should().Be("model");
         view.Bindings.Should().OnlyContain(binding => binding.Present);
-        view.Parts.Single(part => part.Part == AltinnContractPartKind.ProcessDefinition).Present.Should().BeFalse();
+        var process = view.Parts.Single(part => part.Part == AltinnContractPartKind.ProcessDefinition);
+        process.Present.Should().BeTrue();
+        process.Source.Should().Be(AltinnContractSourceKind.DeployedOpenApi);
+        view.Process.Status.Should().Be(AltinnProcessContractStatus.ConfirmedForCurrentOperation);
+        view.Process.StaticDefinition.Should().Be("Not provided · Optional");
+        view.Process.TopologyKnown.Should().BeFalse("the deployed contract does not describe gateways or events");
+        view.Complete.Should().BeTrue(string.Join(" | ", view.Missing));
+        var snapshot = flows.Contract!.PublicMetadata!;
+        snapshot.Source.Should().Be(AltinnContractSourceKind.PublicTt02Metadata);
+        snapshot.Documents.Should().Contain("v1/customOpenapi.json");
+        snapshot.DeployedProcess!.Tasks.Should().ContainSingle().Which.TaskId.Should().Be("Task_1");
+        System.Text.Json.JsonSerializer.Serialize(flows.Contract).Should().NotContain("Altinn 3 App API", "only normalized facts are kept, never the document");
+    }
+
+    [Fact]
+    public async Task PublicMetadata_WithoutADeployedOpenApi_LeavesTheProcessNotConfirmed_AndDoesNotFail()
+    {
+        var kit = new AltinnTestKit();
+        kit.Http.OpenApiJson = null;
+        var flows = new IntegrationJourneyHarness.FakeMessageFlows { Configuration = AltinnTestKit.ReadyConfiguration };
+        var view = await kit.Contracts(flows).DiscoverPublicAsync(Env, default);
+
+        view.Process.Status.Should().Be(AltinnProcessContractStatus.NotConfirmed);
         view.Complete.Should().BeFalse();
-        view.Missing.Should().Contain(item => item.Contains("process.bpmn"));
-        flows.Contract!.PublicMetadata!.Source.Should().Be(AltinnContractSourceKind.PublicTt02Metadata);
+        view.Missing.Should().Contain(item => item.Contains("No process evidence"));
+        flows.Contract!.PublicMetadata!.Notes.Should().Contain(item => item.Contains("deployed OpenAPI contract is not available"));
     }
 
     [Fact]
@@ -529,6 +551,7 @@ public sealed class AltinnTestingTests
             $"POST /buf/skolenaervaer/instances?instanceOwnerPartyId={AltinnTestKit.PartyId}",
             $"PUT /buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/data/{{d}}",
             $"GET /buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/validate",
+            $"GET /buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}",
             $"PUT /buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}/process/next",
             $"GET /buf/skolenaervaer/instances/{AltinnTestKit.PartyId}/{{i}}");
         var body = JsonDocument.Parse(kit.Http.Calls.Single(call => call.Method == HttpMethod.Put && call.Uri.AbsolutePath.Contains("/data/")).Body!).RootElement;
@@ -582,6 +605,7 @@ public sealed class AltinnTestingTests
     [InlineData("instance", HttpStatusCode.InternalServerError, "altinn-instance", "HTTP 500")]
     [InlineData("data", HttpStatusCode.BadRequest, "altinn-data", "HTTP 400")]
     [InlineData("validate", HttpStatusCode.ServiceUnavailable, "altinn-validate", "HTTP 503")]
+    [InlineData("live", HttpStatusCode.InternalServerError, "altinn-submit", "HTTP 500")]
     [InlineData("next", HttpStatusCode.Conflict, "altinn-submit", "HTTP 409")]
     [InlineData("read", HttpStatusCode.InternalServerError, "altinn-receipt", "HTTP 500")]
     public async Task EachStageFailure_IsThatStepsEvidence_AndNothingAfterItRuns(string stage, HttpStatusCode status, string step, string evidence)

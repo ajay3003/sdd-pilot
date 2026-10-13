@@ -87,8 +87,52 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         cut.FindAll("[data-testid=atp-part]").Select(row => (row.GetAttribute("data-part"), row.GetAttribute("data-present")))
             .Should().Equal(("ApplicationMetadata", "true"), ("FormDataType", "true"), ("DataModelSchema", "true"), ("ProcessDefinition", "false"));
         cut.Find("[data-testid=atp-contract-state]").TextContent.Should().Contain("Contract incomplete");
-        cut.Find("[data-testid=atp-missing]").TextContent.Should().Contain("process.bpmn");
+        cut.Find("[data-testid=atp-missing]").TextContent.Should().Contain("No process evidence");
         cut.FindAll("[data-testid=atp-bindings] li").Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void TheProcessSection_WithoutEvidence_IsNotConfirmed_AndProcessBpmnIsShownAsOptional()
+    {
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        var process = cut.Find("[data-testid=atp-process]");
+        process.GetAttribute("data-status").Should().Be("NotConfirmed");
+        cut.Find("[data-testid=atp-process-status]").TextContent.Should().Contain("Not confirmed");
+        cut.Find("[data-testid=atp-process-bpmn]").TextContent.Should().Be("Not provided · Optional");
+        cut.Find("[data-testid=atp-process-task]").TextContent.Should().Be("Not established");
+        cut.Find("[data-testid=atp-process-reasons]").TextContent.Should().Contain("No process evidence");
+        process.TextContent.Should().NotContain("Required file missing");
+    }
+
+    [Fact]
+    public void TheProcessSection_WithTheDeployedContract_ShowsTheOperation_TheBound_AndThatTheTopologyIsNotKnown()
+    {
+        _altinn.ContractView = FakeAltinn.ConfirmedFromDeployedContract;
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        cut.Find("[data-testid=atp-process]").GetAttribute("data-status").Should().Be("ConfirmedForCurrentOperation");
+        cut.Find("[data-testid=atp-process-status]").TextContent.Should().Contain("Confirmed for current operation");
+        cut.Find("[data-testid=atp-process-source]").TextContent.Should().Be("TT02 deployed OpenAPI contract");
+        cut.Find("[data-testid=atp-process-task]").TextContent.Should().Be("Task_1 · Utfylling · data");
+        cut.Find("[data-testid=atp-process-bound]").TextContent.Should().Be("One bounded process/next (no action body)");
+        cut.Find("[data-testid=atp-process-bpmn]").TextContent.Should().Be("Not provided · Optional");
+        cut.Find("[data-testid=atp-process-topology]").TextContent.Should().Contain("does not know the full BPMN topology").And.Contain("checks the live instance's task");
+        cut.FindAll("[data-testid=atp-process-reasons]").Should().BeEmpty();
+        var part = cut.FindAll("[data-testid=atp-part]").Single(row => row.GetAttribute("data-part") == "ProcessDefinition");
+        part.TextContent.Should().Contain("Process contract (current operation)").And.Contain("Confirmed for current operation").And.Contain("TT02 deployed OpenAPI contract");
+        cut.Find("[data-testid=atp-contract-state]").TextContent.Should().Contain("Contract complete");
+    }
+
+    [Fact]
+    public void TheProcessContractReadinessRow_SaysConfirmedPartialOrNotConfirmed()
+    {
+        _journeys.Prerequisites.Add(new("process-contract", "Process contract (current operation)", JourneyPrerequisiteCategory.Contract, JourneyReadinessState.Partial,
+            "Partial — The deployed OpenAPI contract declares 2 tasks but not their order.", Mandatory: false));
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        var row = cut.Find("[data-key=process-contract]");
+        row.GetAttribute("data-state").Should().Be("Partial");
+        row.TextContent.Should().Contain("Partial").And.Contain("not their order");
     }
 
     [Fact]
@@ -307,6 +351,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         public string StartUrl { get; set; } = "https://login.test.idporten.no/authorize";
 
         public static readonly Guid SnapshotId = Guid.Parse("11111111-2222-4333-8444-555555555555");
+        public AltinnAppContractView ContractView { get; set; } = Contract;
         private static AltinnAppContractView Contract => new()
         {
             EnvironmentId = "dev-env", ConfiguredAppId = "buf/skolenaervaer", AppApproved = true, AppDetail = "Approved app buf/skolenaervaer.", FormDataTypeId = "model",
@@ -315,7 +360,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                 new(AltinnContractPartKind.ApplicationMetadata, true, AltinnContractSourceKind.PublicTt02Metadata, "Application metadata."),
                 new(AltinnContractPartKind.FormDataType, true, AltinnContractSourceKind.PublicTt02Metadata, "Form data type model."),
                 new(AltinnContractPartKind.DataModelSchema, true, AltinnContractSourceKind.PublicTt02Metadata, "12 schema fields."),
-                new(AltinnContractPartKind.ProcessDefinition, false, null, "No process definition; upload process.bpmn."),
+                new(AltinnContractPartKind.ProcessDefinition, false, null, "Not confirmed: no trustworthy process evidence."),
             ],
             Bindings =
             [
@@ -324,12 +369,32 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                 new("plannedHours", "Planned", "SkolenaervaerRegistrering.AntallTimerEtterPlanen", "number", true, "Found."),
                 new("actualHours", "Actual", "SkolenaervaerRegistrering.AntallTimerFaktiskNaervaer", "number", true, "Found."),
             ],
-            Complete = false, Missing = ["No process definition; add the app's source (with App/config/process/process.bpmn) through Source Analysis — the process is not part of the public metadata."],
+            Complete = false, Missing = ["No process evidence: neither the app's deployed OpenAPI contract (read the public TT02 metadata) nor a static process.bpmn (Source Analysis)."],
+            Process = new()
+            {
+                Status = AltinnProcessContractStatus.NotConfirmed, Summary = "Not confirmed: no trustworthy process evidence.", MaxTransitions = 1,
+                Operation = "Normal next transition · no action body", StaticDefinition = "Not provided · Optional",
+                Reasons = ["No process evidence: neither the app's deployed OpenAPI contract (read the public TT02 metadata) nor a static process.bpmn (Source Analysis)."],
+            },
             SourceCandidates = [new(SnapshotId, "skolenaervaer-app.zip", DateTimeOffset.Parse("2026-10-12T09:00:00Z"), ["buf/skolenaervaer"])],
         };
 
-        public Task<ActiveEventApiResult<AltinnAppContractView>> ContractAsync(string environmentId, CancellationToken ct = default) => Ok(Contract);
-        public Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default) { PublicReads++; return Ok(Contract); }
+        /// <summary>The contract as public TT02 metadata with the deployed OpenAPI contract and no process.bpmn gives it (shape of the real app).</summary>
+        public static AltinnAppContractView ConfirmedFromDeployedContract => Contract with
+        {
+            Parts = [.. Contract.Parts.Take(3), new(AltinnContractPartKind.ProcessDefinition, true, AltinnContractSourceKind.DeployedOpenApi,
+                "Confirmed for the current operation: process/next × 1 from Task_1 (data), then the process must have ended.")],
+            Complete = true, Missing = [], ProcessTasks = [new("Task_1", "data")],
+            Process = new()
+            {
+                Status = AltinnProcessContractStatus.ConfirmedForCurrentOperation, Summary = "Confirmed for the current operation.", Sources = ["TT02 deployed OpenAPI contract"],
+                DeclaredTaskCount = 1, PlannedTasks = [new("Task_1", "Utfylling", "data", [])], Operation = "Normal next transition · no action body", Transitions = 1, MaxTransitions = 1,
+                StaticDefinition = "Not provided · Optional", TopologyKnown = false,
+            },
+        };
+
+        public Task<ActiveEventApiResult<AltinnAppContractView>> ContractAsync(string environmentId, CancellationToken ct = default) => Ok(ContractView);
+        public Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default) { PublicReads++; return Ok(ContractView); }
         public List<Guid?> SourceUses { get; } = [];
         public Task<ActiveEventApiResult<AltinnAppContractView>> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct = default) { SourceUses.Add(snapshotId); return Ok(Contract); }
         public Task<ActiveEventApiResult<AltinnSignInStatus>> SignInStatusAsync(string environmentId, CancellationToken ct = default) => Ok(Status);
@@ -353,7 +418,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                 Checks =
                 [
                     new("endpoints", "Endpoint allowlist", true, "5 endpoints (ID-porten TEST, Altinn TT02 exchange, the approved app) all pass the request guard."),
-                    new("process-plan", "Process plan", false, "Not known: the app's process definition (process.bpmn) is not in the contract, so process/next is never called."),
+                    new("process-plan", "Process contract", false, "Not confirmed — No process evidence: neither the app's deployed OpenAPI contract nor a static process.bpmn. process/next is never called."),
                     new("unfilled-required", "Required schema fields BirkNext does not fill", false, "6 required field(s) are not filled by BirkNext (Meldingshode.Id, …).", false),
                 ],
                 Preview = [new("XML root", "Skolenaervaer"), new("Klient.Identifikator.Fodselsnummer", "synthetic identifier #1a2b3c4d (masked)")],

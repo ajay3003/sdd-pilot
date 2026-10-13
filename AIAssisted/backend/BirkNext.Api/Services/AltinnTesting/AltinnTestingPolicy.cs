@@ -19,6 +19,11 @@ public sealed class AltinnTestingOptions
     /// stay Not ready: BirkNext never infers an app policy.
     /// </summary>
     public List<AltinnAppPolicyConfirmation> ConfirmedAppPolicies { get; set; } = [];
+    /// <summary>
+    /// The most process/next calls one run may make. 1 for first runs: a plan that needs more is not executed (never truncated), and an
+    /// unexpected process state after a transition always stops the run. Values below 1 or above 10 are treated as 1.
+    /// </summary>
+    public int MaxProcessTransitions { get; set; } = 1;
 }
 
 /// <summary>
@@ -238,6 +243,9 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     public Uri? UnattendedRedirect() =>
         Uri.TryCreate(UnattendedRedirectUri, UriKind.Absolute, out var redirect) && string.IsNullOrEmpty(redirect.UserInfo) && redirect.Fragment.Length == 0
             && (redirect.Scheme == Uri.UriSchemeHttps || (redirect.Scheme == Uri.UriSchemeHttp && redirect.IsLoopback)) ? redirect : null;
+
+    /// <summary>The execution bound on process/next calls per run (see <see cref="AltinnTestingOptions.MaxProcessTransitions"/>).</summary>
+    public int MaxProcessTransitions => options.MaxProcessTransitions is >= 1 and <= 10 ? options.MaxProcessTransitions : 1;
 
     /// <summary>The service owner's confirmation of the app's authorization policy, or null with why it is not confirmed.</summary>
     public AltinnAppPolicyConfirmation? AppPolicy(string? appId, out string detail)

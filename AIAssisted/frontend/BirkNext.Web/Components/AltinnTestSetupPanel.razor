@@ -27,9 +27,9 @@
         <fieldset class="atp-source" data-testid="atp-source">
             <legend>Contract source</legend>
             <label class="atp-option"><input type="radio" name="@($"{_id}-source")" checked="@(_source == "source")" data-testid="atp-source-analysis" @onchange="@(() => _source = "source")" />
-                <span>The Altinn app's source in Source Analysis (authoritative): applicationmetadata.json, the form model's *.schema.json and process.bpmn from the uploaded app repository</span></label>
+                <span>The Altinn app's source in Source Analysis (authoritative): applicationmetadata.json, the form model's *.schema.json and, optionally, process.bpmn from the uploaded app repository</span></label>
             <label class="atp-option"><input type="radio" name="@($"{_id}-source")" checked="@(_source == "public")" data-testid="atp-source-public" @onchange="@(() => _source = "public")" />
-                <span>Public TT02 metadata of the configured app (read-only; the process is not published, so the app source is still needed for it)</span></label>
+                <span>Public TT02 metadata of the configured app (read-only): its metadata, the form's schema and its deployed OpenAPI contract, which can establish the process operation without process.bpmn</span></label>
         </fieldset>
         @if (_source == "source")
         {
@@ -55,7 +55,7 @@
             <div class="atp-actions">
                 <button type="button" class="btn-secondary" data-testid="atp-read-public" disabled="@(_busy || !contract.AppApproved)" @onclick="ReadPublicAsync">Read public TT02 metadata</button>
             </div>
-            <p class="atp-muted">Two read-only GETs (application metadata and the form's JSON schema). Nothing is submitted and nobody signs in.</p>
+            <p class="atp-muted">Three read-only GETs (application metadata, the form's JSON schema and the app's deployed OpenAPI document). Nothing is submitted and nobody signs in.</p>
         }
 
         <div class="atp-table" tabindex="0" role="region" aria-label="App contract parts" data-testid="atp-parts">
@@ -66,14 +66,42 @@
                     {
                         <tr data-testid="atp-part" data-part="@part.Part" data-present="@(part.Present ? "true" : "false")">
                             <th scope="row">@PartLabel(part.Part)</th>
-                            <td><span class="atp-pill atp-pill-@(part.Present ? "ready" : "attention")">@(part.Present ? "Present" : "Missing")</span></td>
-                            <td>@(part.Source switch { AltinnContractSourceKind.SourceAnalysisSnapshot => "App source (Source Analysis)", AltinnContractSourceKind.PublicTt02Metadata => "Public TT02 metadata", _ => "—" })</td>
+                            <td><span class="atp-pill atp-pill-@(part.Present ? "ready" : "attention")">@(part.Part == AltinnContractPartKind.ProcessDefinition ? ProcessStatus(contract.Process.Status) : part.Present ? "Present" : "Missing")</span></td>
+                            <td>@(part.Source switch
+                                {
+                                    AltinnContractSourceKind.SourceAnalysisSnapshot => "App source (Source Analysis)",
+                                    AltinnContractSourceKind.PublicTt02Metadata => "Public TT02 metadata",
+                                    AltinnContractSourceKind.DeployedOpenApi => "TT02 deployed OpenAPI contract",
+                                    _ => "—",
+                                })</td>
                             <td>@part.Detail</td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
+        <section class="atp-process" aria-labelledby="@($"{_id}-process")" data-testid="atp-process" data-status="@contract.Process.Status">
+            <h5 class="atp-minor" id="@($"{_id}-process")">Process contract for the intended operation</h5>
+            <dl class="atp-facts">
+                <div><dt>Current operation contract</dt><dd data-testid="atp-process-status"><span class="atp-pill atp-pill-@(contract.Process.Confirmed ? "ready" : "attention")">@ProcessStatus(contract.Process.Status)</span></dd></div>
+                <div><dt>Process definition source</dt><dd data-testid="atp-process-source">@(contract.Process.Sources.Count > 0 ? string.Join(" + ", contract.Process.Sources) : "None")</dd></div>
+                @if (contract.Process.DeclaredTaskCount is { } declared)
+                {
+                    <div><dt>Declared process tasks</dt><dd>@declared</dd></div>
+                }
+                <div><dt>Current task</dt><dd data-testid="atp-process-task">@(contract.Process.PlannedTasks.Count > 0 ? string.Join(" → ", contract.Process.PlannedTasks.Select(task => string.Join(" · ", new[] { task.TaskId, task.Name, task.TaskType }.Where(part => part.Length > 0)))) : "Not established")</dd></div>
+                <div><dt>Transition policy</dt><dd data-testid="atp-process-bound">@(contract.Process.MaxTransitions == 1 ? "One bounded process/next (no action body)" : $"At most {contract.Process.MaxTransitions} bounded process/next calls (no action body)")</dd></div>
+                <div><dt>Expected post-condition</dt><dd>Process ended (ended and end event set, no current task); anything else stops the run</dd></div>
+                <div><dt>process.bpmn</dt><dd data-testid="atp-process-bpmn">@(string.IsNullOrEmpty(contract.Process.StaticDefinition) ? "Not provided · Optional" : contract.Process.StaticDefinition)</dd></div>
+            </dl>
+            <p class="atp-muted" data-testid="atp-process-topology">@(contract.Process.TopologyKnown
+                ? "The full BPMN topology is known from process.bpmn."
+                : "BirkNext does not know the full BPMN topology (gateways, events). It only needs to know enough for this one operation, and it checks the live instance's task before the transition.")</p>
+            @if (!contract.Process.Confirmed && contract.Process.Reasons.Count > 0)
+            {
+                <ul class="atp-list atp-missing" data-testid="atp-process-reasons" aria-label="Why the process operation is not confirmed">@foreach (var reason in contract.Process.Reasons) { <li>@reason</li> }</ul>
+            }
+        </section>
         @if (contract.Bindings.Count > 0)
         {
             <h5 class="atp-minor">Form fields BirkNext fills</h5>
@@ -188,7 +216,7 @@
     private IReadOnlyList<JourneyPrerequisite> _readiness = [];
     private string? _readinessError;
     /// <summary>The Rapportmottak prerequisites this section explains, in the order a tester resolves them.</summary>
-    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-profile", "reporter-auth"];
+    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "process-contract", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-profile", "reporter-auth"];
     private bool _realScenarioRunnable;
     /// <summary>The backend's own verdict for the first real scenario (E2E-01) plus this browser's execution access; the backend re-checks on Run.</summary>
     private bool RealExecutionReady => _realScenarioRunnable && CanExecute;
@@ -255,6 +283,7 @@
         "app-policy" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
         "unattended-provider" => item.State == JourneyReadinessState.Ready ? "Available" : "Disabled",
         "reporter-profile" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
+        "process-contract" => item.State switch { JourneyReadinessState.Ready => "Confirmed", JourneyReadinessState.Partial => "Partial", _ => "Not confirmed" },
         "client-secret" => item.State == JourneyReadinessState.Ready ? "Available" : "Missing",
         "idporten-client" or "synthetic-reporter" => item.State == JourneyReadinessState.Ready ? "Configured" : "Missing",
         "altinn-environment" => item.State == JourneyReadinessState.Ready ? "Ready" : "Blocked",
@@ -306,6 +335,14 @@
         AltinnContractPartKind.ApplicationMetadata => "Application metadata",
         AltinnContractPartKind.FormDataType => "Form data type",
         AltinnContractPartKind.DataModelSchema => "Data model schema",
-        _ => "Process definition",
+        _ => "Process contract (current operation)",
+    };
+
+    private static string ProcessStatus(AltinnProcessContractStatus status) => status switch
+    {
+        AltinnProcessContractStatus.ConfirmedForCurrentOperation => "Confirmed for current operation",
+        AltinnProcessContractStatus.Partial => "Partial",
+        AltinnProcessContractStatus.Conflict => "Conflict",
+        _ => "Not confirmed",
     };
 }
