@@ -55,7 +55,11 @@ public sealed class AltinnInstanceEvidenceTests
     [InlineData("50012345", "6a1b2c3d-0000-4000-8000-000000000001?language=nb", false)]
     public void InstanceReferences_AreValidatedStrictly(string party, string guid, bool valid)
     {
-        var prepared = SkoleNaervaerInstanceReference.Prepare(new Dictionary<string, string> { [SkoleNaervaerInstanceReference.PartyKey] = party, [SkoleNaervaerInstanceReference.InstanceKey] = guid });
+        var scenario = Pack(new IntegrationJourneyHarness(), new AltinnTestKit()).Journeys.Single(item => item.JourneyId == "rapportmottak").Scenarios.Single(item => item.ScenarioId == "instance-evidence");
+        var prepared = SkoleNaervaerInstanceReference.Prepare(scenario, new Dictionary<string, string>
+        {
+            [SkoleNaervaerReportInput.ReporterKey] = AltinnTestingPolicy.InteractiveReporter, [SkoleNaervaerInstanceReference.PartyKey] = party, [SkoleNaervaerInstanceReference.InstanceKey] = guid,
+        });
         prepared.Valid.Should().Be(valid);
         if (valid) string.Join(" ", prepared.Summary).Should().Contain("inst-6a1b2c3d").And.NotContain(party, "the party id is not kept in history");
     }
@@ -141,7 +145,7 @@ public sealed class AltinnInstanceEvidenceTests
 
         var submission = await service.StartAsync(Request("valid-report", new Dictionary<string, string>
         {
-            ["identitySource"] = "registered", ["childIdentifier"] = SyntheticPersonIdentifier.Generate(), ["periodFrom"] = "2026-10-01", ["periodTo"] = "2026-10-31",
+            ["reporter"] = AltinnTestingPolicy.InteractiveReporter, ["identitySource"] = "registered", ["childIdentifier"] = SyntheticPersonIdentifier.Generate(), ["periodFrom"] = "2026-10-01", ["periodTo"] = "2026-10-31",
             ["plannedHours"] = "100", ["actualHours"] = "90",
         }), Tester, default);
         submission.OverallState.Should().Be(JourneyRunState.Blocked);
@@ -268,6 +272,7 @@ public sealed class AltinnInstanceEvidenceTests
 
     private static Dictionary<string, string> References() => new()
     {
+        [SkoleNaervaerReportInput.ReporterKey] = AltinnTestingPolicy.InteractiveReporter,
         [SkoleNaervaerInstanceReference.PartyKey] = AltinnTestKit.PartyId.ToString(), [SkoleNaervaerInstanceReference.InstanceKey] = AltinnTestKit.InstanceGuid.ToString("D"),
     };
 
@@ -288,7 +293,7 @@ public sealed class AltinnInstanceEvidenceTests
     }
 
     private static SkoleNaervaerAltinnExecutor Executor(IntegrationJourneyHarness harness, AltinnTestKit kit) =>
-        new(Scopes(harness, kit), harness.Tokens, new AltinnAppApiClient(kit.Factory), TimeProvider.System);
+        new(Scopes(harness, kit), kit.Authenticator(harness.Tokens), new AltinnAppApiClient(kit.Factory), TimeProvider.System);
 
     private static IntegrationJourneyHarness Harness(AltinnTestKit kit)
     {
@@ -300,7 +305,7 @@ public sealed class AltinnInstanceEvidenceTests
         });
         harness.Enroll("dev:http:altinn-skolenaervaer");
         harness.Executors.Add(Executor(harness, kit));
-        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), harness.Tokens, new AltinnStorageInstanceReader(kit.Factory), TimeProvider.System));
+        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), kit.Authenticator(harness.Tokens), new AltinnStorageInstanceReader(kit.Factory), TimeProvider.System));
         return harness;
     }
 

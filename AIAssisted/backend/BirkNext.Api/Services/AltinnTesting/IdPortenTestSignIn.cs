@@ -36,6 +36,17 @@ public sealed class AltinnTestSessionCache(TimeProvider clock) : IAltinnTestToke
     internal static readonly TimeSpan PendingLifetime = TimeSpan.FromMinutes(10);
     internal ConcurrentDictionary<string, Pending> PendingByState { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<(string Initiator, string EnvironmentId), Held> Tokens { get; } = new();
+    /// <summary>Unattended reporter tokens, keyed by environment and synthetic reporter alias — never by child, execution context or across reporters.</summary>
+    internal ConcurrentDictionary<(string EnvironmentId, string Alias), Held> UnattendedTokens { get; } = new();
+
+    internal Held? Unattended((string EnvironmentId, string Alias) key) =>
+        UnattendedTokens.TryGetValue(key, out var held) && held.ExpiresAt > clock.GetUtcNow() ? held : null;
+
+    internal void HoldUnattended((string EnvironmentId, string Alias) key, string altinnToken, DateTimeOffset expiresAt)
+    {
+        Prune();
+        UnattendedTokens[key] = new Held(altinnToken, expiresAt);
+    }
 
     public string? Get(string initiator, string environmentId) =>
         Tokens.TryGetValue((initiator, environmentId), out var held) && held.ExpiresAt > clock.GetUtcNow() ? held.AltinnToken : null;
@@ -48,6 +59,7 @@ public sealed class AltinnTestSessionCache(TimeProvider clock) : IAltinnTestToke
         var now = clock.GetUtcNow();
         foreach (var (state, pending) in PendingByState) if (now - pending.Created > PendingLifetime) PendingByState.TryRemove(state, out _);
         foreach (var (key, held) in Tokens) if (held.ExpiresAt <= now) Tokens.TryRemove(key, out _);
+        foreach (var (key, held) in UnattendedTokens) if (held.ExpiresAt <= now) UnattendedTokens.TryRemove(key, out _);
     }
 }
 
@@ -55,9 +67,9 @@ public sealed class AltinnTestSessionCache(TimeProvider clock) : IAltinnTestToke
 /// ID-porten TEST sign-in for Altinn TT02, done by the tester in their own browser (TestID): BirkNext is an OIDC client using the
 /// authorization-code flow with PKCE. The authorize URL is built only from ID-porten TEST's discovery document (issuer pinned, hosts
 /// allowlisted). The code is exchanged server-side, the ID-porten access token is exchanged for an Altinn token, and only that token is kept —
-/// in memory, per person and environment, until it expires or the person signs out. No login_hint is sent: ID-porten documents no TestID
-/// identity hint, so the tester picks or enters the synthetic person in TestID themselves. Codes, tokens and claims are never logged,
-/// persisted or returned to the browser.
+/// in memory, per BirkNext execution context and environment, until it expires or the person signs out. This is the attended fallback: no
+/// login_hint is sent, so the tester picks or enters the synthetic person in TestID themselves. Unattended runs use the documented headless
+/// TestID login instead (<see cref="UnattendedIdPortenTestAuthentication"/>). Codes, tokens and claims are never logged, persisted or returned.
 /// </summary>
 public sealed class IdPortenTestSignIn(
     IHttpClientFactory http,
@@ -68,8 +80,6 @@ public sealed class IdPortenTestSignIn(
     ILogger<IdPortenTestSignIn> logger)
 {
     private static readonly TimeSpan MaxTokenLifetime = TimeSpan.FromMinutes(30);
-
-    private sealed record Discovery(Uri AuthorizationEndpoint, Uri TokenEndpoint, IReadOnlyList<string> AuthMethods, IReadOnlyList<string> ResponseModes);
 
     public async Task<AltinnSignInStatus> StatusAsync(string initiator, string environmentId, CancellationToken ct)
     {
@@ -166,21 +176,8 @@ public sealed class IdPortenTestSignIn(
     private IReadOnlyList<string> Problems(AltinnTestConfiguration config) =>
         [.. AltinnTestingPolicy.AltinnEnvironmentBlock(config) is { } environment ? [environment] : Array.Empty<string>(), .. policy.SignInProblems(config)];
 
-    private async Task<Discovery> DiscoverAsync(CancellationToken ct)
-    {
-        var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
-        using var response = await client.GetAsync(AltinnTestingPolicy.IdPortenTestDiscovery, ct);
-        if (!response.IsSuccessStatusCode) throw new AltinnSignInException($"ID-porten TEST discovery is unavailable (HTTP {(int)response.StatusCode}).");
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        var root = json.RootElement;
-        if (!string.Equals(root.TryGetProperty("issuer", out var issuer) ? issuer.GetString()?.TrimEnd('/') : null, AltinnTestingPolicy.IdPortenTestIssuer, StringComparison.Ordinal))
-            throw new AltinnSignInException("The discovery document is not ID-porten TEST's (unexpected issuer).");
-        Uri Endpoint(string name) => root.TryGetProperty(name, out var value) && Uri.TryCreate(value.GetString(), UriKind.Absolute, out var uri) && AltinnTestingPolicy.IsIdPortenTestHost(uri)
-            ? uri : throw new AltinnSignInException($"ID-porten TEST discovery has no approved {name}.");
-        string[] Strings(string name) => root.TryGetProperty(name, out var values) && values.ValueKind == JsonValueKind.Array
-            ? values.EnumerateArray().Select(item => item.GetString() ?? "").ToArray() : [];
-        return new Discovery(Endpoint("authorization_endpoint"), Endpoint("token_endpoint"), Strings("token_endpoint_auth_methods_supported"), Strings("response_modes_supported"));
-    }
+    private async Task<IdPortenTestDiscovery.Document> DiscoverAsync(CancellationToken ct) =>
+        await IdPortenTestDiscovery.ReadAsync(http.CreateClient(AltinnTestingRequestGuard.ClientName), ct);
 
     private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }

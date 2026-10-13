@@ -26,12 +26,18 @@ public static class BirkNextPermissions
 
 public sealed class ActiveEventPermissionRequirement : IAuthorizationRequirement { }
 
-/// <summary>Active event execution: an authenticated principal with ActiveEventExecute (scope, app role or permission claim). No bypass.</summary>
-public sealed class ActiveEventPermissionHandler : AuthorizationHandler<ActiveEventPermissionRequirement>
+/// <summary>
+/// ActiveEventExecute is a capability: "this caller may execute active/external test actions". It is held by an authenticated principal with
+/// the permission (scope, app role or permission claim), or granted by the explicitly enabled, loopback-bounded local trusted execution of a
+/// Development backend (<see cref="LocalTrustedExecution"/>). The handler enforces both paths itself (the policy has no separate
+/// authenticated-user requirement); anything else — anonymous, a header, an environment name alone — is refused. The local grant adds no
+/// claims and is never specific to one pack, project or route.
+/// </summary>
+public sealed class ActiveEventPermissionHandler(LocalTrustedExecution local, IHttpContextAccessor http) : AuthorizationHandler<ActiveEventPermissionRequirement>
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, ActiveEventPermissionRequirement requirement)
     {
-        if (BirkNextPermissions.Holds(context.User, BirkNextPermissions.ActiveEventExecute)) context.Succeed(requirement);
+        if (BirkNextPermissions.Holds(context.User, BirkNextPermissions.ActiveEventExecute) || local.Applies(http.HttpContext)) context.Succeed(requirement);
         return Task.CompletedTask;
     }
 }

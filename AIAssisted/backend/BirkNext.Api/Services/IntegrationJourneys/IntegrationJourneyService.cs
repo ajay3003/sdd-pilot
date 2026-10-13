@@ -107,7 +107,7 @@ public sealed class IntegrationJourneyService(
             ScenarioId = scenario.ScenarioId, ScenarioName = scenario.DisplayName, EnvironmentId = request.EnvironmentId,
             EnvironmentName = context.TrustedEnvironment?.DisplayName ?? request.EnvironmentId, StartedAt = started,
             Steps = journey.Steps.Select(step => new JourneyStepResult { StepId = step.StepId, Label = step.Label, State = JourneyStepState.NotAssessed, Reason = "Not started." }).ToArray(),
-            Limitations = journey.Limitations, InputSummary = inputs.Summary,
+            Limitations = journey.Limitations, InputSummary = inputs.Summary, InitiatedBy = SafeInitiator(initiator),
         };
 
         var blockers = new List<string>();
@@ -149,6 +149,11 @@ public sealed class IntegrationJourneyService(
         }
         finally { gate.Release(key, run.RunId); }
     }
+
+    /// <summary>History keeps the initiator only in its derived, safe form (local-session:… or authenticated-user:&lt;hash&gt;); anything else — a raw
+    /// subject, e-mail or name — is not persisted.</summary>
+    internal static string? SafeInitiator(string? initiator) =>
+        initiator is { Length: <= 80 } value && System.Text.RegularExpressions.Regex.IsMatch(value, "^(local-session|authenticated-user):[a-z0-9-]{1,64}$") ? value : null;
 
     /// <summary>Generic checks (declared keys only, bounded size, required present), then the pack's typed validation. Nothing here is stored.</summary>
     private static JourneyInputPreparation PrepareInputs(IIntegrationJourneyPack pack, IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario,

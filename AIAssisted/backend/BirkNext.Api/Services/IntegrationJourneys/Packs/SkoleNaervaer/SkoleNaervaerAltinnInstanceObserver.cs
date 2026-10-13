@@ -14,9 +14,10 @@ public static class SkoleNaervaerInstanceReference
     public const string InstanceKey = "instanceGuid";
     private static readonly Regex PartyPattern = new(@"^[1-9][0-9]{0,9}$", RegexOptions.CultureInvariant);
 
-    public static JourneyInputPreparation Prepare(IReadOnlyDictionary<string, string> inputs)
+    public static JourneyInputPreparation Prepare(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs)
     {
         var errors = new List<string>();
+        var reporter = SkoleNaervaerReportInput.PrepareReporter(scenario, inputs, errors);
         var party = inputs.GetValueOrDefault(PartyKey)?.Trim() ?? "";
         var instance = inputs.GetValueOrDefault(InstanceKey)?.Trim() ?? "";
         if (!PartyPattern.IsMatch(party) || !int.TryParse(party, NumberStyles.None, CultureInfo.InvariantCulture, out _))
@@ -25,8 +26,8 @@ public static class SkoleNaervaerInstanceReference
             errors.Add("The instance GUID must be a GUID such as 6a1b2c3d-0000-4000-8000-000000000001.");
         if (errors.Count > 0) return new JourneyInputPreparation(new Dictionary<string, string>(), errors, []);
         return new JourneyInputPreparation(
-            new Dictionary<string, string>(StringComparer.Ordinal) { [PartyKey] = party, [InstanceKey] = guid.ToString("D") },
-            [], [$"Altinn instance inst-{guid.ToString("N")[..8]} (read-only Storage read; the party id is not stored)."]);
+            new Dictionary<string, string>(StringComparer.Ordinal) { [PartyKey] = party, [InstanceKey] = guid.ToString("D"), [SkoleNaervaerReportInput.ReporterKey] = reporter.Value },
+            [], [$"Altinn instance inst-{guid.ToString("N")[..8]} (read-only Storage read; the party id is not stored).", reporter.Summary]);
     }
 
     public static (long PartyId, Guid InstanceGuid) Read(IReadOnlyDictionary<string, string> values) =>
@@ -34,12 +35,13 @@ public static class SkoleNaervaerInstanceReference
 }
 
 /// <summary>
-/// Read-only Altinn instance evidence for Rapportmottak: one GET on Altinn Storage (TT02) with the tester's Altinn token, then each Altinn
+/// Read-only Altinn instance evidence for Rapportmottak: one GET on Altinn Storage (TT02) with the Altinn token of the run's reporter (the
+/// same authentication providers as submissions — unattended synthetic reporter or the interactive fallback), then each Altinn
 /// step is reported from that single observation — Observed or Not verified, never Verified (an observed instance is not a submission this
 /// run made or verified). Nothing is created, uploaded, validated or advanced, and the app's own GET instance (which marks the instance read
 /// for person callers) is not used. MU, MM, Skolenærværsrapport and Person steps stay Not assessed: an Altinn Storage path is not an MU blob.
 /// </summary>
-public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory scopes, IAltinnTestTokens tokens, AltinnStorageInstanceReader storage, TimeProvider clock)
+public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory scopes, AltinnTestAuthenticator authenticator, AltinnStorageInstanceReader storage, TimeProvider clock)
     : IJourneyStepObserver
 {
     private const string Source = "Altinn TT02 Storage (read-only GET)";
@@ -83,8 +85,7 @@ public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory sco
             if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is null) return appReason;
             if (!context.InputValues.ContainsKey(SkoleNaervaerInstanceReference.PartyKey) || !context.InputValues.ContainsKey(SkoleNaervaerInstanceReference.InstanceKey))
                 return "The run has no validated instance reference.";
-            if (context.Initiator is not { Length: > 0 } || tokens.Get(context.Initiator, context.EnvironmentId) is null)
-                return "Not signed in to ID-porten TEST for this environment (Skolenærvær Testing → Rapportmottak → Sign in with TestID).";
+            if (context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is not { Length: > 0 }) return "The run has no reporter.";
             return null;
         }
         var now = clock.GetUtcNow();
@@ -92,7 +93,10 @@ public sealed class SkoleNaervaerAltinnInstanceObserver(IServiceScopeFactory sco
         var (party, guid) = SkoleNaervaerInstanceReference.Read(context.InputValues);
         try
         {
-            var (result, evidence) = await storage.ReadAsync(tokens.Get(context.Initiator!, context.EnvironmentId)!, party, guid, ct);
+            var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator,
+                context.InputValues[SkoleNaervaerReportInput.ReporterKey], package.AltinnConfiguration), ct);
+            if (!auth.Success) return new Observation(null, null, $"{AltinnAuthenticationResult.StageLabel(auth.Stage)} failed: {auth.Detail}", null, now);
+            var (result, evidence) = await storage.ReadAsync(auth.Token!, party, guid, ct);
             return new Observation(result, evidence, null, contract.FormDataTypeId, now);
         }
         catch (AltinnSignInException ex) { return new Observation(null, null, ex.Message, null, now); }

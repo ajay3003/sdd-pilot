@@ -14,7 +14,8 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/altinn-testing")]
-public sealed class AltinnTestingController(AltinnAppContractService contracts, IdPortenTestSignIn signIn, IConfiguration configuration, ILogger<AltinnTestingController> logger) : ControllerBase
+public sealed class AltinnTestingController(AltinnAppContractService contracts, IdPortenTestSignIn signIn, LocalTrustedExecution local, IConfiguration configuration,
+    ILogger<AltinnTestingController> logger) : ControllerBase
 {
     [AllowAnonymous]
     [HttpGet("contract")]
@@ -47,14 +48,14 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
     [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     [HttpGet("sign-in/status")]
     public async Task<ActionResult<AltinnSignInStatus>> Status([FromQuery] string environmentId, CancellationToken ct) =>
-        Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId and a signed-in caller are required." })
+        Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId and an execution context are required." })
             : Ok(await signIn.StatusAsync(caller, environmentId, ct));
 
     [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     [HttpPost("sign-in/start")]
     public async Task<ActionResult<AltinnSignInStart>> Start([FromQuery] string environmentId, CancellationToken ct)
     {
-        if (Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId and a signed-in caller are required." });
+        if (Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId and an execution context are required." });
         try { return Ok(await signIn.StartAsync(caller, environmentId, ct)); }
         catch (AltinnSignInException ex) { return BadRequest(new { message = ex.Message }); }
         catch (HttpRequestException) { return StatusCode(StatusCodes.Status502BadGateway, new { message = "ID-porten TEST could not be reached." }); }
@@ -64,7 +65,7 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
     [HttpPost("sign-in/sign-out")]
     public IActionResult SignOutTester([FromQuery] string environmentId)
     {
-        if (Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId and a signed-in caller are required." });
+        if (Caller() is not { } caller || string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId and an execution context are required." });
         signIn.SignOut(caller, environmentId);
         return NoContent();
     }
@@ -106,5 +107,5 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
             : Content($"<!doctype html><title>BirkNext sign-in</title><p>ID-porten TEST sign-in {(outcome == "complete" ? "completed" : "did not complete")}. Return to BirkNext.</p>", "text/html");
     }
 
-    private string? Caller() => IntegrationJourneysController.CallerId(User);
+    private string? Caller() => IntegrationJourneysController.Actor(User, local, HttpContext);
 }

@@ -59,7 +59,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         cdc.Steps.Should().NotContain(step => step.Owner == "Altinn", "Altinn is not part of the CDC flow");
 
         var report = pack.Journeys[1];
-        report.Steps.Select(step => step.Owner).Distinct().Should().Equal("Tester (TestID)", "Altinn", "MU", "MM", "Skolenærværsrapport");
+        report.Steps.Select(step => step.Owner).Distinct().Should().Equal("Synthetic reporter (TestID)", "Altinn", "MU", "MM", "Skolenærværsrapport");
         report.Steps.Select(step => step.StepId).Should().ContainInOrder("altinn-auth", "altinn-instance", "altinn-data", "altinn-validate", "altinn-submit", "altinn-receipt", "mu-receive");
         report.Steps.Single(step => step.Kind == JourneyStepKind.StructuralValidation).Owner.Should().Be("MM", "XSD validation belongs to the MM intake path");
         report.Steps.Single(step => step.Kind == JourneyStepKind.IdentityLookup).Owner.Should().Be("Skolenærværsrapport");
@@ -107,7 +107,8 @@ public sealed class SkoleNaervaerJourneyPackTests
         var report = views["rapportmottak"];
         report.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == AltinnIntake.Id);
         report.Prerequisites.Single(item => item.Key == "integration:report-intake").State.Should().Be(JourneyReadinessState.Ready);
-        report.Prerequisites.Single(item => item.Key == "altinn-auth").Detail.Should().StartWith("Authentication type is not ID-porten");
+        report.Prerequisites.Single(item => item.Key == "altinn-auth").Detail.Should().Contain("Authentication type is not ID-porten");
+        report.Prerequisites.Single(item => item.Key == "reporter-auth").State.Should().Be(JourneyReadinessState.NotConfigured);
         report.Prerequisites.Single(item => item.Key == "submission-contract").State.Should().Be(JourneyReadinessState.NotReady);
         report.Prerequisites.Single(item => item.Key == "executor").State.Should().Be(JourneyReadinessState.NotAvailable, "no Altinn executor is registered in this harness");
         report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Not source verified");
@@ -142,7 +143,7 @@ public sealed class SkoleNaervaerJourneyPackTests
             EnvironmentId = ActiveEventTestHarness.Env, PackId = "skolenaervaer", JourneyId = "rapportmottak", ScenarioId = "valid-report", Confirmed = true,
             Inputs = new Dictionary<string, string>
             {
-                ["identitySource"] = "registered", ["childIdentifier"] = SyntheticPersonIdentifier.Generate(), ["periodFrom"] = "2026-10-01", ["periodTo"] = "2026-10-31",
+                ["reporter"] = "interactive-session", ["identitySource"] = "registered", ["childIdentifier"] = SyntheticPersonIdentifier.Generate(), ["periodFrom"] = "2026-10-01", ["periodTo"] = "2026-10-31",
                 ["plannedHours"] = "100", ["actualHours"] = "90",
             },
         }, null, default);

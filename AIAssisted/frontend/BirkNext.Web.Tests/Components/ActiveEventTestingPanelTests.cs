@@ -63,7 +63,7 @@ public sealed class ActiveEventTestingPanelTests : BunitContext
         auth.GetAttribute("data-state").Should().Be("NotConfigured");
         auth.TextContent.Should().Contain("Authentication not configured");
         cut.Find("[data-testid=act-start]").HasAttribute("disabled").Should().BeTrue("the backend said CanRun, but the browser cannot obtain a token");
-        cut.Find("[data-testid=act-start-note]").TextContent.Should().Contain("authentication is not configured");
+        cut.Find("[data-testid=act-start-note]").TextContent.Should().Contain("Real execution is disabled").And.Contain("Authentication not configured");
         cut.FindAll("[data-testid=act-check-group]").Select(g => g.GetAttribute("data-category")).Should().ContainInOrder("SourceContract", "TrustedEnvironment", "Authentication", "Authorization", "SyntheticData", "DownstreamVerification");
     }
 

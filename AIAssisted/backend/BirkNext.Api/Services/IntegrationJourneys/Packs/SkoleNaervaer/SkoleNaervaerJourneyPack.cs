@@ -42,7 +42,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     public IReadOnlyList<string> Limitations =>
     [
-        "Rapportmottak's Altinn steps run through the Altinn TT02 App API after the tester signs in with ID-porten TEST (TestID). An Altinn receipt covers the Altinn steps only: MU, MM, Skolenærværsrapport and Person steps have no observer and stay Not assessed.",
+        "Rapportmottak's Altinn steps run through the Altinn TT02 App API as an approved synthetic TestID reporter, authenticated unattended with ID-porten TEST's documented headless login (an interactive TestID sign-in remains an optional fallback). An Altinn receipt covers the Altinn steps only: MU, MM, Skolenærværsrapport and Person steps have no observer and stay Not assessed.",
         "The documented message-flow pilot in Integration Quality Review names the intake component \"Skolenærværsmottaket\" and the report service \"Skoletjenesten\"; this pack uses the architecture diagram's names MM and Skolenærværsrapport. The correspondence is a documentation alias, not source verified.",
         "No MU, MM, Skolenærværsrapport or Bufdata source, contract or read endpoint is available to BirkNext; their steps cannot be observed or verified yet.",
         "BirkNext never publishes SkolenaervaersperiodeLukket itself; period closure must be triggered through a safe domain workflow, which does not exist in the evidence.",
@@ -76,8 +76,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             Integrations = [new(ReportIntake, "Skolenærvær – Altinn report intake", IntegrationKind.HttpApi, "External reporting party (Altinn)", "MU", "Report submission through the configured Altinn test environment")],
             Steps =
             [
-                new(SkoleNaervaerAltinnExecutor.AuthStep, "Tester authenticated with ID-porten TEST; Altinn TT02 accepted the token", JourneyStepKind.ExternalAuthentication, "Tester (TestID)",
-                    "Altinn resolved the signed-in TEST party (authenticated ≠ submitted)", IntegrationKey: ReportIntake, FromComponent: "Tester", ToComponent: "Altinn"),
+                new(SkoleNaervaerAltinnExecutor.AuthStep, "Reporter authenticated with ID-porten TEST; Altinn TT02 token obtained", JourneyStepKind.ExternalAuthentication, "Synthetic reporter (TestID)",
+                    "Altinn resolved the reporter's TEST party (authenticated ≠ submitted)", IntegrationKey: ReportIntake, FromComponent: "Reporter", ToComponent: "Altinn"),
                 new(SkoleNaervaerAltinnExecutor.InstanceStep, "Altinn instance created", JourneyStepKind.ExternalSubmission, "Altinn", "Instance created for the reporter",
                     IntegrationKey: ReportIntake, FromComponent: "External reporter", ToComponent: "Altinn"),
                 new(SkoleNaervaerAltinnExecutor.DataStep, "Report form data stored", JourneyStepKind.ExternalSubmission, "Altinn", "Typed form data stored on the instance",
@@ -100,16 +100,16 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             ],
             Scenarios =
             [
-                new("valid-report", "E2E-01 / MU-01 · Valid report", "One synthetic, typed report for a registered synthetic test child, submitted through the Altinn TT02 App API by the signed-in TestID reporter. Covers the Altinn steps; MU/MM/report steps stay Not assessed.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs([new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")])),
+                new("valid-report", "E2E-01 / MU-01 · Valid report", "One synthetic, typed report for a registered synthetic test child, submitted through the Altinn TT02 App API by an approved synthetic TestID reporter authenticated unattended. Covers the Altinn steps; MU/MM/report steps stay Not assessed.",
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(Reporters(altinnPolicy), [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")])),
                 new("person-not-found", "E2E-02 · Child not found in Person", "A typed report for a synthetic child that Person does not know (declared by the tester or generated). Whether the report is held is not observable yet.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(Reporters(altinnPolicy),
                     [
                         new(SkoleNaervaerReportInput.Supplied, "Synthetic identifier I supply (declared not registered)"),
                         new(SkoleNaervaerReportInput.Generated, "Generated synthetic identifier (unregistered by assumption)"),
                     ])),
                 new("overlapping-report", "E2E-08 · Overlapping report", "A second typed report for the same registered synthetic child with a period that overlaps an earlier report the tester declares. How overlap is marked is not observable yet.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs([new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")],
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(Reporters(altinnPolicy), [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")],
                         new JourneyScenarioInput(SkoleNaervaerReportInput.PriorReportKey, "Earlier overlapping report", JourneyScenarioInputKind.Choice, true,
                             "Required: a report for this child with an overlapping period was submitted earlier (for example by a previous run).",
                             [new("declared", "Yes — an earlier overlapping report exists for this child")]))),
@@ -117,6 +117,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     "Reads one existing Altinn instance from Altinn Storage (TT02) and records its process state and data-element metadata. Read-only: nothing is created, submitted or changed. An observed instance is not a verified submission, and Altinn's storage path is not an MU blob.",
                     JourneyScenarioSupport.Supported, StateChanging: false, Inputs:
                     [
+                        Reporters(altinnPolicy),
                         new(SkoleNaervaerInstanceReference.PartyKey, "Instance owner party id", JourneyScenarioInputKind.Reference, true,
                             "The numeric Altinn party id from the instance id (partyId/instanceGuid). Used for this read only; never stored."),
                         new(SkoleNaervaerInstanceReference.InstanceKey, "Instance GUID", JourneyScenarioInputKind.Reference, true,
@@ -125,7 +126,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 new("correction", "E2E-07 · Correction", "A corrected report replaces an earlier one and the earlier version is kept as history.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: how a correction is expressed in the Altinn form (a new instance, or OppfolgingAvMelding/Oppdatering) is not in any verified app contract."),
                 new("multiple-reporters", "E2E-09 · Several reporters", "Two reporters report for the same child and period; both reports are kept.", JourneyScenarioSupport.NotAssessed,
-                    "Not assessed: each run uses the one signed-in TestID reporter, and BirkNext does not record reporter identities, so distinct reporters cannot be shown safely yet."),
+                    "Not assessed: each run authenticates one approved synthetic reporter alias; two separately approved reporters and a way to show that both reports are kept downstream are not available yet."),
                 new("invalid-xsd", "Invalid XSD", "A reviewed schema-invalid report rejected by MM's XSD validation.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: no reviewed invalid payload fixture and no submission contract exist; arbitrary XML is never corrupted."),
                 new("period-locked", "Period locked", "A report submitted after the reporting period is locked.", JourneyScenarioSupport.NotAssessed,
@@ -183,9 +184,23 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             ArchitectureRuleExpectation.MustDependOn, "Skolenærværsrapport performs the Person lookup for incoming reports."),
     ];
 
-    /// <summary>Typed inputs of a report scenario: identity source (limited per scenario), the child's synthetic identifier, period and hours.</summary>
-    private static IReadOnlyList<JourneyScenarioInput> ReportInputs(IReadOnlyList<JourneyScenarioInputOption> identitySources, params JourneyScenarioInput[] extra) =>
+    /// <summary>
+    /// The reporter choice: each approved synthetic TEST reporter by alias (unattended, the default) and, last, the tester's own interactive
+    /// TestID sign-in as an explicit fallback. Values are aliases, never identifiers.
+    /// </summary>
+    private static JourneyScenarioInput Reporters(AltinnTestingPolicy policy) =>
+        new(SkoleNaervaerReportInput.ReporterKey, "Reporter (Altinn TEST actor)", JourneyScenarioInputKind.Choice, true,
+            "An approved synthetic TestID reporter, authenticated unattended by the backend. The reporter is the Altinn actor, separate from the child the report is about.",
+            [
+                .. policy.Options.UnattendedIdPortenTest.Reporters.Where(item => AltinnTestingPolicy.ReporterProblem(item) is null)
+                    .Select(item => new JourneyScenarioInputOption(item.Alias, string.IsNullOrWhiteSpace(item.Label) ? item.Alias : item.Label)),
+                new(AltinnTestingPolicy.InteractiveReporter, "Interactive TestID sign-in (fallback; sign in first)"),
+            ]);
+
+    /// <summary>Typed inputs of a report scenario: reporter, identity source (limited per scenario), the child's synthetic identifier, period and hours.</summary>
+    private static IReadOnlyList<JourneyScenarioInput> ReportInputs(JourneyScenarioInput reporter, IReadOnlyList<JourneyScenarioInputOption> identitySources, params JourneyScenarioInput[] extra) =>
     [
+        reporter,
         new(SkoleNaervaerReportInput.IdentitySourceKey, "Child identity", JourneyScenarioInputKind.Choice, true,
             "Synthetic test identities only. Known/unknown is your declaration; BirkNext cannot check Person.", identitySources),
         new(SkoleNaervaerAltinnForm.ChildIdentifier, "Barnets fødselsnummer (synthetic)", JourneyScenarioInputKind.SyntheticPersonIdentifier, false,
@@ -200,7 +215,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     ];
 
     public JourneyInputPreparation PrepareInputs(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs) =>
-        scenario.ScenarioId == InstanceEvidenceScenario ? SkoleNaervaerInstanceReference.Prepare(inputs)
+        scenario.ScenarioId == InstanceEvidenceScenario ? SkoleNaervaerInstanceReference.Prepare(scenario, inputs)
         : scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs)
             : inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
 
@@ -242,7 +257,13 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var xsdInSource = context.SourceSnapshots.Any(snapshot => snapshot.EvidenceDomains?.Contracts.Contracts.Any(contract => contract.Type == SourceContractType.XmlSchema) == true);
                 var contract = altinnContracts.Evaluate(context.EnvironmentId, config.AppIdentifier, flow.AppContract);
                 var signIn = altinnPolicy.SignInProblems(config);
+                var unattended = altinnPolicy.UnattendedProblems(config);
                 var altinnEnvironment = AltinnTestingPolicy.AltinnEnvironmentBlock(config);
+                var options = altinnPolicy.Options.UnattendedIdPortenTest;
+                var clientReady = config.AuthenticationType == ExternalAuthenticationType.IDPorten && !string.IsNullOrWhiteSpace(config.ClientReference)
+                    && config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal) && altinnPolicy.UnattendedRedirect() is not null;
+                var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterProblem(item) is null);
+                var policyConfirmed = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail) is not null;
                 return
                 [
                     new("altinn-environment", "Altinn TT02 environment", JourneyPrerequisiteCategory.TrustedEnvironment,
@@ -251,10 +272,32 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     new("altinn-app", "Approved Altinn app", JourneyPrerequisiteCategory.Integration,
                         contract.AppApproved ? JourneyReadinessState.Ready : string.IsNullOrWhiteSpace(config.AppIdentifier) ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
                         contract.AppDetail),
-                    new("altinn-auth", "ID-porten TEST sign-in configuration", JourneyPrerequisiteCategory.Authentication,
+                    // Reporter authentication: unattended (default) or the interactive fallback; either mode can satisfy it. Each unattended part is
+                    // reported on its own below, so a missing secret or reporter is visible as exactly that.
+                    new("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication,
+                        unattended.Count == 0 || signIn.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        unattended.Count == 0 ? "Unattended: an approved synthetic TestID reporter is authenticated by the backend when the run starts. No sign-in step."
+                            : signIn.Count == 0 ? "Only the interactive fallback is configured: the tester must sign in with TestID before running. Unattended authentication is not ready."
+                            : $"Neither unattended nor interactive ID-porten TEST authentication is configured. Unattended: {string.Join(" ", unattended)}"),
+                    new("unattended-provider", "Unattended ID-porten TEST provider", JourneyPrerequisiteCategory.Authentication,
+                        options.Enabled ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        options.Enabled ? "Available: ID-porten TEST headless login for synthetic TestID users (TEST only), then the Altinn TT02 token exchange."
+                            : $"Disabled (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Enabled).", Mandatory: false),
+                    new("idporten-client", "ID-porten TEST client", JourneyPrerequisiteCategory.Authentication,
+                        clientReady ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        clientReady ? "Configured: client id and scopes (Integration Quality Review) and a registered redirect URI (backend)."
+                            : "Missing: ID-porten authentication type, client id, openid scope or a registered redirect URI.", Mandatory: false),
+                    new("client-secret", "Client secret", JourneyPrerequisiteCategory.Authentication,
+                        altinnPolicy.UnattendedSecretAvailable ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        altinnPolicy.UnattendedSecretAvailable ? "Available to the backend (value never shown)." : "Missing: the ID-porten TEST client secret is not available to the backend (environment variable or secret store).", Mandatory: false),
+                    new("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData,
+                        reporters > 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        reporters > 0 ? $"{reporters} approved synthetic TestID reporter alias(es) configured (identifiers stay in the backend)." : "Missing: no approved synthetic TestID reporter alias is configured.", Mandatory: false),
+                    new("altinn-auth", "Interactive TestID sign-in (fallback)", JourneyPrerequisiteCategory.Authentication,
                         signIn.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        signIn.Count == 0 ? "ID-porten TEST client, scopes and redirect are configured. Each tester signs in with TestID before running (checked when the run starts)."
-                            : string.Join(" ", signIn)),
+                        signIn.Count == 0 ? "Optional fallback configured: a tester can sign in with TestID in the browser instead." : $"Optional fallback not configured: {string.Join(" ", signIn)}", Mandatory: false),
+                    new("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization,
+                        policyConfirmed ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady, policyDetail, Scenarios: SubmissionScenarios),
                     new("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract,
                         contract.Complete ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
                         contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, {contract.ProcessTasks.Count} data task(s)."

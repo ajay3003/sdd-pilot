@@ -284,6 +284,16 @@
     private IActiveEventsApiService? Api => _api ??= Services.GetService<IActiveEventsApiService>();
     private IActiveEventsApiService? _api;
     private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private ExecutionAccessView? _access;
+    /// <summary>Run is offered when the deployment signs users in (Entra) or the backend reports execution access (e.g. local trusted
+    /// execution). Only a hint: the backend re-checks ActiveEventExecute on every execution request.</summary>
+    private bool CanExecute => ExecutionGate.CanExecute(Authentication, _access);
+    private async Task LoadAccessAsync()
+    {
+        if (_access is not null || Authentication.Configured || Services.GetService<IExecutionAccessApiService>() is not { } access) return;
+        _access = await access.GetAsync();
+    }
+
     private ActiveEventAuthenticationState? _authentication;
 
     private readonly string _runnerId = "act-" + Guid.NewGuid().ToString("N")[..8];
@@ -325,26 +335,28 @@
             if (_providers.Count == 0 && _trust is null) return checks;
             checks.Add(Authentication.Configured
                 ? new("authentication", "Authentication", ActiveEventReadinessState.Ready, "Entra is configured; the browser requests a BirkNext API token for protected calls.", ActiveEventReadinessCategory.Authentication)
-                : new("authentication", "Authentication", ActiveEventReadinessState.NotConfigured, Authentication.Detail, ActiveEventReadinessCategory.Authentication));
+                : _access is { CanExecute: true } local
+                    ? new("authentication", "Execution access", ActiveEventReadinessState.Ready, local.Detail, ActiveEventReadinessCategory.Authentication)
+                    : new("authentication", "Authentication", ActiveEventReadinessState.NotConfigured, ExecutionGate.Detail(Authentication, _access), ActiveEventReadinessCategory.Authentication));
             checks.Add(_authorized switch
             {
                 true => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.Ready, "The backend accepted this account for protected Active Event calls.", ActiveEventReadinessCategory.Authorization),
                 false => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.Blocked, _historyError ?? "The backend refused protected Active Event calls.", ActiveEventReadinessCategory.Authorization),
                 null => new("authorization", "Authorization (ActiveEventExecute)", ActiveEventReadinessState.NotAvailable,
-                    Authentication.Configured ? "Not checked yet: open Run history or start a run to let the backend check the permission." : "Not available without authentication.", ActiveEventReadinessCategory.Authorization),
+                    CanExecute ? "Not checked yet: open Run history or start a run to let the backend check the permission." : "Not available without execution access.", ActiveEventReadinessCategory.Authorization),
             });
             return checks;
         }
     }
 
-    private bool CanSend => _readiness is { CanRun: true } && Authentication.Configured && _authorized != false && !Busy &&
+    private bool CanSend => _readiness is { CanRun: true } && CanExecute && _authorized != false && !Busy &&
         SelectedScenario is { Support: ActiveEventScenarioSupport.Supported } && Checks.All(c => !ActiveEventReadinessRules.Blocks(c.State));
 
     private string SummaryExecution => _providers.Count == 0 ? (_loading ? "Checking…" : "No provider")
-        : !Authentication.Configured ? "Authentication not configured"
+        : !CanExecute ? "Execution not available"
         : CanSend ? "Ready" : "Blocked";
 
-    private string StartNote => !Authentication.Configured ? "Real execution is disabled: authentication is not configured. Nothing can be sent from this browser."
+    private string StartNote => !CanExecute ? $"Real execution is disabled: {ExecutionGate.Detail(Authentication, _access)} Nothing can be sent from this browser."
         : SelectedScenario is { Support: ActiveEventScenarioSupport.NotAssessed } ? "This scenario is declared but not assessed; it never sends."
         : !CanSend ? "Cannot run: resolve the checks marked Not ready, Not configured or Not available. Nothing is sent while any of them remains."
         : $"Sends the scenario's events once each, in order, then observes read-only evidence for up to {_readiness!.ObservationTimeoutSeconds} s. Without a verified downstream result the best outcome is limited evidence.";
@@ -355,6 +367,7 @@
         var key = $"{Profile.Id}|{string.Join(",", Integrations.Select(i => i.Id))}";
         if (key == _loadedFor) return;
         _loadedFor = key;
+        await LoadAccessAsync();
         _loading = true;
         try
         {

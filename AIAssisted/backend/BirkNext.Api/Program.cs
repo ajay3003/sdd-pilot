@@ -81,9 +81,11 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 
-// Active Event execution and integration configuration writes use an Entra-issued API bearer token. Missing authority/audience leaves
-// the scheme unable to validate callers; there is no development bypass and no trusted identity header path. Inbound claim mapping is off,
-// so Entra's "scp" and "roles" claims are evaluated under their own names.
+// Active Event execution and integration configuration writes are capabilities. An Entra-issued API bearer token can carry them; missing
+// authority/audience leaves the scheme unable to validate callers. Without an identity provider the only grants are the explicit,
+// Development-and-loopback-only backend settings (Authorization:LocalConfigurationWrites, Authorization:LocalTrustedExecution) — never a
+// trusted identity header. No forwarded-headers middleware is registered: the connection's remote address is always the socket peer.
+// Inbound claim mapping is off, so Entra's "scp" and "roles" claims are evaluated under their own names.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
     options.Authority = builder.Configuration["Authentication:Entra:Authority"];
@@ -91,12 +93,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     options.RequireHttpsMetadata = true;
     options.MapInboundClaims = false;
 });
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution>();
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteHandler>();
 builder.Services.AddAuthorization(options =>
 {
+    // The permission handler enforces both valid execution contexts (authenticated principal with the permission, or local trusted
+    // execution), so the policy has no separate authenticated-user requirement. Anonymous requests outside local trust still fail.
     options.AddPolicy(BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.ActiveEventExecutePolicy, policy =>
-        policy.RequireAuthenticatedUser().AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement()));
+        policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement()));
     options.AddPolicy(BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.IntegrationConfigurationWritePolicy, policy =>
         policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteRequirement()));
 });
@@ -559,6 +564,11 @@ builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnAppApiCl
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnFormBinding, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnForm>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.AltinnAppContractService>();
 builder.Services.AddScoped<BirkNext.Api.Services.AltinnTesting.IdPortenTestSignIn>();
+// Reporter authentication for Altinn runs: unattended synthetic TestID reporters (ID-porten TEST headless login, the default) and the
+// tester's interactive TestID sign-in (fallback). One authenticator; the executor and the Storage observer consume a token, never a browser.
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnTestAuthenticationProvider, BirkNext.Api.Services.AltinnTesting.InteractiveIdPortenTestAuthentication>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.IAltinnTestAuthenticationProvider, BirkNext.Api.Services.AltinnTesting.UnattendedIdPortenTestAuthentication>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnTestAuthenticator>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnExecutor>();
 // Read-only Altinn instance evidence: Altinn Storage GET (no side effect), observed — never executed — by the shared journey runner.
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnStorageInstanceReader>();

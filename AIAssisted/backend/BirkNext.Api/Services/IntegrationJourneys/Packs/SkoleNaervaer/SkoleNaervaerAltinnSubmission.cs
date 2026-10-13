@@ -87,14 +87,28 @@ public static class SyntheticPersonIdentifier
 public sealed record SkoleNaervaerReportInput(string IdentitySource, string ChildIdentifier, DateOnly From, DateOnly To, double PlannedHours, double ActualHours)
 {
     public const string IdentitySourceKey = "identitySource";
+    /// <summary>The Altinn reporter: an approved synthetic TEST reporter alias (unattended) or the interactive fallback. Never an identifier.</summary>
+    public const string ReporterKey = "reporter";
     public const string PriorReportKey = "priorReport";
     public const string Registered = "registered";
     public const string Supplied = "supplied";
     public const string Generated = "generated";
 
+    /// <summary>The reporter must be one of the scenario's offered options (the configured aliases and, when offered, the interactive fallback).</summary>
+    public static (string Value, string Summary) PrepareReporter(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs, List<string> errors)
+    {
+        var value = inputs.GetValueOrDefault(ReporterKey)?.Trim() ?? "";
+        var option = scenario.Inputs?.FirstOrDefault(item => item.Key == ReporterKey)?.Options?.FirstOrDefault(item => item.Value == value);
+        if (option is null) { errors.Add("The reporter is not one of the approved synthetic TEST reporters for this scenario."); return ("", ""); }
+        return (value, value == AltinnTestingPolicy.InteractiveReporter
+            ? "Reporter: the tester's own interactive ID-porten TEST sign-in (fallback)."
+            : $"Reporter: synthetic TEST reporter alias {value} (unattended ID-porten TEST; the TestID identifier is not recorded).");
+    }
+
     public static JourneyInputPreparation Prepare(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs)
     {
         var errors = new List<string>();
+        var reporter = PrepareReporter(scenario, inputs, errors);
         var source = inputs.GetValueOrDefault(IdentitySourceKey)?.Trim() ?? "";
         var allowed = scenario.Inputs?.FirstOrDefault(item => item.Key == IdentitySourceKey)?.Options?.Select(item => item.Value).ToArray() ?? [];
         if (!allowed.Contains(source, StringComparer.Ordinal)) errors.Add($"The identity source \"{source}\" is not allowed for this scenario.");
@@ -125,7 +139,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier,
+            [ReporterKey] = reporter.Value, [IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier,
             [SkoleNaervaerAltinnForm.PeriodFrom] = from!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [SkoleNaervaerAltinnForm.PeriodTo] = to!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [SkoleNaervaerAltinnForm.PlannedHours] = planned!.Value.ToString("R", CultureInfo.InvariantCulture),
@@ -139,6 +153,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
         };
         return new JourneyInputPreparation(values, [],
         [
+            reporter.Summary,
             $"Child: synthetic identifier {SyntheticPersonIdentifier.Reference(identifier)} — {declaration}.",
             $"Period: {values[SkoleNaervaerAltinnForm.PeriodFrom]} – {values[SkoleNaervaerAltinnForm.PeriodTo]}.",
             $"Planned hours: {values[SkoleNaervaerAltinnForm.PlannedHours]} · actual attendance hours: {values[SkoleNaervaerAltinnForm.ActualHours]}.",
@@ -155,14 +170,15 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 }
 
 /// <summary>
-/// Performs the six Altinn steps of Rapportmottak through the Altinn 3 App API, after the tester signed in with ID-porten TEST:
-/// authenticate (token accepted, party resolved) → create instance → store form data → validate → advance the process → read the receipt.
+/// Performs the six Altinn steps of Rapportmottak through the Altinn 3 App API with the run's reporter token — the unattended synthetic TEST
+/// reporter (headless ID-porten TEST) by default, or the tester's interactive sign-in as a fallback:
+/// authenticate (token obtained, party resolved) → create instance → store form data → validate → advance the process → read the receipt.
 /// Each step is its own evidence; a step that does not progress stops the run (nothing is retried or resent). Every policy is re-checked
 /// here before the first call. Only safe facts are recorded: HTTP status, a short instance reference, validation codes and process state —
 /// never the token, the party id, the form payload or the child's identifier. Altinn's receipt satisfies the Altinn steps only; MU, MM,
 /// Skolenærværsrapport and Person steps stay Not assessed.
 /// </summary>
-public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAltinnTestTokens tokens, AltinnAppApiClient altinn, TimeProvider clock) : IJourneyStepExecutor
+public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, AltinnTestAuthenticator authenticator, AltinnAppApiClient altinn, TimeProvider clock) : IJourneyStepExecutor
 {
     public const string AuthStep = "altinn-auth";
     internal static IReadOnlyList<string> AltinnSteps => Steps;
@@ -198,7 +214,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAl
         // The read-only instance-evidence scenario is never executed: its steps are only observed (SkoleNaervaerAltinnInstanceObserver).
         var mine = context.Journey.PackId == SkoleNaervaerJourneyPack.Id && context.Journey.JourneyId == SkoleNaervaerJourneyPack.RapportmottakId && Steps.Contains(context.Step.StepId)
             && context.Scenario?.ScenarioId != SkoleNaervaerJourneyPack.InstanceEvidenceScenario;
-        reason = mine ? "Performed through the Altinn TT02 App API after ID-porten TEST sign-in." : "Not an Altinn step of Rapportmottak.";
+        reason = mine ? "Performed through the Altinn TT02 App API with the run's ID-porten TEST reporter." : "Not an Altinn step of Rapportmottak.";
         return mine;
     }
 
@@ -238,22 +254,41 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAl
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } environment) return Blocked(context, environment);
         if (policy.ApprovedApp(package.AltinnConfiguration.AppIdentifier, out var appReason) is not { } app) return Blocked(context, appReason);
         if (!contract.Complete) return Blocked(context, $"The Altinn app contract is incomplete: {string.Join(" ", contract.Missing)}");
+        // A state-changing submission needs the service owner's confirmation of the app's authorization policy: re-checked here, not only in readiness.
+        if (context.Scenario?.StateChanging != false && policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, out var policyDetail) is null) return Blocked(context, policyDetail);
         if (context.InputValues.Count == 0) return Blocked(context, "The run has no validated report inputs.");
         if (contract.SubmissionContentType is not { } contentType) return Blocked(context, "The form's submission format is not known.");
         // The form is built (and checked against the schema's types) before anything is sent, so an unusable input never leaves an instance behind.
         if (BuildModel(SkoleNaervaerReportInput.Read(context.InputValues), contract.Fields).Problem is { } formProblem) return Blocked(context, formProblem);
-        if (context.Initiator is not { Length: > 0 } initiator || tokens.Get(initiator, context.EnvironmentId) is not { } token)
-            return Blocked(context, "Not signed in to ID-porten TEST for this environment (Skolenærvær Testing → Rapportmottak → Sign in with TestID).");
+        if (context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is not { Length: > 0 } reporter) return Blocked(context, "The run has no reporter.");
+
+        var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator, reporter, package.AltinnConfiguration), ct);
+        var mode = new JourneyEvidenceFact("Authentication", auth.Mode == "unattended" ? "Unattended ID-porten TEST (synthetic reporter)" : "Interactive ID-porten TEST (fallback)");
+        if (!auth.Success)
+        {
+            var stage = new JourneyEvidenceFact("Failed stage", AltinnAuthenticationResult.StageLabel(auth.Stage));
+            return auth.Stage == AltinnAuthenticationStage.Configuration
+                ? Result(context, JourneyStepState.Unavailable, $"Failed stage: {stage.Value}", $"Not executed: {auth.Detail} Nothing was sent to Altinn.", facts: [mode, stage])
+                : Result(context, JourneyStepState.NotVerified, $"Failed stage: {stage.Value}", $"{auth.Detail} Nothing was sent to the Altinn app.", facts: [mode, stage]);
+        }
 
         var appBase = AltinnTestingPolicy.AppBase(app.Org, app.App);
-        var (result, party) = await altinn.CurrentPartyAsync(appBase, token, ct);
-        if (!result.Success || party is null) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
+        var (result, party) = await altinn.CurrentPartyAsync(appBase, auth.Token!, ct);
+        if (!result.Success || party is null)
+            return Result(context, JourneyStepState.NotVerified, $"{Http(result)} · failed stage: Altinn app authorization",
+                result.Status is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized
+                    ? $"The Altinn app did not accept the reporter's TT02 token ({Http(result)}): app authorization denied or token not accepted. {result.Detail}"
+                    : result.Detail,
+                facts: [mode, new("Failed stage", "Altinn app authorization (current party)")]);
+        var token = auth.Token!;
         _sessions[context.RunId] = new Session
         {
             AppBase = appBase, Token = token, FormDataTypeId = contract.FormDataTypeId!, Fields = contract.Fields, ContentType = contentType,
             XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, Tasks = contract.ProcessTasks, Created = clock.GetUtcNow(), PartyId = party.Value,
         };
-        return Result(context, JourneyStepState.Verified, $"{Http(result)} · app {app.Org}/{app.App} (TT02)", "Authenticated: Altinn TT02 accepted the ID-porten TEST token and resolved the signed-in party. Not a submission.");
+        return Result(context, JourneyStepState.Verified, $"{Http(result)} · app {app.Org}/{app.App} (TT02)",
+            $"Authenticated: {auth.Detail} Altinn TT02 accepted the token and resolved the reporter's party. Not a submission.",
+            facts: [mode, new("ID-porten TEST", "token obtained"), new("Altinn TT02 exchange", "token obtained"), new("Altinn app", "party resolved")]);
     }
 
     private async Task<JourneyStepResult> CreateInstanceAsync(JourneyStepContext context, Session session, CancellationToken ct)
@@ -304,7 +339,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAl
         }
         return ended is not null
             ? Result(context, JourneyStepState.Verified, $"Process advanced {session.Tasks.Count} time(s) · ended {ended:yyyy-MM-dd HH:mm:ss} UTC",
-                "Submitted in Altinn: the instance process has ended. Not received by MU and not processed by MM or Skolenærværsrapport.", Reference(session.Instance!))
+                "Submitted in Altinn: the instance process has ended. Not received by MU and not processed by MM or Skolenærværsrapport.", Reference(session.Instance!),
+                [new("Process advanced", $"{session.Tasks.Count} time(s)"), new("Submitted", "process ended (Altinn only)")])
             : Result(context, JourneyStepState.UnexpectedResult, $"Process advanced {session.Tasks.Count} time(s) · not ended", "The process did not end after the contract's tasks.", Reference(session.Instance!));
     }
 
@@ -392,11 +428,12 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, IAl
     private JourneyStepResult Blocked(JourneyStepContext context, string reason) =>
         Result(context, JourneyStepState.Unavailable, "", $"Not executed: {reason} Nothing was sent to Altinn.");
 
-    private JourneyStepResult Result(JourneyStepContext context, JourneyStepState state, string evidence, string reason, string? correlation = null) => new()
+    private JourneyStepResult Result(JourneyStepContext context, JourneyStepState state, string evidence, string reason, string? correlation = null,
+        IReadOnlyList<JourneyEvidenceFact>? facts = null) => new()
     {
         StepId = context.Step.StepId, Label = context.Step.Label, IntegrationId = context.Integration?.Id, State = state, Evidence = evidence,
         Verification = state == JourneyStepState.Verified ? "Altinn App API response" : "", Reason = reason, EvidenceSource = Source,
-        Correlation = correlation ?? context.RunId.ToString("N"), CapturedAt = clock.GetUtcNow(),
+        Correlation = correlation ?? context.RunId.ToString("N"), CapturedAt = clock.GetUtcNow(), Facts = facts ?? [],
     };
 
     private static string Http(AltinnCallResult result) => $"HTTP {(int)result.Status}";

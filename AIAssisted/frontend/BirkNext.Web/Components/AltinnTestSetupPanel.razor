@@ -5,7 +5,8 @@
 @inject NavigationManager Navigation
 
 @* Altinn TT02 submission setup for one environment: the app contract (uploaded app files or public TT02 metadata, never guessed) and the
-   tester's own ID-porten TEST sign-in with TestID. Running the submission is done by the shared Integration Journey panel; this component
+   readiness of unattended reporter authentication (approved synthetic TestID reporters, authenticated by the backend). The tester's own
+   interactive TestID sign-in is an optional fallback. Running the submission is done by the shared Integration Journey panel; this component
    only prepares it. No token, secret or identifier is ever shown or kept here. *@
 @if (Api is null) { return; }
 <section class="atp" aria-labelledby="atp-heading" data-testid="atp-panel">
@@ -98,31 +99,53 @@
     }
     else if (_loading) { <p class="atp-muted" role="status">Loading the app contract…</p> }
 
-    <h4 class="atp-subheading">2. Tester sign-in (ID-porten TEST, TestID)</h4>
-    @if (!Authentication.Configured)
+    <h4 class="atp-subheading">2. Reporter authentication (unattended)</h4>
+    <p class="atp-muted" data-testid="atp-unattended-intro">No sign-in step: when a run starts, the backend authenticates the selected approved synthetic TestID reporter with
+        ID-porten TEST and exchanges the result for an Altinn TT02 token. No browser opens and no token is shown. The reporter is the Altinn actor;
+        the child in the report is separate.</p>
+    @if (_readiness.Count > 0)
     {
-        <p class="atp-muted" data-testid="atp-sign-in-unavailable">@Authentication.Detail Sign-in with TestID needs an authenticated BirkNext session.</p>
+        <ul class="atp-list atp-readiness" data-testid="atp-unattended-readiness" aria-label="Unattended run readiness">
+            @foreach (var item in _readiness)
+            {
+                <li data-testid="atp-readiness-item" data-key="@item.Key" data-state="@item.State">
+                    <span class="atp-pill atp-pill-@(item.State == JourneyReadinessState.Ready ? "ready" : "attention")">@ReadinessLabel(item)</span>
+                    <strong>@item.Label</strong> <span class="atp-muted">@item.Detail</span>
+                </li>
+            }
+        </ul>
     }
-    else if (_signIn is { } status)
-    {
-        <p data-testid="atp-sign-in-state"><span class="atp-pill atp-pill-@(status.SignedIn ? "ready" : "neutral")">@(status.SignedIn ? "Signed in" : status.Configured ? "Not signed in" : "Not configured")</span>
-            <span class="atp-muted">@status.Detail@(status.ExpiresAt is { } expires ? $" Expires {expires:HH:mm} UTC." : "")</span></p>
-        @if (status.ConfigurationProblems.Count > 0)
+    else if (_readinessError is { } readinessError) { <p class="atp-muted" data-testid="atp-readiness-unavailable">@readinessError</p> }
+
+    <details class="atp-fallback" data-testid="atp-interactive-fallback">
+        <summary>Alternative: interactive TestID sign-in (fallback)</summary>
+        <p class="atp-muted">Only needed when no synthetic reporter can be used unattended. You choose or enter the synthetic person in TestID yourself (BirkNext sends no
+            identity hint). The resulting Altinn TT02 token stays in backend memory for your BirkNext session and this environment only. Choose
+            "Interactive TestID sign-in" as the reporter when running.</p>
+        @if (!CanExecute)
         {
-            <ul class="atp-list atp-missing" data-testid="atp-sign-in-problems" aria-label="Missing sign-in configuration">@foreach (var item in status.ConfigurationProblems) { <li>@item</li> }</ul>
+            <p class="atp-muted" data-testid="atp-sign-in-unavailable">@ExecutionGate.Detail(Authentication, _access) The interactive fallback needs execution permission in BirkNext.</p>
         }
-        <div class="atp-actions">
-            @if (status.SignedIn)
+        else if (_signIn is { } status)
+        {
+            <p data-testid="atp-sign-in-state"><span class="atp-pill atp-pill-@(status.SignedIn ? "ready" : "neutral")">@(status.SignedIn ? "Signed in" : status.Configured ? "Not signed in" : "Not configured")</span>
+                <span class="atp-muted">@status.Detail@(status.ExpiresAt is { } expires ? $" Expires {expires:HH:mm} UTC." : "")</span></p>
+            @if (status.ConfigurationProblems.Count > 0)
             {
-                <button type="button" class="btn-secondary" data-testid="atp-sign-out" disabled="@_busy" @onclick="SignOutAsync">Sign out of ID-porten TEST</button>
+                <ul class="atp-list atp-missing" data-testid="atp-sign-in-problems" aria-label="Missing sign-in configuration">@foreach (var item in status.ConfigurationProblems) { <li>@item</li> }</ul>
             }
-            else
-            {
-                <button type="button" class="btn-primary" data-testid="atp-sign-in" disabled="@(_busy || !status.Configured)" @onclick="SignInAsync">Sign in with TestID</button>
-            }
-        </div>
-        <p class="atp-muted">You choose or enter the synthetic person in TestID yourself (BirkNext sends no identity hint). The resulting Altinn TT02 token stays in backend memory for you and this environment only.</p>
-    }
+            <div class="atp-actions">
+                @if (status.SignedIn)
+                {
+                    <button type="button" class="btn-secondary" data-testid="atp-sign-out" disabled="@_busy" @onclick="SignOutAsync">Sign out of ID-porten TEST</button>
+                }
+                else
+                {
+                    <button type="button" class="btn-secondary" data-testid="atp-sign-in" disabled="@(_busy || !status.Configured)" @onclick="SignInAsync">Sign in with TestID</button>
+                }
+            </div>
+        }
+    </details>
 
     <h4 class="atp-subheading">3. Altinn instance evidence (read-only)</h4>
     <p class="atp-muted" data-testid="atp-instance-evidence">Read one existing Altinn instance — process state and data-element metadata — from Altinn Storage. <strong>Read-only: no data is submitted or changed.</strong>
@@ -132,8 +155,9 @@
         <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-instance-evidence" @onclick="@(() => OnOpenJourney.InvokeAsync("instance-evidence"))">Check an Altinn instance</button></div>
     }
 
-    <h4 class="atp-subheading">4. Run the submission</h4>
-    <p class="atp-muted">Choose a report scenario, enter the synthetic child and period, and run it in Integration journeys → Rapportmottak. Each Altinn step is recorded on its own; MU, MM and Skolenærværsrapport steps stay Not assessed.</p>
+    <h4 class="atp-subheading">4. Run the test</h4>
+    <p class="atp-muted">Choose a report scenario and reporter, enter the synthetic child, period and hours, and select Run journey in Integration journeys → Rapportmottak.
+        Authentication, instance, data, validation, submission and receipt are recorded as separate steps; MU, MM and Skolenærværsrapport steps stay Not assessed.</p>
     @if (OnOpenJourney.HasDelegate)
     {
         <div class="atp-actions"><button type="button" class="btn-secondary" data-testid="atp-open-journey" @onclick="@(() => OnOpenJourney.InvokeAsync(null))">Open the Rapportmottak run</button></div>
@@ -150,6 +174,10 @@
     private ActiveEventAuthenticationState? _authentication;
     private AltinnAppContractView? _contract;
     private AltinnSignInStatus? _signIn;
+    private IReadOnlyList<JourneyPrerequisite> _readiness = [];
+    private string? _readinessError;
+    /// <summary>The Rapportmottak prerequisites this section explains, in the order a tester resolves them.</summary>
+    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth"];
     private string _source = "source";
     private string _snapshotId = "";
     private string? _error;
@@ -160,6 +188,16 @@
 
     private IAltinnTestingApiService? Api => _api ??= Services.GetService<IAltinnTestingApiService>();
     private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private ExecutionAccessView? _access;
+    /// <summary>Run is offered when the deployment signs users in (Entra) or the backend reports execution access (e.g. local trusted
+    /// execution). Only a hint: the backend re-checks ActiveEventExecute on every execution request.</summary>
+    private bool CanExecute => ExecutionGate.CanExecute(Authentication, _access);
+    private async Task LoadAccessAsync()
+    {
+        if (_access is not null || Authentication.Configured || Services.GetService<IExecutionAccessApiService>() is not { } access) return;
+        _access = await access.GetAsync();
+    }
+
 
     protected override async Task OnParametersSetAsync()
     {
@@ -174,16 +212,38 @@
             _contract = contract.Value;
             _snapshotId = _contract?.SourceCandidates.FirstOrDefault()?.SnapshotId.ToString() ?? "";
             _error = contract.Error;
-            if (Authentication.Configured)
+            await LoadAccessAsync();
+            if (CanExecute)
             {
                 var status = await Api.SignInStatusAsync(EnvironmentId);
                 _signIn = status.Value;
                 _error ??= status.Error;
             }
+            await LoadReadinessAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The Altinn setup could not be loaded from the backend."; }
         finally { _loading = false; }
     }
+
+    /// <summary>Unattended readiness comes from the shared journey readiness (one source of truth), not from a second Altinn status call.</summary>
+    private async Task LoadReadinessAsync()
+    {
+        if (Services.GetService<IIntegrationJourneysApiService>() is not { } journeys) return;
+        var packs = await journeys.PacksAsync(EnvironmentId);
+        var view = packs.Value?.SelectMany(pack => pack.Journeys).FirstOrDefault(item => item.Journey.JourneyId == "rapportmottak");
+        _readiness = view is null ? [] : ReadinessKeys.Select(key => view.Prerequisites.FirstOrDefault(item => item.Key == key)).OfType<JourneyPrerequisite>().ToArray();
+        _readinessError = view is null ? packs.Error ?? "Rapportmottak readiness is not available." : null;
+    }
+
+    private static string ReadinessLabel(JourneyPrerequisite item) => item.Key switch
+    {
+        "app-policy" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
+        "unattended-provider" => item.State == JourneyReadinessState.Ready ? "Available" : "Disabled",
+        "client-secret" => item.State == JourneyReadinessState.Ready ? "Available" : "Missing",
+        "idporten-client" or "synthetic-reporter" => item.State == JourneyReadinessState.Ready ? "Configured" : "Missing",
+        "altinn-environment" => item.State == JourneyReadinessState.Ready ? "Ready" : "Blocked",
+        _ => item.State == JourneyReadinessState.Ready ? "Ready" : "Not ready",
+    };
 
     private async Task UseSourceAsync() => await RunAsync(async () =>
     {

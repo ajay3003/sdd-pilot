@@ -125,6 +125,62 @@ public sealed class AltinnSubmissionUiTests : BunitContext
     }
 
     [Fact]
+    public void UnattendedAuthentication_IsTheDefault_WithEachPrerequisiteOnItsOwn_AndNoSignInRequired()
+    {
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        cut.Find("[data-testid=atp-unattended-intro]").TextContent.Should().Contain("No sign-in step").And.Contain("No browser opens").And.Contain("child in the report is separate");
+        var rows = cut.FindAll("[data-testid=atp-readiness-item]").ToDictionary(row => row.GetAttribute("data-key")!, row => row.TextContent);
+        rows.Keys.Should().Equal("altinn-environment", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth");
+        rows["app-policy"].Should().Contain("Not confirmed").And.Contain("App authorization policy not confirmed");
+        rows["client-secret"].Should().Contain("Missing").And.Contain("not available to the backend");
+        rows["idporten-client"].Should().Contain("Missing");
+        rows["unattended-provider"].Should().Contain("Available");
+        rows["synthetic-reporter"].Should().Contain("Configured");
+        cut.Markup.Should().NotContain("Authentication not configured", "each prerequisite is named on its own")
+            .And.NotContainEquivalentOf("client_secret").And.NotContainEquivalentOf("login_hint").And.NotContainEquivalentOf("bearer");
+
+        var fallback = cut.Find("[data-testid=atp-interactive-fallback]");
+        fallback.TagName.Should().Be("DETAILS");
+        fallback.HasAttribute("open").Should().BeFalse("the interactive sign-in is a collapsed, secondary fallback");
+        cut.Find("[data-testid=atp-sign-in]").ClassList.Should().Contain("btn-secondary").And.NotContain("btn-primary");
+        cut.Find("[data-testid=atp-sign-in]").Closest("[data-testid=atp-interactive-fallback]").Should().NotBeNull("the TestID button only exists inside the fallback");
+    }
+
+    [Fact]
+    public void LocalTrustedExecution_WithoutEntra_ShowsNoEntraPrompt_AndKeepsTheFallbackSecondary()
+    {
+        Services.AddSingleton(ActiveEventAuthenticationState.NotConfigured);
+        Services.AddSingleton<IExecutionAccessApiService>(new FixedAccess(new ExecutionAccessView(ExecutionAccessMode.LocalTrusted, true, "Local trusted execution.")));
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        cut.FindAll("[data-testid=atp-sign-in-unavailable]").Should().BeEmpty("local trusted execution is execution access; no Entra sign-in is needed");
+        cut.Markup.Should().NotContain("Entra").And.NotContain("Companion").And.NotContain("Dedicated Edge");
+        cut.Find("[data-testid=atp-unattended-intro]").TextContent.Should().Contain("No sign-in step");
+        cut.Find("[data-testid=atp-interactive-fallback]").HasAttribute("open").Should().BeFalse();
+    }
+
+    private sealed class FixedAccess(ExecutionAccessView view) : IExecutionAccessApiService
+    {
+        public Task<ExecutionAccessView> GetAsync(CancellationToken ct = default) => Task.FromResult(view);
+    }
+
+    [Fact]
+    public void FullyReadyUnattendedReadiness_IsShownAsReady()
+    {
+        _journeys.Prerequisites.Clear();
+        _journeys.Prerequisites.AddRange(
+        [
+            new("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization, JourneyReadinessState.Ready, "Confirmed by the service owner."),
+            new("client-secret", "Client secret", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.Ready, "Available to the backend (value never shown).", Mandatory: false),
+            new("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.Ready, "Unattended."),
+        ]);
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.FindAll("[data-testid=atp-readiness-item]").Should().OnlyContain(row => row.GetAttribute("data-state") == "Ready");
+        cut.Find("[data-key=app-policy]").TextContent.Should().Contain("Confirmed");
+    }
+
+    [Fact]
     public void SignIn_IsOfferedOnlyWhenConfigured_AndOnlyEverOpensIdPortenTest()
     {
         _altinn.Status = new AltinnSignInStatus { Configured = false, ConfigurationProblems = ["No ID-porten TEST client id is configured."], Detail = "ID-porten TEST sign-in is not configured." };
@@ -247,7 +303,19 @@ public sealed class AltinnSubmissionUiTests : BunitContext
             new("actualHours", "Antall timer faktisk nærvær for perioden", JourneyScenarioInputKind.Number, true),
         ];
 
-        private static IntegrationJourneyPackView Pack => new()
+        /// <summary>Rapportmottak readiness as the backend reports it (synthetic states; no secret or identifier is representable).</summary>
+        public List<JourneyPrerequisite> Prerequisites { get; } =
+        [
+            new("altinn-environment", "Altinn TT02 environment", JourneyPrerequisiteCategory.TrustedEnvironment, JourneyReadinessState.Ready, "TT02 with Production blocked."),
+            new("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization, JourneyReadinessState.NotReady, "App authorization policy not confirmed: no service-owner confirmation."),
+            new("unattended-provider", "Unattended ID-porten TEST provider", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.Ready, "Available.", Mandatory: false),
+            new("idporten-client", "ID-porten TEST client", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.NotConfigured, "Missing: client id.", Mandatory: false),
+            new("client-secret", "Client secret", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.NotConfigured, "Missing: the ID-porten TEST client secret is not available to the backend.", Mandatory: false),
+            new("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData, JourneyReadinessState.Ready, "1 approved synthetic TestID reporter alias(es) configured.", Mandatory: false),
+            new("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.NotConfigured, "Neither mode is configured."),
+        ];
+
+        private IntegrationJourneyPackView Pack => new()
         {
             PackId = "skolenaervaer", DisplayName = "Skolenærvær Testing", EnvironmentId = "dev-env", EnvironmentTrusted = true,
             Journeys =
@@ -260,7 +328,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                         Steps = [new("altinn-auth", "Authenticated", JourneyStepKind.ExternalAuthentication, "Tester (TestID)", "Token accepted"), new("mu-receive", "MU receives", JourneyStepKind.MessageTransport, "MU", "Stored")],
                         Scenarios = [new("valid-report", "E2E-01 / MU-01 · Valid report", "Typed report.", JourneyScenarioSupport.Supported, Inputs: Inputs)],
                     },
-                    Readiness = JourneyReadinessState.Ready, CanRun = true, ReadinessSummary = "Ready to run after confirmation.",
+                    Readiness = JourneyReadinessState.Ready, CanRun = true, ReadinessSummary = "Ready to run after confirmation.", Prerequisites = Prerequisites,
                 },
             ],
         };

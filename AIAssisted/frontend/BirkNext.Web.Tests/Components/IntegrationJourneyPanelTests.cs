@@ -84,7 +84,43 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
         var cut = Render(authenticationConfigured: false);
         cut.Find("[data-testid=ijp-tab-rapportmottak]").Click();
         cut.Find("[data-testid=ijp-start]").HasAttribute("disabled").Should().BeTrue();
-        cut.Find("[data-testid=ijp-run-note]").TextContent.Should().StartWith("Authentication not configured");
+        cut.Find("[data-testid=ijp-run-note]").TextContent.Should().StartWith("Execution not available").And.Contain("Authentication not configured");
+    }
+
+    [Fact]
+    public async Task LocalTrustedExecution_FromTheBackend_EnablesRun_WithoutEntra_AndShowsNoSignInState()
+    {
+        Services.AddSingleton<IExecutionAccessApiService>(new FixedAccess(new ExecutionAccessView(ExecutionAccessMode.LocalTrusted, true,
+            "Local trusted execution: loopback-only Development backend, request from the configured BirkNext frontend.")));
+        _api.Pack = _api.Pack with { Journeys = [.. _api.Pack.Journeys.Select(view => view with { CanRun = true, Readiness = JourneyReadinessState.Ready })] };
+        var cut = Render(authenticationConfigured: false);
+        cut.Find("[data-testid=ijp-tab-rapportmottak]").Click();
+
+        cut.Find("[data-testid=ijp-start]").HasAttribute("disabled").Should().BeFalse("the backend reported execution access");
+        cut.Find("[data-testid=ijp-run-note]").TextContent.Should().StartWith("Ready").And.NotContain("Authentication not configured");
+        cut.Markup.Should().NotContain("Entra").And.NotContain("Sign in with").And.NotContain("authentication/login");
+        cut.Find("[data-testid=ijp-start]").Click();
+        cut.Find("[data-testid=ijp-ack]").Change(true);
+        await cut.Find("[data-testid=ijp-confirm-run]").ClickAsync(new MouseEventArgs());
+        _api.Started.Should().ContainSingle("one click (after the confirmation) starts the run; the backend re-checks the permission");
+    }
+
+    [Fact]
+    public void ABackendDenial_KeepsRunDisabled_WithTheBackendsReason()
+    {
+        Services.AddSingleton<IExecutionAccessApiService>(new FixedAccess(new ExecutionAccessView(ExecutionAccessMode.None, false,
+            "Execution is not permitted for this session. Local trusted execution needs a loopback connection to the backend.")));
+        _api.Pack = _api.Pack with { Journeys = [.. _api.Pack.Journeys.Select(view => view with { CanRun = true, Readiness = JourneyReadinessState.Ready })] };
+        var cut = Render(authenticationConfigured: false);
+        cut.Find("[data-testid=ijp-tab-rapportmottak]").Click();
+
+        cut.Find("[data-testid=ijp-start]").HasAttribute("disabled").Should().BeTrue("the frontend never overrides a backend denial");
+        cut.Find("[data-testid=ijp-run-note]").TextContent.Should().Contain("needs a loopback connection");
+    }
+
+    private sealed class FixedAccess(ExecutionAccessView view) : IExecutionAccessApiService
+    {
+        public Task<ExecutionAccessView> GetAsync(CancellationToken ct = default) => Task.FromResult(view);
     }
 
     [Fact]
@@ -124,7 +160,7 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
         _api.HistoryStatus = HttpStatusCode.Unauthorized;
         var cut = Render(authenticationConfigured: false);
         cut.Find("[data-testid=ijp-tab-history]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ijp-history-error]").TextContent.Should().StartWith("Authentication not configured"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ijp-history-error]").TextContent.Should().Contain("Authentication not configured"));
     }
 
     [Fact]

@@ -337,6 +337,16 @@
 
     private IIntegrationJourneysApiService? Api => _api ??= Services.GetService<IIntegrationJourneysApiService>();
     private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private ExecutionAccessView? _access;
+    /// <summary>Run is offered when the deployment signs users in (Entra) or the backend reports execution access (e.g. local trusted
+    /// execution). Only a hint: the backend re-checks ActiveEventExecute on every execution request.</summary>
+    private bool CanExecute => ExecutionGate.CanExecute(Authentication, _access);
+    private async Task LoadAccessAsync()
+    {
+        if (_access is not null || Authentication.Configured || Services.GetService<IExecutionAccessApiService>() is not { } access) return;
+        _access = await access.GetAsync();
+    }
+
     private IntegrationJourneyPackView? Pack => _packs.FirstOrDefault(item => item.PackId == _packId);
 
     private IReadOnlyList<(string Key, string Label)> Tabs => Pack is { } pack
@@ -349,7 +359,7 @@
     private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0
         ? selected : view.Journey.Scenarios.FirstOrDefault(item => item.Support == JourneyScenarioSupport.Supported)?.ScenarioId ?? "";
 
-    private bool CanRun(IntegrationJourneyView view) => ScenarioRunnable(view) && Authentication.Configured && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
+    private bool CanRun(IntegrationJourneyView view) => ScenarioRunnable(view) && CanExecute && !_running && SelectedScenario(view).Length > 0 && InputsComplete(view);
 
     private readonly Dictionary<string, Dictionary<string, string>> _inputs = new(StringComparer.Ordinal);
 
@@ -389,8 +399,8 @@
     private bool ScenarioRunnable(IntegrationJourneyView view) =>
         view.RunnableScenarios.Count > 0 ? view.RunnableScenarios.Contains(SelectedScenario(view), StringComparer.Ordinal) : view.CanRun;
 
-    private string RunNote(IntegrationJourneyView view) => !Authentication.Configured
-        ? "Authentication not configured: real journey execution is disabled in this browser."
+    private string RunNote(IntegrationJourneyView view) => !CanExecute
+        ? $"Execution not available: {ExecutionGate.Detail(Authentication, _access)}"
         : !ScenarioRunnable(view) ? $"Not runnable: {view.ReadinessSummary} The backend re-checks every prerequisite before anything runs."
         : "Ready. The backend re-checks every prerequisite, the trusted environment and your ActiveEventExecute permission before anything runs.";
 
@@ -398,6 +408,7 @@
     {
         if (Api is null || Profile is null || _loadedFor == Profile.Id) return;
         _loadedFor = Profile.Id;
+        await LoadAccessAsync();
         _loading = true;
         _error = null;
         _rules = null;
@@ -478,7 +489,7 @@
         {
             var result = await Api.HistoryAsync(Profile.Id, pack.PackId, _historyJourney.Length == 0 ? null : _historyJourney, _historyState, _disposed.Token);
             _history = result.Value?.ToList() ?? [];
-            _historyError = result.Unauthorized && !Authentication.Configured ? Authentication.Detail : result.Error;
+            _historyError = result.Unauthorized && !CanExecute ? ExecutionGate.Detail(Authentication, _access) : result.Error;
         }
         catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException) { _historyError = "Sign-in required to read journey history."; }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _historyError = "Journey history could not be loaded."; }

@@ -199,6 +199,9 @@ public sealed record IntegrationJourneyRun
     public IReadOnlyList<string> Limitations { get; init; } = [];
     /// <summary>Redacted description of the run's inputs (e.g. a hashed synthetic identifier and the period) — never the values themselves.</summary>
     public IReadOnlyList<string> InputSummary { get; init; } = [];
+    /// <summary>The BirkNext execution context that started the run: <c>local-session:loopback</c> or <c>authenticated-user:&lt;hash&gt;</c>.
+    /// Never an e-mail, name, raw subject, token or the synthetic TestID reporter (who is an Altinn actor, not a BirkNext user).</summary>
+    public string? InitiatedBy { get; init; }
 }
 
 public sealed record IntegrationJourneyRunSummary(Guid RunId, string PackId, string JourneyId, string ScenarioId, string EnvironmentId, JourneyRunState State,
@@ -244,3 +247,13 @@ public sealed record ArchitectureRuleFinding(
     string Provenance);
 
 public sealed record ArchitectureRuleReport(string PackId, Guid? SourceSnapshotId, string? SourceArchive, IReadOnlyList<ArchitectureRuleFinding> Findings, IReadOnlyList<string> Limitations);
+
+// ── Execution access ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// <summary>How this caller may execute active tests: an authenticated principal holding ActiveEventExecute, or the explicitly enabled local
+/// trusted execution of a loopback-only development backend. None means execution is refused.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ExecutionAccessMode { None, Authenticated, LocalTrusted }
+
+/// <summary>What the backend says about the current caller's execution permission. No identity, claim or token is included.</summary>
+public sealed record ExecutionAccessView(ExecutionAccessMode Mode, bool CanExecute, string Detail);

@@ -98,3 +98,25 @@ public sealed record AltinnSignInStatus
 
 /// <summary>Where the browser goes to sign in. Built by the backend from approved ID-porten TEST endpoints only.</summary>
 public sealed record AltinnSignInStart(string AuthorizationUrl, DateTimeOffset ExpiresAt);
+
+/// <summary>One approved synthetic TEST reporter as the UI may see it: the alias and its readiness. The TestID identifier never leaves the backend.</summary>
+public sealed record AltinnSyntheticReporterView(string Alias, string Label, bool Valid, string Detail);
+
+/// <summary>
+/// Readiness of unattended reporter authentication (ID-porten TEST headless login for a configured synthetic TestID reporter, exchanged for an
+/// Altinn TT02 token). Each prerequisite is reported on its own; a secret is reported only as available or missing, never by value.
+/// </summary>
+public sealed record AltinnUnattendedStatus
+{
+    public bool ProviderEnabled { get; init; }
+    public bool ClientConfigured { get; init; }
+    public bool RedirectConfigured { get; init; }
+    public bool SecretAvailable { get; init; }
+    public IReadOnlyList<AltinnSyntheticReporterView> Reporters { get; init; } = [];
+    public bool AppPolicyConfirmed { get; init; }
+    public string AppPolicyDetail { get; init; } = "";
+    public bool ProductionBlocked { get; init; }
+    /// <summary>True when every unattended prerequisite above is met (the app policy is reported separately and gates submissions).</summary>
+    public bool Ready { get; init; }
+    public IReadOnlyList<string> Problems { get; init; } = [];
+}

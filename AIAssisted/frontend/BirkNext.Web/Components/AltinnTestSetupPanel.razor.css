@@ -31,3 +31,8 @@
 @media (max-width: 640px) {
     .atp { padding: .75rem; }
 }
+.atp-readiness { list-style: none; padding-left: 0; }
+.atp-readiness li { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; overflow-wrap: anywhere; }
+.atp-fallback { margin: .75rem 0; border: 1px solid #e5e7eb; border-radius: 6px; padding: .4rem .75rem; }
+.atp-fallback summary { cursor: pointer; font-size: .9rem; }
+.atp-fallback summary:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }

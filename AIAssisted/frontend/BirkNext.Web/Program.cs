@@ -292,6 +292,11 @@ if (entra.Configured)
 var altinnTestingClient = builder.Services.AddHttpClient<IAltinnTestingApiService, AltinnTestingApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     altinnTestingClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Execution access: whether this session may execute active tests (permission or the backend's local trusted execution). A hint for the
+// UI only; the backend enforces ActiveEventExecute on every execution request.
+var executionAccessClient = builder.Services.AddHttpClient<IExecutionAccessApiService, ExecutionAccessApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    executionAccessClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = backendBase);

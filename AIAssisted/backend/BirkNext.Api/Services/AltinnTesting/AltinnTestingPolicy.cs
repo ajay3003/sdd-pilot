@@ -12,6 +12,54 @@ public sealed class AltinnTestingOptions
     /// <summary>Exact Altinn app ids ("org/app") this BirkNext instance may submit to in TT02.</summary>
     public List<string> ApprovedApps { get; set; } = [];
     public IdPortenTestOptions IdPortenTest { get; set; } = new();
+    public UnattendedIdPortenTestOptions UnattendedIdPortenTest { get; set; } = new();
+    /// <summary>
+    /// Service-owner confirmations that an app's authorization policy (XACML: who may instantiate, write and complete, roles, authentication
+    /// level, party representation) accepts the configured synthetic TEST reporter. Without a confirmation for the app, submission scenarios
+    /// stay Not ready: BirkNext never infers an app policy.
+    /// </summary>
+    public List<AltinnAppPolicyConfirmation> ConfirmedAppPolicies { get; set; } = [];
+}
+
+/// <summary>
+/// Unattended reporter authentication: ID-porten TEST's documented headless login for API testing (authorization code + PKCE with a
+/// <c>testid:</c> login_hint, client_secret_basic), then the Altinn TT02 token exchange. TEST only. The client id and scopes stay in the
+/// Integration Quality Review Altinn test configuration; only trust and secrets live here.
+/// </summary>
+public sealed class UnattendedIdPortenTestOptions
+{
+    public bool Enabled { get; set; }
+    /// <summary>The redirect URI registered for the ID-porten TEST client. It is only compared with the redirect ID-porten answers; it is never
+    /// requested. Falls back to <see cref="IdPortenTestOptions.RedirectUri"/>.</summary>
+    public string? RedirectUri { get; set; }
+    /// <summary>The client secret (environment variable or secret store only, never a committed file). Falls back to <see cref="IdPortenTestOptions.ClientSecret"/>.</summary>
+    public string? ClientSecret { get; set; }
+    /// <summary>Approved synthetic TEST reporters, selected in the UI by alias only.</summary>
+    public List<SyntheticReporterOptions> Reporters { get; set; } = [];
+}
+
+/// <summary>One approved synthetic TestID reporter. The identifier is used only in the login_hint; the UI, logs and history see the alias.</summary>
+public sealed class SyntheticReporterOptions
+{
+    /// <summary>Stable key, e.g. "reporter-a" (lowercase letters, digits and hyphens).</summary>
+    public string Alias { get; set; } = "";
+    /// <summary>Display name, e.g. "Skolenærvær reporter A".</summary>
+    public string Label { get; set; } = "";
+    /// <summary>The synthetic Test-Norge person identifier (month + 80) of the TestID user. Configuration outside committed files only.</summary>
+    public string? TestIdPersonIdentifier { get; set; }
+    /// <summary>The requested security level: idporten-loa-substantial or idporten-loa-high (sent as acr_values and in the login_hint).</summary>
+    public string AcrValue { get; set; } = "idporten-loa-substantial";
+    /// <summary>Only the TT02 test environment is ever allowed.</summary>
+    public string AllowedEnvironment { get; set; } = "TT02";
+}
+
+public sealed class AltinnAppPolicyConfirmation
+{
+    public string AppId { get; set; } = "";
+    /// <summary>Where the confirmation is recorded (ticket, mail, policy file version) — a reference, not the policy itself.</summary>
+    public string Reference { get; set; } = "";
+    public string ConfirmedBy { get; set; } = "";
+    public DateOnly? ConfirmedOn { get; set; }
 }
 
 public sealed class IdPortenTestOptions
@@ -101,6 +149,74 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         if (Uri.TryCreate(trusted.TargetUrl, UriKind.Absolute, out var url) && ActiveEventPolicy.LooksLikeProduction(url.Host))
             return "The trusted environment's target host carries a production marker.";
         return null;
+    }
+
+    /// <summary>The value the interactive (attended) fallback uses as reporter: the tester's own TestID sign-in held for their execution context.</summary>
+    public const string InteractiveReporter = "interactive-session";
+    public static readonly string[] AcrValues = ["idporten-loa-substantial", "idporten-loa-high"];
+    private static readonly Regex AliasPattern = new("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.CultureInvariant);
+
+    public string? UnattendedRedirectUri => string.IsNullOrWhiteSpace(options.UnattendedIdPortenTest.RedirectUri) ? options.IdPortenTest.RedirectUri : options.UnattendedIdPortenTest.RedirectUri;
+    public bool UnattendedSecretAvailable => !string.IsNullOrEmpty(UnattendedClientSecret);
+    internal string? UnattendedClientSecret => string.IsNullOrEmpty(options.UnattendedIdPortenTest.ClientSecret) ? options.IdPortenTest.ClientSecret : options.UnattendedIdPortenTest.ClientSecret;
+
+    /// <summary>The approved reporter with this alias, or null with the reason. Its identifier never appears in the reason.</summary>
+    public SyntheticReporterOptions? Reporter(string? alias, out string reason)
+    {
+        var matches = options.UnattendedIdPortenTest.Reporters.Where(item => string.Equals(item.Alias, alias, StringComparison.Ordinal)).ToList();
+        if (matches.Count != 1) { reason = matches.Count == 0 ? "The reporter is not an approved synthetic TEST reporter." : "The reporter alias is configured more than once."; return null; }
+        var problem = ReporterProblem(matches[0]);
+        reason = problem ?? $"Approved synthetic TEST reporter {matches[0].Alias}.";
+        return problem is null ? matches[0] : null;
+    }
+
+    /// <summary>Why a configured reporter cannot be used (alias shape, synthetic identifier, security level, environment), or null.</summary>
+    public static string? ReporterProblem(SyntheticReporterOptions reporter) =>
+        !AliasPattern.IsMatch(reporter.Alias) ? "The reporter alias must be lowercase letters, digits and hyphens."
+        : !IntegrationJourneys.Packs.SkoleNaervaer.SyntheticPersonIdentifier.IsSynthetic(reporter.TestIdPersonIdentifier?.Trim())
+            ? $"Reporter {reporter.Alias}: the TestID identifier is missing or not a synthetic Test-Norge identifier (month + 80)."
+        : !AcrValues.Contains(reporter.AcrValue, StringComparer.Ordinal) ? $"Reporter {reporter.Alias}: the security level must be one of {string.Join(", ", AcrValues)}."
+        : !string.Equals(reporter.AllowedEnvironment, "TT02", StringComparison.Ordinal) ? $"Reporter {reporter.Alias}: only the TT02 test environment is allowed."
+        : null;
+
+    /// <summary>What is missing for unattended reporter authentication, each problem on its own (no value is ever echoed).</summary>
+    public IReadOnlyList<string> UnattendedProblems(AltinnTestConfiguration config)
+    {
+        var problems = new List<string>();
+        if (!options.UnattendedIdPortenTest.Enabled)
+            problems.Add($"Unattended ID-porten TEST authentication is not enabled (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Enabled).");
+        if (config.AuthenticationType != ExternalAuthenticationType.IDPorten)
+            problems.Add("Authentication type is not ID-porten (Integration Quality Review → Altinn test configuration → Authentication).");
+        if (string.IsNullOrWhiteSpace(config.ClientReference))
+            problems.Add("No ID-porten TEST client id is configured (Altinn test configuration → Client reference).");
+        if (!config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal))
+            problems.Add("The configured scopes do not include openid (Altinn test configuration → Configured scopes).");
+        if (UnattendedRedirect() is null)
+            problems.Add($"No registered redirect URI is configured for the ID-porten TEST client (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:RedirectUri): https, or http on loopback.");
+        if (string.IsNullOrEmpty(UnattendedClientSecret))
+            problems.Add("The ID-porten TEST client secret is not available to the backend (environment variable or secret store).");
+        if (!options.UnattendedIdPortenTest.Reporters.Any(item => ReporterProblem(item) is null))
+            problems.Add("No approved synthetic TEST reporter is configured (backend reporter alias with a synthetic TestID identifier).");
+        problems.AddRange(options.UnattendedIdPortenTest.Reporters.Select(ReporterProblem).OfType<string>());
+        if (options.UnattendedIdPortenTest.Reporters.GroupBy(item => item.Alias, StringComparer.Ordinal).Any(group => group.Count() > 1))
+            problems.Add("A reporter alias is configured more than once.");
+        return problems;
+    }
+
+    /// <summary>The registered redirect URI when it is usable: absolute, https or loopback http, no credentials or fragment.</summary>
+    public Uri? UnattendedRedirect() =>
+        Uri.TryCreate(UnattendedRedirectUri, UriKind.Absolute, out var redirect) && string.IsNullOrEmpty(redirect.UserInfo) && redirect.Fragment.Length == 0
+            && (redirect.Scheme == Uri.UriSchemeHttps || (redirect.Scheme == Uri.UriSchemeHttp && redirect.IsLoopback)) ? redirect : null;
+
+    /// <summary>The service owner's confirmation of the app's authorization policy, or null with why it is not confirmed.</summary>
+    public AltinnAppPolicyConfirmation? AppPolicy(string? appId, out string detail)
+    {
+        var confirmation = options.ConfirmedAppPolicies.FirstOrDefault(item => string.Equals(item.AppId?.Trim(), appId?.Trim(), StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(item.Reference) && !string.IsNullOrWhiteSpace(item.ConfirmedBy) && item.ConfirmedOn is not null);
+        detail = confirmation is null
+            ? $"App authorization policy not confirmed: no service-owner confirmation that {appId ?? "the app"}'s XACML policy lets the synthetic TEST reporter instantiate, write and complete (backend {AltinnTestingOptions.Section}:ConfirmedAppPolicies). Real submissions stay disabled."
+            : $"App authorization policy confirmed by the service owner ({confirmation.ConfirmedOn:yyyy-MM-dd}, reference {confirmation.Reference}). The policy itself is not read by BirkNext.";
+        return confirmation;
     }
 
     /// <summary>What is missing for ID-porten TEST sign-in, each problem on its own. Empty when sign-in can be offered.</summary>

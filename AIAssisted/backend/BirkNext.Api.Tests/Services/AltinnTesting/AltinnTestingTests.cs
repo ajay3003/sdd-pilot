@@ -460,7 +460,7 @@ public sealed class AltinnTestingTests
     [Fact]
     public async Task AnXmlOnlyForm_IsSubmittedAsXml_AndFractionalHoursStopBeforeAnythingIsSent()
     {
-        var kit = new AltinnTestKit();
+        var kit = new AltinnTestKit().ConfigureUnattended();
         await using var harness = Harness(kit);
         harness.MessageFlows.Configuration = AltinnTestKit.ReadyConfiguration;
         harness.Sources.Snapshots.Add(AltinnTestKit.Snapshot(AltinnTestKit.AppFiles(metadata: AltinnTestKit.ApplicationMetadata(allowed: "\"application/xml\""))));
@@ -492,7 +492,7 @@ public sealed class AltinnTestingTests
         var before = Rapportmottak(await service.PacksAsync(Env, default));
         before.CanRun.Should().BeFalse();
         before.Prerequisites.Where(item => item.Mandatory && item.State != JourneyReadinessState.Ready).Select(item => item.Key)
-            .Should().Contain(["altinn-environment", "altinn-app", "altinn-auth", "submission-contract", "test-reporter", "synthetic-data"]);
+            .Should().Contain(["altinn-environment", "altinn-app", "reporter-auth", "submission-contract", "test-reporter", "synthetic-data", "app-policy"]);
 
         await kit.ConfigureReadyAsync(harness);
         var after = Rapportmottak(await service.PacksAsync(Env, default));
@@ -648,7 +648,7 @@ public sealed class AltinnTestingTests
         journey.Scenarios.Where(item => item.Support == JourneyScenarioSupport.Supported).Select(item => item.ScenarioId)
             .Should().Equal("valid-report", "person-not-found", "overlapping-report", "instance-evidence");
         journey.Scenarios.Single(item => item.ScenarioId == "correction").NotAssessedBecause.Should().Contain("verified app contract");
-        journey.Scenarios.Single(item => item.ScenarioId == "multiple-reporters").NotAssessedBecause.Should().Contain("reporter identities");
+        journey.Scenarios.Single(item => item.ScenarioId == "multiple-reporters").NotAssessedBecause.Should().Contain("approved reporters");
         journey.Scenarios.Single(item => item.ScenarioId == "valid-report").Inputs!.Single(item => item.Key == SkoleNaervaerReportInput.IdentitySourceKey).Options!
             .Select(item => item.Value).Should().Equal("registered");
         journey.Scenarios.Single(item => item.ScenarioId == "person-not-found").Inputs!.Single(item => item.Key == SkoleNaervaerReportInput.IdentitySourceKey).Options!
@@ -661,9 +661,12 @@ public sealed class AltinnTestingTests
     private static string State(string authorizationUrl) => Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(authorizationUrl).Query)["state"].ToString();
     private static Stream Text(string value) => new MemoryStream(System.Text.Encoding.UTF8.GetBytes(value));
 
-    private static Dictionary<string, string> Inputs(string source, string identifier, string from, string to, string planned, string actual) => new()
+    /// <summary>Report inputs. The reporter defaults to the interactive fallback (a held sign-in), which these tests exercise; unattended runs
+    /// are covered in UnattendedAltinnAuthenticationTests.</summary>
+    private static Dictionary<string, string> Inputs(string source, string identifier, string from, string to, string planned, string actual,
+        string reporter = AltinnTestingPolicy.InteractiveReporter) => new()
     {
-        [SkoleNaervaerReportInput.IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier, [SkoleNaervaerAltinnForm.PeriodFrom] = from,
+        [SkoleNaervaerReportInput.ReporterKey] = reporter, [SkoleNaervaerReportInput.IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier, [SkoleNaervaerAltinnForm.PeriodFrom] = from,
         [SkoleNaervaerAltinnForm.PeriodTo] = to, [SkoleNaervaerAltinnForm.PlannedHours] = planned, [SkoleNaervaerAltinnForm.ActualHours] = actual,
     };
 
@@ -697,7 +700,7 @@ public sealed class AltinnTestingTests
         services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationMessageFlowStore>(harness.MessageFlows);
         services.AddSingleton(kit.Policy);
         services.AddSingleton(_ => kit.Contracts(harness.MessageFlows, harness.Sources));
-        return new SkoleNaervaerAltinnExecutor(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), harness.Tokens,
+        return new SkoleNaervaerAltinnExecutor(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), kit.Authenticator(harness.Tokens),
             new AltinnAppApiClient(kit.Factory), TimeProvider.System);
     }
 

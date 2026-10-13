@@ -21,6 +21,12 @@ internal sealed class AltinnTestKit
     public const string AltinnToken = "altinn-tt02-token-DO-NOT-PERSIST";
     public const string AuthorizationCode = "authorization-code-DO-NOT-PERSIST";
     public const string ClientSecret = "client-secret-DO-NOT-PERSIST";
+    public const string ClientId = "birknext-test-client";
+    public const string ReporterAlias = "reporter-a";
+    public const string HeadlessRedirect = "https://birknext.test/idporten/headless-redirect";
+    public const string HeadlessCode = "headless-authorization-code-DO-NOT-PERSIST";
+    /// <summary>A synthetic (month + 80, valid control digits) identifier made up for these in-process fakes; it is never sent anywhere.</summary>
+    public static readonly string ReporterIdentifier = FirstSynthetic("0384");
     public const long PartyId = 50012345;
     public static readonly Guid InstanceGuid = Guid.Parse("6a1b2c3d-0000-4000-8000-000000000001");
     public static readonly Guid DataGuid = Guid.Parse("7b2c3d4e-0000-4000-8000-000000000002");
@@ -34,6 +40,40 @@ internal sealed class AltinnTestKit
     public AltinnTestingPolicy Policy => new(Options);
     public IHttpClientFactory Factory => new GuardedFactory(Http);
 
+    /// <summary>Approved synthetic reporter, ID-porten TEST client secret and registered redirect for unattended authentication; optionally the
+    /// service owner's app-policy confirmation (without it, submissions stay Not ready).</summary>
+    public AltinnTestKit ConfigureUnattended(bool confirmPolicy = true, bool enabled = true, bool secret = true, bool reporter = true)
+    {
+        Options.UnattendedIdPortenTest = new UnattendedIdPortenTestOptions
+        {
+            Enabled = enabled, RedirectUri = HeadlessRedirect, ClientSecret = secret ? ClientSecret : null,
+            Reporters = reporter ? [new SyntheticReporterOptions { Alias = ReporterAlias, Label = "Skolenærvær reporter A", TestIdPersonIdentifier = ReporterIdentifier }] : [],
+        };
+        Options.ConfirmedAppPolicies = confirmPolicy
+            ? [new AltinnAppPolicyConfirmation { AppId = AppId, Reference = "TEST-POLICY-1", ConfirmedBy = "service owner (test)", ConfirmedOn = new DateOnly(2026, 10, 13) }]
+            : [];
+        return this;
+    }
+
+    public UnattendedIdPortenTestAuthentication Unattended(AltinnTestSessionCache cache, TimeProvider? clock = null, ListLogger<UnattendedIdPortenTestAuthentication>? logger = null) =>
+        new(Factory, Policy, cache, clock ?? TimeProvider.System, logger ?? new ListLogger<UnattendedIdPortenTestAuthentication>());
+
+    /// <summary>The production authenticator with both providers: interactive (the given held tokens) and unattended (in-process fakes).</summary>
+    public AltinnTestAuthenticator Authenticator(IAltinnTestTokens tokens, AltinnTestSessionCache? cache = null, TimeProvider? clock = null,
+        ListLogger<UnattendedIdPortenTestAuthentication>? logger = null) =>
+        new([new InteractiveIdPortenTestAuthentication(tokens, clock ?? TimeProvider.System), Unattended(cache ?? new AltinnTestSessionCache(clock ?? TimeProvider.System), clock, logger)]);
+
+    private static string FirstSynthetic(string dayMonth)
+    {
+        for (var individual = 500; individual < 1000; individual++)
+            for (var k = 0; k < 100; k++)
+            {
+                var candidate = $"{dayMonth}10{individual:000}{k:00}";
+                if (SyntheticPersonIdentifier.IsSynthetic(candidate)) return candidate;
+            }
+        throw new InvalidOperationException("No synthetic identifier found.");
+    }
+
     public AltinnAppContractService Contracts(IntegrationJourneyHarness.FakeMessageFlows flows, IntegrationJourneyHarness.FakeSources? sources = null, TimeProvider? clock = null) =>
         new(Factory, Policy, flows, sources ?? new IntegrationJourneyHarness.FakeSources(), new SkoleNaervaerAltinnForm(), clock ?? TimeProvider.System);
 
@@ -44,7 +84,7 @@ internal sealed class AltinnTestKit
     public static AltinnTestConfiguration ReadyConfiguration => MessageFlowReviewExamples.SkolenærværInitialConfiguration with
     {
         Environment = ExternalTestEnvironment.Test, AppIdentifier = AppId, AuthenticationType = ExternalAuthenticationType.IDPorten,
-        ClientReference = "birknext-test-client", ConfiguredScopes = ["openid", "altinn:instances.read", "altinn:instances.write"],
+        ClientReference = ClientId, ConfiguredScopes = ["openid", "altinn:instances.read", "altinn:instances.write"],
         ReporterReference = "approved-test-reporter", ReporterApprovedForTest = true, ApprovedSyntheticData = true, SyntheticIdentitySetReference = "testnorge-set-1",
     };
 
@@ -124,6 +164,7 @@ internal sealed class AltinnTestKit
     /// <summary>The app's source in Source Analysis, a complete contract taken from it and a ready configuration for the harness.</summary>
     public async Task ConfigureReadyAsync(IntegrationJourneyHarness harness)
     {
+        ConfigureUnattended();
         harness.MessageFlows.Configuration = ReadyConfiguration;
         harness.Sources.Snapshots.Add(Snapshot(AppFiles()));
         await Contracts(harness.MessageFlows, harness.Sources).UseSourceAnalysisAsync("dev-env", null, default);
@@ -147,6 +188,15 @@ internal sealed class FakeAltinn : HttpMessageHandler
     public string StorageInstanceJson { get; set; } = StorageInstances.ActiveTask();
     public string DiscoveryIssuer { get; set; } = "https://test.idporten.no";
     public string AuthorizationEndpoint { get; set; } = "https://login.test.idporten.no/authorize";
+    public string[] AuthMethods { get; set; } = ["client_secret_basic", "client_secret_post", "none"];
+    /// <summary>How the headless /authorize answers: ok, error, wrong-state, wrong-iss, foreign-redirect, no-redirect, no-code, no-location.</summary>
+    public string Headless { get; set; } = "ok";
+    /// <summary>id_token claim overrides (null value removes the claim).</summary>
+    public Dictionary<string, object?> IdTokenClaims { get; } = new(StringComparer.Ordinal);
+    public bool TokenMalformed { get; set; }
+    public int TokenExpiresIn { get; set; } = 120;
+    public Dictionary<string, string> LastAuthorize { get; private set; } = new(StringComparer.Ordinal);
+    private int _codeUses;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -158,7 +208,8 @@ internal sealed class FakeAltinn : HttpMessageHandler
         var (stage, json) = (request.Method.Method, url) switch
         {
             ("GET", "https://test.idporten.no/.well-known/openid-configuration") => ("discovery",
-                $$"""{"issuer":"{{DiscoveryIssuer}}","authorization_endpoint":"{{AuthorizationEndpoint}}","token_endpoint":"https://test.idporten.no/token","token_endpoint_auth_methods_supported":["client_secret_post","none"],"response_modes_supported":["query","form_post"]}"""),
+                $$"""{"issuer":"{{DiscoveryIssuer}}","authorization_endpoint":"{{AuthorizationEndpoint}}","token_endpoint":"https://test.idporten.no/token","token_endpoint_auth_methods_supported":[{{string.Join(",", AuthMethods.Select(item => $"\"{item}\""))}}],"response_modes_supported":["query","form_post"]}"""),
+            ("GET", var u) when u.StartsWith("https://login.test.idporten.no/authorize?", StringComparison.Ordinal) => ("authorize", ""),
             ("POST", "https://test.idporten.no/token") => ("token", $$"""{"access_token":"{{AltinnTestKit.IdPortenToken}}","expires_in":120,"id_token":"not-used"}"""),
             ("GET", AltinnTestingPolicy.AltinnTokenExchange) => ("exchange", $"\"{AltinnTestKit.AltinnToken}\""),
             ("GET", $"{AltinnTestKit.AppBase}api/v1/applicationmetadata") => ("metadata", AltinnTestKit.ApplicationMetadata()),
@@ -173,11 +224,60 @@ internal sealed class FakeAltinn : HttpMessageHandler
             _ => ("unknown", ""),
         };
         if (stage == "unknown") return new HttpResponseMessage(HttpStatusCode.NotFound);
+        if (stage == "authorize" && !Fail.ContainsKey(stage)) return Authorize(request.RequestUri!);
+        if (stage == "token" && request.Headers.Authorization?.Scheme == "Basic" && !Fail.ContainsKey(stage)) return HeadlessToken(request.Headers.Authorization.Parameter, body ?? "");
         if (Fail.TryGetValue(stage, out var status)) return new HttpResponseMessage(status) { Content = new StringContent("""{"title":"failure with a SECRET-LOOKING body"}""") };
         if ((stage is "exchange") && request.Headers.Authorization?.Parameter != AltinnTestKit.IdPortenToken) return new HttpResponseMessage(HttpStatusCode.Unauthorized);
         if (stage is "party" or "instance" or "data" or "validate" or "next" or "read" or "storage" && request.Headers.Authorization?.Parameter != AltinnTestKit.AltinnToken)
             return new HttpResponseMessage(HttpStatusCode.Unauthorized);
         return new HttpResponseMessage(stage == "instance" ? HttpStatusCode.Created : HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+    }
+
+    /// <summary>ID-porten TEST headless login: 302 to the registered redirect with code, state and iss (docs.digdir.no oidc_func_apitesting).</summary>
+    private HttpResponseMessage Authorize(Uri uri)
+    {
+        _codeUses = 0;
+        LastAuthorize = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).ToDictionary(item => item.Key, item => item.Value.ToString(), StringComparer.Ordinal);
+        var redirect = LastAuthorize.GetValueOrDefault("redirect_uri") ?? "";
+        var state = LastAuthorize.GetValueOrDefault("state") ?? "";
+        string Location(string target, string query) => $"{target}?{query}";
+        var location = Headless switch
+        {
+            "error" => Location(redirect, $"error=access_denied&state={Uri.EscapeDataString(state)}"),
+            "wrong-state" => Location(redirect, $"code={AltinnTestKit.HeadlessCode}&state=forged&iss=https%3A%2F%2Ftest.idporten.no"),
+            "wrong-iss" => Location(redirect, $"code={AltinnTestKit.HeadlessCode}&state={Uri.EscapeDataString(state)}&iss=https%3A%2F%2Fevil.example"),
+            "foreign-redirect" => Location("https://attacker.example/cb", $"code={AltinnTestKit.HeadlessCode}&state={Uri.EscapeDataString(state)}"),
+            "no-code" => Location(redirect, $"state={Uri.EscapeDataString(state)}&iss=https%3A%2F%2Ftest.idporten.no"),
+            _ => Location(redirect, $"code={AltinnTestKit.HeadlessCode}&state={Uri.EscapeDataString(state)}&iss=https%3A%2F%2Ftest.idporten.no"),
+        };
+        if (Headless == "no-redirect") return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>TestID login page</html>") };
+        var response = new HttpResponseMessage(HttpStatusCode.Found);
+        if (Headless != "no-location") response.Headers.Location = new Uri(location);
+        return response;
+    }
+
+    /// <summary>The token endpoint for client_secret_basic: checks the client, code (single use), redirect and PKCE verifier like ID-porten would.</summary>
+    private HttpResponseMessage HeadlessToken(string? basic, string body)
+    {
+        var form = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery("?" + body);
+        var credentials = Encoding.UTF8.GetString(Convert.FromBase64String(basic ?? ""));
+        var challenge = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(form["code_verifier"].ToString()))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        if (credentials != $"{AltinnTestKit.ClientId}:{AltinnTestKit.ClientSecret}" || form["grant_type"] != "authorization_code" || form["code"] != AltinnTestKit.HeadlessCode
+            || form["redirect_uri"] != LastAuthorize.GetValueOrDefault("redirect_uri") || challenge != LastAuthorize.GetValueOrDefault("code_challenge") || ++_codeUses > 1)
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("""{"error":"invalid_grant"}""") };
+        if (TokenMalformed) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("not json") };
+        var claims = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["iss"] = "https://test.idporten.no", ["aud"] = AltinnTestKit.ClientId, ["nonce"] = LastAuthorize.GetValueOrDefault("nonce"),
+            ["amr"] = new[] { "TestID" }, ["pid"] = AltinnTestKit.ReporterIdentifier, ["acr"] = "idporten-loa-substantial",
+        };
+        foreach (var (key, value) in IdTokenClaims) { if (value is null) claims.Remove(key); else claims[key] = value; }
+        static string Part(object value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(value))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var idToken = $"{Part(new { alg = "RS256", typ = "JWT" })}.{Part(claims)}.signature";
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"access_token":"{{AltinnTestKit.IdPortenToken}}","token_type":"Bearer","expires_in":{{TokenExpiresIn}},"refresh_token":"refresh-DO-NOT-PERSIST","id_token":"{{idToken}}"}""", Encoding.UTF8, "application/json"),
+        };
     }
 
     private static string Instance(bool ended) => $$"""
