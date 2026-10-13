@@ -390,7 +390,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var options = altinnPolicy.Options.UnattendedIdPortenTest;
                 var clientConfigured = config.AuthenticationType == ExternalAuthenticationType.IDPorten && !string.IsNullOrWhiteSpace(config.ClientReference)
                     && config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal);
-                var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterProblem(item) is null);
+                // Configured ≠ confirmed: a reporter counts as configured before its Altinn profile is confirmed (shown in its own row).
+                var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterConfigurationProblem(item) is null);
+                var reporterProblem = options.Reporters.Select(AltinnTestingPolicy.ReporterConfigurationProblem).FirstOrDefault(item => item is not null);
+                var publicMetadata = contract.Sources.FirstOrDefault(item => item.Source == AltinnContractSourceKind.PublicTt02Metadata);
                 var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail);
                 // A confirmed policy must also allow the roles the configured reporters act in (unattended aliases, or PRIV for the fallback).
                 var roles = options.Reporters.Select(item => item.AltinnRole).Append("PRIV").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -430,13 +433,19 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         altinnPolicy.UnattendedSecretAvailable ? "Available to the backend (value never shown)." : "Missing: the ID-porten TEST client secret is not available to the backend (environment variable or secret store).", Mandatory: false),
                     new("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData,
                         reporters > 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        reporters > 0 ? $"{reporters} approved synthetic TestID reporter alias(es) configured (identifiers stay in the backend)." : "Missing: no approved synthetic TestID reporter alias is configured.", Mandatory: false),
+                        reporters > 0 ? $"{reporters} approved synthetic TestID reporter alias(es) configured (identifiers stay in the backend)."
+                            : reporterProblem is not null ? $"Not usable: {reporterProblem}"
+                            : $"Missing: no synthetic TestID reporter alias is configured (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Reporters).", Mandatory: false),
+                    new("reporter-role", "Reporter role", JourneyPrerequisiteCategory.Authorization,
+                        reporters > 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        reporters > 0 ? "PRIV: the reporter submits for their own party (the only supported role; acting for an organisation is not part of this run)."
+                            : "Not applicable until a synthetic reporter alias is configured; only PRIV is supported.", Mandatory: false),
                     new("altinn-auth", "Interactive TestID sign-in (fallback)", JourneyPrerequisiteCategory.Authentication,
                         signIn.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         signIn.Count == 0 ? "Optional fallback configured: a tester can sign in with TestID in the browser instead." : $"Optional fallback not configured: {string.Join(" ", signIn)}", Mandatory: false),
                     new("reporter-profile", "Reporter Altinn profile", JourneyPrerequisiteCategory.SyntheticData,
-                        options.Reporters.Count > 0 && awaitingProfile == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
-                        options.Reporters.Count == 0 ? "Not applicable until a synthetic reporter alias is configured."
+                        reporters > 0 && awaitingProfile == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        reporters == 0 ? "Not applicable until a synthetic reporter alias is configured."
                             : awaitingProfile == 0 ? "Confirmed: every configured synthetic reporter has an Altinn TT02 profile (Altinn's token exchange requires one)."
                             : $"Not confirmed for {awaitingProfile} reporter alias(es): Altinn's token exchange fails for a person without an Altinn TT02 profile (AltinnProfileConfirmed).", Mandatory: false),
                     new("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization,
@@ -446,6 +455,11 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         contract.Complete ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
                         contract.Complete ? $"Complete: form data type {contract.FormDataTypeId}, {contract.Bindings.Count} verified fields, process confirmed for {contract.Process.Transitions} bounded transition(s)."
                             : $"Incomplete — {string.Join(" ", contract.Missing)}", Scenarios: SubmissionScenarios),
+                    new("public-metadata", "Public TT02 process metadata", JourneyPrerequisiteCategory.Contract,
+                        publicMetadata is not null ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
+                        publicMetadata is not null
+                            ? $"Loaded {publicMetadata.CapturedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC from the public TT02 metadata of {publicMetadata.AppId} (anonymous reads; fingerprint {Short(publicMetadata.Fingerprint)})."
+                            : "Missing: select \"Read public TT02 metadata\" (anonymous GETs only) after restarting the backend on the current commit.", Mandatory: false),
                     // Shown on its own so the tester sees what is known for the one intended operation; the contract row above already gates it.
                     new("process-contract", "Process contract (current operation)", JourneyPrerequisiteCategory.Contract,
                         contract.Process.Status switch
@@ -476,6 +490,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         contract.RequiredUnboundFields.Count == 0 ? "Every required form field is filled by BirkNext."
                             : $"Risk, not a blocker: {contract.RequiredUnboundFields.Count} required field(s) BirkNext does not fill ({string.Join(", ", contract.RequiredUnboundFields.Take(6).Select(field => field.Path))}). They are expected from the app; Altinn's validation in the first live run shows it, before any process transition.",
                         Scenarios: SubmissionScenarios, Mandatory: false),
+                    new("backend-build", "Backend build", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.Ready,
+                        $"{BackendBuild.Describe()} Restart the backend after changing branch, commit or configuration, then read the public TT02 metadata again.", Mandatory: false),
                     // Downstream steps (MU, MM, Skolenærværsrapport) are shown but do not gate the Altinn submission: without them those steps stay
                     // Not assessed, so a run can reach Partial at most.
                     Source("MU", ["MU", "Meldingsutveksleren"]) with { Mandatory = false },
@@ -510,5 +526,24 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             default:
                 return [];
         }
+    }
+
+    private static string Short(string fingerprint) => fingerprint.Length > 12 ? fingerprint[..12] : fingerprint;
+}
+
+/// <summary>The running backend's build (assembly informational version, which carries the git commit), so a stale backend is visible.</summary>
+public static class BackendBuild
+{
+    public static string Version { get; } = typeof(BackendBuild).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false).OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+        .FirstOrDefault()?.InformationalVersion ?? "unknown";
+
+    /// <summary>"Running commit 8c68d872." when the version carries a commit; otherwise the version itself.</summary>
+    public static string Describe(string? version = null)
+    {
+        version ??= Version;
+        var plus = version.IndexOf('+');
+        var commit = plus >= 0 ? version[(plus + 1)..] : "";
+        return System.Text.RegularExpressions.Regex.IsMatch(commit, "^[0-9a-f]{7,40}$") ? $"Running commit {commit[..8]}." : $"Running version {version} (no commit recorded).";
     }
 }

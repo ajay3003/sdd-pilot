@@ -238,7 +238,9 @@ public sealed class IntegrationJourneyService(
             var (state, detail) = found.Length == 0
                 ? (JourneyReadinessState.NotConfigured, $"No configured {requirement.Kind} integration was found for {requirement.Label} ({requirement.Producer} → {requirement.Consumer}). Configure it in Integration Quality Review.")
                 : enabled.Length == 0 ? (JourneyReadinessState.NotReady, $"{requirement.Label}: the configured integration is disabled.")
-                : enrolled.Length == 0 ? (JourneyReadinessState.NotReady, $"{requirement.Label}: configured, but not enrolled in the backend trusted environment (TargetEnvironments:Trusted IntegrationIds).")
+                : enrolled.Length == 0 ? (JourneyReadinessState.NotReady, context.TrustedEnvironment is null
+                    ? $"{requirement.Label}: configured, but environment {context.EnvironmentId} is not a backend trusted environment (TargetEnvironments:Trusted). Enrol it with integration id(s) {string.Join(", ", enabled.Select(item => item.Id))}."
+                    : $"{requirement.Label}: configured, but not enrolled in the backend trusted environment {context.EnvironmentId}. Add integration id(s) {string.Join(", ", enabled.Select(item => item.Id))} to its TargetEnvironments:Trusted IntegrationIds (exact ids, no wildcard).")
                 : (JourneyReadinessState.Ready, $"{requirement.Label}: {string.Join(", ", enrolled.Select(item => item.DisplayName))}.");
             prerequisites.Add(new(IntegrationKeyPrefix + requirement.Key, requirement.Label, JourneyPrerequisiteCategory.Integration, state, detail));
         }

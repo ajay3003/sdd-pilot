@@ -54,13 +54,67 @@ public sealed class FirstRunReadinessTests
         var view = await Rapportmottak(harness, kit);
         Row(view, "reporter-profile").State.Should().Be(JourneyReadinessState.NotConfigured);
         Row(view, "reporter-profile").Detail.Should().Contain("Not confirmed for 1");
-        Row(view, "synthetic-reporter").State.Should().Be(JourneyReadinessState.NotConfigured, "an alias without a confirmed profile is not an approved reporter");
+        Row(view, "synthetic-reporter").State.Should().Be(JourneyReadinessState.Ready, "configured is not confirmed: the alias is configured, its profile is not yet confirmed");
+        Row(view, "reporter-role").Detail.Should().StartWith("PRIV");
+        Row(view, "reporter-auth").Detail.Should().StartWith("Only the interactive fallback", "an unconfirmed profile keeps unattended authentication from being ready");
         var policy = Row(view, "app-policy");
         policy.State.Should().Be(JourneyReadinessState.Ready);
         policy.Detail.Should().Contain("end-user roles PRIV, DAGL").And.Contain("end-user actions read, write, delete, instantiate").And.Contain("minimum authentication level 1");
 
         kit.Options.UnattendedIdPortenTest.Reporters[0].AltinnProfileConfirmed = true;
         Row(await Rapportmottak(harness, kit), "reporter-profile").State.Should().Be(JourneyReadinessState.Ready);
+    }
+
+    [Fact]
+    public async Task AReporterConfigurationProblem_IsNamed_NotReportedAsMissing()
+    {
+        var kit = new AltinnTestKit();
+        await using var harness = Harness(kit);
+        await kit.ConfigureReadyAsync(harness);
+        kit.Options.UnattendedIdPortenTest.Reporters[0].AltinnRole = "DAGL";
+        var view = await Rapportmottak(harness, kit);
+        Row(view, "synthetic-reporter").Detail.Should().Contain("only the Altinn role PRIV").And.NotContain(AltinnTestKit.ReporterIdentifier);
+        Row(view, "reporter-role").State.Should().Be(JourneyReadinessState.NotConfigured);
+        Row(view, "reporter-profile").Detail.Should().Contain("Not applicable", "a profile is only confirmable for a usable reporter");
+
+        kit.Options.UnattendedIdPortenTest.Reporters.Clear();
+        Row(await Rapportmottak(harness, kit), "synthetic-reporter").Detail.Should().Contain("AltinnTesting:UnattendedIdPortenTest:Reporters");
+    }
+
+    [Fact]
+    public async Task PublicTt02Metadata_IsMissing_UntilRead_ThenLoaded_WithoutClaimingMore()
+    {
+        var kit = new AltinnTestKit();
+        await using var harness = Harness(kit);
+        await kit.ConfigureReadyAsync(harness);
+        var missing = Row(await Rapportmottak(harness, kit), "public-metadata");
+        missing.State.Should().Be(JourneyReadinessState.NotConfigured);
+        missing.Detail.Should().Contain("Read public TT02 metadata").And.Contain("restarting the backend");
+        missing.Mandatory.Should().BeFalse("the app source can establish the contract instead");
+
+        await kit.Contracts(harness.MessageFlows, harness.Sources).DiscoverPublicAsync(Env, default);
+        var loaded = Row(await Rapportmottak(harness, kit), "public-metadata");
+        loaded.State.Should().Be(JourneyReadinessState.Ready);
+        loaded.Detail.Should().StartWith("Loaded").And.Contain(AltinnTestKit.AppId).And.Contain("anonymous reads");
+        kit.Http.Calls.Should().OnlyContain(c => c.Method == HttpMethod.Get && c.Authorization == null, "public metadata is read anonymously");
+    }
+
+    [Theory]
+    [InlineData("1.0.0+8c68d872de7d2d7079f64fd93d2993d4400f53e5", "Running commit 8c68d872.")]
+    [InlineData("1.0.0", "Running version 1.0.0 (no commit recorded).")]
+    [InlineData("1.0.0+local", "Running version 1.0.0+local (no commit recorded).")]
+    public void TheBackendBuild_ShowsTheRunningCommit_SoAStaleBackendIsVisible(string version, string expected) =>
+        BackendBuild.Describe(version).Should().Be(expected);
+
+    [Fact]
+    public async Task TheBackendBuildRow_IsInformational_AndTellsTheTesterToRestart()
+    {
+        var kit = new AltinnTestKit();
+        await using var harness = Harness(kit);
+        await kit.ConfigureReadyAsync(harness);
+        var row = Row(await Rapportmottak(harness, kit), "backend-build");
+        row.Mandatory.Should().BeFalse();
+        row.Detail.Should().StartWith("Running ").And.Contain("Restart the backend after changing branch, commit or configuration");
     }
 
     [Theory]

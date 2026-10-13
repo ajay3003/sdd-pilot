@@ -175,11 +175,11 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         cut.Find("[data-testid=atp-unattended-intro]").TextContent.Should().Contain("No sign-in step").And.Contain("No browser opens").And.Contain("child in the report is separate");
         var rows = cut.FindAll("[data-testid=atp-readiness-item]").ToDictionary(row => row.GetAttribute("data-key")!, row => row.TextContent);
-        rows.Keys.Should().Equal("local-execution", "altinn-environment", "app-policy", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth", "real-execution");
+        rows.Keys.Should().Equal("local-execution", "altinn-environment", "unattended-provider", "idporten-client", "client-secret", "synthetic-reporter", "reporter-auth", "app-policy", "real-execution");
         rows["app-policy"].Should().Contain("Not confirmed").And.Contain("App authorization policy not confirmed");
         rows["client-secret"].Should().Contain("Missing").And.Contain("not available to the backend");
         rows["idporten-client"].Should().Contain("Missing");
-        rows["unattended-provider"].Should().Contain("Available");
+        rows["unattended-provider"].Should().StartWith("Enabled");
         rows["synthetic-reporter"].Should().Contain("Configured");
         cut.Markup.Should().NotContain("Authentication not configured", "each prerequisite is named on its own")
             .And.NotContainEquivalentOf("client_secret").And.NotContainEquivalentOf("login_hint").And.NotContainEquivalentOf("bearer");
@@ -189,6 +189,64 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         fallback.HasAttribute("open").Should().BeFalse("the interactive sign-in is a collapsed, secondary fallback");
         cut.Find("[data-testid=atp-sign-in]").ClassList.Should().Contain("btn-secondary").And.NotContain("btn-primary");
         cut.Find("[data-testid=atp-sign-in]").Closest("[data-testid=atp-interactive-fallback]").Should().NotBeNull("the TestID button only exists inside the fallback");
+    }
+
+    [Theory]
+    [InlineData("unattended-provider", JourneyReadinessState.Ready, "Enabled")]
+    [InlineData("unattended-provider", JourneyReadinessState.NotConfigured, "Disabled")]
+    [InlineData("idporten-client", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("redirect-uri", JourneyReadinessState.Ready, "Configured")]
+    [InlineData("redirect-uri", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("client-secret", JourneyReadinessState.Ready, "Available")]
+    [InlineData("client-secret", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("synthetic-reporter", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("reporter-role", JourneyReadinessState.Ready, "PRIV")]
+    [InlineData("reporter-profile", JourneyReadinessState.Ready, "Confirmed")]
+    [InlineData("reporter-profile", JourneyReadinessState.NotConfigured, "Not confirmed")]
+    [InlineData("synthetic-data", JourneyReadinessState.Ready, "Declared")]
+    [InlineData("synthetic-data", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("integration:report-intake", JourneyReadinessState.Ready, "Configured")]
+    [InlineData("integration:report-intake", JourneyReadinessState.NotReady, "Not enrolled")]
+    [InlineData("integration:report-intake", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("public-metadata", JourneyReadinessState.Ready, "Loaded")]
+    [InlineData("public-metadata", JourneyReadinessState.NotConfigured, "Missing")]
+    [InlineData("process-contract", JourneyReadinessState.Ready, "Confirmed")]
+    [InlineData("process-contract", JourneyReadinessState.NotReady, "Not confirmed")]
+    [InlineData("meldingshode", JourneyReadinessState.Partial, "Risk")]
+    [InlineData("backend-build", JourneyReadinessState.Ready, "Build")]
+    public void EachSetupItem_HasItsOwnRow_WithAPlainState_AndTheBackendReason(string key, JourneyReadinessState state, string label)
+    {
+        _journeys.Prerequisites.RemoveAll(item => item.Key == key);
+        _journeys.Prerequisites.Add(new(key, $"Row {key}", JourneyPrerequisiteCategory.Contract, state, $"Reason for {key}.", Mandatory: false));
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        var row = cut.Find($"[data-testid=atp-readiness-item][data-key='{key}']");
+        row.QuerySelector(".atp-pill")!.TextContent.Should().Be(label);
+        row.TextContent.Should().Contain($"Reason for {key}.", "every state shows the backend's specific reason");
+    }
+
+    [Fact]
+    public void SetupRows_FollowTheTestersOrder_FromBackendBuildToMeldingshode_ThenRealExecution()
+    {
+        string[] keys = ["meldingshode", "public-metadata", "integration:report-intake", "reporter-role", "redirect-uri", "backend-build", "synthetic-data", "reporter-profile", "process-contract", "submission-contract"];
+        foreach (var key in keys) _journeys.Prerequisites.Add(new(key, key, JourneyPrerequisiteCategory.Contract, JourneyReadinessState.Ready, "ok", Mandatory: false));
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.FindAll("[data-testid=atp-readiness-item]").Select(row => row.GetAttribute("data-key")).Should().Equal(
+            "local-execution", "backend-build", "altinn-environment", "unattended-provider", "idporten-client", "redirect-uri", "client-secret", "synthetic-reporter", "reporter-role",
+            "reporter-profile", "reporter-auth", "synthetic-data", "integration:report-intake", "public-metadata", "submission-contract", "process-contract", "app-policy", "meldingshode", "real-execution");
+    }
+
+    [Fact]
+    public void RealExecution_IsBlocked_UntilTheBackendMarksE2E01Runnable()
+    {
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        var blocked = cut.Find("[data-testid=atp-readiness-item][data-key=real-execution]");
+        blocked.GetAttribute("data-state").Should().Be("NotReady");
+        blocked.TextContent.Should().Contain("Not ready").And.Contain("resolve the items marked");
+
+        _journeys.Runnable.Add("valid-report");
+        var ready = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env")).Find("[data-testid=atp-readiness-item][data-key=real-execution]");
+        ready.GetAttribute("data-state").Should().Be("Ready");
+        ready.TextContent.Should().Contain("validate it first, then confirm it explicitly").And.Contain("nothing is retried");
     }
 
     [Fact]

@@ -216,7 +216,10 @@
     private IReadOnlyList<JourneyPrerequisite> _readiness = [];
     private string? _readinessError;
     /// <summary>The Rapportmottak prerequisites this section explains, in the order a tester resolves them.</summary>
-    private static readonly string[] ReadinessKeys = ["altinn-environment", "submission-contract", "process-contract", "app-policy", "unattended-provider", "idporten-client", "redirect-uri", "client-secret", "synthetic-reporter", "reporter-profile", "reporter-auth", "synthetic-data", "meldingshode"];
+    private static readonly string[] ReadinessKeys = ["backend-build", "altinn-environment", "unattended-provider", "idporten-client", "redirect-uri", "client-secret", "synthetic-reporter",
+        "reporter-role", "reporter-profile", "reporter-auth", "synthetic-data", TrustedIntegrationKey, "public-metadata", "submission-contract", "process-contract", "app-policy", "meldingshode"];
+    /// <summary>The Altinn report-intake integration's own readiness row: configured in IQR and enrolled in the backend trusted environment.</summary>
+    private const string TrustedIntegrationKey = "integration:report-intake";
     private bool _realScenarioRunnable;
     /// <summary>The backend's own verdict for the first real scenario (E2E-01) plus this browser's execution access; the backend re-checks on Run.</summary>
     private bool RealExecutionReady => _realScenarioRunnable && CanExecute;
@@ -281,7 +284,11 @@
     private static string ReadinessLabel(JourneyPrerequisite item) => item.Key switch
     {
         "app-policy" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
-        "unattended-provider" => item.State == JourneyReadinessState.Ready ? "Available" : "Disabled",
+        "unattended-provider" => item.State == JourneyReadinessState.Ready ? "Enabled" : "Disabled",
+        "reporter-role" => item.State == JourneyReadinessState.Ready ? "PRIV" : "Missing",
+        "public-metadata" => item.State == JourneyReadinessState.Ready ? "Loaded" : "Missing",
+        TrustedIntegrationKey => item.State == JourneyReadinessState.Ready ? "Configured" : item.State == JourneyReadinessState.NotConfigured ? "Missing" : "Not enrolled",
+        "backend-build" => "Build",
         "reporter-profile" => item.State == JourneyReadinessState.Ready ? "Confirmed" : "Not confirmed",
         "process-contract" => item.State switch { JourneyReadinessState.Ready => "Confirmed", JourneyReadinessState.Partial => "Partial", _ => "Not confirmed" },
         "client-secret" => item.State == JourneyReadinessState.Ready ? "Available" : "Missing",

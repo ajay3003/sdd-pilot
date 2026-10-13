@@ -189,8 +189,16 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         return problem is null ? matches[0] : null;
     }
 
-    /// <summary>Why a configured reporter cannot be used (alias shape, synthetic identifier, security level, environment), or null.</summary>
+    /// <summary>Why a configured reporter cannot be used (its configuration, then the deliberate Altinn profile confirmation), or null.</summary>
     public static string? ReporterProblem(SyntheticReporterOptions reporter) =>
+        ReporterConfigurationProblem(reporter)
+        ?? (!reporter.AltinnProfileConfirmed ? $"Reporter {reporter.Alias}: the Altinn TT02 profile of the synthetic person is not confirmed (AltinnProfileConfirmed)." : null);
+
+    /// <summary>
+    /// Why a reporter's configuration is unusable (alias shape, synthetic identifier, security level, environment, role), or null. Configured
+    /// is not confirmed: the Altinn profile confirmation is a separate, deliberate step that nothing here infers.
+    /// </summary>
+    public static string? ReporterConfigurationProblem(SyntheticReporterOptions reporter) =>
         !AliasPattern.IsMatch(reporter.Alias) ? "The reporter alias must be lowercase letters, digits and hyphens."
         : !IntegrationJourneys.Packs.SkoleNaervaer.SyntheticPersonIdentifier.IsSynthetic(reporter.TestIdPersonIdentifier?.Trim())
             ? $"Reporter {reporter.Alias}: the TestID identifier is missing or not a synthetic Test-Norge identifier (month + 80)."
@@ -198,7 +206,6 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         : !string.Equals(reporter.AllowedEnvironment, "TT02", StringComparison.Ordinal) ? $"Reporter {reporter.Alias}: only the TT02 test environment is allowed."
         : !string.Equals(reporter.AltinnRole, "PRIV", StringComparison.OrdinalIgnoreCase)
             ? $"Reporter {reporter.Alias}: only the Altinn role PRIV (the person's own party) is supported; acting for an organisation is not part of this run."
-        : !reporter.AltinnProfileConfirmed ? $"Reporter {reporter.Alias}: the Altinn TT02 profile of the synthetic person is not confirmed (AltinnProfileConfirmed)."
         : null;
 
     /// <summary>
@@ -211,7 +218,7 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         && string.Equals(identifier.Trim(), childIdentifier.Trim(), StringComparison.Ordinal);
 
     /// <summary>Whether the reporter has a confirmed Altinn TT02 profile (reported separately so it is never hidden among other problems).</summary>
-    public int ReportersAwaitingProfile => options.UnattendedIdPortenTest.Reporters.Count(item => !item.AltinnProfileConfirmed);
+    public int ReportersAwaitingProfile => options.UnattendedIdPortenTest.Reporters.Count(item => ReporterConfigurationProblem(item) is null && !item.AltinnProfileConfirmed);
 
     /// <summary>
     /// When the confirmation records verified policy facts, they must allow what a submission does: an end user in the reporter's role may
