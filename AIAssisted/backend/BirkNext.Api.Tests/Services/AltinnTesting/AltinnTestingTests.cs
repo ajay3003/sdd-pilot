@@ -403,8 +403,23 @@ public sealed class AltinnTestingTests
         var synthetic = SyntheticPersonIdentifier.Generate();
         var realMonth = synthetic[..2] + (int.Parse(synthetic[2..4]) - 80).ToString("00") + synthetic[4..];
         SyntheticPersonIdentifier.IsSynthetic(realMonth).Should().BeFalse("a real-format fødselsnummer (month 01–12) is never accepted");
-        var dNumber = (int.Parse(synthetic[..2]) + 40).ToString("00") + synthetic[2..];
-        SyntheticPersonIdentifier.IsSynthetic(dNumber).Should().BeFalse("D-numbers are refused");
+        // D-numbers (day + 40): the real form (month 01–12) is refused; the synthetic form (month + 80, as TestID issues) is accepted.
+        static string WithControl(string nine)
+        {
+            int Control(string digits, int[] weights) { var c = 11 - digits.Select((d, i) => (d - '0') * weights[i]).Sum() % 11; return c == 11 ? 0 : c; }
+            var k1 = Control(nine, [3, 7, 6, 1, 8, 9, 4, 5, 2]);
+            if (k1 == 10) return "";
+            var k2 = Control(nine + k1, [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]);
+            return k2 == 10 ? "" : $"{nine}{k1}{k2}";
+        }
+        var syntheticDNumbers = Enumerable.Range(500, 400).Select(individual => WithControl($"418212{individual:000}")).Where(id => id.Length == 11).Take(5).ToArray();
+        syntheticDNumbers.Should().NotBeEmpty().And.OnlyContain(id => SyntheticPersonIdentifier.IsSynthetic(id), "a synthetic D-number (day + 40, month + 80) is a TestID person");
+        var realDNumbers = Enumerable.Range(500, 400).Select(individual => WithControl($"410212{individual:000}")).Where(id => id.Length == 11).Take(5).ToArray();
+        realDNumbers.Should().NotBeEmpty().And.OnlyContain(id => !SyntheticPersonIdentifier.IsSynthetic(id), "a real-format D-number (month 01–12) is refused");
+        var badDays = new[] { "32", "40", "72", "00" }.Select(day => Enumerable.Range(500, 400).Select(individual => WithControl($"{day}8212{individual:000}")).First(id => id.Length == 11));
+        badDays.Should().OnlyContain(id => !SyntheticPersonIdentifier.IsSynthetic(id), "days outside 01–31 and 41–71 are not identifiers");
+        var hNumber = Enumerable.Range(500, 400).Select(individual => WithControl($"154212{individual:000}")).First(id => id.Length == 11);
+        SyntheticPersonIdentifier.IsSynthetic(hNumber).Should().BeFalse("H-numbers (month + 40) are refused");
         SyntheticPersonIdentifier.IsSynthetic(synthetic[..10] + ((synthetic[10] - '0' + 1) % 10)).Should().BeFalse("control digits are checked");
         SyntheticPersonIdentifier.IsSynthetic("1234567890").Should().BeFalse();
         SyntheticPersonIdentifier.Reference(synthetic).Should().MatchRegex("^#[0-9a-f]{8}$").And.NotContain(synthetic);

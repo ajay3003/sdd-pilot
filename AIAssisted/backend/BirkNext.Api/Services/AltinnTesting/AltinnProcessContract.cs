@@ -43,7 +43,8 @@ public static class AltinnDeployedOpenApiReader
         }).ToArray() ?? [];
 
         // The App API operations, found by method and path shape under this app's own prefix — never assumed from fixed literals.
-        var operations = Operations(contract.Operations.Select(operation => (operation.Method, operation.Path)), appId);
+        var formDataTypes = dataTypes.Where(item => item.Kind?.StartsWith("FormData", StringComparison.Ordinal) == true).Select(item => item.DataTypeId).ToArray();
+        var operations = Operations(contract.Operations.Select(operation => (operation.Method, operation.Path)), appId, formDataTypes);
         foreach (var key in AltinnAppOperationKeys.Required.Where(key => operations.All(operation => operation.Key != key)))
             notes.Add($"The document does not declare the {key} operation.");
         var nextPath = operations.FirstOrDefault(operation => operation.Key == AltinnAppOperationKeys.ProcessNext)?.PathTemplate;
@@ -66,26 +67,37 @@ public static class AltinnDeployedOpenApiReader
 
     /// <summary>
     /// The submission operations among the document's operations, matched by HTTP method and path shape (literal segments plus placeholders of
-    /// any name) under <c>/{appId}/</c>. An operation outside the app's own namespace is never taken.
+    /// any name) under <c>/{appId}/</c>. An operation outside the app's own namespace is never taken. app-lib documents form data per data type
+    /// (<c>…/data/type/{type}</c>, <c>…/data/{dataGuid}/type/{type}</c>, route aliases of the generic operations); such a path is taken only for the
+    /// app's single form data type (<paramref name="formDataTypes"/>, from the document's data-type table) — never for an attachment, and with
+    /// several form data types nothing is guessed.
     /// </summary>
-    public static IReadOnlyList<AltinnAppOperation> Operations(IEnumerable<(string Method, string Path)> declared, string appId)
+    public static IReadOnlyList<AltinnAppOperation> Operations(IEnumerable<(string Method, string Path)> declared, string appId, IReadOnlyList<string>? formDataTypes = null)
     {
-        (string Key, string Method, string[] Shape)[] shapes =
+        var formType = formDataTypes is [var single] ? single : null;
+        (string Key, string Method, string[][] Shapes)[] shapes =
         [
-            (AltinnAppOperationKeys.CreateInstance, "POST", ["instances"]),
-            (AltinnAppOperationKeys.GetInstance, "GET", ["instances", "{}", "{}"]),
-            (AltinnAppOperationKeys.CreateData, "POST", ["instances", "{}", "{}", "data"]),
-            (AltinnAppOperationKeys.UpdateData, "PUT", ["instances", "{}", "{}", "data", "{}"]),
-            (AltinnAppOperationKeys.Validate, "GET", ["instances", "{}", "{}", "validate"]),
-            (AltinnAppOperationKeys.ProcessNext, "PUT", ["instances", "{}", "{}", "process", "next"]),
+            (AltinnAppOperationKeys.CreateInstance, "POST", [["instances"]]),
+            (AltinnAppOperationKeys.GetInstance, "GET", [["instances", "{}", "{}"]]),
+            (AltinnAppOperationKeys.CreateData, "POST", formType is null ? [["instances", "{}", "{}", "data"]] : [["instances", "{}", "{}", "data"], ["instances", "{}", "{}", "data", "type", formType]]),
+            (AltinnAppOperationKeys.UpdateData, "PUT", formType is null ? [["instances", "{}", "{}", "data", "{}"]] : [["instances", "{}", "{}", "data", "{}"], ["instances", "{}", "{}", "data", "{}", "type", formType]]),
+            (AltinnAppOperationKeys.Validate, "GET", [["instances", "{}", "{}", "validate"]]),
+            (AltinnAppOperationKeys.ProcessNext, "PUT", [["instances", "{}", "{}", "process", "next"]]),
         ];
         var prefix = $"/{appId}/";
+        var list = declared.ToList();
         var result = new List<AltinnAppOperation>();
-        foreach (var (key, method, shape) in shapes)
+        foreach (var (key, method, candidates) in shapes)
         {
-            var match = declared.FirstOrDefault(item => string.Equals(item.Method, method, StringComparison.OrdinalIgnoreCase) && item.Path is { } path
-                && path.StartsWith(prefix, StringComparison.Ordinal) && Matches(path[prefix.Length..].Split('/'), shape));
-            if (match.Path is { } found) result.Add(new AltinnAppOperation(key, method, found));
+            // The generic shape wins when both are declared; the typed alias is the fallback.
+            foreach (var shape in candidates)
+            {
+                var match = list.FirstOrDefault(item => string.Equals(item.Method, method, StringComparison.OrdinalIgnoreCase) && item.Path is { } path
+                    && path.StartsWith(prefix, StringComparison.Ordinal) && Matches(path[prefix.Length..].Split('/'), shape));
+                if (match.Path is not { } found) continue;
+                result.Add(new AltinnAppOperation(key, method, found));
+                break;
+            }
         }
         return result;
 

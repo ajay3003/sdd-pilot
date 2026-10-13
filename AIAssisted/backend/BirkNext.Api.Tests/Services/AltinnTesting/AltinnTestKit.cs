@@ -140,16 +140,33 @@ internal sealed class AltinnTestKit
     /// </summary>
     public static string DeployedOpenApi(string dataType = "model", string taskRows = RealTaskRow, bool processNext = true, bool bodyRequired = false,
         string stateFields = "\"started\": {}, \"startEvent\": {}, \"currentTask\": {}, \"ended\": {}, \"endEvent\": {}, \"actions\": {}", string app = AppId, bool taskTable = true,
-        string validatePath = "validate", string appLib = "8.12.7.264", string formTask = "Task_1", string partyParam = "instanceOwnerPartyId")
+        string validatePath = "validate", string appLib = "8.12.7.264", string formTask = "Task_1", string partyParam = "instanceOwnerPartyId", bool typedDataPaths = true,
+        string? secondFormType = null)
     {
         // The instance, data and validation operations the real document declares (the submission uses them; their paths come from here).
+        // app-lib 8 documents data operations per data type (…/data/type/{type}, …/data/{dataGuid}/type/{type}: route aliases "to comply with
+        // OpenAPI restrictions"), plus PATCH …/data and DELETE …/data/{dataGuid}; typedDataPaths: false gives the generic routes instead.
         var instance = $"/{app}/instances/{{{partyParam}}}/{{instanceGuid}}";
+        string Typed(string type, string kind) => $$"""
+            ,"{{instance}}/data/{dataGuid}/type/{{type}}": { "get": { "summary": "Get data", "tags": ["{{kind}} {{type}}"], "responses": { "200": { "description": "OK" } } },
+              "put": { "summary": "Replace data element content", "tags": ["{{kind}} {{type}}"], "responses": { "200": { "description": "OK" } } } }
+            ,"{{instance}}/data/type/{{type}}": { "post": { "summary": "Create data", "tags": ["{{kind}} {{type}}"], "responses": { "201": { "description": "Created" } } } }
+            """;
+        var data = typedDataPaths
+            ? $$"""
+              ,"{{instance}}/data": { "patch": { "summary": "Patch data elements on instance", "responses": { "200": { "description": "OK" } } } }
+              ,"{{instance}}/data/{dataGuid}": { "delete": { "summary": "Delete data element", "responses": { "200": { "description": "OK" } } } }
+              """ + Typed("ref-data-as-pdf", "FileData") + Typed(dataType, "FormData") + (secondFormType is null ? "" : Typed(secondFormType, "FormData"))
+            : $$"""
+              ,"{{instance}}/data": { "post": { "summary": "Create data element", "responses": { "201": { "description": "Created" } } } }
+              ,"{{instance}}/data/{dataGuid}": { "put": { "summary": "Update data element", "responses": { "201": { "description": "Updated" } } } }
+              """;
         var operations = $$"""
             ,"{{instance}}": { "get": { "summary": "Get instance", "responses": { "200": { "description": "OK" } } } }
-            ,"{{instance}}/data": { "post": { "summary": "Create data element", "responses": { "201": { "description": "Created" } } } }
-            ,"{{instance}}/data/{dataGuid}": { "put": { "summary": "Update data element", "responses": { "201": { "description": "Updated" } } } }
+            {{data}}
             ,"{{instance}}/{{validatePath}}": { "get": { "summary": "Validate instance", "responses": { "200": { "description": "OK" } } } }
             """;
+        var secondRow = secondFormType is null ? "" : $@"|{secondFormType}|FormData|1|application/xml|{formTask}|\n";
         var next = processNext ? $$"""
             ,"{{instance}}/process/next": { "put": { "summary": "Move instance to next process step",
                 "requestBody": { "description": "Optional body with specification of the action to perform", {{(bodyRequired ? "\"required\": true," : "")}}
@@ -163,7 +180,7 @@ internal sealed class AltinnTestKit
         return $$"""
             { "openapi": "3.0.4",
               "info": { "title": "Altinn 3 App API for School attendance", "version": "{{appLib}}",
-                "description": "App API description\r\n\nThis app has the following data types:\n| DataTypeId | Type | Allowed number | MimeTypes | TaskId |\n|------------|------|----------------|-----------|--------|\n|ref-data-as-pdf|Attachment|-|application/pdf||\n|{{dataType}}|FormData (AutoCreate)|1|application/xml|{{formTask}}|\n{{tasks}}" },
+                "description": "App API description\r\n\nThis app has the following data types:\n| DataTypeId | Type | Allowed number | MimeTypes | TaskId |\n|------------|------|----------------|-----------|--------|\n|ref-data-as-pdf|Attachment|-|application/pdf||\n|{{dataType}}|FormData (AutoCreate)|1|application/xml|{{formTask}}|\n{{secondRow}}{{tasks}}" },
               "paths": {
                 "/{{app}}/instances": { "post": { "summary": "Create new instance", "responses": { "201": { "description": "Instance created" } } } }
                 {{operations}}
@@ -288,7 +305,10 @@ internal sealed class FakeAltinn : HttpMessageHandler
             ("GET", "https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy") when PolicyXml is not null => ("policy", PolicyXml),
             ("GET", $"{AltinnTestKit.AppBase}api/authorization/parties/current?returnPartyObject=true") => ("party", $$"""{"partyId":{{AltinnTestKit.PartyId}},"name":"Synthetic reporter"}"""),
             ("POST", var u) when u == $"{AltinnTestKit.AppBase}instances?instanceOwnerPartyId={AltinnTestKit.PartyId}" => ("instance", Instance(ended: false)),
-            ("PUT", var u) when u == $"{instance}/data/{AltinnTestKit.DataGuid:D}" => ("data", "{}"),
+            ("PUT", var u) when u == $"{instance}/data/{AltinnTestKit.DataGuid:D}" || u == $"{instance}/data/{AltinnTestKit.DataGuid:D}/type/model" => ("data", "{}"),
+            // Creating the form data element: app-lib's typed route answers DataPostResponse, the generic route a DataElement.
+            ("POST", var u) when u == $"{instance}/data/type/model" => ("data", "{\"newDataElementId\":\"" + AltinnTestKit.DataGuid.ToString("D") + "\",\"instance\":{}}"),
+            ("POST", var u) when u == $"{instance}/data?dataType=model" => ("data", $$"""{"id":"{{AltinnTestKit.DataGuid:D}}"}"""),
             ("GET", var u) when u == $"{instance}/{ValidatePath}" => ("validate", ValidationJson),
             ("PUT", var u) when u == $"{instance}/process/next" => ("next", NextJson),
             ("GET", var u) when u == instance && !Advanced => ("live", LiveInstanceJson ?? Instance(ended: false)),

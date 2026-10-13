@@ -191,6 +191,68 @@ public sealed class DynamicConfigurationTests
         good.ProcessNext(5, AltinnTestKit.InstanceGuid).Host.Should().Be("buf.apps.tt02.altinn.no");
     }
 
+    [Fact]
+    public async Task TheRealAppLibDocument_DeclaresFormDataPerDataType_AndThoseOperationsAreFoundAndUsed()
+    {
+        // The real TT02 document (app-lib 8.12.7) declares form data only as …/data/type/{type} and …/data/{dataGuid}/type/{type}
+        // (app-lib route aliases), never as the generic …/data and …/data/{dataGuid}. The contract must still be complete.
+        var kit = new AltinnTestKit();
+        await using var harness = await ReadyAsync(kit);
+        var contract = Contract(harness, kit);
+        contract.Complete.Should().BeTrue(string.Join(" ", contract.Missing));
+        contract.Operations.Single(item => item.Key == AltinnAppOperationKeys.CreateData).PathTemplate.Should().EndWith("/data/type/model");
+        contract.Operations.Single(item => item.Key == AltinnAppOperationKeys.UpdateData).PathTemplate.Should().EndWith("/data/{dataGuid}/type/model");
+
+        var validation = await Service(harness, kit).ValidateAsync(Run(Report()), default);
+        validation.Checks.Single(check => check.Key == "endpoints").Passed.Should().BeTrue(validation.Checks.Single(check => check.Key == "endpoints").Detail);
+
+        var run = await Service(harness, kit).StartAsync(Run(Report()), "local-session:loopback", default);
+        run.Steps.Take(6).Should().OnlyContain(step => step.State == JourneyStepState.Verified, string.Join(" | ", run.Steps.Select(step => $"{step.StepId}: {step.State} {step.Reason}")));
+        kit.Http.Calls.Should().ContainSingle(call => call.Method == HttpMethod.Put && call.Uri.AbsolutePath.EndsWith($"/data/{AltinnTestKit.DataGuid:D}/type/model", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ATypedDataOperation_IsUsedOnlyForTheAppsSingleFormDataType()
+    {
+        const string instance = "/buf/skolenaervaer/instances/{instanceOwnerPartyId}/{instanceGuid}";
+        (string, string)[] typed = [("POST", "/buf/skolenaervaer/instances"), ("POST", $"{instance}/data/type/ref-data-as-pdf"),
+            ("POST", $"{instance}/data/type/form_v2"), ("PUT", $"{instance}/data/{{dataGuid}}/type/form_v2")];
+        var operations = AltinnDeployedOpenApiReader.Operations(typed, AltinnTestKit.AppId, ["form_v2"]);
+        operations.Select(item => (item.Key, item.PathTemplate)).Should().Contain([(AltinnAppOperationKeys.CreateData, $"{instance}/data/type/form_v2"),
+            (AltinnAppOperationKeys.UpdateData, $"{instance}/data/{{dataGuid}}/type/form_v2")]);
+        // An attachment's typed route is never taken for the form, and with two form data types nothing is guessed.
+        AltinnDeployedOpenApiReader.Operations(typed.Where(item => !item.Item2.Contains("form_v2", StringComparison.Ordinal)), AltinnTestKit.AppId, ["form_v2"])
+            .Should().NotContain(item => item.Key == AltinnAppOperationKeys.CreateData);
+        AltinnDeployedOpenApiReader.Operations(typed, AltinnTestKit.AppId, ["form_v2", "form_v3"])
+            .Should().NotContain(item => item.Key == AltinnAppOperationKeys.CreateData || item.Key == AltinnAppOperationKeys.UpdateData);
+
+        var endpoints = AltinnAppEndpoints.Create(new Uri(AltinnTestKit.AppBase), AltinnTestKit.AppId, operations, AltinnAppEndpoints.DeployedSource);
+        endpoints.CreateData(5, AltinnTestKit.InstanceGuid, "form_v2").ToString().Should().Be($"{AltinnTestKit.AppBase}instances/5/{AltinnTestKit.InstanceGuid:D}/data/type/form_v2");
+        endpoints.UpdateData(5, AltinnTestKit.InstanceGuid, AltinnTestKit.DataGuid, "form_v2").ToString()
+            .Should().Be($"{AltinnTestKit.AppBase}instances/5/{AltinnTestKit.InstanceGuid:D}/data/{AltinnTestKit.DataGuid:D}/type/form_v2");
+        FluentActions.Invoking(() => endpoints.CreateData(5, AltinnTestKit.InstanceGuid, "form_v3")).Should().Throw<AltinnContractException>().WithMessage("*form_v2*form_v3*");
+        FluentActions.Invoking(() => endpoints.UpdateData(5, AltinnTestKit.InstanceGuid, AltinnTestKit.DataGuid, "form_v3")).Should().Throw<AltinnContractException>();
+
+        // The generic routes keep working: the data type travels as the query parameter.
+        var generic = AltinnAppEndpoints.Create(new Uri(AltinnTestKit.AppBase), AltinnTestKit.AppId, AltinnAppEndpoints.Defaults(AltinnTestKit.AppId), AltinnAppEndpoints.DefaultSource);
+        generic.CreateData(5, AltinnTestKit.InstanceGuid, "form_v2").ToString().Should().EndWith($"/instances/5/{AltinnTestKit.InstanceGuid:D}/data?dataType=form_v2");
+        generic.UpdateData(5, AltinnTestKit.InstanceGuid, AltinnTestKit.DataGuid, "form_v2").ToString().Should().EndWith($"/data/{AltinnTestKit.DataGuid:D}");
+
+        // Creating through the typed route: app-lib answers DataPostResponse (newDataElementId), not a DataElement.
+        var kit = new AltinnTestKit();
+        var state = new AltinnInstanceState(AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid, null, "Task_1", null, null, null);
+        foreach (var (document, path) in new[] { (AltinnTestKit.DeployedOpenApi(), "/data/type/model"), (AltinnTestKit.DeployedOpenApi(typedDataPaths: false), "/data") })
+        {
+            var reader = AltinnDeployedOpenApiReader.Read(document, AltinnTestKit.AppId, new BirkNext.Api.Services.ContractAnalysis.OpenApiExtractor(Microsoft.Extensions.Logging.Abstractions.NullLogger<BirkNext.Api.Services.ContractAnalysis.OpenApiExtractor>.Instance));
+            reader.Notes.Should().NotContain(note => note.Contains("does not declare", StringComparison.Ordinal));
+            var addresses = AltinnAppEndpoints.Create(new Uri(AltinnTestKit.AppBase), AltinnTestKit.AppId, reader.Operations, AltinnAppEndpoints.DeployedSource);
+            var (result, id) = await new AltinnAppApiClient(kit.Factory).PutFormDataAsync(addresses, AltinnTestKit.AltinnToken, state, "model", "<x/>", "application/xml", default);
+            result.Success.Should().BeTrue(result.Detail);
+            id.Should().Be(AltinnTestKit.DataGuid, path);
+            kit.Http.Calls.Last().Uri.AbsolutePath.Should().EndWith(path);
+        }
+    }
+
     // ── Imported OpenAPI: offline evidence, never runtime truth ────────────────────────────────────────────────
 
     [Fact]

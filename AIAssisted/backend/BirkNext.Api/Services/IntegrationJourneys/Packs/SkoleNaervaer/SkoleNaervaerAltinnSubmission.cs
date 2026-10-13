@@ -37,7 +37,8 @@ public sealed class SkoleNaervaerAltinnForm : IAltinnFormBinding
 
 /// <summary>
 /// Synthetic Norwegian person identifiers. Only the Test-Norge synthetic form is accepted — month + 80, valid mod-11 control digits — so a
-/// real fødselsnummer, D-number or H-number is refused. A syntactically valid synthetic identifier is not a registered test person: whether
+/// real fødselsnummer, D-number or H-number is refused. The synthetic form exists for both fødselsnummer (day 01–31) and D-number (day + 40,
+/// 41–71); with month + 80 neither can be a real person. A syntactically valid synthetic identifier is not a registered test person: whether
 /// a child is known to Person is the tester's declaration, never inferred from the number.
 /// </summary>
 public static class SyntheticPersonIdentifier
@@ -50,7 +51,7 @@ public static class SyntheticPersonIdentifier
         if (value is not { Length: 11 } || !value.All(char.IsAsciiDigit)) return false;
         var day = int.Parse(value[..2], CultureInfo.InvariantCulture);
         var month = int.Parse(value[2..4], CultureInfo.InvariantCulture);
-        return day is >= 1 and <= 31 && month is >= 81 and <= 92 && Control(value, K1, 9) == value[9] - '0' && Control(value, K2, 10) == value[10] - '0';
+        return day is (>= 1 and <= 31) or (>= 41 and <= 71) && month is >= 81 and <= 92 && Control(value, K1, 9) == value[9] - '0' && Control(value, K2, 10) == value[10] - '0';
     }
 
     /// <summary>A new synthetic identifier (born 2008–2019, school age). Not looked up anywhere; it is unregistered only by assumption.</summary>

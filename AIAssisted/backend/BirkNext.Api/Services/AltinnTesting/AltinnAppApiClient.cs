@@ -58,7 +58,7 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         string contentType, CancellationToken ct)
     {
         var uri = instance.FormDataGuid is { } dataGuid
-            ? endpoints.UpdateData(instance.PartyId, instance.InstanceGuid, dataGuid)
+            ? endpoints.UpdateData(instance.PartyId, instance.InstanceGuid, dataGuid, formDataTypeId)
             : endpoints.CreateData(instance.PartyId, instance.InstanceGuid, formDataTypeId);
         using var response = await SendAsync(instance.FormDataGuid is null ? HttpMethod.Post : HttpMethod.Put, uri, token,
             new StringContent(body, Encoding.UTF8, contentType), ct);
@@ -67,7 +67,9 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         if (id is null)
         {
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-            id = json.RootElement.TryGetProperty("id", out var element) && Guid.TryParse(element.GetString(), out var created) ? created : null;
+            // The generic route answers a DataElement (id); app-lib's typed route a DataPostResponse (newDataElementId).
+            id = (json.RootElement.TryGetProperty("id", out var element) || json.RootElement.TryGetProperty("newDataElementId", out element))
+                && element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var created) ? created : null;
         }
         return (new AltinnCallResult(true, response.StatusCode, "Form data stored."), id);
     }

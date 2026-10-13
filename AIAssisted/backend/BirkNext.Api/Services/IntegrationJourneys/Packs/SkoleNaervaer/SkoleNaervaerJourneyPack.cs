@@ -281,7 +281,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var addresses = AltinnAppEndpoints.Create(AltinnTestingPolicy.AppBase(a.Org, a.App), $"{a.Org}/{a.App}", contract.Operations, contract.OperationsSource);
                 var sample = new Guid("00000000-0000-4000-8000-000000000001");
                 endpoints.AddRange([addresses.CreateInstance(1), addresses.Instance(1, sample), addresses.CreateData(1, sample, contract.FormDataTypeId ?? "form"),
-                    addresses.UpdateData(1, sample, sample), addresses.Validate(1, sample), addresses.ProcessNext(1, sample)]);
+                    addresses.UpdateData(1, sample, sample, contract.FormDataTypeId ?? "form"), addresses.Validate(1, sample), addresses.ProcessNext(1, sample)]);
             }
             catch (AltinnContractException ex) { addressProblem = ex.Message; }
         }

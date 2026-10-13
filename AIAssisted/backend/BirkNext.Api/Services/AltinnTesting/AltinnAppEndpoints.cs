@@ -54,8 +54,27 @@ public sealed class AltinnAppEndpoints
 
     public Uri CreateInstance(long partyId) => Build(AltinnAppOperationKeys.CreateInstance, null, null, null, $"instanceOwnerPartyId={Party(partyId)}");
     public Uri Instance(long partyId, Guid instanceGuid) => Build(AltinnAppOperationKeys.GetInstance, partyId, instanceGuid, null, null);
-    public Uri CreateData(long partyId, Guid instanceGuid, string dataTypeId) => Build(AltinnAppOperationKeys.CreateData, partyId, instanceGuid, null, $"dataType={Uri.EscapeDataString(dataTypeId)}");
-    public Uri UpdateData(long partyId, Guid instanceGuid, Guid dataGuid) => Build(AltinnAppOperationKeys.UpdateData, partyId, instanceGuid, dataGuid, null);
+    /// <summary>Creates a data element of <paramref name="dataTypeId"/>: the generic path takes the type as a query parameter, a typed path
+    /// (<c>…/data/type/{type}</c>) carries it and must be declared for exactly this type.</summary>
+    public Uri CreateData(long partyId, Guid instanceGuid, string dataTypeId) => TypedDataType(AltinnAppOperationKeys.CreateData, dataTypeId)
+        ? Build(AltinnAppOperationKeys.CreateData, partyId, instanceGuid, null, null)
+        : Build(AltinnAppOperationKeys.CreateData, partyId, instanceGuid, null, $"dataType={Uri.EscapeDataString(dataTypeId)}");
+
+    public Uri UpdateData(long partyId, Guid instanceGuid, Guid dataGuid, string dataTypeId)
+    {
+        TypedDataType(AltinnAppOperationKeys.UpdateData, dataTypeId);
+        return Build(AltinnAppOperationKeys.UpdateData, partyId, instanceGuid, dataGuid, null);
+    }
+
+    /// <summary>True when the operation's path ends in <c>/type/{literal}</c>; that literal must be <paramref name="dataTypeId"/>.</summary>
+    private bool TypedDataType(string key, string dataTypeId)
+    {
+        if (!_operations.TryGetValue(key, out var operation)) throw new AltinnContractException($"The app contract does not declare the {key} operation.");
+        var segments = operation.PathTemplate.Split('/');
+        if (segments.Length < 2 || segments[^2] != "type" || AltinnDeployedOpenApiReader.IsPlaceholder(segments[^1])) return false;
+        return string.Equals(segments[^1], dataTypeId, StringComparison.Ordinal) ? true
+            : throw new AltinnContractException($"The {key} path is declared for data type {segments[^1]}, not {dataTypeId}.");
+    }
     public Uri Validate(long partyId, Guid instanceGuid) => Build(AltinnAppOperationKeys.Validate, partyId, instanceGuid, null, null);
     public Uri ProcessNext(long partyId, Guid instanceGuid) => Build(AltinnAppOperationKeys.ProcessNext, partyId, instanceGuid, null, null);
 
