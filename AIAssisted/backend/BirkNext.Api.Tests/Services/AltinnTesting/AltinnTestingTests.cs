@@ -575,7 +575,10 @@ public sealed class AltinnTestingTests
         body.GetProperty("AntallTimerFaktiskNaervaer").GetInt32().Should().Be(92);
 
         var stored = JsonSerializer.Serialize(await harness.Store.GetAsync(run.RunId, default));
-        stored.Should().NotContainAny(identifier, AltinnTestKit.AltinnToken, AltinnTestKit.IdPortenToken, AltinnTestKit.PartyId.ToString(), "Fodselsnummer", AltinnTestKit.InstanceGuid.ToString("D"));
+        stored.Should().NotContainAny(identifier, AltinnTestKit.AltinnToken, AltinnTestKit.IdPortenToken, AltinnTestKit.PartyId.ToString(), AltinnTestKit.InstanceGuid.ToString("D"));
+        // History keeps the form payload only masked (Payload & Mapping Flow): the child's element holds the mask, never the identifier.
+        var kept = JsonSerializer.Deserialize<IntegrationJourneyRun>(stored)!.Steps.Single(step => step.StepId == SkoleNaervaerAltinnExecutor.DataStep).Payload!;
+        JsonDocument.Parse(kept.MaskedContent).RootElement.GetProperty("Klient").GetProperty("Identifikator").GetProperty("Fodselsnummer").GetString().Should().Be(SkoleNaervaerPayloadFlow.Mask);
         stored.Should().Contain(SyntheticPersonIdentifier.Reference(identifier));
         Regex.IsMatch(stored, @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("no 11-digit identifier is persisted");
     }

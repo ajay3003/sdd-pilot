@@ -20,6 +20,9 @@ public interface IIntegrationJourneysApiService
         Task.FromResult(new ActiveEventApiResult<JourneyRunValidation>(null, "Run validation is not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> GetAsync(Guid runId, CancellationToken ct = default);
     Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyRunSummary>>> HistoryAsync(string environmentId, string packId, string? journeyId, JourneyRunState? state, CancellationToken ct = default);
+    /// <summary>A recorded run's Payload &amp; Mapping Flow, built by the backend from the run's stored, redacted evidence (Not found when the pack has none).</summary>
+    Task<ActiveEventApiResult<PayloadFlowView>> PayloadFlowAsync(Guid runId, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<PayloadFlowView>(null, "Payload & Mapping Flow is not available.", null));
 }
 
 public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegrationJourneysApiService
@@ -47,6 +50,9 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public Task<ActiveEventApiResult<IntegrationJourneyRun>> GetAsync(Guid runId, CancellationToken ct = default) =>
         GetAsync<IntegrationJourneyRun>($"api/integration-journeys/runs/{runId}", ct);
+
+    public Task<ActiveEventApiResult<PayloadFlowView>> PayloadFlowAsync(Guid runId, CancellationToken ct = default) =>
+        GetAsync<PayloadFlowView>($"api/integration-journeys/runs/{runId}/payload-flow", ct);
 
     public async Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyRunSummary>>> HistoryAsync(string environmentId, string packId, string? journeyId, JourneyRunState? state,
         CancellationToken ct = default) =>

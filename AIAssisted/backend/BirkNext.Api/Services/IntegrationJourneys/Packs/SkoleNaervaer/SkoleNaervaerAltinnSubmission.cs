@@ -175,8 +175,9 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 /// reporter (headless ID-porten TEST) by default, or the tester's interactive sign-in as a fallback:
 /// authenticate (token obtained, party resolved) → create instance → store form data → validate → advance the process → read the receipt.
 /// Each step is its own evidence; a step that does not progress stops the run (nothing is retried or resent). Every policy is re-checked
-/// here before the first call. Only safe facts are recorded: HTTP status, a short instance reference, validation codes and process state —
-/// never the token, the party id, the form payload or the child's identifier. Altinn's receipt satisfies the Altinn steps only; MU, MM,
+/// here before the first call. Only safe facts are recorded: HTTP status, a short instance reference, validation codes, process state and the
+/// form payload with the child's identifier masked (Payload &amp; Mapping Flow) — never the token, the party id, the unmasked payload or the
+/// child's identifier. Altinn's receipt satisfies the Altinn steps only; MU, MM,
 /// Skolenærværsrapport and Person steps stay Not assessed.
 /// </summary>
 public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, AltinnTestAuthenticator authenticator, AltinnAppApiClient altinn, TimeProvider clock) : IJourneyStepExecutor
@@ -329,11 +330,14 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var body = session.ContentType == "application/xml"
             ? ToXml(model, session.Fields, session.XmlRootElement!, session.XmlNamespace!, session.XmlElementsQualified)
             : model.ToJsonString();
+        // The masked record of this very body (sent unchanged); the unmasked body is never kept.
+        var capture = SkoleNaervaerPayloadFlow.Capture(input, model, session.Fields, session.ContentType, session.XmlRootElement, session.XmlNamespace, session.XmlElementsQualified,
+            session.FormDataTypeId, System.Text.Encoding.UTF8.GetByteCount(body), sent: true);
         var (result, dataGuid) = await altinn.PutFormDataAsync(session.Endpoints, session.Token, session.Instance!, session.FormDataTypeId, body, session.ContentType, ct);
-        if (!result.Success) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
+        if (!result.Success) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail) with { Payload = capture };
         session.Instance = session.Instance! with { FormDataGuid = dataGuid };
         return Result(context, JourneyStepState.Verified, $"{Http(result)} · data type {session.FormDataTypeId} · {session.ContentType} · 5 fields",
-            "Form data stored on the instance. Not yet validated or submitted.", Reference(session.Instance));
+            "Form data stored on the instance. Not yet validated or submitted.", Reference(session.Instance)) with { Payload = capture };
     }
 
     private async Task<JourneyStepResult> ValidateAsync(JourneyStepContext context, Session session, CancellationToken ct)

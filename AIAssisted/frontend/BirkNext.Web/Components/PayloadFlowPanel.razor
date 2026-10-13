@@ -1,0 +1,172 @@
+@using BirkNext.Integrations
+@inject IJSRuntime JS
+
+@* Payload & Mapping Flow: each stage states its own evidence level (generated, submitted, expected, observed, confirmed, not observed, …) and
+   source. Expected is never shown as observed, and a payload is shown only as the backend sent it — already masked. Payload text is rendered
+   as text (never as HTML) and the copy button copies only that masked text. *@
+<section class="pff" aria-labelledby="@($"{_id}-heading")" data-testid="pff" data-mode="@Flow.Mode">
+    <h5 id="@($"{_id}-heading")">@Flow.Title <span class="pff-badge pff-tone-neutral">@(Flow.Mode == PayloadFlowMode.DryRun ? "Dry run" : "Recorded run")</span></h5>
+    <p class="pff-muted">What BirkNext generated, what was submitted, what was observed, and what is only expected downstream — each with its source.</p>
+
+    <ol class="pff-pipeline" aria-label="Flow summary, in stage order" data-testid="pff-pipeline">
+        @foreach (var stage in Stages)
+        {
+            <li class="pff-pipeline-stage" data-testid="pff-pipeline-stage" data-stage="@stage.StageId" data-level="@stage.Level">
+                <span class="pff-stage-name">@stage.DisplayName</span>
+                <span class="pff-badge pff-tone-@Tone(stage.Level)">@PayloadFlowPresentation.Level(stage.Level)</span>
+                <span class="pff-muted">@stage.Summary</span>
+            </li>
+        }
+    </ol>
+
+    @foreach (var stage in Stages)
+    {
+        <details class="pff-stage" data-testid="pff-stage" data-stage="@stage.StageId" data-level="@stage.Level">
+            <summary><span class="pff-stage-name">@stage.Sequence. @stage.DisplayName</span> <span class="pff-badge pff-tone-@Tone(stage.Level)">@PayloadFlowPresentation.Level(stage.Level)</span> <span class="pff-muted">@stage.Summary</span></summary>
+            <div class="pff-body">
+                <h6>Overview</h6>
+                <dl class="pff-facts" data-testid="pff-overview">
+                    <div><dt>Evidence level</dt><dd>@PayloadFlowPresentation.Level(stage.Level) — @PayloadFlowPresentation.Meaning(stage.Level)</dd></div>
+                    <div><dt>Runtime</dt><dd data-testid="pff-runtime">@stage.Runtime</dd></div>
+                    <div><dt>Evidence source</dt><dd>@stage.EvidenceSource</dd></div>
+                    @if (stage.ExpectationBasis is { } basis) { <div><dt>Expectations</dt><dd data-testid="pff-expectation-basis">@basis</dd></div> }
+                    @if (stage.Timestamp is { } at) { <div><dt>Recorded</dt><dd>@($"{at.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC")</dd></div> }
+                </dl>
+                @if (stage.Diagnostic is { Length: > 0 } diagnostic) { <p class="pff-diagnostic" role="note" data-testid="pff-diagnostic"><strong>Diagnostics:</strong> @diagnostic</p> }
+                @if (stage.Notes.Count > 0) { <ul class="pff-notes">@foreach (var note in stage.Notes) { <li>@note</li> }</ul> }
+
+                <h6>Payload</h6>
+                <p data-testid="pff-payload-state">@stage.PayloadState</p>
+                @if (stage.Payload.Count > 0 && stage.ObservedPayload.Count > 0)
+                {
+                    <div class="pff-view" role="group" aria-label="@($"{stage.DisplayName} payload view")" data-testid="pff-view">
+                        @foreach (var view in new[] { "Expected", "Observed", "Difference" })
+                        {
+                            <button type="button" class="pff-toggle" aria-pressed="@(ViewOf(stage) == view ? "true" : "false")" @onclick="() => _views[stage.StageId] = view">@view</button>
+                        }
+                    </div>
+                    @if (ViewOf(stage) == "Difference")
+                    {
+                        <table class="pff-table" data-testid="pff-difference">
+                            <thead><tr><th scope="col">Field</th><th scope="col">Expected / generated</th><th scope="col">Observed</th><th scope="col">Difference</th></tr></thead>
+                            <tbody>@foreach (var row in PayloadFlowPresentation.Difference(stage.Payload, stage.ObservedPayload))
+                            {
+                                <tr><td data-label="Field">@row.Path</td><td data-label="Expected / generated">@row.Expected</td><td data-label="Observed">@row.Observed</td><td data-label="Difference">@row.Kind</td></tr>
+                            }</tbody>
+                        </table>
+                        <p class="pff-muted">A difference is not automatically a defect: mappings may transform values on purpose.</p>
+                    }
+                    else { @Fields(ViewOf(stage) == "Observed" ? stage.ObservedPayload : stage.Payload) }
+                }
+                else if (stage.Payload.Count > 0)
+                {
+                    @Fields(stage.Payload)
+                    <p class="pff-muted" data-testid="pff-no-observed">Observed payload: none recorded, so no difference is shown.</p>
+                }
+                @if (stage.TechnicalPayload is { } technical)
+                {
+                    <details class="pff-technical" data-testid="pff-technical">
+                        <summary>Technical payload (@technical.Format.ToUpperInvariant(), masked · @technical.ByteCount bytes built)</summary>
+                        <pre class="pff-pre" tabindex="0" aria-label="@($"Technical payload, {technical.Format}, masked")">@technical.MaskedContent</pre>
+                        <p class="pff-muted">@technical.Note</p>
+                        <button type="button" class="btn-secondary" data-testid="pff-copy" @onclick="() => CopyAsync(technical.MaskedContent)">Copy masked payload</button>
+                        @if (_copied == technical.MaskedContent) { <span class="pff-muted" role="status">Masked payload copied.</span> }
+                    </details>
+                }
+
+                <h6>Contract</h6>
+                @if (stage.Contract.Count > 0)
+                {
+                    <table class="pff-table" data-testid="pff-contract">
+                        <thead><tr><th scope="col">Fact</th><th scope="col">Value</th><th scope="col">Source</th></tr></thead>
+                        <tbody>@foreach (var fact in stage.Contract) { <tr><td data-label="Fact">@fact.Label</td><td data-label="Value">@fact.Value</td><td data-label="Source">@fact.Source</td></tr> }</tbody>
+                    </table>
+                }
+                else { <p class="pff-muted">No contract information.</p> }
+
+                <h6>Validation</h6>
+                @if (stage.Validation.Count > 0)
+                {
+                    <table class="pff-table" data-testid="pff-validation">
+                        <thead><tr><th scope="col">Check</th><th scope="col">Expected</th><th scope="col">Actual</th><th scope="col">Source</th></tr></thead>
+                        <tbody>@foreach (var check in stage.Validation) { <tr><td data-label="Check">@check.Label</td><td data-label="Expected">@check.Expected</td><td data-label="Actual">@check.Actual</td><td data-label="Source">@check.Source</td></tr> }</tbody>
+                    </table>
+                }
+                else { <p class="pff-muted">No validation is defined for this stage.</p> }
+
+                <h6>Mapping</h6>
+                <p class="pff-muted" data-testid="pff-mapping-note">@stage.MappingNote</p>
+                @if (stage.Mappings.Count > 0)
+                {
+                    <table class="pff-table" data-testid="pff-mapping">
+                        <thead><tr><th scope="col">Source field</th><th scope="col">Target field</th><th scope="col">Status</th><th scope="col">Provenance</th></tr></thead>
+                        <tbody>@foreach (var entry in stage.Mappings)
+                        {
+                            <tr data-testid="pff-mapping-row" data-status="@entry.Status" data-provenance="@entry.Provenance">
+                                <td data-label="Source field">@entry.SourceStage · @entry.SourcePath<br /><span class="pff-mono">@entry.SourceValue</span></td>
+                                <td data-label="Target field"><span aria-hidden="true">→ </span>@entry.TargetStage · @entry.TargetPath<br /><span class="pff-mono">@entry.TargetValue</span>@if (entry.Transformation is { } transformation) { <br /><span class="pff-muted">Transformation: @transformation</span> }</td>
+                                <td data-label="Status">@PayloadFlowPresentation.Mapping(entry.Status)</td>
+                                <td data-label="Provenance">@PayloadFlowPresentation.Provenance(entry.Provenance)</td>
+                            </tr>
+                        }</tbody>
+                    </table>
+                }
+
+                <h6>Evidence and correlation</h6>
+                <dl class="pff-facts" data-testid="pff-correlation">@foreach (var fact in stage.Correlation) { <div><dt>@fact.Label</dt><dd>@fact.Value <span class="pff-muted">· @fact.Source</span></dd></div> }</dl>
+            </div>
+        </details>
+    }
+
+    @if (Flow.Timeline.Count > 0)
+    {
+        <h6>Timeline</h6>
+        <ol class="pff-timeline" data-testid="pff-timeline">
+            @foreach (var entry in Flow.Timeline)
+            {
+                <li data-observed="@(entry.At is not null ? "true" : "false")"><span class="pff-stage-name">@entry.Label</span> <span>@(entry.At is { } at ? $"{at.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC · {entry.State}" : entry.State)</span></li>
+            }
+        </ol>
+    }
+    @if (Flow.Notes.Count > 0) { <ul class="pff-notes" data-testid="pff-notes">@foreach (var note in Flow.Notes) { <li>@note</li> }</ul> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PayloadFlowView Flow { get; set; } = default!;
+
+    private readonly string _id = "pff-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly Dictionary<string, string> _views = new(StringComparer.Ordinal);
+    private string? _copied;
+
+    private IEnumerable<FlowStageEvidence> Stages => Flow.Stages.OrderBy(stage => stage.Sequence);
+    private string ViewOf(FlowStageEvidence stage) => _views.GetValueOrDefault(stage.StageId) ?? "Expected";
+
+    private static string Tone(FlowStageEvidenceLevel level) => level switch
+    {
+        FlowStageEvidenceLevel.Confirmed or FlowStageEvidenceLevel.Submitted or FlowStageEvidenceLevel.Observed => "ok",
+        FlowStageEvidenceLevel.Failed => "danger",
+        FlowStageEvidenceLevel.Unavailable => "attention",
+        _ => "neutral",
+    };
+
+    private static RenderFragment Fields(IReadOnlyList<PayloadFieldValue> fields) => __builder =>
+    {
+        <dl class="pff-facts" data-testid="pff-payload">
+            @foreach (var field in fields)
+            {
+                <div data-testid="pff-field" data-path="@field.Path"><dt>@field.Label@(field.Label != field.Path ? $" ({field.Path})" : "")</dt><dd>@field.Value <span class="pff-muted">· @field.Source</span>@if (field.Note is { } note) { <br /><span class="pff-muted">@note</span> }</dd></div>
+            }
+        </dl>
+    };
+
+    private async Task CopyAsync(string masked)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", masked);
+            _copied = masked;
+        }
+        catch (JSException) { _copied = null; }
+        catch (InvalidOperationException) { _copied = null; }
+    }
+}

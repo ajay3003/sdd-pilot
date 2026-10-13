@@ -333,6 +333,22 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         return new JourneyPackValidation(checks, preview);
     }
 
+    /// <summary>
+    /// Payload &amp; Mapping Flow for a Rapportmottak submission: the dry run's generated payload, or a recorded run's stored evidence. MU, MM and
+    /// Skolenærværsrapport stay Expected / Not observed unless a run step recorded runtime evidence for them. No network call is made.
+    /// </summary>
+    public async Task<PayloadFlowView?> PayloadFlowAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, PayloadFlowRequest request,
+        JourneyPackContext context, CancellationToken ct)
+    {
+        if (journey.JourneyId != RapportmottakId || !SubmissionScenarios.Contains(scenario.ScenarioId, StringComparer.Ordinal)) return null;
+        var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
+        if (request.Run is { } run) return SkoleNaervaerPayloadFlow.ForRun(run, journey, flow.AltinnConfiguration, context);
+        if (request.DryRunValues is not { Count: > 0 } values) return null;
+        var contract = altinnContracts.Evaluate(context.EnvironmentId, flow.AltinnConfiguration.AppIdentifier, flow.AppContract);
+        return SkoleNaervaerPayloadFlow.ForDryRun(SkoleNaervaerReportInput.Read(values), values.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) ?? "",
+            values.GetValueOrDefault(SkoleNaervaerReportInput.IdentitySourceKey) ?? "", contract, journey, flow.AltinnConfiguration, context);
+    }
+
     internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
     {
         AltinnProcessContractStatus.ConfirmedForCurrentOperation => "Confirmed for current operation",

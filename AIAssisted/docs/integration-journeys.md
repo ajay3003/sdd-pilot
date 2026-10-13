@@ -51,3 +51,36 @@ BiRK education data; Skolenærværsrapport owns the Person lookup for submitted 
 report processed; Service Bus accepted ≠ Bufdata processed. BirkNext never publishes `SkolenaervaersperiodeLukket` itself and never invents
 an Altinn payload. The documented message-flow pilot calls the intake "Skolenærværsmottaket" and the report service "Skoletjenesten"; that
 correspondence to MM / Skolenærværsrapport is a documentation alias, not source verified.
+
+### Payload & Mapping Flow (Rapportmottak)
+
+A Rapportmottak dry run, the last run and every history row (**View**) show a *Payload & Mapping Flow*:
+Altinn → Meldingsutveksleren (MU) → Meldingsutvekslermottaket (MM) → Skolenærværsrapport (Skoletjenesten). Each stage states its own
+evidence level and source; nothing is collapsed into one green or red status.
+
+| Level | Meaning |
+|---|---|
+| Generated | Built by BirkNext, not sent (dry run). |
+| Submitted | Sent and accepted by the receiving API (Altinn stored the form data). |
+| Confirmed | Read back from the system itself (Altinn shows the instance completed). |
+| Expected | What the contract, configuration or documented design says should happen. Nothing was observed. |
+| Observed | Seen at runtime by an evidence reader during this run. |
+| Not observed | No runtime evidence for the stage. This is not a failure. |
+| Not evaluated | The run did not get far enough to say. |
+| Failed | The stage answered with a failure. |
+
+- **Altinn** is the only stage BirkNext can generate, submit or confirm.
+  - The payload is built from the live contract (data type, task, namespace and operation all come from the deployed metadata).
+  - The run keeps it only masked: the child appears as `synthetic-child-1`, and no token, party id or identifier is kept.
+  - "Generated and submitted" is shown only because the executor sends exactly the body it built.
+- **MU, MM and Skolenærværsrapport** stay *Expected* in a dry run and *Not observed* in a run: BirkNext has no reader for them.
+  - Their expectations come from the Integration Quality Review configuration (message type, MU channel, contract, correlation mapping), a
+    bound XSD in Source Analysis (source-derived), and the documented journey steps.
+  - For a recorded run they are labelled *current expected contract*, not something recorded during that run.
+- **Mapping:** Test input → Altinn FormData comes from BirkNext's form binding (Configured), with transformations shown only where the app's
+  schema requires them (date → date-time, number → integer). No field mapping exists for the downstream hops, so none is shown.
+- **Not invented:** no Skoletjenesten endpoint, downstream payload, timestamp, correlation id or XSD result. XML schema validation is
+  *Not evaluated*: BirkNext checks field paths and types against the app's form schema, not the XML against an XSD. Required header fields
+  BirkNext does not fill (Meldingshode) are listed as *Not supplied by BirkNext*.
+- Previewed payload ≠ downstream observed payload; expected mapping ≠ observed mapping; schema-valid ≠ business-valid.
+- Runs recorded before payload capture existed show their recorded Altinn steps only; nothing is reconstructed.

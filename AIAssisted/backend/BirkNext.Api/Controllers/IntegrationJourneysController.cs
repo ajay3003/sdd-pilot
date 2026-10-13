@@ -67,4 +67,9 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
     [HttpGet("runs/{runId:guid}")]
     public async Task<ActionResult<IntegrationJourneyRun>> Get(Guid runId, CancellationToken ct) =>
         await journeys.GetAsync(runId, ct) is { } run ? Ok(run) : NotFound();
+
+    /// <summary>A recorded run's Payload &amp; Mapping Flow, built from its stored (redacted) evidence; no external call is made.</summary>
+    [HttpGet("runs/{runId:guid}/payload-flow")]
+    public async Task<ActionResult<PayloadFlowView>> PayloadFlow(Guid runId, CancellationToken ct) =>
+        await journeys.PayloadFlowAsync(runId, ct) is { } flow ? Ok(flow) : NotFound();
 }

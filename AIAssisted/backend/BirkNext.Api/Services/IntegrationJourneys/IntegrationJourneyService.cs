@@ -19,6 +19,8 @@ public interface IIntegrationJourneyService
     Task<JourneyRunValidation> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct) => throw new NotSupportedException();
     Task<IntegrationJourneyRun?> GetAsync(Guid runId, CancellationToken ct);
     Task<IReadOnlyList<IntegrationJourneyRunSummary>> HistoryAsync(IntegrationJourneyHistoryQuery query, CancellationToken ct);
+    /// <summary>A recorded run's Payload &amp; Mapping Flow from its stored evidence, or null when the run or its pack has none.</summary>
+    Task<PayloadFlowView?> PayloadFlowAsync(Guid runId, CancellationToken ct) => Task.FromResult<PayloadFlowView?>(null);
 }
 
 /// <summary>One in-flight run per environment and journey.</summary>
@@ -181,7 +183,18 @@ public sealed class IntegrationJourneyService(
         var packChecks = journey.ExecutionMode == JourneyExecutionMode.JourneyRunner && scenario.Support == JourneyScenarioSupport.Supported
             ? await pack.ValidateRunAsync(journey, scenario, inputs.Values, context, ct) : JourneyPackValidation.None;
         checks.AddRange(packChecks.Checks);
-        return result with { Valid = checks.All(item => item.Passed || !item.Blocking), Checks = checks, Preview = packChecks.Preview, InputSummary = inputs.Summary };
+        var flow = journey.ExecutionMode == JourneyExecutionMode.JourneyRunner && scenario.Support == JourneyScenarioSupport.Supported
+            ? await pack.PayloadFlowAsync(journey, scenario, new PayloadFlowRequest(inputs.Values, null), context, ct) : null;
+        return result with { Valid = checks.All(item => item.Passed || !item.Blocking), Checks = checks, Preview = packChecks.Preview, InputSummary = inputs.Summary, PayloadFlow = flow };
+    }
+
+    public async Task<PayloadFlowView?> PayloadFlowAsync(Guid runId, CancellationToken ct)
+    {
+        if (await history.GetAsync(runId, ct) is not { } run || packs.Find(run.PackId) is not { } pack) return null;
+        var journey = pack.Journeys.FirstOrDefault(item => item.JourneyId == run.JourneyId);
+        var scenario = journey?.Scenarios.FirstOrDefault(item => item.ScenarioId == run.ScenarioId);
+        if (journey is null || scenario is null) return null;
+        return await pack.PayloadFlowAsync(journey, scenario, new PayloadFlowRequest(null, run), await ContextAsync(run.EnvironmentId, ct), ct);
     }
 
     /// <summary>History keeps the initiator only in its derived, safe form (local-session:… or authenticated-user:&lt;hash&gt;); anything else — a raw

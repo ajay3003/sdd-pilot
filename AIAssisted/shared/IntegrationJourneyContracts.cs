@@ -178,6 +178,8 @@ public sealed record JourneyStepResult
     public DateTimeOffset? CapturedAt { get; init; }
     /// <summary>Safe, labelled facts behind the evidence (e.g. a task id or a masked reference) — never payloads or personal identifiers.</summary>
     public IReadOnlyList<JourneyEvidenceFact> Facts { get; init; } = [];
+    /// <summary>The payload this step generated/sent, masked (optional; runs recorded before it existed have none).</summary>
+    public JourneyPayloadCapture? Payload { get; init; }
 }
 
 public sealed record JourneyEvidenceFact(string Label, string Value);
@@ -279,5 +281,7 @@ public sealed record JourneyRunValidation
     public IReadOnlyList<JourneyValidationCheck> Checks { get; init; } = [];
     public IReadOnlyList<JourneyEvidenceFact> Preview { get; init; } = [];
     public IReadOnlyList<string> InputSummary { get; init; } = [];
+    /// <summary>The pack's Payload &amp; Mapping Flow for this dry run (generated and expected only — nothing is observed in a dry run).</summary>
+    public PayloadFlowView? PayloadFlow { get; init; }
     public string Note { get; init; } = "Validated without any external call: nothing was authenticated, created, sent or recorded.";
 }

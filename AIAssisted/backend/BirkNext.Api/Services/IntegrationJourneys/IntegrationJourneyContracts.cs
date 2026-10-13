@@ -43,7 +43,17 @@ public interface IIntegrationJourneyPack
     /// </summary>
     Task<JourneyPackValidation> ValidateRunAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> values,
         JourneyPackContext context, CancellationToken ct) => Task.FromResult(JourneyPackValidation.None);
+
+    /// <summary>
+    /// The Payload &amp; Mapping Flow of a dry run (validated values, memory only) or of a recorded run — strictly without any network call.
+    /// Stages say what was generated, submitted, observed or only expected; a pack without one returns null.
+    /// </summary>
+    Task<PayloadFlowView?> PayloadFlowAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, PayloadFlowRequest request,
+        JourneyPackContext context, CancellationToken ct) => Task.FromResult<PayloadFlowView?>(null);
 }
+
+/// <summary>Either a dry run's validated values (never persisted) or a recorded run (its stored, redacted evidence only).</summary>
+public sealed record PayloadFlowRequest(IReadOnlyDictionary<string, string>? DryRunValues, IntegrationJourneyRun? Run);
 
 /// <summary>A pack's dry-run checks and its redacted preview.</summary>
 public sealed record JourneyPackValidation(IReadOnlyList<JourneyValidationCheck> Checks, IReadOnlyList<JourneyEvidenceFact> Preview)
