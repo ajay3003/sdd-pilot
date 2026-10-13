@@ -154,7 +154,7 @@
                         @foreach (var area in areas)
                         {
                             <button type="button" id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab @(_area == area ? "active" : "")" aria-pressed="@(_area == area ? "true" : "false")"
-                                    data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@area</button>
+                                    data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@(area == "Infrastructure" ? "Infrastructure as Code" : area)</button>
                         }
                     </div>
                 }
@@ -305,6 +305,7 @@
 @code {
     /// <summary>The review that sent the user here (an allow-listed internal route identifier — never an arbitrary URL).</summary>
     [SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
+    [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
     private static readonly Dictionary<string, string> ReturnTargets = new(StringComparer.Ordinal)
     {
         ["dependency-review"] = "Dependency Review",
@@ -355,7 +356,7 @@
     /// <summary>No snapshot is shown (none stored, or none chosen) and no upload is running: the empty state offers the actions once.</summary>
     private bool NoSnapshotSelected => !_busy && _snapshots.All(s => s.Id.ToString() != _selected);
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
-    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; await Load(); _loaded = true; }
+    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfileOrNull; await Load(); if (Area is "Infrastructure" or "Configuration" or "CI/CD" or "Contracts" or "Architecture" or "Observability" or "Database" or "Overview") _area = Area; _loaded = true; }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile?.Id ?? ""); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
     private async Task Upload(InputFileChangeEventArgs args)
     {

@@ -126,6 +126,9 @@ public static class TechnologyInventory
                 if (pattern.IsMatch(file.Content)) Add(id, DetectionConfidence.Inferred, IqrSourceArchiveReader.SafeLabel(file.Path));
 
         // Evidence the analyzers already produced (stronger than markers).
+        foreach (var file in workspace.EvidenceFiles ?? [])
+            if (Path.GetExtension(file.Path).Equals(".tf", StringComparison.OrdinalIgnoreCase))
+                Add("source.iac.terraform", DetectionConfidence.Confirmed, IqrSourceArchiveReader.SafeLabel(file.Path));
         foreach (var p in domains?.CiCd.Pipelines ?? [])
             Add(p.Platform switch
             {

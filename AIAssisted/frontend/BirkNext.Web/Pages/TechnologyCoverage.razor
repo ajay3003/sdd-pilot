@@ -90,7 +90,14 @@
                                 {
                                     var descriptor = TechnologySupportRegistry.Find(t.TechnologyId);
                                     <tr data-testid="tc-tech-@t.TechnologyId" data-overall="@descriptor?.Overall">
-                                        <th scope="row">@t.DisplayName<span class="sd-context">@t.TechnologyId</span></th>
+                                        <th scope="row">
+                                            @if (t.TechnologyId == "source.iac.terraform")
+                                            {
+                                                <a href="source-analysis?area=Infrastructure" data-testid="tc-terraform-source-analysis">@t.DisplayName</a>
+                                            }
+                                            else { @t.DisplayName }
+                                            <span class="sd-context">@t.TechnologyId</span>
+                                        </th>
                                         <td class="tc-detected-cell">@P.Confidence(t.Confidence)<span class="sd-context">@t.Files file(s): @string.Join(", ", t.Evidence.Take(3))</span></td>
                                         @foreach (var d in Enum.GetValues<SupportDimension>())
                                         {
