@@ -844,9 +844,20 @@ public static class PipelineReviewBuilder
                 .Any(s => ie.Ancestors(ijob.Key).ContainsKey(s.JobKey) || (s.JobKey == ijob.Key && s.Order < ipoint));
             var terraformApply = ie.StepsOf(ijob.Key).Any(s => s.Step.Tool.StartsWith("terraform apply", StringComparison.Ordinal) || s.Step.Tool == "terraform apply");
             if (terraformApply && !plan)
-                Add(ctx, PipelineFindingCategory.InfrastructureSequenceGap, PipelineFindingSeverity.Low, ArchitectureEvidenceState.Confirmed, $"tfplan|{infra.Id}",
-                    $"terraform apply in {Display(infra)} without a preceding plan", "Without a reviewed plan, apply computes and applies changes in one step.",
-                    $"`{infra.Stage ?? infra.Job}` in `{infra.PipelineName}`.", [infra.Pipeline], Display(infra), [infra.Evidence], "Confirm whether a plan step (and its review) should precede apply.");
+            {
+                var unresolvedJobDependencies = ijob.DependsOn
+                    .Where(name => ie.Job(EffectivePipeline.JobKey(ijob.Stage, name)) is null).ToList();
+                var state = unresolvedJobDependencies.Count > 0 ? ArchitectureEvidenceState.Unresolved : ArchitectureEvidenceState.Confirmed;
+                var title = state == ArchitectureEvidenceState.Unresolved
+                    ? $"terraform apply plan sequence in {Display(infra)} is not assessable"
+                    : $"terraform apply in {Display(infra)} without a preceding plan";
+                var basis = state == ArchitectureEvidenceState.Unresolved
+                    ? $"The apply job depends on job(s) {string.Join(", ", unresolvedJobDependencies.Select(n => $"`{n}`"))}, which are not present in the analyzed pipeline snapshot. A preceding plan cannot be confirmed or ruled out."
+                    : "No preceding terraform plan was found in the same job or a resolved dependency job.";
+                Add(ctx, PipelineFindingCategory.InfrastructureSequenceGap, PipelineFindingSeverity.Low, state, $"tfplan|{infra.Id}", title,
+                    state == ArchitectureEvidenceState.Unresolved ? "Pipeline job dependencies are incomplete in this source snapshot, so plan-before-apply ordering cannot be assessed." : "Without a reviewed plan, apply computes and applies changes in one step.",
+                    $"`{infra.Stage ?? infra.Job}` in `{infra.PipelineName}`. {basis}", [infra.Pipeline], Display(infra), [infra.Evidence], "Confirm the resolved job dependency and whether a plan step (and its review) should precede apply.");
+            }
         }
 
         // Templates.

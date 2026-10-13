@@ -32,7 +32,7 @@ public static class IqrSourceArchiveReader
     public const int MaxFileBytes = 2 * 1024 * 1024;
     public const int MaxExpandedBytes = 100 * 1024 * 1024;
     private static readonly HashSet<string> Ignored = new(StringComparer.OrdinalIgnoreCase)
-        { "bin", "obj", "node_modules", "packages", ".git", ".vs", "coverage", "TestResults" };
+        { "bin", "obj", "node_modules", "packages", ".git", ".vs", ".terraform", "coverage", "TestResults" };
     /// <param name="ConfigurationFiles">JSON/YAML content held in memory for this analysis only. Never stored; only the source-architecture analyzer reads it,
     /// and only allow-listed entity names and endpoint hosts can leave it. Every other analyzer keeps seeing key inventories only.</param>
     /// <param name="AllPaths">Every non-ignored file path in the archive (names only, never content), including files no analyzer reads (pom.xml, .java,

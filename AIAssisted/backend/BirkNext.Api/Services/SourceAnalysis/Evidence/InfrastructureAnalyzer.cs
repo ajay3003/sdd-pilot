@@ -218,7 +218,7 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
                         var id = Id(scope.Directory, block.Type == "data" ? $"data.{type}.{block.Labels[1]}" : $"{type}.{block.Labels[1]}");
                         var provider = InfrastructureCatalog.Provider(type);
                         var (category, detail) = InfrastructureCatalog.Terraform(type);
-                        if (!InfrastructureCatalog.KnownProvider(provider))
+                        if (!(block.Type == "data" && type == "terraform_remote_state") && !InfrastructureCatalog.KnownProvider(provider))
                             b.Diagnostics.Add(new("Unsupported provider", $"Provider '{SourceEvidenceRedaction.Safe(provider)}' has no category adapter; its resources are recorded generically.", safeFile, block.Line));
                         var nameAttribute = block.Attribute("name") ?? block.Attribute("bucket") ?? block.Nested("metadata").FirstOrDefault()?.Attribute("name");
                         var declared = nameAttribute is null ? null : Resolve(scope, nameAttribute.Expression);

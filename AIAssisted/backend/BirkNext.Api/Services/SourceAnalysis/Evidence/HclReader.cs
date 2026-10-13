@@ -162,7 +162,10 @@ internal sealed class HclReader
                     body.Append(text).Append('\n');
                 }
                 sb.Append("<<HEREDOC>>").Append(body.ToString().Length > 0 ? "\n" + body : "");
-                break;
+                // A heredoc ends its string value, but the expression may continue with closing
+                // brackets or other terms after the terminator (for example a heredoc in an object).
+                if (depth == 0) break;
+                continue;
             }
             if (c == '#' || (c == '/' && Peek(1) == '/')) { if (depth == 0) break; SkipLine(); continue; }
             if (c == '/' && Peek(1) == '*') { SkipTrivia(newlines: true); continue; }

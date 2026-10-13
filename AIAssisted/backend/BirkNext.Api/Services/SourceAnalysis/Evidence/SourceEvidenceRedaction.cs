@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Net;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Integrations;
 using BirkNext.SourceDomains;
@@ -18,6 +19,7 @@ internal static class SourceEvidenceRedaction
     // Key segment (leaf) names that always hold sensitive values.
     private static readonly Regex SensitiveLeaf = R(@"(password|passwd|passphrase|pwd|secret|token|api[-_]?key|access[-_]?key|account[-_]?key|shared[-_]?access|sas|signing[-_]?key|private[-_]?key|client[-_]?certificate|certificate|cert|pfx|credentials?|authorization|connection[-_]?string|connstr|pat|subscription[-_]?key|instrumentation[-_]?key|master[-_]?key|encryption[-_]?key|username|user[-_]?id)$");
     private static readonly Regex SensitiveAnywhere = R(@"(password|passwd|secret|privatekey|private_key|connectionstring|apikey|api_key|accesstoken|access_token|clientsecret|client_secret)");
+    private static readonly Regex SensitiveIdentifier = R(@"(^|[-_.])(tenant|subscription|object|principal|client)[-_.]?id$");
     private static readonly Regex ConnectionSection = R(@"(^|[:._])(connectionstrings?|connection_strings?)([:._]|$)");
 
     private static readonly Regex ConnectionShape = R(@"(^|;)\s*(server|data source|host|endpoint|accountname|defaultendpointsprotocol|user id|uid|username|database|initial catalog)\s*=.*;");
@@ -33,7 +35,8 @@ internal static class SourceEvidenceRedaction
     public static bool SensitiveKey(string key)
     {
         var leaf = Leaf(key);
-        return SensitiveLeaf.IsMatch(leaf) || SensitiveAnywhere.IsMatch(leaf.Replace("-", "").Replace("_", "")) || ConnectionSection.IsMatch(key);
+        return SensitiveLeaf.IsMatch(leaf) || SensitiveAnywhere.IsMatch(leaf.Replace("-", "").Replace("_", ""))
+            || SensitiveIdentifier.IsMatch(leaf) || ConnectionSection.IsMatch(key);
     }
 
     public static string Leaf(string key)
@@ -60,6 +63,7 @@ internal static class SourceEvidenceRedaction
         if (SecretReference(value) && !ConnectionShaped(value)) return (ConfigurationValueKind.SecretReference, ConfigurationSensitivity.SecretReference, SecretReferenceLabel(value));
         if (ConnectionShaped(value) || (ConnectionSection.IsMatch(key) && !Placeholder(value)))
             return (ConfigurationValueKind.ConnectionString, ConfigurationSensitivity.Sensitive, null);
+        if (PrivateNetworkRange(value)) return (ConfigurationValueKind.Identifier, ConfigurationSensitivity.Sensitive, null);
         if (SensitiveKey(key) || SecretShaped(value))
             return Placeholder(value) ? (ConfigurationValueKind.Placeholder, ConfigurationSensitivity.Sensitive, null) : (ConfigurationValueKind.Secret, ConfigurationSensitivity.Sensitive, null);
         if (Placeholder(value)) return (ConfigurationValueKind.Placeholder, ConfigurationSensitivity.None, Safe(value));
@@ -84,6 +88,33 @@ internal static class SourceEvidenceRedaction
     }
 
     private static string? ArchitectureSafeEntity(string key, string value) => SourceArchitecture.ArchitectureText.SafeValue(key, value) is { } safe && !safe.Contains("://") ? safe : null;
+
+    // Network ranges that identify private/link-local address space are not persisted in source evidence.
+    // The same classifier is used for every environment, including dev and QA.
+    private static bool PrivateNetworkRange(string value)
+    {
+        var parts = value.Trim().Split('/', 2);
+        if (!IPAddress.TryParse(parts[0], out var address)) return false;
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+            return (bytes[0] & 0xfe) == 0xfc || (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80);
+        }
+        if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) return false;
+        var octets = address.GetAddressBytes();
+        var privateAddress = octets[0] == 10 || octets[0] == 127 || octets[0] == 169 && octets[1] == 254
+            || octets[0] == 172 && octets[1] is >= 16 and <= 31 || octets[0] == 192 && octets[1] == 168;
+        if (privateAddress) return true;
+        if (parts.Length != 2 || !int.TryParse(parts[1], out var prefix) || prefix is < 0 or > 32) return false;
+        var start = ((uint)octets[0] << 24) | ((uint)octets[1] << 16) | ((uint)octets[2] << 8) | octets[3];
+        var mask = prefix == 0 ? 0u : uint.MaxValue << (32 - prefix);
+        var end = start | ~mask;
+        return Overlaps(start, end, 0x0a000000, 0x0affffff) || Overlaps(start, end, 0x7f000000, 0x7fffffff)
+            || Overlaps(start, end, 0xa9fe0000, 0xa9feffff) || Overlaps(start, end, 0xac100000, 0xac1fffff)
+            || Overlaps(start, end, 0xc0a80000, 0xc0a8ffff);
+    }
+
+    private static bool Overlaps(uint start, uint end, uint rangeStart, uint rangeEnd) => start <= rangeEnd && end >= rangeStart;
 
     private static string SecretReferenceLabel(string value) => value switch
     {

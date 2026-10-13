@@ -41,7 +41,8 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         (R(@"\b(trivy\s+(image|config)|aquasec/trivy|docker\s+scout|grype\s+(?!dir)\S|gitleaks|checkov|tfsec|kics|zap-|owasp\s+zap|semgrep)"), PipelineStepKind.SecurityScan, "security scan"),
         (R(@"\b(cyclonedx|syft|sbom-tool|dotnet\s+CycloneDX)\b"), PipelineStepKind.Sbom, "SBOM generation"),
         (R(@"\b(sonar-scanner|dotnet\s+sonarscanner|codeql|dotnet\s+format|eslint|tflint|stylecop)\b"), PipelineStepKind.StaticAnalysis, "static analysis"),
-        (R(@"\bterraform\s+(-chdir=\S+\s+)?(init|validate|plan|fmt)\b"), PipelineStepKind.InfrastructurePlan, "terraform init/plan"),
+        (R(@"\bterraform\s+(-chdir=\S+\s+)?plan\b"), PipelineStepKind.InfrastructurePlan, "terraform plan"),
+        (R(@"\bterraform\s+(-chdir=\S+\s+)?(init|validate|fmt)\b"), PipelineStepKind.Other, "terraform setup/validation/format"),
         (R(@"\bterraform\s+(-chdir=\S+\s+)?(apply|destroy)\b"), PipelineStepKind.InfrastructureDeploy, "terraform apply"),
         (R(@"\b(az\s+deployment\s+(group|sub|mg|tenant)\s+(create|what-if)|az\s+bicep\s+build|New-Az(ResourceGroup)?Deployment)\b"), PipelineStepKind.InfrastructureDeploy, "Bicep/ARM deployment"),
         (R(@"\bhelm\s+(upgrade|install)\b"), PipelineStepKind.ApplicationDeploy, "helm upgrade"),
@@ -64,7 +65,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
     private static readonly Dictionary<string, (PipelineStepKind Kind, string Tool)> Tasks = new(StringComparer.OrdinalIgnoreCase)
     {
         ["VSTest"] = (PipelineStepKind.Test, "VSTest"), ["PublishTestResults"] = (PipelineStepKind.Test, "PublishTestResults"),
-        ["PublishCodeCoverageResults"] = (PipelineStepKind.Coverage, "PublishCodeCoverageResults"), ["TerraformInstaller"] = (PipelineStepKind.InfrastructurePlan, "terraform install"),
+        ["PublishCodeCoverageResults"] = (PipelineStepKind.Coverage, "PublishCodeCoverageResults"), ["TerraformInstaller"] = (PipelineStepKind.Other, "terraform install"),
         ["AzureResourceManagerTemplateDeployment"] = (PipelineStepKind.InfrastructureDeploy, "ARM/Bicep deployment task"), ["AzureResourceGroupDeployment"] = (PipelineStepKind.InfrastructureDeploy, "ARM deployment task"),
         ["HelmDeploy"] = (PipelineStepKind.ApplicationDeploy, "Helm"), ["Kubernetes"] = (PipelineStepKind.ApplicationDeploy, "kubectl task"), ["KubernetesManifest"] = (PipelineStepKind.ApplicationDeploy, "Kubernetes manifest task"),
         ["AzureWebApp"] = (PipelineStepKind.ApplicationDeploy, "Azure Web App"), ["AzureRmWebAppDeployment"] = (PipelineStepKind.ApplicationDeploy, "Azure App Service deploy"),
@@ -88,7 +89,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         (R(@"^snyk/actions"), PipelineStepKind.DependencyScan, "Snyk"), (R(@"^docker/build-push-action"), PipelineStepKind.ContainerBuild, "docker build-push"),
         (R(@"^azure/webapps-deploy"), PipelineStepKind.ApplicationDeploy, "Azure Web App deploy"), (R(@"^azure/functions-action"), PipelineStepKind.ApplicationDeploy, "Azure Functions deploy"),
         (R(@"^azure/container-apps-deploy-action"), PipelineStepKind.ApplicationDeploy, "Container Apps deploy"), (R(@"^azure/arm-deploy"), PipelineStepKind.InfrastructureDeploy, "ARM/Bicep deploy"),
-        (R(@"^azure/k8s-deploy"), PipelineStepKind.ApplicationDeploy, "Kubernetes deploy"), (R(@"^hashicorp/setup-terraform"), PipelineStepKind.InfrastructurePlan, "terraform setup"),
+        (R(@"^azure/k8s-deploy"), PipelineStepKind.ApplicationDeploy, "Kubernetes deploy"), (R(@"^hashicorp/setup-terraform"), PipelineStepKind.Other, "terraform setup"),
         (R(@"^sonarsource/"), PipelineStepKind.StaticAnalysis, "Sonar"), (R(@"^microsoft/security-devops-action"), PipelineStepKind.SecurityScan, "Microsoft Security DevOps"),
         (R(@"^actions/upload-artifact"), PipelineStepKind.Publish, "upload artifact"), (R(@"^dorny/test-reporter|^EnricoMi/publish-unit-test-result"), PipelineStepKind.Test, "test report"),
         (R(@"^azure/login"), PipelineStepKind.Other, "azure/login"), (R(@"^Azure/get-keyvault-secrets"), PipelineStepKind.SecretRetrieval, "Key Vault secrets"),
@@ -390,7 +391,12 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 var command = inputs?.Str("command")?.ToLowerInvariant();
                 if (Regex.IsMatch(taskName, @"^Terraform(TaskV\d|CLI|Task)$", RegexOptions.IgnoreCase) || taskName.StartsWith("TerraformTask", StringComparison.OrdinalIgnoreCase))
                 {
-                    var kind = command is "apply" or "destroy" ? PipelineStepKind.InfrastructureDeploy : PipelineStepKind.InfrastructurePlan;
+                    var kind = command switch
+                    {
+                        "apply" or "destroy" => PipelineStepKind.InfrastructureDeploy,
+                        "plan" => PipelineStepKind.InfrastructurePlan,
+                        _ => PipelineStepKind.Other,
+                    };
                     b.Step(display ?? task, kind, $"terraform {command ?? "(command)"}", stage, job, wd, environment, TerraformTargets(wd, inputs?.Str("commandOptions")), step.Line);
                 }
                 else if (taskName.Equals("DotNetCoreCLI", StringComparison.OrdinalIgnoreCase) && command is not null)
