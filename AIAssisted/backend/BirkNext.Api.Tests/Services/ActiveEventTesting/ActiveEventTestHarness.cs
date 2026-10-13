@@ -166,7 +166,7 @@ internal sealed class ActiveEventTestHarness : IAsyncDisposable
             lock (Reads) Reads.Add((environmentType, targetUrl));
             return Task.FromResult(new IntegrationCatalog { EnvironmentId = environmentId, Platforms = [Platform], Integrations = [Integration, .. Extra] });
         }
-        public Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IntegrationTemplateApplyResult?> ApplyTemplateAsync(string environmentId, string templateId, string? environmentType, string? targetUrl, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) => Task.FromResult(definition);
         public Task<IntegrationDefinition?> UpdateAsync(string environmentId, string id, IntegrationDefinition definition, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IntegrationDefinition?> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();

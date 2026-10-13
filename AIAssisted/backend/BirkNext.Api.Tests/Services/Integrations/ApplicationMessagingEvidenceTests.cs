@@ -368,7 +368,7 @@ public sealed class ApplicationMessagingEvidenceTests
     private static IntegrationCatalog Catalog() => new()
     {
         EnvironmentId = "dev", Platforms = [M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow)],
-        Integrations = M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).ToList(),
+        Integrations = M2lbDevHistoricalFixture.Integrations("dev", DateTimeOffset.UtcNow).ToList(),
     };
 
     /// <summary>The adapter's analyzed evidence, explicitly bound (by a person) to the "Hendelse BiRK Adapter" consumer of the seed.</summary>

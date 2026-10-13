@@ -81,7 +81,7 @@ public enum IntegrationConfigurationState { Ready, NeedsConfirmation, NeedsConfi
 
 /// <summary>Where a catalog record came from.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile }
+public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile, SourceSuggestion }
 
 /// <summary>What the consumer of a CDC topic expects for deletes. Tombstones are only judged against an explicit expectation.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -389,8 +389,45 @@ public sealed record IntegrationCatalog
     public bool AzureRuntimeEnabled { get; init; }
 }
 
-/// <summary>A project integration template a person can apply explicitly. Suggested = a hint from the target (never applied automatically).</summary>
-public sealed record IntegrationTemplateOffer(string Id, string Name, string Description, bool Suggested, string? SuggestionReason = null);
+/// <summary>A project integration template a person can apply explicitly. Suggested = a hint from the target (never applied automatically).
+/// <see cref="Items"/> lists exactly what applying adds, so a person can review it first.</summary>
+public sealed record IntegrationTemplateOffer(string Id, string Name, string Description, bool Suggested, string? SuggestionReason = null)
+{
+    public IReadOnlyList<IntegrationTemplateItem> Items { get; init; } = [];
+}
+
+/// <summary>Where a template value comes from. A template value is never discovered or verified evidence.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationTemplateProvenance { ConfirmedMapping, HistoricalAudit, ConfiguredAssumption }
+
+/// <summary>One record or setting a template adds, with its provenance (for the review before applying).</summary>
+public sealed record IntegrationTemplateItem(string Kind, string Name, string Detail, IntegrationTemplateProvenance Provenance);
+
+/// <summary>
+/// The environment's configured values (namespaces, Event Hubs, consumer groups, checkpoint storage, Application Insights, Service Bus entities)
+/// compared with the Terraform declared in the newest Source Analysis snapshot that holds infrastructure evidence. Read-only: neither side is
+/// preferred and nothing is overwritten. Without Terraform, seeded environment values stay seeded assumptions — never "verified".
+/// </summary>
+public sealed record IntegrationTerraformComparison
+{
+    public bool SourceAnalysisEnabled { get; init; } = true;
+    public bool TerraformAvailable { get; init; }
+    public Guid? SnapshotId { get; init; }
+    public string? ArchiveName { get; init; }
+    public DateTimeOffset? AnalyzedAt { get; init; }
+    public List<BirkNext.SourceDomains.ConfiguredSourceComparison> Values { get; init; } = [];
+}
+
+/// <summary>
+/// The logical identity of a configured integration: kind + channel (case-insensitive) + platform. Two records with the same identity are
+/// the same integration under different ids; creating the second is refused. Distinct channels or platforms are never merged.
+/// </summary>
+public static class IntegrationIdentity
+{
+    public static string? Key(IntegrationDefinition definition) =>
+        string.IsNullOrWhiteSpace(definition.EndpointOrTopic) ? null
+            : $"{definition.Kind}|{definition.PlatformId?.Trim().ToLowerInvariant()}|{definition.EndpointOrTopic.Trim().ToLowerInvariant()}";
+}
 
 /// <summary>Configuration completeness of one integration, with the fields behind it. Pure; shared by pane, API and review.</summary>
 public static class IntegrationConfigurationRules

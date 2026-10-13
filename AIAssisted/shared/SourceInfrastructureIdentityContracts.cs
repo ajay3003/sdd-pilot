@@ -67,9 +67,15 @@ public static class InfrastructureIdentity
     ];
 
     /// <summary>The kind of a provider resource type (Terraform type, ARM/Bicep type) from the one table <see cref="Kind(InfrastructureResource)"/> uses,
-    /// so a declared resource and an observed cloud resource normalize onto the same kind.</summary>
+    /// so a declared resource and an observed cloud resource normalize onto the same kind. A child setting of a resource (an access rule, network
+    /// rule set, DR pairing, key, workbook or web test) shares its parent's type prefix but is not that resource: "azurerm_eventhub_namespace_authorization_rule" is
+    /// never an Event Hubs namespace.</summary>
     public static InfrastructureResourceKind KindOfType(string resourceType) =>
-        Types.Where(t => resourceType.StartsWith(t.Prefix, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Prefix.Length).Select(t => t.Kind).FirstOrDefault();
+        SubordinateSuffixes.Any(s => resourceType.EndsWith(s, StringComparison.OrdinalIgnoreCase)) ? InfrastructureResourceKind.Unknown
+            : Types.Where(t => resourceType.StartsWith(t.Prefix, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Prefix.Length).Select(t => t.Kind).FirstOrDefault();
+
+    private static readonly string[] SubordinateSuffixes = ["_authorization_rule", "_network_rule_set", "_disaster_recovery_config", "_customer_managed_key", "/authorizationRules", "/networkRuleSets", "/disasterRecoveryConfigs",
+        "_workbook", "_web_test", "_analytics_item", "_api_key", "_smart_detection_rule"];
 
     /// <summary>Whether one kind satisfies another; the generic messaging namespace (from a host) matches either namespace kind, both ways.</summary>
     public static bool Compatible(InfrastructureResourceKind actual, InfrastructureResourceKind wanted) => actual == wanted

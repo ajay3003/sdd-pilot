@@ -244,7 +244,7 @@ public sealed class EventHubRuntimeDefaultsTests
     {
         await using var db = Db();
         var controller = new BirkNext.Api.Controllers.IntegrationsController(Service(db));
-        await Service(db).ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name);
+        await Service(db).ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name, "Development", "https://m2lbdev.bufetat.no/");
         var off = (IntegrationCatalog)((Microsoft.AspNetCore.Mvc.OkObjectResult)(await controller.Get(DevId, "Development", DevUrl, Azure(false), CancellationToken.None)).Result!).Value!;
         off.AzureRuntimeEnabled.Should().BeFalse();
         off.Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.PlatformId).RuntimeEvidence!.ExpectedConsumerGroup.Should().Be("$Default", "configured sources exist whether or not Azure runs");

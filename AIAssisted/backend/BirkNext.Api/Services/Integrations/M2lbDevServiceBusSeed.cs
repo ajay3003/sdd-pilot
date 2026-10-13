@@ -91,7 +91,7 @@ public static partial class M2lbDevIntegrationSeed
     public static IntegrationPlatform ServiceBusPlatform(string environmentId, DateTimeOffset now) => new()
     {
         Id = ServiceBusPlatformId, EnvironmentId = environmentId, Name = "M2LB DEV Service Bus", Kind = IntegrationKind.ServiceBus, Enabled = true,
-        Region = "nwe", Namespace = ServiceBusNamespace, NamespaceFqdn = $"{ServiceBusNamespace}.servicebus.windows.net", ResourceGroup = "rg-m2lb-dev-shared-nwe",
+        Region = Location, Namespace = ServiceBusNamespace, NamespaceFqdn = $"{ServiceBusNamespace}.servicebus.windows.net", ResourceGroup = "rg-m2lb-dev-shared-nwe",
         TechnicalOwner = "platform-team", MonitoringProvider = "Application Insights", ProducerTechnology = "Wolverine and Azure.Messaging.ServiceBus",
         ProducerAuthentication = IntegrationAuthMechanism.ManagedIdentity, DefaultConsumerAuthentication = IntegrationAuthMechanism.ManagedIdentity,
         ServiceBusTopology = ServiceBusTopology(), Origin = IntegrationRecordOrigin.Seed, UpdatedAt = now,

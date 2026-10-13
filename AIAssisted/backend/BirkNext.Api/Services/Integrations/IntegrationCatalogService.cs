@@ -18,8 +18,11 @@ public interface IIntegrationCatalogService
     /// <see cref="ApplyTemplateAsync"/>. An environment that already has a template applied receives that template's add-missing upgrades.
     /// Environment type and target URL only produce a template SUGGESTION.</summary>
     Task<IntegrationCatalog> GetAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default);
-    /// <summary>Explicitly applies a project integration template (add-missing only; edited records are never overwritten). Null for an unknown template.</summary>
-    Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default);
+    /// <summary>
+    /// Explicitly applies a project integration template (add-missing only; edited records are never overwritten). Null for an unknown
+    /// template; <see cref="IntegrationTemplateApplyResult.Blocked"/> when the environment is not the one the template is for (enforced here).
+    /// </summary>
+    Task<IntegrationTemplateApplyResult?> ApplyTemplateAsync(string environmentId, string templateId, string? environmentType, string? targetUrl, CancellationToken ct = default);
     Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition?> UpdateAsync(string environmentId, string id, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition?> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default);
@@ -28,6 +31,9 @@ public interface IIntegrationCatalogService
     /// <summary>One-time import of integrations previously stored in the browser Target Environment profile. Never overwrites a record.</summary>
     Task<int> ImportLegacyAsync(string environmentId, IReadOnlyList<IntegrationConfigDto> legacy, CancellationToken ct = default);
 }
+
+/// <summary>The outcome of applying a template: the catalog afterwards, or why the environment may not receive it (nothing was written).</summary>
+public sealed record IntegrationTemplateApplyResult(IntegrationCatalog? Catalog, string? Blocked);
 
 public sealed class IntegrationCatalogService(AppDbContext db, ILogger<IntegrationCatalogService> logger, TimeProvider? clock = null) : IIntegrationCatalogService
 {
@@ -42,7 +48,9 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         // A host that merely resembles M2LB never mutates the catalog: it only yields a suggestion below. Read-only checks (no environment
         // type) never upgrade either.
         var state = environmentType is null ? null : await db.IntegrationEnvironmentStates.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId, ct);
-        if (state is { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: < M2lbDevIntegrationSeed.Version })
+        // Upgrades are DEV values too: only a Development environment that already carries the helper receives them (a renamed DEV host
+        // still does; QA and Production never do).
+        if (state is { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: < M2lbDevIntegrationSeed.Version } && M2lbDevIntegrationSeed.MayUpgrade(environmentType))
         {
             var added = await AttachSeedAsync(environmentId, ct);
             if (added > 0) notices.Add($"Updated the applied M2LB DEV template: {added} missing record{(added == 1 ? "" : "s")} added.");
@@ -50,14 +58,19 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         return await ReadAsync(environmentId, notices, ct, M2lbDevIntegrationSeed.AppliesTo(environmentType, targetUrl));
     }
 
-    public async Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default)
+    public async Task<IntegrationTemplateApplyResult?> ApplyTemplateAsync(string environmentId, string templateId, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(environmentId) || !string.Equals(templateId, M2lbDevIntegrationSeed.Name, StringComparison.Ordinal)) return null;
+        if (M2lbDevIntegrationSeed.ApplyBlock(environmentType, targetUrl) is { } blocked)
+        {
+            logger.LogWarning("Integration template {Template} refused for {EnvironmentId}: {Reason}", templateId, environmentId, blocked);
+            return new IntegrationTemplateApplyResult(null, blocked);
+        }
         var added = await AttachSeedAsync(environmentId, ct);
         logger.LogInformation("Integration template {Template} applied explicitly to {EnvironmentId}.", templateId, environmentId);
-        return await ReadAsync(environmentId, [added > 0
-            ? $"Applied the M2LB DEV template: {added} record{(added == 1 ? "" : "s")} added. Existing records were left unchanged."
-            : "The M2LB DEV template is already applied; nothing was changed."], ct, false);
+        return new IntegrationTemplateApplyResult(await ReadAsync(environmentId, [added > 0
+            ? $"Applied the M2LB DEV helper: {added} record{(added == 1 ? "" : "s")} added. Existing records were left unchanged."
+            : "The M2LB DEV helper is already applied; nothing was changed."], ct, false), null);
     }
 
     /// <summary>Adds seed records whose stable id is missing. Existing records — edited or not — are left exactly as they are.</summary>
@@ -83,11 +96,20 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
                 added++;
             }
         }
-        // v2 added the Service Bus platform and v3 the SCIM identity provisioning platform: each is added once, never re-added after deletion.
+        // v2 added the Service Bus platform and v3 the SCIM identity provisioning platform: each is added once, never re-added after deletion
+        // (an environment already at that version had it; if it is missing now, a person deleted it).
         var serviceBus = M2lbDevIntegrationSeed.ServiceBusPlatform(environmentId, now);
         if (state is not { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: >= 2 } && !existingPlatforms.Contains(serviceBus.Id)) { db.IntegrationPlatforms.Add(ToRecord(serviceBus)); added++; }
         var scim = M2lbDevIntegrationSeed.ScimPlatform(environmentId, now);
-        if (!existingPlatforms.Contains(scim.Id)) { db.IntegrationPlatforms.Add(ToRecord(scim)); added++; }
+        if (state is not { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: >= 3 } && !existingPlatforms.Contains(scim.Id)) { db.IntegrationPlatforms.Add(ToRecord(scim)); added++; }
+        // v5 normalizes the region label of unedited seeded Service Bus / SCIM platforms ("nwe" → "Norway East"); nothing else changes.
+        if (upgrade && state is { SeedVersion: < 5 })
+            foreach (var record in await db.IntegrationPlatforms.Where(p => p.EnvironmentId == environmentId && (p.Id == M2lbDevIntegrationSeed.ServiceBusPlatformId || p.Id == M2lbDevIntegrationSeed.ScimPlatformId)).ToListAsync(ct))
+            {
+                var current = FromRecord(record);
+                var normalized = M2lbDevIntegrationSeed.WithCanonicalRegion(current);
+                if (normalized != current) { record.DocumentJson = JsonSerializer.Serialize(normalized with { UpdatedAt = now }, Json); record.UpdatedAt = now; }
+            }
         // v4 fills the verified Event Hub runtime-evidence defaults into an existing seeded platform: missing values only, never an
         // overwrite; a person-edited platform that already has runtime settings is left exactly as it is (see WithRuntimeDefaults).
         if (upgrade && state is { SeedVersion: < 4 }
@@ -120,24 +142,37 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         {
             EnvironmentId = environmentId,
             Platforms = platforms.Select(FromRecord).ToList(),
-            // Seed order for seeded records (the known table order), then everything else by name.
+            // Seeded records first, then everything else; each group by name.
             Integrations = definitions.Select(FromRecord)
-                .OrderBy(d => d.Origin == IntegrationRecordOrigin.Seed ? Array.IndexOf(M2lbDevIntegrationSeed.Tables, d.SourceResource?.Split(".dbo.").LastOrDefault()) : int.MaxValue)
+                .OrderBy(d => d.Origin == IntegrationRecordOrigin.Seed ? 0 : 1)
                 .ThenBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
             Notices = notices,
             AppliedTemplateId = applied,
-            Templates = m2lbApplied ? [] : [new IntegrationTemplateOffer(M2lbDevIntegrationSeed.Name, M2lbDevIntegrationSeed.TemplateName, M2lbDevIntegrationSeed.TemplateDescription,
-                suggestM2lb, suggestM2lb ? $"The target is the M2LB DEV frontend ({M2lbDevIntegrationSeed.FrontendHost})." : null)],
+            // Offered only to the environment it is for: QA and Production never see the DEV helper (the server refuses it as well).
+            Templates = m2lbApplied || !suggestM2lb ? [] : [new IntegrationTemplateOffer(M2lbDevIntegrationSeed.Name, M2lbDevIntegrationSeed.TemplateName, M2lbDevIntegrationSeed.TemplateDescription,
+                true, $"The target is the M2LB DEV frontend ({M2lbDevIntegrationSeed.FrontendHost}).") { Items = M2lbDevIntegrationSeed.Items() }],
             DomainExtensions = m2lbApplied ? [BirkNext.Technology.DomainExtensionIds.M2lbChildSecurityClassification] : [],
         };
     }
 
     public async Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default)
     {
-        var existing = await db.IntegrationDefinitions.Where(d => d.EnvironmentId == environmentId).Select(d => d.Id).ToListAsync(ct);
+        var records = await db.IntegrationDefinitions.Where(d => d.EnvironmentId == environmentId).ToListAsync(ct);
+        var existing = records.Select(d => d.Id).ToList();
         var id = string.IsNullOrWhiteSpace(definition.Id) ? UniqueId(environmentId, definition, existing) : definition.Id;
         if (existing.Contains(id)) throw new InvalidOperationException($"An integration with id '{id}' already exists.");
-        var created = definition with { Id = id, EnvironmentId = environmentId, Origin = IntegrationRecordOrigin.Manual, UserModified = true, UpdatedAt = _clock.GetUtcNow() };
+        // The same logical integration (kind + platform + channel) under another id is a duplicate, not a second integration.
+        if (IntegrationIdentity.Key(definition) is { } key && records.Select(FromRecord).FirstOrDefault(d => IntegrationIdentity.Key(d) == key) is { } duplicate)
+            throw new InvalidOperationException($"{duplicate.DisplayName} already configures the channel {definition.EndpointOrTopic}; edit it instead of adding a duplicate.");
+        // A record added from a source suggestion keeps that origin; its mapping is never confirmed by being added (a person confirms later).
+        var fromSource = definition.Origin == IntegrationRecordOrigin.SourceSuggestion;
+        var consumer = fromSource && definition.Consumer.MappingState == ConsumerMappingState.Confirmed
+            ? definition.Consumer with { MappingState = ConsumerMappingState.Suggested, MappingConfirmedAt = null } : definition.Consumer;
+        var created = definition with
+        {
+            Id = id, EnvironmentId = environmentId, Origin = fromSource ? IntegrationRecordOrigin.SourceSuggestion : IntegrationRecordOrigin.Manual, Consumer = consumer,
+            UserModified = true, UpdatedAt = _clock.GetUtcNow(),
+        };
         db.IntegrationDefinitions.Add(ToRecord(created));
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Integration {IntegrationId} created in environment {EnvironmentId} (platform {PlatformId}).", id, environmentId, created.PlatformId);

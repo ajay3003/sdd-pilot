@@ -53,13 +53,36 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
             : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct) with { AzureRuntimeEnabled = azure.Credential is not null });
 
-    /// <summary>Explicitly applies a project integration template (add-missing only). The only path that writes template records.</summary>
-    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
-    [HttpPost("templates/{templateId}/apply")]
-    public async Task<ActionResult<IntegrationCatalog>> ApplyTemplate([FromQuery] string environmentId, string templateId, [FromServices] IIntegrationAzureCredential azure, CancellationToken ct)
+    /// <summary>
+    /// Configured environment values compared with the Terraform in Source Analysis (read-only). No environment type/URL: a read never attaches
+    /// seed records. Without infrastructure evidence the response says so, and seeded values stay assumptions.
+    /// </summary>
+    [HttpGet("terraform-comparison")]
+    public async Task<ActionResult<IntegrationTerraformComparison>> TerraformComparison([FromQuery] string environmentId, [FromQuery] string? environmentName,
+        [FromServices] BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider sources, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
-        return await catalog.ApplyTemplateAsync(environmentId, templateId, ct) is { } applied ? Ok(applied with { AzureRuntimeEnabled = azure.Credential is not null }) : NotFound();
+        var configured = await catalog.GetAsync(environmentId, null, null, ct);
+        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        return Ok(IntegrationTerraformComparisons.Compare(configured, snapshots, environmentName, sources.SourceAnalysisEnabled));
+    }
+
+    /// <summary>
+    /// Explicitly applies a project integration template (add-missing only). The only path that writes template records. The environment's
+    /// type and target URL decide whether the template fits; a backend-owned trusted environment record wins over what the request says, and
+    /// a template for another environment (QA, Production, another host) is refused with 409 — nothing is written.
+    /// </summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    [HttpPost("templates/{templateId}/apply")]
+    public async Task<ActionResult<IntegrationCatalog>> ApplyTemplate([FromQuery] string environmentId, string templateId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl,
+        [FromServices] IIntegrationAzureCredential azure, [FromServices] BirkNext.Api.Services.ActiveEventTesting.ITrustedExecutionEnvironmentRegistry trusted, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        if (trusted.Resolve(environmentId, out _) is { } record) (environmentType, targetUrl) = (record.EnvironmentType, record.TargetUrl ?? targetUrl);
+        var result = await catalog.ApplyTemplateAsync(environmentId, templateId, environmentType, targetUrl, ct);
+        if (result is null) return NotFound();
+        if (result.Blocked is { } blocked) return Conflict(new { message = blocked });
+        return Ok(result.Catalog! with { AzureRuntimeEnabled = azure.Credential is not null });
     }
 
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

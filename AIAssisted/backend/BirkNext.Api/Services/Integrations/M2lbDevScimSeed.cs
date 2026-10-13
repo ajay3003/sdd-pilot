@@ -21,7 +21,7 @@ public static partial class M2lbDevIntegrationSeed
     public static IntegrationPlatform ScimPlatform(string environmentId, DateTimeOffset now) => new()
     {
         Id = ScimPlatformId, EnvironmentId = environmentId, Name = "M2LB Entra SCIM Provisioning", Kind = IntegrationKind.IdentityProvisioning, Enabled = true,
-        Region = "nwe", ResourceGroup = "rg-m2lb-dev-apps-nwe", TechnicalOwner = "platform-team", MonitoringProvider = "Application Insights",
+        Region = Location, ResourceGroup = "rg-m2lb-dev-apps-nwe", TechnicalOwner = "platform-team", MonitoringProvider = "Application Insights",
         ProducerTechnology = "ASP.NET Core minimal API (M2LB.Autorisasjon.ScimAdapter)", ProducerAuthentication = IntegrationAuthMechanism.EntraIdClientCredentials,
         DefaultConsumerAuthentication = IntegrationAuthMechanism.ManagedIdentity, Origin = IntegrationRecordOrigin.Seed, UpdatedAt = now,
         ScimProvisioning = new ScimProvisioningSettings

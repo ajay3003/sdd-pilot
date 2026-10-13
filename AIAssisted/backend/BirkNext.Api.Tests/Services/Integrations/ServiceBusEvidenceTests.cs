@@ -339,7 +339,7 @@ public sealed class ServiceBusEvidenceTests
     private static IntegrationCatalog Catalog() => new()
     {
         EnvironmentId = "dev", Platforms = [M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow), Platform()],
-        Integrations = M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).ToList(),
+        Integrations = M2lbDevHistoricalFixture.Integrations("dev", DateTimeOffset.UtcNow).ToList(),
     };
 
     [Fact]

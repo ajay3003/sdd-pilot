@@ -11,7 +11,7 @@ namespace BirkNext.Api.Tests.Services.Integrations;
 
 public sealed class IntegrationMappingEvidenceTests
 {
-    private static IntegrationDefinition Topic => M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Tiltak"));
+    private static IntegrationDefinition Topic => M2lbDevHistoricalFixture.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Tiltak"));
     /// <summary>The seeded platform without runtime-evidence settings: no expected consumer group, so nothing is assumed.</summary>
     private static IntegrationPlatform Platform => M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow) with { RuntimeEvidence = null };
     /// <summary>The seeded platform with the verified v4 defaults ($Default as a configured assumption).</summary>
@@ -207,7 +207,7 @@ public sealed class IntegrationMappingEvidenceTests
     public async Task ThePlatformExpectationIsReadAsAnAssumption_AndTheMappingStaysUnconfirmed()
     {
         var sources = new Sources();
-        var person = M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Person"));
+        var person = M2lbDevHistoricalFixture.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Person"));
         var result = await Service(sources).CheckAsync(person, SeededPlatform, IntegrationContractSet.Empty);
         sources.CheckpointCalls.Should().Be(1);
         result.ExpectedConsumerGroup.Should().Be("$Default");

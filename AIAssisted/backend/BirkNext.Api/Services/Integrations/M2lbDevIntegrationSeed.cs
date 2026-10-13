@@ -3,63 +3,73 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.Integrations;
 
 /// <summary>
-/// Known M2LB DEV Event Hub configuration, seeded as ordinary catalog records (Origin = Seed) for the Development Target
-/// Environment whose frontend is m2lbdev.bufetat.no. Values were supplied by the platform team; Terraform is not read,
-/// imported or referenced. No QA or production values are derived from these. No secret is seeded: authentication is the
-/// NAME of a mechanism only.
+/// The M2LB DEV helper: ONLY the environment-specific configuration that cannot be reliably discovered from source, seeded as ordinary
+/// catalog records (Origin = Seed) for the Development Target Environment whose frontend is m2lbdev.bufetat.no — and only there (the
+/// server refuses any other environment). Terraform is not read at runtime; no secret is seeded (authentication is a mechanism name).
 ///
-/// Consumer mappings, strongest first:
+/// What it adds (v5):
 /// <list type="bullet">
-/// <item>Confirmed — BIRK Person CDC → Person Adapter (confirmed for M2LB DEV).</item>
-/// <item>Suggested — hubs the audited M2LB source (QA-context audit, <c>KnownIntegrationTemplates</c>) names a consuming service
-/// for. Environment-independent source evidence, not confirmed for DEV; no container app or identity is inferred.</item>
-/// <item>Needs confirmation — every other hub. Receiver rights on the namespace do not make an adapter a consumer.</item>
+/// <item>The Event Hub platform (namespace, resource group, region, Debezium source database and topic prefix, Kafka Connect technical
+/// topics) with the runtime-evidence identifiers verified at the time (<see cref="RuntimeDefaults"/>; current-at-time, not re-verified).</item>
+/// <item>One integration: BIRK Person CDC → Person Adapter, the one consumer mapping CONFIRMED for M2LB DEV.</item>
+/// <item>The Service Bus platform (namespace, resource group) with the send/receive grants of a Terraform audit, which application source
+/// cannot prove; and the SCIM platform (container app, identity, gateway route) — ingress and identity are deployment facts.</item>
 /// </list>
-/// Consumer group is left unknown on every integration. The platform carries <c>$Default</c> as an explicit, labelled CONFIGURED
-/// ASSUMPTION (<see cref="RuntimeDefaults"/>): it lets checkpoint lookups run, but never confirms a mapping or yields a Pass.
+/// Everything Source Analysis discovers — the other CDC hubs and their consumers, Service Bus entities, publishers and listeners, SCIM
+/// routes in code, Wolverine mappings — is no longer seeded: it is offered as a source suggestion in Target Environment → Integrations.
+/// Consumer group stays unknown; <c>$Default</c> is a labelled CONFIGURED ASSUMPTION that never confirms a mapping or yields a Pass.
 /// </summary>
 public static partial class M2lbDevIntegrationSeed
 {
     /// <summary>v2 adds the M2LB DEV Service Bus platform (see <see cref="ServiceBusPlatform"/>); v1 environments receive only that platform.
-    /// v3 adds SCIM; v4 adds the verified Event Hub runtime-evidence defaults (<see cref="RuntimeDefaults"/>) without overwriting any value.</summary>
-    public const int Version = 4;
+    /// v3 adds SCIM; v4 adds the verified Event Hub runtime-evidence defaults (<see cref="RuntimeDefaults"/>) without overwriting any value.
+    /// v5 reduces a new application to what source cannot supply (one confirmed integration instead of 16, no source host) and normalizes the
+    /// region label of unedited seeded platforms; existing records are never removed, overwritten or resurrected.</summary>
+    public const int Version = 5;
     public const string Location = "Norway East";
     public const string PersonAdapterApp = "ca-m2lb-person-adp-dev-nwe-001";
     public const string Name = "m2lb-dev-eventhub";
     public const string FrontendHost = "m2lbdev.bufetat.no";
-    public const string TemplateName = "M2LB DEV integration template";
-    public const string TemplateDescription = "Project-specific: the M2LB DEV Event Hub, Service Bus and SCIM platforms and the BIRK CDC integrations, and the M2LB child security classification extension. Apply only to an M2LB DEV environment.";
+    public const string TemplateName = "M2LB DEV helper";
+    public const string TemplateDescription = "Adds only environment-specific configuration that cannot be reliably discovered from source: the M2LB DEV platforms and their runtime identifiers, the confirmed Person CDC mapping, and the M2LB child security classification extension. Other integrations come from Source Analysis suggestions.";
     public const string PlatformId = "dev:eventhub:m2lb";
     public const string SystemName = "BIRK CDC / Debezium";
     public const string Namespace = "evhns-m2lb-dev-nwe-001";
     public const string TopicPrefix = "m2lb-cdc-dev";
     public const string SourceDatabase = "BirkM2LB";
-    public const string AuditedSource = "Audited M2LB source (QA-context audit)";
 
-    public static readonly string[] Tables =
-    [
-        "Person", "Tiltak", "Bestilling", "TjenesteType", "TiltaksStatusType", "AvslutningsGrunnType", "Barn", "BarnStatusType",
-        "BarnType", "Kommune", "KjønnType", "TvangsProtokoll", "HjemmelType", "TvangsProtokollStatusType", "Romning", "RomningKategoriType",
-    ];
+    /// <summary>The one CDC table the helper still seeds: its consumer mapping is confirmed for M2LB DEV, which source cannot establish.</summary>
+    public const string ConfirmedTable = "Person";
 
-    /// <summary>Consuming services named per hub by the audited M2LB source (templates eh-barn, eh-tiltak …). Person is confirmed separately.</summary>
-    private static readonly Dictionary<string, string> AuditedConsumers = new(StringComparer.Ordinal)
+    /// <summary>Whether the helper fits the environment: the Development environment whose frontend host is m2lbdev.bufetat.no.</summary>
+    public static bool AppliesTo(string? environmentType, string? targetUrl) => ApplyBlock(environmentType, targetUrl) is null;
+
+    /// <summary>Why the helper must not be applied to this environment, or null. Enforced by the server, never only by the UI.</summary>
+    public static string? ApplyBlock(string? environmentType, string? targetUrl)
     {
-        ["Barn"] = "PersonBiRKAdapter",
-        ["Tiltak"] = "Tjeneste API",
-        ["Bestilling"] = "Tjeneste API",
-        ["TjenesteType"] = "Tjeneste API",
-        ["TiltaksStatusType"] = "Tjeneste API",
-        ["AvslutningsGrunnType"] = "Tjeneste API",
-        ["TvangsProtokoll"] = "Hendelse BiRK Adapter",
-        ["Romning"] = "Hendelse BiRK Adapter",
-    };
+        if (string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase))
+            return "The M2LB DEV helper is never applied to a Production environment.";
+        if (!string.Equals(environmentType, "Development", StringComparison.OrdinalIgnoreCase))
+            return $"The M2LB DEV helper applies only to a Development environment (this one is {(string.IsNullOrWhiteSpace(environmentType) ? "of unknown type" : environmentType)}).";
+        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) || !string.Equals(uri.Host, FrontendHost, StringComparison.OrdinalIgnoreCase))
+            return $"The M2LB DEV helper applies only to the M2LB DEV environment ({FrontendHost}).";
+        return null;
+    }
 
-    /// <summary>Whether to SUGGEST the template: the Development environment whose frontend host is m2lbdev.bufetat.no. Never a reason to apply it.</summary>
-    public static bool AppliesTo(string? environmentType, string? targetUrl) =>
-        string.Equals(environmentType, "Development", StringComparison.OrdinalIgnoreCase)
-        && Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri)
-        && string.Equals(uri.Host, FrontendHost, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether an environment that already carries the helper may receive its add-missing upgrades: Development only.</summary>
+    public static bool MayUpgrade(string? environmentType) => string.Equals(environmentType, "Development", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Exactly what applying adds, with each value's provenance, for the review before applying.</summary>
+    public static IReadOnlyList<IntegrationTemplateItem> Items() =>
+    [
+        new("Platform", "M2LB DEV Event Hubs", $"Namespace {Namespace}, resource group rg-m2lb-dev-integration-nwe, region {Location}; Debezium source database {SourceDatabase}, topic prefix {TopicPrefix}, Kafka Connect technical topics.", IntegrationTemplateProvenance.HistoricalAudit),
+        new("Runtime evidence", "Event Hub runtime identifiers", "Subscription m2lb-samhandling-dev, Premium namespace, checkpoint storage (Person Adapter container), Application Insights appi-m2lb-dev-nwe-001 — verified at the time, not re-verified.", IntegrationTemplateProvenance.HistoricalAudit),
+        new("Runtime evidence", "Expected consumer group $Default", "A configured assumption: lets checkpoint lookups run; never confirms a mapping or yields a Pass.", IntegrationTemplateProvenance.ConfiguredAssumption),
+        new("Integration", "BIRK Person CDC → Person Adapter", $"Topic {Topic(ConfirmedTable)}; consumer mapping confirmed for M2LB DEV.", IntegrationTemplateProvenance.ConfirmedMapping),
+        new("Platform", "M2LB DEV Service Bus", $"Namespace {ServiceBusNamespace}, resource group rg-m2lb-dev-shared-nwe; send/receive grants from a Terraform audit (not provable from application source).", IntegrationTemplateProvenance.HistoricalAudit),
+        new("Platform", "M2LB Entra SCIM Provisioning", "Container app, managed identity and gateway route of the SCIM adapter; the public tenant URL stays unknown.", IntegrationTemplateProvenance.HistoricalAudit),
+        new("Extension", "M2LB child security classification", "Enables the M2LB child security classification review extension.", IntegrationTemplateProvenance.ConfiguredAssumption),
+    ];
 
     public static string IntegrationId(string table) => $"dev:eventhub:birk-cdc:dbo.{table}";
     public static string Topic(string table) => $"{TopicPrefix}.{SourceDatabase}.dbo.{table}";
@@ -71,7 +81,7 @@ public static partial class M2lbDevIntegrationSeed
         TechnicalOwner = "platform-team", MonitoringProvider = "Application Insights", MonitoringUrl = null, RunbookUrl = null,
         ProducerTechnology = "Debezium SQL Server CDC", ProducerAuthentication = IntegrationAuthMechanism.Sas,
         DefaultConsumerAuthentication = IntegrationAuthMechanism.ManagedIdentity,
-        SourceDatabase = SourceDatabase, SourceHost = "10.31.19.31", SourcePort = 50806, TopicPrefix = TopicPrefix,
+        SourceDatabase = SourceDatabase, TopicPrefix = TopicPrefix,
         DefaultPartitionCount = 1, DefaultRetentionDays = 7,
         TechnicalTopics =
         [
@@ -147,8 +157,9 @@ public static partial class M2lbDevIntegrationSeed
         };
     }
 
+    /// <summary>The integrations the helper seeds: only the confirmed Person CDC mapping (other hubs are source suggestions).</summary>
     public static IReadOnlyList<IntegrationDefinition> Integrations(string environmentId, DateTimeOffset now) =>
-        Tables.Select(table => new IntegrationDefinition
+        new[] { ConfirmedTable }.Select(table => new IntegrationDefinition
         {
             Id = IntegrationId(table), EnvironmentId = environmentId, PlatformId = PlatformId, DisplayName = $"BIRK {table} CDC",
             Kind = IntegrationKind.EventHub, Enabled = true, SystemName = SystemName,
@@ -160,17 +171,16 @@ public static partial class M2lbDevIntegrationSeed
             PartitionCount = 1, RetentionDays = 7, Origin = IntegrationRecordOrigin.Seed, UpdatedAt = now,
         }).ToList();
 
-    private static IntegrationConsumer Consumer(string table) => table switch
+    private static IntegrationConsumer Consumer(string table) => new()
     {
-        "Person" => new IntegrationConsumer
-        {
-            DisplayName = "Person Adapter", LogicalName = "person-adapter", ContainerApp = PersonAdapterApp,
-            ManagedIdentity = "id-m2lb-person-adp-dev-nwe", MappingState = ConsumerMappingState.Confirmed, MappingSource = "Confirmed M2LB DEV mapping",
-        },
-        _ when AuditedConsumers.TryGetValue(table, out var service) => new IntegrationConsumer
-        {
-            DisplayName = service, MappingState = ConsumerMappingState.Suggested, MappingSource = AuditedSource,
-        },
-        _ => new IntegrationConsumer { MappingState = ConsumerMappingState.NeedsConfirmation },
+        DisplayName = "Person Adapter", LogicalName = "person-adapter", ContainerApp = PersonAdapterApp,
+        ManagedIdentity = "id-m2lb-person-adp-dev-nwe", MappingState = ConsumerMappingState.Confirmed, MappingSource = "Confirmed M2LB DEV mapping",
     };
+
+    /// <summary>
+    /// Seed upgrade (v5) of an unedited seeded Service Bus or SCIM platform: the region label "nwe" becomes the canonical location name.
+    /// A platform a person edited, or one with any other region, is left exactly as it is.
+    /// </summary>
+    public static IntegrationPlatform WithCanonicalRegion(IntegrationPlatform platform) =>
+        platform.Origin == IntegrationRecordOrigin.Seed && !platform.UserModified && platform.Region == "nwe" ? platform with { Region = Location } : platform;
 }
