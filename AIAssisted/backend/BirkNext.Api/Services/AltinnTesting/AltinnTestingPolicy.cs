@@ -65,6 +65,8 @@ public sealed class SyntheticReporterOptions
 public sealed class AltinnAppPolicyConfirmation
 {
     public string AppId { get; set; } = "";
+    /// <summary>The Altinn environment the confirmed policy was read from. Only TT02 is accepted; a confirmation for any other environment is ignored.</summary>
+    public string Environment { get; set; } = "TT02";
     /// <summary>Where the confirmation is recorded (ticket, mail, policy file version) — a reference, not the policy itself.</summary>
     public string Reference { get; set; } = "";
     public string ConfirmedBy { get; set; } = "";
@@ -199,6 +201,15 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         : !reporter.AltinnProfileConfirmed ? $"Reporter {reporter.Alias}: the Altinn TT02 profile of the synthetic person is not confirmed (AltinnProfileConfirmed)."
         : null;
 
+    /// <summary>
+    /// True when the run's child identifier is the selected reporter's own synthetic person. Compared in the backend only; neither value is
+    /// returned. The reporter is the Altinn actor and the child is form data: they must be different persons.
+    /// </summary>
+    public bool IsReporterIdentity(string? alias, string? childIdentifier) =>
+        !string.IsNullOrWhiteSpace(childIdentifier)
+        && options.UnattendedIdPortenTest.Reporters.FirstOrDefault(item => string.Equals(item.Alias, alias, StringComparison.Ordinal)) is { TestIdPersonIdentifier: { Length: > 0 } identifier }
+        && string.Equals(identifier.Trim(), childIdentifier.Trim(), StringComparison.Ordinal);
+
     /// <summary>Whether the reporter has a confirmed Altinn TT02 profile (reported separately so it is never hidden among other problems).</summary>
     public int ReportersAwaitingProfile => options.UnattendedIdPortenTest.Reporters.Count(item => !item.AltinnProfileConfirmed);
 
@@ -250,9 +261,13 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     /// <summary>The service owner's confirmation of the app's authorization policy, or null with why it is not confirmed.</summary>
     public AltinnAppPolicyConfirmation? AppPolicy(string? appId, out string detail)
     {
-        var confirmation = options.ConfirmedAppPolicies.FirstOrDefault(item => string.Equals(item.AppId?.Trim(), appId?.Trim(), StringComparison.Ordinal)
-            && !string.IsNullOrWhiteSpace(item.Reference) && !string.IsNullOrWhiteSpace(item.ConfirmedBy) && item.ConfirmedOn is not null);
-        detail = confirmation is null
+        var candidates = options.ConfirmedAppPolicies.Where(item => string.Equals(item.AppId?.Trim(), appId?.Trim(), StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(item.Reference) && !string.IsNullOrWhiteSpace(item.ConfirmedBy) && item.ConfirmedOn is not null).ToList();
+        var problems = candidates.Select(item => ConfirmationProblem(item)).ToList();
+        var confirmation = candidates.Where((_, index) => problems[index] is null).FirstOrDefault();
+        detail = confirmation is null && problems.OfType<string>().FirstOrDefault() is { } invalid
+            ? $"App authorization policy not confirmed: {invalid} Real submissions stay disabled."
+            : confirmation is null
             ? $"App authorization policy not confirmed: no service-owner confirmation that {appId ?? "the app"}'s XACML policy lets the synthetic TEST reporter instantiate, write and complete (backend {AltinnTestingOptions.Section}:ConfirmedAppPolicies). Real submissions stay disabled."
             : $"App authorization policy confirmed ({confirmation.ConfirmedOn:yyyy-MM-dd}, {confirmation.ConfirmedBy}, reference {confirmation.Reference})"
               + (confirmation.EndUserRoles.Count > 0 ? $"; end-user roles {string.Join(", ", confirmation.EndUserRoles)}" : "")
@@ -261,6 +276,26 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
               + (confirmation.PolicySha256 is { Length: > 0 } sha ? $"; policy sha256 {sha[..Math.Min(12, sha.Length)]}…" : "")
               + ". BirkNext does not read the policy at run time; re-confirm when the app's policy changes.";
         return confirmation;
+    }
+
+    private static readonly Regex Sha256Hex = new("^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Why a recorded confirmation cannot stand for the app's TT02 policy, or null: it must be for TT02, a recorded policy source must be that
+    /// app's own TT02 Resource Registry policy (never another app or a Production host), and a recorded hash must be a SHA-256 hex digest.
+    /// </summary>
+    public static string? ConfirmationProblem(AltinnAppPolicyConfirmation confirmation)
+    {
+        if (!string.Equals(confirmation.Environment?.Trim(), "TT02", StringComparison.Ordinal))
+            return $"the confirmation for {confirmation.AppId} is for the environment \"{confirmation.Environment}\", not TT02.";
+        if (!string.IsNullOrWhiteSpace(confirmation.PolicySource)
+            && AppIdPattern.Match(confirmation.AppId.Trim()) is { Success: true } app
+            && !string.Equals(confirmation.PolicySource.Trim(),
+                $"https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_{app.Groups["org"].Value}_{app.Groups["app"].Value}/policy", StringComparison.Ordinal))
+            return $"the recorded policy source is not {confirmation.AppId}'s TT02 Resource Registry policy.";
+        if (!string.IsNullOrWhiteSpace(confirmation.PolicySha256) && !Sha256Hex.IsMatch(confirmation.PolicySha256.Trim()))
+            return "the recorded policy hash is not a SHA-256 hex digest.";
+        return null;
     }
 
     /// <summary>What is missing for ID-porten TEST sign-in, each problem on its own. Empty when sign-in can be offered.</summary>

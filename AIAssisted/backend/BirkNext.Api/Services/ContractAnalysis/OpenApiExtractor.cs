@@ -283,17 +283,17 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         var schema = new NormalizedSchema { Name = name };
 
         if (schemaEl.TryGetProperty("type", out var typeEl))
-            schema.Type = typeEl.GetString() ?? "object";
+            schema.Type = (typeEl.ValueKind == JsonValueKind.String ? typeEl.GetString() : null) ?? "object";
 
         if (schemaEl.TryGetProperty("nullable", out var nullEl))
-            schema.Nullable = nullEl.GetBoolean();
+            schema.Nullable = nullEl.ValueKind == JsonValueKind.True;
 
         // Enum values
         if (schemaEl.TryGetProperty("enum", out var enumEl))
         {
             schema.EnumValues = [];
             foreach (var val in enumEl.EnumerateArray())
-                if (val.GetString() is string s)
+                if (val.ValueKind == JsonValueKind.String && val.GetString() is string s)
                     schema.EnumValues.Add(s);
         }
 
@@ -301,7 +301,7 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         if (schemaEl.TryGetProperty("items", out var itemsEl) &&
             itemsEl.TryGetProperty("type", out var itemTypeEl))
         {
-            schema.ArrayItemType = itemTypeEl.GetString();
+            schema.ArrayItemType = itemTypeEl.ValueKind == JsonValueKind.String ? itemTypeEl.GetString() : null;
         }
 
         // Additional properties
@@ -338,26 +338,26 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         var prop = new NormalizedProperty { Name = name };
 
         if (propEl.TryGetProperty("type", out var typeEl))
-            prop.Type = typeEl.GetString() ?? "";
+            prop.Type = (typeEl.ValueKind == JsonValueKind.String ? typeEl.GetString() : null) ?? "";
 
         if (propEl.TryGetProperty("format", out var formatEl))
             prop.Format = formatEl.GetString();
 
         if (propEl.TryGetProperty("nullable", out var nullEl))
-            prop.Nullable = nullEl.GetBoolean();
+            prop.Nullable = nullEl.ValueKind == JsonValueKind.True;
 
         if (propEl.TryGetProperty("enum", out var enumEl))
         {
             prop.EnumValues = [];
             foreach (var val in enumEl.EnumerateArray())
-                if (val.GetString() is string s)
+                if (val.ValueKind == JsonValueKind.String && val.GetString() is string s)
                     prop.EnumValues.Add(s);
         }
 
         if (propEl.TryGetProperty("items", out var itemsEl) &&
             itemsEl.TryGetProperty("type", out var itemTypeEl))
         {
-            prop.ArrayItemType = itemTypeEl.GetString();
+            prop.ArrayItemType = itemTypeEl.ValueKind == JsonValueKind.String ? itemTypeEl.GetString() : null;
         }
 
         return prop;

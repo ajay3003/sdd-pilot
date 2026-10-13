@@ -64,6 +64,8 @@
 .ijp-confirm { margin: .75rem 0 0; padding: .75rem; border: 2px solid #f59e0b; border-radius: var(--radius-md, .5rem); background: #fffbeb; }
 .ijp-confirm h5 { margin: 0 0 .35rem; font-size: .95rem; }
 .ijp-confirm p { margin: 0 0 .4rem; font-size: .86rem; }
+.ijp-effects { margin: 0 0 .5rem; padding-left: 1.25rem; font-size: .86rem; }
+.ijp-effects li { margin: .15rem 0; }
 .ijp .ijp-ack { display: flex; gap: .5rem; align-items: flex-start; font-weight: 400; }
 .ijp-ack input { margin-top: .2rem; flex: none; }
 

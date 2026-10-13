@@ -62,7 +62,8 @@ public sealed record JourneyScenarioDescriptor(
     JourneyScenarioSupport Support,
     string? NotAssessedBecause = null,
     bool StateChanging = true,
-    IReadOnlyList<JourneyScenarioInput>? Inputs = null);
+    IReadOnlyList<JourneyScenarioInput>? Inputs = null,
+    IReadOnlyList<string>? ExecutionEffects = null);
 
 /// <summary>Kinds of typed scenario input. There is deliberately no free-form payload, URL or endpoint kind.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

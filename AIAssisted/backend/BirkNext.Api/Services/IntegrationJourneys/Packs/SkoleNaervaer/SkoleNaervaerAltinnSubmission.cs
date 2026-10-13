@@ -189,6 +189,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
     public const string ReceiptStep = "altinn-receipt";
     private static readonly string[] Steps = [AuthStep, InstanceStep, DataStep, ValidateStep, SubmitStep, ReceiptStep];
     private const string Source = "Altinn TT02 App API";
+    internal const string ReporterIsChild = "The child must not be the reporter's own synthetic person: the reporter is the Altinn actor, the child is form data.";
     private static readonly TimeSpan SessionLifetime = TimeSpan.FromMinutes(15);
 
     private sealed class Session
@@ -277,6 +278,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         // The form is built (and checked against the schema's types) before anything is sent, so an unusable input never leaves an instance behind.
         if (BuildModel(SkoleNaervaerReportInput.Read(context.InputValues), contract.Fields).Problem is { } formProblem) return Blocked(context, formProblem);
         if (context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is not { Length: > 0 } reporter) return Blocked(context, "The run has no reporter.");
+        if (policy.IsReporterIdentity(reporter, context.InputValues.GetValueOrDefault(SkoleNaervaerAltinnForm.ChildIdentifier)))
+            return Blocked(context, ReporterIsChild);
 
         var auth = await authenticator.AuthenticateAsync(new AltinnAuthenticationRequest(context.EnvironmentId, context.Initiator, reporter, package.AltinnConfiguration), ct);
         var mode = new JourneyEvidenceFact("Authentication", auth.Mode == "unattended" ? "Unattended ID-porten TEST (synthetic reporter)" : "Interactive ID-porten TEST (fallback)");

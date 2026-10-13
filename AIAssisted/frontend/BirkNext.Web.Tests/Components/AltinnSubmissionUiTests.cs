@@ -236,6 +236,29 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         Fill(cut);
         cut.Find("[data-testid=ijp-start]").Click();
         cut.Find("[data-testid=ijp-confirm-external]").TextContent.Should().Contain("real external call").And.Contain("one attempt, nothing is retried");
+        cut.FindAll("[data-testid=ijp-confirm-effects] li").Select(li => li.TextContent).Should().HaveCount(4)
+            .And.Contain(item => item.Contains("Altinn TT02") && item.Contains("Production is never called"))
+            .And.Contain("Create one new instance.").And.Contain(item => item.Contains("at most one process transition"))
+            .And.Contain("No automatic retry and no automatic second process transition.");
+        cut.Find("[data-testid=ijp-confirm-run]").HasAttribute("disabled").Should().BeTrue("the run needs the explicit acknowledgement");
+    }
+
+    [Fact]
+    public void Readiness_ShowsTheRedirect_TheKnownChildAsDeclared_AndMeldingshodeAsARisk()
+    {
+        _journeys.Prerequisites.Add(new("redirect-uri", "Registered redirect URI", JourneyPrerequisiteCategory.Authentication, JourneyReadinessState.NotConfigured,
+            "Missing: the redirect URI registered for the ID-porten TEST client.", Mandatory: false));
+        _journeys.Prerequisites.Add(new("synthetic-data", "Known synthetic child (test data)", JourneyPrerequisiteCategory.SyntheticData, JourneyReadinessState.Ready,
+            "Declared test prerequisite: approved synthetic identity set testnorge-set-1. Whether Person knows it is not verified by BirkNext."));
+        _journeys.Prerequisites.Add(new("meldingshode", "Meldingshode (first-run risk)", JourneyPrerequisiteCategory.Contract, JourneyReadinessState.Partial,
+            "Risk, not a blocker: 6 required field(s) BirkNext does not fill (Meldingshode.Id, …).", Mandatory: false));
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        cut.Find("[data-key=redirect-uri]").TextContent.Should().Contain("Missing").And.Contain("Registered redirect URI");
+        cut.Find("[data-key=synthetic-data]").TextContent.Should().Contain("Declared").And.Contain("Known synthetic child").And.Contain("not verified");
+        var risk = cut.Find("[data-key=meldingshode]");
+        risk.GetAttribute("data-state").Should().Be("Partial");
+        risk.TextContent.Should().Contain("Risk").And.Contain("not a blocker");
     }
 
     [Fact]
@@ -457,7 +480,10 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                     {
                         PackId = "skolenaervaer", JourneyId = "rapportmottak", DisplayName = "Rapportmottak", ExecutionMode = JourneyExecutionMode.JourneyRunner,
                         Steps = [new("altinn-auth", "Authenticated", JourneyStepKind.ExternalAuthentication, "Tester (TestID)", "Token accepted"), new("mu-receive", "MU receives", JourneyStepKind.MessageTransport, "MU", "Stored")],
-                        Scenarios = [new("valid-report", "E2E-01 / MU-01 · Valid report", "Typed report.", JourneyScenarioSupport.Supported, Inputs: Inputs)],
+                        Scenarios = [new("valid-report", "E2E-01 / MU-01 · Valid report", "Typed report.", JourneyScenarioSupport.Supported, Inputs: Inputs,
+                            ExecutionEffects: ["This will make a real external call to Altinn TT02 (ID-porten TEST for the reporter's sign-in). Production is never called.",
+                                "Create one new instance.", "Make at most one process transition (process/next), only if the live instance is at the expected task and validation passed.",
+                                "No automatic retry and no automatic second process transition."])],
                     },
                     Readiness = JourneyReadinessState.Ready, CanRun = true, ReadinessSummary = "Ready to run after confirmation.", Prerequisites = Prerequisites,
                     RunnableScenarios = Runnable,

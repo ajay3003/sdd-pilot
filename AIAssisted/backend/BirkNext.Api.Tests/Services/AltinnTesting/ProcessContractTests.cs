@@ -55,6 +55,19 @@ public sealed class ProcessContractTests
     }
 
     [Fact]
+    public void NumericEnums_AsAltinnPublishesThem_DoNotBreakTheSharedExtractor()
+    {
+        // Regression: the real TT02 document has integer enums (ReadStatus [0,1,2]); reading them as strings made the whole extraction fail,
+        // so the deployed contract was silently not stored.
+        var extraction = Extractor.Extract(AltinnTestKit.DeployedOpenApi(AltinnTestKit.RealFormDataType));
+        extraction.Success.Should().BeTrue(extraction.ErrorMessage);
+        var readStatus = extraction.Contract!.Schemas.Single(schema => schema.Name == "ReadStatus");
+        readStatus.Type.Should().Be("integer");
+        readStatus.EnumValues.Should().BeEmpty("only string enum values are modelled, as for parameters");
+        Deployed().TaskInventoryFound.Should().BeTrue();
+    }
+
+    [Fact]
     public void ADocumentForAnotherApp_IsNotEvidenceForTheConfiguredApp()
     {
         var act = () => AltinnDeployedOpenApiReader.Read(AltinnTestKit.DeployedOpenApi(app: "other/app"), AltinnTestKit.AppId, Extractor);

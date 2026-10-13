@@ -268,6 +268,10 @@
                                     {
                                         <p><strong>This run may change downstream state in the non-production environment. Only synthetic test data is used.</strong></p>
                                         <p data-testid="ijp-confirm-external">This is a real external call to the configured test environment: one attempt, nothing is retried. Validate the run first if you have not.</p>
+                                        @if (ScenarioOf(view)?.ExecutionEffects is { Count: > 0 } effects)
+                                        {
+                                            <ul class="ijp-effects" data-testid="ijp-confirm-effects" aria-label="What this run will do">@foreach (var effect in effects) { <li>@effect</li> }</ul>
+                                        }
                                     }
                                     <label class="ijp-ack"><input type="checkbox" data-testid="ijp-ack" @bind="_acknowledged" /> I confirm this synthetic run against the trusted non-production environment.</label>
                                     <div class="ijp-actions">

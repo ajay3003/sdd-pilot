@@ -22,7 +22,7 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
     public async Task<ActionResult<AltinnAppContractView>> Contract([FromQuery] string environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId is required." }) : Ok(await contracts.ViewAsync(environmentId, ct));
 
-    /// <summary>Reads the configured app's public TT02 metadata (two anonymous GETs). Nothing is submitted; nobody is authenticated.</summary>
+    /// <summary>Reads the configured app's public TT02 metadata (three anonymous GETs: application metadata, the form schema and the deployed OpenAPI contract). Nothing is submitted; nobody is authenticated.</summary>
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("contract/public-metadata")]
     public async Task<ActionResult<AltinnAppContractView>> DiscoverPublic([FromQuery] string environmentId, CancellationToken ct)

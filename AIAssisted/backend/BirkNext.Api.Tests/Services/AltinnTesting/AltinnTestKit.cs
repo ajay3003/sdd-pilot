@@ -129,7 +129,8 @@ internal sealed class AltinnTestKit
     public const string RealTaskRow = "| Task_1 | Utfylling | data |  |";
 
     /// <summary>
-    /// An app's deployed OpenAPI document (v1/customOpenapi.json) in the shape app-lib 8 generates: the data-type and process-task tables in
+    /// An app's deployed OpenAPI document (v1/customOpenapi.json) in the shape app-lib 8 generates — including its numeric (integer) enums,
+    /// which the real TT02 document has (ReadStatus, ValidationIssueSeverity): the data-type and process-task tables in
     /// info.description and the process/next operation with its AppProcessState response. Defaults mirror the facts of the real
     /// buf/skolenaervaer TT02 document (one data task Task_1 · Utfylling, no actions, optional body); only what BirkNext reads is included.
     /// </summary>
@@ -155,6 +156,9 @@ internal sealed class AltinnTestKit
                 {{next}} },
               "components": { "schemas": {
                 "ProcessNext": { "type": "object", "properties": { "action": { "type": "string", "nullable": true }, "actionOnBehalfOf": { "type": "string", "nullable": true } }, "additionalProperties": false },
+                "ReadStatus": { "enum": [ 0, 1, 2 ], "type": "integer", "format": "int32" },
+                "ValidationIssueSeverity": { "enum": [ 0, 1, 2, 3, 4, 5 ], "type": "integer", "format": "int32" },
+                "InstanceStatus": { "type": "object", "properties": { "readStatus": { "$ref": "#/components/schemas/ReadStatus" }, "isArchived": { "type": "boolean" } }, "additionalProperties": false },
                 "AppProcessState": { "type": "object", "properties": { {{stateFields}} }, "additionalProperties": false } } } }
             """;
     }

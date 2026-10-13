@@ -260,3 +260,43 @@ The requirement is a **verified process execution contract** for the one operati
   - approve the synthetic child;
   - read the public TT02 metadata once in the target environment, so that the deployed contract is stored for it.
 - **Meldingshode** (§10.2) remains a first-run risk.
+
+## 12. Configuration for the first supervised TT02 run (2026-10-13)
+
+**Applied and committed:**
+- **App policy confirmation:** the §10.1 confirmation is now in `appsettings.json`, with `"Environment": "TT02"` added.
+  - BirkNext accepts a confirmation only when all of these hold: the environment is TT02; a recorded `PolicySource` is exactly `https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_{org}_{app}/policy` for that app; a recorded `PolicySha256` is a SHA-256 hex digest.
+  - A role list without PRIV (for example DAGL only) does not satisfy a person run.
+- **Reporter ≠ child:** the dry run and the executor refuse a child identifier that equals the selected reporter's TestID identifier. They compare in the backend and echo neither value.
+- **Readiness rows:** Registered redirect URI and ID-porten TEST client are now separate rows. "Known synthetic child (test data)" is a declared test prerequisite, never verified. Meldingshode is a first-run risk (Partial, not mandatory).
+- **Run confirmation:** it lists the real effects:
+  - TT02 call;
+  - authenticate the reporter;
+  - one new instance;
+  - upload;
+  - validate;
+  - at most one process transition;
+  - read the receipt;
+  - no retry, no second transition, no Production.
+- **Fix:** the shared `OpenApiExtractor` threw on numeric (integer) enums. The real TT02 `customOpenapi.json` has them (`ReadStatus`, `ValidationIssueSeverity`), so the deployed process contract was never stored. Non-string enum values are now skipped, as they already were for parameters. The fixture now carries numeric enums.
+
+**Verified end to end on a scratch backend** (isolated database; placeholders for the client, redirect, secret and reporter):
+- "Read public TT02 metadata" stored the live deployed contract: app-lib 8.12.7.264, sha256 `4f8b4ba0…`, `Task_1 · Utfylling · data`, no actions, form data type on `Task_1`, `PUT process/next` with an optional body, `AppProcessState` with `currentTask`/`ended`/`endEvent`.
+- Readiness was complete.
+- The dry run was **Valid** (XML 426 bytes, not shown), with no history and no network call.
+
+**Still to configure per installation (never in committed files).** `appsettings.Local.json` is tracked by git, so do not use it for secrets. Use environment variables for the backend process:
+
+| Setting | Where |
+|---|---|
+| `AltinnTesting__UnattendedIdPortenTest__Enabled=true` | backend environment |
+| `AltinnTesting__UnattendedIdPortenTest__RedirectUri=<redirect registered for the ID-porten TEST client>` | backend environment |
+| `AltinnTesting__UnattendedIdPortenTest__ClientSecret=<secret>` | backend environment / secret store only |
+| `AltinnTesting__UnattendedIdPortenTest__Reporters__0__Alias=reporter-a`, `…__Label=Skolenærvær reporter A` | backend environment |
+| `AltinnTesting__UnattendedIdPortenTest__Reporters__0__TestIdPersonIdentifier=<synthetic TestID person>` | backend environment only |
+| `AltinnTesting__UnattendedIdPortenTest__Reporters__0__AltinnProfileConfirmed=true` | only after confirming the TT02 profile |
+| ID-porten client id, `openid` plus the instance scopes, app id `buf/skolenaervaer`, environment Test, reporter reference, approved synthetic identity set | Integration Quality Review → Altinn test configuration (the selected target environment) |
+| The Rapportmottak integration enrolled in `TargetEnvironments:Trusted:<n>:IntegrationIds` | backend configuration |
+| "Read public TT02 metadata" once for the selected target | Skolenærvær Testing → Altinn TT02 submission |
+
+**Meldingshode (unchanged):** `Id`, `MeldingstypeNmsp`, `FagsystemAvsender.{Leverandor,Navn,Versjon}` and `SendtTidspunkt` are required by the schema. BirkNext supplies none of them. Whether the app supplies them is unknown (expected: the app). Altinn's validation step in the first live run shows it before any process transition.
