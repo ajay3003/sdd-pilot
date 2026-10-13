@@ -162,7 +162,7 @@ public sealed class FirstRunReadinessTests
 
         validation.Valid.Should().BeTrue(string.Join(" | ", validation.Checks.Where(c => !c.Passed).Select(c => $"{c.Key}: {c.Detail}")));
         validation.Checks.Select(c => c.Key).Should().Contain(["scenario", "inputs", "reporter", "unattended-configuration", "production-safety", "endpoints", "app-policy", "contract", "form", "process-plan"]);
-        validation.Checks.Single(c => c.Key == "endpoints").Detail.Should().Contain("5 endpoints");
+        validation.Checks.Single(c => c.Key == "endpoints").Detail.Should().Contain("10 endpoints").And.Contain("approved app's operations");
         validation.Checks.Single(c => c.Key == "process-plan").Detail.Should().Contain("process/next × 1").And.Contain("Task_1 (data)");
         validation.Checks.Single(c => c.Key == "form").Detail.Should().Contain("bytes, not shown");
         validation.Preview.Should().Contain(new JourneyEvidenceFact("XML root", "Skolenaervaer")).And.Contain(new JourneyEvidenceFact("Content type", "application/xml"));

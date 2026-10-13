@@ -3,41 +3,52 @@
     Sets the backend settings for a local, unattended Skolenærvær TT02 run in THIS PowerShell session only.
 
 .DESCRIPTION
-    Developer-only helper. It sets process-scope environment variables (AltinnTesting:UnattendedIdPortenTest and, optionally,
-    TargetEnvironments:Trusted) and can start the backend from the same session so the backend inherits them.
+    Developer-only helper. It asks for the values that belong to you and your environment, sets them as process-scope environment variables,
+    and can start the backend from the same session so the backend inherits them. Every value can change at any time without a code change.
+
+    It asks for:
+      Reporter alias          (e.g. reporter-a; the stable name the UI, logs and history use)
+      Reporter label          (e.g. Skolenærvær reporter A)
+      Reporter synthetic identifier   (a synthetic Test-Norge TestID person: 11 digits, month + 80 — not shown, not stored)
+      Profile confirmed?      (only after checking that person's Altinn TT02 profile; default: Not confirmed)
+      Client id               (optional here; may instead be set in Integration Quality Review → Altinn test configuration)
+      Redirect URI            (the URI registered for the ID-porten TEST client)
+      Client secret           (not shown, not stored)
 
     Nothing is persisted: no file, no registry, no user or machine environment variable. Closing the window removes everything.
-    The client secret and the reporter's TestID identifier are read as SecureString and never echoed or written anywhere.
+    No identifier is embedded in this script, and the script makes no network call.
 
-    AltinnProfileConfirmed stays false unless -ReporterProfileConfirmed is passed AND you type the confirmation. Only do that after you
-    have checked that the synthetic TestID person has an Altinn TT02 profile; nothing here can check it for you.
-
-    The ID-porten TEST client id, scopes, app (buf/skolenaervaer), environment (Test), reporter reference and approved synthetic identity set
-    are NOT backend settings: set them in Integration Quality Review → Altinn test configuration.
-
-    This script makes no network call and never contacts ID-porten or Altinn.
+    What BirkNext discovers from the deployed app (host, process task, data type, endpoints) is NOT configured here: it is read from the app's
+    public TT02 metadata ("Read public TT02 metadata") after the backend has started.
 
 .EXAMPLE
-    .\configure-skolenaervaer-tt02-local.ps1 -RedirectUri https://localhost:5001/idporten-test/callback
-    Prompts for the client secret and the reporter's synthetic TestID identifier; profile confirmation stays false.
+    .\configure-skolenaervaer-tt02-local.ps1
+    Prompts for every value.
+
+.EXAMPLE
+    .\configure-skolenaervaer-tt02-local.ps1 -ReporterIndex 1 -ReporterAlias reporter-b -ReporterLabel 'Skolenærvær reporter B'
+    Adds or replaces a second reporter in this session.
 
 .EXAMPLE
     .\configure-skolenaervaer-tt02-local.ps1 -Status
-    Shows which settings are present in this session (secrets as Set/Not set only).
+    Shows which settings are present in this session (secrets and identifiers as Set/Not set only).
 #>
 [CmdletBinding()]
 param(
     [string]$RedirectUri,
     [System.Security.SecureString]$ClientSecret,
+    [string]$ClientId,
     [System.Security.SecureString]$ReporterIdentifier,
-    [string]$ReporterAlias = 'reporter-a',
-    [string]$ReporterLabel = 'Skolenærvær reporter A',
+    [ValidateRange(0, 9)][int]$ReporterIndex = 0,
+    [string]$ReporterAlias,
+    [string]$ReporterLabel,
     [switch]$ReporterProfileConfirmed,
     [string]$TrustedEnvironmentId,
     [string]$TrustedDisplayName,
     [string]$TrustedEnvironmentType = 'Development',
     [string]$TrustedTargetUrl,
     [string[]]$TrustedIntegrationIds,
+    [switch]$NoPrompt,
     [switch]$StartBackend,
     [switch]$Status,
     [switch]$Clear
@@ -45,9 +56,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $prefix = 'AltinnTesting__UnattendedIdPortenTest__'
-$reporter = "${prefix}Reporters__0__"
+$reporter = "${prefix}Reporters__${ReporterIndex}__"
 $trusted = 'TargetEnvironments__Trusted__0__'
-$secretNames = @("${prefix}ClientSecret", "${reporter}TestIdPersonIdentifier")
 
 function Set-SessionVariable([string]$Name, [string]$Value) {
     [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
@@ -76,25 +86,35 @@ function Test-SyntheticIdentifier([System.Security.SecureString]$Value) {
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
 
+# Asks only when the value was not passed and prompting is allowed; Enter keeps the default.
+function Read-Value([string]$Prompt, [string]$Current, [string]$Default) {
+    if (-not [string]::IsNullOrWhiteSpace($Current)) { return $Current.Trim() }
+    if ($NoPrompt) { return $Default }
+    $answer = Read-Host $(if ($Default) { "$Prompt [$Default]" } else { $Prompt })
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default } else { return $answer.Trim() }
+}
+
 function Show-Status {
     Write-Host 'Skolenærvær TT02 settings in this PowerShell session (process scope only):'
-    $rows = @(
-        @("${prefix}Enabled", $false), @("${prefix}RedirectUri", $false), @("${prefix}ClientSecret", $true),
-        @("${reporter}Alias", $false), @("${reporter}Label", $false), @("${reporter}TestIdPersonIdentifier", $true),
-        @("${reporter}AltinnProfileConfirmed", $false), @("${trusted}EnvironmentId", $false), @("${trusted}EnvironmentType", $false),
-        @("${trusted}ExecutionAllowed", $false), @("${trusted}TargetUrl", $false)
-    )
+    $rows = @(@("${prefix}Enabled", $false), @("${prefix}RedirectUri", $false), @("${prefix}ClientId", $false), @("${prefix}ClientSecret", $true))
+    for ($i = 0; $i -le 9; $i++) {
+        $r = "${prefix}Reporters__${i}__"
+        if ([string]::IsNullOrEmpty((Get-SessionVariable "${r}Alias"))) { continue }
+        $rows += , @("${r}Alias", $false); $rows += , @("${r}Label", $false); $rows += , @("${r}TestIdPersonIdentifier", $true); $rows += , @("${r}AltinnProfileConfirmed", $false)
+    }
+    $rows += @(@("${trusted}EnvironmentId", $false), @("${trusted}EnvironmentType", $false), @("${trusted}ExecutionAllowed", $false), @("${trusted}TargetUrl", $false))
     foreach ($row in $rows) {
         $value = Get-SessionVariable $row[0]
         $shown = if ([string]::IsNullOrEmpty($value)) { 'Not set' } elseif ($row[1]) { 'Set (value not shown)' } else { $value }
-        Write-Host ('  {0,-70} {1}' -f $row[0], $shown)
+        Write-Host ('  {0,-72} {1}' -f $row[0], $shown)
     }
     $index = 0
     while (-not [string]::IsNullOrEmpty((Get-SessionVariable "${trusted}IntegrationIds__$index"))) {
-        Write-Host ('  {0,-70} {1}' -f "${trusted}IntegrationIds__$index", (Get-SessionVariable "${trusted}IntegrationIds__$index"))
+        Write-Host ('  {0,-72} {1}' -f "${trusted}IntegrationIds__$index", (Get-SessionVariable "${trusted}IntegrationIds__$index"))
         $index++
     }
-    Write-Host 'Client id, scopes, app, environment, reporter reference and synthetic identity set: Integration Quality Review → Altinn test configuration.'
+    Write-Host 'Scopes, app, environment, reporter reference and synthetic identity set: Integration Quality Review → Altinn test configuration.'
+    Write-Host 'Process task, data type and endpoints are read from the deployed app ("Read public TT02 metadata"), never configured here.'
 }
 
 if ($Clear) {
@@ -104,32 +124,45 @@ if ($Clear) {
 }
 if ($Status) { Show-Status; return }
 
-# Redirect URI: the exact URI registered for the ID-porten TEST client; https, or http on loopback (the backend enforces the same rule).
-if ([string]::IsNullOrWhiteSpace($RedirectUri)) { $RedirectUri = Read-Host 'Registered ID-porten TEST redirect URI' }
-$redirect = $null
-if (-not [Uri]::TryCreate($RedirectUri.Trim(), [UriKind]::Absolute, [ref]$redirect)) { throw 'The redirect URI is not an absolute URI.' }
-$loopback = $redirect.IsLoopback
-if (-not ($redirect.Scheme -eq 'https' -or ($redirect.Scheme -eq 'http' -and $loopback))) { throw 'The redirect URI must be https, or http on loopback.' }
-if ($redirect.UserInfo -or $redirect.Fragment) { throw 'The redirect URI must not contain user info or a fragment.' }
-
+# Reporter: an alias (stable) and a synthetic identifier behind it (replaceable).
+$ReporterAlias = Read-Value 'Reporter alias' $ReporterAlias "reporter-$([char](97 + $ReporterIndex))"
 if ($ReporterAlias -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { throw 'The reporter alias must be lowercase letters, digits and hyphens (e.g. reporter-a).' }
-
-if (-not $ClientSecret) { $ClientSecret = Read-Host 'ID-porten TEST client secret (not shown)' -AsSecureString }
-if ($ClientSecret.Length -eq 0) { throw 'No client secret was entered.' }
-if (-not $ReporterIdentifier) { $ReporterIdentifier = Read-Host "Synthetic TestID person identifier for $ReporterAlias (not shown)" -AsSecureString }
+$ReporterLabel = Read-Value 'Reporter label' $ReporterLabel "Skolenærvær reporter $([char](65 + $ReporterIndex))"
+if (-not $ReporterIdentifier) {
+    if ($NoPrompt) { throw 'No reporter identifier: pass -ReporterIdentifier or run without -NoPrompt.' }
+    Write-Host 'Example synthetic identifier format: 11 digits (a synthetic Test-Norge person, month + 80). It is not shown and not stored.'
+    $ReporterIdentifier = Read-Host "Synthetic TestID identifier for $ReporterAlias" -AsSecureString
+}
 if (-not (Test-SyntheticIdentifier $ReporterIdentifier)) { throw 'The reporter identifier is not a synthetic Test-Norge identifier (11 digits, month + 80). Real identifiers are never used.' }
 
+# Profile confirmation is a deliberate step: never inferred from the identifier or this script.
 $profileConfirmed = $false
-if ($ReporterProfileConfirmed) {
-    Write-Host "You are about to mark the Altinn TT02 profile of $ReporterAlias as confirmed."
-    Write-Host 'Only do this after checking that this synthetic TestID person has an Altinn TT02 profile. Nothing here can check it.'
-    $typed = Read-Host "Type $ReporterAlias to confirm"
-    if ($typed -ceq $ReporterAlias) { $profileConfirmed = $true } else { Write-Host 'Not confirmed: AltinnProfileConfirmed stays false.' }
+if ($ReporterProfileConfirmed -or -not $NoPrompt) {
+    Write-Host "Has the Altinn TT02 profile of $ReporterAlias's synthetic person been confirmed? Nothing here can check it."
+    $typed = if ($NoPrompt -and -not $ReporterProfileConfirmed) { '' } else { Read-Host "Type $ReporterAlias to mark it confirmed, or press Enter to leave it Not confirmed" }
+    if ($typed -ceq $ReporterAlias) { $profileConfirmed = $true } elseif ($typed) { Write-Host 'Not confirmed: the alias did not match.' }
 }
+
+# Client id: optional here (Integration Quality Review can hold it instead; both set and different is reported as a conflict).
+$ClientId = Read-Value 'ID-porten TEST client id (Enter to keep it in Integration Quality Review only)' $ClientId ''
+
+# Redirect URI: the exact URI registered for the ID-porten TEST client; https, or http on loopback (the backend enforces the same rule).
+$RedirectUri = Read-Value 'Registered ID-porten TEST redirect URI' $RedirectUri ''
+$redirect = $null
+if (-not [Uri]::TryCreate("$RedirectUri".Trim(), [UriKind]::Absolute, [ref]$redirect)) { throw 'The redirect URI is not an absolute URI.' }
+if (-not ($redirect.Scheme -eq 'https' -or ($redirect.Scheme -eq 'http' -and $redirect.IsLoopback))) { throw 'The redirect URI must be https, or http on loopback.' }
+if ($redirect.UserInfo -or $redirect.Fragment) { throw 'The redirect URI must not contain user info or a fragment.' }
+
+if (-not $ClientSecret) {
+    if ($NoPrompt) { throw 'No client secret: pass -ClientSecret or run without -NoPrompt.' }
+    $ClientSecret = Read-Host 'ID-porten TEST client secret (not shown)' -AsSecureString
+}
+if ($ClientSecret.Length -eq 0) { throw 'No client secret was entered.' }
 
 Set-SessionVariable "${prefix}Enabled" 'true'
 Set-SessionVariable "${prefix}RedirectUri" $redirect.AbsoluteUri
 Set-SecretVariable "${prefix}ClientSecret" $ClientSecret
+if ($ClientId) { Set-SessionVariable "${prefix}ClientId" $ClientId }
 Set-SessionVariable "${reporter}Alias" $ReporterAlias
 Set-SessionVariable "${reporter}Label" $ReporterLabel
 Set-SecretVariable "${reporter}TestIdPersonIdentifier" $ReporterIdentifier
@@ -151,7 +184,7 @@ if ($TrustedEnvironmentId) {
 
 Show-Status
 if (-not $profileConfirmed) {
-    Write-Host "Reporter profile: Not confirmed. After checking the person's Altinn TT02 profile, rerun with -ReporterProfileConfirmed."
+    Write-Host "Reporter $ReporterAlias profile: Not confirmed. After checking the person's Altinn TT02 profile, run this again and type the alias when asked."
 }
 
 if ($StartBackend) {

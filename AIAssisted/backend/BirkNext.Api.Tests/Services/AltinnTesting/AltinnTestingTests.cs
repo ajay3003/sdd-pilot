@@ -219,7 +219,8 @@ public sealed class AltinnTestingTests
         var view = await kit.Contracts(flows).DiscoverPublicAsync(Env, default);
 
         kit.Http.Calls.Select(call => $"{call.Method} {call.Uri.AbsolutePath}").Should().Equal(
-            "GET /buf/skolenaervaer/api/v1/applicationmetadata", "GET /buf/skolenaervaer/api/jsonschema/model", "GET /buf/skolenaervaer/v1/customOpenapi.json");
+            "GET /buf/skolenaervaer/api/v1/applicationmetadata", "GET /buf/skolenaervaer/api/jsonschema/model", "GET /buf/skolenaervaer/v1/customOpenapi.json",
+            "GET /resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy");
         kit.Http.Calls.Should().OnlyContain(call => call.Authorization == null, "discovery never authenticates");
         view.FormDataTypeId.Should().Be("model");
         view.Bindings.Should().OnlyContain(binding => binding.Present);

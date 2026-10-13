@@ -1,6 +1,7 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
 @inject IServiceProvider Services
 @inject NavigationManager Navigation
 
@@ -22,6 +23,31 @@
     <h4 class="atp-subheading">1. App contract</h4>
     @if (_contract is { } contract)
     {
+        @if (contract.Changes is { } changes)
+        {
+            <div class="atp-change" data-testid="atp-contract-changed" data-impact="@changes.Impact">
+                <p><strong>Deployed Altinn contract changed since last confirmation.</strong> Real execution is blocked until the changes are reviewed.</p>
+                <details data-testid="atp-change-review">
+                    <summary>Review changes (@changes.Changes.Count)</summary>
+                    <div class="atp-table" tabindex="0" role="region" aria-label="Contract changes" data-testid="atp-changes">
+                        <table>
+                            <thead><tr><th scope="col">Change</th><th scope="col">Before</th><th scope="col">After</th><th scope="col">Impact</th></tr></thead>
+                            <tbody>
+                                @foreach (var change in changes.Changes)
+                                {
+                                    <tr data-testid="atp-change" data-impact="@change.Impact"><th scope="row">@change.Area</th><td class="atp-mono">@change.Before</td><td class="atp-mono">@change.After</td>
+                                        <td><span class="atp-pill atp-pill-@(change.Impact is AltinnContractChangeImpact.Compatible ? "neutral" : "attention")">@ImpactLabel(change.Impact)</span> <span class="atp-muted">@change.Detail</span></td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="atp-muted" data-testid="atp-changes-detail">@contract.ChangesDetail</p>
+                    <div class="atp-actions">
+                        <button type="button" class="btn-secondary" data-testid="atp-accept-changes" disabled="@(_busy || !contract.ChangesAcceptable)" @onclick="AcceptChangesAsync">Accept reviewed changes</button>
+                    </div>
+                </details>
+            </div>
+        }
         <p data-testid="atp-app"><span class="atp-pill atp-pill-@(contract.AppApproved ? "ready" : "neutral")">@(contract.AppApproved ? "Approved app" : "App not ready")</span>
             <span class="atp-mono">@(contract.ConfiguredAppId ?? "no app id")</span> <span class="atp-muted">@contract.AppDetail</span></p>
         <fieldset class="atp-source" data-testid="atp-source">
@@ -55,7 +81,22 @@
             <div class="atp-actions">
                 <button type="button" class="btn-secondary" data-testid="atp-read-public" disabled="@(_busy || !contract.AppApproved)" @onclick="ReadPublicAsync">Read public TT02 metadata</button>
             </div>
-            <p class="atp-muted">Three read-only GETs (application metadata, the form's JSON schema and the app's deployed OpenAPI document). Nothing is submitted and nobody signs in.</p>
+            <p class="atp-muted">Read-only, anonymous GETs: application metadata, the form's JSON schema, the app's deployed OpenAPI document and its authorization policy (hash only).
+                Nothing is submitted and nobody signs in.</p>
+            <div class="atp-import">
+                <label for="@($"{_id}-import")">Import an OpenAPI document (offline analysis, optional)</label>
+                <InputFile id="@($"{_id}-import")" accept=".json,application/json" data-testid="atp-import-openapi" disabled="@_busy" OnChange="ImportAsync" />
+                <p class="atp-muted">An imported document is compared with the live contract. It is never live-verified and never used to run.</p>
+            </div>
+        }
+        <p data-testid="atp-freshness" data-freshness="@contract.Freshness"><span class="atp-pill atp-pill-@(contract.Freshness == AltinnContractFreshness.Current ? "ready" : contract.Freshness == AltinnContractFreshness.NotRead ? "neutral" : "attention")">Deployed contract: @FreshnessLabel(contract.Freshness)</span>
+            <span class="atp-muted">@contract.FreshnessDetail@(contract.Sources.FirstOrDefault(item => item.Source == AltinnContractSourceKind.PublicTt02Metadata) is { } live ? $" · fingerprint {live.Fingerprint[..Math.Min(12, live.Fingerprint.Length)]}…" : "")@(contract.Confirmed is { } confirmed ? $" · confirmed {confirmed.ConfirmedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC ({confirmed.Basis})" : "")</span></p>
+        @if (contract.ImportedOpenApi is { } imported)
+        {
+            <p data-testid="atp-imported" class="atp-note" role="note">Source: <strong>Imported OpenAPI</strong> · Status: <strong>Not live-verified</strong>
+                · app-lib @(imported.DeployedProcess?.AppLibVersion ?? "unknown") · @(contract.ImportedComparedToLive is { } compared
+                    ? compared.Impact == AltinnContractChangeImpact.NoChange ? "matches the live deployed contract" : $"differs from the live deployed contract: {string.Join("; ", compared.Changes.Take(4).Select(change => $"{change.Area} {change.Before} → {change.After}"))}"
+                    : "no live contract to compare with")</p>
         }
 
         <div class="atp-table" tabindex="0" role="region" aria-label="App contract parts" data-testid="atp-parts">
@@ -126,6 +167,40 @@
         }
     }
     else if (_loading) { <p class="atp-muted" role="status">Loading the app contract…</p> }
+
+    @if (_configuration is { } configuration)
+    {
+        <h4 class="atp-subheading">Configuration and sources</h4>
+        <p class="atp-muted">Configured values, values discovered from the deployed app, confirmed policy evidence and run input — each with its source. Current values are current evidence, not permanent facts.</p>
+        <div class="atp-table" tabindex="0" role="region" aria-label="Configuration and sources" data-testid="atp-configuration">
+            <table class="atp-config">
+                <thead><tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
+                <tbody>
+                    @foreach (var item in configuration.Items)
+                    {
+                        <tr data-testid="atp-config-item" data-key="@item.Key" data-state="@item.State">
+                            <th scope="row">@item.Label</th><td class="atp-mono">@(item.Value ?? "—")</td>
+                            <td><span class="atp-pill atp-pill-@ConfigTone(item.State)">@item.State</span></td>
+                            <td>@item.Source<span class="atp-muted atp-block">@item.Detail</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <ul class="atp-list" data-testid="atp-reporters" aria-label="Configured synthetic reporters">
+            @if (configuration.Reporters.Count == 0) { <li class="atp-muted">No synthetic reporter is configured (backend AltinnTesting:UnattendedIdPortenTest:Reporters).</li> }
+            @foreach (var reporter in configuration.Reporters)
+            {
+                <li data-testid="atp-reporter" data-alias="@reporter.Alias">
+                    <strong>@reporter.Label</strong> <span class="atp-muted">(@reporter.Alias)</span>
+                    · Identifier <span class="atp-pill atp-pill-@(reporter.IdentifierConfigured ? "ready" : "attention")" data-testid="atp-reporter-identifier">@(reporter.IdentifierConfigured ? "Configured" : "Missing")</span>
+                    · TT02 profile <span class="atp-pill atp-pill-@(reporter.ProfileConfirmed ? "ready" : "attention")" data-testid="atp-reporter-profile">@(reporter.ProfileConfirmed ? "Confirmed" : "Not confirmed")</span>
+                    · Role @reporter.Role · <span class="atp-muted">Source: local backend configuration</span>
+                    @if (reporter.Problem is { } problem) { <span class="atp-muted atp-block" data-testid="atp-reporter-problem">@problem</span> }
+                </li>
+            }
+        </ul>
+    }
 
     <h4 class="atp-subheading">2. Reporter authentication (unattended)</h4>
     <p class="atp-muted" data-testid="atp-unattended-intro">No sign-in step: when a run starts, the backend authenticates the selected approved synthetic TestID reporter with
@@ -213,6 +288,7 @@
     private ActiveEventAuthenticationState? _authentication;
     private AltinnAppContractView? _contract;
     private AltinnSignInStatus? _signIn;
+    private AltinnConfigurationOverview? _configuration;
     private IReadOnlyList<JourneyPrerequisite> _readiness = [];
     private string? _readinessError;
     /// <summary>The Rapportmottak prerequisites this section explains, in the order a tester resolves them.</summary>
@@ -265,6 +341,7 @@
                 _error ??= status.Error;
             }
             await LoadReadinessAsync();
+            await LoadConfigurationAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The Altinn setup could not be loaded from the backend."; }
         finally { _loading = false; }
@@ -311,7 +388,65 @@
         var result = await Api!.ReadPublicMetadataAsync(EnvironmentId);
         if (result.Value is { } contract) _contract = contract;
         _error = result.Error;
+        await RefreshDerivedAsync();
     });
+
+    private async Task AcceptChangesAsync() => await RunAsync(async () =>
+    {
+        var result = await Api!.AcceptContractChangesAsync(EnvironmentId);
+        if (result.Value is { } contract) _contract = contract;
+        _error = result.Error;
+        await RefreshDerivedAsync();
+    });
+
+    private const long MaxImportBytes = 2 * 1024 * 1024;
+
+    private async Task ImportAsync(InputFileChangeEventArgs e) => await RunAsync(async () =>
+    {
+        if (e.File.Size > MaxImportBytes) { _error = "The OpenAPI document exceeds the 2 MB limit."; return; }
+        using var reader = new StreamReader(e.File.OpenReadStream(MaxImportBytes));
+        var result = await Api!.ImportOpenApiAsync(EnvironmentId, await reader.ReadToEndAsync());
+        if (result.Value is { } contract) _contract = contract;
+        _error = result.Error;
+        await RefreshDerivedAsync();
+    });
+
+    /// <summary>Readiness and the configuration overview depend on the contract: reload both after it changes.</summary>
+    private async Task RefreshDerivedAsync()
+    {
+        await LoadReadinessAsync();
+        await LoadConfigurationAsync();
+    }
+
+    private async Task LoadConfigurationAsync()
+    {
+        var result = await Api!.ConfigurationAsync(EnvironmentId);
+        _configuration = result.Value;
+    }
+
+    private static string ImpactLabel(AltinnContractChangeImpact impact) => impact switch
+    {
+        AltinnContractChangeImpact.Blocking => "Blocks run",
+        AltinnContractChangeImpact.NeedsReview => "Needs review",
+        AltinnContractChangeImpact.Compatible => "Informational",
+        _ => "No change",
+    };
+
+    private static string FreshnessLabel(AltinnContractFreshness freshness) => freshness switch
+    {
+        AltinnContractFreshness.Current => "Current",
+        AltinnContractFreshness.RefreshRecommended => "Refresh recommended",
+        AltinnContractFreshness.Changed => "Changed",
+        _ => "Not read",
+    };
+
+    private static string ConfigTone(string state) => state switch
+    {
+        "Approved" or "TT02" or "Derived" or "Discovered" or "Resolved" or "Current" or "Confirmed" or "Confirmed for current operation" or "Configured" or "Available" or "Declared" => "ready",
+        _ when state.EndsWith(" configured", StringComparison.Ordinal) => "ready",
+        "Not live-verified" => "neutral",
+        _ => "attention",
+    };
 
     private async Task SignInAsync() => await RunAsync(async () =>
     {

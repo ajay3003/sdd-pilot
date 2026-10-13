@@ -194,7 +194,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
 
     private sealed class Session
     {
-        public required Uri AppBase { get; init; }
+        /// <summary>The app's addresses from its current contract (deployed OpenAPI paths), kept inside the approved app.</summary>
+        public required AltinnAppEndpoints Endpoints { get; init; }
         public required string Token { get; init; }
         public required string FormDataTypeId { get; init; }
         public required string ContentType { get; init; }
@@ -268,7 +269,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         // A state-changing submission needs the service owner's confirmation of the app's authorization policy: re-checked here, not only in readiness.
         if (context.Scenario?.StateChanging != false)
         {
-            if (policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, out var policyDetail) is not { } confirmation) return Blocked(context, policyDetail);
+            if (policy.AppPolicy(package.AltinnConfiguration.AppIdentifier, package.AppContract?.ObservedPolicy, out var policyDetail) is not { } confirmation) return Blocked(context, policyDetail);
             var role = context.InputValues.GetValueOrDefault(SkoleNaervaerReportInput.ReporterKey) is { } selected && selected != AltinnTestingPolicy.InteractiveReporter
                 ? policy.Reporter(selected, out _)?.AltinnRole ?? "PRIV" : "PRIV";
             if (AltinnTestingPolicy.PolicyProblem(confirmation, role) is { } policyProblem) return Blocked(context, policyProblem);
@@ -302,7 +303,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var token = auth.Token!;
         _sessions[context.RunId] = new Session
         {
-            AppBase = appBase, Token = token, FormDataTypeId = contract.FormDataTypeId!, Fields = contract.Fields, ContentType = contentType,
+            Endpoints = AltinnAppEndpoints.Create(appBase, $"{app.Org}/{app.App}", contract.Operations, contract.OperationsSource), Token = token, FormDataTypeId = contract.FormDataTypeId!, Fields = contract.Fields, ContentType = contentType,
             XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, Plan = contract.Process.PlannedTasks, MaxTransitions = policy.MaxProcessTransitions,
             Created = clock.GetUtcNow(), PartyId = party.Value,
         };
@@ -313,7 +314,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
 
     private async Task<JourneyStepResult> CreateInstanceAsync(JourneyStepContext context, Session session, CancellationToken ct)
     {
-        var (result, instance) = await altinn.CreateInstanceAsync(session.AppBase, session.Token, session.PartyId, session.FormDataTypeId, ct);
+        var (result, instance) = await altinn.CreateInstanceAsync(session.Endpoints, session.Token, session.PartyId, session.FormDataTypeId, ct);
         if (!result.Success || instance is null) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
         session.Instance = instance;
         return Result(context, JourneyStepState.Verified, $"{Http(result)} · instance {Reference(instance)}", "Instance created. Not yet submitted.", Reference(instance));
@@ -327,7 +328,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var body = session.ContentType == "application/xml"
             ? ToXml(model, session.Fields, session.XmlRootElement!, session.XmlNamespace!, session.XmlElementsQualified)
             : model.ToJsonString();
-        var (result, dataGuid) = await altinn.PutFormDataAsync(session.AppBase, session.Token, session.Instance!, session.FormDataTypeId, body, session.ContentType, ct);
+        var (result, dataGuid) = await altinn.PutFormDataAsync(session.Endpoints, session.Token, session.Instance!, session.FormDataTypeId, body, session.ContentType, ct);
         if (!result.Success) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
         session.Instance = session.Instance! with { FormDataGuid = dataGuid };
         return Result(context, JourneyStepState.Verified, $"{Http(result)} · data type {session.FormDataTypeId} · {session.ContentType} · 5 fields",
@@ -336,7 +337,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
 
     private async Task<JourneyStepResult> ValidateAsync(JourneyStepContext context, Session session, CancellationToken ct)
     {
-        var (result, summary) = await altinn.ValidateAsync(session.AppBase, session.Token, session.Instance!, ct);
+        var (result, summary) = await altinn.ValidateAsync(session.Endpoints, session.Token, session.Instance!, ct);
         if (!result.Success || summary is null) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail);
         var codes = summary.Codes.Count > 0 ? $" · codes {string.Join(", ", summary.Codes)}" : "";
         session.Validated = summary.Errors == 0;
@@ -363,7 +364,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         {
             var expected = session.Plan[index];
             // The contract says which task the process should be at; only the live instance says where it is.
-            var (read, live) = await altinn.GetInstanceAsync(session.AppBase, session.Token, session.Instance!, session.FormDataTypeId, ct);
+            var (read, live) = await altinn.GetInstanceAsync(session.Endpoints, session.Token, session.Instance!, session.FormDataTypeId, ct);
             if (!read.Success || live is null)
                 return Result(context, JourneyStepState.NotVerified, Http(read), $"The live process state could not be read, so process/next was not called. {read.Detail}", Reference(session.Instance!), facts);
             if (AltinnProcessContractEvaluator.PreTransitionProblem(live, expected) is { } problem)
@@ -374,7 +375,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
                 return Result(context, JourneyStepState.UnexpectedResult, "", $"Not advanced: the execution bound of {session.MaxTransitions} process transition(s) is reached.", Reference(live), facts);
 
             session.Transitions++;
-            var (result, state) = await altinn.ProcessNextAsync(session.AppBase, session.Token, live, ct);
+            var (result, state) = await altinn.ProcessNextAsync(session.Endpoints, session.Token, live, ct);
             if (!result.Success || state is null)
                 return Result(context, JourneyStepState.NotVerified, $"{Http(result)} · process/next {session.Transitions} of {session.Plan.Count}",
                     $"{result.Detail} Not retried; nothing further was sent.", Reference(live), facts);
@@ -404,7 +405,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
 
     private async Task<JourneyStepResult> ReceiptAsync(JourneyStepContext context, Session session, CancellationToken ct)
     {
-        var (result, instance) = await altinn.GetInstanceAsync(session.AppBase, session.Token, session.Instance!, session.FormDataTypeId, ct);
+        var (result, instance) = await altinn.GetInstanceAsync(session.Endpoints, session.Token, session.Instance!, session.FormDataTypeId, ct);
         if (!result.Success || instance is null) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail, Reference(session.Instance!));
         return instance.Ended is { } ended
             ? Result(context, JourneyStepState.Verified,

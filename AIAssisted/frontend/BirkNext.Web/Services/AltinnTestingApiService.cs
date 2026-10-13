@@ -15,6 +15,15 @@ public interface IAltinnTestingApiService
     Task<ActiveEventApiResult<AltinnSignInStatus>> SignInStatusAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<AltinnSignInStart>> StartSignInAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<bool>> SignOutAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Where each setting comes from (configured, discovered, policy evidence, run input). No secret or identifier is returned.</summary>
+    Task<ActiveEventApiResult<AltinnConfigurationOverview>> ConfigurationAsync(string environmentId, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<AltinnConfigurationOverview>(null, "The configuration overview is not available.", HttpStatusCode.NotFound));
+    /// <summary>Confirms the latest live deployed contract after its changes were reviewed.</summary>
+    Task<ActiveEventApiResult<AltinnAppContractView>> AcceptContractChangesAsync(string environmentId, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<AltinnAppContractView>(null, "Not available.", HttpStatusCode.NotFound));
+    /// <summary>Imports an OpenAPI document for offline analysis (never live-verified, never executed against).</summary>
+    Task<ActiveEventApiResult<AltinnAppContractView>> ImportOpenApiAsync(string environmentId, string json, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<AltinnAppContractView>(null, "Not available.", HttpStatusCode.NotFound));
 }
 
 public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApiService
@@ -37,6 +46,16 @@ public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApi
 
     public Task<ActiveEventApiResult<AltinnSignInStart>> StartSignInAsync(string environmentId, CancellationToken ct = default) =>
         SendAsync<AltinnSignInStart>(HttpMethod.Post, $"api/altinn-testing/sign-in/start?environmentId={E(environmentId)}", null, ct);
+
+    public Task<ActiveEventApiResult<AltinnConfigurationOverview>> ConfigurationAsync(string environmentId, CancellationToken ct = default) =>
+        SendAsync<AltinnConfigurationOverview>(HttpMethod.Get, $"api/altinn-testing/configuration?environmentId={E(environmentId)}", null, ct);
+
+    public Task<ActiveEventApiResult<AltinnAppContractView>> AcceptContractChangesAsync(string environmentId, CancellationToken ct = default) =>
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/accept-changes?environmentId={E(environmentId)}", null, ct);
+
+    public Task<ActiveEventApiResult<AltinnAppContractView>> ImportOpenApiAsync(string environmentId, string json, CancellationToken ct = default) =>
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/import-openapi?environmentId={E(environmentId)}",
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"), ct);
 
     public async Task<ActiveEventApiResult<bool>> SignOutAsync(string environmentId, CancellationToken ct = default)
     {

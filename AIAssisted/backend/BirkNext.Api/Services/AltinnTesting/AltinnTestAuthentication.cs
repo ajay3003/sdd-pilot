@@ -161,7 +161,7 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
     {
         var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
         var config = request.Configuration;
-        var clientId = config.ClientReference!.Trim();
+        var clientId = policy.ClientId(config, out _, out _)!;
         var redirect = policy.UnattendedRedirect()!;
         var secret = policy.UnattendedClientSecret!;
 

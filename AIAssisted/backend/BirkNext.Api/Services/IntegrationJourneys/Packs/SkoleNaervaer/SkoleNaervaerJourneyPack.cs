@@ -272,14 +272,26 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         {
             new(AltinnTestingPolicy.IdPortenTestDiscovery), new("https://login.test.idporten.no/authorize"), new("https://test.idporten.no/token"), new(AltinnTestingPolicy.AltinnTokenExchange),
         };
-        if (app is { } a) endpoints.Add(new Uri(AltinnTestingPolicy.AppBase(a.Org, a.App), "instances"));
+        string? addressProblem = null;
+        if (app is { } a)
+        {
+            // Every App API address the run would use, built from the contract's operation paths (sample ids only), must pass the same guard.
+            try
+            {
+                var addresses = AltinnAppEndpoints.Create(AltinnTestingPolicy.AppBase(a.Org, a.App), $"{a.Org}/{a.App}", contract.Operations, contract.OperationsSource);
+                var sample = new Guid("00000000-0000-4000-8000-000000000001");
+                endpoints.AddRange([addresses.CreateInstance(1), addresses.Instance(1, sample), addresses.CreateData(1, sample, contract.FormDataTypeId ?? "form"),
+                    addresses.UpdateData(1, sample, sample), addresses.Validate(1, sample), addresses.ProcessNext(1, sample)]);
+            }
+            catch (AltinnContractException ex) { addressProblem = ex.Message; }
+        }
         var blocked = endpoints.Select(uri => (uri, reason: AltinnTestingPolicy.RequestBlock(uri))).Where(item => item.reason is not null).ToList();
-        checks.Add(new("endpoints", "Endpoint allowlist", blocked.Count == 0 && app is not null,
-            app is null ? "No approved app: the app endpoint cannot be built." : blocked.Count == 0
-                ? $"{endpoints.Count} endpoints (ID-porten TEST, Altinn TT02 exchange, the approved app) all pass the request guard."
+        checks.Add(new("endpoints", "Endpoint allowlist", blocked.Count == 0 && app is not null && addressProblem is null,
+            app is null ? "No approved app: the app endpoint cannot be built." : addressProblem is not null ? addressProblem : blocked.Count == 0
+                ? $"{endpoints.Count} endpoints (ID-porten TEST, Altinn TT02 exchange, and the approved app's operations · {contract.OperationsSource}) all pass the request guard."
                 : string.Join(" ", blocked.Select(item => item.reason))));
 
-        var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail);
+        var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, flow.AppContract?.ObservedPolicy, out var policyDetail);
         var policyProblem = confirmation is null ? null : AltinnTestingPolicy.PolicyProblem(confirmation, role);
         checks.Add(new("app-policy", "App authorization policy for the reporter", confirmation is not null && policyProblem is null, policyProblem ?? policyDetail));
         checks.Add(new("contract", "App contract", contract.Complete, contract.Complete ? "Complete." : $"Incomplete — {string.Join(" ", contract.Missing)}"));
@@ -388,13 +400,13 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var unattended = altinnPolicy.UnattendedProblems(config);
                 var altinnEnvironment = AltinnTestingPolicy.AltinnEnvironmentBlock(config);
                 var options = altinnPolicy.Options.UnattendedIdPortenTest;
-                var clientConfigured = config.AuthenticationType == ExternalAuthenticationType.IDPorten && !string.IsNullOrWhiteSpace(config.ClientReference)
+                var clientConfigured = config.AuthenticationType == ExternalAuthenticationType.IDPorten && altinnPolicy.ClientId(config, out _, out _) is not null
                     && config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal);
                 // Configured ≠ confirmed: a reporter counts as configured before its Altinn profile is confirmed (shown in its own row).
                 var reporters = options.Reporters.Count(item => AltinnTestingPolicy.ReporterConfigurationProblem(item) is null);
                 var reporterProblem = options.Reporters.Select(AltinnTestingPolicy.ReporterConfigurationProblem).FirstOrDefault(item => item is not null);
                 var publicMetadata = contract.Sources.FirstOrDefault(item => item.Source == AltinnContractSourceKind.PublicTt02Metadata);
-                var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, out var policyDetail);
+                var confirmation = altinnPolicy.AppPolicy(config.AppIdentifier, flow.AppContract?.ObservedPolicy, out var policyDetail);
                 // A confirmed policy must also allow the roles the configured reporters act in (unattended aliases, or PRIV for the fallback).
                 var roles = options.Reporters.Select(item => item.AltinnRole).Append("PRIV").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 var policyProblem = confirmation is null ? null : roles.Select(role => AltinnTestingPolicy.PolicyProblem(confirmation, role)).FirstOrDefault(item => item is not null);

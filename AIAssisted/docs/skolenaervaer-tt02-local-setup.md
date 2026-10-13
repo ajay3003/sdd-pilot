@@ -27,19 +27,33 @@ Placeholders only appear here (`<…>`). Never put a real secret, TestID identif
 
 ## Where each setting lives
 
-The backend owns trust and secrets. Integration Quality Review owns the app, client and scopes. The browser never holds a
-secret.
+Every value below can change without a code change. The values seen in TT02 today (the app, its task, its data type, the scopes in
+use) are **current evidence, not permanent configuration**. The setup page's *Configuration and sources* table shows each value
+with its source.
+
+Ownership:
+- **You / the environment configure:** the ID-porten TEST client, redirect URI, secret, reporters, profile confirmation, trusted
+  target and approved synthetic test data.
+- **BirkNext discovers from the deployed app:** the TT02 host, process tasks, data type, App API endpoints and contract
+  fingerprint.
+- **Confirmed policy evidence:** the app policy's source, hash, roles, actions and authentication level. It is re-checked on every
+  metadata read.
+
+The browser never holds a secret.
 
 | Setting | Exact key | Owner |
 |---|---|---|
 | Unattended ID-porten TEST enabled | `AltinnTesting:UnattendedIdPortenTest:Enabled` | backend (env var) |
 | Registered redirect URI | `AltinnTesting:UnattendedIdPortenTest:RedirectUri` (falls back to `AltinnTesting:IdPortenTest:RedirectUri`) | backend (env var) |
 | Client secret | `AltinnTesting:UnattendedIdPortenTest:ClientSecret` (falls back to `AltinnTesting:IdPortenTest:ClientSecret`) | backend (env var only) |
-| Reporter alias / label | `AltinnTesting:UnattendedIdPortenTest:Reporters:<n>:Alias` / `:Label` | backend (env var) |
+| Client id (optional here) | `AltinnTesting:UnattendedIdPortenTest:ClientId` — used when IQR has none; both set and different is reported as a conflict | backend (env var) |
+| Reporter alias / label | `AltinnTesting:UnattendedIdPortenTest:Reporters:<n>:Alias` / `:Label` (several reporters: `<n>` = 0, 1, …) | backend (env var) |
 | Reporter TestID identifier | `AltinnTesting:UnattendedIdPortenTest:Reporters:<n>:TestIdPersonIdentifier` | backend (env var only) |
 | Reporter profile confirmed | `AltinnTesting:UnattendedIdPortenTest:Reporters:<n>:AltinnProfileConfirmed` (default `false`) | backend (deliberate) |
 | Reporter role / security level / environment | `…:Reporters:<n>:AltinnRole` (`PRIV`, the only supported role), `:AcrValue` (`idporten-loa-substantial`), `:AllowedEnvironment` (`TT02`) | backend (defaults) |
-| App policy confirmation | `AltinnTesting:ConfirmedAppPolicies` (committed for `buf/skolenaervaer`, TT02) | backend (done) |
+| Approved app (target boundary) | `AltinnTesting:ApprovedApps` (currently `buf/skolenaervaer`); another app or organisation needs an explicit change here and in IQR | backend |
+| App policy confirmation | `AltinnTesting:ConfirmedAppPolicies` with `PolicySha256` (currently confirmed for `buf/skolenaervaer`, TT02) | backend (confirmed evidence) |
+| TT02 host, process tasks, data type, endpoints, app-lib version | discovered by **Read public TT02 metadata** from the approved app; never configured | deployed metadata |
 | Trusted target + enrolled integrations | `TargetEnvironments:Trusted:<n>:EnvironmentId`, `:DisplayName`, `:EnvironmentType`, `:ExecutionAllowed`, `:TargetUrl`, `:IntegrationIds:<m>` | backend (env var) |
 | Client id, scopes, app, environment, reporter reference | IQR → Altinn test configuration: *Client / app reference*, *Configured scopes*, *App identifier*, *Environment*, *Test reporter reference* + *Reporter access approved for this test* | IQR (UI) |
 | Approved synthetic child | IQR → *Approved synthetic identity-set reference* + *Test data is approved synthetic data*; the child identifier itself is entered per run and never stored | IQR (UI) + run input |
@@ -52,8 +66,10 @@ Use the session-only helper, the smallest safe option:
 
 ```powershell
 # From the repository root, in the window that will run the backend:
-.\AIAssisted\scripts\configure-skolenaervaer-tt02-local.ps1 -RedirectUri <REGISTERED_IDPORTEN_TEST_REDIRECT_URI>
-# Prompts for the client secret and the reporter's synthetic TestID identifier (input is not shown).
+.\AIAssisted\scripts\configure-skolenaervaer-tt02-local.ps1
+# Prompts for: reporter alias, reporter label, reporter synthetic identifier (not shown), profile confirmed?, client id (optional),
+# redirect URI and client secret (not shown). Example identifier format: 11 digits — no identifier is built into the script.
+.\AIAssisted\scripts\configure-skolenaervaer-tt02-local.ps1 -ReporterIndex 1   # a second reporter (reporter-b)
 .\AIAssisted\scripts\configure-skolenaervaer-tt02-local.ps1 -Status   # what is set; secrets as "Set (value not shown)"
 .\AIAssisted\scripts\configure-skolenaervaer-tt02-local.ps1 -Clear    # remove them from this session
 ```
@@ -87,7 +103,7 @@ not from the identifier existing, not from its format, and not from the configur
 
 1. Create or select the synthetic TestID person (Test-Norge).
 2. Make sure that person has an Altinn TT02 profile.
-3. Mark it confirmed, deliberately. Rerun the helper with `-ReporterProfileConfirmed` and type the alias when asked, or set
+3. Mark it confirmed, deliberately: when the helper asks *Profile confirmed?*, type the alias, or set
    `…Reporters__0__AltinnProfileConfirmed = 'true'` yourself.
 4. Readiness then shows *Reporter Altinn profile: Confirmed*.
 
@@ -97,10 +113,13 @@ confirmed* until step 3.
 ## Integration Quality Review → Altinn test configuration
 
 - **Environment:** `Test` (TT02). Production stays blocked.
-- **App identifier:** `buf/skolenaervaer`.
+- **App identifier:** the approved app (currently `buf/skolenaervaer`).
 - **Authentication type:** ID-porten. **Client / app reference:** the ID-porten TEST client id.
-- **Configured scopes:** `openid, altinn:instances.read, altinn:instances.write`. These are sent exactly as configured, and BirkNext
-  requires `openid`. Check them against your ID-porten TEST client registration yourself; BirkNext cannot.
+- **Configured scopes:** configuration, not a fixed requirement.
+  - Currently used: `openid, altinn:instances.read, altinn:instances.write`.
+  - They are sent exactly as configured; the current authentication requires only `openid`.
+  - Readiness shows them as *N configured · Not checked against the client registration*. Verify them against your ID-porten TEST
+    client registration yourself; BirkNext cannot.
 - **Test reporter reference** + *Reporter access approved for this test*.
 - **Approved synthetic identity-set reference** + *Test data is approved synthetic data* (see the synthetic child section below).
 
@@ -142,11 +161,49 @@ No committed configuration defines `TargetEnvironments:Trusted`, so index `0` is
 1. Stop any backend already running on `:5000`. Start it from the configured window: `dotnet run --project
    AIAssisted\backend\BirkNext.Api`, or the helper with `-StartBackend`.
 2. On `/extensions/skolenaervaer`, check that *Backend build* shows the expected commit.
-3. Under *Public TT02 metadata*, select **Read public TT02 metadata**. This makes three anonymous GETs: application metadata,
-   the form schema and the deployed OpenAPI document. *Public TT02 process metadata* then shows **Loaded**.
-4. Expected *Process contract*: **Confirmed for the current operation**. That is `Task_1` · *Utfylling* · `data`, no actions,
-   one `process/next` with an optional body, and a response exposing `currentTask`, `ended` and `endEvent`.
-   `process.bpmn` is **optional**.
+3. Under *Public TT02 metadata*, select **Read public TT02 metadata**. This makes anonymous GETs only:
+   - the application metadata;
+   - the form schema;
+   - the deployed OpenAPI document;
+   - the app's authorization policy (only its SHA-256 is kept).
+
+   *Public TT02 process metadata* then shows **Loaded**, and *Deployed contract* shows **Current**.
+4. Expected *Process contract*: **Confirmed for the current operation**.
+   - The task is whatever the deployed contract declares. Currently that is `Task_1` · *Utfylling* · `data`, with no actions.
+   - There is one `process/next` with an optional body, and its response exposes `currentTask`, `ended` and `endEvent`.
+   - The App API paths come from the deployed contract too.
+   - `process.bpmn` is **optional**.
+
+## When the deployed app or its policy changes
+
+- **Every read compares against the last confirmed contract.**
+  - The first read that confirms the operation becomes the confirmed contract.
+  - A compatible change (for example a new app-lib version with the same facts) is accepted automatically.
+  - Anything else shows **Deployed Altinn contract changed since last confirmation** with a *Review changes* table
+    (Before · After · Impact). Real execution stays blocked until you select *Accept reviewed changes*.
+  - *Accept* is only offered when the new contract still fits the bounded operation.
+- **Blocking changes cannot be accepted.** These are:
+  - a second task;
+  - a task action;
+  - a non-data task;
+  - a missing `process/next`, a required body, or a missing state field;
+  - a missing operation.
+- **Needs review:** a renamed task, a different data type or task ownership, or a changed path.
+- **A changed policy hash** turns *App authorization policy* into **Changed · needs confirmation**, and real execution is
+  blocked. Review the new policy and record its new `PolicySha256` in `AltinnTesting:ConfirmedAppPolicies`. A policy that could not
+  be re-read is shown as unknown, never as unchanged.
+- **Freshness:** a read older than `AltinnTesting:ContractRefreshRecommendedAfterHours` (default 24) shows **Refresh
+  recommended**.
+- **Imported OpenAPI:** you may import a downloaded OpenAPI document (for example `customOpenapi.json`) for offline comparison. It
+  is shown as **Imported OpenAPI · Not live-verified** and is never used to run.
+- **Source precedence:**
+  1. live deployed metadata;
+  2. target configuration;
+  3. confirmed policy evidence;
+  4. imported OpenAPI;
+  5. documented defaults.
+
+  An uploaded app source that disagrees with the live data type is a conflict, not a silent choice.
 
 ## Dry run (no external call)
 

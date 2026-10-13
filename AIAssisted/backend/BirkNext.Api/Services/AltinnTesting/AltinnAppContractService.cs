@@ -95,9 +95,97 @@ public sealed class AltinnAppContractService(
             Documents = documents.Select(item => item.Name).ToArray(), Fields = schema?.Fields, ProcessTasks = null, DeployedProcess = deployed, Notes = notes,
             XmlRootElement = schema?.XmlRootElement, XmlNamespace = schema?.XmlNamespace, XmlElementsQualified = schema?.XmlElementsQualified ?? false,
         };
-        var record = (package.AppContract ?? new AltinnAppContractRecord(null, null)) with { PublicMetadata = snapshot };
+        var record = (package.AppContract ?? new AltinnAppContractRecord(null, null)) with
+        {
+            PublicMetadata = snapshot, ObservedPolicy = await ReadPolicyAsync(client, approved.Org, approved.App, ct),
+        };
+        record = Reconcile(environmentId, appId!, record);
         await messageFlows.SaveAppContractAsync(environmentId, record, ct);
         return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+    }
+
+    /// <summary>
+    /// Compares the fresh live read with the confirmed contract. The first read that confirms the operation becomes the confirmed contract;
+    /// afterwards compatible changes (e.g. a new app-lib version with the same facts) move it forward, while changes that need review or block
+    /// keep the old confirmation and are stored for review — a changed deployment is never silently relied on.
+    /// </summary>
+    private AltinnAppContractRecord Reconcile(string environmentId, string appId, AltinnAppContractRecord record)
+    {
+        var now = clock.GetUtcNow();
+        var live = record.PublicMetadata!;
+        if (record.Confirmed is not { } confirmed || !string.Equals(confirmed.Snapshot.AppId, appId, StringComparison.Ordinal))
+        {
+            var first = Evaluate(environmentId, appId, record with { Confirmed = null, Changes = null });
+            return first.Process.Confirmed
+                ? record with { Confirmed = new AltinnConfirmedContract(live, now, "First live read that confirmed the operation"), Changes = null }
+                : record with { Confirmed = null, Changes = null };
+        }
+        var changes = AltinnContractComparer.Compare(confirmed.Snapshot, live, now);
+        return changes.Impact switch
+        {
+            AltinnContractChangeImpact.NoChange => record with { Confirmed = confirmed with { Snapshot = live }, Changes = null },
+            AltinnContractChangeImpact.Compatible => record with { Confirmed = new AltinnConfirmedContract(live, now, $"Compatible change accepted automatically ({string.Join("; ", changes.Changes.Select(change => change.Area))})"), Changes = null },
+            _ => record with { Changes = changes },
+        };
+    }
+
+    /// <summary>Confirms the latest live contract after a person reviewed its changes. Refused while the contract is otherwise not usable.</summary>
+    public async Task<AltinnAppContractView> AcceptChangesAsync(string environmentId, string? reviewer, CancellationToken ct)
+    {
+        var package = await messageFlows.GetAsync(environmentId, ct);
+        var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
+        var record = package.AppContract;
+        if (record?.Changes is null || record.PublicMetadata is null) throw new AltinnContractException("There are no contract changes to review.");
+        var view = Evaluate(environmentId, appId, record);
+        if (!view.ChangesAcceptable) throw new AltinnContractException(view.ChangesDetail);
+        record = record with { Confirmed = new AltinnConfirmedContract(record.PublicMetadata, clock.GetUtcNow(), $"Changes reviewed and accepted{(string.IsNullOrWhiteSpace(reviewer) ? "" : $" by {reviewer}")}"), Changes = null };
+        await messageFlows.SaveAppContractAsync(environmentId, record, ct);
+        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+    }
+
+    /// <summary>
+    /// Reads an OpenAPI document a person supplies (e.g. a downloaded customOpenapi.json) for offline analysis of the configured app. It is kept as
+    /// "Imported OpenAPI · not live-verified" and compared with the live contract; it never becomes the contract BirkNext executes against.
+    /// </summary>
+    public async Task<AltinnAppContractView> ImportOpenApiAsync(string environmentId, string json, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(json)) throw new AltinnContractException("The OpenAPI document is empty.");
+        if (Encoding.UTF8.GetByteCount(json) > MaxDocumentBytes) throw new AltinnContractException($"The OpenAPI document exceeds the {MaxDocumentBytes / (1024 * 1024)} MB limit.");
+        var package = await messageFlows.GetAsync(environmentId, ct);
+        var appId = package.AltinnConfiguration.AppIdentifier?.Trim();
+        _ = policy.ApprovedApp(appId, out var reason) ?? throw new AltinnContractException(reason);
+        AltinnDeployedProcessContract facts;
+        try { facts = AltinnDeployedOpenApiReader.Read(json.TrimStart('\uFEFF'), appId!, openApi); }
+        catch (JsonException ex) { throw new AltinnContractException($"The OpenAPI document is not valid JSON ({ex.Message})."); }
+        var imported = new AltinnContractSnapshot
+        {
+            Source = AltinnContractSourceKind.ImportedOpenApi, AppId = appId!, CapturedAt = clock.GetUtcNow(), Fingerprint = facts.Fingerprint,
+            Documents = ["imported OpenAPI document"], DeployedProcess = facts with { Document = "imported" }, Notes = ["Imported for offline analysis; not live-verified."],
+        };
+        var record = (package.AppContract ?? new AltinnAppContractRecord(null, null)) with { ImportedOpenApi = imported };
+        await messageFlows.SaveAppContractAsync(environmentId, record, ct);
+        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+    }
+
+    /// <summary>
+    /// Reads the app's authorization policy anonymously from its TT02 Resource Registry address and keeps only the SHA-256 of the exact bytes,
+    /// so a later change is detectable. A failed read is recorded as unknown, never as unchanged.
+    /// </summary>
+    private async Task<AltinnObservedPolicy> ReadPolicyAsync(HttpClient client, string org, string app, CancellationToken ct)
+    {
+        var source = AltinnTestingPolicy.PolicySource(org, app);
+        try
+        {
+            using var response = await client.GetAsync(source, ct);
+            if (!response.IsSuccessStatusCode) return new AltinnObservedPolicy(source.ToString(), null, clock.GetUtcNow(), $"HTTP {(int)response.StatusCode}");
+            using var buffer = new MemoryStream();
+            await CopyBoundedAsync(await response.Content.ReadAsStreamAsync(ct), buffer, MaxDocumentBytes, ct);
+            return new AltinnObservedPolicy(source.ToString(), Convert.ToHexString(SHA256.HashData(buffer.ToArray())).ToLowerInvariant(), clock.GetUtcNow(), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or AltinnContractException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            return new AltinnObservedPolicy(source.ToString(), null, clock.GetUtcNow(), ex is AltinnContractException ? ex.Message : "the request failed");
+        }
     }
 
     /// <summary>
@@ -154,6 +242,11 @@ public sealed class AltinnAppContractService(
         var schemaSource = uploaded?.Fields is not null ? uploaded : published?.Fields is not null ? published : null;
         var staticProcess = uploaded?.ProcessTasks is not null ? uploaded : published?.ProcessTasks is not null ? published : null;
         var dataType = dataTypeSource?.FormDataTypeId;
+        // Uploaded source is static evidence; the live deployed metadata is what runs. When they disagree, nothing is chosen silently.
+        if (uploaded?.FormDataTypeId is { } staticType && published?.FormDataTypeId is { } liveType && staticType != liveType)
+            missing.Add($"Conflict: the app source in Source Analysis binds the form to {staticType}, the deployed TT02 app to {liveType}. Re-upload the app source or review the deployment.");
+        else if (uploaded?.FormDataTaskId is { } staticTask && published?.FormDataTaskId is { } liveTask && staticTask != liveTask)
+            missing.Add($"Conflict: the app source puts the form on {staticTask}, the deployed TT02 app on {liveTask}.");
         if (schemaSource is not null && dataTypeSource is not null && schemaSource != dataTypeSource && schemaSource.FormDataTypeId != dataType)
         {
             missing.Add("The data model schema was read for a different form data type than the one in effect; supply both from the same source.");
@@ -204,6 +297,27 @@ public sealed class AltinnAppContractService(
         var bound = binding.Fields.Select(item => item.Path).ToHashSet(StringComparer.Ordinal);
         var requiredUnbound = fields.Where(item => item.Required && !bound.Contains(item.Path) && !fields.Any(child => child.Path.StartsWith(item.Path + ".", StringComparison.Ordinal))).ToArray();
 
+        // The App API operations: from the deployed contract when it was read (each must be declared), otherwise app-lib's documented defaults.
+        var (operations, operationsSource, operationsMissing) = appId is { Length: > 0 } ? AltinnAppEndpoints.For(appId, published?.DeployedProcess) : ([], "", []);
+        missing.AddRange(operationsMissing);
+
+        // Changes since the confirmed deployed contract that still need review keep execution blocked until a person accepts them.
+        var changes = published is not null && record?.Changes is { Impact: AltinnContractChangeImpact.NeedsReview or AltinnContractChangeImpact.Blocking } pending
+            && pending.CurrentFingerprint == published.Fingerprint ? pending : null;
+        var acceptable = changes is not null && missing.Count == 0;
+        var changesDetail = changes is null ? ""
+            : acceptable ? $"{changes.Changes.Count} change(s) since the confirmed contract; the new contract is otherwise usable. Review and accept to rely on it."
+            : $"The changed contract is not usable as it stands: {string.Join(" ", missing.Distinct())}";
+        if (changes is not null)
+            missing.Add($"Deployed Altinn contract changed since last confirmation ({string.Join(", ", changes.Changes.Select(change => change.Area).Distinct())}); review the changes before a real run.");
+
+        var (freshness, freshnessDetail) = published is null ? (AltinnContractFreshness.NotRead, "The deployed contract has not been read from TT02.")
+            : changes is not null ? (AltinnContractFreshness.Changed, $"Changed since the confirmed contract · read {published.CapturedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC")
+            : clock.GetUtcNow() - published.CapturedAt > policy.ContractRefreshRecommendedAfter
+                ? (AltinnContractFreshness.RefreshRecommended, $"Read {published.CapturedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC, more than {policy.ContractRefreshRecommendedAfter.TotalHours:0} hours ago — refresh recommended")
+            : (AltinnContractFreshness.Current, $"Read {published.CapturedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC");
+        var imported = Usable(record?.ImportedOpenApi);
+
         return new AltinnAppContractView
         {
             EnvironmentId = environmentId, ConfiguredAppId = appId, AppApproved = approved, AppDetail = appDetail, FormDataTypeId = dataType, Parts = parts,
@@ -211,6 +325,10 @@ public sealed class AltinnAppContractService(
             XmlRootElement = schemaSource?.XmlRootElement, XmlNamespace = schemaSource?.XmlNamespace, XmlElementsQualified = schemaSource?.XmlElementsQualified ?? false,
             Sources = new[] { record?.SourceAnalysis, record?.PublicMetadata }.OfType<AltinnContractSnapshot>().ToArray(),
             Complete = missing.Count == 0, Missing = missing.Distinct().ToArray(),
+            Operations = operations, OperationsSource = operationsSource, Freshness = freshness, FreshnessDetail = freshnessDetail,
+            Confirmed = record?.Confirmed is { } confirmedContract && confirmedContract.Snapshot.AppId == appId ? confirmedContract : null,
+            Changes = changes, ChangesAcceptable = acceptable, ChangesDetail = changesDetail, ImportedOpenApi = imported,
+            ImportedComparedToLive = imported is not null && published is not null ? AltinnContractComparer.Compare(published, imported, clock.GetUtcNow(), processOnly: true) : null,
         };
 
         static AltinnContractPartStatus Part(AltinnContractPartKind kind, AltinnContractSnapshot? source, string present, string absent) =>
@@ -226,7 +344,7 @@ public sealed class AltinnAppContractService(
         var id = root.TryGetProperty("id", out var idElement) ? idElement.GetString() : null;
         if (!string.Equals(id, expectedAppId, StringComparison.Ordinal))
             throw new AltinnContractException($"The application metadata is for {id ?? "an unknown app"}, not the configured app {expectedAppId}.");
-        var candidates = new List<(string Id, IReadOnlyList<string> Types, string? ClassRef, string? TaskId)>();
+        var candidates = new List<(string Id, IReadOnlyList<string> Types, string? ClassRef, string? TaskId, int? MaxCount)>();
         if (root.TryGetProperty("dataTypes", out var dataTypes) && dataTypes.ValueKind == JsonValueKind.Array)
             foreach (var item in dataTypes.EnumerateArray())
             {
@@ -236,13 +354,14 @@ public sealed class AltinnAppContractService(
                 var types = item.TryGetProperty("allowedContentTypes", out var allowed) && allowed.ValueKind == JsonValueKind.Array
                     ? allowed.EnumerateArray().Select(type => type.GetString() ?? "").Where(type => type.Length > 0).ToArray() : [];
                 var taskId = item.TryGetProperty("taskId", out var task) && task.ValueKind == JsonValueKind.String ? task.GetString() : null;
-                candidates.Add((dataId, types, classRef, taskId));
+                int? maxCount = item.TryGetProperty("maxCount", out var max) && max.ValueKind == JsonValueKind.Number && max.TryGetInt32(out var count) ? count : null;
+                candidates.Add((dataId, types, classRef, taskId, maxCount));
             }
         var single = candidates.Count == 1 ? candidates[0] : default;
         return new AltinnContractSnapshot
         {
             HasApplicationMetadata = true, FormDataTypeId = candidates.Count == 1 ? single.Id : null, FormDataTypeCandidates = candidates.Select(item => item.Id).ToArray(),
-            AllowedContentTypes = candidates.Count == 1 ? single.Types : [], FormDataTaskId = candidates.Count == 1 ? single.TaskId : null,
+            AllowedContentTypes = candidates.Count == 1 ? single.Types : [], FormDataTaskId = candidates.Count == 1 ? single.TaskId : null, FormDataMaxCount = candidates.Count == 1 ? single.MaxCount : null,
             Notes = candidates.Count == 1 ? [$"classRef:{single.ClassRef}"] : candidates.Count == 0 ? ["The app has no app-logic (form) data type."] : [],
         };
     }

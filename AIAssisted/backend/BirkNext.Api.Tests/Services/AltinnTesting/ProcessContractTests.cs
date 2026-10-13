@@ -43,7 +43,9 @@ public sealed class ProcessContractTests
 
         deployed.TaskInventoryFound.Should().BeTrue();
         deployed.Tasks.Should().Equal([new AltinnDeclaredProcessTask("Task_1", "Utfylling", "data", [])], (a, b) => a.TaskId == b.TaskId && a.Name == b.Name && a.TaskType == b.TaskType && a.Actions.Count == b.Actions.Count);
-        deployed.DataTypeTasks.Should().Contain(new AltinnDataTypeTask(AltinnTestKit.RealFormDataType, "Task_1")).And.Contain(new AltinnDataTypeTask("ref-data-as-pdf", null));
+        deployed.DataTypeTasks.Select(item => (item.DataTypeId, item.TaskId)).Should().Contain((AltinnTestKit.RealFormDataType, "Task_1")).And.Contain(("ref-data-as-pdf", (string?)null));
+        deployed.DataTypeTasks.Single(item => item.DataTypeId == AltinnTestKit.RealFormDataType).Should().Match<AltinnDataTypeTask>(item =>
+            item.Kind == "FormData (AutoCreate)" && item.AllowedNumber == "1" && item.MimeTypes.SequenceEqual(new[] { "application/xml" }));
         deployed.ProcessNextDeclared.Should().BeTrue();
         deployed.ProcessNextMethod.Should().Be("PUT");
         deployed.ProcessNextBodyRequired.Should().BeFalse("the ProcessNext body is optional");

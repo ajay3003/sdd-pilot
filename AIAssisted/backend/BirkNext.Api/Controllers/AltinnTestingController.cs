@@ -34,6 +34,37 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
         catch (System.Text.Json.JsonException) { return BadRequest(new { message = "The public TT02 metadata is not readable JSON." }); }
     }
 
+    /// <summary>Confirms the latest live deployed contract after a person reviewed its changes (refused while it is otherwise not usable).</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    [HttpPost("contract/accept-changes")]
+    public async Task<ActionResult<AltinnAppContractView>> AcceptChanges([FromQuery] string environmentId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId is required." });
+        try { return Ok(await contracts.AcceptChangesAsync(environmentId, User.Identity?.IsAuthenticated == true ? "an authenticated user" : "the local tester", ct)); }
+        catch (AltinnContractException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    /// <summary>Imports an OpenAPI document (JSON body, at most 2 MB) for offline analysis of the configured app. Never live-verified; never used to execute.</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    [HttpPost("contract/import-openapi")]
+    [RequestSizeLimit(3 * 1024 * 1024)]
+    public async Task<ActionResult<AltinnAppContractView>> ImportOpenApi([FromQuery] string environmentId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId is required." });
+        using var reader = new StreamReader(Request.Body, System.Text.Encoding.UTF8);
+        var json = await reader.ReadToEndAsync(ct);
+        try { return Ok(await contracts.ImportOpenApiAsync(environmentId, json, ct)); }
+        catch (AltinnContractException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    /// <summary>Where each Skolenærvær/Altinn setting comes from (configured, discovered, policy evidence, run input). No secret or identifier.</summary>
+    [AllowAnonymous]
+    [HttpGet("configuration")]
+    public async Task<ActionResult<AltinnConfigurationOverview>> Configuration([FromQuery] string environmentId,
+        [FromServices] BirkNext.Api.Services.Integrations.IIntegrationMessageFlowStore messageFlows, [FromServices] AltinnTestingPolicy policy, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId is required." })
+            : Ok(await new AltinnConfigurationOverviewService(messageFlows, policy, contracts).GetAsync(environmentId, ct));
+
     /// <summary>Uses the configured app's source from a Source Analysis snapshot (newest containing it, or the given one) as the authoritative
     /// contract. The app repository is uploaded through Source Analysis; this endpoint accepts no file.</summary>
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

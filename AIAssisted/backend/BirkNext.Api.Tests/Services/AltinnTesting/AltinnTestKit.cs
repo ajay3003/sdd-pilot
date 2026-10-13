@@ -89,10 +89,10 @@ internal sealed class AltinnTestKit
         ReporterReference = "approved-test-reporter", ReporterApprovedForTest = true, ApprovedSyntheticData = true, SyntheticIdentitySetReference = "testnorge-set-1",
     };
 
-    public static string ApplicationMetadata(string id = AppId, string allowed = "\"application/xml\", \"application/json\"", bool secondFormType = false) => $$"""
+    public static string ApplicationMetadata(string id = AppId, string allowed = "\"application/xml\", \"application/json\"", bool secondFormType = false, string formTask = "Task_1") => $$"""
         { "id": "{{id}}", "org": "buf",
           "dataTypes": [
-            { "id": "model", "allowedContentTypes": [{{allowed}}], "appLogic": { "autoCreate": true, "classRef": "Altinn.App.Models.Skolenaervaer" }, "taskId": "Task_1" },
+            { "id": "model", "allowedContentTypes": [{{allowed}}], "appLogic": { "autoCreate": true, "classRef": "Altinn.App.Models.Skolenaervaer" }, "taskId": "{{formTask}}", "maxCount": 1 },
             {{(secondFormType ? "{ \"id\": \"model2\", \"appLogic\": { \"classRef\": \"Altinn.App.Models.Other\" } }," : "")}}
             { "id": "ref-data-as-pdf", "allowedContentTypes": ["application/pdf"] } ] }
         """;
@@ -125,6 +125,10 @@ internal sealed class AltinnTestKit
     /// <summary>The data type id the real buf/skolenaervaer app binds its form to (public TT02 metadata and deployed OpenAPI, read 2026-10-13).</summary>
     public const string RealFormDataType = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
 
+    /// <summary>A synthetic stand-in for the app's XACML policy document (only its exact bytes matter: BirkNext keeps their SHA-256).</summary>
+    public const string PolicyXml = "<xacml:Policy PolicyId=\"urn:altinn:policyid:test\" xmlns:xacml=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" />";
+    public static string PolicySha256(string xml = PolicyXml) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(xml))).ToLowerInvariant();
+
     /// <summary>One process-task row exactly as app-lib's generated OpenAPI writes it (an empty action list is an empty cell).</summary>
     public const string RealTaskRow = "| Task_1 | Utfylling | data |  |";
 
@@ -135,10 +139,19 @@ internal sealed class AltinnTestKit
     /// buf/skolenaervaer TT02 document (one data task Task_1 · Utfylling, no actions, optional body); only what BirkNext reads is included.
     /// </summary>
     public static string DeployedOpenApi(string dataType = "model", string taskRows = RealTaskRow, bool processNext = true, bool bodyRequired = false,
-        string stateFields = "\"started\": {}, \"startEvent\": {}, \"currentTask\": {}, \"ended\": {}, \"endEvent\": {}, \"actions\": {}", string app = AppId, bool taskTable = true)
+        string stateFields = "\"started\": {}, \"startEvent\": {}, \"currentTask\": {}, \"ended\": {}, \"endEvent\": {}, \"actions\": {}", string app = AppId, bool taskTable = true,
+        string validatePath = "validate", string appLib = "8.12.7.264", string formTask = "Task_1", string partyParam = "instanceOwnerPartyId")
     {
+        // The instance, data and validation operations the real document declares (the submission uses them; their paths come from here).
+        var instance = $"/{app}/instances/{{{partyParam}}}/{{instanceGuid}}";
+        var operations = $$"""
+            ,"{{instance}}": { "get": { "summary": "Get instance", "responses": { "200": { "description": "OK" } } } }
+            ,"{{instance}}/data": { "post": { "summary": "Create data element", "responses": { "201": { "description": "Created" } } } }
+            ,"{{instance}}/data/{dataGuid}": { "put": { "summary": "Update data element", "responses": { "201": { "description": "Updated" } } } }
+            ,"{{instance}}/{{validatePath}}": { "get": { "summary": "Validate instance", "responses": { "200": { "description": "OK" } } } }
+            """;
         var next = processNext ? $$"""
-            ,"/{{app}}/instances/{instanceOwnerPartyId}/{instanceGuid}/process/next": { "put": { "summary": "Move instance to next process step",
+            ,"{{instance}}/process/next": { "put": { "summary": "Move instance to next process step",
                 "requestBody": { "description": "Optional body with specification of the action to perform", {{(bodyRequired ? "\"required\": true," : "")}}
                   "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProcessNext" } } } },
                 "responses": { "200": { "description": "Instance moved to next process step. Returns the new process state",
@@ -149,10 +162,11 @@ internal sealed class AltinnTestKit
         var tasks = taskTable ? @"\r\n## This app has the following process tasks:\r\n| TaskId | Name | Type | Actions |\r\n|--------|------|------|---------|\r\n" + rows + @"\n" : "";
         return $$"""
             { "openapi": "3.0.4",
-              "info": { "title": "Altinn 3 App API for School attendance", "version": "8.12.7.264",
-                "description": "App API description\r\n\nThis app has the following data types:\n| DataTypeId | Type | Allowed number | MimeTypes | TaskId |\n|------------|------|----------------|-----------|--------|\n|ref-data-as-pdf|Attachment|-|application/pdf||\n|{{dataType}}|FormData (AutoCreate)|1|application/xml|Task_1|\n{{tasks}}" },
+              "info": { "title": "Altinn 3 App API for School attendance", "version": "{{appLib}}",
+                "description": "App API description\r\n\nThis app has the following data types:\n| DataTypeId | Type | Allowed number | MimeTypes | TaskId |\n|------------|------|----------------|-----------|--------|\n|ref-data-as-pdf|Attachment|-|application/pdf||\n|{{dataType}}|FormData (AutoCreate)|1|application/xml|{{formTask}}|\n{{tasks}}" },
               "paths": {
                 "/{{app}}/instances": { "post": { "summary": "Create new instance", "responses": { "201": { "description": "Instance created" } } } }
+                {{operations}}
                 {{next}} },
               "components": { "schemas": {
                 "ProcessNext": { "type": "object", "properties": { "action": { "type": "string", "nullable": true }, "actionOnBehalfOf": { "type": "string", "nullable": true } }, "additionalProperties": false },
@@ -228,6 +242,12 @@ internal sealed class FakeAltinn : HttpMessageHandler
     public string ValidationJson { get; set; } = "[]";
     /// <summary>The app's deployed OpenAPI document (v1/customOpenapi.json); null answers 404 like an app that does not serve one.</summary>
     public string? OpenApiJson { get; set; } = AltinnTestKit.DeployedOpenApi();
+    /// <summary>The app's application metadata (api/v1/applicationmetadata).</summary>
+    public string MetadataJson { get; set; } = AltinnTestKit.ApplicationMetadata();
+    /// <summary>The app's authorization policy as the TT02 Resource Registry serves it (anonymous); null answers 404.</summary>
+    public string? PolicyXml { get; set; } = AltinnTestKit.PolicyXml;
+    /// <summary>The validation path segment the app serves (changes together with the deployed document's validate path).</summary>
+    public string ValidatePath { get; set; } = "validate";
     /// <summary>The live instance read before process/next (defaults to an active instance at Task_1, a completable data task).</summary>
     public string? LiveInstanceJson { get; set; }
     /// <summary>The AppProcessState process/next returns (defaults to an ended process).</summary>
@@ -262,13 +282,14 @@ internal sealed class FakeAltinn : HttpMessageHandler
             ("GET", var u) when u.StartsWith("https://login.test.idporten.no/authorize?", StringComparison.Ordinal) => ("authorize", ""),
             ("POST", "https://test.idporten.no/token") => ("token", $$"""{"access_token":"{{AltinnTestKit.IdPortenToken}}","expires_in":120,"id_token":"not-used"}"""),
             ("GET", AltinnTestingPolicy.AltinnTokenExchange) => ("exchange", $"\"{AltinnTestKit.AltinnToken}\""),
-            ("GET", $"{AltinnTestKit.AppBase}api/v1/applicationmetadata") => ("metadata", AltinnTestKit.ApplicationMetadata()),
+            ("GET", $"{AltinnTestKit.AppBase}api/v1/applicationmetadata") => ("metadata", MetadataJson),
             ("GET", $"{AltinnTestKit.AppBase}api/jsonschema/model") => ("schema", AltinnTestKit.Schema(doubleEncoded: true)),
             ("GET", $"{AltinnTestKit.AppBase}v1/customOpenapi.json") when OpenApiJson is not null => ("openapi", OpenApiJson),
+            ("GET", "https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy") when PolicyXml is not null => ("policy", PolicyXml),
             ("GET", $"{AltinnTestKit.AppBase}api/authorization/parties/current?returnPartyObject=true") => ("party", $$"""{"partyId":{{AltinnTestKit.PartyId}},"name":"Synthetic reporter"}"""),
             ("POST", var u) when u == $"{AltinnTestKit.AppBase}instances?instanceOwnerPartyId={AltinnTestKit.PartyId}" => ("instance", Instance(ended: false)),
             ("PUT", var u) when u == $"{instance}/data/{AltinnTestKit.DataGuid:D}" => ("data", "{}"),
-            ("GET", var u) when u == $"{instance}/validate" => ("validate", ValidationJson),
+            ("GET", var u) when u == $"{instance}/{ValidatePath}" => ("validate", ValidationJson),
             ("PUT", var u) when u == $"{instance}/process/next" => ("next", NextJson),
             ("GET", var u) when u == instance && !Advanced => ("live", LiveInstanceJson ?? Instance(ended: false)),
             ("GET", var u) when u == instance => ("read", Instance(ended: true)),

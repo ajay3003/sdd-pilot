@@ -24,9 +24,10 @@ public sealed record AltinnValidationSummary(int Errors, int Warnings, IReadOnly
 
 /// <summary>
 /// The Altinn 3 App API calls a TT02 submission needs, against one approved app (base address built from the validated org/app only):
-/// resolve the signed-in party, create an instance, store form data, validate, advance the process and read the instance back. Every URL
-/// is composed from that base, a numeric party id and GUIDs; every request passes <see cref="AltinnTestingRequestGuard"/>; redirects are
-/// not followed. Bodies are parsed for ids and states only and never logged or returned.
+/// resolve the signed-in party, create an instance, store form data, validate, advance the process and read the instance back. The instance,
+/// data, validation and process addresses come from the app's current contract (<see cref="AltinnAppEndpoints"/>: the deployed OpenAPI paths,
+/// filled with a numeric party id and GUIDs and kept inside the approved app); every request passes <see cref="AltinnTestingRequestGuard"/>;
+/// redirects are not followed. Bodies are parsed for ids and states only and never logged or returned.
 /// </summary>
 public sealed class AltinnAppApiClient(IHttpClientFactory http)
 {
@@ -42,9 +43,9 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
             : (new AltinnCallResult(false, response.StatusCode, "Altinn answered without a party id."), null);
     }
 
-    public async Task<(AltinnCallResult Result, AltinnInstanceState? Instance)> CreateInstanceAsync(Uri appBase, string token, long partyId, string formDataTypeId, CancellationToken ct)
+    public async Task<(AltinnCallResult Result, AltinnInstanceState? Instance)> CreateInstanceAsync(AltinnAppEndpoints endpoints, string token, long partyId, string formDataTypeId, CancellationToken ct)
     {
-        using var response = await SendAsync(HttpMethod.Post, new Uri(appBase, $"instances?instanceOwnerPartyId={partyId.ToString(CultureInfo.InvariantCulture)}"), token, null, ct);
+        using var response = await SendAsync(HttpMethod.Post, endpoints.CreateInstance(partyId), token, null, ct);
         if (!response.IsSuccessStatusCode) return (Fail(response, "creating the instance"), null);
         var instance = ParseInstance(await response.Content.ReadAsStringAsync(ct), formDataTypeId);
         return instance is null
@@ -53,13 +54,13 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
     }
 
     /// <summary>Stores the typed form (JSON or XML, as the contract says): PUT on the instance's form data element, or POST when the app created none.</summary>
-    public async Task<(AltinnCallResult Result, Guid? DataGuid)> PutFormDataAsync(Uri appBase, string token, AltinnInstanceState instance, string formDataTypeId, string body,
+    public async Task<(AltinnCallResult Result, Guid? DataGuid)> PutFormDataAsync(AltinnAppEndpoints endpoints, string token, AltinnInstanceState instance, string formDataTypeId, string body,
         string contentType, CancellationToken ct)
     {
-        var path = instance.FormDataGuid is { } dataGuid
-            ? $"instances/{instance.PartyId.ToString(CultureInfo.InvariantCulture)}/{instance.InstanceGuid:D}/data/{dataGuid:D}"
-            : $"instances/{instance.PartyId.ToString(CultureInfo.InvariantCulture)}/{instance.InstanceGuid:D}/data?dataType={Uri.EscapeDataString(formDataTypeId)}";
-        using var response = await SendAsync(instance.FormDataGuid is null ? HttpMethod.Post : HttpMethod.Put, new Uri(appBase, path), token,
+        var uri = instance.FormDataGuid is { } dataGuid
+            ? endpoints.UpdateData(instance.PartyId, instance.InstanceGuid, dataGuid)
+            : endpoints.CreateData(instance.PartyId, instance.InstanceGuid, formDataTypeId);
+        using var response = await SendAsync(instance.FormDataGuid is null ? HttpMethod.Post : HttpMethod.Put, uri, token,
             new StringContent(body, Encoding.UTF8, contentType), ct);
         if (!response.IsSuccessStatusCode) return (Fail(response, "storing the form data"), null);
         Guid? id = instance.FormDataGuid;
@@ -71,9 +72,9 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         return (new AltinnCallResult(true, response.StatusCode, "Form data stored."), id);
     }
 
-    public async Task<(AltinnCallResult Result, AltinnValidationSummary? Summary)> ValidateAsync(Uri appBase, string token, AltinnInstanceState instance, CancellationToken ct)
+    public async Task<(AltinnCallResult Result, AltinnValidationSummary? Summary)> ValidateAsync(AltinnAppEndpoints endpoints, string token, AltinnInstanceState instance, CancellationToken ct)
     {
-        using var response = await SendAsync(HttpMethod.Get, new Uri(appBase, $"{InstancePath(instance)}/validate"), token, null, ct);
+        using var response = await SendAsync(HttpMethod.Get, endpoints.Validate(instance.PartyId, instance.InstanceGuid), token, null, ct);
         if (!response.IsSuccessStatusCode) return (Fail(response, "validating the instance"), null);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var issues = json.RootElement.ValueKind == JsonValueKind.Array ? json.RootElement.EnumerateArray().ToArray() : [];
@@ -84,9 +85,9 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
     }
 
     /// <summary>One normal process/next (no body, so no action: app-lib uses the data task's "write"). Never retried here.</summary>
-    public async Task<(AltinnCallResult Result, AltinnProcessStateResult? State)> ProcessNextAsync(Uri appBase, string token, AltinnInstanceState instance, CancellationToken ct)
+    public async Task<(AltinnCallResult Result, AltinnProcessStateResult? State)> ProcessNextAsync(AltinnAppEndpoints endpoints, string token, AltinnInstanceState instance, CancellationToken ct)
     {
-        using var response = await SendAsync(HttpMethod.Put, new Uri(appBase, $"{InstancePath(instance)}/process/next"), token, null, ct);
+        using var response = await SendAsync(HttpMethod.Put, endpoints.ProcessNext(instance.PartyId, instance.InstanceGuid), token, null, ct);
         if (!response.IsSuccessStatusCode)
             return (response.StatusCode == HttpStatusCode.Conflict
                 ? new AltinnCallResult(false, response.StatusCode, "Altinn refused to advance the process (HTTP 409): the task did not validate, or the process is not at a task.")
@@ -96,9 +97,9 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         return (new AltinnCallResult(true, response.StatusCode, "Process advanced."), new AltinnProcessStateResult(state.Task, state.TaskType, state.Ended, state.EndEvent));
     }
 
-    public async Task<(AltinnCallResult Result, AltinnInstanceState? Instance)> GetInstanceAsync(Uri appBase, string token, AltinnInstanceState instance, string formDataTypeId, CancellationToken ct)
+    public async Task<(AltinnCallResult Result, AltinnInstanceState? Instance)> GetInstanceAsync(AltinnAppEndpoints endpoints, string token, AltinnInstanceState instance, string formDataTypeId, CancellationToken ct)
     {
-        using var response = await SendAsync(HttpMethod.Get, new Uri(appBase, InstancePath(instance)), token, null, ct);
+        using var response = await SendAsync(HttpMethod.Get, endpoints.Instance(instance.PartyId, instance.InstanceGuid), token, null, ct);
         if (!response.IsSuccessStatusCode) return (Fail(response, "reading the instance"), null);
         var read = ParseInstance(await response.Content.ReadAsStringAsync(ct), formDataTypeId);
         return read is null ? (new AltinnCallResult(false, response.StatusCode, "Altinn answered without a readable instance."), null)
@@ -131,8 +132,6 @@ public sealed class AltinnAppApiClient(IHttpClientFactory http)
         DateTimeOffset? ended = process.TryGetProperty("ended", out var end) && end.ValueKind == JsonValueKind.String && end.TryGetDateTimeOffset(out var at) ? at : null;
         return (Text(current, "elementId"), Text(current, "altinnTaskType"), canComplete, ended, Text(process, "endEvent"));
     }
-
-    private static string InstancePath(AltinnInstanceState instance) => $"instances/{instance.PartyId.ToString(CultureInfo.InvariantCulture)}/{instance.InstanceGuid:D}";
 
     private static AltinnCallResult Fail(HttpResponseMessage response, string action) => new(false, response.StatusCode, response.StatusCode switch
     {

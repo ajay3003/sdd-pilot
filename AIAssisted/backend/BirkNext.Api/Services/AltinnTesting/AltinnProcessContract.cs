@@ -37,15 +37,22 @@ public static class AltinnDeployedOpenApiReader
         var taskRows = Table(description, TaskHeader, 4);
         var tasks = taskRows?.Select(row => new AltinnDeclaredProcessTask(row[0], row[1], row[2], Actions(row[3]))).ToArray() ?? [];
         if (taskRows is null) notes.Add("The document has no generated process-task table; it says nothing about the process tasks.");
-        var dataTypes = Table(description, DataTypeHeader, 5)?.Select(row => new AltinnDataTypeTask(row[0], row[4].Length > 0 ? row[4] : null)).ToArray() ?? [];
+        var dataTypes = Table(description, DataTypeHeader, 5)?.Select(row => new AltinnDataTypeTask(row[0], row[4].Length > 0 ? row[4] : null)
+        {
+            Kind = row[1], AllowedNumber = row[2], MimeTypes = row[3].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
+        }).ToArray() ?? [];
 
-        var nextPath = $"/{appId}/instances/{{instanceOwnerPartyId}}/{{instanceGuid}}/process/next";
-        var next = contract.Operations.FirstOrDefault(operation => operation.Path == nextPath && operation.Method == "PUT");
+        // The App API operations, found by method and path shape under this app's own prefix — never assumed from fixed literals.
+        var operations = Operations(contract.Operations.Select(operation => (operation.Method, operation.Path)), appId);
+        foreach (var key in AltinnAppOperationKeys.Required.Where(key => operations.All(operation => operation.Key != key)))
+            notes.Add($"The document does not declare the {key} operation.");
+        var nextPath = operations.FirstOrDefault(operation => operation.Key == AltinnAppOperationKeys.ProcessNext)?.PathTemplate;
+        var next = nextPath is null ? null : contract.Operations.FirstOrDefault(operation => operation.Path == nextPath && operation.Method == "PUT");
         var responseSchema = next?.ResponseSchemaRefs.GetValueOrDefault("200");
         var stateFields = responseSchema is null ? [] : contract.Schemas.FirstOrDefault(schema => schema.Name == responseSchema)?.Properties.Select(property => property.Name).ToArray() ?? [];
         var bodyRequired = next is not null && document.RootElement.TryGetProperty("paths", out var paths) && paths.TryGetProperty(nextPath, out var item)
             && item.TryGetProperty("put", out var put) && put.TryGetProperty("requestBody", out var body) && body.TryGetProperty("required", out var required) && required.ValueKind == JsonValueKind.True;
-        if (next is null) notes.Add("The document does not declare PUT …/process/next.");
+        if (next is null && !notes.Any(note => note.Contains(AltinnAppOperationKeys.ProcessNext, StringComparison.Ordinal))) notes.Add("The document does not declare PUT …/process/next.");
 
         return new AltinnDeployedProcessContract
         {
@@ -53,9 +60,40 @@ public static class AltinnDeployedOpenApiReader
             TaskInventoryFound = taskRows is not null, Tasks = tasks, DataTypeTasks = dataTypes,
             ProcessNextDeclared = next is not null, ProcessNextMethod = next?.Method, ProcessNextBodyRequired = bodyRequired,
             ProcessNextBodyFields = next?.RequestBody?.Fields.Select(field => field.Name).ToArray() ?? [],
-            ProcessNextResponseSchema = responseSchema, ProcessStateFields = stateFields, Notes = notes,
+            ProcessNextResponseSchema = responseSchema, ProcessStateFields = stateFields, Operations = operations, Notes = notes,
         };
     }
+
+    /// <summary>
+    /// The submission operations among the document's operations, matched by HTTP method and path shape (literal segments plus placeholders of
+    /// any name) under <c>/{appId}/</c>. An operation outside the app's own namespace is never taken.
+    /// </summary>
+    public static IReadOnlyList<AltinnAppOperation> Operations(IEnumerable<(string Method, string Path)> declared, string appId)
+    {
+        (string Key, string Method, string[] Shape)[] shapes =
+        [
+            (AltinnAppOperationKeys.CreateInstance, "POST", ["instances"]),
+            (AltinnAppOperationKeys.GetInstance, "GET", ["instances", "{}", "{}"]),
+            (AltinnAppOperationKeys.CreateData, "POST", ["instances", "{}", "{}", "data"]),
+            (AltinnAppOperationKeys.UpdateData, "PUT", ["instances", "{}", "{}", "data", "{}"]),
+            (AltinnAppOperationKeys.Validate, "GET", ["instances", "{}", "{}", "validate"]),
+            (AltinnAppOperationKeys.ProcessNext, "PUT", ["instances", "{}", "{}", "process", "next"]),
+        ];
+        var prefix = $"/{appId}/";
+        var result = new List<AltinnAppOperation>();
+        foreach (var (key, method, shape) in shapes)
+        {
+            var match = declared.FirstOrDefault(item => string.Equals(item.Method, method, StringComparison.OrdinalIgnoreCase) && item.Path is { } path
+                && path.StartsWith(prefix, StringComparison.Ordinal) && Matches(path[prefix.Length..].Split('/'), shape));
+            if (match.Path is { } found) result.Add(new AltinnAppOperation(key, method, found));
+        }
+        return result;
+
+        static bool Matches(string[] segments, string[] shape) => segments.Length == shape.Length
+            && segments.Zip(shape).All(pair => pair.Second == "{}" ? IsPlaceholder(pair.First) : string.Equals(pair.First, pair.Second, StringComparison.Ordinal));
+    }
+
+    public static bool IsPlaceholder(string segment) => segment.Length > 2 && segment[0] == '{' && segment[^1] == '}' && segment[1..^1].All(char.IsLetterOrDigit);
 
     /// <summary>app-lib writes an empty cell when the task's action list is empty and "[no actions]" when it has none at all.</summary>
     private static IReadOnlyList<string> Actions(string cell) =>

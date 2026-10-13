@@ -44,3 +44,16 @@
 @media (max-width: 640px) {
     .atp-facts > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
 }
+.atp-change { margin: .5rem 0; padding: .55rem .75rem; border: 1px solid #f59e0b; border-left-width: 4px; background: #fffbeb; border-radius: var(--radius-md, .5rem); font-size: .86rem; }
+.atp-change p { margin: 0 0 .3rem; }
+.atp-change summary { cursor: pointer; font-weight: 600; }
+.atp-change summary:focus-visible, .atp summary:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.atp-import { display: grid; gap: .25rem; margin: .4rem 0; font-size: .85rem; }
+.atp-import input[type=file] { max-width: 100%; }
+.atp-import input[type=file]:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.atp-block { display: block; }
+.atp-mono { overflow-wrap: anywhere; }
+.atp-table table.atp-config { min-width: 44rem; table-layout: fixed; }
+.atp-config th:nth-child(1) { width: 11rem; }
+.atp-config th:nth-child(2) { width: 14rem; }
+.atp-config th:nth-child(3) { width: 10rem; }

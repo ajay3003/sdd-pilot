@@ -110,11 +110,11 @@ public sealed class IdPortenTestSignIn(
         var nonce = Base64Url(RandomNumberGenerator.GetBytes(32));
         var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
         var created = clock.GetUtcNow();
-        sessions.PendingByState[state] = new AltinnTestSessionCache.Pending(initiator, environmentId, verifier, discovery.TokenEndpoint, config.ClientReference!.Trim(), created);
+        sessions.PendingByState[state] = new AltinnTestSessionCache.Pending(initiator, environmentId, verifier, discovery.TokenEndpoint, policy.ClientId(config, out _, out _)!, created);
 
         var query = new List<KeyValuePair<string, string>>
         {
-            new("response_type", "code"), new("client_id", config.ClientReference!.Trim()), new("redirect_uri", policy.Options.IdPortenTest.RedirectUri!),
+            new("response_type", "code"), new("client_id", policy.ClientId(config, out _, out _)!), new("redirect_uri", policy.Options.IdPortenTest.RedirectUri!),
             new("scope", string.Join(' ', config.ConfiguredScopes.Select(item => item.Trim()).Where(item => item.Length > 0).Distinct(StringComparer.Ordinal))),
             new("state", state), new("nonce", nonce), new("code_challenge", challenge), new("code_challenge_method", "S256"),
         };

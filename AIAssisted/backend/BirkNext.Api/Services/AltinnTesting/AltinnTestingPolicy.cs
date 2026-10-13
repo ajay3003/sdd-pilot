@@ -24,6 +24,8 @@ public sealed class AltinnTestingOptions
     /// unexpected process state after a transition always stops the run. Values below 1 or above 10 are treated as 1.
     /// </summary>
     public int MaxProcessTransitions { get; set; } = 1;
+    /// <summary>After how many hours a live read of the deployed contract is shown as "Refresh recommended" (bounded default 24; 1–720).</summary>
+    public int ContractRefreshRecommendedAfterHours { get; set; } = 24;
 }
 
 /// <summary>
@@ -34,6 +36,11 @@ public sealed class AltinnTestingOptions
 public sealed class UnattendedIdPortenTestOptions
 {
     public bool Enabled { get; set; }
+    /// <summary>
+    /// Optional ID-porten TEST client id from local backend configuration, used when Integration Quality Review has none. When both are set
+    /// they must agree; a disagreement is reported, never resolved by picking one.
+    /// </summary>
+    public string? ClientId { get; set; }
     /// <summary>The redirect URI registered for the ID-porten TEST client. It is only compared with the redirect ID-porten answers; it is never
     /// requested. Falls back to <see cref="IdPortenTestOptions.RedirectUri"/>.</summary>
     public string? RedirectUri { get; set; }
@@ -175,6 +182,27 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     public static readonly string[] AcrValues = ["idporten-loa-substantial", "idporten-loa-high"];
     private static readonly Regex AliasPattern = new("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// The ID-porten TEST client id in effect: the Integration Quality Review value, else the local backend value. Null when neither is set or
+    /// when both are set and differ (then <paramref name="problem"/> says so). <paramref name="source"/> names where it came from.
+    /// </summary>
+    public string? ClientId(AltinnTestConfiguration config, out string source, out string? problem)
+    {
+        var iqr = config.ClientReference?.Trim();
+        var local = options.UnattendedIdPortenTest.ClientId?.Trim();
+        problem = null;
+        if (!string.IsNullOrEmpty(iqr) && !string.IsNullOrEmpty(local) && !string.Equals(iqr, local, StringComparison.Ordinal))
+        {
+            source = "Integration Quality Review and local backend configuration";
+            problem = $"The ID-porten TEST client id differs between Integration Quality Review and the backend ({AltinnTestingOptions.Section}:UnattendedIdPortenTest:ClientId); set one of them.";
+            return null;
+        }
+        if (!string.IsNullOrEmpty(iqr)) { source = "Integration Quality Review → Altinn test configuration"; return iqr; }
+        if (!string.IsNullOrEmpty(local)) { source = "Local backend configuration"; return local; }
+        source = "Not configured";
+        return null;
+    }
+
     public string? UnattendedRedirectUri => string.IsNullOrWhiteSpace(options.UnattendedIdPortenTest.RedirectUri) ? options.IdPortenTest.RedirectUri : options.UnattendedIdPortenTest.RedirectUri;
     public bool UnattendedSecretAvailable => !string.IsNullOrEmpty(UnattendedClientSecret);
     internal string? UnattendedClientSecret => string.IsNullOrEmpty(options.UnattendedIdPortenTest.ClientSecret) ? options.IdPortenTest.ClientSecret : options.UnattendedIdPortenTest.ClientSecret;
@@ -241,8 +269,8 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
             problems.Add($"Unattended ID-porten TEST authentication is not enabled (backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:Enabled).");
         if (config.AuthenticationType != ExternalAuthenticationType.IDPorten)
             problems.Add("Authentication type is not ID-porten (Integration Quality Review → Altinn test configuration → Authentication).");
-        if (string.IsNullOrWhiteSpace(config.ClientReference))
-            problems.Add("No ID-porten TEST client id is configured (Altinn test configuration → Client reference).");
+        if (ClientId(config, out _, out var clientProblem) is null)
+            problems.Add(clientProblem ?? $"No ID-porten TEST client id is configured (Altinn test configuration → Client reference, or backend {AltinnTestingOptions.Section}:UnattendedIdPortenTest:ClientId).");
         if (!config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal))
             problems.Add("The configured scopes do not include openid (Altinn test configuration → Configured scopes).");
         if (UnattendedRedirect() is null)
@@ -265,8 +293,50 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     /// <summary>The execution bound on process/next calls per run (see <see cref="AltinnTestingOptions.MaxProcessTransitions"/>).</summary>
     public int MaxProcessTransitions => options.MaxProcessTransitions is >= 1 and <= 10 ? options.MaxProcessTransitions : 1;
 
+    public TimeSpan ContractRefreshRecommendedAfter => TimeSpan.FromHours(options.ContractRefreshRecommendedAfterHours is >= 1 and <= 720 ? options.ContractRefreshRecommendedAfterHours : 24);
+
     /// <summary>The service owner's confirmation of the app's authorization policy, or null with why it is not confirmed.</summary>
-    public AltinnAppPolicyConfirmation? AppPolicy(string? appId, out string detail)
+    public AltinnAppPolicyConfirmation? AppPolicy(string? appId, out string detail) => AppPolicy(appId, null, out detail);
+
+    /// <summary>
+    /// The confirmation, checked against the policy as last read from its TT02 Resource Registry source. A changed hash never inherits the old
+    /// confirmation: the policy needs confirming again and real execution stays blocked. Without a re-read, or a recorded hash, that is said.
+    /// </summary>
+    public AltinnAppPolicyConfirmation? AppPolicy(string? appId, AltinnObservedPolicy? observed, out string detail)
+    {
+        var confirmation = ConfirmedAppPolicy(appId, out detail);
+        if (confirmation is null) return null;
+        if (observed is null)
+        {
+            detail += " The deployed policy has not been re-read since; read the public TT02 metadata to check it.";
+            return confirmation;
+        }
+        if (observed.Sha256 is not { Length: > 0 } current)
+        {
+            detail += $" The deployed policy could not be re-read ({observed.Problem ?? "no hash"}); its current state is unknown.";
+            return confirmation;
+        }
+        if (confirmation.PolicySha256 is not { Length: > 0 } confirmed)
+        {
+            detail += " No policy hash was recorded with the confirmation, so a policy change cannot be detected.";
+            return confirmation;
+        }
+        if (!string.Equals(confirmed.Trim(), current, StringComparison.OrdinalIgnoreCase))
+        {
+            detail = $"App authorization policy changed since it was confirmed (confirmed sha256 {Short(confirmed)}…, deployed now {Short(current)}…, read {observed.ReadAt:yyyy-MM-dd HH:mm} UTC). "
+                + $"Needs confirmation: review the new policy and record it in {AltinnTestingOptions.Section}:ConfirmedAppPolicies. Real submissions stay disabled.";
+            return null;
+        }
+        detail += $" Matches the deployed policy read {observed.ReadAt:yyyy-MM-dd HH:mm} UTC.";
+        return confirmation;
+    }
+
+    private static string Short(string sha) => sha.Trim()[..Math.Min(12, sha.Trim().Length)];
+
+    /// <summary>The TT02 Resource Registry address of an approved app's authorization policy (anonymous, read-only).</summary>
+    public static Uri PolicySource(string org, string app) => new($"https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_{org}_{app}/policy");
+
+    private AltinnAppPolicyConfirmation? ConfirmedAppPolicy(string? appId, out string detail)
     {
         var candidates = options.ConfirmedAppPolicies.Where(item => string.Equals(item.AppId?.Trim(), appId?.Trim(), StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(item.Reference) && !string.IsNullOrWhiteSpace(item.ConfirmedBy) && item.ConfirmedOn is not null).ToList();
@@ -281,7 +351,7 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
               + (confirmation.EndUserActions.Count > 0 ? $"; end-user actions {string.Join(", ", confirmation.EndUserActions)}" : "")
               + (confirmation.MinimumAuthenticationLevel is { } level ? $"; minimum authentication level {level}" : "")
               + (confirmation.PolicySha256 is { Length: > 0 } sha ? $"; policy sha256 {sha[..Math.Min(12, sha.Length)]}…" : "")
-              + ". BirkNext does not read the policy at run time; re-confirm when the app's policy changes.";
+              + ".";
         return confirmation;
     }
 
@@ -311,8 +381,8 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         var problems = new List<string>();
         if (config.AuthenticationType != ExternalAuthenticationType.IDPorten)
             problems.Add("Authentication type is not ID-porten (Integration Quality Review → Altinn test configuration → Authentication).");
-        if (string.IsNullOrWhiteSpace(config.ClientReference))
-            problems.Add("No ID-porten TEST client id is configured (Altinn test configuration → Client reference).");
+        if (ClientId(config, out _, out var clientProblem) is null)
+            problems.Add(clientProblem ?? "No ID-porten TEST client id is configured (Altinn test configuration → Client reference).");
         if (!config.ConfiguredScopes.Contains("openid", StringComparer.Ordinal))
             problems.Add("The configured scopes do not include openid (Altinn test configuration → Configured scopes).");
         if (!Uri.TryCreate(options.IdPortenTest.RedirectUri, UriKind.Absolute, out var redirect))
