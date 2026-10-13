@@ -22,5 +22,7 @@ ${entries.join('\n')}
 `;
 const target = path.resolve(__dirname, '../shared/AxeRuleCatalog.cs');
 if (process.argv.includes('--check')) {
-  if (fs.readFileSync(target, 'utf8') !== content) throw new Error('Axe catalogue does not match bundled engine; regenerate it.');
+  // Compare content, not line endings: a Windows checkout (core.autocrlf) has CRLF while the generator writes LF.
+  const lf = text => text.replace(/\r\n/g, '\n');
+  if (lf(fs.readFileSync(target, 'utf8')) !== lf(content)) throw new Error('Axe catalogue does not match bundled engine; regenerate it.');
 } else fs.writeFileSync(target, content);
