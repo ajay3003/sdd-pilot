@@ -84,6 +84,82 @@ and next action (`JourneyScenarioCapabilityProfile`). The tab also lists the pac
 
 Reading the tab sends nothing and starts nothing.
 
+Every report BirkNext exports through the shared template now puts each table inside a labelled, keyboard-reachable scroll region. A wide
+table scrolls within its region, so the page itself does not scroll sideways on a phone, and no column is truncated.
+
+### Message Verification (Rapportmottak, read-only)
+
+**Extensions → Skolenærvær Testing → Message Verification** answers the question "what actually happened to this message?" from evidence
+that already exists. It is the Rapportmottak scenario `message-verification`, which runs through the same journey engine, gates, run
+history and export as the other scenarios. It submits, sends, writes and retries nothing.
+
+**Entry points.** An earlier BirkNext run, an Altinn instance GUID (matched by its short reference `inst-xxxxxxxx`, which is the only form
+that is stored), or an MU message id (`Meldingshode/Id`). The tester also chooses an expected outcome and an observation window of 24, 72 or
+168 hours.
+
+**Evidence providers.** One read-only observer fills every Rapportmottak step from a single evidence snapshot per run.
+
+| Provider | Source | What it can show |
+|---|---|---|
+| BirkNext run history | The recorded Altinn steps of a run in the same environment and journey. No network call. | Generated, Submitted or Confirmed by Altinn. Recorded evidence is *observed*, not re-verified. |
+| MM outcome events | MM's documented `MeldingUtfall` event (`AppTraces`, `Properties.Hendelse == "MeldingUtfall"`, `MuMeldingId`). One parameterized query: window-bounded, `take 50`, 30 s timeout, no retry. | Pick-up of the queue message (`KoeMeldingId`), outcome, reason code, attempt and receipt status. `Aktoer` is never read. |
+| Skoletjenesten intake log | The intake log line `Rapport {MeldingId} for {Periode} besvart {Utfall} {Aarsakskode}` (the field names are inferred from the log template, because Skoletjenesten does not document its deployed schema), plus its *Tillegg* line. | The HTTP answer (Mottatt, or Avvist with its code). Never the internal outcome. |
+| Skoletjenesten GraphQL | — | **Blocked**: no approved client or role (`Skole:SeDekningsstatistikk`, `Skole:SeOppfolgingsliste`). Coverage is aggregate and never one message's outcome. |
+| Bufdata | — | **No provider**: only prepared delivery rows (`Klargjort`) exist. |
+
+**Access to telemetry.** MM and Skoletjenesten telemetry is read only when all of these hold:
+
+- an MU message id is given;
+- the component has an enabled IQR integration enrolled in the backend trusted environment (`TargetEnvironments:Trusted IntegrationIds`);
+- that integration's IQR platform names a Log Analytics workspace or Application Insights resource.
+
+The read uses BirkNext's existing backend Azure credential. A configured source is not an authorized one: a 401 or 403 answer is reported
+as *Access denied*. The query text is predefined, and the message id is a parsed GUID written as an escaped literal. The browser never
+sends a query, URL or connection string. An Altinn run does not record `Meldingshode/Id` (the Altinn app sets it), so a run alone cannot be
+correlated with MM or Skoletjenesten. A message id supplied together with a run is shown as *stated by the tester, not verified*.
+
+**Correlation** records:
+
+- the source and target identifier types;
+- the provider;
+- the time;
+- the matching rule;
+- one certainty: *exact identifier match*, *explicit mapping observed*, *partial correlation*, *stated by the tester* or *uncorrelated*.
+
+Timestamps, a shared child or a shared period never link two messages.
+
+**Evidence stages are not verdicts.** The stages are Generated, Submitted, Confirmed, MM processing observed, HTTP answer observed,
+Processing observed, Not observed, Not evaluated, Access denied and Unavailable. Assertions compare each stage with the expected outcome:
+
+| Expected outcome | Asserted from evidence | Never asserted (no read surface) |
+|---|---|---|
+| Valid report | MM delivered (`Mottatt`); Skoletjenesten answered 200; receipt `Sendt` | Accepted (`Godkjent`) |
+| Unknown child | Delivered; answered 200 | Held (`Holdt`) |
+| Duplicate | Two deliveries answered | Only one stored record |
+| Correction | Delivered | Effective version |
+| Invalid XML | MM `Avvist` with `SkjemaBrudd`/`UstoettetVersjon`; not forwarded | — |
+| Temporary failure | `Midlertidig`, then `Mottatt` (`Dodbrev` fails) | — |
+| MM / Skoletjenesten rejection | `Avvist` with MM's own reason code, or with one of Skoletjenesten's six published codes | — |
+| Locked period | `Avvist` with `UTENFOR_GYLDIGHETSVINDU` | Period status (Blocked) |
+| Coverage / Bufdata | — | Blocked / Not evaluated |
+
+**Verdict rules:**
+
+- *Failed* if any assertion failed.
+- *Passed* only if every assertion passed.
+- *Blocked* if evidence access is missing.
+- Otherwise *Not evaluated*.
+
+So HTTP 200 never makes a business pass, and a missing log entry is never a failure.
+
+**Persistence.** The sanitized record (rule set `1`) is stored on the verification's journey run in the existing run history:
+
+- target, providers, observations, correlations, assertions, missing evidence and the evaluation time;
+- message ids, short Altinn references and reason codes only;
+- never a payload, person, token or full instance id.
+
+A refresh is a new verification run, and earlier records are never changed. A record can be reopened and exported as HTML from the panel.
+
 ### Payload & Mapping Flow (Rapportmottak)
 
 A Rapportmottak dry run, the last run and every history row (**View**) show a *Payload & Mapping Flow*:

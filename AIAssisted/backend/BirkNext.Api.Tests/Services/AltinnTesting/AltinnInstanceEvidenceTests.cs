@@ -140,7 +140,8 @@ public sealed class AltinnInstanceEvidenceTests
         var service = Service(harness, kit);
 
         var view = (await service.PacksAsync(Env, default)).Single().Journeys.Single(item => item.Journey.JourneyId == "rapportmottak");
-        view.RunnableScenarios.Should().Equal(SkoleNaervaerJourneyPack.InstanceEvidenceScenario);
+        view.RunnableScenarios.Should().Equal([SkoleNaervaerJourneyPack.InstanceEvidenceScenario, SkoleNaervaerJourneyPack.MessageVerificationScenario],
+            "a message verification reads existing evidence only, so it needs no Altinn contract either");
         view.Prerequisites.Single(item => item.Key == "submission-contract").Scenarios.Should().Equal(SkoleNaervaerJourneyPack.SubmissionScenarios);
 
         var submission = await service.StartAsync(Request("valid-report", new Dictionary<string, string>

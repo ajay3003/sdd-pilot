@@ -9,6 +9,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using System.Text.RegularExpressions;
 
 namespace BirkNext.Web.Tests.Components;
 
@@ -405,6 +406,9 @@ public sealed class ScimProvisioningUiTests : BunitContext
         var html = new ReportExportService().ExportScimCheck(Check());
         html.Should().Contain("Evidence by stage").And.Contain("Specification vs implementation").And.Contain("Deactivation reaching effective access").And.Contain("Missing evidence");
         html.Should().NotContainAny("Authorization: Bearer", "Bearer ey", "birknext-invalid-token", "SharedAccessKey");
+        // The shared report template keeps every table inside a labelled, keyboard-reachable scroll region (no page overflow on a phone).
+        Regex.Matches(html, "<table>").Count.Should().BePositive().And.Be(Regex.Matches(html, "<div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"Table: ").Count);
+        html.Should().Contain(".table-scroll{max-width:100%;overflow-x:auto}").And.Contain(".table-scroll:focus-visible{outline:2px solid");
     }
 
     [Fact]

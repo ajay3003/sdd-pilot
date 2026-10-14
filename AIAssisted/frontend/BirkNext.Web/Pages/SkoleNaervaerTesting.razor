@@ -70,6 +70,18 @@
             <AltinnTestSetupPanel EnvironmentId="@_profile.Id" OnOpenJourney="OpenRapportmottakAsync" />
         }
     </section>
+    <section id="snt-verification" aria-labelledby="snt-verification-heading">
+        <h2 id="snt-verification-heading" tabindex="-1">Message Verification</h2>
+        <p>What actually happened to one Skolenærvær message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only.</p>
+        @if (_profile is null)
+        {
+            <p role="status" data-testid="snt-verification-not-ready">Not ready: select a Target Environment to verify a message. Nothing has been read.</p>
+        }
+        else
+        {
+            <MessageVerificationPanel EnvironmentId="@_profile.Id" />
+        }
+    </section>
     <section id="snt-period" aria-labelledby="snt-period-heading">
         <h2 id="snt-period-heading" tabindex="-1">Periodeavslutning</h2>
         <p>Skolenærværsrapport → Service Bus → Bufdata. Service Bus accepted is not the same as Bufdata processed.</p>
@@ -102,7 +114,7 @@
 @code {
     private static readonly (string Id, string Label)[] Sections =
     [
-        ("snt-overview", "Overview"), ("snt-education", "Utdanningsdata"), ("snt-rapport", "Rapportmottak"),
+        ("snt-overview", "Overview"), ("snt-education", "Utdanningsdata"), ("snt-rapport", "Rapportmottak"), ("snt-verification", "Message Verification"),
         ("snt-period", "Periodeavslutning"), ("snt-rules", "Architecture Rules"), ("snt-history", "History"),
     ];
 

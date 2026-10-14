@@ -226,7 +226,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
     {
         // The read-only instance-evidence scenario is never executed: its steps are only observed (SkoleNaervaerAltinnInstanceObserver).
         var mine = context.Journey.PackId == SkoleNaervaerJourneyPack.Id && context.Journey.JourneyId == SkoleNaervaerJourneyPack.RapportmottakId && Steps.Contains(context.Step.StepId)
-            && context.Scenario?.ScenarioId != SkoleNaervaerJourneyPack.InstanceEvidenceScenario;
+            && context.Scenario?.ScenarioId is not (SkoleNaervaerJourneyPack.InstanceEvidenceScenario or SkoleNaervaerJourneyPack.MessageVerificationScenario);
         reason = mine ? "Performed through the Altinn TT02 App API with the run's ID-porten TEST reporter." : "Not an Altinn step of Rapportmottak.";
         return mine;
     }

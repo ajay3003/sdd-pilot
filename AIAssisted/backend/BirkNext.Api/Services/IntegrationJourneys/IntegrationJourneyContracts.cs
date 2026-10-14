@@ -56,6 +56,12 @@ public interface IIntegrationJourneyPack
     /// pack's declared knowledge of the target systems. Read-only; the default has none.
     /// </summary>
     IReadOnlyList<JourneyEvidenceLimitation> EvidenceLimitations(IReadOnlyList<IntegrationJourneyView> journeys) => [];
+
+    /// <summary>
+    /// Lets a pack add its own derived, sanitized record to a finished run before it is stored (e.g. a message verification's correlations and
+    /// assertions, computed from what its observers recorded). Never changes step evidence or the run state; the default returns the run.
+    /// </summary>
+    IntegrationJourneyRun CompleteRun(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IntegrationJourneyRun run) => run;
 }
 
 /// <summary>Either a dry run's validated values (never persisted) or a recorded run (its stored, redacted evidence only).</summary>

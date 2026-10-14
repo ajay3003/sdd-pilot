@@ -441,6 +441,8 @@ public sealed class ReportExportService : IReportExportService
     public string ExportIntegrationJourneys(BirkNext.Integrations.IntegrationJourneyPackView pack, BirkNext.Integrations.ArchitectureRuleReport? rules,
         IReadOnlyList<BirkNext.Integrations.IntegrationJourneyRunSummary> history, string? projectName) =>
         IntegrationJourneyExport.Build(pack, rules, history, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportMessageVerification(BirkNext.Integrations.IntegrationJourneyRun run, string? projectName) =>
+        MessageVerificationExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportSourceArchitecture(BirkNext.SourceArchitecture.ArchitectureSnapshot snapshot) => SourceArchitectureExport.Build(snapshot, Table, Esc, BuildHtml);
     public string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result) => DependencyReviewExport.Build(result, Table, Badge, Esc, BuildHtml);
     public string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run) => DependencyHealthExport.Build(run, Table, Badge, Esc, BuildHtml);
@@ -1308,10 +1310,15 @@ public sealed class ReportExportService : IReportExportService
         return sb.ToString();
     }
 
+    /// <summary>
+    /// A report table inside a labelled, keyboard-reachable scroll region: a wide table scrolls within its region instead of widening the
+    /// page, and no column content is truncated.
+    /// </summary>
     private static string Table(string[] headers, IEnumerable<string[]> rows)
     {
         var sb = new StringBuilder();
-        sb.Append("<table>\n<thead><tr>");
+        var label = $"Table: {string.Join(", ", headers.Take(3))}{(headers.Length > 3 ? ", …" : "")}";
+        sb.Append($"<div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"{Esc(label)}\">\n<table>\n<thead><tr>");
         foreach (var h in headers) sb.Append($"<th>{Esc(h)}</th>");
         sb.Append("</tr></thead>\n<tbody>\n");
         foreach (var row in rows)
@@ -1320,7 +1327,7 @@ public sealed class ReportExportService : IReportExportService
             foreach (var cell in row) sb.Append($"<td>{cell}</td>");
             sb.Append("</tr>\n");
         }
-        sb.Append("</tbody>\n</table>\n");
+        sb.Append("</tbody>\n</table>\n</div>\n");
         return sb.ToString();
     }
 
@@ -1423,6 +1430,8 @@ tr:last-child td{border-bottom:none}
 .badge-mostlyready{background:#fef9c3;color:#713f12}
 .badge-notready,.badge-blocked{background:#fee2e2;color:#991b1b}
 .badge-notassessed{background:#f3f4f6;color:#6b7280}
+.table-scroll{max-width:100%;overflow-x:auto}
+.table-scroll:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
 section.block{margin-bottom:2rem}
 .rec-item{padding:.4rem 0;border-bottom:1px solid #f0f0f0;font-size:.85rem}
 .rec-num{font-weight:700;margin-right:.4rem;color:#1d4ed8}

@@ -571,6 +571,10 @@ builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourney
 // Read-only Altinn instance evidence: Altinn Storage GET (no side effect), observed — never executed — by the shared journey runner.
 builder.Services.AddSingleton<BirkNext.Api.Services.AltinnTesting.AltinnStorageInstanceReader>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerAltinnInstanceObserver>();
+// Message verification (read-only): one observer over BirkNext's run history and approved MM / Skoletjenesten telemetry.
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.ISkoleNaervaerMessageTelemetry, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.LogAnalyticsSkoleNaervaerMessageTelemetry>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerMessageEvidence>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerMessageVerificationObserver>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunGate>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyService>();
 // Legacy (read-only): history of runs recorded by the retired Active CDC runner.

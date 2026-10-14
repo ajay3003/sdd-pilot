@@ -66,6 +66,17 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void MessageVerification_IsASkolenaervaerSection_AndNeedsATargetEnvironment()
+    {
+        var page = Render<SkoleNaervaerTesting>();
+
+        page.FindAll(".snt-tabs a").Select(a => a.TextContent).Should().Contain("Message Verification");
+        page.Find("#snt-verification-heading").TextContent.Should().Be("Message Verification");
+        page.Find("[data-testid=snt-verification-not-ready]").TextContent.Should().Contain("Nothing has been read");
+        page.FindAll("[data-testid=mvp]").Should().BeEmpty("nothing is loaded without a Target Environment");
+    }
+
+    [Fact]
     public void SectionLink_MovesFocusToItsHeading_InsteadOfLeavingThePage()
     {
         var page = Render<SkoleNaervaerTesting>();

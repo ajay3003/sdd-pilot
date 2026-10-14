@@ -1,0 +1,317 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IReportExportService ExportService
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+@* Message Verification: a read-only Rapportmottak scenario of the shared journey engine. The form's choices come from the scenario's own
+   declared inputs; the run, its history and its record are the existing journey run store. Evidence stages are never shown as passes. *@
+<div class="mvp" data-testid="mvp">
+    @if (_loading)
+    {
+        <p class="mvp-muted" role="status">Loading the verification scenario and evidence providers…</p>
+    }
+    else if (Scenario is null)
+    {
+        <p role="status" data-testid="mvp-unavailable">@(_error ?? "Message verification is not available for this environment.")</p>
+    }
+    else
+    {
+        <h3 class="mvp-heading">Evidence providers</h3>
+        <ul class="mvp-providers" data-testid="mvp-providers">
+            <li data-testid="mvp-provider" data-state="Ready"><strong>BirkNext run history</strong> <span class="mvp-pill mvp-pill-neutral">Available</span>
+                <span class="mvp-muted">Recorded Altinn steps of earlier runs in this environment. No network call.</span></li>
+            @foreach (var item in Providers)
+            {
+                <li data-testid="mvp-provider" data-state="@item.State"><strong>@item.Label</strong>
+                    <span class="mvp-pill mvp-pill-@(item.State == JourneyReadinessState.Ready ? "neutral" : "attention")">@(item.State == JourneyReadinessState.Ready ? "Configured" : IntegrationJourneyPresentation.Readiness(item.State))</span>
+                    <span class="mvp-muted">@item.Detail</span></li>
+            }
+        </ul>
+
+        <form class="mvp-form" data-testid="mvp-form" @onsubmit="VerifyAsync" @onsubmit:preventDefault>
+            <fieldset>
+                <legend>Message to verify</legend>
+                <div class="mvp-field">
+                    <label for="@($"{_id}-expected")">Expected outcome</label>
+                    <select id="@($"{_id}-expected")" data-testid="mvp-expected" @bind="_expected">
+                        @foreach (var option in Options(ExpectedKey)) { <option value="@option.Value">@option.Label</option> }
+                    </select>
+                </div>
+                <div class="mvp-field">
+                    <label for="@($"{_id}-run")">Existing BirkNext run</label>
+                    <select id="@($"{_id}-run")" data-testid="mvp-source-run" @bind="_sourceRun">
+                        <option value="">None</option>
+                        @foreach (var run in SourceRuns) { <option value="@run.RunId.ToString("D")">@($"{run.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {run.ScenarioId} · {run.State} · {run.RunId.ToString("N")[..8]}")</option> }
+                    </select>
+                </div>
+                <div class="mvp-field">
+                    <label for="@($"{_id}-instance")">Altinn instance GUID</label>
+                    <input id="@($"{_id}-instance")" data-testid="mvp-instance" @bind="_instance" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-instance-help")" />
+                    <span id="@($"{_id}-instance-help")" class="mvp-muted">Optional. Only the short reference is kept.</span>
+                </div>
+                <div class="mvp-field">
+                    <label for="@($"{_id}-message")">MU message id</label>
+                    <input id="@($"{_id}-message")" data-testid="mvp-message" @bind="_message" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-message-help")" />
+                    <span id="@($"{_id}-message-help")" class="mvp-muted">Optional. Meldingshode/Id (a UUID); needed for MM and Skoletjenesten evidence.</span>
+                </div>
+                <div class="mvp-field">
+                    <label for="@($"{_id}-window")">Observation window</label>
+                    <select id="@($"{_id}-window")" data-testid="mvp-window" @bind="_window">
+                        @foreach (var option in Options(WindowKey)) { <option value="@option.Value">@option.Label</option> }
+                    </select>
+                </div>
+            </fieldset>
+            <p id="@($"{_id}-note")" class="mvp-muted" data-testid="mvp-note">@Note</p>
+            <button type="submit" class="btn-primary" data-testid="mvp-verify" disabled="@(!CanVerify || _running)" aria-describedby="@($"{_id}-note")">
+                @(_running ? "Collecting evidence…" : "Collect evidence (read-only)")
+            </button>
+        </form>
+        @if (_error is { } error) { <p class="mvp-error" role="alert" data-testid="mvp-error">@error</p> }
+
+        @if (_run?.MessageVerification is { } record)
+        {
+            <section class="mvp-result" aria-labelledby="@($"{_id}-result")" data-testid="mvp-result" data-verdict="@record.Verdict">
+                <h3 id="@($"{_id}-result")" class="mvp-heading" tabindex="-1">@record.TargetLabel</h3>
+                <dl class="mvp-facts" data-testid="mvp-overview">
+                    <div><dt>Expected outcome</dt><dd>@record.ExpectedScenarioName</dd></div>
+                    <div><dt>Verification run</dt><dd>@_run.RunId.ToString("N")[..8]</dd></div>
+                    <div><dt>Environment</dt><dd>@_run.EnvironmentId</dd></div>
+                    <div><dt>Overall verification</dt><dd><span class="mvp-pill mvp-pill-@MessageVerificationPresentation.VerdictTone(record.Verdict)" data-testid="mvp-verdict">@MessageVerificationPresentation.Verdict(record.Verdict)</span> @record.VerdictReason</dd></div>
+                    <div><dt>Evidence collected</dt><dd>@($"{record.EvaluatedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC") · window @record.WindowHours h · rule set @record.RuleVersion</dd></div>
+                </dl>
+                <p class="mvp-muted">Evidence stages are not verdicts. HTTP 200 (Mottatt) is receipt, never a business pass; missing evidence is never a failure by itself.</p>
+
+                <h4 class="mvp-heading">Processing journey</h4>
+                <ol class="mvp-journey" data-testid="mvp-journey">
+                    @foreach (var system in MessageVerificationPresentation.Systems)
+                    {
+                        var observations = record.Observations.Where(item => item.System == system).ToList();
+                        <li data-testid="mvp-system" data-system="@system">
+                            <span class="mvp-system">@system</span>
+                            @foreach (var item in observations)
+                            {
+                                <span class="mvp-pill mvp-pill-@MessageVerificationPresentation.StageTone(item.Stage)" data-testid="mvp-stage" data-stage="@item.Stage">@MessageVerificationPresentation.Stage(item.Stage)</span>
+                            }
+                            <span class="mvp-muted">@(observations.LastOrDefault()?.Summary ?? "No evidence")</span>
+                        </li>
+                    }
+                </ol>
+
+                <h4 class="mvp-heading">Test assertions</h4>
+                <div class="mvp-scroll" role="region" tabindex="0" aria-label="Test assertions">
+                    <table class="mvp-table" data-testid="mvp-assertions">
+                        <thead><tr><th scope="col">Assertion</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Result</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in record.Assertions)
+                            {
+                                <tr data-testid="mvp-assertion" data-id="@item.Id" data-verdict="@item.Verdict">
+                                    <td>@item.Label</td><td>@item.Expected</td><td>@item.Observed <span class="mvp-muted">· @item.EvidenceBasis</span></td>
+                                    <td><span class="mvp-pill mvp-pill-@MessageVerificationPresentation.VerdictTone(item.Verdict)">@MessageVerificationPresentation.Verdict(item.Verdict)</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4 class="mvp-heading">Correlation</h4>
+                <ul class="mvp-list" data-testid="mvp-correlations">
+                    @foreach (var item in record.Correlations)
+                    {
+                        <li data-certainty="@item.Certainty"><strong>@item.SourceType</strong> @item.SourceValue → <strong>@item.TargetType</strong> @(item.TargetValue ?? "—")
+                            <span class="mvp-pill mvp-pill-neutral">@MessageVerificationPresentation.Certainty(item.Certainty)</span>
+                            <span class="mvp-muted">@item.MatchingRule@(item.Limitation.Length > 0 ? $". {item.Limitation}" : "")</span></li>
+                    }
+                </ul>
+
+                <details class="mvp-details" data-testid="mvp-evidence">
+                    <summary>Evidence details</summary>
+                    <ul class="mvp-list">
+                        @foreach (var item in record.Observations)
+                        {
+                            <li><strong>@item.System</strong> — @MessageVerificationPresentation.Stage(item.Stage): @item.Summary
+                                <span class="mvp-muted">@(item.At is { } at ? $"{at.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC · " : "")@item.CorrelationMethod@(item.Limitation.Length > 0 ? $" · {item.Limitation}" : "")</span>
+                                @if (item.Facts.Count > 0) { <span class="mvp-muted">(@string.Join("; ", item.Facts.Select(fact => $"{fact.Label}: {fact.Value}")))</span> }</li>
+                        }
+                    </ul>
+                    <h5>Providers</h5>
+                    <ul class="mvp-list" data-testid="mvp-record-providers">
+                        @foreach (var item in record.Providers)
+                        {
+                            <li data-provider="@item.ProviderId" data-state="@item.State"><strong>@item.DisplayName</strong>
+                                <span class="mvp-pill mvp-pill-@MessageVerificationPresentation.ProviderTone(item.State)">@MessageVerificationPresentation.Provider(item.State)</span> @item.Detail
+                                <span class="mvp-muted">@item.EvidenceBasis</span></li>
+                        }
+                    </ul>
+                </details>
+
+                <details class="mvp-details" data-testid="mvp-missing">
+                    <summary>Missing evidence (@record.MissingEvidence.Count)</summary>
+                    <ul class="mvp-list">
+                        @foreach (var item in record.MissingEvidence)
+                        {
+                            <li><strong>@item.What</strong>: @item.Why <span class="mvp-muted">Required: @item.Required · Team: @item.ResponsibleTeam · Next: @item.NextAction</span></li>
+                        }
+                    </ul>
+                </details>
+                <div class="mvp-actions">
+                    <button type="button" class="btn-secondary" data-testid="mvp-export" @onclick="ExportAsync">Export HTML</button>
+                    <button type="button" class="btn-secondary" data-testid="mvp-refresh" disabled="@(record.MessageId is null && record.SourceRunId is null)" @onclick="() => Prefill(record)">Refresh evidence…</button>
+                </div>
+            </section>
+        }
+
+        <h3 class="mvp-heading">Earlier verifications</h3>
+        @if (Verifications.Count == 0)
+        {
+            <p class="mvp-muted" data-testid="mvp-history-empty">No message verification is recorded for this environment.</p>
+        }
+        else
+        {
+            <ul class="mvp-list" data-testid="mvp-history">
+                @foreach (var item in Verifications)
+                {
+                    <li data-testid="mvp-history-row">@($"{item.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC") · @IntegrationJourneyPresentation.Run(item.State) · @item.RunId.ToString("N")[..8]
+                        <button type="button" class="btn-secondary mvp-open" data-testid="mvp-open" aria-pressed="@(_run?.RunId == item.RunId ? "true" : "false")"
+                                aria-label="@($"Open verification {item.RunId.ToString("N")[..8]}")" @onclick="() => OpenAsync(item.RunId)">Open</button></li>
+                }
+            </ul>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+
+    private const string ExpectedKey = "expectedOutcome";
+    private const string WindowKey = "observationWindow";
+    private const string SourceRunKey = "sourceRun";
+    private const string InstanceKey = "altinnInstance";
+    private const string MessageKey = "messageId";
+
+    private readonly string _id = "mvp-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly CancellationTokenSource _disposed = new();
+    private IIntegrationJourneysApiService? _api;
+    private IntegrationJourneyView? _view;
+    private IReadOnlyList<IntegrationJourneyRunSummary> _history = [];
+    private IntegrationJourneyRun? _run;
+    private ExecutionAccessView? _access;
+    private ActiveEventAuthenticationState? _authentication;
+    private bool _loading = true;
+    private bool _running;
+    private string? _error;
+    private string _expected = "";
+    private string _sourceRun = "";
+    private string _instance = "";
+    private string _message = "";
+    private string _window = "";
+    private string? _loadedFor;
+
+    private IIntegrationJourneysApiService? Api => _api ??= Services.GetService<IIntegrationJourneysApiService>();
+    private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
+    private JourneyScenarioDescriptor? Scenario => _view?.Journey.Scenarios.FirstOrDefault(item => item.ScenarioId == MessageVerificationPresentation.ScenarioId);
+    private IEnumerable<JourneyPrerequisite> Providers => _view?.Prerequisites.Where(item => item.Key.StartsWith("evidence:", StringComparison.Ordinal)) ?? [];
+    private IEnumerable<IntegrationJourneyRunSummary> SourceRuns => _history.Where(item => item.ScenarioId != MessageVerificationPresentation.ScenarioId);
+    private IReadOnlyList<IntegrationJourneyRunSummary> Verifications => _history.Where(item => item.ScenarioId == MessageVerificationPresentation.ScenarioId).ToList();
+    private IReadOnlyList<JourneyScenarioInputOption> Options(string key) => Scenario?.Inputs?.FirstOrDefault(item => item.Key == key)?.Options ?? [];
+    private bool HasTarget => _sourceRun.Length > 0 || _instance.Trim().Length > 0 || _message.Trim().Length > 0;
+    private bool CanExecute => ExecutionGate.CanExecute(Authentication, _access);
+    private bool Runnable => _view?.RunnableScenarios.Contains(MessageVerificationPresentation.ScenarioId, StringComparer.Ordinal) == true;
+    private bool CanVerify => CanExecute && Runnable && HasTarget;
+
+    private string Note => !CanExecute ? $"Not available: {ExecutionGate.Detail(Authentication, _access)}"
+        : !Runnable ? $"Not available: {_view?.ReadinessSummary} The backend re-checks every prerequisite."
+        : !HasTarget ? "Choose an existing run, or enter an Altinn instance GUID or an MU message id."
+        : "Read-only: the backend reads recorded evidence and approved telemetry only, and re-checks the trusted environment and your permission.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        _loading = true;
+        _run = null;
+        _error = null;
+        try
+        {
+            if (!Authentication.Configured && Services.GetService<IExecutionAccessApiService>() is { } access) _access = await access.GetAsync();
+            if (Api is null) { _error = "Message verification is not available in this build."; return; }
+            var packs = await Api.PacksAsync(EnvironmentId, _disposed.Token);
+            _view = packs.Value?.FirstOrDefault(item => item.PackId == MessageVerificationPresentation.PackId)?.Journeys
+                .FirstOrDefault(item => item.Journey.JourneyId == MessageVerificationPresentation.JourneyId);
+            _error = packs.Error;
+            _expected = Options(ExpectedKey).FirstOrDefault()?.Value ?? "";
+            _window = Options(WindowKey).Skip(1).FirstOrDefault()?.Value ?? Options(WindowKey).FirstOrDefault()?.Value ?? "";
+            await LoadHistoryAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The verification scenario could not be loaded."; }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (Api is null) return;
+        var history = await Api.HistoryAsync(EnvironmentId, MessageVerificationPresentation.PackId, MessageVerificationPresentation.JourneyId, null, _disposed.Token);
+        _history = history.Value ?? [];
+    }
+
+    private async Task VerifyAsync()
+    {
+        if (Api is null || !CanVerify || _running) return;
+        _running = true;
+        _error = null;
+        try
+        {
+            var inputs = new Dictionary<string, string>(StringComparer.Ordinal) { [ExpectedKey] = _expected, [WindowKey] = _window };
+            if (_sourceRun.Length > 0) inputs[SourceRunKey] = _sourceRun;
+            if (_instance.Trim().Length > 0) inputs[InstanceKey] = _instance.Trim();
+            if (_message.Trim().Length > 0) inputs[MessageKey] = _message.Trim();
+            var result = await Api.StartAsync(new IntegrationJourneyRunRequest
+            {
+                EnvironmentId = EnvironmentId, PackId = MessageVerificationPresentation.PackId, JourneyId = MessageVerificationPresentation.JourneyId,
+                ScenarioId = MessageVerificationPresentation.ScenarioId, Confirmed = true, Inputs = inputs,
+            }, _disposed.Token);
+            _run = result.Value;
+            _error = result.Error ?? (_run is { MessageVerification: null } blocked ? $"Not verified: {blocked.StateReason}" : null);
+            // The full Altinn instance id is not kept in the browser once it has been used.
+            _instance = "";
+            await LoadHistoryAsync();
+        }
+        catch (Microsoft.AspNetCore.Components.WebAssembly.Authentication.AccessTokenNotAvailableException) { _error = "Sign-in required to verify a message."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The verification could not be started."; }
+        finally { _running = false; }
+    }
+
+    private async Task OpenAsync(Guid runId)
+    {
+        if (Api is null) return;
+        var result = await Api.GetAsync(runId, _disposed.Token);
+        _run = result.Value;
+        _error = result.Error;
+    }
+
+    /// <summary>A refresh is a new verification of the same message; the earlier record stays as it was.</summary>
+    private void Prefill(MessageVerificationRecord record)
+    {
+        _expected = record.ExpectedScenario;
+        _window = record.WindowHours.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _message = record.MessageId ?? "";
+        _sourceRun = record.SourceRunId?.ToString("D") ?? "";
+        _instance = "";
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_run is not { } run) return;
+        var html = ExportService.ExportMessageVerification(run, Workspace.ProjectName);
+        try { await JS.InvokeVoidAsync("downloadHtmlFile", $"message-verification-{run.RunId.ToString("N")[..8]}-{DateTime.UtcNow:yyyy-MM-dd}.html", html); }
+        catch (JSException) { _error = "The report could not be downloaded."; }
+    }
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
+}

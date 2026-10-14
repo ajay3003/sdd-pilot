@@ -235,6 +235,13 @@ therefore not invoke it directly against a target. Recommended reuse, smallest f
   rows are the `skolenaervaer.cdc` provider catalog: create, exact replay and invalid → control are supported; update, delete, tombstone,
   snapshot read, natural-key duplicate and late linkage stay Not assessed. Tests: `ScenarioCapabilityTests` (backend) and
   `IntegrationJourneyPanelTests.ScenarioCapability_*` (frontend). See [integration-journeys.md](integration-journeys.md#scenario-capability).
+- **Message Verification** (Skolenærvær Testing → *Message Verification*; the read-only Rapportmottak scenario `message-verification`).
+  - **Evidence read:** BirkNext's run history; MM's documented `MeldingUtfall` outcome events; Skoletjenesten's intake log line. The two
+    telemetry sources are read only through an enrolled IQR integration's telemetry scope and the existing backend credential.
+  - **What is recorded:** correlations with their certainty, and assertions against the expected outcome, under the verdict rules above.
+  - **Where it is stored:** on the existing run history.
+  - **Not verified against a real environment:** only fixtures and local tests were used; no QA telemetry was read. Tests:
+    `MessageVerificationTests` (backend) and `MessageVerificationPanelTests` (frontend).
 
 ## 8. Open dependencies
 

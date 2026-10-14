@@ -297,12 +297,16 @@ internal sealed record TelemetryScope(string? Workspace, string? ResourceId)
     public bool Configured => Workspace is not null || ResourceId is not null;
 
     /// <summary>One bounded aggregate query (30 s server timeout); the first row or null.</summary>
-    public async Task<LogsTableRow?> QueryAsync(LogsQueryClient client, string query, QueryTimeRange range, CancellationToken ct)
+    public async Task<LogsTableRow?> QueryAsync(LogsQueryClient client, string query, QueryTimeRange range, CancellationToken ct) =>
+        (await QueryRowsAsync(client, query, range, ct)).FirstOrDefault();
+
+    /// <summary>One bounded query (30 s server timeout); its rows. The query itself must bound the row count (take).</summary>
+    public async Task<IReadOnlyList<LogsTableRow>> QueryRowsAsync(LogsQueryClient client, string query, QueryTimeRange range, CancellationToken ct)
     {
         var options = new LogsQueryOptions { ServerTimeout = TimeSpan.FromSeconds(30) };
         var result = Workspace is not null
             ? await client.QueryWorkspaceAsync(Workspace, query, range, options, ct)
             : await client.QueryResourceAsync(new ResourceIdentifier(ResourceId!), query, range, options, ct);
-        return result.Value.Table.Rows.FirstOrDefault();
+        return result.Value.Table.Rows;
     }
 }

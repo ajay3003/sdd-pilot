@@ -337,7 +337,8 @@ public sealed class UnattendedAltinnAuthenticationTests
         var stored = JsonSerializer.Serialize(await harness.Store.GetAsync(run.RunId, default));
         stored.Should().NotContainAny(AltinnTestKit.IdPortenToken, AltinnTestKit.AltinnToken, AltinnTestKit.HeadlessCode, AltinnTestKit.ClientSecret,
             AltinnTestKit.ReporterIdentifier, child, "testid:", "refresh-DO-NOT-PERSIST", AltinnTestKit.HeadlessRedirect);
-        Regex.IsMatch(stored, @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("neither the reporter's nor the child's identifier is persisted");
+        // The run's own id (N format, the runner's default step correlation) is random hex; it can contain 11 digits by chance and is not an identifier of a person.
+        Regex.IsMatch(stored.Replace(run.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("neither the reporter's nor the child's identifier is persisted");
     }
 
     [Fact]
@@ -390,7 +391,7 @@ public sealed class UnattendedAltinnAuthenticationTests
         State("app-policy").Should().Be("Ready");
         State("reporter-auth").Should().Be("NotConfigured", "neither the unattended (secret missing) nor the interactive mode is configured");
         view.Prerequisites.Single(item => item.Key == "client-secret").Detail.Should().NotContain(AltinnTestKit.ClientSecret);
-        view.RunnableScenarios.Should().BeEmpty();
+        view.RunnableScenarios.Should().Equal([SkoleNaervaerJourneyPack.MessageVerificationScenario], "only the read-only message verification needs no reporter authentication");
         JsonSerializer.Serialize(view).Should().NotContain(AltinnTestKit.ReporterIdentifier, "the reporter is offered by alias only");
         view.Journey.Scenarios.Single(item => item.ScenarioId == "valid-report").Inputs!.Single(item => item.Key == "reporter").Options!
             .Select(item => item.Value).Should().Equal(AltinnTestKit.ReporterAlias, AltinnTestingPolicy.InteractiveReporter);

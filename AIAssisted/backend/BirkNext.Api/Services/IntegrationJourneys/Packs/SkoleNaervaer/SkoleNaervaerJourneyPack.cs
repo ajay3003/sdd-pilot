@@ -18,7 +18,8 @@ namespace BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 /// this pack defines no endpoint, namespace, topic, consumer group, authentication or environment. No MU, MM, Skolenærværsrapport, Bufdata or
 /// Altinn source, contract or read surface exists in the evidence BirkNext has, so those journeys are modeled truthfully as not ready.
 /// </summary>
-public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy altinnPolicy, AltinnAppContractService altinnContracts) : IIntegrationJourneyPack
+public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy altinnPolicy, AltinnAppContractService altinnContracts,
+    SkoleNaervaerMessageEvidence? messageEvidence = null) : IIntegrationJourneyPack
 {
     public const string Id = "skolenaervaer";
     public const string UtdanningsdataId = "utdanningsdata";
@@ -27,8 +28,12 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public const string PeriodClosedEvent = "SkolenaervaersperiodeLukket";
     /// <summary>Read-only observation of an existing Altinn instance (Altinn Storage GET); sends and changes nothing.</summary>
     public const string InstanceEvidenceScenario = "instance-evidence";
+    /// <summary>Read-only verification of one existing message from recorded and telemetry evidence (nothing is sent).</summary>
+    public const string MessageVerificationScenario = "message-verification";
     /// <summary>The scenarios that create and submit a report; only these need the submission contract and the test-data references.</summary>
     public static readonly IReadOnlyList<string> SubmissionScenarios = ["valid-report", "person-not-found", "overlapping-report"];
+    /// <summary>Scenarios that call Altinn (and so need reporter authentication and the approved app); a message verification calls nothing.</summary>
+    public static readonly IReadOnlyList<string> AltinnCallingScenarios = [.. SubmissionScenarios, InstanceEvidenceScenario];
 
     /// <summary>What a confirmed submission run does, stated in the run confirmation before anything is sent.</summary>
     public static readonly IReadOnlyList<string> SubmissionEffects =
@@ -146,6 +151,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         new(SkoleNaervaerInstanceReference.InstanceKey, "Instance GUID", JourneyScenarioInputKind.Reference, true,
                             "The instance GUID from the instance id. History keeps only a short reference."),
                     ]),
+                new(MessageVerificationScenario, "Message verification (read-only)",
+                    "Collects the evidence that already exists for one message — an earlier BirkNext run, an Altinn instance reference or an MU message id — from BirkNext's run history and, where approved, MM's outcome events and Skoletjenesten's intake log, then checks it against the expected outcome. Nothing is submitted, sent, written or retried.",
+                    JourneyScenarioSupport.Supported, StateChanging: false, Inputs: SkoleNaervaerMessageInput.Inputs),
                 new("correction", "E2E-07 · Correction", "A corrected report replaces an earlier one and the earlier version is kept as history.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: how a correction is expressed in the Altinn form (a new instance, or OppfolgingAvMelding/Oppdatering) is not in any verified app contract. Skoletjenesten keeps earlier versions, and an Oppdatering that changes the dates creates a separate report (Skole source review; not runtime verified)."),
                 new("multiple-reporters", "E2E-09 · Several reporters", "Two reporters report for the same child and period; both reports are kept.", JourneyScenarioSupport.NotAssessed,
@@ -252,6 +260,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             "The instance's process state and data-element metadata are read back. An observed instance is not a verified submission.",
             "None for the instance itself; it says nothing about MU, MM or Skoletjenesten.", TeamOperator, "Complete the ID-porten TEST configuration and supply a known test instance."),
 
+        [MessageVerificationScenario] = new("BirkNext run history → MM → Skoletjenesten (read-only evidence)",
+            "Integration journey runner: one read-only observer reads BirkNext's run history and, where approved, MM's outcome events and Skoletjenesten's intake log (one bounded query each).",
+            "An MU message id for MM and Skoletjenesten evidence; for each, an enabled IQR integration enrolled in the trusted environment on a platform with its telemetry source.",
+            "An existing message: a BirkNext run, an Altinn instance GUID or an MU message id. Nothing new is created.",
+            "Read access for BirkNext's backend identity to the components' Log Analytics / Application Insights (checked when read; configured is not authorized).",
+            JourneyResultVerification.Partial,
+            "Altinn steps from recorded runs; MM outcomes and Skoletjenesten's HTTP answer from telemetry. Skoletjenesten's internal outcome, coverage and Bufdata receipt are not verifiable.",
+            "MU message id for runs (not recorded by BirkNext); telemetry access; a report state read contract; an approved GraphQL client; a Bufdata receipt.",
+            $"{TeamOperator}; {TeamMm}; {TeamSkole}", "Configure and enrol the MM and Skoletjenesten telemetry sources, grant read access, then verify messages by their MU message id."),
         ["correction"] = new(ReportChain, NotRunnableHere, "A verified Altinn app contract for expressing a correction.", "Two related synthetic reports for one child.", AltinnAccess,
             JourneyResultVerification.NotVerifiable, "Version history is kept in Skoletjenesten's database only.", $"How the Altinn form expresses a correction; {NoReportRead}",
             $"{TeamSkole}; Altinn app owner", "Use Skole's KorreksjonOgKjedeTests (discovered, not executed) as evidence."),
@@ -345,6 +362,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     public JourneyInputPreparation PrepareInputs(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs) =>
         scenario.ScenarioId == InstanceEvidenceScenario ? SkoleNaervaerInstanceReference.Prepare(scenario, inputs)
+        : scenario.ScenarioId == MessageVerificationScenario ? SkoleNaervaerMessageInput.Prepare(inputs)
         : scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs)
             : inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
 
@@ -504,6 +522,32 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         ];
     }
 
+    /// <summary>Message verification evidence sources: shown, never gating (a verification records what it could and could not read).</summary>
+    private static IEnumerable<JourneyPrerequisite> VerificationPrerequisites(JourneyPackContext context)
+    {
+        string[] only = [MessageVerificationScenario];
+        foreach (var (key, label, tokens, component) in new[]
+        {
+            ("evidence:mm-telemetry", "MM outcome events (telemetry)", SkoleNaervaerMessageEvidence.MmTokens, "MM"),
+            ("evidence:skole-telemetry", "Skoletjenesten intake log (telemetry)", SkoleNaervaerMessageEvidence.SkoleTokens, "Skoletjenesten"),
+        })
+        {
+            var (platform, state, detail) = SkoleNaervaerMessageEvidence.Scope(context.Catalog, context.TrustedEnvironment, tokens, component);
+            yield return new(key, label, JourneyPrerequisiteCategory.Observation, platform is not null ? JourneyReadinessState.Ready
+                    : state == MessageEvidenceProviderState.NotConfigured ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
+                platform is not null ? $"Configured: platform {platform.Id} names a telemetry source. Configured is not authorized: the backend identity's access is checked when it is read." : detail,
+                Mandatory: false, Scenarios: only);
+        }
+        yield return new("evidence:skole-graphql", "Skoletjenesten GraphQL (coverage)", JourneyPrerequisiteCategory.Observation, JourneyReadinessState.NotAvailable,
+            "No approved GraphQL client and role (Skole:SeDekningsstatistikk / Skole:SeOppfolgingsliste) exists for BirkNext.", Mandatory: false, Scenarios: only);
+    }
+
+    /// <summary>A message verification's run record: its correlations and assertions, computed from the evidence its observer collected.</summary>
+    public IntegrationJourneyRun CompleteRun(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, IntegrationJourneyRun run) =>
+        scenario.ScenarioId != MessageVerificationScenario ? run
+            : run with { MessageVerification = SkoleNaervaerMessageVerification.Record(messageEvidence?.Take(run.RunId),
+                run.InputSummary.FirstOrDefault()?.Replace("Expected outcome: ", "", StringComparison.Ordinal) ?? "", run.CompletedAt ?? run.StartedAt) };
+
     internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
     {
         AltinnProcessContractStatus.ConfirmedForCurrentOperation => "Confirmed for current operation",
@@ -593,14 +637,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         altinnEnvironment ?? "Altinn environment Test (TT02) with Production blocked (Integration Quality Review → Altinn test configuration)."),
                     new("altinn-app", "Approved Altinn app", JourneyPrerequisiteCategory.Integration,
                         contract.AppApproved ? JourneyReadinessState.Ready : string.IsNullOrWhiteSpace(config.AppIdentifier) ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
-                        contract.AppDetail),
+                        contract.AppDetail, Scenarios: AltinnCallingScenarios),
                     // Reporter authentication: unattended (default) or the interactive fallback; either mode can satisfy it. Each unattended part is
                     // reported on its own below, so a missing secret or reporter is visible as exactly that.
                     new("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication,
                         unattended.Count == 0 || signIn.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         unattended.Count == 0 ? "Unattended: an approved synthetic TestID reporter is authenticated by the backend when the run starts. No sign-in step."
                             : signIn.Count == 0 ? "Only the interactive fallback is configured: the tester must sign in with TestID before running. Unattended authentication is not ready."
-                            : $"Neither unattended nor interactive ID-porten TEST authentication is configured. Unattended: {string.Join(" ", unattended)}"),
+                            : $"Neither unattended nor interactive ID-porten TEST authentication is configured. Unattended: {string.Join(" ", unattended)}",
+                        Scenarios: AltinnCallingScenarios),
                     new("unattended-provider", "Unattended ID-porten TEST provider", JourneyPrerequisiteCategory.Authentication,
                         options.Enabled ? JourneyReadinessState.Ready : JourneyReadinessState.NotConfigured,
                         options.Enabled ? "Available: ID-porten TEST headless login for synthetic TestID users (TEST only), then the Altinn TT02 token exchange."
@@ -685,6 +730,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"]) with { Mandatory = false },
                     new("report-verifier", "Skolenærværsrapport verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,
                         "No read contract for the report service exists, so report state, mapping and Person lookup outcome cannot be verified.", Mandatory: false),
+                    .. VerificationPrerequisites(context),
                 ];
             }
 

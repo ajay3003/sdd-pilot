@@ -250,6 +250,8 @@ public sealed record IntegrationJourneyRun
     /// <summary>The BirkNext execution context that started the run: <c>local-session:loopback</c> or <c>authenticated-user:&lt;hash&gt;</c>.
     /// Never an e-mail, name, raw subject, token or the synthetic TestID reporter (who is an Altinn actor, not a BirkNext user).</summary>
     public string? InitiatedBy { get; init; }
+    /// <summary>For a read-only message verification run: its sanitized evidence, correlations and assertions (null for every other run).</summary>
+    public MessageVerificationRecord? MessageVerification { get; init; }
 }
 
 public sealed record IntegrationJourneyRunSummary(Guid RunId, string PackId, string JourneyId, string ScenarioId, string EnvironmentId, JourneyRunState State,

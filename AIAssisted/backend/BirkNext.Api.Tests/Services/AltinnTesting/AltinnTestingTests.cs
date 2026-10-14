@@ -580,7 +580,8 @@ public sealed class AltinnTestingTests
         var kept = JsonSerializer.Deserialize<IntegrationJourneyRun>(stored)!.Steps.Single(step => step.StepId == SkoleNaervaerAltinnExecutor.DataStep).Payload!;
         JsonDocument.Parse(kept.MaskedContent).RootElement.GetProperty("Klient").GetProperty("Identifikator").GetProperty("Fodselsnummer").GetString().Should().Be(SkoleNaervaerPayloadFlow.Mask);
         stored.Should().Contain(SyntheticPersonIdentifier.Reference(identifier));
-        Regex.IsMatch(stored, @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("no 11-digit identifier is persisted");
+        // The run's own id (N format, the runner's default step correlation) is random hex; it can contain 11 digits by chance and is not an identifier of a person.
+        Regex.IsMatch(stored.Replace(run.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("no 11-digit identifier is persisted");
     }
 
     [Fact]
@@ -689,7 +690,7 @@ public sealed class AltinnTestingTests
     {
         var journey = Pack(new IntegrationJourneyHarness(), new AltinnTestKit()).Journeys.Single(item => item.JourneyId == "rapportmottak");
         journey.Scenarios.Where(item => item.Support == JourneyScenarioSupport.Supported).Select(item => item.ScenarioId)
-            .Should().Equal("valid-report", "person-not-found", "overlapping-report", "instance-evidence");
+            .Should().Equal("valid-report", "person-not-found", "overlapping-report", "instance-evidence", "message-verification");
         journey.Scenarios.Single(item => item.ScenarioId == "correction").NotAssessedBecause.Should().Contain("verified app contract");
         journey.Scenarios.Single(item => item.ScenarioId == "multiple-reporters").NotAssessedBecause.Should().Contain("approved reporters");
         journey.Scenarios.Single(item => item.ScenarioId == "valid-report").Inputs!.Single(item => item.Key == SkoleNaervaerReportInput.IdentitySourceKey).Options!

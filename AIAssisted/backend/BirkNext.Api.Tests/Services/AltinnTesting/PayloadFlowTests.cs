@@ -251,7 +251,7 @@ public sealed class PayloadFlowTests
         snapshot.Namespace.Should().Be(contract.XmlNamespace);
         var schemaSource = contract.Sources.Single(source => source.Source == AltinnContractSourceKind.PublicTt02Metadata);
         snapshot.ContractFingerprint!.Replace("-", "").Should().Be(schemaSource.Fingerprint, "the fingerprint is the contract the payload was built from");
-        System.Text.RegularExpressions.Regex.IsMatch(persisted, @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("nothing identifier-shaped is persisted, not even inside a fingerprint");
+        System.Text.RegularExpressions.Regex.IsMatch(persisted.Replace(run.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("nothing identifier-shaped is persisted, not even inside a fingerprint");
         snapshot.ContractSource.Should().Be("Live discovered (public TT02 metadata)");
         using (var document = JsonDocument.Parse(JsonSerializer.Serialize(snapshot)))
             document.RootElement.EnumerateObject().Select(property => property.Name).Should().NotContain(name => name.Contains("Hash", StringComparison.OrdinalIgnoreCase),

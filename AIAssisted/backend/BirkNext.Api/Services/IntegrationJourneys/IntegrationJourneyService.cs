@@ -138,6 +138,8 @@ public sealed class IntegrationJourneyService(
             {
                 completed = await runner.ExecuteAsync(run, context.TrustedEnvironment!, journey, scenario, integrations, bounded.Token,
                     async (progress, token) => await history.UpdateAsync(progress, token), inputs.Values, initiator);
+                // The pack may attach its derived record; it never alters the step evidence or the state the runner decided.
+                completed = pack.CompleteRun(journey, scenario, completed) with { Steps = completed.Steps, OverallState = completed.OverallState, StateReason = completed.StateReason };
             }
             catch (OperationCanceledException)
             {
