@@ -6,7 +6,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BirkNext.Api.Services.IntegrationJourneys;
 
-/// <summary>Durable, payload-free journey history for every pack (one table, no pack-specific columns).</summary>
+/// <summary>Durable journey history for every pack (one table, no pack-specific columns). It holds no unredacted payload: a step can carry only a
+/// redacted payload evidence snapshot, redacted before it reaches this store.</summary>
 public sealed class IntegrationJourneyRunStore(IServiceScopeFactory scopes, ILogger<IntegrationJourneyRunStore> logger)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

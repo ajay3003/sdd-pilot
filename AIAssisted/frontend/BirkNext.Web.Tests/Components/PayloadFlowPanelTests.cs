@@ -91,6 +91,36 @@ public sealed class PayloadFlowPanelTests : BunitContext
     }
 
     [Fact]
+    public void ARecordedSnapshot_IsLabelledAsRedactedEvidence_WithItsRedactionVersionAndCaptureTime_InsideTheCollapsedTechnicalPayload()
+    {
+        var capturedAt = DateTimeOffset.Parse("2026-10-14T09:15:30Z");
+        var altinn = Altinn(FlowStageEvidenceLevel.Confirmed, "Generated and submitted · Altinn confirmed the instance completed", "Generated and submitted (the same body)");
+        altinn = altinn with { TechnicalPayload = altinn.TechnicalPayload! with { RedactionVersion = "v1", CapturedAt = capturedAt, SentAsGenerated = true } };
+        var cut = Render(Flow(PayloadFlowMode.Run, altinn, Downstream(FlowStageEvidenceLevel.NotObserved, "Current expected contract and configuration — not recorded during this run")));
+
+        var technical = cut.Find("[data-testid=pff-technical]");
+        technical.HasAttribute("open").Should().BeFalse("snapshot details stay out of the normal tester view until opened");
+        technical.QuerySelector("summary")!.TextContent.Should().Contain("redacted");
+        var snapshot = technical.QuerySelector("[data-testid=pff-snapshot]")!.TextContent;
+        snapshot.Should().Contain("Redacted payload evidence snapshot").And.Contain("the original unredacted payload is never persisted").And.Contain("2026-10-14 09:15:30 UTC");
+        technical.QuerySelector("[data-testid=pff-redaction-version]")!.TextContent.Should().Be("v1");
+        cut.Markup.Should().NotContainEquivalentOf("payload hash", "no payload hash is recorded or shown").And.NotMatchRegex(@"(?<!\d)\d{11}(?!\d)");
+        cut.FindAll("[data-testid=pff-expectation-basis]").Should().OnlyContain(item => item.TextContent.StartsWith("Current expected contract"));
+
+        cut.Find("[data-testid=pff-copy]").Click();
+        JSInterop.VerifyInvoke("navigator.clipboard.writeText").Arguments.Single().Should().Be(XmlPayload, "copy takes the redacted text only, never the metadata or an unredacted body");
+    }
+
+    [Fact]
+    public void ASnapshotRecordedBeforeVersioning_ShowsLegacyUnknown_AndNotRecorded_WithoutAssumingTheCurrentVersion()
+    {
+        var cut = Render(Flow(PayloadFlowMode.Run, Altinn(FlowStageEvidenceLevel.Confirmed, "Generated and submitted", "Generated and submitted (the same body)"), Downstream(FlowStageEvidenceLevel.NotObserved)));
+
+        cut.Find("[data-testid=pff-redaction-version]").TextContent.Should().StartWith("Legacy / unknown").And.NotContain("v1");
+        cut.Find("[data-testid=pff-snapshot]").TextContent.Should().Contain("Snapshot captured").And.Contain("Not recorded");
+    }
+
+    [Fact]
     public void TheExpectedMapping_ShowsProvenanceAndTransformations_AndDownstreamSaysWhyNoMappingIsShown()
     {
         var cut = Render(Flow(PayloadFlowMode.DryRun, Altinn(FlowStageEvidenceLevel.Generated, "Generated · not submitted", "Generated payload (not submitted)"), Downstream(FlowStageEvidenceLevel.Expected)));

@@ -71,7 +71,8 @@ evidence level and source; nothing is collapsed into one green or red status.
 
 - **Altinn** is the only stage BirkNext can generate, submit or confirm.
   - The payload is built from the live contract (data type, task, namespace and operation all come from the deployed metadata).
-  - The run keeps it only masked: the child appears as `synthetic-child-1`, and no token, party id or identifier is kept.
+  - Run history stores a **redacted payload evidence snapshot**. The original unredacted form payload is never persisted. See
+    [Redacted payload evidence](#redacted-payload-evidence) below.
   - "Generated and submitted" is shown only because the executor sends exactly the body it built.
 - **MU, MM and Skolenærværsrapport** stay *Expected* in a dry run and *Not observed* in a run: BirkNext has no reader for them.
   - Their expectations come from the Integration Quality Review configuration (message type, MU channel, contract, correlation mapping), a
@@ -84,3 +85,32 @@ evidence level and source; nothing is collapsed into one green or red status.
   BirkNext does not fill (Meldingshode) are listed as *Not supplied by BirkNext*.
 - Previewed payload ≠ downstream observed payload; expected mapping ≠ observed mapping; schema-valid ≠ business-valid.
 - Runs recorded before payload capture existed show their recorded Altinn steps only; nothing is reconstructed.
+
+#### Redacted payload evidence
+
+Run history stores a redacted payload evidence snapshot. The original unredacted form payload is never persisted.
+
+- **Redaction happens before persistence.** The executor builds the body, sends exactly that string, and creates the snapshot from it before
+  the step result exists. Only the snapshot reaches the run record. The unredacted body lives in memory for the request only; it is not
+  stored, logged or hashed.
+- **What the snapshot holds:** the format, content type, data type and XML namespace; the business fields (the child as `synthetic-child-1
+  (masked)`, plus the period and hours); the redacted technical payload (rendered as text, and its copy action copies only the redacted text);
+  the Test input → Altinn FormData mapping; the byte count of the body that was built; and whether it was sent unchanged.
+- **Never in it:** a fødselsnummer, D-number or DUF number, the reporter's identifier (only the alias `reporter-a` appears, in the run
+  summary), tokens, the client secret, an `Authorization` header, cookies, the party id or the instance GUID. The run keeps only its short
+  `inst-xxxxxxxx` reference.
+- **RedactionVersion** (currently `v1`) names the fixed redaction rules that produced the snapshot. Version 1 masks the child's field before
+  serialization, masks the child's raw value anywhere else it appears, and masks any remaining 11-digit run. It is a constant: it is never
+  derived from time and cannot be edited.
+- **CapturedAt** is when the snapshot was created, immediately before the form-data request. Dry-run snapshots are not timestamped.
+- **Contract fingerprint** identifies the contract snapshot whose form schema built the payload (for example the live discovered public TT02
+  metadata). It is stored in groups of eight hex characters (`xxxxxxxx-xxxxxxxx-…`), so a run record never contains an identifier-shaped
+  11-digit run, even by chance. It identifies the contract, not the payload.
+- **No payload hash.** An unkeyed hash such as SHA-256 of the original payload is deliberately not stored. The snapshot shows every value
+  except the child's identifier, and that identifier has only about 10⁷ valid values, so the hash could be brute-forced back to it. Even a
+  hash would only show that a payload corresponds to what BirkNext built. It would never show that MU, MM or Skolenærværsrapport received it.
+- **Older runs** may have a snapshot with no redaction version (shown as *Legacy / unknown*), no capture time (*Not recorded*) and no contract
+  fingerprint, or no snapshot at all (*No payload recorded for this run*). Nothing is backfilled from the current configuration.
+- **Current expected downstream contract ≠ historical runtime evidence.** For a recorded run, the MU, MM and Skolenærværsrapport
+  expectations are today's configuration and contracts, labelled *Current expected contract and configuration — not recorded during this
+  run*. Storing payload evidence does not move any downstream stage beyond *Not observed*.

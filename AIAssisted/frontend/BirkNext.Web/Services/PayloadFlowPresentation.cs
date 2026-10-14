@@ -45,6 +45,9 @@ public static class PayloadFlowPresentation
         _ => "Expected / documented",
     };
 
+    /// <summary>A snapshot recorded before redaction versioning has none; it is shown as such, never assumed to be the current version.</summary>
+    public static string RedactionVersion(string? version) => version is { Length: > 0 } ? version : "Legacy / unknown (recorded before redaction versioning)";
+
     public sealed record DifferenceRow(string Path, string Expected, string Observed, string Kind);
 
     /// <summary>Field-level comparison by path, only when both sides exist. A changed value is reported, not judged.</summary>

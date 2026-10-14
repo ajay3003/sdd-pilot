@@ -34,7 +34,7 @@ public sealed class IntegrationJourneyRunGate
 /// <summary>
 /// Generic journey lifecycle: readiness (trusted environment, IQR integrations, step coverage, pack prerequisites; delegated journeys reuse the
 /// Active Event readiness of their provider), explicit confirmation, one run per journey, ordered execution through the shared runner, and
-/// durable payload-free history. Safety is enforced here and cannot be relaxed by a pack: Production and unknown environments, untrusted
+/// durable history without unredacted payloads. Safety is enforced here and cannot be relaxed by a pack: Production and unknown environments, untrusted
 /// environments, unenrolled integrations, uncovered steps and unsupported scenarios never run.
 /// </summary>
 public sealed class IntegrationJourneyService(

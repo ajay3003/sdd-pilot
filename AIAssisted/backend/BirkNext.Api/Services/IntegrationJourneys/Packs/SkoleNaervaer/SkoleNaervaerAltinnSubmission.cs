@@ -175,9 +175,9 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 /// reporter (headless ID-porten TEST) by default, or the tester's interactive sign-in as a fallback:
 /// authenticate (token obtained, party resolved) → create instance → store form data → validate → advance the process → read the receipt.
 /// Each step is its own evidence; a step that does not progress stops the run (nothing is retried or resent). Every policy is re-checked
-/// here before the first call. Only safe facts are recorded: HTTP status, a short instance reference, validation codes, process state and the
-/// form payload with the child's identifier masked (Payload &amp; Mapping Flow) — never the token, the party id, the unmasked payload or the
-/// child's identifier. Altinn's receipt satisfies the Altinn steps only; MU, MM,
+/// here before the first call. Only safe facts are recorded: HTTP status, a short instance reference, validation codes, process state and a
+/// redacted payload evidence snapshot, redacted before it is recorded (Payload &amp; Mapping Flow) — never the token, the party id, the
+/// unredacted payload (nor a hash of it) or the child's identifier. Altinn's receipt satisfies the Altinn steps only; MU, MM,
 /// Skolenærværsrapport and Person steps stay Not assessed.
 /// </summary>
 public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, AltinnTestAuthenticator authenticator, AltinnAppApiClient altinn, TimeProvider clock) : IJourneyStepExecutor
@@ -205,6 +205,8 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         public string? XmlNamespace { get; init; }
         public bool XmlElementsQualified { get; init; }
         public required IReadOnlyList<AltinnSchemaField> Fields { get; init; }
+        /// <summary>The contract snapshot <see cref="Fields"/> come from (its fingerprint goes into the payload evidence), when known.</summary>
+        public AltinnContractSnapshot? SchemaSource { get; init; }
         /// <summary>The tasks process/next transitions from, in order, as the confirmed process contract plans them.</summary>
         public required IReadOnlyList<AltinnDeclaredProcessTask> Plan { get; init; }
         /// <summary>The execution bound on process/next calls for this run.</summary>
@@ -306,7 +308,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         _sessions[context.RunId] = new Session
         {
             Endpoints = AltinnAppEndpoints.Create(appBase, $"{app.Org}/{app.App}", contract.Operations, contract.OperationsSource), Token = token, FormDataTypeId = contract.FormDataTypeId!, Fields = contract.Fields, ContentType = contentType,
-            XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, Plan = contract.Process.PlannedTasks, MaxTransitions = policy.MaxProcessTransitions,
+            XmlRootElement = contract.XmlRootElement, XmlNamespace = contract.XmlNamespace, XmlElementsQualified = contract.XmlElementsQualified, SchemaSource = SkoleNaervaerPayloadFlow.SchemaSource(contract), Plan = contract.Process.PlannedTasks, MaxTransitions = policy.MaxProcessTransitions,
             Created = clock.GetUtcNow(), PartyId = party.Value,
         };
         return Result(context, JourneyStepState.Verified, $"{Http(result)} · app {app.Org}/{app.App} (TT02)",
@@ -330,9 +332,10 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
         var body = session.ContentType == "application/xml"
             ? ToXml(model, session.Fields, session.XmlRootElement!, session.XmlNamespace!, session.XmlElementsQualified)
             : model.ToJsonString();
-        // The masked record of this very body (sent unchanged); the unmasked body is never kept.
+        // The redacted evidence snapshot of this very body (sent unchanged), redacted here, before the step result is recorded; the unredacted
+        // body is never kept, logged or hashed.
         var capture = SkoleNaervaerPayloadFlow.Capture(input, model, session.Fields, session.ContentType, session.XmlRootElement, session.XmlNamespace, session.XmlElementsQualified,
-            session.FormDataTypeId, System.Text.Encoding.UTF8.GetByteCount(body), sent: true);
+            session.FormDataTypeId, System.Text.Encoding.UTF8.GetByteCount(body), sent: true, clock.GetUtcNow(), session.SchemaSource);
         var (result, dataGuid) = await altinn.PutFormDataAsync(session.Endpoints, session.Token, session.Instance!, session.FormDataTypeId, body, session.ContentType, ct);
         if (!result.Success) return Result(context, JourneyStepState.NotVerified, Http(result), result.Detail) with { Payload = capture };
         session.Instance = session.Instance! with { FormDataGuid = dataGuid };

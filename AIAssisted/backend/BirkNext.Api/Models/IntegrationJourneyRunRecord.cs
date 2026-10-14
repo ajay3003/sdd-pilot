@@ -1,6 +1,6 @@
 namespace BirkNext.Api.Models;
 
-/// <summary>Generic integration-journey history row. ResultJson holds the payload-free <c>IntegrationJourneyRun</c> contract.</summary>
+/// <summary>Generic integration-journey history row. ResultJson holds the <c>IntegrationJourneyRun</c> contract: no unredacted payload, only redacted payload evidence snapshots.</summary>
 public sealed class IntegrationJourneyRunRecord
 {
     public Guid Id { get; init; }

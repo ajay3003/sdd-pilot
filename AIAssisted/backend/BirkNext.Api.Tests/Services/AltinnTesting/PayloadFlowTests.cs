@@ -224,6 +224,107 @@ public sealed class PayloadFlowTests
     }
 
     [Fact]
+    public async Task TheHistoryRow_PersistsOnlyARedactedPayloadEvidenceSnapshot_NeverTheRawPayloadIdentitiesSecretsOrAltinnIds()
+    {
+        var kit = new AltinnTestKit();
+        kit.Http.MetadataJson = AltinnTestKit.ApplicationMetadata(allowed: "\"application/xml\"");
+        await using var harness = await ReadyAsync(kit);
+        var contract = Contract(harness, kit);
+        var child = SyntheticPersonIdentifier.Generate();
+        var input = SkoleNaervaerReportInput.Read(Report(child: child));
+        var (model, _) = SkoleNaervaerAltinnExecutor.BuildModel(input, contract.Fields);
+        var rawBody = SkoleNaervaerAltinnExecutor.ToXml(model!, contract.Fields, contract.XmlRootElement!, contract.XmlNamespace!, contract.XmlElementsQualified);
+        var run = await Service(harness, kit).StartAsync(Run(Report(child: child)), "local-session:loopback", default);
+
+        var persisted = (await harness.PersistedJsonAsync(run.RunId))!;
+        Leaks(persisted, child, rawBody).Should().BeEmpty("the history row holds no raw payload, identity, secret, token, header, cookie or Altinn id");
+        Leaks(JsonSerializer.Serialize(await Service(harness, kit).PayloadFlowAsync(run.RunId, default)), child, rawBody).Should().BeEmpty("nor does the flow built from it");
+
+        var snapshot = JsonSerializer.Deserialize<IntegrationJourneyRun>(persisted, new JsonSerializerOptions(JsonSerializerDefaults.Web))!
+            .Steps.Single(step => step.StepId == SkoleNaervaerAltinnExecutor.DataStep).Payload!;
+        snapshot.MaskedContent.Should().Contain(SkoleNaervaerPayloadFlow.Mask).And.NotBe(rawBody);
+        snapshot.Fields.Single(field => field.Path == "Klient.Identifikator.Fodselsnummer").Value.Should().Be($"{SkoleNaervaerPayloadFlow.ChildAlias} (masked)");
+        snapshot.RedactionVersion.Should().Be(SkoleNaervaerPayloadFlow.RedactionVersion).And.Be("v1");
+        snapshot.CapturedAt.Should().NotBeNull().And.BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+        snapshot.ByteCount.Should().Be(System.Text.Encoding.UTF8.GetByteCount(rawBody), "the size describes the body that was built and sent");
+        snapshot.DataType.Should().Be(contract.FormDataTypeId);
+        snapshot.Namespace.Should().Be(contract.XmlNamespace);
+        var schemaSource = contract.Sources.Single(source => source.Source == AltinnContractSourceKind.PublicTt02Metadata);
+        snapshot.ContractFingerprint!.Replace("-", "").Should().Be(schemaSource.Fingerprint, "the fingerprint is the contract the payload was built from");
+        System.Text.RegularExpressions.Regex.IsMatch(persisted, @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("nothing identifier-shaped is persisted, not even inside a fingerprint");
+        snapshot.ContractSource.Should().Be("Live discovered (public TT02 metadata)");
+        using (var document = JsonDocument.Parse(JsonSerializer.Serialize(snapshot)))
+            document.RootElement.EnumerateObject().Select(property => property.Name).Should().NotContain(name => name.Contains("Hash", StringComparison.OrdinalIgnoreCase),
+                "no hash of the unredacted payload is stored: with the rest of the snapshot visible it could be enumerated back to the child");
+
+        var altinn = (await Service(harness, kit).PayloadFlowAsync(run.RunId, default))!.Stages[0];
+        altinn.Contract.Should().Contain(fact => fact.Label == "Namespace" && fact.Value == contract.XmlNamespace && fact.Source == "Recorded during this run");
+        altinn.Contract.Single(fact => fact.Label.StartsWith("Contract fingerprint")).Source.Should().Contain("not a payload hash");
+    }
+
+    [Fact]
+    public void RedactionV1_MasksTheChildsRawValueWhereverItAppears_EvenWhenItIsNotAnElevenDigitRun()
+    {
+        // A 12-digit synthetic value (DUF-like length) slips past the 11-digit rule; the value rule still masks it, in every field and in the text.
+        const string child = "900000000001";
+        var fields = SchemaFields();
+        var input = new SkoleNaervaerReportInput("supplied", child, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), 100, 92);
+        var (model, _) = SkoleNaervaerAltinnExecutor.BuildModel(input, fields);
+        model!["Kommentar"] = $"Gjelder {child}";
+        var capture = SkoleNaervaerPayloadFlow.Capture(input, model, fields, "application/json", null, null, false, "model", 200, sent: true);
+
+        JsonSerializer.Serialize(capture).Contains(child, StringComparison.Ordinal).Should().BeFalse("the child's raw value is masked wherever it appears");
+        capture.MaskedContent.Should().Contain($"Gjelder {SkoleNaervaerPayloadFlow.Mask}");
+        capture.RedactionVersion.Should().Be("v1");
+        capture.Namespace.Should().BeNull("a JSON payload has no XML namespace");
+        capture.CapturedAt.Should().BeNull("only the caller knows when the snapshot is taken; nothing is synthesized");
+    }
+
+    [Fact]
+    public async Task ASnapshotRecordedBeforeVersioning_StaysReadable_AndNothingIsBackfilled()
+    {
+        var kit = new AltinnTestKit();
+        await using var harness = await ReadyAsync(kit);
+        var run = await Service(harness, kit).StartAsync(Run(Report()), "local-session:loopback", default);
+        // The shape 6b2073c5 persisted: a masked capture without version, capture time, namespace or contract reference.
+        var legacy = run with
+        {
+            Steps = run.Steps.Select(step => step.Payload is { } payload
+                ? step with { Payload = payload with { RedactionVersion = null, CapturedAt = null, Namespace = null, ContractFingerprint = null, ContractSource = null } }
+                : step).ToArray(),
+        };
+        var json = JsonSerializer.Serialize(legacy, new JsonSerializerOptions(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+        json.Should().NotContain("redactionVersion").And.NotContain("contractFingerprint");
+        var old = JsonSerializer.Deserialize<IntegrationJourneyRun>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        var journey = Pack(harness, kit).Journeys.Single(item => item.JourneyId == SkoleNaervaerJourneyPack.RapportmottakId);
+        var flow = SkoleNaervaerPayloadFlow.ForRun(old, journey, AltinnTestKit.ReadyConfiguration, new JourneyPackContext(Env, null, "", new IntegrationCatalog(), []));
+        var altinn = flow.Stages[0];
+        altinn.TechnicalPayload!.RedactionVersion.Should().BeNull("an old snapshot is not assumed to be v1");
+        altinn.TechnicalPayload.CapturedAt.Should().BeNull();
+        altinn.TechnicalPayload.MaskedContent.Should().Contain(SkoleNaervaerPayloadFlow.Mask);
+        altinn.Contract.Should().NotContain(fact => fact.Label == "Namespace" || fact.Label.StartsWith("Contract fingerprint"), "nothing is backfilled from the current contract");
+        altinn.Level.Should().Be(FlowStageEvidenceLevel.Confirmed);
+        flow.Stages.Skip(1).Should().OnlyContain(stage => stage.Level == FlowStageEvidenceLevel.NotObserved && stage.ExpectationBasis!.StartsWith("Current expected contract"));
+    }
+
+    [Fact]
+    public async Task TheDryRunSnapshot_IsVersionedAndNamesItsLiveContract_ButIsNotTimestamped()
+    {
+        var kit = new AltinnTestKit();
+        kit.Http.MetadataJson = AltinnTestKit.ApplicationMetadata(allowed: "\"application/xml\"");
+        await using var harness = await ReadyAsync(kit);
+        var contract = Contract(harness, kit);
+        var technical = (await Service(harness, kit).ValidateAsync(Run(Report()), default)).PayloadFlow!.Stages[0].TechnicalPayload!;
+
+        technical.RedactionVersion.Should().Be("v1");
+        technical.CapturedAt.Should().BeNull("a dry run is generated in memory and not timestamped");
+        technical.Namespace.Should().Be(contract.XmlNamespace);
+        technical.ContractFingerprint.Should().Be(SkoleNaervaerPayloadFlow.Grouped(SkoleNaervaerPayloadFlow.SchemaSource(contract)!.Fingerprint));
+        kit.Http.Calls.Should().BeEmpty("a dry run makes no network call");
+    }
+
+    [Fact]
     public async Task ABoundXsd_IsShownAsASourceDerivedExpectation_NotAsRuntimeValidation()
     {
         var kit = new AltinnTestKit();
@@ -250,6 +351,28 @@ public sealed class PayloadFlowTests
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Which sensitive things appear in <paramref name="text"/>, by label only, so a failure never prints the values themselves.</summary>
+    private static IEnumerable<string> Leaks(string text, string child, string rawBody)
+    {
+        var sensitive = new (string Label, string Value)[]
+        {
+            ("raw child identifier", child), ("raw payload", rawBody), ("reporter identifier", AltinnTestKit.ReporterIdentifier),
+            ("ID-porten token", AltinnTestKit.IdPortenToken), ("Altinn token", AltinnTestKit.AltinnToken), ("authorization code", AltinnTestKit.AuthorizationCode),
+            ("headless code", AltinnTestKit.HeadlessCode), ("client secret", AltinnTestKit.ClientSecret), ("bearer header", "Bearer "),
+            ("Authorization header", "\"Authorization\""), ("cookie", "Cookie"), ("party id", AltinnTestKit.PartyId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("instance GUID", AltinnTestKit.InstanceGuid.ToString("D")), ("instance GUID (N)", AltinnTestKit.InstanceGuid.ToString("N")),
+            ("data element GUID", AltinnTestKit.DataGuid.ToString("D")),
+        };
+        return sensitive.Where(item => text.Contains(item.Value, StringComparison.OrdinalIgnoreCase)).Select(item => item.Label);
+    }
+
+    private static AltinnSchemaField[] SchemaFields() =>
+    [
+        new("Klient.Identifikator.Fodselsnummer", "string", null, true), new("Periode.StartDato", "string", "date", true),
+        new("Periode.SluttDato", "string", "date", true), new("AntallTimerEtterPlanen", "number", null, true),
+        new("AntallTimerFaktiskNaervaer", "number", null, true),
+    ];
 
     private static async Task<IntegrationJourneyHarness> ReadyAsync(AltinnTestKit kit)
     {

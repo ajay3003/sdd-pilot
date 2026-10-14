@@ -178,7 +178,8 @@ public sealed record JourneyStepResult
     public DateTimeOffset? CapturedAt { get; init; }
     /// <summary>Safe, labelled facts behind the evidence (e.g. a task id or a masked reference) — never payloads or personal identifiers.</summary>
     public IReadOnlyList<JourneyEvidenceFact> Facts { get; init; } = [];
-    /// <summary>The payload this step generated/sent, masked (optional; runs recorded before it existed have none).</summary>
+    /// <summary>A redacted payload evidence snapshot of what this step generated/sent — never the unredacted payload (optional; runs recorded
+    /// before it existed have none).</summary>
     public JourneyPayloadCapture? Payload { get; init; }
 }
 

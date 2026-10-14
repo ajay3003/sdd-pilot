@@ -66,9 +66,14 @@
                 @if (stage.TechnicalPayload is { } technical)
                 {
                     <details class="pff-technical" data-testid="pff-technical">
-                        <summary>Technical payload (@technical.Format.ToUpperInvariant(), masked · @technical.ByteCount bytes built)</summary>
-                        <pre class="pff-pre" tabindex="0" aria-label="@($"Technical payload, {technical.Format}, masked")">@technical.MaskedContent</pre>
+                        <summary>Technical payload (@technical.Format.ToUpperInvariant(), redacted · @technical.ByteCount bytes built)</summary>
+                        <pre class="pff-pre" tabindex="0" aria-label="@($"Technical payload, {technical.Format}, redacted")">@technical.MaskedContent</pre>
                         <p class="pff-muted">@technical.Note</p>
+                        <dl class="pff-facts" data-testid="pff-snapshot">
+                            <div><dt>Evidence</dt><dd>Redacted payload evidence snapshot — the original unredacted payload is never persisted</dd></div>
+                            <div><dt>Redaction version</dt><dd data-testid="pff-redaction-version">@PayloadFlowPresentation.RedactionVersion(technical.RedactionVersion)</dd></div>
+                            <div><dt>Snapshot captured</dt><dd>@(technical.CapturedAt is { } captured ? $"{captured.UtcDateTime:yyyy-MM-dd HH:mm:ss} UTC" : "Not recorded")</dd></div>
+                        </dl>
                         <button type="button" class="btn-secondary" data-testid="pff-copy" @onclick="() => CopyAsync(technical.MaskedContent)">Copy masked payload</button>
                         @if (_copied == technical.MaskedContent) { <span class="pff-muted" role="status">Masked payload copied.</span> }
                     </details>

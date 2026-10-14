@@ -43,6 +43,13 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
         Active.Settings[$"TargetEnvironments:Trusted:0:IntegrationIds:{index}"] = integrationId;
     }
 
+    /// <summary>The history row exactly as persisted (its ResultJson column), without deserializing it.</summary>
+    public async Task<string?> PersistedJsonAsync(Guid runId)
+    {
+        using var scope = _provider.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<AppDbContext>().IntegrationJourneyRuns.AsNoTracking().FirstOrDefaultAsync(item => item.Id == runId))?.ResultJson;
+    }
+
     public IntegrationJourneyService Service(params IIntegrationJourneyPack[] packs) =>
         new(new IntegrationJourneyPackRegistry(packs), Active.Catalog, TrustedExecutionEnvironmentRegistry.From(Active.Configuration()), Sources, Active.Lifecycle(),
             new IntegrationJourneyRunner(Executors, Observers, TimeProvider.System), Store, new IntegrationJourneyRunGate(), TimeProvider.System,

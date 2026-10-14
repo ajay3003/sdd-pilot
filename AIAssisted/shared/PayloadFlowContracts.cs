@@ -50,8 +50,10 @@ public sealed record PayloadMappingEntry(
     string Notes = "");
 
 /// <summary>
-/// A payload exactly as a step generated (and possibly sent) it — with every sensitive value masked before it is stored. The unmasked bytes
-/// are never kept; <see cref="ByteCount"/> describes the body that was actually built.
+/// A redacted payload evidence snapshot of what a step generated (and possibly sent). It is redacted when it is created — before it reaches
+/// a run record — and the original unredacted payload is never persisted: not as text, and not as a hash (a hash of a payload whose only
+/// unknown is an identifier could be enumerated back to it). <see cref="ByteCount"/> describes the body that was actually built. Snapshots
+/// recorded before redaction versioning have no <see cref="RedactionVersion"/>, <see cref="CapturedAt"/> or contract reference; nothing is backfilled.
 /// </summary>
 public sealed record JourneyPayloadCapture
 {
@@ -59,14 +61,25 @@ public sealed record JourneyPayloadCapture
     public string Format { get; init; } = "text";
     public string ContentType { get; init; } = "";
     public string? DataType { get; init; }
+    /// <summary>The XML namespace the payload was written with, when it is XML.</summary>
+    public string? Namespace { get; init; }
     public int ByteCount { get; init; }
-    /// <summary>The payload with sensitive values masked. Display only: it is not the sent body.</summary>
+    /// <summary>The redacted technical payload. Display only: it is not the sent body.</summary>
     public string MaskedContent { get; init; } = "";
     public IReadOnlyList<PayloadFieldValue> Fields { get; init; } = [];
     public IReadOnlyList<PayloadMappingEntry> Mappings { get; init; } = [];
     /// <summary>True when the implementation sent this very body (no change between generation and the request).</summary>
     public bool SentAsGenerated { get; init; }
     public string Note { get; init; } = "";
+    /// <summary>The fixed version of the redaction rules that produced this snapshot; null for snapshots recorded before it was versioned.</summary>
+    public string? RedactionVersion { get; init; }
+    /// <summary>When this redacted snapshot was created; null when it was not timestamped (a dry run, or recorded before versioning).</summary>
+    public DateTimeOffset? CapturedAt { get; init; }
+    /// <summary>The fingerprint (SHA-256 over the contract's source documents) of the contract snapshot whose form schema built this payload.
+    /// It identifies the contract, not the payload. Written in groups of eight hex characters, so it never reads as an 11-digit identifier.</summary>
+    public string? ContractFingerprint { get; init; }
+    /// <summary>Which contract source that fingerprint belongs to (e.g. live discovered public TT02 metadata).</summary>
+    public string? ContractSource { get; init; }
 }
 
 public sealed record FlowStageEvidence

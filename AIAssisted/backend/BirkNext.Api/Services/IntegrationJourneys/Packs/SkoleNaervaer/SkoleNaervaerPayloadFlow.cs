@@ -38,15 +38,25 @@ public static class SkoleNaervaerPayloadFlow
         (ReportStage, "Skolenærværsrapport (Skoletjenesten)", ["report-receive", "report-person", "report-state"]),
     ];
 
-    // ── Capture: the payload exactly as built, masked before it is kept ─────────────────────────────────────────────
+    // ── Capture: a redacted payload evidence snapshot, redacted before it is kept ───────────────────────────────────
 
     /// <summary>
-    /// The masked record of a form payload built from <paramref name="model"/> — the same model the executor serializes and sends. The
-    /// child's identifier is replaced by a mask before serialization, and any remaining 11-digit run is masked too.
+    /// The version of the redaction rules <see cref="Capture"/> applies: (1) the child's field is replaced by <see cref="Mask"/> before
+    /// serialization and shown as <see cref="ChildAlias"/>; (2) the child's raw value is masked wherever else it appears; (3) any remaining
+    /// 11-digit run is masked. Change it whenever these rules change; it is fixed, never derived from time or input.
+    /// </summary>
+    public const string RedactionVersion = "v1";
+
+    /// <summary>
+    /// A redacted payload evidence snapshot of a form payload built from <paramref name="model"/> — the same model the executor serializes
+    /// and sends. Every value is redacted here, so the snapshot is safe to persist; the unredacted payload is never part of it, and no hash
+    /// of it is taken (with the rest of the snapshot visible, a hash would let the child's identifier be enumerated).
     /// </summary>
     public static JourneyPayloadCapture Capture(SkoleNaervaerReportInput input, JsonObject model, IReadOnlyList<AltinnSchemaField> fields, string contentType,
-        string? rootElement, string? xmlNamespace, bool qualified, string dataType, int byteCount, bool sent)
+        string? rootElement, string? xmlNamespace, bool qualified, string dataType, int byteCount, bool sent,
+        DateTimeOffset? capturedAt = null, AltinnContractSnapshot? contract = null)
     {
+        string Redact(string text) => MaskDigits(string.IsNullOrEmpty(input.ChildIdentifier) ? text : text.Replace(input.ChildIdentifier, Mask, StringComparison.Ordinal));
         var form = new SkoleNaervaerAltinnForm();
         var masked = (JsonObject)model.DeepClone();
         var childPath = form.Fields.First(item => item.Key == SkoleNaervaerAltinnForm.ChildIdentifier).Path;
@@ -64,7 +74,7 @@ public static class SkoleNaervaerPayloadFlow
             var target = Leaf(model, expected.Path);
             var child = expected.Key == SkoleNaervaerAltinnForm.ChildIdentifier;
             var shown = child ? $"{ChildAlias} (masked)" : target;
-            values.Add(new(expected.Path, expected.Label, MaskDigits(shown), child ? "Test input (synthetic, masked)" : "Test input"));
+            values.Add(new(expected.Path, expected.Label, Redact(shown), child ? "Test input (synthetic, masked)" : "Test input"));
             var (source, status, transformation) = expected.Key switch
             {
                 SkoleNaervaerAltinnForm.ChildIdentifier => ($"{ChildAlias} (masked)", PayloadMappingStatus.Matched, (string?)null),
@@ -76,18 +86,24 @@ public static class SkoleNaervaerPayloadFlow
                       field?.Type == "integer" ? PayloadMappingStatus.Transformed : PayloadMappingStatus.Matched,
                       field?.Type == "integer" ? "number → integer (the app's schema declares an integer)" : null),
             };
-            mappings.Add(new("Test input", $"{expected.Key} ({expected.Label})", source, "Altinn FormData", expected.Path, MaskDigits(shown), status, PayloadProvenance.Configured, transformation,
+            mappings.Add(new("Test input", $"{expected.Key} ({expected.Label})", Redact(source), "Altinn FormData", expected.Path, Redact(shown), status, PayloadProvenance.Configured, transformation,
                 "BirkNext form binding; the target path and type were checked against the app's form schema before the payload was built."));
         }
         return new JourneyPayloadCapture
         {
-            Format = xml ? "xml" : "json", ContentType = contentType, DataType = dataType, ByteCount = byteCount, MaskedContent = MaskDigits(content),
-            Fields = values, Mappings = mappings, SentAsGenerated = sent,
+            Format = xml ? "xml" : "json", ContentType = contentType, DataType = dataType, Namespace = xml ? xmlNamespace : null, ByteCount = byteCount,
+            MaskedContent = Redact(content), Fields = values, Mappings = mappings, SentAsGenerated = sent,
+            RedactionVersion = RedactionVersion, CapturedAt = capturedAt, ContractFingerprint = contract is null ? null : Grouped(contract.Fingerprint),
+            ContractSource = contract is null ? null : Label(contract.Source),
             Note = sent
-                ? "This is the body BirkNext built and sent in this run (one string, unchanged between generation and the request); the child's identifier is masked here."
-                : "Generated in memory for the dry run and not sent; the child's identifier is masked here.",
+                ? "Redacted evidence snapshot of the body BirkNext built and sent in this run (one string, unchanged between generation and the request). The child's identifier is masked; the unredacted body is not kept."
+                : "Redacted evidence snapshot of the payload generated in memory for the dry run (not sent). The child's identifier is masked; the unredacted payload is not kept.",
         };
     }
+
+    /// <summary>The contract snapshot whose form schema is the one in effect — the schema a payload is built from — or null when none is known.</summary>
+    public static AltinnContractSnapshot? SchemaSource(AltinnAppContractView contract) =>
+        contract.Fields.Count == 0 ? null : contract.Sources.FirstOrDefault(source => source.Fields is { } fields && fields.SequenceEqual(contract.Fields));
 
     // ── Dry run ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -111,7 +127,7 @@ public static class SkoleNaervaerPayloadFlow
                 var xml = contentType == "application/xml" && contract.XmlRootElement is not null && contract.XmlNamespace is not null;
                 var body = xml ? SkoleNaervaerAltinnExecutor.ToXml(model, contract.Fields, contract.XmlRootElement!, contract.XmlNamespace!, contract.XmlElementsQualified) : model.ToJsonString();
                 var capture = Capture(input, model, contract.Fields, contentType, contract.XmlRootElement, contract.XmlNamespace, contract.XmlElementsQualified, dataType,
-                    Encoding.UTF8.GetByteCount(body), sent: false);
+                    Encoding.UTF8.GetByteCount(body), sent: false, contract: SchemaSource(contract));
                 altinn = altinn with
                 {
                     Level = FlowStageEvidenceLevel.Generated, Summary = "Generated · not submitted", Runtime = "Nothing sent (dry run)",
@@ -183,6 +199,10 @@ public static class SkoleNaervaerPayloadFlow
         var contract = new List<FlowStageFact>();
         if (capture?.DataType is { } dataType) contract.Add(new("Data type", dataType, "Recorded during this run (from the live contract in use)"));
         if (capture is not null) contract.Add(new("Content type", capture.ContentType, "Recorded during this run"));
+        if (capture?.Namespace is { } ns) contract.Add(new("Namespace", ns, "Recorded during this run"));
+        if (capture?.ContractFingerprint is { } fingerprint)
+            contract.Add(new($"Contract fingerprint ({capture.ContractSource ?? "source not recorded"})", Short(fingerprint.Replace("-", "", StringComparison.Ordinal)),
+                "Recorded during this run — identifies the contract the payload was built from; it is not a payload hash"));
         if (submit?.Facts.FirstOrDefault(fact => fact.Label == "Live task before transition") is { } task) contract.Add(new("Task (live, before process/next)", task.Value, "Altinn TT02 App API response"));
         if (contract.Count == 0) contract.Add(new("Contract used", "Not recorded for this run", "—"));
 
@@ -399,6 +419,10 @@ public static class SkoleNaervaerPayloadFlow
     private static string Configured(string? value) => string.IsNullOrWhiteSpace(value) ? NotConfigured : value;
     private static string Short(string fingerprint) => fingerprint.Length > 12 ? fingerprint[..12] + "…" : fingerprint;
     internal static string MaskDigits(string text) => ElevenDigits.Replace(text, Mask);
+
+    /// <summary>A hex fingerprint in groups of eight (<c>xxxxxxxx-xxxxxxxx-…</c>): a run record never holds anything shaped like an 11-digit
+    /// identifier, not even by chance inside a fingerprint, so the history's identifier guard stays strict.</summary>
+    internal static string Grouped(string fingerprint) => string.Join('-', fingerprint.Chunk(8).Select(chunk => new string(chunk)));
 
     private static string Leaf(JsonObject model, string path)
     {
