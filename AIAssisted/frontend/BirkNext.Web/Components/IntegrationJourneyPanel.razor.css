@@ -81,11 +81,18 @@
 .ijp-capability-facts > div { display: contents; }
 .ijp-capability-facts dt { font-weight: 600; }
 .ijp-capability-facts dd { margin: 0; }
+.ijp-capability-group { margin: 0 0 .75rem; }
+.ijp-capability-subheading { margin: .5rem 0 .1rem; font-size: .92rem; }
+.ijp-not-assessed { margin-top: .5rem; }
+.ijp-not-assessed > .ijp-capabilities { margin-top: .4rem; }
 
 @media (max-width: 640px) {
     .ijp { padding: .75rem; }
-    .ijp-capability-facts { grid-template-columns: minmax(0, 1fr); }
-    .ijp-capability-facts dd { margin-bottom: .3rem; }
+    .ijp-capabilities, .ijp-limitations { gap: .35rem; }
+    .ijp-capability, .ijp-limitations li { padding: .4rem .55rem; font-size: .82rem; }
+    .ijp-capability-facts { grid-template-columns: minmax(0, 1fr); gap: 0; font-size: .82rem; }
+    .ijp-capability-facts dt { font-size: .76rem; color: var(--clr-text-muted, #4b5563); }
+    .ijp-capability-facts dd { margin-bottom: .2rem; }
     .ijp-step, .ijp-check { grid-template-columns: minmax(0, 1fr) auto; }
     .ijp-step-owner, .ijp-step-flags, .ijp-step-limit, .ijp-check-detail { grid-column: 1 / -1; }
     .ijp-tab { flex: 1 1 auto; text-align: center; }

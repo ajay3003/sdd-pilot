@@ -140,6 +140,14 @@ public static class IntegrationJourneyPresentation
         _ => "Not declared",
     };
 
+    /// <summary>Counts per status in a fixed order (e.g. "3 conditionally runnable · 6 not assessed"); never a pass rate.</summary>
+    public static string CapabilitySummary(IEnumerable<JourneyScenarioCapabilityStatus> statuses)
+    {
+        var counts = statuses.GroupBy(status => status).ToDictionary(group => group.Key, group => group.Count());
+        return string.Join(" · ", Enum.GetValues<JourneyScenarioCapabilityStatus>().Where(counts.ContainsKey)
+            .Select(status => $"{counts[status]} {Capability(status).ToLowerInvariant()}"));
+    }
+
     public static string Step(JourneyStepState state) => state switch
     {
         JourneyStepState.NotVerified => "Not verified",

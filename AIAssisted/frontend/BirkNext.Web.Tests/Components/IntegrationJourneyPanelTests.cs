@@ -193,22 +193,59 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
         cut.Find("[data-testid=ijp-tab-scenarios]").Click();
 
         var cards = cut.FindAll("[data-testid=ijp-capability]");
-        cards.Select(card => card.GetAttribute("data-status")).Should().Equal("Runnable", "ConditionallyRunnable", "NotAssessed", "OperatorRequired", "Blocked");
+        // Not-assessed scenarios fold into their collapsed group after the others.
+        cards.Select(card => card.GetAttribute("data-status")).Should().Equal("Runnable", "ConditionallyRunnable", "OperatorRequired", "Blocked", "NotAssessed");
         cards.Select(card => card.QuerySelector("[data-testid=ijp-capability-status]")!.TextContent)
-            .Should().Equal("Runnable", "Conditionally runnable", "Not assessed", "Operator required", "Blocked");
+            .Should().Equal("Runnable", "Conditionally runnable", "Operator required", "Blocked", "Not assessed");
         var runnable = cards[0];
         runnable.QuerySelector("[data-testid=ijp-capability-execution]")!.TextContent.Should().Be("Available (after confirmation)");
         runnable.QuerySelector("[data-testid=ijp-capability-verification]")!.TextContent.Should().StartWith("Partial —", "a runnable scenario is not verifiable beyond what is declared");
-        cards[3].QuerySelector("[data-testid=ijp-capability-execution]")!.TextContent.Should().Be("Not by BirkNext (operator)");
+        cards[2].QuerySelector("[data-testid=ijp-capability-execution]")!.TextContent.Should().Be("Not by BirkNext (operator)");
         cut.FindAll("[data-testid=ijp-capability-details]").Should().OnlyContain(details => !details.HasAttribute("open"), "requirements and gaps stay collapsed");
-        cards[4].QuerySelector("[data-testid=ijp-capability-details]")!.TextContent.Should().Contain("Unmet prerequisites").And.Contain("Altinn app contract");
+        cards[3].QuerySelector("[data-testid=ijp-capability-details]")!.TextContent.Should().Contain("Unmet prerequisites").And.Contain("Altinn app contract");
+        var notAssessed = cut.Find("[data-testid=ijp-not-assessed]");
+        notAssessed.HasAttribute("open").Should().BeFalse();
+        notAssessed.QuerySelector("summary")!.TextContent.Should().Be("Not assessed (1)");
+        cut.Find("[data-testid=ijp-capability-summary]").TextContent.Should().Be("1 runnable · 1 conditionally runnable · 1 operator required · 1 not assessed · 1 blocked");
         cut.Markup.Should().NotContain("Passed");
         cut.FindAll("[data-testid=ijp-evidence-limitation]").Select(item => item.GetAttribute("data-key")).Should().Equal("altinn-tt02", "period-lock");
         cut.Find("[data-testid=ijp-evidence-limitation][data-key=altinn-tt02]").TextContent.Should().Contain("Blocked: ID-porten TEST configuration incomplete").And.Contain("Owner:");
         cut.FindAll("button").Should().NotContain(button => button.TextContent.Contains("Run", StringComparison.Ordinal), "the capability view starts nothing");
     }
 
-    private static IntegrationJourneyPackView CapabilityPack()
+    [Fact]
+    public void CdcScenarios_AreGroupedBySourceTable_WithAStatusSummary_AndTheNotAssessedOnesCollapsed()
+    {
+        var profile = new JourneyScenarioCapabilityProfile("BiRK CDC → Event Hub → SkoleAdapter", "Active Event Testing", "Event Hub integration", "Reserved synthetic keys",
+            "Approved test hub", JourneyResultVerification.Partial, "Transport only", "SkoleAdapter source", "SkoleAdapter team", "Supply the source");
+        JourneyScenarioCapability Row(string table, string kind, JourneyScenarioCapabilityStatus status) => new($"skolenaervaer.{table}.{kind}", $"{kind}", $"dbo.{table}", status, "detail", [], profile);
+        var pack = SamplePack();
+        _api.Pack = pack with
+        {
+            Journeys = [.. pack.Journeys.Select(view => view.Journey.JourneyId != "utdanningsdata" ? view : view with
+            {
+                ScenarioCapabilities =
+                [
+                    Row("Utdanning", "create", JourneyScenarioCapabilityStatus.ConditionallyRunnable), Row("Utdanning", "update", JourneyScenarioCapabilityStatus.NotAssessed),
+                    Row("Utdanning", "delete", JourneyScenarioCapabilityStatus.NotAssessed),
+                    Row("ManglendeSkoletilbud", "create", JourneyScenarioCapabilityStatus.ConditionallyRunnable), Row("ManglendeSkoletilbud", "update", JourneyScenarioCapabilityStatus.NotAssessed),
+                ],
+            })],
+        };
+        var cut = Render();
+        cut.Find("[data-testid=ijp-tab-scenarios]").Click();
+
+        var groups = cut.FindAll("[data-testid=ijp-capabilities][data-journey=utdanningsdata] [data-testid=ijp-capability-group]");
+        groups.Select(group => group.GetAttribute("data-resource")).Should().Equal("dbo.Utdanning", "dbo.ManglendeSkoletilbud");
+        groups[0].QuerySelector("h5")!.TextContent.Should().Be("Source table dbo.Utdanning");
+        groups[0].QuerySelector("[data-testid=ijp-capability-summary]")!.TextContent.Should().Be("1 conditionally runnable · 2 not assessed");
+        groups[0].QuerySelector("[data-testid=ijp-not-assessed] summary")!.TextContent.Should().Be("Not assessed (2)");
+        groups[0].QuerySelectorAll("[data-testid=ijp-capability]").Select(card => card.QuerySelector(".ijp-capability-name")!.TextContent).Should().Equal("create", "update", "delete");
+        groups[1].QuerySelector("[data-testid=ijp-capability-summary]")!.TextContent.Should().Be("1 conditionally runnable · 1 not assessed");
+        cut.FindAll("[data-testid=ijp-capability-verification]").Should().OnlyContain(item => item.TextContent.StartsWith("Partial"), "grouping never changes what can be verified");
+    }
+
+    internal static IntegrationJourneyPackView CapabilityPack()
     {
         var profile = new JourneyScenarioCapabilityProfile("Altinn TT02 → MU → MM → Skoletjenesten", "Integration journey runner", "ID-porten TEST client", "Approved synthetic reporter",
             "PRIV role", JourneyResultVerification.Partial, "Altinn steps only", "MU and MM observers", "BirkNext operator", "Complete the configuration");

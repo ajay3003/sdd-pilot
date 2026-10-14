@@ -102,6 +102,17 @@ and next action (`JourneyScenarioCapabilityProfile`). The tab also lists the pac
 
 Reading the tab sends nothing and starts nothing.
 
+The tab is organized for scanning:
+
+- CDC scenarios are grouped by their source table (`dbo.Utdanning`, `dbo.ManglendeSkoletilbud`).
+- Every group and journey shows a status summary, for example "3 conditionally runnable · 6 not assessed".
+- Not-assessed scenarios fold into one collapsed *Not assessed (n)* group, with their reasons inside.
+- Each card shows execution, result verification and the next action. Everything else is under *Requirements and gaps*.
+
+The journey panel's **Export HTML** report includes the same view as a *Scenario capability* section. For each scenario it lists status,
+execution, result verification, missing configuration (the unmet prerequisites), required configuration, required evidence, responsible team
+and next action, followed by the evidence limitations. It is built by the existing integration journey export, so there is no separate format.
+
 Every report BirkNext exports through the shared template now puts each table inside a labelled, keyboard-reachable scroll region. A wide
 table scrolls within its region, so the page itself does not scroll sideways on a phone, and no column is truncated.
 

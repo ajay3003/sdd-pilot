@@ -26,6 +26,8 @@ public static class IntegrationJourneyExport
         })));
         sb.Append("<p>Configured ≠ source verified ≠ executable ≠ runtime verified. Accepted or observed is never a pass; a journey is Completed only when every mandatory step is verified.</p></section>\n");
 
+        AppendCapabilities(sb, pack, table, badge, esc);
+
         foreach (var view in pack.Journeys)
         {
             sb.Append($"<section class=\"block\"><h2>{esc(view.Journey.DisplayName)}</h2><p>{esc(view.Journey.Description)}</p>");
@@ -78,5 +80,40 @@ public static class IntegrationJourneyExport
         if (pack.Limitations.Count > 0)
             sb.Append("<section class=\"block\"><h2>Limitations</h2><ul>" + string.Concat(pack.Limitations.Select(item => $"<li>{esc(item)}</li>")) + "</ul></section>\n");
         return buildHtml(pack.DisplayName + " — Integration journeys", projectName, $"Environment: {pack.EnvironmentId} · No payloads, credentials or personal data are included.", sb.ToString());
+    }
+
+    /// <summary>
+    /// The scenario capability view as tables: per scenario its execution status and availability, kept apart from result verification, with
+    /// the unmet prerequisites, declared requirements, required evidence, responsible team and next action; then the pack's evidence limitations.
+    /// </summary>
+    private static void AppendCapabilities(StringBuilder sb, IntegrationJourneyPackView pack, Func<string[], IEnumerable<string[]>, string> table, Func<string, string> badge,
+        Func<string?, string> esc)
+    {
+        if (pack.EvidenceLimitations.Count == 0 && pack.Journeys.All(view => view.ScenarioCapabilities.Count == 0)) return;
+        sb.Append("<section class=\"block\"><h2>Scenario capability</h2>");
+        sb.Append("<p>Execution availability and result verification are separate. Runnable means it may be started after confirmation; it is not a pass. Not assessed is never a pass.</p>");
+        if (pack.EvidenceLimitations.Count > 0)
+        {
+            sb.Append("<h3>Evidence limitations</h3>");
+            sb.Append(table(["Limitation", "Status", "Detail", "Owner"], pack.EvidenceLimitations.Select(item => new[]
+            {
+                esc(item.Title), esc(item.Status), esc(item.Detail), esc(item.Owner),
+            })));
+        }
+        foreach (var view in pack.Journeys.Where(item => item.ScenarioCapabilities.Count > 0))
+        {
+            sb.Append($"<h3>{esc(view.Journey.DisplayName)}</h3>");
+            sb.Append($"<p>{esc(IntegrationJourneyPresentation.CapabilitySummary(view.ScenarioCapabilities.Select(item => item.Status)))}</p>");
+            sb.Append(table(["Scenario", "Source table", "Status", "Execution", "Result verification", "Missing configuration", "Required configuration", "Required evidence", "Responsible team", "Next action"],
+                view.ScenarioCapabilities.Select(item => new[]
+                {
+                    esc(item.DisplayName), esc(item.Resource ?? "—"), badge(IntegrationJourneyPresentation.Capability(item.Status)), esc(IntegrationJourneyPresentation.Execution(item.Status)),
+                    esc(item.Profile is { } profile ? $"{IntegrationJourneyPresentation.Verification(profile.Verification)} — {profile.VerificationDetail}" : "Not declared"),
+                    esc(item.Blockers.Count > 0 ? string.Join("; ", item.Blockers) : item.Status == JourneyScenarioCapabilityStatus.NotAssessed ? item.StatusDetail : "—"),
+                    esc(item.Profile?.RequiredConfiguration ?? "Not declared"), esc(item.Profile?.MissingEvidence ?? "Not declared"),
+                    esc(item.Profile?.ResponsibleTeam ?? "Not declared"), esc(item.Profile?.NextAction ?? "Not declared"),
+                })));
+        }
+        sb.Append("</section>\n");
     }
 }

@@ -93,40 +93,29 @@
                 @foreach (var view in pack.Journeys.Where(item => item.ScenarioCapabilities.Count > 0))
                 {
                     <h4 class="ijp-capability-heading">@view.Journey.DisplayName</h4>
-                    <ul class="ijp-capabilities" data-testid="ijp-capabilities" data-journey="@view.Journey.JourneyId" aria-label="@($"{view.Journey.DisplayName} scenarios")">
-                        @foreach (var capability in view.ScenarioCapabilities)
+                    <div data-testid="ijp-capabilities" data-journey="@view.Journey.JourneyId">
+                        @* CDC scenarios are grouped by their source table; not-assessed scenarios fold into one collapsed group per table or journey. *@
+                        @foreach (var group in view.ScenarioCapabilities.GroupBy(item => item.Resource))
                         {
-                            var profile = capability.Profile;
-                            <li class="ijp-capability" data-testid="ijp-capability" data-scenario="@capability.ScenarioId" data-status="@capability.Status">
-                                <div class="ijp-capability-head">
-                                    <span class="ijp-capability-name">@capability.DisplayName@(capability.Resource is { } resource ? $" · {resource}" : "")</span>
-                                    <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.CapabilityTone(capability.Status)" data-testid="ijp-capability-status">@IntegrationJourneyPresentation.Capability(capability.Status)</span>
-                                </div>
-                                <dl class="ijp-capability-facts">
-                                    <div><dt>System</dt><dd>@(profile?.System ?? "Not declared")</dd></div>
-                                    <div><dt>Execution</dt><dd data-testid="ijp-capability-execution">@IntegrationJourneyPresentation.Execution(capability.Status)</dd></div>
-                                    <div><dt>Result verification</dt><dd data-testid="ijp-capability-verification">@IntegrationJourneyPresentation.Verification(profile?.Verification)@(profile is null ? "" : $" — {profile.VerificationDetail}")</dd></div>
-                                    <div><dt>Readiness</dt><dd>@capability.StatusDetail</dd></div>
-                                    <div><dt>Next action</dt><dd>@(profile?.NextAction ?? "Not declared")</dd></div>
-                                </dl>
-                                <details class="ijp-details" data-testid="ijp-capability-details">
-                                    <summary>Requirements and gaps</summary>
-                                    <dl class="ijp-capability-facts">
-                                        <div><dt>Existing execution method</dt><dd>@(profile?.ExecutionMethod ?? "Not declared")</dd></div>
-                                        <div><dt>Required configuration</dt><dd>@(profile?.RequiredConfiguration ?? "Not declared")</dd></div>
-                                        <div><dt>Required test data</dt><dd>@(profile?.RequiredTestData ?? "Not declared")</dd></div>
-                                        <div><dt>Required access</dt><dd>@(profile?.RequiredAccess ?? "Not declared")</dd></div>
-                                        <div><dt>Missing evidence</dt><dd>@(profile?.MissingEvidence ?? "Not declared")</dd></div>
-                                        <div><dt>Responsible team</dt><dd>@(profile?.ResponsibleTeam ?? "Not declared")</dd></div>
-                                        @if (capability.Blockers.Count > 0)
-                                        {
-                                            <div><dt>Unmet prerequisites</dt><dd><ul class="ijp-notes">@foreach (var blocker in capability.Blockers) { <li>@blocker</li> }</ul></dd></div>
-                                        }
-                                    </dl>
-                                </details>
-                            </li>
+                            var active = group.Where(item => item.Status != JourneyScenarioCapabilityStatus.NotAssessed).ToList();
+                            var notAssessed = group.Where(item => item.Status == JourneyScenarioCapabilityStatus.NotAssessed).ToList();
+                            <div class="ijp-capability-group" data-testid="ijp-capability-group" data-resource="@(group.Key ?? "")">
+                                @if (group.Key is { } resource) { <h5 class="ijp-capability-subheading">Source table @resource</h5> }
+                                <p class="ijp-muted" data-testid="ijp-capability-summary">@IntegrationJourneyPresentation.CapabilitySummary(group.Select(item => item.Status))</p>
+                                @if (active.Count > 0)
+                                {
+                                    <ul class="ijp-capabilities" aria-label="@(group.Key is { } table ? $"{view.Journey.DisplayName} scenarios for {table}" : $"{view.Journey.DisplayName} scenarios")">@foreach (var capability in active) { @CapabilityCard(capability) }</ul>
+                                }
+                                @if (notAssessed.Count > 0)
+                                {
+                                    <details class="ijp-details ijp-not-assessed" data-testid="ijp-not-assessed">
+                                        <summary>Not assessed (@notAssessed.Count)</summary>
+                                        <ul class="ijp-capabilities">@foreach (var capability in notAssessed) { @CapabilityCard(capability) }</ul>
+                                    </details>
+                                }
+                            </div>
                         }
-                    </ul>
+                    </div>
                 }
             }
             else if (_tab == "rules")
@@ -441,6 +430,41 @@
         : [];
 
     private string TabId(string key) => $"{_id}-tab-{key}";
+
+    /// <summary>One scenario: status, execution and result verification side by side (never merged), the next action, and the rest collapsed.</summary>
+    private static RenderFragment CapabilityCard(JourneyScenarioCapability capability) => __builder =>
+    {
+        var profile = capability.Profile;
+        <li class="ijp-capability" data-testid="ijp-capability" data-scenario="@capability.ScenarioId" data-status="@capability.Status">
+            <div class="ijp-capability-head">
+                <span class="ijp-capability-name">@capability.DisplayName</span>
+                <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.CapabilityTone(capability.Status)" data-testid="ijp-capability-status">@IntegrationJourneyPresentation.Capability(capability.Status)</span>
+            </div>
+            <dl class="ijp-capability-facts">
+                <div><dt>Execution</dt><dd data-testid="ijp-capability-execution">@IntegrationJourneyPresentation.Execution(capability.Status)</dd></div>
+                <div><dt>Result verification</dt><dd data-testid="ijp-capability-verification">@IntegrationJourneyPresentation.Verification(profile?.Verification)@(profile is null ? "" : $" — {profile.VerificationDetail}")</dd></div>
+                <div><dt>Next action</dt><dd>@(profile?.NextAction ?? "Not declared")</dd></div>
+            </dl>
+            <details class="ijp-details" data-testid="ijp-capability-details">
+                <summary>Requirements and gaps</summary>
+                <dl class="ijp-capability-facts">
+                    <div><dt>System</dt><dd>@(profile?.System ?? "Not declared")</dd></div>
+                    <div><dt>Readiness</dt><dd>@capability.StatusDetail</dd></div>
+                    <div><dt>Existing execution method</dt><dd>@(profile?.ExecutionMethod ?? "Not declared")</dd></div>
+                    <div><dt>Required configuration</dt><dd>@(profile?.RequiredConfiguration ?? "Not declared")</dd></div>
+                    <div><dt>Required test data</dt><dd>@(profile?.RequiredTestData ?? "Not declared")</dd></div>
+                    <div><dt>Required access</dt><dd>@(profile?.RequiredAccess ?? "Not declared")</dd></div>
+                    <div><dt>Missing evidence</dt><dd>@(profile?.MissingEvidence ?? "Not declared")</dd></div>
+                    <div><dt>Responsible team</dt><dd>@(profile?.ResponsibleTeam ?? "Not declared")</dd></div>
+                    @if (capability.Blockers.Count > 0)
+                    {
+                        <div><dt>Unmet prerequisites</dt><dd><ul class="ijp-notes">@foreach (var blocker in capability.Blockers) { <li>@blocker</li> }</ul></dd></div>
+                    }
+                </dl>
+            </details>
+        </li>
+    };
+
     private string JourneyName(string journeyId) => Pack?.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId)?.Journey.DisplayName ?? journeyId;
 
     private string SelectedScenario(IntegrationJourneyView view) => _scenario.TryGetValue(view.Journey.JourneyId, out var selected) && selected.Length > 0

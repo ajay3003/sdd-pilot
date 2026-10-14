@@ -1420,7 +1420,7 @@ tr:last-child td{border-bottom:none}
 .badge-missing{background:#fee2e2;color:#991b1b}
 .badge-passed{background:#dcfce7;color:#166534}
 .badge-failed{background:#fee2e2;color:#991b1b}
-.badge-notapplicable{background:#f3f4f6;color:#6b7280}
+.badge-notapplicable{background:#f3f4f6;color:#4b5563}
 .badge-orphaned{background:#f3e8ff;color:#6b21a8}
 .badge-linked{background:#dcfce7;color:#166534}
 .badge-technicalonly{background:#dbeafe;color:#1e40af}
@@ -1429,7 +1429,9 @@ tr:last-child td{border-bottom:none}
 .badge-ready{background:#dcfce7;color:#166534}
 .badge-mostlyready{background:#fef9c3;color:#713f12}
 .badge-notready,.badge-blocked{background:#fee2e2;color:#991b1b}
-.badge-notassessed{background:#f3f4f6;color:#6b7280}
+.badge-notassessed{background:#f3f4f6;color:#4b5563}
+.badge-runnable{background:#dcfce7;color:#166534}
+.badge-conditionallyrunnable,.badge-operatorrequired{background:#fef3c7;color:#92400e}
 .table-scroll{max-width:100%;overflow-x:auto}
 .table-scroll:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
 section.block{margin-bottom:2rem}
