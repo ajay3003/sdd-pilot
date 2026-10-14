@@ -454,8 +454,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         }
         else checks.Add(new("form", "Typed form data", false, "The app's form schema is not known, so the form cannot be built."));
 
-        checks.Add(new("unfilled-required", "Required schema fields BirkNext does not fill", contract.RequiredUnboundFields.Count == 0,
-            contract.RequiredUnboundFields.Count == 0 ? "None."
+        // Without the app's form schema nothing is known about required fields: that is not evaluated, never "none missing".
+        checks.Add(new("unfilled-required", "Required schema fields BirkNext does not fill", contract.Fields.Count > 0 && contract.RequiredUnboundFields.Count == 0,
+            contract.Fields.Count == 0 ? SchemaUnknownDetail
+            : contract.RequiredUnboundFields.Count == 0 ? "None."
                 : $"{contract.RequiredUnboundFields.Count} required field(s) are not filled by BirkNext ({string.Join(", ", contract.RequiredUnboundFields.Take(10).Select(field => field.Path))}). They must come from the app itself — not verified; Altinn's validation step of the first live run will show it.",
             Blocking: false));
         var process = contract.Process;
@@ -547,6 +549,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         scenario.ScenarioId != MessageVerificationScenario ? run
             : run with { MessageVerification = SkoleNaervaerMessageVerification.Record(messageEvidence?.Take(run.RunId),
                 run.InputSummary.FirstOrDefault()?.Replace("Expected outcome: ", "", StringComparison.Ordinal) ?? "", run.CompletedAt ?? run.StartedAt) };
+
+    /// <summary>Why required-field coverage (including Meldingshode) is unknown: no form schema has been read for the app.</summary>
+    internal const string SchemaUnknownDetail = "Not evaluated: the app's form schema has not been read, so whether BirkNext fills every required field (including Meldingshode) is unknown. Read the public TT02 metadata.";
 
     internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
     {
@@ -717,8 +722,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                             : "No approved synthetic child identity set is configured; real national ids, names and institution data are never used.",
                         Scenarios: SubmissionScenarios),
                     new("meldingshode", "Meldingshode (first-run risk)", JourneyPrerequisiteCategory.Contract,
-                        contract.RequiredUnboundFields.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
-                        contract.RequiredUnboundFields.Count == 0 ? "Every required form field is filled by BirkNext."
+                        contract.Fields.Count == 0 ? JourneyReadinessState.NotReady
+                        : contract.RequiredUnboundFields.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
+                        contract.Fields.Count == 0 ? SchemaUnknownDetail
+                        : contract.RequiredUnboundFields.Count == 0 ? "Every required form field is filled by BirkNext."
                             : $"Risk, not a blocker: {contract.RequiredUnboundFields.Count} required field(s) BirkNext does not fill ({string.Join(", ", contract.RequiredUnboundFields.Take(6).Select(field => field.Path))}). They are expected from the app; Altinn's validation in the first live run shows it, before any process transition.",
                         Scenarios: SubmissionScenarios, Mandatory: false),
                     new("backend-build", "Backend build", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.Ready,

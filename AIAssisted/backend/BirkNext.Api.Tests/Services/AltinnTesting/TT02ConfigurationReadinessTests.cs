@@ -179,6 +179,28 @@ public sealed class TT02ConfigurationReadinessTests
     }
 
     [Fact]
+    public async Task WithoutTheAppsFormSchema_TheMeldingshodeRiskIsNotEvaluated_NeverReady()
+    {
+        var kit = new AltinnTestKit();
+        await using var harness = Harness(kit);
+        // Altinn is configured, but no contract has been read: nothing is known about the app's required fields.
+        harness.MessageFlows.Configuration = AltinnTestKit.ReadyConfiguration;
+        kit.ConfigureUnattended(confirmPolicy: true, secret: true);
+
+        var view = await Rapportmottak(harness, kit);
+        Row(view, "meldingshode").State.Should().Be(JourneyReadinessState.NotReady, "an unread schema is not proof that every required field is filled");
+        Row(view, "meldingshode").Detail.Should().Be(SkoleNaervaerJourneyPack.SchemaUnknownDetail);
+        Row(view, "meldingshode").Mandatory.Should().BeFalse("it stays a first-run risk, not a gate");
+
+        var validation = await Service(harness, kit).ValidateAsync(Run(Report(SyntheticPersonIdentifier.Generate())), default);
+        var unfilled = validation.Checks.Single(c => c.Key == "unfilled-required");
+        unfilled.Passed.Should().BeFalse("unknown is not \"none missing\"");
+        unfilled.Blocking.Should().BeFalse();
+        unfilled.Detail.Should().Be(SkoleNaervaerJourneyPack.SchemaUnknownDetail);
+        kit.Http.Calls.Should().BeEmpty("nothing is read or sent to evaluate readiness");
+    }
+
+    [Fact]
     public void SubmissionScenarios_StateTheirRealEffects_ForTheConfirmation()
     {
         var journey = Pack(new IntegrationJourneyHarness(), new AltinnTestKit()).Journeys.Single(item => item.JourneyId == "rapportmottak");

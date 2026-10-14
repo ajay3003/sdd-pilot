@@ -233,6 +233,9 @@ below are filled by BirkNext. Whether the app (or Altinn) fills them is not prov
 This stays **First-run risk**, not a blocker. Altinn's validation in the first real run will show it, before any process
 transition.
 
+The readiness row needs the app's form schema. Until the public TT02 metadata has been read, the row shows **Not evaluated**
+(not ready): with no schema, BirkNext cannot tell whether every required field is filled. It is never shown as Ready then.
+
 ## Stop
 
 When every mandatory row is green: **stop**. The first real run needs explicit approval.
