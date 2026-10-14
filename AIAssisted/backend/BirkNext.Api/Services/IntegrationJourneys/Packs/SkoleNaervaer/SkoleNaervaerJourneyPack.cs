@@ -48,6 +48,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     private const string PeriodClosed = "period-closed";
     private const string DiagramBasis = "Approved Skolenærvær architecture diagram and the SkoleAdapter/Skolenærvær specifications (external, documented). Not source verified.";
 
+    /// <summary>How Skoletjenesten locks a period, from a review of its source (not runtime verified; see docs/skolenaervaer-cross-repo-verification.md).</summary>
+    internal const string SkoleLockLifecycle =
+        "Skoletjenesten locks a period on its own schedule (lock planner job; by default 06:00 Europe/Oslo on the 11th of the following month and no July period, configurable in Skolenaervaer:Kalender). " +
+        "PUT /api/skole/v1/drift/perioder/{periode}/laastidspunkt only postpones that time, and the only immediate trigger is mapped for local development only (Skole source review; not runtime verified).";
+
+    /// <summary>What Skoletjenesten does with a locked period's delivery today, from a review of its source (not runtime verified).</summary>
+    internal const string SkoleDeliveryState =
+        "At lock Skoletjenesten prepares delivery rows (status Klargjort) but does not yet write dataset files, mark a delivery Levert or publish SkolenaervaersperiodeLukket (Skole source review, ADR-028 pending; not runtime verified).";
+
     public string PackId => Id;
     public string PackVersion => "1";
     public string DisplayName => "Skolenærvær Testing";
@@ -57,11 +66,11 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     [
         "Rapportmottak's Altinn steps run through the Altinn TT02 App API as an approved synthetic TestID reporter, authenticated unattended with ID-porten TEST's documented headless login (an interactive TestID sign-in remains an optional fallback). An Altinn receipt covers the Altinn steps only: MU, MM, Skolenærværsrapport and Person steps have no observer and stay Not assessed.",
         "The documented message-flow pilot in Integration Quality Review names the intake component \"Skolenærværsmottaket\" and the report service \"Skoletjenesten\"; this pack uses the architecture diagram's names MM and Skolenærværsrapport. The correspondence is a documentation alias, not source verified.",
-        "No MU, MM, Skolenærværsrapport or Bufdata source, contract or read endpoint is available to BirkNext; their steps cannot be observed or verified yet.",
-        "BirkNext never publishes SkolenaervaersperiodeLukket itself; period closure must be triggered through a safe domain workflow, which does not exist in the evidence.",
+        "No MU, MM, Skolenærværsrapport or Bufdata observer or read endpoint is available to BirkNext; their steps cannot be observed or verified yet (a source review of Skoletjenesten and MM is recorded in docs/skolenaervaer-cross-repo-verification.md).",
+        "BirkNext never publishes SkolenaervaersperiodeLukket itself and never locks a period; Skoletjenesten locks periods on its own schedule, so period closure is an operator action.",
     ];
 
-    public IReadOnlyList<IntegrationJourneyDefinition> Journeys { get; } =
+    public IReadOnlyList<IntegrationJourneyDefinition> Journeys { get; } = WithCapabilities(
     [
         new()
         {
@@ -138,17 +147,17 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                             "The instance GUID from the instance id. History keeps only a short reference."),
                     ]),
                 new("correction", "E2E-07 · Correction", "A corrected report replaces an earlier one and the earlier version is kept as history.", JourneyScenarioSupport.NotAssessed,
-                    "Not assessed: how a correction is expressed in the Altinn form (a new instance, or OppfolgingAvMelding/Oppdatering) is not in any verified app contract."),
+                    "Not assessed: how a correction is expressed in the Altinn form (a new instance, or OppfolgingAvMelding/Oppdatering) is not in any verified app contract. Skoletjenesten keeps earlier versions, and an Oppdatering that changes the dates creates a separate report (Skole source review; not runtime verified)."),
                 new("multiple-reporters", "E2E-09 · Several reporters", "Two reporters report for the same child and period; both reports are kept.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: each run authenticates one approved synthetic reporter alias; two separately approved reporters and a way to show that both reports are kept downstream are not available yet."),
                 new("invalid-xsd", "Invalid XSD", "A reviewed schema-invalid report rejected by MM's XSD validation.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: no reviewed invalid payload fixture and no submission contract exist; arbitrary XML is never corrupted."),
                 new("period-locked", "Period locked", "A report submitted after the reporting period is locked.", JourneyScenarioSupport.NotAssessed,
-                    "Not assessed: period-lock behavior lives in Skolenærværsrapport and is not source verified; test code never re-implements it."),
+                    "Not assessed: Skoletjenesten answers a report for a locked period with 422 UTENFOR_GYLDIGHETSVINDU (Skole source review; not runtime verified), but locking is operator-only and BirkNext has no report read contract to observe the outcome. Test code never re-implements the rule."),
                 new("mapping-validation", "Mapping validation", "Mapped values in Skolenærværsrapport match the synthetic submission.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: no read contract for the report service exists to verify mapped values."),
                 new("duplicate-report", "Duplicate report", "The same report submitted twice (exact repeat ≠ natural-key duplicate).", JourneyScenarioSupport.NotAssessed,
-                    "Not assessed: duplicate/idempotency semantics for reports are not defined."),
+                    "Not assessed: Skoletjenesten answers a repeated meldingId with its stored outcome (Skole source review; not runtime verified), so an exact repeat looks identical to the first answer (200 Mottatt). BirkNext cannot produce a repeat through Altinn or observe the stored outcome without a report read contract."),
                 new("retrieval-decrypt-failure", "Message retrieval/decrypt failure", "MM cannot retrieve or decrypt the payload.", JourneyScenarioSupport.NotAssessed,
                     "Not assessed: no safe test-environment support for retrieval or cryptographic fault injection; destructive testing is never improvised."),
             ],
@@ -173,17 +182,123 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             ],
             Scenarios =
             [
-                new("close-valid-period", "Close valid period", "Close one synthetic period through a safe domain workflow and follow the emitted event to Bufdata.", JourneyScenarioSupport.Supported),
-                new("event-emitted", "Event emitted", $"{PeriodClosedEvent} is emitted once for the closed period.", JourneyScenarioSupport.NotAssessed, "Not assessed: requires the domain trigger and a broker observer."),
-                new("event-metadata", "Event metadata correct", "The event carries the expected period metadata.", JourneyScenarioSupport.NotAssessed, "Not assessed: the event contract is not source verified."),
-                new("bufdata-receives", "Bufdata receives dataset", "Bufdata processed the dataset for the closed period.", JourneyScenarioSupport.NotAssessed, "Not assessed: no Bufdata read/verification surface exists."),
-                new("pii-absent", "PII absent", "The delivered dataset contains no fødselsnummer or DUF.", JourneyScenarioSupport.NotAssessed, "Not verified: no dataset evidence is available."),
-                new("coverage-metadata", "Coverage/row count metadata correct", "Row count and coverage metadata match the synthetic period.", JourneyScenarioSupport.NotAssessed, "Not assessed: no dataset metadata evidence is available."),
+                new("close-valid-period", "Close valid period", "Close one synthetic period through a safe domain workflow and follow the emitted event to Bufdata.", JourneyScenarioSupport.NotAssessed,
+                    $"Not assessed — operator required. {SkoleLockLifecycle} BirkNext never locks a period."),
+                new("event-emitted", "Event emitted", $"{PeriodClosedEvent} is emitted once for the closed period.", JourneyScenarioSupport.NotAssessed,
+                    $"Not assessed: requires an operator-run lock and a broker observer. {SkoleDeliveryState}"),
+                new("event-metadata", "Event metadata correct", "The event carries the expected period metadata.", JourneyScenarioSupport.NotAssessed,
+                    "Not assessed: Skoletjenesten declares the event (period, delivered row count, coverage) and routes it to topic skole.perioder, but nothing publishes it yet (Skole source review, ADR-028 pending; not runtime verified), so no emitted event exists to check."),
+                new("bufdata-receives", "Bufdata receives dataset", "Bufdata processed the dataset for the closed period.", JourneyScenarioSupport.NotAssessed,
+                    $"Not assessed: no Bufdata read/verification surface exists, and Skoletjenesten has no delivery acknowledgement. {SkoleDeliveryState}"),
+                new("pii-absent", "PII absent", "The delivered dataset contains no fødselsnummer or DUF.", JourneyScenarioSupport.NotAssessed,
+                    $"Not verified: no dataset evidence is available. {SkoleDeliveryState}"),
+                new("coverage-metadata", "Coverage/row count metadata correct", "Row count and coverage metadata match the synthetic period.", JourneyScenarioSupport.NotAssessed,
+                    "Not assessed: no dataset metadata evidence is available. Frozen coverage can be read after a lock through Skoletjenesten's GraphQL dekningsstatistikk (Skole:SeDekningsstatistikk); BirkNext has no reader for it, and that coverage is not the Bufdata delivery."),
             ],
             EvidenceBasis = DiagramBasis,
             Limitations = ["Service Bus accepted ≠ Bufdata processed: broker, consumer and dataset evidence are separate steps.", "BirkNext never sends SkolenaervaersperiodeLukket directly."],
         },
-    ];
+    ]);
+
+    /// <summary>Attaches each scenario's declared capability profile (by scenario id) to the catalog; identity stays the scenario catalog's.</summary>
+    private static IReadOnlyList<IntegrationJourneyDefinition> WithCapabilities(IReadOnlyList<IntegrationJourneyDefinition> journeys) =>
+        journeys.Select(journey => journey with
+        {
+            Scenarios = journey.Scenarios.Select(scenario => scenario with { Capability = CapabilityProfiles.GetValueOrDefault(scenario.ScenarioId) }).ToArray(),
+        }).ToArray();
+
+    private const string TeamOperator = "BirkNext operator with the ID-porten TEST client owner";
+    private const string TeamSkole = "Skole team (Skoletjenesten)";
+    private const string TeamMm = "MM team (Meldingsutvekslermottak)";
+    private const string AltinnConfiguration =
+        "ID-porten TEST client id and scopes (Integration Quality Review → Altinn test configuration); redirect URI, client secret and Enabled (backend); approved Altinn app with public TT02 metadata read; trusted target with the report-intake integration enrolled.";
+    private const string AltinnAccess = "A registered ID-porten TEST client; the reporter's PRIV role allowed by the confirmed app policy.";
+    private const string AltinnTestData = "An approved synthetic TestID reporter alias with a confirmed Altinn TT02 profile";
+    private const string AltinnExecution = "Integration journey runner: Altinn TT02 App API (create instance, store form data, validate, one process/next, read receipt) as the unattended synthetic reporter.";
+    private const string ReportChain = "Altinn TT02 → MU → MM → Skoletjenesten";
+    private const string NoReportRead = "A read contract for report state in Skoletjenesten: its 200 Mottatt answer is the same for accepted, held, replayed and closed-chain reports.";
+    private const string NotRunnableHere = "None in BirkNext.";
+
+    /// <summary>Per scenario: what it needs, how far its result can be verified, and who can close the gap. Statuses are computed, never declared here.</summary>
+    private static readonly IReadOnlyDictionary<string, JourneyScenarioCapabilityProfile> CapabilityProfiles = new Dictionary<string, JourneyScenarioCapabilityProfile>(StringComparer.Ordinal)
+    {
+        ["active-event-scenarios"] = new("BiRK CDC → Event Hub → SkoleAdapter → Skoletjenesten (Utdanning)",
+            "Active Event Testing with provider skolenaervaer.cdc: synthetic CDC events sent to the approved test Event Hub.",
+            "An enabled Event Hub integration for dbo.Utdanning or dbo.ManglendeSkoletilbud in Integration Quality Review, its approved destination, the trusted target with that integration enrolled, and the SkoleAdapter source contract in Source Analysis.",
+            "Reserved synthetic record keys and synthetic child references (provider policy) and a reviewed fixture.",
+            "Send to the approved test Event Hub (backend-held connection; never a client-supplied destination).",
+            JourneyResultVerification.Partial,
+            "Transport and consumer/continuity evidence only. Event Hub accepted ≠ education relationship created: the Utdanning outcome has no read contract in BirkNext.",
+            "SkoleAdapter source and its CDC contract (only the specification is available); an approved read-only client for Skoletjenesten's /api/skole/v1/utdanning/postidentiteter.",
+            "SkoleAdapter team (source and contract); Skole team (read access)",
+            "Supply the SkoleAdapter source to Source Analysis; agree a read-only verification client for the education API. Update, delete and late linkage stay Not assessed until then."),
+
+        ["valid-report"] = new(ReportChain, AltinnExecution, AltinnConfiguration, $"{AltinnTestData}, and an approved registered synthetic child (never the reporter).", AltinnAccess,
+            JourneyResultVerification.Partial,
+            "The Altinn steps (stored, validated, submitted, receipt) are verified from Altinn's answers. MU, MM and Skoletjenesten outcomes are not observable.",
+            $"MU and MM observers; {NoReportRead}", $"{TeamOperator} (configuration); {TeamSkole} (report read contract)",
+            "Complete the ID-porten TEST configuration, confirm reporter-a's TT02 profile and approve a synthetic child, then run a dry run before the first supervised submission."),
+        ["person-not-found"] = new(ReportChain, AltinnExecution, AltinnConfiguration, $"{AltinnTestData}, and a synthetic child that Person does not know.", AltinnAccess,
+            JourneyResultVerification.NotVerifiable,
+            "Skoletjenesten holds a report for an unknown child and still answers 200 Mottatt; the held state is visible only in its database, its SkolenaervaersrapportEndret events or the GraphQL follow-up list.",
+            "An authorized read of held reports (GraphQL follow-up list or report events).", TeamSkole,
+            "Use Skole's HoldtRapportTests and HoldVedLaasTests (discovered, not executed) as evidence until an authorized follow-up reader exists."),
+        ["overlapping-report"] = new(ReportChain, AltinnExecution, AltinnConfiguration, $"{AltinnTestData}, a registered synthetic child and an earlier overlapping report.", AltinnAccess,
+            JourneyResultVerification.NotVerifiable, "How Skoletjenesten records the overlap is not observable from BirkNext.", NoReportRead, TeamSkole,
+            "Use Skole's KorreksjonOgKjedeTests, which include overlapping reports (discovered, not executed), until a report read contract exists."),
+        [InstanceEvidenceScenario] = new("Altinn TT02 Storage", "Integration journey runner: one read-only Altinn Storage instance read (nothing is created or changed).",
+            AltinnConfiguration, "The party id and instance GUID of an existing test instance (used for the read only, never stored).",
+            "The reporter's token must be allowed to read that instance.", JourneyResultVerification.Verifiable,
+            "The instance's process state and data-element metadata are read back. An observed instance is not a verified submission.",
+            "None for the instance itself; it says nothing about MU, MM or Skoletjenesten.", TeamOperator, "Complete the ID-porten TEST configuration and supply a known test instance."),
+
+        ["correction"] = new(ReportChain, NotRunnableHere, "A verified Altinn app contract for expressing a correction.", "Two related synthetic reports for one child.", AltinnAccess,
+            JourneyResultVerification.NotVerifiable, "Version history is kept in Skoletjenesten's database only.", $"How the Altinn form expresses a correction; {NoReportRead}",
+            $"{TeamSkole}; Altinn app owner", "Use Skole's KorreksjonOgKjedeTests (discovered, not executed) as evidence."),
+        ["multiple-reporters"] = new(ReportChain, NotRunnableHere, AltinnConfiguration, "Two approved synthetic reporters with confirmed Altinn TT02 profiles, one synthetic child.", AltinnAccess,
+            JourneyResultVerification.NotVerifiable, "Whether both reports are kept is visible only in Skoletjenesten.", $"A second approved reporter; {NoReportRead}",
+            $"{TeamOperator}; {TeamSkole}", "Approve a second synthetic reporter; until then rely on Skole's SamtidighetTests (discovered, not executed)."),
+        ["invalid-xsd"] = new("MU → MM", NotRunnableHere, "A reviewed schema-invalid fixture; MM test environment.", "Synthetic invalid report (never corrupted ad hoc).", "MU send access to a test channel (not granted).",
+            JourneyResultVerification.NotVerifiable, "MM's rejection is visible in MM telemetry and its receipt only.", "An MM observer or imported MM test results.", TeamMm,
+            "Run MM's AvviseUgyldigMeldingTests (integration, emulators) in an isolated .NET 10 worker and import the TRX."),
+        ["period-locked"] = new("Skoletjenesten", NotRunnableHere, "A locked QA period.", "A synthetic report for that period.", "Skole operations for the lock.",
+            JourneyResultVerification.NotVerifiable, "The 422 UTENFOR_GYLDIGHETSVINDU answer goes to MM, not to BirkNext.", $"An operator-run lock; {NoReportRead}",
+            $"{TeamSkole}; Skole operations", "Use Skole's GyldighetskontrollTests and LaasutsettelseTests (discovered, not executed) as evidence."),
+        ["mapping-validation"] = new("MM → Skoletjenesten", NotRunnableHere, "Not applicable.", "A synthetic report with known values.", "Read access to stored report state (not granted).",
+            JourneyResultVerification.NotVerifiable,
+            "The MM → Skoletjenesten contract is compatible in source except timestamp drift D1; no live MM → Skoletjenesten call has been observed.",
+            NoReportRead, $"{TeamMm}; {TeamSkole}", "Resolve drift D1 and run MM's SkoletjenestenKontraktTests; see docs/skolenaervaer-cross-repo-verification.md."),
+        ["duplicate-report"] = new("MM → Skoletjenesten", NotRunnableHere, "Not applicable.", "One synthetic report sent twice with the same message id.", "MU send access (not granted).",
+            JourneyResultVerification.NotVerifiable, "An exact repeat gets the stored answer; it looks identical to the first.", NoReportRead, TeamSkole,
+            "Use Skole's RapportinntakIdempotensTests and MM's integration tests (discovered, not executed) as evidence."),
+        ["retrieval-decrypt-failure"] = new("MU → MM", NotRunnableHere, "MM test environment with emulators.", "Synthetic encrypted message.", "None granted; no fault injection against a real MU.",
+            JourneyResultVerification.NotVerifiable, "Visible in MM telemetry and its dead-letter handling only.", "Imported MM test results or an MM observer.", TeamMm,
+            "Run MM's integration suites (Service Bus emulator, Azurite) in an isolated worker and import the TRX."),
+
+        ["close-valid-period"] = new("Skoletjenesten → Service Bus → Bufdata", "None in BirkNext: Skoletjenesten's lock planner locks the period on its schedule.",
+            "A QA reporting period whose lock an operator controls.", "Synthetic reports and education data for that period.",
+            "Skole operations (Skole:UtsetteLaas only postpones the lock).", JourneyResultVerification.NotVerifiable,
+            "After a lock, frozen coverage needs an approved GraphQL client and role; the dataset is not written yet.",
+            "Dataset files, the SkolenaervaersperiodeLukket publisher and a Bufdata receipt (ADR-028 pending in Skoletjenesten).",
+            "Skole operations; Skole team; Bufdata team", "Agree an operator-run QA lock procedure; until then rely on Skole's PeriodelaasEndeTilEndeTests (discovered, not executed).",
+            OperatorRequired: true),
+        ["event-emitted"] = new("Skoletjenesten → Service Bus", NotRunnableHere, "An operator-run lock; a broker observer for topic skole.perioder.", "A locked synthetic period.",
+            "Read access to Service Bus metrics for skole.perioder.", JourneyResultVerification.NotVerifiable, "Nothing publishes the event yet.",
+            "The event publisher in Skoletjenesten (ADR-028).", TeamSkole, "Wait for the publisher; then add a read-only broker observer."),
+        ["event-metadata"] = new("Skoletjenesten → Service Bus", NotRunnableHere, "As for event-emitted.", "A locked synthetic period.", "As for event-emitted.",
+            JourneyResultVerification.NotVerifiable, "No emitted event exists to check.", "An emitted SkolenaervaersperiodeLukket (period, delivered row count, coverage).", TeamSkole,
+            "Wait for the publisher (ADR-028)."),
+        ["bufdata-receives"] = new("Bufdata", NotRunnableHere, "A Bufdata read or receipt surface.", "A delivered synthetic period.", "Read access to Bufdata delivery status (none exists).",
+            JourneyResultVerification.NotVerifiable, "Only prepared delivery rows exist (Klargjort); no file or receipt.", "A dataset file, a Levert state and a Bufdata receipt.",
+            $"{TeamSkole}; Bufdata team", "Agree a Bufdata receipt or read-only status surface."),
+        ["pii-absent"] = new("Bufdata", NotRunnableHere, "Access to the delivered dataset.", "A delivered synthetic period.", "Read access to the dataset (none exists).",
+            JourneyResultVerification.NotVerifiable, "No dataset file exists to scan.", "The delivered dataset; Skole's file PII test is skipped (ADR-028).",
+            $"{TeamSkole}; Bufdata team", "Use Skole's PersonvernTests (discovered, not executed) for the database and events; the file scan waits for ADR-028."),
+        ["coverage-metadata"] = new("Skoletjenesten", NotRunnableHere, "An approved GraphQL client for dekningsstatistikk.", "A locked synthetic period.",
+            "Role Skole:SeDekningsstatistikk (not granted).", JourneyResultVerification.NotVerifiable,
+            "Frozen coverage is readable through GraphQL after a lock, but BirkNext has no approved client; it is not the Bufdata delivery population.",
+            "An approved read-only GraphQL client and role.", TeamSkole, "Agree a read-only coverage client; until then rely on Skole's DekningsstatistikkTests (discovered, not executed)."),
+    };
 
     /// <summary>Responsibility rules from the approved architecture. Evaluated on Source Analysis dependency evidence; not assessed without source.</summary>
     public IReadOnlyList<ArchitectureResponsibilityRule> Rules { get; } =
@@ -349,6 +464,46 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             values.GetValueOrDefault(SkoleNaervaerReportInput.IdentitySourceKey) ?? "", contract, journey, flow.AltinnConfiguration, context);
     }
 
+    /// <summary>The Altinn TT02 prerequisites that are configuration the operator must supply (never invented by BirkNext).</summary>
+    internal static readonly string[] AltinnConfigurationKeys =
+        ["unattended-provider", "idporten-client", "redirect-uri", "client-secret", "synthetic-reporter", "reporter-profile", "synthetic-data", "integration:report-intake"];
+
+    /// <summary>
+    /// The evidence limits a tester must see next to the scenarios. The Altinn and SkoleAdapter items follow current readiness; the others are
+    /// what a source review of Skoletjenesten and MM established (not runtime verified) and change only when new evidence exists.
+    /// </summary>
+    public IReadOnlyList<JourneyEvidenceLimitation> EvidenceLimitations(IReadOnlyList<IntegrationJourneyView> journeys)
+    {
+        var report = journeys.FirstOrDefault(view => view.Journey.JourneyId == RapportmottakId);
+        var missing = report?.Prerequisites.Where(item => AltinnConfigurationKeys.Contains(item.Key, StringComparer.Ordinal) && item.State != JourneyReadinessState.Ready)
+            .Select(item => item.Label).ToArray() ?? [];
+        var adapter = journeys.FirstOrDefault(view => view.Journey.JourneyId == UtdanningsdataId)?.Prerequisites.FirstOrDefault(item => item.Key == "source:SkoleAdapter");
+        return
+        [
+            missing.Length > 0
+                ? new("altinn-tt02", "Altinn TT02 submission", "Blocked: ID-porten TEST configuration incomplete",
+                    $"Missing or unconfirmed: {string.Join(", ", missing)}. BirkNext never invents these values; no TT02 submission is possible until they are supplied.", TeamOperator)
+                : new("altinn-tt02", "Altinn TT02 submission", "Configured, not verified",
+                    "Every configuration prerequisite is present. Configured is not verified against the ID-porten client registration; only a supervised run shows it.", TeamOperator),
+            new("mm-skole-contract", "MM → Skoletjenesten contract", "Not runtime verified",
+                "A source review found the report contract compatible except drift D1 (timestamp text MM's XSD accepts can be refused by Skoletjenesten). No live MM → Skoletjenesten call has been observed by BirkNext.",
+                $"{TeamMm}; {TeamSkole}"),
+            adapter is { State: JourneyReadinessState.Ready }
+                ? new("skoleadapter-source", "SkoleAdapter source", "Source available", $"{adapter.Detail} Its CDC contract still needs review before update, delete and late linkage can be assessed.", "SkoleAdapter team")
+                : new("skoleadapter-source", "SkoleAdapter source", "Not available",
+                    "Only the SkoleAdapter specification has been supplied; its source is not in Source Analysis. The education CDC contract is not verified, and update, delete and late linkage stay Not assessed.",
+                    "SkoleAdapter team"),
+            new("period-lock", "Period lock", "Operator required", $"{SkoleLockLifecycle} BirkNext never locks a period.", "Skole operations"),
+            new("bufdata-delivery", "Bufdata delivery", "Not verifiable beyond prepared rows", SkoleDeliveryState, $"{TeamSkole}; Bufdata team"),
+            new("graphql-coverage", "Coverage (GraphQL)", "Needs an approved client and role",
+                "dekningsstatistikk needs Skole:SeDekningsstatistikk and the follow-up lists need Skole:SeOppfolgingsliste (with graded access for Kode 6/7). BirkNext has no approved client, so coverage is not verified.",
+                TeamSkole),
+            new("target-system-tests", "Skoletjenesten and MM automated tests", "Discovered, not executed",
+                "Their unit and integration suites are known from a source review only; BirkNext holds no execution result for them (they need the .NET 10 SDK, private package feeds and emulators). Discovered is not passed.",
+                $"Platform team; {TeamMm}; {TeamSkole}"),
+        ];
+    }
+
     internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
     {
         AltinnProcessContractStatus.ConfirmedForCurrentOperation => "Confirmed for current operation",
@@ -391,13 +546,16 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     public async Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct)
     {
-        var architecture = context.SourceSnapshots.FirstOrDefault(snapshot => snapshot.Architecture is not null);
+        // Every snapshot counts: MU, MM, Skoletjenesten and SkoleAdapter are separate repositories, usually uploaded as separate archives.
         JourneyPrerequisite Source(string component, string[] tokens)
         {
-            var found = architecture?.Architecture?.Components.FirstOrDefault(item => ArchitectureRuleEvaluator.MatchesAny(tokens, item.Name, item.LogicalName, item.SourceProject));
+            var found = context.SourceSnapshots
+                .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item)))
+                .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
             return new($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence,
-                found is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
-                found is null ? $"Not source verified: {component} source is not present in Source Analysis." : $"Source verified: component {found.Name} in snapshot {architecture!.Archive.FileName}.");
+                found.Component is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
+                found.Component is null ? $"Not source verified: {component} source is not present in Source Analysis."
+                    : $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName}.");
         }
 
         switch (journey.JourneyId)
@@ -523,7 +681,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     // Downstream steps (MU, MM, Skolenærværsrapport) are shown but do not gate the Altinn submission: without them those steps stay
                     // Not assessed, so a run can reach Partial at most.
                     Source("MU", ["MU", "Meldingsutveksleren"]) with { Mandatory = false },
-                    Source("MM", ["MM"]) with { Mandatory = false },
+                    Source("MM", ["MM", "Meldingsutvekslermottak"]) with { Mandatory = false },
                     Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"]) with { Mandatory = false },
                     new("report-verifier", "Skolenærværsrapport verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,
                         "No read contract for the report service exists, so report state, mapping and Person lookup outcome cannot be verified.", Mandatory: false),
@@ -537,7 +695,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 return
                 [
                     new("domain-trigger", "Safe period-closure trigger", JourneyPrerequisiteCategory.Trigger, JourneyReadinessState.NotReady,
-                        "No safe domain API/workflow to close a synthetic period exists in evidence. BirkNext never publishes the event directly."),
+                        $"Operator required. {SkoleLockLifecycle} BirkNext never locks a period and never publishes the event directly."),
                     new("event-contract", $"{PeriodClosedEvent} contract", JourneyPrerequisiteCategory.Contract,
                         channel is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
                         channel is null ? "Documented in the architecture diagram only; no Service Bus channel with this name is present in Source Analysis (not source verified)."

@@ -105,6 +105,41 @@ public static class IntegrationJourneyPresentation
         _ => "neutral",
     };
 
+    /// <summary>Execution capability only. Runnable means it may be started after confirmation — never that it passed.</summary>
+    public static string Capability(JourneyScenarioCapabilityStatus status) => status switch
+    {
+        JourneyScenarioCapabilityStatus.Runnable => "Runnable",
+        JourneyScenarioCapabilityStatus.ConditionallyRunnable => "Conditionally runnable",
+        JourneyScenarioCapabilityStatus.OperatorRequired => "Operator required",
+        JourneyScenarioCapabilityStatus.NotAssessed => "Not assessed",
+        _ => "Blocked",
+    };
+
+    public static string CapabilityTone(JourneyScenarioCapabilityStatus status) => status switch
+    {
+        JourneyScenarioCapabilityStatus.Runnable => "ready",
+        JourneyScenarioCapabilityStatus.ConditionallyRunnable or JourneyScenarioCapabilityStatus.OperatorRequired => "attention",
+        JourneyScenarioCapabilityStatus.Blocked => "danger",
+        _ => "neutral",
+    };
+
+    /// <summary>Whether BirkNext itself can start it now, kept apart from whether its result can be verified.</summary>
+    public static string Execution(JourneyScenarioCapabilityStatus status) => status switch
+    {
+        JourneyScenarioCapabilityStatus.Runnable => "Available (after confirmation)",
+        JourneyScenarioCapabilityStatus.ConditionallyRunnable => "After configuration",
+        JourneyScenarioCapabilityStatus.OperatorRequired => "Not by BirkNext (operator)",
+        _ => "Not available",
+    };
+
+    public static string Verification(JourneyResultVerification? verification) => verification switch
+    {
+        JourneyResultVerification.Verifiable => "Verifiable",
+        JourneyResultVerification.Partial => "Partial",
+        JourneyResultVerification.NotVerifiable => "Not verifiable",
+        _ => "Not declared",
+    };
+
     public static string Step(JourneyStepState state) => state switch
     {
         JourneyStepState.NotVerified => "Not verified",

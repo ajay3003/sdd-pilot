@@ -4,6 +4,11 @@ Audit date: 2026-10-12 (first audit), corrected 2026-10-12 (second audit)\
 Repository: `BirkNext`\
 Branch/HEAD: `008-traceability-first` / `aa261796e0dc32be970c5b6307dd34a479ea2aa4`
 
+> **Superseded in part (2026-10-14).** This audit describes `aa261796`. Since then the Altinn executor (`SkoleNaervaerAltinnExecutor`) and
+> instance observer are registered, so Rapportmottak's Altinn steps can run once configured. Period closure is now known from Skoletjenesten's
+> source to be operator-only. For the current state, and for what was verified from the Skole and MM sources, see
+> [skolenaervaer-cross-repo-verification.md](skolenaervaer-cross-repo-verification.md).
+
 ## 0. Correction from first audit
 
 The first audit received only the 39 scenario IDs, without titles, areas, priorities or expected results. Its 0/39 result and its "Definition unavailable" matrix were intentionally conservative, but they were not useful for the actual system-test plan.

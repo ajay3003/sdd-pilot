@@ -289,10 +289,15 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, Persisted().Authentication.AuthenticatedTestingMethod);
         Assert.Equal(0, SaveCalls());
         Click(cut, "Save changes");
-        Assert.Equal(AuthenticatedTestingMethod.LocalHttpsProxy, Persisted().Authentication.AuthenticatedTestingMethod);
-        Assert.Equal(1, SaveCalls());
-        Assert.Equal(AuthenticatedTestingMethodLabels.ProxyOption, Row(cut, "authenticated-testing-method-value"));
-        Assert.True(Has(cut, "local-https-proxy-panel"));
+        // Click dispatches through the renderer; when a background continuation holds the renderer at that moment, the save runs just after
+        // Click returns. Assert once the save has rendered, rather than at an arbitrary point before it.
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(AuthenticatedTestingMethod.LocalHttpsProxy, Persisted().Authentication.AuthenticatedTestingMethod);
+            Assert.Equal(1, SaveCalls());
+            Assert.Equal(AuthenticatedTestingMethodLabels.ProxyOption, Row(cut, "authenticated-testing-method-value"));
+            Assert.True(Has(cut, "local-https-proxy-panel"));
+        });
     }
 
     [Fact]

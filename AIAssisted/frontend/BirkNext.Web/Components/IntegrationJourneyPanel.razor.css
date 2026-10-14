@@ -69,8 +69,23 @@
 .ijp .ijp-ack { display: flex; gap: .5rem; align-items: flex-start; font-weight: 400; }
 .ijp-ack input { margin-top: .2rem; flex: none; }
 
+/* Scenario capability: one card per scenario; execution and verification are separate facts. */
+.ijp-capability-heading { margin: 1rem 0 .4rem; font-size: 1rem; }
+.ijp-limitations, .ijp-capabilities { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.ijp-limitations li { padding: .5rem .75rem; border-left: 4px solid var(--clr-border, #d1d5db); background: var(--clr-surface, #f8fafc); font-size: .86rem; overflow-wrap: anywhere; }
+.ijp-capability-text { display: block; margin: .2rem 0; }
+.ijp-capability { padding: .6rem .75rem; border: 1px solid var(--clr-border, #d1d5db); border-radius: 6px; overflow-wrap: anywhere; }
+.ijp-capability-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: space-between; }
+.ijp-capability-name { font-weight: 600; }
+.ijp-capability-facts { display: grid; grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr); gap: .2rem .75rem; margin: .4rem 0 0; font-size: .85rem; }
+.ijp-capability-facts > div { display: contents; }
+.ijp-capability-facts dt { font-weight: 600; }
+.ijp-capability-facts dd { margin: 0; }
+
 @media (max-width: 640px) {
     .ijp { padding: .75rem; }
+    .ijp-capability-facts { grid-template-columns: minmax(0, 1fr); }
+    .ijp-capability-facts dd { margin-bottom: .3rem; }
     .ijp-step, .ijp-check { grid-template-columns: minmax(0, 1fr) auto; }
     .ijp-step-owner, .ijp-step-flags, .ijp-step-limit, .ijp-check-detail { grid-column: 1 / -1; }
     .ijp-tab { flex: 1 1 auto; text-align: center; }

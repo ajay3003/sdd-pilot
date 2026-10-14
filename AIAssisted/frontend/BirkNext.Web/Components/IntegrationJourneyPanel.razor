@@ -76,6 +76,59 @@
                     <details class="ijp-details" data-testid="ijp-limitations"><summary>Limitations</summary><ul>@foreach (var item in pack.Limitations) { <li>@item</li> }</ul></details>
                 }
             }
+            else if (_tab == "scenarios")
+            {
+                <p class="ijp-muted" data-testid="ijp-capability-intro">What each scenario needs, whether BirkNext can start it now, and how far its result can be verified. Execution and verification are separate: a runnable scenario is not a passed one, and Not assessed is never a pass.</p>
+                @if (pack.EvidenceLimitations.Count > 0)
+                {
+                    <h4 class="ijp-capability-heading">Evidence limitations</h4>
+                    <ul class="ijp-limitations" data-testid="ijp-evidence-limitations">
+                        @foreach (var limitation in pack.EvidenceLimitations)
+                        {
+                            <li data-testid="ijp-evidence-limitation" data-key="@limitation.Key"><strong>@limitation.Title</strong> <span class="ijp-pill ijp-pill-neutral">@limitation.Status</span>
+                                <span class="ijp-capability-text">@limitation.Detail</span> <span class="ijp-muted">Owner: @limitation.Owner</span></li>
+                        }
+                    </ul>
+                }
+                @foreach (var view in pack.Journeys.Where(item => item.ScenarioCapabilities.Count > 0))
+                {
+                    <h4 class="ijp-capability-heading">@view.Journey.DisplayName</h4>
+                    <ul class="ijp-capabilities" data-testid="ijp-capabilities" data-journey="@view.Journey.JourneyId" aria-label="@($"{view.Journey.DisplayName} scenarios")">
+                        @foreach (var capability in view.ScenarioCapabilities)
+                        {
+                            var profile = capability.Profile;
+                            <li class="ijp-capability" data-testid="ijp-capability" data-scenario="@capability.ScenarioId" data-status="@capability.Status">
+                                <div class="ijp-capability-head">
+                                    <span class="ijp-capability-name">@capability.DisplayName@(capability.Resource is { } resource ? $" · {resource}" : "")</span>
+                                    <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.CapabilityTone(capability.Status)" data-testid="ijp-capability-status">@IntegrationJourneyPresentation.Capability(capability.Status)</span>
+                                </div>
+                                <dl class="ijp-capability-facts">
+                                    <div><dt>System</dt><dd>@(profile?.System ?? "Not declared")</dd></div>
+                                    <div><dt>Execution</dt><dd data-testid="ijp-capability-execution">@IntegrationJourneyPresentation.Execution(capability.Status)</dd></div>
+                                    <div><dt>Result verification</dt><dd data-testid="ijp-capability-verification">@IntegrationJourneyPresentation.Verification(profile?.Verification)@(profile is null ? "" : $" — {profile.VerificationDetail}")</dd></div>
+                                    <div><dt>Readiness</dt><dd>@capability.StatusDetail</dd></div>
+                                    <div><dt>Next action</dt><dd>@(profile?.NextAction ?? "Not declared")</dd></div>
+                                </dl>
+                                <details class="ijp-details" data-testid="ijp-capability-details">
+                                    <summary>Requirements and gaps</summary>
+                                    <dl class="ijp-capability-facts">
+                                        <div><dt>Existing execution method</dt><dd>@(profile?.ExecutionMethod ?? "Not declared")</dd></div>
+                                        <div><dt>Required configuration</dt><dd>@(profile?.RequiredConfiguration ?? "Not declared")</dd></div>
+                                        <div><dt>Required test data</dt><dd>@(profile?.RequiredTestData ?? "Not declared")</dd></div>
+                                        <div><dt>Required access</dt><dd>@(profile?.RequiredAccess ?? "Not declared")</dd></div>
+                                        <div><dt>Missing evidence</dt><dd>@(profile?.MissingEvidence ?? "Not declared")</dd></div>
+                                        <div><dt>Responsible team</dt><dd>@(profile?.ResponsibleTeam ?? "Not declared")</dd></div>
+                                        @if (capability.Blockers.Count > 0)
+                                        {
+                                            <div><dt>Unmet prerequisites</dt><dd><ul class="ijp-notes">@foreach (var blocker in capability.Blockers) { <li>@blocker</li> }</ul></dd></div>
+                                        }
+                                    </dl>
+                                </details>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
             else if (_tab == "rules")
             {
                 @if (_rulesLoading) { <p class="ijp-muted" role="status">Evaluating architecture rules…</p> }
@@ -384,7 +437,7 @@
     private IntegrationJourneyPackView? Pack => _packs.FirstOrDefault(item => item.PackId == _packId);
 
     private IReadOnlyList<(string Key, string Label)> Tabs => Pack is { } pack
-        ? [("overview", "Overview"), .. pack.Journeys.Select(view => (view.Journey.JourneyId, view.Journey.DisplayName)), ("rules", "Architecture rules"), ("history", "History")]
+        ? [("overview", "Overview"), ("scenarios", "Scenario capability"), .. pack.Journeys.Select(view => (view.Journey.JourneyId, view.Journey.DisplayName)), ("rules", "Architecture rules"), ("history", "History")]
         : [];
 
     private string TabId(string key) => $"{_id}-tab-{key}";

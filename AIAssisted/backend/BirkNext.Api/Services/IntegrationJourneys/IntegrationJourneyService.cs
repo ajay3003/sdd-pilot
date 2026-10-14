@@ -66,7 +66,7 @@ public sealed class IntegrationJourneyService(
             {
                 PackId = pack.PackId, PackVersion = pack.PackVersion, DisplayName = pack.DisplayName, Description = pack.Description,
                 EnvironmentId = environmentId, EnvironmentTrusted = TrustProblem(context) is null, EnvironmentDetail = TrustProblem(context) ?? context.TrustDetail,
-                Journeys = journeys, Limitations = pack.Limitations,
+                Journeys = journeys, Limitations = pack.Limitations, EvidenceLimitations = pack.EvidenceLimitations(journeys),
             });
         }
         return views;
@@ -312,6 +312,9 @@ public sealed class IntegrationJourneyService(
         return new IntegrationJourneyView
         {
             Journey = journey, Readiness = readiness, Prerequisites = prerequisites, MatchedIntegrations = matched, StepStatus = stepStatus, CanRun = canRun, RunnableScenarios = runnable,
+            ScenarioCapabilities = journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent
+                ? await DelegatedCapabilitiesAsync(journey, context, matches, ct)
+                : journey.Scenarios.Select(scenario => Capability(scenario, prerequisites, runnable)).ToArray(),
             LastRun = lastRun is null ? null : Summary(lastRun),
             ReadinessSummary = readiness switch
             {
@@ -358,6 +361,101 @@ public sealed class IntegrationJourneyService(
             {
                 result.Add(new($"delegated:{integration.Id}", $"Active Event readiness for {integration.DisplayName}", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.NotAvailable, ex.Message));
             }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// A journey-runner scenario's capability from the readiness already computed for it. Missing configuration (Not configured, Partial) makes it
+    /// conditionally runnable; any other unmet mandatory prerequisite blocks it. Operator-required and not-assessed scenarios never run here.
+    /// </summary>
+    internal static JourneyScenarioCapability Capability(JourneyScenarioDescriptor scenario, IReadOnlyList<JourneyPrerequisite> prerequisites, IReadOnlyList<string> runnable)
+    {
+        JourneyScenarioCapability Row(JourneyScenarioCapabilityStatus status, string detail, IReadOnlyList<string>? blockers = null) =>
+            new(scenario.ScenarioId, scenario.DisplayName, null, status, detail, blockers ?? [], scenario.Capability);
+        if (scenario.Capability?.OperatorRequired == true)
+            return Row(JourneyScenarioCapabilityStatus.OperatorRequired, scenario.NotAssessedBecause ?? "A human operator must act in the target system; BirkNext does not perform this step.");
+        if (scenario.Support != JourneyScenarioSupport.Supported)
+            return Row(JourneyScenarioCapabilityStatus.NotAssessed, scenario.NotAssessedBecause ?? "The scenario is not supported.");
+        if (runnable.Contains(scenario.ScenarioId, StringComparer.Ordinal))
+            return Row(JourneyScenarioCapabilityStatus.Runnable, "Every applicable mandatory prerequisite is ready. Running still needs explicit confirmation.");
+        return Blocked(prerequisites.Where(item => item.Mandatory && item.AppliesTo(scenario.ScenarioId) && item.State != JourneyReadinessState.Ready).ToArray(), Row);
+    }
+
+    private static JourneyScenarioCapability Blocked(IReadOnlyList<JourneyPrerequisite> unmet,
+        Func<JourneyScenarioCapabilityStatus, string, IReadOnlyList<string>?, JourneyScenarioCapability> row)
+    {
+        var blockers = unmet.Select(item => $"{item.Label}: {item.Detail}").ToArray();
+        return unmet.All(item => item.State is JourneyReadinessState.NotConfigured or JourneyReadinessState.Partial)
+            ? row(JourneyScenarioCapabilityStatus.ConditionallyRunnable, $"Runs once configured: {string.Join(", ", unmet.Select(item => item.Label))}.", blockers)
+            : row(JourneyScenarioCapabilityStatus.Blocked,
+                $"Blocked by: {string.Join(", ", unmet.Where(item => item.State is not (JourneyReadinessState.NotConfigured or JourneyReadinessState.Partial)).Select(item => item.Label))}.", blockers);
+    }
+
+    /// <summary>
+    /// A delegated journey's capabilities come from its Active Event provider's own scenario catalog (no second catalog) and, for an applicable
+    /// integration, from Active Event readiness of each supported scenario. Execution happens in Active Event Testing; this only reads.
+    /// </summary>
+    private async Task<IReadOnlyList<JourneyScenarioCapability>> DelegatedCapabilitiesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context,
+        IReadOnlyList<(JourneyIntegrationRequirement Requirement, IntegrationDefinition? Integration)> matches, CancellationToken ct)
+    {
+        var profile = journey.Scenarios.Select(item => item.Capability).FirstOrDefault(item => item is not null);
+        var provider = (await activeEvents.ProvidersAsync(context.EnvironmentId, ct)).FirstOrDefault(item => item.ExtensionId == journey.DelegatedProviderId);
+        if (provider is null || provider.Scenarios.Count == 0)
+            return journey.Scenarios.Select(scenario => new JourneyScenarioCapability(scenario.ScenarioId, scenario.DisplayName, null, JourneyScenarioCapabilityStatus.Blocked,
+                $"Active Event provider {journey.DelegatedProviderId} is not registered, so its scenarios are unknown here.", [], scenario.Capability)).ToArray();
+
+        var integrations = matches.Where(item => item.Integration is { Enabled: true }).Select(item => item.Integration!).DistinctBy(item => item.Id).ToArray();
+        var applicable = new Dictionary<string, List<IntegrationDefinition>>(StringComparer.Ordinal);
+        foreach (var integration in integrations.Where(item => provider.ApplicableIntegrationIds.Contains(item.Id, StringComparer.Ordinal)))
+        {
+            try
+            {
+                foreach (var offered in await activeEvents.ScenariosAsync(context.EnvironmentId, integration.Id, ct))
+                    (applicable.TryGetValue(offered.ScenarioId, out var list) ? list : applicable[offered.ScenarioId] = []).Add(integration);
+            }
+            catch (ActiveEventRequestException) { /* Reported per scenario below as having no applicable integration. */ }
+        }
+
+        var result = new List<JourneyScenarioCapability>();
+        foreach (var scenario in provider.Scenarios)
+        {
+            JourneyScenarioCapability Row(JourneyScenarioCapabilityStatus status, string detail, IReadOnlyList<string>? blockers = null) =>
+                new(scenario.ScenarioId, scenario.DisplayName, scenario.ResourceLabel, status, detail, blockers ?? [], profile);
+            if (scenario.Support != ActiveEventScenarioSupport.Supported)
+            {
+                result.Add(Row(JourneyScenarioCapabilityStatus.NotAssessed, string.IsNullOrWhiteSpace(scenario.SupportDetail) ? "Not supported by the provider." : scenario.SupportDetail));
+                continue;
+            }
+            if (!applicable.TryGetValue(scenario.ScenarioId, out var targets))
+            {
+                result.Add(Row(JourneyScenarioCapabilityStatus.ConditionallyRunnable,
+                    $"Runs in Active Event Testing once an enabled Event Hub integration for {scenario.ResourceLabel} is configured in Integration Quality Review and enrolled in this trusted environment.",
+                    [$"Integration: no applicable integration for {scenario.ResourceLabel}."]));
+                continue;
+            }
+            // Active Event readiness decides whether it can run (CanRun); its unmet checks explain why not. No second rule is applied here.
+            var unmet = new List<JourneyPrerequisite>();
+            var canRun = false;
+            foreach (var integration in targets)
+            {
+                try
+                {
+                    var readiness = await activeEvents.ReadinessAsync(context.EnvironmentId, integration.Id, provider.ExtensionId, scenario.ScenarioId, null, ct);
+                    canRun |= readiness.CanRun;
+                    unmet.AddRange(readiness.Checks.Where(check => check.State is not (ActiveEventReadinessState.Ready or ActiveEventReadinessState.Optional))
+                        .Select(check => new JourneyPrerequisite(check.Key, $"{check.Label} ({integration.DisplayName})", Category(check.Category), State(check.State), check.Detail)));
+                }
+                catch (ActiveEventRequestException ex)
+                {
+                    unmet.Add(new($"delegated:{integration.Id}", $"Active Event readiness ({integration.DisplayName})", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.NotAvailable, ex.Message));
+                }
+            }
+            result.Add(canRun
+                ? Row(JourneyScenarioCapabilityStatus.Runnable, "Active Event readiness allows a run. Run it from Active Event Testing; it still needs explicit confirmation.",
+                    unmet.Select(item => $"{item.Label}: {item.Detail}").ToArray())
+                : Blocked(unmet.Count > 0 ? unmet
+                    : [new("delegated", "Active Event readiness", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.NotReady, "Active Event readiness does not allow a run.")], Row));
         }
         return result;
     }

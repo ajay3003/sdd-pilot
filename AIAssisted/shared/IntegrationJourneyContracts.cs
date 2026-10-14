@@ -63,7 +63,47 @@ public sealed record JourneyScenarioDescriptor(
     string? NotAssessedBecause = null,
     bool StateChanging = true,
     IReadOnlyList<JourneyScenarioInput>? Inputs = null,
-    IReadOnlyList<string>? ExecutionEffects = null);
+    IReadOnlyList<string>? ExecutionEffects = null,
+    JourneyScenarioCapabilityProfile? Capability = null);
+
+/// <summary>
+/// Whether a scenario can be executed now, separately from whether its result can be verified. Runnable = every applicable mandatory
+/// prerequisite is ready; ConditionallyRunnable = only configuration is missing; OperatorRequired = a human operator must act in the target
+/// system (BirkNext never does it); NotAssessed = the scenario is not supported yet; Blocked = a non-configuration prerequisite is not met.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyScenarioCapabilityStatus { Runnable, ConditionallyRunnable, OperatorRequired, NotAssessed, Blocked }
+
+/// <summary>How far BirkNext can verify a scenario's result once it ran. Independent of whether it can run.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyResultVerification { Verifiable, Partial, NotVerifiable }
+
+/// <summary>What a scenario needs and who can close its gaps, as declared by the pack. Text only: never identifiers, secrets or endpoints with credentials.</summary>
+public sealed record JourneyScenarioCapabilityProfile(
+    string System,
+    string ExecutionMethod,
+    string RequiredConfiguration,
+    string RequiredTestData,
+    string RequiredAccess,
+    JourneyResultVerification Verification,
+    string VerificationDetail,
+    string MissingEvidence,
+    string ResponsibleTeam,
+    string NextAction,
+    bool OperatorRequired = false);
+
+/// <summary>One scenario's capability in this environment: its status from current readiness plus the pack's declared profile.</summary>
+public sealed record JourneyScenarioCapability(
+    string ScenarioId,
+    string DisplayName,
+    string? Resource,
+    JourneyScenarioCapabilityStatus Status,
+    string StatusDetail,
+    IReadOnlyList<string> Blockers,
+    JourneyScenarioCapabilityProfile? Profile);
+
+/// <summary>A pack-level evidence limitation shown next to the scenarios (e.g. a missing source repository). Never a pass.</summary>
+public sealed record JourneyEvidenceLimitation(string Key, string Title, string Status, string Detail, string Owner);
 
 /// <summary>Kinds of typed scenario input. There is deliberately no free-form payload, URL or endpoint kind.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -129,6 +169,8 @@ public sealed record IntegrationJourneyView
     public bool CanRun { get; init; }
     /// <summary>Supported scenarios whose applicable mandatory prerequisites are all ready.</summary>
     public IReadOnlyList<string> RunnableScenarios { get; init; } = [];
+    /// <summary>Every scenario with its execution status and declared verification capability (for a delegated journey, its provider's catalog).</summary>
+    public IReadOnlyList<JourneyScenarioCapability> ScenarioCapabilities { get; init; } = [];
     public IntegrationJourneyRunSummary? LastRun { get; init; }
 }
 
@@ -143,6 +185,8 @@ public sealed record IntegrationJourneyPackView
     public string EnvironmentDetail { get; init; } = "";
     public IReadOnlyList<IntegrationJourneyView> Journeys { get; init; } = [];
     public IReadOnlyList<string> Limitations { get; init; } = [];
+    /// <summary>Evidence limitations the pack derives from current readiness and its declared knowledge (shown with the scenario capabilities).</summary>
+    public IReadOnlyList<JourneyEvidenceLimitation> EvidenceLimitations { get; init; } = [];
 }
 
 /// <summary>Journey ids and boundaries other reviews (Test Coverage, Traceability, Impact Analysis) can reference. Relations are design-level

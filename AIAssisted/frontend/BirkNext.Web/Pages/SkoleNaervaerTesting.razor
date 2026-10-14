@@ -41,7 +41,7 @@
         </p>
         <div class="snt-journeys">
             <article><h3>Utdanningsdata</h3><p>BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning</p><p>Readiness comes from Active Event Testing. Event Hub configuration and safety checks are shared.</p></article>
-            <article><h3>Rapportmottak</h3><p>Privat institusjon/fosterhjem → Altinn → MU → MM → Skolenærværsrapport</p><p>The Altinn steps run through the Altinn TT02 App API after the tester signs in with TestID. They stay Not ready until the app contract, sign-in configuration and synthetic test data are in place.</p></article>
+            <article><h3>Rapportmottak</h3><p>Privat institusjon/fosterhjem → Altinn → MU → MM → Skolenærværsrapport</p><p>The Altinn steps run through the Altinn TT02 App API with an approved synthetic TestID reporter (unattended by default, interactive sign-in as a fallback). They stay Not ready until the app contract, ID-porten TEST configuration and synthetic test data are in place. MU, MM and Skolenærværsrapport have no evidence reader yet, so a run reaches Partial at most.</p></article>
             <article><h3>Periodeavslutning</h3><p>Skolenærværsrapport → Service Bus → Bufdata</p><p>Service Bus acceptance does not establish that Bufdata processed the event.</p></article>
         </div>
     </section>
@@ -73,6 +73,7 @@
     <section id="snt-period" aria-labelledby="snt-period-heading">
         <h2 id="snt-period-heading" tabindex="-1">Periodeavslutning</h2>
         <p>Skolenærværsrapport → Service Bus → Bufdata. Service Bus accepted is not the same as Bufdata processed.</p>
+        <p data-testid="snt-period-operator">Period closure is an operator action: Skolenærværsrapport locks a period on its own schedule, its drift endpoint only postpones the lock, and BirkNext never locks a period or publishes the event.</p>
     </section>
     <section id="snt-rules" aria-labelledby="snt-rules-heading">
         <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>

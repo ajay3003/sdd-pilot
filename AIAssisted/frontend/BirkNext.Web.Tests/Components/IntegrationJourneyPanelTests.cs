@@ -43,7 +43,7 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
     {
         var cut = Render();
         cut.Find("[data-testid=ijp-pack-title]").TextContent.Should().Be("Skolenærvær Testing");
-        cut.FindAll("[data-testid^=ijp-tab-]").Select(tab => tab.TextContent).Should().Equal("Overview", "Utdanningsdata", "Rapportmottak", "Periodeavslutning", "Architecture rules", "History");
+        cut.FindAll("[data-testid^=ijp-tab-]").Select(tab => tab.TextContent).Should().Equal("Overview", "Scenario capability", "Utdanningsdata", "Rapportmottak", "Periodeavslutning", "Architecture rules", "History");
         var rows = cut.FindAll("[data-testid=ijp-overview-row]");
         rows.Select(row => row.GetAttribute("data-readiness")).Should().Equal("Partial", "NotReady", "NotConfigured");
         rows[1].TextContent.Should().Contain("Not source verified").And.Contain("Not verified (no run)");
@@ -168,6 +168,8 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
     {
         var cut = Render();
         cut.Find("[data-testid=ijp-tab-overview]").KeyDown(new KeyboardEventArgs { Key = "ArrowRight" });
+        cut.Find("[data-testid=ijp-tabpanel]").GetAttribute("data-tab").Should().Be("scenarios");
+        cut.Find("[data-testid=ijp-tab-scenarios]").KeyDown(new KeyboardEventArgs { Key = "ArrowRight" });
         cut.Find("[data-testid=ijp-tabpanel]").GetAttribute("data-tab").Should().Be("utdanningsdata");
         cut.Find("[data-testid=ijp-tab-utdanningsdata]").GetAttribute("aria-selected").Should().Be("true");
         cut.Find("[data-testid=ijp-tab-utdanningsdata]").KeyDown(new KeyboardEventArgs { Key = "End" });
@@ -181,6 +183,56 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
         cut.Find("[data-testid=ijp-export]").Click();
         cut.WaitForAssertion(() => _export.Verify(e => e.ExportIntegrationJourneys(It.Is<IntegrationJourneyPackView>(p => p.PackId == "skolenaervaer"), It.IsAny<ArchitectureRuleReport?>(),
             It.IsAny<IReadOnlyList<IntegrationJourneyRunSummary>>(), It.IsAny<string?>()), Times.Once));
+    }
+
+    [Fact]
+    public void ScenarioCapability_ShowsEveryScenarioStatus_KeepsExecutionApartFromVerification_AndShowsTheEvidenceLimitations()
+    {
+        _api.Pack = CapabilityPack();
+        var cut = Render();
+        cut.Find("[data-testid=ijp-tab-scenarios]").Click();
+
+        var cards = cut.FindAll("[data-testid=ijp-capability]");
+        cards.Select(card => card.GetAttribute("data-status")).Should().Equal("Runnable", "ConditionallyRunnable", "NotAssessed", "OperatorRequired", "Blocked");
+        cards.Select(card => card.QuerySelector("[data-testid=ijp-capability-status]")!.TextContent)
+            .Should().Equal("Runnable", "Conditionally runnable", "Not assessed", "Operator required", "Blocked");
+        var runnable = cards[0];
+        runnable.QuerySelector("[data-testid=ijp-capability-execution]")!.TextContent.Should().Be("Available (after confirmation)");
+        runnable.QuerySelector("[data-testid=ijp-capability-verification]")!.TextContent.Should().StartWith("Partial —", "a runnable scenario is not verifiable beyond what is declared");
+        cards[3].QuerySelector("[data-testid=ijp-capability-execution]")!.TextContent.Should().Be("Not by BirkNext (operator)");
+        cut.FindAll("[data-testid=ijp-capability-details]").Should().OnlyContain(details => !details.HasAttribute("open"), "requirements and gaps stay collapsed");
+        cards[4].QuerySelector("[data-testid=ijp-capability-details]")!.TextContent.Should().Contain("Unmet prerequisites").And.Contain("Altinn app contract");
+        cut.Markup.Should().NotContain("Passed");
+        cut.FindAll("[data-testid=ijp-evidence-limitation]").Select(item => item.GetAttribute("data-key")).Should().Equal("altinn-tt02", "period-lock");
+        cut.Find("[data-testid=ijp-evidence-limitation][data-key=altinn-tt02]").TextContent.Should().Contain("Blocked: ID-porten TEST configuration incomplete").And.Contain("Owner:");
+        cut.FindAll("button").Should().NotContain(button => button.TextContent.Contains("Run", StringComparison.Ordinal), "the capability view starts nothing");
+    }
+
+    private static IntegrationJourneyPackView CapabilityPack()
+    {
+        var profile = new JourneyScenarioCapabilityProfile("Altinn TT02 → MU → MM → Skoletjenesten", "Integration journey runner", "ID-porten TEST client", "Approved synthetic reporter",
+            "PRIV role", JourneyResultVerification.Partial, "Altinn steps only", "MU and MM observers", "BirkNext operator", "Complete the configuration");
+        JourneyScenarioCapability Row(string id, JourneyScenarioCapabilityStatus status, params string[] blockers) => new(id, id, null, status, $"{status} detail", blockers, profile);
+        var pack = SamplePack();
+        return pack with
+        {
+            Journeys = [.. pack.Journeys.Select(view => view.Journey.JourneyId != "rapportmottak" ? view : view with
+            {
+                ScenarioCapabilities =
+                [
+                    Row("valid-report", JourneyScenarioCapabilityStatus.Runnable),
+                    Row("person-not-found", JourneyScenarioCapabilityStatus.ConditionallyRunnable, "Report intake: not configured."),
+                    Row("invalid-xsd", JourneyScenarioCapabilityStatus.NotAssessed),
+                    Row("close-valid-period", JourneyScenarioCapabilityStatus.OperatorRequired),
+                    Row("overlapping-report", JourneyScenarioCapabilityStatus.Blocked, "Altinn app contract: incomplete."),
+                ],
+            })],
+            EvidenceLimitations =
+            [
+                new("altinn-tt02", "Altinn TT02 submission", "Blocked: ID-porten TEST configuration incomplete", "Missing: Client secret.", "BirkNext operator"),
+                new("period-lock", "Period lock", "Operator required", "Skoletjenesten locks periods itself.", "Skole operations"),
+            ],
+        };
     }
 
     internal static IntegrationJourneyPackView SamplePack()

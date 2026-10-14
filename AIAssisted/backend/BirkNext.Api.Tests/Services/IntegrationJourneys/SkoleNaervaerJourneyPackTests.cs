@@ -186,6 +186,51 @@ public sealed class SkoleNaervaerJourneyPackTests
     }
 
     [Fact]
+    public async Task SourceEvidence_CountsEverySnapshot_SoSeparatelyUploadedRepositoriesAddUp()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        IqrSourceSnapshot Repo(string archive, char hash, params string[] components) => new()
+        {
+            Archive = new(archive, new string(hash, 64), 10),
+            Architecture = new ArchitectureSnapshot { Components = [.. components.Select((name, index) => new ArchitectureComponent { Id = $"{archive}-{index}", Name = name })] },
+        };
+        harness.Sources.Snapshots.Add(Repo("meldingsutveksleren.zip", 'a', "Meldingsutveksleren.Api"));
+        harness.Sources.Snapshots.Add(Repo("meldingsutvekslermottak.zip", 'c', "M2LB.Meldingsutvekslermottak.Host"));
+        var report = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
+
+        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Source verified: component Meldingsutveksleren.Api in snapshot meldingsutveksleren.zip.");
+        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().Be("Source verified: component M2LB.Meldingsutvekslermottak.Host in snapshot meldingsutvekslermottak.zip.",
+            "MM's own project name counts, and it is found in its own archive rather than only in the first snapshot with architecture");
+        report.Prerequisites.Single(item => item.Key == "source:Skolenærværsrapport").State.Should().Be(JourneyReadinessState.NotReady, "nothing is matched by a shared word such as 'Skole'");
+    }
+
+    [Fact]
+    public async Task PeriodClosure_IsOperatorOnly_NoScenarioClaimsToRun_AndTheReasonStatesTheVerifiedLockLifecycle()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(PeriodClosed);
+        harness.Enroll(PeriodClosed.Id);
+        var service = harness.Service(Pack(harness));
+        var closure = (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "periodeavslutning");
+
+        closure.Journey.Scenarios.Should().OnlyContain(item => item.Support == JourneyScenarioSupport.NotAssessed, "no safe trigger exists, so nothing in this journey can run");
+        var close = closure.Journey.Scenarios.Single(item => item.ScenarioId == "close-valid-period");
+        close.NotAssessedBecause.Should().StartWith("Not assessed — operator required.").And.Contain("only postpones").And.Contain("never locks a period");
+        closure.Prerequisites.Single(item => item.Key == "domain-trigger").Detail.Should().StartWith("Operator required.");
+        closure.Journey.Scenarios.Where(item => item.ScenarioId is "event-emitted" or "bufdata-receives" or "pii-absent")
+            .Should().OnlyContain(item => item.NotAssessedBecause!.Contains("Klargjort") && item.NotAssessedBecause.Contains("not runtime verified"));
+        closure.CanRun.Should().BeFalse();
+
+        var run = await service.StartAsync(new IntegrationJourneyRunRequest
+        {
+            EnvironmentId = ActiveEventTestHarness.Env, PackId = "skolenaervaer", JourneyId = "periodeavslutning", ScenarioId = "close-valid-period", Confirmed = true,
+        }, null, default);
+        run.OverallState.Should().Be(JourneyRunState.Blocked);
+        run.StateReason.Should().Contain("operator required");
+        run.Steps.Should().OnlyContain(step => step.State == JourneyStepState.NotAssessed);
+    }
+
+    [Fact]
     public void PackDefinitions_ContainNoPersonalData()
     {
         var json = JsonSerializer.Serialize(Pack().Journeys);

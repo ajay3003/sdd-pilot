@@ -56,6 +56,16 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void PeriodClosure_IsPresentedAsAnOperatorAction_NeverAsSomethingBirkNextTriggers()
+    {
+        var page = Render<SkoleNaervaerTesting>();
+
+        page.Find("[data-testid=snt-period-operator]").TextContent.Should().StartWith("Period closure is an operator action")
+            .And.Contain("only postpones the lock").And.Contain("BirkNext never locks a period");
+        page.FindAll("button").Should().NotContain(button => button.TextContent.Contains("lock", StringComparison.OrdinalIgnoreCase), "there is no period-lock button");
+    }
+
+    [Fact]
     public void SectionLink_MovesFocusToItsHeading_InsteadOfLeavingThePage()
     {
         var page = Render<SkoleNaervaerTesting>();

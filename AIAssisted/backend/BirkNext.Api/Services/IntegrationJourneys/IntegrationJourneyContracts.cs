@@ -50,6 +50,12 @@ public interface IIntegrationJourneyPack
     /// </summary>
     Task<PayloadFlowView?> PayloadFlowAsync(IntegrationJourneyDefinition journey, JourneyScenarioDescriptor scenario, PayloadFlowRequest request,
         JourneyPackContext context, CancellationToken ct) => Task.FromResult<PayloadFlowView?>(null);
+
+    /// <summary>
+    /// Pack-level evidence limitations derived from the computed journey views (e.g. which prerequisites keep a scenario blocked) and the
+    /// pack's declared knowledge of the target systems. Read-only; the default has none.
+    /// </summary>
+    IReadOnlyList<JourneyEvidenceLimitation> EvidenceLimitations(IReadOnlyList<IntegrationJourneyView> journeys) => [];
 }
 
 /// <summary>Either a dry run's validated values (never persisted) or a recorded run (its stored, redacted evidence only).</summary>

@@ -43,14 +43,46 @@ Shared infrastructure                                         Domain packs (Serv
 | Journey | Configuration source | Today |
 | --- | --- | --- |
 | Utdanningsdata | IQR Event Hub integration for `<db>.dbo.Utdanning` / `<db>.dbo.ManglendeSkoletilbud` | Executed by Active Event Testing; not ready until its prerequisites exist |
-| Rapportmottak | IQR HTTP integration (producer Altinn, consumer MU) + IQR message-flow test configuration | Not ready: no Altinn submission contract, no shared machine-identity/Maskinporten token source, no MU/MM/report source, observer or verifier |
-| Periodeavslutning | IQR Service Bus integration (`SkolenaervaersperiodeLukket`, producer Skolenærværsrapport, consumer Bufdata) | Not ready: no safe domain trigger to close a synthetic period, event contract not source verified, no Bufdata verification surface |
+| Rapportmottak | IQR HTTP integration (producer Altinn, consumer MU) + IQR message-flow test configuration | Altinn steps run through the TT02 App API once ID-porten TEST, reporter, synthetic child and trusted target are configured; MU, MM and report steps stay Not assessed (no observer or report read contract), so a run reaches Partial at most |
+| Periodeavslutning | IQR Service Bus integration (`SkolenaervaersperiodeLukket`, producer Skolenærværsrapport, consumer Bufdata) | Not runnable — operator required: Skoletjenesten locks on its own schedule, its drift endpoint only postpones the lock, and it does not yet write the dataset or publish the event (see [cross-repo verification](skolenaervaer-cross-repo-verification.md)) |
 
 Responsibilities checked by the rule pack: MM does no Person lookup; SkoleAdapter does no Person lookup; Utdanning owns the Person lookup for
 BiRK education data; Skolenærværsrapport owns the Person lookup for submitted reports. XSD validation is attributed to MM. Altinn accepted ≠
 report processed; Service Bus accepted ≠ Bufdata processed. BirkNext never publishes `SkolenaervaersperiodeLukket` itself and never invents
 an Altinn payload. The documented message-flow pilot calls the intake "Skolenærværsmottaket" and the report service "Skoletjenesten"; that
 correspondence to MM / Skolenærværsrapport is a documentation alias, not source verified.
+
+### Scenario capability
+
+The journey panel's **Scenario capability** tab lists every scenario of the existing catalog. For a delegated journey such as Utdanningsdata,
+the list is the Active Event provider's own scenario catalog. Each scenario shows two things separately:
+
+- **Execution:** whether BirkNext can start it now.
+- **Result verification:** how far its result can be verified. A runnable scenario is not a passed one, and Not assessed is never a pass.
+
+Each scenario is in exactly one of these statuses:
+
+| Status | Meaning |
+|---|---|
+| Runnable | Every applicable mandatory prerequisite is ready (for CDC: Active Event readiness allows the run). Starting still needs confirmation. |
+| Conditionally runnable | Only configuration is missing (Not configured / Partial prerequisites, or no applicable integration yet). |
+| Operator required | A human operator must act in the target system, for example the period lock; BirkNext never does it. |
+| Not assessed | The scenario is not supported yet, with the reason. |
+| Blocked | A prerequisite other than configuration is not met (for example an incomplete app contract or no executor). |
+
+Statuses are computed from the readiness the journey service already evaluates; there is no second rule. For each scenario, the pack declares
+its system, existing execution method, required configuration, test data and access, result verification, missing evidence, responsible team
+and next action (`JourneyScenarioCapabilityProfile`). The tab also lists the pack's **evidence limitations**:
+
+- Altinn TT02 configuration status, derived from the current prerequisites;
+- MM → Skoletjenesten contract not runtime verified;
+- SkoleAdapter source availability, derived from Source Analysis;
+- period lock operator-only;
+- Bufdata not verifiable beyond prepared rows;
+- GraphQL coverage needs an approved client and role;
+- Skoletjenesten and MM automated tests discovered, not executed.
+
+Reading the tab sends nothing and starts nothing.
 
 ### Payload & Mapping Flow (Rapportmottak)
 
