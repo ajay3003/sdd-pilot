@@ -5,6 +5,7 @@ using BirkNext.Web.Services;
 using BirkNext.Web.Tests.Integration;
 using Bunit;
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
@@ -121,30 +122,49 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
     }
 
     [Fact]
-    public void GroupsAndSectionsFollowOverviewEvidenceAreasActiveTests()
+    public void FourViews_OverviewFirst_EachReviewGroupInItsOwnView_InTheSameOrder()
     {
         var cut = Open();
+        cut.FindAll("[data-testid=iqr-views] a").Select(a => a.TextContent).Should().Equal("Overview", "Integrations", "Evidence", "Test Configuration");
+        cut.Find("[data-testid=iqr-view-overview]").GetAttribute("aria-current").Should().Be("page");
+        cut.FindAll("[data-testid=iqr-views] a[aria-current]").Should().ContainSingle("only the current view is marked");
         cut.FindAll(".iqr-group-heading").Select(h => h.TextContent.Trim()).Should().Equal("Review overview", "Evidence", "Integration areas");
         cut.FindAll(".iqr-group-heading").Should().OnlyContain(h => h.TagName == "H2");
+        cut.Find("[data-testid=iqr-group-overview]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=iqr-group-evidence]").HasAttribute("hidden").Should().BeTrue("one view at a time");
+        cut.Find("[data-testid=iqr-group-areas]").HasAttribute("hidden").Should().BeTrue();
         var order = new[]
         {
             "iqr-group-overview", "iqr-scope", "iqr-readiness", "iqr-domain-readiness",
-            "iqr-group-evidence", "iqr-source-evidence", "iqr-evidence-sources",
+            "iqr-group-evidence", "iqr-source-evidence", "iqr-evidence-sources", "iqr-contracts",
             "iqr-group-areas", "iqr-systems", "iqr-servicebus", "iqr-scim", "iqr-messaging",
-            "iqr-group-active-tests", "act-panel",
         }.Select(id => Position(cut, id)).ToList();
         order.Should().BeInAscendingOrder();
         cut.Find("[data-testid=iqr-readiness] h3").TextContent.Should().Be("Needs attention");
         cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations", "the run gate stays in the overview");
         cut.FindAll("[data-testid=iqr-group-overview] [data-testid=iqr-run]").Should().HaveCount(1);
+        cut.FindAll("[data-testid=act-panel]").Should().BeEmpty("the test modules are not mounted, and load nothing, outside Test Configuration");
+        cut.FindAll("[data-testid=mfr-panel]").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("integrations", "iqr-group-areas")]
+    [InlineData("evidence", "iqr-group-evidence")]
+    public void AViewLink_ShowsOnlyThatView(string view, string group)
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"integration-quality-review?view={view}");
+        var cut = Open();
+        cut.Find($"[data-testid=iqr-view-{view}]").GetAttribute("aria-current").Should().Be("page");
+        cut.Find($"[data-testid={group}]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=iqr-group-overview]").HasAttribute("hidden").Should().BeTrue();
     }
 
     [Fact]
-    public void ActiveTestsComeLast_SummaryFirstWithTheRunnerCollapsed()
+    public void TestConfiguration_HoldsActiveTestsSummaryFirst_JourneyCounts_AndTheMessageFlowReview()
     {
+        Services.GetRequiredService<NavigationManager>().NavigateTo("integration-quality-review?view=test-configuration");
         var cut = Open();
-        var testIds = cut.FindAll("[data-testid]").Select(e => e.GetAttribute("data-testid")).ToList();
-        testIds.Where(id => id!.StartsWith("iqr-")).Select(id => testIds.LastIndexOf(id)).Max().Should().BeLessThan(testIds.IndexOf("act-panel"), "nothing IQR follows Active tests");
+        new[] { "iqr-group-test-configuration", "act-panel", "iqr-journeys-summary", "mfr-panel" }.Select(id => Position(cut, id)).Should().BeInAscendingOrder();
         cut.Find("#act-heading").TextContent.Should().Be("Active tests");
         cut.Find("[data-testid=act-summary-scenarios]").TextContent.Should().Be("3 available");
         cut.Find("[data-testid=act-summary-scenario]").TextContent.Should().Be("Normal Person");
@@ -158,6 +178,8 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
         toggle.Click();
         cut.Find("[data-testid=act-open]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Find("[data-testid=act-runner]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=iqr-open-journeys-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        cut.FindAll("[data-testid=ijp-panel]").Should().BeEmpty("the journey module mounts only when opened");
     }
 
     [Theory]

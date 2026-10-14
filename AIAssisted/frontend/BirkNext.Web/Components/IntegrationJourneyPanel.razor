@@ -396,7 +396,7 @@
 
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
-    /// <summary>A journey tab to open first (e.g. from a domain page section). Unknown ids leave the overview open.</summary>
+    /// <summary>A journey tab to open first (e.g. from a domain page section), or "history". Unknown ids leave the overview open.</summary>
     [Parameter] public string? InitialJourneyId { get; set; }
 
     private readonly string _id = "ijp-" + Guid.NewGuid().ToString("N")[..8];
@@ -534,6 +534,7 @@
             _error = result.Error;
             if (_packs.All(item => item.PackId != _packId)) _packId = _packs.FirstOrDefault()?.PackId ?? "";
             if (InitialJourneyId is { } initial && Pack?.Journeys.Any(item => item.Journey.JourneyId == initial) == true) _tab = initial;
+            else if (InitialJourneyId == "history") await SelectTabAsync("history");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {

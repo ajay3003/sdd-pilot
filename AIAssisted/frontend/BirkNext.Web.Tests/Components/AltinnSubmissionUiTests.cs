@@ -405,6 +405,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         catalog.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         Services.AddSingleton(catalog.Object);
 
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("extensions/skolenaervaer?tab=rapportmottak");
         var without = Render<SkoleNaervaerTesting>();
         without.Find("#snt-rapport [data-testid=snt-altinn-not-ready]").TextContent.Should().StartWith("Not ready");
         without.FindAll("[data-testid=atp-panel]").Should().BeEmpty();
@@ -413,6 +414,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         var with = Render<SkoleNaervaerTesting>();
         with.WaitForAssertion(() => with.FindAll("#snt-rapport [data-testid=atp-panel]").Should().ContainSingle());
         with.FindAll("[data-testid=ijp-panel]").Should().ContainSingle("one shared journey panel runs the submission");
+        with.Find("#snt-rapport [data-testid=snt-group-contract] [data-testid=atp-panel]").Should().NotBeNull("the Altinn setup sits in the App contract details");
     }
 
     private static void Fill(IRenderedComponent<IntegrationJourneyPanel> cut)

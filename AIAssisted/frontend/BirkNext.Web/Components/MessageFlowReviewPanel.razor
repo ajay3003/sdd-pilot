@@ -53,18 +53,30 @@
             </ol>
             <p class="mfr-note">Documented or source-declared flows do not prove runtime delivery. Transport receipt, application receipt and business completion remain distinct.</p>
         </section>
-        <div class="mfr-grid">
+        @* Validation/error paths and Altinn readiness side by side on wide screens (60/40, each with a usable minimum), stacked below. *@
+        <div class="mfr-grid mfr-grid-split">
             <section class="mfr-card" aria-labelledby="mfr-validate-heading"><h3 id="mfr-validate-heading">Validation and error paths</h3>
                 @if (package.Flow.Validation.Count > 0) { <ul>@foreach (var v in package.Flow.Validation) { <li><strong>@v.Layer</strong> — @v.Outcome <small>(@v.Owner · @v.Evidence.State)</small></li> }</ul> }
                 @foreach (var error in package.Flow.ErrorPaths) { <article class="mfr-error"><strong>@error.Condition</strong><span>Owner: @error.Owner</span><span>@error.ExpectedHandling</span><small>Retry: @Display(error.RetryPolicy) · Hold: @Display(error.HoldPolicy) · Dead-letter: @Display(error.DeadLetterPolicy)</small><small>Final state: @error.FinalState · @error.Evidence.State</small></article> }
                 <details><summary>Add a documented error path</summary><div class="mfr-form"><label>Condition<input @bind="_errorCondition" /></label><label>State owner<input @bind="_errorOwner" /></label><label>Expected handling<input @bind="_errorHandling" /></label><label>Transport retry policy<input @bind="_retryPolicy" /></label><label>Domain hold policy<input @bind="_holdPolicy" /></label><label>Dead-letter policy<input @bind="_deadLetterPolicy" /></label><button type="button" class="btn-secondary" @onclick="AddErrorPath">Add error path</button></div></details>
             </section>
-            <section class="mfr-card" aria-labelledby="mfr-readiness-heading"><h3 id="mfr-readiness-heading">Altinn test readiness</h3>
-                <p><strong>@package.Readiness.Ready / @package.Readiness.Total</strong> prerequisites configured. Active submission remains blocked.</p>
-                <ul class="mfr-readiness">@foreach (var item in package.Readiness.Items) { <li><span aria-label="@(item.Satisfied ? "Configured" : "Needs attention")">@(item.Satisfied ? "Configured" : "○")</span><strong>@item.Label:</strong> @item.State <small>@item.Explanation</small></li> }</ul>
-                <p>Implementation readiness: not source verified. QA configuration: not verified. Runtime: not observed.</p>
+            <section class="mfr-card mfr-readiness-card" aria-labelledby="mfr-readiness-heading" data-testid="mfr-readiness"><h3 id="mfr-readiness-heading">Altinn test readiness</h3>
+                <p data-testid="mfr-readiness-count"><strong>@package.Readiness.Ready / @package.Readiness.Total</strong> prerequisites configured. Active submission remains blocked.</p>
+                @{ var open = package.Readiness.Items.Where(item => !item.Satisfied).ToList(); }
+                @if (open.Count > 0)
+                {
+                    <h4 class="mfr-subheading">Primary blockers</h4>
+                    <ul class="mfr-blockers" data-testid="mfr-readiness-blockers">@foreach (var item in open.Take(3)) { <li><strong>@item.Label</strong> <span class="mfr-state">@item.State</span></li> }</ul>
+                    @if (open.Count > 3) { <p class="mfr-note">@(open.Count - 3) more in the full list.</p> }
+                }
+                <p><a class="btn-secondary mfr-configure" href="#mfr-config-heading" @onclick="FocusConfigurationAsync" @onclick:preventDefault data-testid="mfr-configure-altinn">Configure Altinn</a></p>
+                <ReviewDisclosure Text="@($"View all {package.Readiness.Total} prerequisites")" CollapseText="Hide prerequisites" TestId="mfr-readiness-all" Class="disclosure-inline">
+                    <ul class="mfr-readiness">@foreach (var item in package.Readiness.Items) { <li data-testid="mfr-readiness-item" data-satisfied="@(item.Satisfied ? "true" : "false")"><span class="mfr-readiness-mark" aria-hidden="true">@(item.Satisfied ? "✓" : "○")</span><span class="mfr-readiness-text"><strong>@item.Label:</strong> @(item.Satisfied ? "Configured" : "Needs attention") · @item.State <small>@item.Explanation</small></span></li> }</ul>
+                </ReviewDisclosure>
+                <p class="mfr-note">Implementation readiness: not source verified. QA configuration: not verified. Runtime: not observed.</p>
             </section>
         </div>
+        <ReviewDisclosure Text="Flow details" CollapseText="Hide flow details" Hint="data handling, receipts, lifecycle, authority" TestId="mfr-flow-details" Class="mfr-disclosure">
         @if (package.Flow.DataHandling is { } handling)
         {
             <section class="mfr-card" aria-labelledby="mfr-data-heading"><h3 id="mfr-data-heading">Data handling</h3>
@@ -85,20 +97,34 @@
         {
             <section class="mfr-card" aria-labelledby="mfr-authority-heading"><h3 id="mfr-authority-heading">Decision and artifact authority</h3><p>The task-provided consolidated Spec-Kit baseline is the pilot authority; older architecture assumptions below are superseded evidence, not current implementation findings.</p><ul>@foreach (var note in package.Flow.AuthorityNotes) { <li><strong>@note.Topic — @note.State.</strong> @note.Description <small>Source: @note.SourceReference. Superseded by: @note.SupersededBy</small></li> }</ul></section>
         }
-        <section class="mfr-card" aria-labelledby="mfr-config-heading"><h3 id="mfr-config-heading">Altinn Test Configuration</h3>
-            <p>Safe references only. Never enter secrets, tokens, private keys, connection strings, message payloads, or real personal data.</p>
-            <div class="mfr-form">
+        </ReviewDisclosure>
+        <section class="mfr-card" aria-labelledby="mfr-config-heading" data-testid="mfr-config"><h3 id="mfr-config-heading" tabindex="-1">Altinn Test Configuration</h3>
+            <p class="mfr-safe" data-testid="mfr-safe-warning"><strong>Safe references only.</strong> Never enter secrets, tokens, private keys, connection strings, message payloads or real personal data.</p>
+            <div class="mfr-groups">
+            <fieldset class="mfr-group" data-testid="mfr-group-application"><legend>Application</legend><div class="mfr-form">
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
-                <label>Authentication type<select @bind="_auth"><option value="Unknown">Needs verification</option>@foreach (var auth in Enum.GetValues<ExternalAuthenticationType>().Where(x => x != ExternalAuthenticationType.Unknown)) { <option value="@auth">@auth</option> }</select></label>
                 <label>Safe base URL reference<input @bind="_baseUrl" /></label><label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
-                <label>Tenant reference<input @bind="_tenant" /></label><label>Client / app reference<input @bind="_client" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" /></label>
-                <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label><label>Test reporter type<input @bind="_reporterType" /></label><label>Test reporter reference<input @bind="_reporter" /></label>
+            </div></fieldset>
+            <fieldset class="mfr-group" data-testid="mfr-group-authentication"><legend>Authentication</legend><div class="mfr-form">
+                <label>Authentication type<select @bind="_auth"><option value="Unknown">Needs verification</option>@foreach (var auth in Enum.GetValues<ExternalAuthenticationType>().Where(x => x != ExternalAuthenticationType.Unknown)) { <option value="@auth">@auth</option> }</select></label>
+                <label>Client / app reference<input @bind="_client" /></label><label>Tenant reference<input @bind="_tenant" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" /></label>
+                @if (UsesCertificate) { <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label> }
+            </div>
+            <p class="mfr-note" data-testid="mfr-verified-scopes">Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p></fieldset>
+            <fieldset class="mfr-group" data-testid="mfr-group-reporter"><legend>Reporter &amp; test data</legend><div class="mfr-form">
+                <label>Test reporter type<input @bind="_reporterType" /></label><label>Test reporter reference<input @bind="_reporter" /></label>
                 <label class="mfr-check"><input type="checkbox" @bind="_reporterApproved" /> Reporter access approved for this test</label>
-                <label>Approved synthetic identity-set reference<input @bind="_identitySet" /></label><label>MU channel reference<input @bind="_channel" /></label>
-                <label>Queue reference<input @bind="_queue" /></label><label>Payload store reference<input @bind="_payload" /></label>
-                <label>Message type<input @bind="_messageType" /></label><label>Contract reference<input @bind="_contract" /></label><label>Contract version<input @bind="_version" /></label>
+                <label>Approved synthetic identity-set reference<input @bind="_identitySet" /></label>
+                <label class="mfr-check"><input type="checkbox" @bind="_syntheticApproved" /> Test data is approved synthetic data</label>
+            </div></fieldset>
+            <fieldset class="mfr-group" data-testid="mfr-group-transport"><legend>Message transport</legend><div class="mfr-form">
+                <label>MU channel reference<input @bind="_channel" /></label><label>Message type<input @bind="_messageType" /></label>
+                @if (UsesBroker) { <label>Queue reference<input @bind="_queue" /></label><label>Payload store reference<input @bind="_payload" /></label> }
+            </div></fieldset>
+            <fieldset class="mfr-group mfr-group-wide" data-testid="mfr-group-contracts"><legend>Contracts &amp; correlation</legend><div class="mfr-form">
+                <label>Contract reference<input @bind="_contract" /></label><label>Contract version<input @bind="_version" /></label>
                 <label>Source Analysis snapshot<select value="@_sourceSnapshot" @onchange="SourceSnapshotChanged"><option value="">No source snapshot selected</option>@foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.SnapshotId">@snapshot.ArchiveName · @snapshot.Fingerprint · @snapshot.AnalyzedAt.ToString("yyyy-MM-dd HH:mm") UTC</option> }</select></label>
                 @if (_sourceOptions is { } sourceOptions)
                 {
@@ -111,27 +137,48 @@
                         </div>
                     }
                 }
-                <label>Checkpoint configuration reference<input @bind="_checkpoint" /></label><label>Correlation mapping reference<input @bind="_correlation" /></label>
-                <label>Receipt mode/reference<input @bind="_receipt" /></label>
-                <label>Official documentation URLs/references (comma-separated)<input @bind="_documentation" /></label><label>Documentation platform/product<input @bind="_documentationPlatform" /></label><label>Documentation retrieved on<input type="date" @bind="_documentationRetrievedOn" /></label>
-                <label class="mfr-check"><input type="checkbox" @bind="_syntheticApproved" /> Test data is approved synthetic data</label>
             </div>
-            <p>Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p>
             @if (_sourceSnapshots.Count == 0) { <p role="status">No Source Analysis snapshots are available to select. Source evidence remains optional; <a href="/source-analysis">open Source Analysis</a>. A manual contract reference remains documented only.</p> }
             else if (_sourceOptions is { Contracts.Count: 0 }) { <p role="status">This exact snapshot has no parsed XML Schema contracts.</p> }
+            </fieldset>
+            </div>
+            <ReviewDisclosure Text="Advanced configuration" CollapseText="Hide advanced configuration" Hint="low-frequency references" TestId="mfr-advanced" Class="mfr-disclosure">
+                <div class="mfr-form" data-testid="mfr-advanced-fields">
+                @if (!UsesCertificate) { <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label> }
+                @if (!UsesBroker) { <label>Queue reference<input @bind="_queue" /></label><label>Payload store reference<input @bind="_payload" /></label> }
+                <label>Receipt mode/reference<input @bind="_receipt" /></label><label>Checkpoint configuration reference<input @bind="_checkpoint" /></label><label>Correlation mapping reference<input @bind="_correlation" /></label>
+                <label>Official documentation URLs/references (comma-separated)<input @bind="_documentation" /></label><label>Documentation platform/product<input @bind="_documentationPlatform" /></label><label>Documentation retrieved on<input type="date" @bind="_documentationRetrievedOn" /></label>
+                </div>
+                <p class="mfr-note">Shown here because they rarely apply to this configuration. Every value is saved as before.</p>
+            </ReviewDisclosure>
             <p class="mfr-note">Configuration state and verification state are independent. Production is blocked by the backend for active execution; this release has no active submission provider.</p>
         </section>
-        <div class="mfr-grid">
+        <ReviewDisclosure Text="Checkpoints" CollapseText="Hide checkpoints" Hint="@($"{package.Flow.Checkpoints.Count(c => c.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)} of {package.Flow.Checkpoints.Count} observation sources configured · configured ≠ observed")" TestId="mfr-checkpoints" Class="mfr-disclosure">
             <section class="mfr-card" aria-labelledby="mfr-checkpoints-heading"><h3 id="mfr-checkpoints-heading">Checkpoints</h3><ol>@foreach (var checkpoint in package.Flow.Checkpoints) { <li class="mfr-checkpoint"><strong>@checkpoint.Name</strong><span>Configuration @checkpoint.ConfigurationStatus; runtime @checkpoint.RuntimeStatus.</span><label>Observation source<select value="@checkpoint.ProbeType" @onchange="e => SetCheckpointProbe(checkpoint.Id, e.Value?.ToString())"><option>Manual</option><option>Azure App Insights</option><option>Azure Monitor</option><option>Service API</option><option>Read-only DB</option><option>Queue metadata</option><option>Blob metadata</option><option>External platform status</option><option>Log query</option><option>Other</option></select></label><button type="button" class="btn-secondary" aria-pressed="@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)" @onclick="() => ToggleCheckpoint(checkpoint.Id)">@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured ? "Mark observation source unconfigured" : "Mark observation source configured")</button></li> }</ol><p>Configured probe is not an observed checkpoint. Runtime status remains NotAssessed until evidence is captured.</p></section>
+        </ReviewDisclosure>
+        <ReviewDisclosure Text="Test plan" CollapseText="Hide test plan" Hint="@($"{package.TestCases.Count} case(s)")" TestId="mfr-test-plan" Class="mfr-disclosure">
             <section class="mfr-card" aria-labelledby="mfr-cases-heading"><h3 id="mfr-cases-heading">Test plan</h3>@foreach (var test in package.TestCases) { <details><summary>@test.Name</summary><p>@test.Purpose</p><p>Evidence basis: @test.EvidenceBasis</p><p>Preconditions: @string.Join("; ", test.Preconditions)</p><p>Expected: @string.Join("; ", test.ExpectedFlow)</p><p>Evidence: @string.Join("; ", test.EvidenceRequired)</p><p>@test.AutomationReadiness. @test.Limitations</p></details> }</section>
-        </div>
+        </ReviewDisclosure>
+        <ReviewDisclosure Text="Manual test procedure" CollapseText="Hide manual test procedure" Hint="used until automation is available" TestId="mfr-manual" Class="mfr-disclosure">
         <section class="mfr-card" aria-labelledby="mfr-manual-heading"><h3 id="mfr-manual-heading">Manual test procedure</h3><p>Generate a plan before automation is available. Unconfigured checkpoints remain not assessed, not failed.</p><ol>@foreach (var step in package.ManualTestPlan) { <li>@step</li> }</ol>@if (package.Flow.OpenQuestions.Count > 0) { <h4>Needs clarification</h4><ul>@foreach (var q in package.Flow.OpenQuestions) { <li>@q</li> }</ul> }</section>
+        </ReviewDisclosure>
         <p class="mfr-disclaimer">Technical status is derived from the evidence maturity shown above. Runtime/deployed behavior has not been verified.</p>
     }
 </section>
 
 @code {
     [Parameter] public string? EnvironmentId { get; set; }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    /// <summary>Certificate and key references are primary only for certificate-based authentication (Maskinporten signs with one); otherwise they
+    /// sit under Advanced. Presentation only: every value is still bound and saved.</summary>
+    private bool UsesCertificate => _auth is nameof(ExternalAuthenticationType.Certificate) or nameof(ExternalAuthenticationType.EnterpriseCertificate) or nameof(ExternalAuthenticationType.Maskinporten);
+    /// <summary>Queue and payload-store references are primary only for event, broker or file transfer; otherwise they sit under Advanced.</summary>
+    private bool UsesBroker => _submission is nameof(ExternalSubmissionMode.Event) or nameof(ExternalSubmissionMode.BrokerTransfer) or nameof(ExternalSubmissionMode.FileTransfer);
+
+    private async Task FocusConfigurationAsync()
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "mfr-config-heading"); } catch (JSException) { }
+    }
     private IntegrationMessageFlowPackage? _package;
     private IReadOnlyList<BirkNext.SourceEvidence.ReviewSourceSnapshot> _sourceSnapshots = [];
     private MessageFlowSourceContractOptions? _sourceOptions;

@@ -52,6 +52,24 @@ report processed; Service Bus accepted ≠ Bufdata processed. BirkNext never pub
 an Altinn payload. The documented message-flow pilot calls the intake "Skolenærværsmottaket" and the report service "Skoletjenesten"; that
 correspondence to MM / Skolenærværsrapport is a documentation alias, not source verified.
 
+### Page layout
+
+**Extensions → Skolenærvær Testing** shows one section at a time (`?tab=`): Overview, Utdanningsdata, Rapportmottak, Message Verification,
+Periodeavslutning, Architecture Rules and History.
+
+- **Overview is a summary.** It shows the selected project, Target Environment and source snapshot, then each journey's readiness and blocker
+  count, the top blockers and links to the owning pages. Readiness and blockers are the journey engine's own; the page does not recompute them.
+- **Each journey tab owns its detail.** Rapportmottak starts with its status and actions (*Open Rapportmottak run*, *Configure Altinn*,
+  *Open Target Environment*), then the main blockers, then every prerequisite in collapsed groups. Opening the run page sends nothing.
+- **Message Verification** has its own tab.
+- **The shared Integration Journey panel stays the execution engine.** It opens inside Rapportmottak (the run), Periodeavslutning (journey
+  details) and History. Utdanningsdata uses the shared Active Event tests.
+
+**Integration Quality Review** has four views (`?view=`): Overview, Integrations, Evidence and Test Configuration. Test Configuration holds
+the Active Event tests (summary first), the integration journey counts (the module opens on demand), the message flow review with Altinn
+readiness, and the Altinn Test Configuration. That configuration is grouped as Application, Authentication, Reporter & test data, Message
+transport, and Contracts & correlation. Low-frequency references are under *Advanced configuration*, and every value is saved as before.
+
 ### Scenario capability
 
 The journey panel's **Scenario capability** tab lists every scenario of the existing catalog. For a delegated journey such as Utdanningsdata,

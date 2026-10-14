@@ -10,10 +10,26 @@
 .mfr-flow li > * { display: block; }
 .mfr-flow small, .mfr-error small, .mfr-readiness small { color: var(--muted-text-color, #526174); }
 .mfr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+/* 60/40 with a usable minimum for the readiness column; below 1100px the two stack. */
+.mfr-grid-split { grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr); }
+.mfr-subheading { margin: .75rem 0 .35rem; font-size: .95rem; }
+.mfr-blockers { margin: 0 0 .5rem; padding-left: 1.1rem; }
+.mfr-blockers li { margin: .2rem 0; }
+.mfr-state { color: var(--muted-text-color, #526174); }
+.mfr-configure { display: inline-block; }
+.mfr-safe { margin: 0 0 .75rem; padding: .5rem .75rem; border-left: 4px solid #b54708; background: #fffaeb; border-radius: 4px; }
+.mfr-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.mfr-group { margin: 0; padding: .75rem 1rem 1rem; border: 1px solid var(--border-color, #d6dce5); border-radius: 8px; min-width: 0; }
+.mfr-group legend { padding: 0 .35rem; font-weight: 700; }
+.mfr-group .mfr-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mfr-group-wide { grid-column: 1 / -1; }
+.mfr-group-wide .mfr-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mfr-disclosure { margin-top: 1rem; }
 .mfr-error { display: grid; gap: .25rem; padding: .65rem 0; border-bottom: 1px solid var(--border-color, #d6dce5); }
 .mfr-readiness { display: grid; gap: .6rem; padding: 0; list-style: none; }
-.mfr-readiness li { display: grid; grid-template-columns: 1.2rem auto; gap: .25rem .5rem; }
-.mfr-readiness small { grid-column: 2; }
+.mfr-readiness li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); gap: .25rem .5rem; }
+.mfr-readiness-text { min-width: 0; overflow-wrap: break-word; }
+.mfr-readiness-text small { display: block; }
 .mfr-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
 .mfr-form label, .mfr-card > label { display: grid; gap: .3rem; font-weight: 600; }
 .mfr-form input:not([type=checkbox]), .mfr-form select, .mfr-card > label input { min-width: 0; width: 100%; padding: .45rem; }
@@ -25,5 +41,9 @@
 .mfr-checkpoint { display: grid; gap: .4rem; margin: .65rem 0; padding-bottom: .65rem; border-bottom: 1px solid var(--border-color, #d6dce5); }
 .mfr-card summary { cursor: pointer; font-weight: 700; }
 .mfr-panel button:focus-visible, .mfr-panel input:focus-visible, .mfr-panel select:focus-visible, .mfr-panel summary:focus-visible { outline: 3px solid #245fcc; outline-offset: 2px; }
-@media (max-width: 900px) { .mfr-grid { grid-template-columns: 1fr; } .mfr-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 520px) { .mfr-panel { padding: .75rem; } .mfr-form { grid-template-columns: 1fr; } .mfr-heading-row { align-items: flex-start; flex-direction: column; } .mfr-actions { justify-content: flex-start; } }
+@media (max-width: 1100px) { .mfr-grid-split, .mfr-groups { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .mfr-grid { grid-template-columns: 1fr; } .mfr-form, .mfr-group-wide .mfr-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .mfr-panel { padding: .75rem; } .mfr-form { grid-template-columns: 1fr; } .mfr-heading-row { align-items: flex-start; flex-direction: column; } .mfr-group .mfr-form, .mfr-group-wide .mfr-form { grid-template-columns: 1fr; } .mfr-actions { justify-content: flex-start; } }
+.mfr-configure { text-decoration: none; }
+/* A date input keeps focus on its inner date segments, so :focus-visible on the input does not match: outline it while focus is inside. */
+.mfr-panel input[type=date]:focus-within { outline: 3px solid #245fcc; outline-offset: 2px; }

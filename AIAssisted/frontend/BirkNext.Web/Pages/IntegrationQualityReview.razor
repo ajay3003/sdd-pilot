@@ -10,6 +10,8 @@
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IntegrationMappingEvidenceSession MappingEvidence
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject IServiceProvider Services
 
 <PageTitle>Integration Quality Review</PageTitle>
 
@@ -38,11 +40,18 @@
     }
     else if (_profile is { } profile && _result is null)
     {
-        @* ── Pre-run ── Four groups, summary first: Review overview (scope, readiness + Run, what can be reviewed) → Evidence (source,
-           runtime) → Integration areas → Active tests. Presentation only: headline, domain readiness and the Run gate are the
-           backend's; every detail stays reachable behind a disclosure. Corrective actions deep-link to Target Environment →
-           Integrations; nothing is configured here. *@
-        <section class="iqr-group" aria-labelledby="iqr-group-overview-heading" data-testid="iqr-group-overview">
+        @* ── Pre-run ── Four views, one shown at a time (?view=): Overview (scope, readiness + Run, what can be reviewed), Integrations,
+           Evidence (source, runtime, contracts) and Test Configuration (active tests, integration journeys, message flow and Altinn
+           test configuration). Presentation only: headline, domain readiness and the Run gate are the backend's; every detail stays
+           reachable behind a disclosure. The three review views stay in the DOM (hidden), so their data is loaded once; the shared
+           test modules mount only when opened. Corrective actions deep-link to Target Environment → Integrations. *@
+        <nav class="iqr-views" aria-label="Integration Quality Review views" data-testid="iqr-views">
+            @foreach (var (key, label) in Views)
+            {
+                <a href="@ViewHref(key)" class="iqr-view @(CurrentView == key ? "iqr-view-active" : "")" aria-current="@(CurrentView == key ? "page" : null)" data-testid="@($"iqr-view-{key}")">@label</a>
+            }
+        </nav>
+        <section class="iqr-group" aria-labelledby="iqr-group-overview-heading" data-testid="iqr-group-overview" hidden="@(CurrentView != OverviewView)">
             <h2 class="iqr-group-heading" id="iqr-group-overview-heading">Review overview</h2>
             <section class="iqr-card iqr-scope @(_readiness is { } r0 ? $"iqr-readiness iqr-readiness-{IntegrationReviewPrerunPresentation.ReadinessTone(r0)}" : "")" aria-labelledby="iqr-scope-heading" data-testid="iqr-scope">
                 <h3 id="iqr-scope-heading">Configured scope</h3>
@@ -169,7 +178,7 @@
             }
         </section>
 
-        <section class="iqr-group" aria-labelledby="iqr-group-evidence-heading" data-testid="iqr-group-evidence">
+        <section class="iqr-group" aria-labelledby="iqr-group-evidence-heading" data-testid="iqr-group-evidence" hidden="@(CurrentView != EvidenceView)">
             <h2 class="iqr-group-heading" id="iqr-group-evidence-heading">Evidence</h2>
             @{ var snapshots = _readiness?.SourceSnapshots ?? []; }
             <section class="iqr-card" aria-labelledby="iqr-source-summary-heading" data-testid="iqr-source-evidence">
@@ -232,11 +241,21 @@
                     }
                 </section>
             }
+
+            <section class="iqr-card" aria-labelledby="iqr-contracts-heading" data-testid="iqr-contracts">
+                <h3 id="iqr-contracts-heading">Contracts</h3>
+                <p>XML Schema contracts are chosen from an immutable Source Analysis snapshot in the Altinn Test Configuration; a typed-in contract reference stays documented only. Configured is not observed: no contract is validated against runtime messages here.</p>
+                <a class="iqr-link" href="@ViewHref(TestConfigurationView)" data-testid="iqr-manage-contracts">Manage contracts in Test Configuration</a>
+            </section>
         </section>
 
+        @if (CurrentView == IntegrationsView && _readiness is null && _error is null)
+        {
+            <p class="iqr-muted" role="status" data-testid="iqr-integrations-loading">Loading configured integrations…</p>
+        }
         @if (_readiness is { } areas)
         {
-            <section class="iqr-group" aria-labelledby="iqr-group-areas-heading" data-testid="iqr-group-areas">
+            <section class="iqr-group" aria-labelledby="iqr-group-areas-heading" data-testid="iqr-group-areas" hidden="@(CurrentView != IntegrationsView)">
                 <h2 class="iqr-group-heading" id="iqr-group-areas-heading">Integration areas</h2>
                 <section class="iqr-card" aria-labelledby="iqr-systems-heading" data-testid="iqr-systems">
                     <h3 id="iqr-systems-heading">Configured integration system@(areas.Systems.Count == 1 ? "" : "s")</h3>
@@ -370,11 +389,38 @@
             </section>
         }
 
-        @* Active tests last: the component's own heading is the group heading; summary first, runner collapsed, every guard unchanged. *@
-        <div class="iqr-group iqr-group-active" data-testid="iqr-group-active-tests">
-            <ActiveEventTestingPanel SummaryFirst="true" Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
-            <IntegrationJourneyPanel Profile="profile" />
-        </div>
+        @if (CurrentView == TestConfigurationView)
+        {
+            @* Test Configuration: the shared test modules as compact summaries (active tests summary-first; integration journeys as counts, the
+               full module mounting only when opened), every guard unchanged; then the message flow review with Altinn readiness and the
+               grouped Altinn Test Configuration. *@
+            <section class="iqr-group" aria-labelledby="iqr-group-tests-heading" data-testid="iqr-group-test-configuration">
+                <h2 class="iqr-group-heading" id="iqr-group-tests-heading">Test configuration</h2>
+                <div class="iqr-test-cards">
+                    @* Active tests: the shared panel is already summary-first (scenarios, execution, blockers) with its runner collapsed. *@
+                    <div class="iqr-active-tests" data-testid="iqr-group-active-tests">
+                        <ActiveEventTestingPanel SummaryFirst="true" Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
+                    </div>
+                    <section class="iqr-card" aria-labelledby="iqr-journeys-summary-heading" data-testid="iqr-journeys-summary">
+                        <h3 id="iqr-journeys-summary-heading">Integration journeys</h3>
+                        @if (_journeySummary is { } journeys)
+                        {
+                            <dl class="iqr-facts">
+                                <div><dt>Journeys</dt><dd data-testid="iqr-journeys-total">@journeys.Total</dd></div>
+                                <div><dt>Ready</dt><dd data-testid="iqr-journeys-ready">@journeys.Ready</dd></div>
+                                <div><dt>Not ready</dt><dd data-testid="iqr-journeys-blocked">@journeys.NotReady</dd></div>
+                            </dl>
+                        }
+                        else { <p class="iqr-muted" role="status">@(_testSummaryError ?? "Loading the integration journey summary…")</p> }
+                        <p class="iqr-muted">Readiness is the journeys' own; Ready means it may be started after confirmation, never that it passed.</p>
+                        <ReviewDisclosure Text="Open integration journeys" CollapseText="Close integration journeys" TestId="iqr-open-journeys" @bind-Expanded="_journeysOpen">
+                            @if (_journeysOpen) { <IntegrationJourneyPanel Profile="profile" /> }
+                        </ReviewDisclosure>
+                    </section>
+                </div>
+                <MessageFlowReviewPanel EnvironmentId="@profile.Id" />
+            </section>
+        }
     }
     else if (_result is { } result)
     {
@@ -702,7 +748,7 @@
             }
         </div>
     }
-    @if (_profile is { } messageFlowProfile)
+    @if (_result is not null && _profile is { } messageFlowProfile)
     {
         <MessageFlowReviewPanel EnvironmentId="@messageFlowProfile.Id" />
     }
@@ -736,6 +782,49 @@
     private string? _error;
     private bool _running;
     private string _tab = "Overview";
+
+    private const string OverviewView = "overview";
+    private const string IntegrationsView = "integrations";
+    private const string EvidenceView = "evidence";
+    private const string TestConfigurationView = "test-configuration";
+    private static readonly (string Key, string Label)[] Views =
+        [(OverviewView, "Overview"), (IntegrationsView, "Integrations"), (EvidenceView, "Evidence"), (TestConfigurationView, "Test Configuration")];
+    /// <summary>The pre-run view (?view=); anything else is the Overview.</summary>
+    [SupplyParameterFromQuery(Name = "view")] public string? View { get; set; }
+    private string CurrentView => Views.Any(view => view.Key == View) ? View! : OverviewView;
+    private string ViewHref(string key) => Navigation.GetUriWithQueryParameter("view", key == OverviewView ? null : key);
+
+    private sealed record JourneySummary(int Total, int Ready, int NotReady);
+    private JourneySummary? _journeySummary;
+    private string? _testSummaryError;
+    private string? _testSummaryFor;
+    private bool _journeysOpen;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CurrentView == TestConfigurationView) await LoadTestSummariesAsync();
+    }
+
+    /// <summary>Journey counts from the journeys' own read-only readiness endpoint; loaded once, only for this view.</summary>
+    private async Task LoadTestSummariesAsync()
+    {
+        if (_profile is not { } profile || _testSummaryFor == profile.Id) return;
+        _testSummaryFor = profile.Id;
+        try
+        {
+            if (Services.GetService<IIntegrationJourneysApiService>() is { } journeysApi)
+            {
+                var packs = (await journeysApi.PacksAsync(profile.Id)).Value ?? [];
+                var all = packs.SelectMany(pack => pack.Journeys).ToList();
+                _journeySummary = new(all.Count, all.Count(view => view.Readiness == JourneyReadinessState.Ready), all.Count(view => view.Readiness != JourneyReadinessState.Ready));
+            }
+            else _testSummaryError = "Integration journeys are not available in this build.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _testSummaryError = "The journey summary could not be loaded; open the integration journeys for detail.";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
