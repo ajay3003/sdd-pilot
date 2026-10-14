@@ -2,6 +2,7 @@ using BirkNext.Web;
 using BirkNext.Web.Configuration;
 using BirkNext.Web.GraphQL;
 using BirkNext.Web.Services;
+using BirkNext.Web.Services.SchemaStudio;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -57,6 +58,7 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
     client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
+builder.Services.AddSingleton<SchemaStudioService>();
 builder.Services.AddSingleton<MarkdownRenderingService>();
 
 // Strawberry Shake registers concrete mutation classes but omits interface mappings.

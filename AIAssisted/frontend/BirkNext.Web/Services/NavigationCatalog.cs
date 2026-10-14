@@ -115,6 +115,8 @@ public static class NavigationCatalog
         [
             new("source-analysis", "Source Analysis", "nav-icon-source-analysis", f => f.SourceAnalysis,
                 Hint: "inspect the current source snapshot (from Import Project or a source-only upload)"),
+            new("schema-studio", "Schema Studio", "nav-icon-source-analysis", Always,
+                Hint: "import, inspect, compare and validate generic XSD contracts"),
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always,
                 Hint: "what the source contains and what BirkNext can assess"),
             new("dependency-review", "Dependency Review", "nav-icon-constitution-compliance", Always, ReviewId: "dependency-review"),

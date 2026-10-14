@@ -1,0 +1,46 @@
+.ss-page { max-width: 1180px; margin: 0 auto; padding: 1.25rem; color: var(--text-primary, #18212f); }
+.ss-page h2 { margin: 0 0 .55rem; font-size: 1.25rem; }
+.ss-page h3 { margin: 1.2rem 0 .45rem; font-size: 1.05rem; }
+.ss-page p { line-height: 1.55; }
+.ss-note,.ss-warning { padding: .8rem 1rem; border-left: 4px solid #3b82f6; background: #eff6ff; border-radius: .35rem; }
+.ss-import,.ss-workspace,.ss-card { margin: 1.2rem 0; padding: 1rem; border: 1px solid #d5dbe5; border-radius: .65rem; background: var(--surface, #fff); }
+.ss-import p,.ss-heading p,.ss-empty { color: #536174; }
+.ss-upload { display: inline-flex; flex-direction: column; gap: .35rem; margin: .35rem 1rem .5rem 0; padding: .7rem; border: 1px solid #aeb8c7; border-radius: .45rem; font-weight: 600; }
+.ss-upload input { max-width: 100%; font-weight: 400; }
+.ss-error { color: #9b1c1c; }
+.ss-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.ss-heading code { overflow-wrap: anywhere; }
+.ss-package-list { display: grid; gap: .5rem; }
+.ss-package { display: flex; align-items: center; gap: 1rem; border: 1px solid #d5dbe5; border-radius: .5rem; padding: .5rem .8rem; }
+.ss-package.selected { border-color: #2864b4; box-shadow: 0 0 0 1px #2864b4; }
+.ss-package-open { display: grid; text-align: left; flex: 1; gap: .2rem; border: 0; background: transparent; color: inherit; padding: .25rem; cursor: pointer; }
+.ss-package-open span { color: #536174; }
+.ss-text-button,.ss-link { color: #1558a6; border: 0; background: transparent; text-decoration: underline; cursor: pointer; }
+.ss-action { display: inline-block; border: 1px solid #174d86; background: #174d86; color: white; padding: .55rem .85rem; border-radius: .4rem; cursor: pointer; text-decoration: none; font: inherit; }
+.ss-action:focus-visible,.ss-tabs button:focus-visible,.ss-package button:focus-visible,.ss-page a:focus-visible,.ss-page select:focus-visible,.ss-page input:focus-visible,.ss-page textarea:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.ss-tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin: 1rem 0; border-bottom: 1px solid #ccd4df; }
+.ss-tabs button { padding: .55rem .75rem; border: 0; background: transparent; border-bottom: 3px solid transparent; color: inherit; cursor: pointer; font: inherit; }
+.ss-tabs button.active { border-bottom-color: #174d86; font-weight: 700; }
+.ss-stats { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,220px),1fr)); gap: .8rem; }
+.ss-stats div { border: 1px solid #d5dbe5; padding: .8rem; border-radius: .45rem; overflow-wrap: anywhere; }
+.ss-stats dt { color: #536174; font-size: .9rem; }
+.ss-stats dd { margin: .25rem 0 0; font-weight: 600; }
+.ss-table-wrap { width: 100%; overflow-x: auto; }
+.ss-page table { border-collapse: collapse; width: 100%; margin: .7rem 0; }
+.ss-page th,.ss-page td { text-align: left; vertical-align: top; border-bottom: 1px solid #d5dbe5; padding: .55rem; overflow-wrap: anywhere; }
+.ss-dependencies,.ss-tree { padding-left: 1.35rem; }
+.ss-tree li,.ss-dependencies li { margin: .4rem 0; }
+.ss-tree small { display: block; color: #536174; }
+.ss-raw,.ss-editor { display: block; box-sizing: border-box; width: 100%; max-height: 70vh; overflow: auto; padding: 1rem; border: 1px solid #ccd4df; border-radius: .45rem; background: #f6f8fb; white-space: pre; }
+.ss-editor { min-height: 24rem; white-space: pre; font: 14px/1.5 Consolas,monospace; }
+.ss-xml { min-height: 10rem; }
+.ss-field,.ss-profile label { display: inline-flex; flex-direction: column; gap: .3rem; margin: .5rem .8rem .5rem 0; }
+.ss-field select,.ss-profile input { min-width: 12rem; max-width: 100%; padding: .45rem; }
+.ss-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ss-result { padding: .7rem; border: 1px solid #aeb8c7; border-radius: .4rem; }
+.ss-profile { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.ss-profile button { padding: .5rem .8rem; }
+.ss-search { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .75rem 0; font-weight: 600; }
+.ss-search input { flex: 1 1 18rem; min-width: 0; padding: .55rem; }
+.ss-search-results small { display: block; color: #536174; }
+@media (max-width: 600px) { .ss-page { padding: .8rem; } .ss-package { align-items: flex-start; } .ss-upload { display: flex; margin-right: 0; } .ss-tabs { flex-wrap: nowrap; overflow-x: auto; } .ss-tabs button { flex: 0 0 auto; } .ss-heading { align-items: flex-start; } }

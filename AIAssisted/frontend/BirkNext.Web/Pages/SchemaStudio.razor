@@ -1,0 +1,311 @@
+@page "/schema-studio"
+@using System.Text
+@using System.Xml
+@using BirkNext.Web.Services.SchemaStudio
+@using Microsoft.AspNetCore.Components.Forms
+@inject SchemaStudioService Studio
+
+<PageTitle>Schema Studio</PageTitle>
+<main class="ss-page">
+    <PageHeader Title="Schema Studio" Description="A generic workspace for exploring, comparing and testing XML Schema (XSD) contracts. Imports are analyzed locally in this browser session; schemas are never fetched from remote locations." />
+    <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p>
+    <section class="ss-import" aria-labelledby="ss-import-title">
+        <h2 id="ss-import-title">Import XSD files or a package</h2>
+        <label class="ss-upload">Choose one or more .xsd files <InputFile accept=".xsd" multiple OnChange="ImportFiles" aria-label="Choose XSD files" /></label>
+        <label class="ss-upload">Choose an XSD ZIP package <InputFile accept=".zip" OnChange="ImportZip" aria-label="Choose XSD ZIP package" /></label>
+        <button class="ss-action" @onclick="() => _creating = !_creating">Create new XSD</button>
+        <p>Maximum 100 schema files, 2 MB each and 20 MB total. Package contents stay in memory for this browser session.</p>
+        @if (_creating)
+        {
+            <div class="ss-create" aria-label="Create new XSD wizard">
+                <label>Schema name <input @bind="_newSchemaName" /></label><label>Target namespace <input @bind="_newNamespace" /></label><label>Root element <input @bind="_newRoot" /></label>
+                <button class="ss-action" @onclick="CreateSchema">Create schema and open Designer</button>
+            </div>
+        }
+        @if (_error is not null) { <p class="ss-error" role="alert">@_error</p> }
+    </section>
+
+    <section aria-labelledby="ss-packages-title">
+        <div class="ss-heading"><h2 id="ss-packages-title">Schema packages and versions</h2><span>@Studio.Packages.Count in this session</span></div>
+        @if (Studio.Packages.Count == 0)
+        {
+            <p class="ss-empty">No schemas imported. Choose an XSD or ZIP package to begin.</p>
+        }
+        else
+        {
+            <div class="ss-package-list">
+                @foreach (var item in Studio.Packages)
+                {
+                    <article class="ss-package @(item.Id == _selectedId ? "selected" : "")">
+                        <button class="ss-package-open" @onclick="() => Select(item.Id)"><strong>@item.Name</strong><span>@item.Files.Count file(s) · @item.Validation · @item.ImportedAt.ToLocalTime().ToString("g")</span><code>@item.Fingerprint[..12]</code></button>
+                        <button class="ss-text-button" @onclick="() => Remove(item.Id)" aria-label="Remove @item.Name">Remove</button>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    @if (Current is { } package)
+    {
+        <section class="ss-workspace" aria-labelledby="ss-current-title">
+        <div class="ss-heading"><div><h2 id="ss-current-title">@package.Name</h2><p>@package.Files.Count XSD file(s) · @package.Validation · Fingerprint <code>@package.Fingerprint</code></p></div>
+                @if (CurrentFile is { } active) { <a class="ss-action" download="@active.Name" href="@Download(active.Text, "application/xml")">Export current XSD</a> }
+                <a class="ss-action" download="@(package.Name + ".zip")" href="@Download(Convert.ToBase64String(SchemaStudioService.ExportZip(package)), "application/zip", true)">Export package ZIP</a>
+            </div>
+            <label class="ss-search">Search this package <input type="search" @bind="_search" @bind:event="oninput" placeholder="Element, type, namespace, filename, facet" /></label>
+            @if (!string.IsNullOrWhiteSpace(_search))
+            {
+                <ul class="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small>@result.File · @result.Tab · @result.Match</small></li> }</ul>
+            }
+            <nav class="ss-tabs" aria-label="Schema package views">
+                @foreach (var tab in Tabs) { <button class="@(tab == _tab ? "active" : "")" aria-current="@(tab == _tab ? "page" : null)" @onclick="() => _tab = tab">@tab</button> }
+            </nav>
+            @if (package.Diagnostics.Count > 0) { <div class="ss-warning" role="status"><strong>Partial dependency resolution</strong><ul>@foreach (var d in package.Diagnostics) { <li>@d</li> }</ul></div> }
+            @switch (_tab)
+            {
+                case "Overview":
+                    <dl class="ss-stats"><div><dt>Root XSD</dt><dd>@(package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"))?.Name ?? "Not identified")</dd></div><div><dt>Namespaces</dt><dd>@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div><div><dt>Dependencies</dt><dd>@package.Files.Sum(f => f.Links.Count) links · @package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null)) unresolved</dd></div><div><dt>Global declarations</dt><dd>@package.Files.Sum(f => f.Declarations.Count)</dd></div></dl>
+                    <p>Current imported artifact is the version you selected for this session. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
+                    break;
+                case "Linked XSDs":
+                    var dependencyEdges = DependencyEdges(package, _graphMode).Take(1001).ToArray();
+                    <p>Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
+                    <label class="ss-field">Dependency view <select @bind="_graphMode"><option>Files only</option><option>Files + namespaces</option><option>Files + types</option><option>All relationships</option></select></label>
+                    <div class="ss-table-wrap"><table><thead><tr><th>File</th><th>Namespace</th><th>Relationship</th><th>Schema location</th><th>Resolution</th></tr></thead><tbody>
+                    @foreach (var f in package.Files) { <tr><td><button class="ss-link" @onclick="() => _fileName = f.Name">@f.Name</button></td><td>@(f.TargetNamespace ?? "—")</td><td>Root file</td><td>—</td><td>Available</td></tr>@foreach (var link in f.Links) { <tr><td>@f.Name</td><td>@(link.Namespace ?? "—")</td><td>@link.Kind</td><td>@(link.Location ?? "—")</td><td>@(link.ResolvedFile is null ? "Unresolved" : "Resolved: " + link.ResolvedFile)</td></tr> } }
+                    </tbody></table></div>
+                    <h3>Dependency relationships</h3>
+                    @if (dependencyEdges.Length > SchemaStudioService.MaxRelationships || (package.ReferencesTruncated && _graphMode is "Files + types" or "All relationships"))
+                    {
+                        <p class="ss-warning" role="status">Relationship view limited to 1,000 entries. Showing the first 1,000 relationships; additional relationships are omitted.</p>
+                    }
+                    <ul class="ss-dependencies">@foreach (var edge in dependencyEdges.Take(1000)) { <li>@edge</li> }</ul>
+                    break;
+                case "Schema Tree":
+                    <p>Declared schema structures, grouped by file. Linked source files remain separate artifacts.</p>
+                    @foreach (var f in package.Files) { <h3>@f.Name · @(f.TargetNamespace ?? "no target namespace")</h3><ul class="ss-tree">@foreach (var d in f.Declarations) { <li><strong>@d.Name</strong> <small>@d.Kind · @(d.Type ?? d.BaseType ?? "inline") · declared in @f.Name</small>@if (d.Compositor is not null) { <small>Compositor: @d.Compositor</small> }@if (d.Documentation is not null) { <p>@d.Documentation</p> }@if (d.Children.Count > 0) { <ul>@foreach (var child in d.Children) { <li>@child.Name <small>@(child.Type ?? "inline") · @(child.MinOccurs)..@(child.MaxOccurs) · @child.SourceFile @(child.Compositor is null ? "" : "· " + child.Compositor)</small>@if (child.Documentation is not null) { <p>@child.Documentation</p> }</li> }</ul> }</li> }</ul> }
+                    break;
+                case "Effective Schema":
+                    <p>Effective logical view resolves linked type use and inheritance while preserving provenance. Physical XSD files remain separate.</p>
+                    @foreach (var root in package.EffectiveSchema) { <article class="ss-card"><h3>@root.Name <small>root · declared in @root.DeclaredIn</small></h3><ul class="ss-tree">@foreach (var member in root.Children) { @RenderMember(member) }</ul></article> }
+                    @if (package.EffectiveSchema.Count == 0) { <p>No global root elements were found.</p> }
+                    break;
+                case "Types":
+                    <div class="ss-table-wrap"><table><thead><tr><th>Declaration</th><th>Kind</th><th>Type/base</th><th>Source</th><th>Facets / members</th><th>Usage</th></tr></thead><tbody>@foreach (var f in package.Files) { @foreach (var d in f.Declarations.Where(d => _tab == "References" || d.Kind is "simpleType" or "complexType")) { <tr><td>@d.Name @if (d.Documentation is not null) { <details><summary>Documentation</summary><p>@d.Documentation</p></details> }</td><td>@d.Kind</td><td>@(d.Type ?? d.BaseType ?? "—")</td><td>@f.Name</td><td>@string.Join(", ", d.Facets.Select(x => x.Kind + "=" + x.Value)) · @d.Children.Count child elements @if (d.BaseType is not null) { <span>· extends @d.BaseType</span> }</td><td>@UsageCount(package, d.Name) reference(s)</td></tr> } }</tbody></table></div>
+                    break;
+                case "References":
+                    <p>Cross-file type use, inheritance and element references, with both source and declaration files.</p>
+                    @if (package.ReferencesTruncated)
+                    {
+                        <p class="ss-warning" role="status">Reference view limited to 1,000 entries. Showing the first 1,000 references; additional references are omitted.</p>
+                    }
+                    <div class="ss-table-wrap"><table><thead><tr><th>Relationship</th><th>Declaration</th><th>Referenced from</th><th>Declared in</th><th>Path</th></tr></thead><tbody>@foreach (var reference in package.References) { <tr><td>@reference.Kind</td><td>@reference.Name</td><td>@reference.SourceFile</td><td>@reference.TargetFile</td><td>@(reference.Path ?? "—")</td></tr> }</tbody></table></div>
+                    @if (package.References.Count == 0) { <p>No cross-file references were resolved.</p> }
+                    break;
+                case "Constraints":
+                    <div class="ss-table-wrap"><table><thead><tr><th>Type/path</th><th>Constraint</th><th>Value</th><th>Source XSD</th></tr></thead><tbody>@foreach (var f in package.Files) { @foreach (var d in f.Declarations) { @foreach (var facet in d.Facets) { <tr><td>@d.Path</td><td>@facet.Kind</td><td>@facet.Value</td><td>@f.Name</td></tr> } @foreach (var e in d.Children) { <tr><td>@(d.Path + "/" + e.Name)</td><td>Occurrence</td><td>@e.MinOccurs..@e.MaxOccurs @(e.Compositor is null ? "" : "· " + e.Compositor)</td><td>@e.SourceFile</td></tr> @foreach (var facet in e.Facets) { <tr><td>@(d.Path + "/" + e.Name)</td><td>@facet.Kind</td><td>@facet.Value</td><td>@e.SourceFile</td></tr> } } } }</tbody></table></div>
+                    break;
+                case "Namespaces":
+                    @foreach (var group in package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)")) { <article class="ss-card"><h3>@group.Key</h3><p>@string.Join(", ", group.Select(f => f.Name))</p><p>Global elements and types: @group.Sum(f => f.Declarations.Count)</p><p>Imported by: @string.Join(", ", package.Files.Where(f => f.Links.Any(l => l.ResolvedFile is not null && group.Any(g => g.Name == l.ResolvedFile))).Select(f => f.Name).DefaultIfEmpty("None"))</p></article> }
+                    break;
+                case "Raw XSD":
+                    <label class="ss-field">XSD file <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
+                    <pre class="ss-raw"><code>@(CurrentFile?.Text)</code></pre>
+                    break;
+                case "Designer":
+                    <p>Schema Designer. Add a child to an inline or named complex root type, or edit the XSD draft below. Saving always creates a separate version.</p>
+                    <label class="ss-field">File <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
+                    <div class="ss-create"><label>Child element <input @bind="_newChildName" /></label><label>Type <select @bind="_newChildType"><option value="xs:string">String</option><option value="xs:decimal">Decimal</option><option value="xs:integer">Integer</option><option value="xs:boolean">Boolean</option><option value="xs:date">Date</option></select></label><label>Occurrence <select @bind="_newChildMin"><option value="1">Required</option><option value="0">Optional</option></select></label><button class="ss-action" @onclick="AddDraftElement">Add child element</button></div>
+                    <textarea class="ss-editor" @bind="_draft" aria-label="Edit XSD source"></textarea>
+                    <button class="ss-action" @onclick="SaveDraft">Validate and save new version</button>
+                    break;
+                case "Compare":
+                    <p>Compare immutable package fingerprints and declaration summaries. Import a second version to compare it with the current package.</p>
+                    @if (Studio.Packages.Count > 1) { var prior = Studio.Packages.Where(p => p.Id != package.Id && p.Name == package.Name).OrderByDescending(p => p.ImportedAt).FirstOrDefault() ?? Studio.Packages.First(p => p.Id != package.Id); <p>Comparing with <strong>@prior.Name</strong> (@prior.Fingerprint[..12])</p><ul>@foreach (var change in Compare(prior, package)) { <li>@change</li> }</ul> } else { <p>Import a second package/version to see contract changes.</p> }
+                    break;
+                case "Generated Tests":
+                    <p>Cases derive from XSD declarations and constraints. They test schema behavior only, not business or integration behavior.</p>
+                    <p>Cases run locally against the imported package. Expected validity and actual validator output are shown separately.</p>
+                    <div class="ss-actions"><button class="ss-action" @onclick="RunGeneratedTests">Run generated tests (first 100)</button></div>
+                    <div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Derived case</th><th>Value or mutation</th><th>Expected</th><th>Source XSD</th><th>Action</th></tr></thead><tbody>@foreach (var test in package.GeneratedTests) { <tr><td>@test.Path</td><td>@test.Rule</td><td><code>@test.Value</code></td><td>@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.SourceFile</td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML</button></td></tr> }</tbody></table></div>
+                    @if (_testResults.Count > 0) { <h3>Test results</h3><div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Case</th><th>Expected</th><th>Actual</th><th>Outcome</th><th>Evidence</th></tr></thead><tbody>@foreach (var result in _testResults) { <tr><td>@result.Path</td><td>@result.Rule</td><td>@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Actual</td><td>@result.Outcome</td><td><details><summary>Diagnostic and generated XML</summary><p>@result.Diagnostic</p><pre class="ss-raw"><code>@result.Xml</code></pre></details></td></tr> }</tbody></table></div> }
+                    <label class="ss-field">Validate XML against <select @bind="_fileName">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
+                    <textarea class="ss-editor ss-xml" @bind="_xml" aria-label="XML instance to validate"></textarea>
+                    <div class="ss-actions"><button class="ss-action" @onclick="GenerateXml">Generate minimum example</button><button class="ss-action" @onclick="ValidateXml">Validate XML</button></div>
+                    @if (_validationMessage is not null) { <p role="status" class="ss-result">@_validationMessage</p> }
+                    break;
+                case "Test Data Profile":
+                    <p>Profile values are separate from the schema contract and are held only in this component state.</p>
+                    <div class="ss-profile"><label>Element/path <input @bind="_profilePath" list="ss-profile-paths" /></label><datalist id="ss-profile-paths">@foreach (var testPath in package.GeneratedTests.Select(t => t.Path).Distinct()) { <option value="@testPath"></option> }</datalist><label>Test value <input @bind="_profileValue" /></label><label>Value source <select @bind="_profileSource"><option>Manual</option><option>Generated valid</option><option>Boundary</option><option>Generated invalid</option></select></label><button class="ss-action" @onclick="AddProfile">Add or update value</button></div>
+                    <div class="ss-actions"><button class="ss-text-button" @onclick='() => GenerateProfileValue("Generated valid")'>Generate valid value</button><button class="ss-text-button" @onclick='() => GenerateProfileValue("Boundary")'>Generate boundary value</button><button class="ss-text-button" @onclick='() => GenerateProfileValue("Generated invalid")'>Generate invalid value</button></div>
+                    @if (_profileRows.Count > 0) { <div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Type</th><th>Constraint</th><th>Value</th><th>Source</th><th>Status</th><th>Action</th></tr></thead><tbody>@foreach (var row in _profileRows) { <tr><td>@row.Path</td><td>@(Current?.GeneratedTests.FirstOrDefault(t => t.Path == row.Path)?.SourceFile ?? "XSD-derived")</td><td>@string.Join(", ", Current?.EffectiveSchema.SelectMany(FlattenMembers).FirstOrDefault(m => m.Name == row.Path.Split('/').Last())?.Facets.Select(f => f.Kind + "=" + f.Value) ?? [])</td><td><input @bind="row.Value" aria-label="Profile value for @row.Path" /></td><td>@row.Source</td><td>Draft</td><td><button class="ss-text-button" @onclick="() => RemoveProfile(row)">Remove</button></td></tr> }</tbody></table></div> }
+                    @if (_profileError is not null) { <p class="ss-error" role="alert">@_profileError</p> }
+                    break;
+            }
+        </section>
+    }
+</main>
+
+@code {
+    private static readonly string[] Tabs = ["Overview", "Linked XSDs", "Schema Tree", "Types", "Constraints", "Namespaces", "References", "Effective Schema", "Raw XSD", "Designer", "Compare", "Generated Tests", "Test Data Profile"];
+    private string? _selectedId, _fileName, _error, _tab = "Overview", _draft, _xml, _validationMessage, _profilePath, _profileValue, _profileSource = "Manual", _profileError, _search;
+    private string _graphMode = "Files + namespaces";
+    private bool _creating;
+    private string _newSchemaName = "new-schema", _newNamespace = "urn:example:schema", _newRoot = "Root", _newChildName = "NewElement", _newChildType = "xs:string", _newChildMin = "1";
+    private readonly List<ProfileValue> _profileRows = [];
+    private readonly List<SchemaTestResult> _testResults = [];
+    private SchemaPackage? Current => Studio.Packages.FirstOrDefault(p => p.Id == _selectedId);
+    private SchemaFile? CurrentFile => Current?.Files.FirstOrDefault(f => f.Name == _fileName) ?? Current?.Files.FirstOrDefault();
+
+    protected override void OnInitialized()
+    {
+        if (Studio.Packages.FirstOrDefault() is { } latest) Select(latest.Id);
+    }
+
+    private async Task ImportFiles(InputFileChangeEventArgs args)
+    {
+        try { var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); var total = 0L; foreach (var file in args.GetMultipleFiles(SchemaStudioService.MaxFiles)) { total += file.Size; if (total > SchemaStudioService.MaxPackageBytes) throw new InvalidDataException("Selected XSD files exceed 20 MB total."); await using var stream = file.OpenReadStream(SchemaStudioService.MaxFileBytes); using var reader = new StreamReader(stream, new UTF8Encoding(false, true), true); files.Add(file.Name, await reader.ReadToEndAsync()); } Select(Studio.Import(files, args.FileCount == 1 ? args.File.Name : "XSD package").Id); _error = null; }
+        catch (Exception e) when (e is InvalidDataException or IOException or DecoderFallbackException or ArgumentException or InvalidOperationException or XmlException or System.Xml.Schema.XmlSchemaException) { _error = e.Message; }
+    }
+    private async Task ImportZip(InputFileChangeEventArgs args)
+    {
+        try { await using var stream = args.File.OpenReadStream(SchemaStudioService.MaxPackageBytes); using var buffer = new MemoryStream(); await stream.CopyToAsync(buffer); buffer.Position = 0; var files = SchemaStudioService.ReadZip(buffer); Select(Studio.Import(files, args.File.Name).Id); _error = null; }
+        catch (Exception e) when (e is InvalidDataException or IOException or DecoderFallbackException or ArgumentException or InvalidOperationException or XmlException or System.Xml.Schema.XmlSchemaException) { _error = e.Message; }
+    }
+    private void Select(string id) { _selectedId = id; _fileName = Current?.Files.FirstOrDefault()?.Name; _draft = CurrentFile?.Text; _tab = "Overview"; _validationMessage = null; }
+    private void Remove(string id) { Studio.Remove(id); if (_selectedId == id) { _selectedId = Studio.Packages.FirstOrDefault()?.Id; Select(_selectedId ?? ""); } }
+    private void FileChanged(ChangeEventArgs e) { _fileName = e.Value?.ToString(); _draft = CurrentFile?.Text; }
+    private void CreateSchema()
+    {
+        try
+        {
+            System.Xml.XmlConvert.VerifyNCName(_newRoot);
+            if (string.IsNullOrWhiteSpace(_newSchemaName)) throw new InvalidDataException("Enter a schema filename.");
+            var xs = System.Xml.Linq.XNamespace.Get("http://www.w3.org/2001/XMLSchema");
+            var schemaAttributes = new List<System.Xml.Linq.XAttribute> { new(System.Xml.Linq.XNamespace.Xmlns + "xs", xs), new("elementFormDefault", "qualified") };
+            if (!string.IsNullOrWhiteSpace(_newNamespace)) schemaAttributes.Add(new("targetNamespace", _newNamespace.Trim()));
+            var schema = new System.Xml.Linq.XElement(xs + "schema", schemaAttributes,
+                new System.Xml.Linq.XElement(xs + "element", new System.Xml.Linq.XAttribute("name", _newRoot),
+                    new System.Xml.Linq.XElement(xs + "complexType", new System.Xml.Linq.XElement(xs + "sequence"))));
+            var package = Studio.Import(new Dictionary<string, string> { [_newSchemaName.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase) ? _newSchemaName : _newSchemaName + ".xsd"] = new System.Xml.Linq.XDocument(new System.Xml.Linq.XDeclaration("1.0", "utf-8", null), schema).ToString() }, _newSchemaName);
+            Select(package.Id); _tab = "Designer"; _creating = false; _error = null;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or System.Xml.XmlException) { _error = e.Message; }
+    }
+    private void AddDraftElement()
+    {
+        try
+        {
+            System.Xml.XmlConvert.VerifyNCName(_newChildName);
+            if (_draft is null) throw new InvalidDataException("Select an XSD draft first.");
+            using var reader = System.Xml.XmlReader.Create(new StringReader(_draft), new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = SchemaStudioService.MaxFileBytes });
+            var document = System.Xml.Linq.XDocument.Load(reader);
+            var xs = System.Xml.Linq.XNamespace.Get("http://www.w3.org/2001/XMLSchema");
+            var schema = document.Root ?? throw new InvalidDataException("XSD schema root is missing.");
+            var root = schema.Elements(xs + "element").FirstOrDefault() ?? throw new InvalidDataException("A global root element is required before adding child elements.");
+            var complex = root.Element(xs + "complexType");
+            if (complex is null && root.Attribute("type") is { } typeAttribute)
+            {
+                var localTypeName = typeAttribute.Value.Split(':').Last();
+                complex = schema.Elements(xs + "complexType").FirstOrDefault(t => (string?)t.Attribute("name") == localTypeName);
+            }
+            if (complex is null && root.Attribute("type") is null) { complex = new System.Xml.Linq.XElement(xs + "complexType"); root.Add(complex); }
+            if (complex is null) throw new InvalidDataException("The root uses a non-inline type that is not a complex type; no child was added.");
+            var content = complex.Elements().FirstOrDefault(e => e.Name == xs + "complexContent" || e.Name == xs + "simpleContent");
+            var extension = content?.Elements().FirstOrDefault(e => e.Name == xs + "extension" || e.Name == xs + "restriction");
+            var contentType = extension ?? complex;
+            var compositor = contentType.Elements().FirstOrDefault(e => e.Name == xs + "sequence" || e.Name == xs + "choice" || e.Name == xs + "all");
+            if (compositor is not null && compositor.Name != xs + "sequence") throw new InvalidDataException("Adding a field to this choice/all compositor needs an explicit designer edit; the draft was not changed.");
+            compositor ??= new System.Xml.Linq.XElement(xs + "sequence");
+            if (compositor.Parent is null) contentType.Add(compositor);
+            if (compositor.Elements(xs + "element").Any(e => (string?)e.Attribute("name") == _newChildName)) throw new InvalidDataException("A child with that name already exists in the sequence.");
+            compositor.Add(new System.Xml.Linq.XElement(xs + "element", new System.Xml.Linq.XAttribute("name", _newChildName), new System.Xml.Linq.XAttribute("type", _newChildType), new System.Xml.Linq.XAttribute("minOccurs", _newChildMin), new System.Xml.Linq.XAttribute("maxOccurs", "1")));
+            _draft = document.ToString(); _error = null;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or System.Xml.XmlException or InvalidOperationException) { _error = e.Message; }
+    }
+    private void SaveDraft() { if (Current is null || CurrentFile is null || _draft is null) return; try { var files = Current.Files.ToDictionary(f => f.Name, f => f.Name == CurrentFile.Name ? _draft : f.Text, StringComparer.OrdinalIgnoreCase); Select(Studio.Import(files, Current.Name + " version").Id); _error = null; } catch (Exception e) when (e is InvalidDataException or XmlException) { _error = e.Message; } }
+    private void GenerateXml() { if (CurrentFile is { } file) { _xml = SchemaStudioService.GenerateMinimumXml(file); _validationMessage = null; } }
+    private void GenerateXml(SchemaTestCase test) { if (Current is { } package) { _xml = SchemaStudioService.GenerateTestXml(package, test, ProfileValues()); _fileName = test.SourceFile; _validationMessage = null; } }
+    private void ValidateXml() { _validationMessage = Current is { } p && _xml is not null && _fileName is not null ? SchemaStudioService.ValidateXml(p, _fileName, _xml) : "Not evaluated: select a schema and enter XML."; }
+    private void RunGeneratedTests() { if (Current is { } package) _testResults.AddRange(SchemaStudioService.RunGeneratedTests(package, ProfileValues(), 100).Where(r => _testResults.All(existing => existing.TestId != r.TestId))); }
+    private void AddProfile()
+    {
+        if (string.IsNullOrWhiteSpace(_profilePath)) { _profileError = "Choose an element path from this schema package."; return; }
+        var existing = _profileRows.FirstOrDefault(p => p.Path == _profilePath);
+        if (existing is not null) { existing.Value = _profileValue ?? ""; existing.Source = _profileSource ?? "Manual"; }
+        else if (_profileRows.Count < 500) _profileRows.Add(new(_profilePath, _profileValue ?? "", _profileSource ?? "Manual"));
+        else { _profileError = "A profile is limited to 500 values."; return; }
+        _profileError = null;
+    }
+    private void GenerateProfileValue(string source)
+    {
+        if (string.IsNullOrWhiteSpace(_profilePath)) { _profileError = "Choose an element path first."; return; }
+        var candidates = Current?.GeneratedTests.Where(t => t.Path == _profilePath).ToArray() ?? [];
+        var selected = source switch
+        {
+            "Generated valid" => candidates.FirstOrDefault(t => t.ExpectedValid && !t.Rule.Contains("omitted", StringComparison.OrdinalIgnoreCase)),
+            "Generated invalid" => candidates.FirstOrDefault(t => !t.ExpectedValid && t.Rule is "unknown enumeration" or "above maxLength" or "wrong datatype"),
+            _ => candidates.FirstOrDefault(t => t.Rule.Contains("boundary", StringComparison.OrdinalIgnoreCase))
+        };
+        _profileValue = selected?.Value ?? (source == "Generated valid" ? "value" : "");
+        _profileSource = source; _profileError = null;
+    }
+    private void RemoveProfile(ProfileValue row) => _profileRows.Remove(row);
+    private IReadOnlyDictionary<string, string> ProfileValues() => _profileRows.ToDictionary(p => p.Path, p => p.Value, StringComparer.Ordinal);
+    private static IEnumerable<EffectiveMember> FlattenMembers(EffectiveMember root) { foreach (var child in root.Children) { yield return child; foreach (var nested in FlattenMembers(child)) yield return nested; } }
+    private static int UsageCount(SchemaPackage package, string name) => package.Files.SelectMany(f => f.Declarations).Sum(d => (d.Type?.Split(':').LastOrDefault() == name ? 1 : 0) + (d.BaseType?.Split(':').LastOrDefault() == name ? 1 : 0) + d.Children.Count(e => e.Type?.Split(':').LastOrDefault() == name));
+    private static IEnumerable<string> DependencyEdges(SchemaPackage package, string mode)
+    {
+        foreach (var file in package.Files)
+        {
+            if (mode is "Files + namespaces" or "Files + types" or "All relationships") yield return $"{file.Name} → namespace {file.TargetNamespace ?? "(none)"}";
+            foreach (var link in file.Links) yield return $"{file.Name} —{link.Kind.ToLowerInvariant()}→ {link.ResolvedFile ?? "unresolved: " + (link.Location ?? link.Namespace ?? "no location")}";
+        }
+        if (mode is "Files + types" or "All relationships") foreach (var reference in package.References) yield return $"{reference.SourceFile} —{reference.Kind} {reference.Name}→ {reference.TargetFile}";
+    }
+    private static RenderFragment RenderMember(EffectiveMember member) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "li"); builder.OpenElement(seq++, "strong"); builder.AddContent(seq++, member.Name); builder.CloseElement();
+        builder.AddContent(seq++, " "); builder.OpenElement(seq++, "small");
+        builder.AddContent(seq++, $"{member.Type ?? "inline"} · {member.MinOccurs}..{member.MaxOccurs} · declared in {member.DeclaredIn}");
+        if (member.InheritedFrom is not null) builder.AddContent(seq++, $" · inherited from {member.InheritedFrom}");
+        if (member.TypeDeclaredIn is not null) builder.AddContent(seq++, $" · type declared in {member.TypeDeclaredIn}");
+        if (member.Compositor is not null) builder.AddContent(seq++, $" · {member.Compositor}");
+        builder.CloseElement();
+        if (member.Facets.Count > 0) { builder.OpenElement(seq++, "small"); builder.AddContent(seq++, " · " + string.Join(", ", member.Facets.Select(f => f.Kind + "=" + f.Value))); builder.CloseElement(); }
+        if (member.Children.Count > 0) { builder.OpenElement(seq++, "ul"); foreach (var child in member.Children) builder.AddContent(seq++, RenderMember(child)); builder.CloseElement(); }
+        builder.CloseElement();
+    };
+    private static string Download(string text, string mime, bool isBase64 = false) => $"data:{mime};base64,{(isBase64 ? text : Convert.ToBase64String(Encoding.UTF8.GetBytes(text)))}";
+    private void Jump(string file, string tab) { _fileName = file; _tab = tab; _draft = CurrentFile?.Text; }
+    private static IEnumerable<SearchHit> Search(SchemaPackage package, string term)
+    {
+        foreach (var file in package.Files)
+        {
+            if (file.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(file.Name, file.Name, "Linked XSDs", "filename");
+            if ((file.TargetNamespace ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(file.TargetNamespace!, file.Name, "Namespaces", "namespace");
+            foreach (var declaration in file.Declarations)
+            {
+                if (declaration.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(declaration.Name, file.Name, declaration.Kind is "simpleType" or "complexType" ? "Types" : "Schema Tree", "declaration");
+                foreach (var facet in declaration.Facets.Where(f => (f.Value + " " + f.Kind).Contains(term, StringComparison.OrdinalIgnoreCase))) yield return new(declaration.Name, file.Name, "Constraints", facet.Kind + "=" + facet.Value);
+            }
+        }
+    }
+    private sealed record SearchHit(string Name, string File, string Tab, string Match);
+    private static IEnumerable<string> Compare(SchemaPackage old, SchemaPackage current)
+    {
+        var before = old.Files.SelectMany(f => f.Declarations.Select(d => (Key: f.Name + ":" + d.Kind + ":" + d.Name, d.Type, d.BaseType, Facets: string.Join(";", d.Facets.Select(x => x.Kind + "=" + x.Value))))).ToDictionary(x => x.Key);
+        var after = current.Files.SelectMany(f => f.Declarations.Select(d => (Key: f.Name + ":" + d.Kind + ":" + d.Name, d.Type, d.BaseType, Facets: string.Join(";", d.Facets.Select(x => x.Kind + "=" + x.Value))))).ToDictionary(x => x.Key);
+        foreach (var k in before.Keys.Except(after.Keys)) yield return $"Needs review: declaration removed — {k}";
+        foreach (var k in after.Keys.Except(before.Keys)) yield return $"Informational: declaration added — {k}";
+        foreach (var k in before.Keys.Intersect(after.Keys)) { if (before[k].Type != after[k].Type || before[k].BaseType != after[k].BaseType) yield return $"Potentially breaking: type/base changed — {k}"; if (before[k].Facets != after[k].Facets) yield return $"Needs review: constraints changed — {k}"; }
+    }
+    private sealed class ProfileValue(string path, string value, string source)
+    {
+        public string Path { get; } = path;
+        public string Value { get; set; } = value;
+        public string Source { get; set; } = source;
+    }
+}

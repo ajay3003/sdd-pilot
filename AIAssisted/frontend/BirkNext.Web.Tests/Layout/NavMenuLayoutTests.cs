@@ -274,7 +274,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("getting-started", new[] { "getting-started", "user-guide", "dashboard" })]
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document" })]
-    [InlineData("source-review", new[] { "source-analysis", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
+    [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "ai-generated-code-review" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "admin/system-settings" })]
@@ -301,6 +301,7 @@ public sealed class NavMenuLayoutTests : BunitContext
 
         routes.Should().OnlyHaveUniqueItems();
         NavigationCatalog.Sections.Where(s => s.Items.Any(i => i.Route == "source-analysis")).Select(s => s.Id).Should().Equal("source-review");
+        NavigationCatalog.Sections.Where(s => s.Items.Any(i => i.Route == "schema-studio")).Select(s => s.Id).Should().Equal("source-review");
         NavigationCatalog.Sections.Where(s => s.Items.Any(i => i.Route == "security-classification-review")).Select(s => s.Id).Should().Equal("extensions");
         NavigationCatalog.Sections.Select(s => s.Id).Should().OnlyHaveUniqueItems();
     }

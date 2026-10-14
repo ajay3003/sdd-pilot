@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Layout;
 
-/// <summary>Source Analysis is one optional Project Inputs item (after Import Project and Demo Projects), controlled by Feature Visibility; its consumers are under Source Review.</summary>
+/// <summary>Source Analysis remains a Project Inputs item; generic source tooling such as Schema Studio lives under Source Review.</summary>
 public sealed class NavMenuSourceAnalysisTests : BunitContext
 {
     public NavMenuSourceAnalysisTests() => Services.AddSingleton<FeatureVisibilityService>();
@@ -27,7 +27,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
         entries.Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "Demo Projects", "Target Environments");
         entries.Should().ContainInConsecutiveOrder("§Traceability", "Requirements Traceability", "Implementation Review", "Implementation Traceability");
-        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
+        entries.Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }
@@ -72,7 +72,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
         Entries(cut).Should().ContainInConsecutiveOrder("§Project Inputs", "Import Project", "§Document Review");
-        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Technology Coverage");
+        Entries(cut).Should().ContainInConsecutiveOrder("§Source Review", "Source Analysis", "Schema Studio", "Technology Coverage");
     }
 
     [Fact]
