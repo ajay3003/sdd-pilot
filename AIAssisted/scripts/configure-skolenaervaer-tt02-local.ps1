@@ -14,6 +14,7 @@
       Client id               (optional here; may instead be set in Integration Quality Review → Altinn test configuration)
       Redirect URI            (the URI registered for the ID-porten TEST client)
       Client secret           (not shown, not stored)
+      Approved synthetic child  (optional: alias, label and a synthetic Test-Norge identifier — not shown, not stored; Enter skips it)
 
     Nothing is persisted: no file, no registry, no user or machine environment variable. Closing the window removes everything.
     No identifier is embedded in this script, and the script makes no network call.
@@ -30,6 +31,10 @@
     Adds or replaces a second reporter in this session.
 
 .EXAMPLE
+    .\configure-skolenaervaer-tt02-local.ps1 -ChildAlias synthetic-child-1 -ChildLabel 'Synthetic child 1'
+    Adds an approved synthetic child (known to Person, declared). The run page then resolves it by alias; BirkNext never generates one.
+
+.EXAMPLE
     .\configure-skolenaervaer-tt02-local.ps1 -Status
     Shows which settings are present in this session (secrets and identifiers as Set/Not set only).
 #>
@@ -43,6 +48,12 @@ param(
     [string]$ReporterAlias,
     [string]$ReporterLabel,
     [switch]$ReporterProfileConfirmed,
+    [System.Security.SecureString]$ChildIdentifier,
+    [ValidateRange(0, 9)][int]$ChildIndex = 0,
+    [string]$ChildAlias,
+    [string]$ChildLabel,
+    [switch]$ChildUnknownToPerson,
+    [switch]$ChildDefault,
     [string]$TrustedEnvironmentId,
     [string]$TrustedDisplayName,
     [string]$TrustedEnvironmentType = 'Development',
@@ -58,6 +69,8 @@ $ErrorActionPreference = 'Stop'
 $prefix = 'AltinnTesting__UnattendedIdPortenTest__'
 $reporter = "${prefix}Reporters__${ReporterIndex}__"
 $trusted = 'TargetEnvironments__Trusted__0__'
+$children = 'AltinnTesting__SyntheticChildren__'
+$child = "${children}${ChildIndex}__"
 
 function Set-SessionVariable([string]$Name, [string]$Value) {
     [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
@@ -102,6 +115,11 @@ function Show-Status {
         if ([string]::IsNullOrEmpty((Get-SessionVariable "${r}Alias"))) { continue }
         $rows += , @("${r}Alias", $false); $rows += , @("${r}Label", $false); $rows += , @("${r}TestIdPersonIdentifier", $true); $rows += , @("${r}AltinnProfileConfirmed", $false)
     }
+    for ($i = 0; $i -le 9; $i++) {
+        $c = "${children}${i}__"
+        if ([string]::IsNullOrEmpty((Get-SessionVariable "${c}Alias"))) { continue }
+        $rows += , @("${c}Alias", $false); $rows += , @("${c}Label", $false); $rows += , @("${c}TestPersonIdentifier", $true); $rows += , @("${c}KnownToPerson", $false); $rows += , @("${c}Default", $false)
+    }
     $rows += @(@("${trusted}EnvironmentId", $false), @("${trusted}EnvironmentType", $false), @("${trusted}ExecutionAllowed", $false), @("${trusted}TargetUrl", $false))
     foreach ($row in $rows) {
         $value = Get-SessionVariable $row[0]
@@ -114,11 +132,12 @@ function Show-Status {
         $index++
     }
     Write-Host 'Scopes, app, environment, reporter reference and synthetic identity set: Integration Quality Review → Altinn test configuration.'
+    Write-Host 'Skolenærvær Testing resolves these values automatically; it never stores another copy.'
     Write-Host 'Process task, data type and endpoints are read from the deployed app ("Read public TT02 metadata"), never configured here.'
 }
 
 if ($Clear) {
-    Get-ChildItem Env: | Where-Object { $_.Name.StartsWith($prefix) -or $_.Name.StartsWith($trusted) } | ForEach-Object { Set-SessionVariable $_.Name $null }
+    Get-ChildItem Env: | Where-Object { $_.Name.StartsWith($prefix) -or $_.Name.StartsWith($trusted) -or $_.Name.StartsWith($children) } | ForEach-Object { Set-SessionVariable $_.Name $null }
     Write-Host 'Cleared the Skolenærvær TT02 settings from this session.'
     return
 }
@@ -141,6 +160,18 @@ if ($ReporterProfileConfirmed -or -not $NoPrompt) {
     Write-Host "Has the Altinn TT02 profile of $ReporterAlias's synthetic person been confirmed? Nothing here can check it."
     $typed = if ($NoPrompt -and -not $ReporterProfileConfirmed) { '' } else { Read-Host "Type $ReporterAlias to mark it confirmed, or press Enter to leave it Not confirmed" }
     if ($typed -ceq $ReporterAlias) { $profileConfirmed = $true } elseif ($typed) { Write-Host 'Not confirmed: the alias did not match.' }
+}
+
+# Approved synthetic child (optional): approved test data the run page resolves by alias. Nothing is generated; reporter ≠ child is enforced by the backend.
+$ChildAlias = Read-Value 'Approved synthetic child alias (Enter to skip)' $ChildAlias ''
+if ($ChildAlias) {
+    if ($ChildAlias -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { throw 'The child alias must be lowercase letters, digits and hyphens (e.g. synthetic-child-1).' }
+    $ChildLabel = Read-Value 'Child label' $ChildLabel $ChildAlias
+    if (-not $ChildIdentifier) {
+        if ($NoPrompt) { throw 'No child identifier: pass -ChildIdentifier or run without -NoPrompt.' }
+        $ChildIdentifier = Read-Host "Synthetic Test-Norge identifier for $ChildAlias (not shown, not stored)" -AsSecureString
+    }
+    if (-not (Test-SyntheticIdentifier $ChildIdentifier)) { throw 'The child identifier is not a synthetic Test-Norge identifier (11 digits, month + 80). Real identifiers are never used.' }
 }
 
 # Client id: optional here (Integration Quality Review can hold it instead; both set and different is reported as a conflict).
@@ -167,6 +198,13 @@ Set-SessionVariable "${reporter}Alias" $ReporterAlias
 Set-SessionVariable "${reporter}Label" $ReporterLabel
 Set-SecretVariable "${reporter}TestIdPersonIdentifier" $ReporterIdentifier
 Set-SessionVariable "${reporter}AltinnProfileConfirmed" ($(if ($profileConfirmed) { 'true' } else { 'false' }))
+if ($ChildAlias) {
+    Set-SessionVariable "${child}Alias" $ChildAlias
+    Set-SessionVariable "${child}Label" $ChildLabel
+    Set-SecretVariable "${child}TestPersonIdentifier" $ChildIdentifier
+    Set-SessionVariable "${child}KnownToPerson" ($(if ($ChildUnknownToPerson) { 'false' } else { 'true' }))
+    Set-SessionVariable "${child}Default" ($(if ($ChildDefault) { 'true' } else { 'false' }))
+}
 
 # Trusted target enrolment (backend-authoritative): exact environment id and exact integration ids, never Production, never a wildcard.
 if ($TrustedEnvironmentId) {

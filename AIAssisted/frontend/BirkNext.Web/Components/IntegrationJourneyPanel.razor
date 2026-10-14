@@ -506,7 +506,10 @@
     private Dictionary<string, string> Inputs(IntegrationJourneyView view) =>
         _inputs.TryGetValue(view.Journey.JourneyId, out var values) ? values : _inputs[view.Journey.JourneyId] = new(StringComparer.Ordinal);
 
-    private string InputValue(IntegrationJourneyView view, string key) => Inputs(view).GetValueOrDefault(key) ?? "";
+    /// <summary>The tester's value, else the value the pack resolved from an approved source (e.g. the only approved reporter). An explicit
+    /// "Choose…" (empty) is the tester's choice and is kept.</summary>
+    private string InputValue(IntegrationJourneyView view, string key) =>
+        Inputs(view).TryGetValue(key, out var value) ? value : ScenarioOf(view)?.Inputs?.FirstOrDefault(input => input.Key == key)?.Default ?? "";
 
     private void SetInput(IntegrationJourneyView view, string key, ChangeEventArgs e) => Inputs(view)[key] = e.Value?.ToString() ?? "";
 

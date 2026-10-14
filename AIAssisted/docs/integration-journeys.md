@@ -60,7 +60,9 @@ Periodeavslutning, Architecture Rules and History.
 - **Overview is a summary.** It shows the selected project, Target Environment and source snapshot, then each journey's readiness and blocker
   count, the top blockers and links to the owning pages. Readiness and blockers are the journey engine's own; the page does not recompute them.
 - **Each journey tab owns its detail.** Rapportmottak starts with its status and actions (*Open Rapportmottak run*, *Configure Altinn*,
-  *Open Target Environment*), then the main blockers, then every prerequisite in collapsed groups. Opening the run page sends nothing.
+  *Open Target Environment*). Then it shows the TT02 readiness decision, what was **resolved automatically** (with its source) and what
+  **needs attention**: only unresolved inputs, each linked to its owner. Every prerequisite follows in collapsed groups. Opening the run
+  page sends nothing. See [automatic resolution](skolenaervaer-tt02-local-setup.md#automatic-resolution-on-the-run-page).
 - **Message Verification** has its own tab.
 - **The shared Integration Journey panel stays the execution engine.** It opens inside Rapportmottak (the run), Periodeavslutning (journey
   details) and History. Utdanningsdata uses the shared Active Event tests.

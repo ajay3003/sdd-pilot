@@ -113,7 +113,8 @@ public sealed record JourneyScenarioInputOption(string Value, string Label);
 
 /// <summary>
 /// One typed input a scenario asks the tester for. The pack validates and normalizes every value server-side before anything runs; values
-/// are held in memory for the run only and never persisted — history keeps the pack's redacted summary instead.
+/// are held in memory for the run only and never persisted — history keeps the pack's redacted summary instead. <c>Default</c> is a value
+/// the pack resolved from an approved source (one of the options, e.g. the only approved reporter alias); the tester can still change it.
 /// </summary>
 public sealed record JourneyScenarioInput(
     string Key,
@@ -121,7 +122,8 @@ public sealed record JourneyScenarioInput(
     JourneyScenarioInputKind Kind,
     bool Required,
     string Help = "",
-    IReadOnlyList<JourneyScenarioInputOption>? Options = null);
+    IReadOnlyList<JourneyScenarioInputOption>? Options = null,
+    string? Default = null);
 
 public sealed record IntegrationJourneyDefinition
 {
@@ -147,6 +149,9 @@ public sealed record JourneyPrerequisite(string Key, string Label, JourneyPrereq
     IReadOnlyList<string>? Scenarios = null)
 {
     public bool AppliesTo(string scenarioId) => Scenarios is null || Scenarios.Contains(scenarioId, StringComparer.Ordinal);
+    /// <summary>Where the value was resolved from (e.g. "Target Environment", "Integration Quality Review", "Local execution config",
+    /// "Approved test data", "Live Altinn metadata"). A source, never a value: secrets and identities are not named here.</summary>
+    public string? Source { get; init; }
 }
 
 /// <summary>Separate maturity levels: a configured integration is not source verified, executable or runtime verified.</summary>

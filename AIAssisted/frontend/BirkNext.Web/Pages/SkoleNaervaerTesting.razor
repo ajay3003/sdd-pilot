@@ -115,31 +115,81 @@
                 </div>
                 <p class="snt-muted">Opening the run page sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
 
-                <div id="snt-rapport-run">
+                <div id="snt-rapport-run" class="snt-focus-target" tabindex="-1">
                     <ReviewDisclosure Text="Rapportmottak run" CollapseText="Hide Rapportmottak run" TestId="snt-rapport-run" @bind-Expanded="_runOpen">
                         <IntegrationJourneyPanel @ref="_journeys" Profile="_profile" InitialJourneyId="rapportmottak" />
                     </ReviewDisclosure>
                 </div>
 
-                @if (Blockers("rapportmottak") is { Count: > 0 } blockers)
+                @if (View("rapportmottak") is { } rapport)
                 {
-                    <h3 class="snt-subheading">Main blockers</h3>
-                    <ul class="snt-blockers" data-testid="snt-rapport-blockers">
-                        @foreach (var item in blockers.Take(6))
-                        {
-                            var action = BlockerAction(item);
-                            <li data-key="@item.Key"><strong>@item.Label</strong> <span class="snt-muted">· @IntegrationJourneyPresentation.Readiness(item.State)</span>
-                                @if (action is { } a) { <a class="snt-blocker-action" href="@a.Href">@a.Label</a> }</li>
-                        }
-                    </ul>
-                    @if (blockers.Count > 6) { <p class="snt-muted">@(blockers.Count - 6) more under Technical details.</p> }
+                    var resolved = SkoleNaervaerReadinessPresentation.Resolved(rapport.Prerequisites);
+                    var attention = SkoleNaervaerReadinessPresentation.NeedsAttention(rapport.Prerequisites);
+                    var decision = SkoleNaervaerReadinessPresentation.Decision(attention);
+                    <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code">TT02 readiness: <strong>@decision.Code. @decision.Label</strong>
+                        @if (decision.Code == "A") { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
+                    <div class="snt-resolution">
+                        <section aria-labelledby="snt-resolved-heading" data-testid="snt-resolved">
+                            <h3 id="snt-resolved-heading" class="snt-subheading">Resolved automatically (@resolved.Count)</h3>
+                            @if (resolved.Count == 0) { <p class="snt-muted">Nothing could be resolved yet.</p> }
+                            else
+                            {
+                                <ul class="snt-resolved-list">
+                                    @foreach (var item in resolved)
+                                    {
+                                        <li data-testid="snt-resolved-item" data-key="@item.Key"><span class="snt-mark snt-mark-ok" aria-hidden="true">✓</span>
+                                            <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source">@(item.Source ?? "BirkNext")</span>
+                                                @* Compact: what was chosen is named (an alias, never an identifier); the full reason stays under Technical details. *@
+                                                @if (item.Detail.StartsWith("Resolved:", StringComparison.Ordinal)) { <span class="snt-muted snt-row-detail" data-testid="snt-resolved-choice">@item.Detail</span> }</span></li>
+                                    }
+                                </ul>
+                            }
+                        </section>
+                        <section aria-labelledby="snt-attention-heading" data-testid="snt-needs-attention">
+                            <h3 id="snt-attention-heading" class="snt-subheading">Needs attention (@attention.Count)</h3>
+                            @if (attention.Count == 0) { <p class="snt-muted" data-testid="snt-nothing-unresolved">Nothing is unresolved for a submission.</p> }
+                            else
+                            {
+                                @if (SkoleNaervaerReadinessPresentation.InteractiveFallbackOnly(rapport.Prerequisites))
+                                {
+                                    <p class="snt-muted" data-testid="snt-fallback-note">The unattended setup is incomplete. The interactive TestID sign-in fallback can still run it, but the first TT02 run is unattended.</p>
+                                }
+                                <ul class="snt-attention-list" data-testid="snt-rapport-blockers">
+                                    @foreach (var item in attention)
+                                    {
+                                        var action = SkoleNaervaerReadinessPresentation.ActionFor(item, _profile.Id);
+                                        <li data-key="@item.Key" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">✗</span>
+                                            <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source">@(item.Source ?? "BirkNext")</span>
+                                                <span class="snt-muted snt-row-detail">@item.Detail</span>
+                                                @if (action.Href is { } href) { <a class="snt-blocker-action" href="@href">@action.Label</a> }
+                                                else if (action.Group is { } group) { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(group)">@action.Label</button> }</span></li>
+                                    }
+                                </ul>
+                            }
+                        </section>
+                    </div>
                 }
 
                 <h3 class="snt-subheading">Technical details</h3>
                 <div class="snt-groups" data-testid="snt-rapport-details">
                     @foreach (var group in DetailGroups("rapportmottak"))
                     {
-                        <ReviewDisclosure Text="@group.Title" CollapseText="@group.Title" Hint="@group.Hint" TestId="@($"snt-group-{group.Key}")" Class="snt-group">
+                        <div id="@($"snt-group-{group.Key}")" class="snt-focus-target" tabindex="-1">
+                        <ReviewDisclosure Text="@group.Title" CollapseText="@group.Title" Hint="@group.Hint" TestId="@($"snt-group-{group.Key}")" Class="snt-group"
+                                          Expanded="@_openGroups.Contains(group.Key)" ExpandedChanged="@(open => ToggleGroup(group.Key, open))">
+                            @if (group.Key == "local")
+                            {
+                                <div class="snt-local-setup" data-testid="snt-local-setup">
+                                    <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
+                                    <ul>
+                                        <li><strong>Integration Quality Review → Altinn test configuration:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=test-configuration">Open Altinn test configuration</a></li>
+                                        <li><strong>Local execution config</strong> (this backend's process only, never a committed file): Enabled, the registered redirect URI, the client secret, the approved synthetic TestID reporters and their Altinn profile confirmation, approved synthetic children and the app-policy confirmation. Set them with <code>AIAssisted/scripts/configure-skolenaervaer-tt02-local.ps1</code> and restart the backend from that window.</li>
+                                        <li><strong>Target Environment:</strong> the trusted target and its enrolled integrations. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
+                                        <li><strong>Live Altinn metadata:</strong> task, data type and process contract, read anonymously with "Read public TT02 metadata" under App contract.</li>
+                                    </ul>
+                                    <p class="snt-muted">Resolving is not verifying: configured scopes are not a verified client registration, a configured reporter is not authenticated, and a declared child is not verified.</p>
+                                </div>
+                            }
                             @if (group.Key == "contract")
                             {
                                 <AltinnTestSetupPanel EnvironmentId="@_profile.Id" OnOpenJourney="OpenRapportmottakAsync" />
@@ -157,6 +207,7 @@
                                 </ul>
                             }
                         </ReviewDisclosure>
+                        </div>
                     }
                 </div>
             }
@@ -281,6 +332,17 @@
     private string _tab = OverviewTab;
     private string? _focusAfterRender;
     private bool _runOpen, _periodOpen;
+    private readonly HashSet<string> _openGroups = new(StringComparer.Ordinal);
+
+    private void ToggleGroup(string key, bool open) { if (open) _openGroups.Add(key); else _openGroups.Remove(key); }
+
+    /// <summary>A blocker's action that is explained on this page (local execution setup, contract metadata) opens that detail group.</summary>
+    private async Task OpenGroupAsync(string key)
+    {
+        _openGroups.Add(key);
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("birknextFocusElement", $"snt-group-{key}"); } catch (JSException) { }
+    }
     /// <summary>False until the active Target Environment and readiness have been read: nothing is called Not ready before that is known.</summary>
     private bool _initialized;
 
@@ -291,8 +353,9 @@
     private IntegrationJourneyView? View(string journeyId) => _pack?.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId);
 
     /// <summary>Mandatory prerequisites that are not ready, in the journey's own order. Readiness is the backend's; nothing is recomputed.</summary>
-    private IReadOnlyList<JourneyPrerequisite> Blockers(string journeyId) =>
-        View(journeyId)?.Prerequisites.Where(item => item.Mandatory && item.State != JourneyReadinessState.Ready).ToList() ?? [];
+    private IReadOnlyList<JourneyPrerequisite> Blockers(string journeyId) => View(journeyId) is not { } view ? []
+        : journeyId == "rapportmottak" ? SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites)
+        : view.Prerequisites.Where(item => item.Mandatory && item.State != JourneyReadinessState.Ready).ToList();
 
     private IEnumerable<JourneyRow> JourneyRows
     {
@@ -356,29 +419,21 @@
             _ when item.Key.StartsWith("integration:", StringComparison.Ordinal) || item.Key.StartsWith("source:", StringComparison.Ordinal) => "configuration",
             _ => "advanced",
         };
+        // "local" holds no rows: it explains where values come from.
         (string Key, string Title)[] groups =
         [
-            ("contract", "App contract"), ("authentication", "Authentication"), ("reporter", "Reporter & test data"), ("process", "Process contract"),
+            ("local", "Local execution setup"), ("contract", "App contract"), ("authentication", "Authentication"), ("reporter", "Reporter & test data"), ("process", "Process contract"),
             ("meldingshode", "Meldingshode"), ("configuration", "Configuration & sources"), ("advanced", "Advanced technical details"),
         ];
         foreach (var (key, title) in groups)
         {
             var items = all.Where(item => GroupOf(item) == key).ToList();
+            if (key == "local") { yield return new(key, title, "where each value comes from", []); continue; }
             if (items.Count == 0 && key != "contract") continue;
             var open = items.Count(item => item.State != JourneyReadinessState.Ready);
             yield return new(key, title, items.Count == 0 ? "Altinn app setup" : open == 0 ? $"{items.Count} ready" : $"{open} of {items.Count} not ready", items);
         }
     }
-
-    private static (string Label, string Href)? BlockerAction(JourneyPrerequisite item) => item.Category switch
-    {
-        JourneyPrerequisiteCategory.TrustedEnvironment => ("Open Target Environment", "/admin/system-settings?section=target-environments"),
-        JourneyPrerequisiteCategory.Integration => ("Open Integration Quality Review", "/integration-quality-review?view=integrations"),
-        JourneyPrerequisiteCategory.SourceEvidence => ("Open Source Analysis", "/source-analysis"),
-        JourneyPrerequisiteCategory.Authentication or JourneyPrerequisiteCategory.Authorization or JourneyPrerequisiteCategory.Contract
-            or JourneyPrerequisiteCategory.SyntheticData => ("Configure", "/integration-quality-review?view=test-configuration"),
-        _ => null,
-    };
 
     private async Task SelectTabAsync(string key)
     {

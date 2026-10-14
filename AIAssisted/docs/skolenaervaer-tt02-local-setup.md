@@ -7,6 +7,30 @@ explicitly approved step (see [Stop](#stop)).
 Placeholders only appear here (`<…>`). Never put a real secret, TestID identifier or child identifier in this file, in
 `appsettings*.json` (including the **tracked** `appsettings.Local.json`), in frontend configuration or in a committed `.env`.
 
+## Automatic resolution on the run page
+
+Skolenærvær run readiness resolves execution inputs automatically from approved existing sources. The run page (Skolenærvær Testing →
+Rapportmottak) lists what was **resolved automatically** and where it came from, and **needs attention** shows only what is still
+unresolved, each with the owner that resolves it.
+
+| Input | Source (owner) |
+|---|---|
+| Trusted target, enrolled integrations | Target Environment |
+| Report-intake integration | Integration Quality Review + Target Environment |
+| App, environment, ID-porten client id, scopes, test reporter reference, synthetic identity set | Integration Quality Review → Altinn test configuration |
+| Enabled, redirect URI, client secret (as *Available*/*Missing*), app-policy confirmation | Local execution config |
+| Synthetic reporter and its profile confirmation, approved synthetic children | Approved test data (local execution config) |
+| Task, data type, process contract, contract fingerprint | Live Altinn metadata (anonymous reads) |
+
+- Automatic resolution does not create configuration or identities. It never generates a child, invents a redirect URI or switches
+  *Enabled* on.
+- Only unresolved inputs are blockers. A value is preselected on the run form only when the choice is deterministic: exactly one usable
+  approved reporter, or exactly one approved child (or exactly one marked default). Otherwise the tester chooses.
+- Resolved is not verified. Configured scopes are not a verified client registration, a configured reporter is not an authenticated one,
+  and a declared child is not a verified one. No ID-porten or authenticated Altinn call is made to resolve readiness.
+- The run page stores nothing. ID-porten values are never configured in Target application.
+- **Ready (A)** means ready for a first *supervised* TT02 submission. Nothing is submitted without an explicit confirmation in the run.
+
 ## Checklist
 
 1. **Restart the backend on the current commit.** The readiness row *Backend build* shows the running commit.
@@ -18,7 +42,7 @@ Placeholders only appear here (`<…>`). Never put a real secret, TestID identif
 6. Confirm the reporter's **TT02 Altinn profile** — a deliberate, manual step.
 7. Configure **IQR → Altinn test configuration**: client id, scopes, app, environment, reporter reference.
 8. **Enrol the trusted integration** for the target.
-9. Configure the **approved synthetic child** (identity set + approval in IQR).
+9. Configure the **approved synthetic child**: approved test data via the helper (`-ChildAlias`), or an identity set + approval in IQR.
 10. **Read public TT02 metadata.**
 11. Run the **dry run** ("Validate run").
 12. Confirm every mandatory readiness row is green.
@@ -150,7 +174,11 @@ No committed configuration defines `TargetEnvironments:Trusted`, so index `0` is
 
 ## Approved synthetic child
 
-- Declare the approved synthetic identity set in IQR: the reference, plus *Test data is approved synthetic data*.
+- **Approved test data (preferred).** Run the helper with `-ChildAlias synthetic-child-1` (and `-ChildDefault` if there are several). It
+  asks for the synthetic identifier without echoing it and keeps it in this window's process only. Add `-ChildUnknownToPerson` for a
+  child declared unknown to Person (used by *Child not found in Person*). The run page then resolves the child by alias and preselects
+  it. A child that is the same person as an approved reporter is rejected by the backend.
+- **Or** declare the approved synthetic identity set in IQR: the reference, plus *Test data is approved synthetic data*.
   Readiness then shows *Known synthetic child: **Declared***.
 - Declared is not verified: whether Person knows the child is not checked by BirkNext.
 - The child identifier is entered per run. It must be a synthetic identifier and must differ from the reporter; this is compared

@@ -172,6 +172,67 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         _journeys.Started.Should().BeEmpty("opening the run page starts nothing");
     }
 
+    private void WithRapportmottakRows(params string[] unresolved)
+    {
+        var pack = IntegrationJourneyPanelTests.SamplePack();
+        _journeys.Pack = pack with
+        {
+            Journeys = [.. pack.Journeys.Select(view => view.Journey.JourneyId != "rapportmottak" ? view
+                : view with { Prerequisites = [.. BirkNext.Web.Tests.Services.SkoleNaervaerReadinessPresentationTests.Rows(unresolved)] })],
+        };
+    }
+
+    [Fact]
+    public void Rapportmottak_ShowsWhatWasResolvedAndFromWhere_AndOnlyTheUnresolvedInput()
+    {
+        WithTarget();
+        WithRapportmottakRows("client-secret");
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-tt02-decision]").GetAttribute("data-code").Should().Be("B"));
+        page.Find("[data-testid=snt-tt02-decision]").TextContent.Should().Contain("ID-porten configuration incomplete");
+        var resolved = page.FindAll("[data-testid=snt-resolved-item]");
+        resolved.Should().HaveCount(15, "every other run input was resolved");
+        page.Find("[data-testid=snt-resolved-item][data-key=idporten-client] .snt-source").TextContent.Should().Be("Integration Quality Review");
+        page.Find("[data-testid=snt-resolved-item][data-key=redirect-uri] .snt-source").TextContent.Should().Be("Local execution config");
+        page.Find("[data-testid=snt-resolved-item][data-key=synthetic-data] .snt-source").TextContent.Should().Be("Approved test data");
+        page.FindAll("[data-testid=snt-attention-item]").Select(li => li.GetAttribute("data-key")).Should().Equal("client-secret");
+        page.Find("[data-testid=snt-status]").TextContent.Should().Contain("1 blocker").And.NotContain("2 blockers", "resolved inputs are not counted");
+
+        page.Find("[data-testid=snt-attention-item] button").TextContent.Should().Be("Configure local execution");
+        page.Find("[data-testid=snt-group-local-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.Find("[data-testid=snt-attention-item] button").Click();
+        page.Find("[data-testid=snt-group-local-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=snt-local-setup]").TextContent.Should().Contain("configure-skolenaervaer-tt02-local.ps1").And.Contain("The run page stores nothing");
+        JSInterop.VerifyInvoke("birknextFocusElement").Arguments.Should().Equal("snt-group-local");
+    }
+
+    [Fact]
+    public void Rapportmottak_HasNoEditableCopyOfConfiguration()
+    {
+        WithTarget();
+        WithRapportmottakRows("idporten-client");
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().ContainSingle());
+        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/integration-quality-review?view=test-configuration");
+        var outsideRun = page.FindAll("#snt-rapport input, #snt-rapport select, #snt-rapport textarea").Where(field => field.Closest("[data-testid=ijp-panel]") is null && field.Closest("[data-testid=atp-panel]") is null);
+        outsideRun.Should().BeEmpty("client id, scopes, redirect, secret, reporter and child are resolved from their owners, never re-entered here");
+    }
+
+    [Fact]
+    public void Rapportmottak_AllResolved_IsReadyForASupervisedFirstSubmission_Only()
+    {
+        WithTarget();
+        WithRapportmottakRows();
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-tt02-decision]").GetAttribute("data-code").Should().Be("A"));
+        page.Find("[data-testid=snt-tt02-decision]").TextContent.Should().Contain("Ready for first supervised TT02 submission").And.Contain("explicit confirmation");
+        page.Find("[data-testid=snt-nothing-unresolved]").Should().NotBeNull();
+        _journeys.Started.Should().BeEmpty("ready never starts a submission");
+    }
+
     [Fact]
     public void MessageVerification_HasItsOwnTab_WithAProperEmptyStateWithoutATarget()
     {

@@ -234,8 +234,8 @@ public sealed class IntegrationJourneyService(
     {
         var prerequisites = new List<JourneyPrerequisite>();
         var trustProblem = TrustProblem(context);
-        prerequisites.Add(new("trusted-environment", "Trusted non-production environment", JourneyPrerequisiteCategory.TrustedEnvironment,
-            trustProblem is null ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady, trustProblem ?? context.TrustDetail));
+        prerequisites.Add(new JourneyPrerequisite("trusted-environment", "Trusted non-production environment", JourneyPrerequisiteCategory.TrustedEnvironment,
+            trustProblem is null ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady, trustProblem ?? context.TrustDetail) { Source = "Target Environment" });
 
         var matches = Matches(pack, journey, context.Catalog);
         var matched = new List<JourneyMatchedIntegration>();
@@ -257,7 +257,8 @@ public sealed class IntegrationJourneyService(
                     ? $"{requirement.Label}: configured, but environment {context.EnvironmentId} is not a backend trusted environment (TargetEnvironments:Trusted). Enrol it with integration id(s) {string.Join(", ", enabled.Select(item => item.Id))}."
                     : $"{requirement.Label}: configured, but not enrolled in the backend trusted environment {context.EnvironmentId}. Add integration id(s) {string.Join(", ", enabled.Select(item => item.Id))} to its TargetEnvironments:Trusted IntegrationIds (exact ids, no wildcard).")
                 : (JourneyReadinessState.Ready, $"{requirement.Label}: {string.Join(", ", enrolled.Select(item => item.DisplayName))}.");
-            prerequisites.Add(new(IntegrationKeyPrefix + requirement.Key, requirement.Label, JourneyPrerequisiteCategory.Integration, state, detail));
+            prerequisites.Add(new JourneyPrerequisite(IntegrationKeyPrefix + requirement.Key, requirement.Label, JourneyPrerequisiteCategory.Integration, state, detail)
+                { Source = "Integration Quality Review + Target Environment" });
         }
 
         var stepStatus = new List<JourneyStepStatus>();
@@ -286,16 +287,17 @@ public sealed class IntegrationJourneyService(
                 stepStatus.Add(new(step.StepId, configured, coverage.Observable || coverage.Executable, coverage.Observable,
                     configured ? JourneyStepState.Configured : JourneyStepState.NotAssessed, coverage.Reason));
             }
-            prerequisites.Add(new("executor", "Journey trigger", JourneyPrerequisiteCategory.Executor,
+            prerequisites.Add(new JourneyPrerequisite("executor", "Journey trigger", JourneyPrerequisiteCategory.Executor,
                 firstExecutable ? JourneyReadinessState.Ready : JourneyReadinessState.NotAvailable,
-                firstExecutable ? "A registered executor can start the journey." : $"No registered executor can perform the first step (\"{journey.Steps.FirstOrDefault()?.Label}\"); the journey cannot be started."));
+                firstExecutable ? "A registered executor can start the journey." : $"No registered executor can perform the first step (\"{journey.Steps.FirstOrDefault()?.Label}\"); the journey cannot be started.")
+                { Source = "BirkNext" });
             // Not a gate: a step without an executor or observer is reported Not assessed in the run, and because Completed needs every
             // mandatory step Verified, a run with uncovered mandatory steps can reach Partial at most. It is shown, never hidden.
-            prerequisites.Add(new("observation", "Step evidence coverage", JourneyPrerequisiteCategory.Observation,
+            prerequisites.Add(new JourneyPrerequisite("observation", "Step evidence coverage", JourneyPrerequisiteCategory.Observation,
                 uncovered.Count == 0 ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
                 uncovered.Count == 0 ? "Every mandatory step has a registered executor or observer."
                     : $"{uncovered.Count} of {journey.Steps.Count(step => step.Mandatory)} mandatory steps have no executor or observer, so a run can reach Partial at most: {string.Join("; ", uncovered)}.",
-                Mandatory: false));
+                Mandatory: false) { Source = "BirkNext" });
         }
 
         prerequisites.AddRange(await pack.PrerequisitesAsync(journey, context, ct));

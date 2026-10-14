@@ -262,3 +262,90 @@
     align-items: center;
     text-decoration: none;
 }
+
+/* Resolution summary: compact rows, one mark and one text block each. */
+.snt-decision {
+    margin: 0;
+}
+
+.snt-resolution {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.snt-resolved-list,
+.snt-attention-list {
+    display: grid;
+    gap: .35rem;
+    margin: .35rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.snt-resolved-list li,
+.snt-attention-list li {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(0, 1fr);
+    gap: .4rem;
+    align-items: start;
+}
+
+.snt-row-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.snt-row-detail {
+    display: block;
+    font-size: .85rem;
+}
+
+.snt-source {
+    display: inline-block;
+    margin-left: .35rem;
+    padding: 0 .4rem;
+    border: 1px solid var(--border-color, #d0d5dd);
+    border-radius: 999px;
+    font-size: .75rem;
+    color: #344054;
+}
+
+.snt-mark {
+    font-weight: 700;
+}
+
+.snt-mark-ok {
+    color: #067647;
+}
+
+.snt-mark-open {
+    color: #b42318;
+}
+
+.snt-link-button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--link-color, #155eef);
+    text-decoration: underline;
+    text-underline-offset: .15em;
+    cursor: pointer;
+    font: inherit;
+}
+
+.snt-link-button:focus-visible,
+.snt-focus-target:focus-visible {
+    outline: 3px solid var(--focus-color, #155eef);
+    outline-offset: 3px;
+}
+
+.snt-local-setup ul {
+    padding-left: 1.25rem;
+}
+
+@media (max-width: 1100px) {
+    .snt-resolution {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

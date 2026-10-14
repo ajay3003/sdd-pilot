@@ -13,6 +13,9 @@ public sealed class AltinnTestingOptions
     public List<string> ApprovedApps { get; set; } = [];
     public IdPortenTestOptions IdPortenTest { get; set; } = new();
     public UnattendedIdPortenTestOptions UnattendedIdPortenTest { get; set; } = new();
+    /// <summary>Approved synthetic children for report scenarios, chosen by alias. Local execution configuration only (environment variables,
+    /// never a committed file): the identifier stays in the backend. BirkNext never adds to this list or invents a child.</summary>
+    public List<SyntheticChildOptions> SyntheticChildren { get; set; } = [];
     /// <summary>
     /// Service-owner confirmations that an app's authorization policy (XACML: who may instantiate, write and complete, roles, authentication
     /// level, party representation) accepts the configured synthetic TEST reporter. Without a confirmation for the app, submission scenarios
@@ -67,6 +70,23 @@ public sealed class SyntheticReporterOptions
     public bool AltinnProfileConfirmed { get; set; }
     /// <summary>The Altinn role the reporter acts in. A run's instance owner is the reporter's own current party, so only PRIV is supported.</summary>
     public string AltinnRole { get; set; } = "PRIV";
+}
+
+/// <summary>
+/// One approved synthetic child (approved test data). The identifier is used only to build the form; the UI, logs and history see the alias.
+/// Whether Person knows the child is the approver's declaration (<see cref="KnownToPerson"/>), never verified by BirkNext.
+/// </summary>
+public sealed class SyntheticChildOptions
+{
+    /// <summary>Stable key, e.g. "synthetic-child-1" (lowercase letters, digits and hyphens).</summary>
+    public string Alias { get; set; } = "";
+    public string Label { get; set; } = "";
+    /// <summary>The synthetic Test-Norge person identifier (month + 80). Configuration outside committed files only.</summary>
+    public string? TestPersonIdentifier { get; set; }
+    /// <summary>Declared: the child is a registered synthetic test person (known child) rather than one Person does not know.</summary>
+    public bool KnownToPerson { get; set; } = true;
+    /// <summary>The child to use when several approved children apply. At most one may be the default; otherwise the tester chooses.</summary>
+    public bool Default { get; set; }
 }
 
 public sealed class AltinnAppPolicyConfirmation

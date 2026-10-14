@@ -106,6 +106,38 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
     }
 
     [Fact]
+    public async Task ResolvedDefaults_ArePreselected_AndSent_ButAnExplicitChooseIsRespected()
+    {
+        Services.AddSingleton<IExecutionAccessApiService>(new FixedAccess(new ExecutionAccessView(ExecutionAccessMode.LocalTrusted, true, "Local trusted execution (test).")));
+        JourneyScenarioInput[] inputs =
+        [
+            new("reporter", "Reporter", JourneyScenarioInputKind.Choice, true, "", [new("reporter-a", "Reporter A"), new("interactive-session", "Interactive")], Default: "reporter-a"),
+            new("child", "Approved synthetic child", JourneyScenarioInputKind.Choice, false, "", [new("synthetic-child-1", "Synthetic child 1"), new("synthetic-child-2", "Synthetic child 2")],
+                Default: "synthetic-child-1"),
+        ];
+        _api.Pack = _api.Pack with
+        {
+            Journeys = [.. _api.Pack.Journeys.Select(view => view.Journey.JourneyId != "rapportmottak" ? view : view with
+            {
+                CanRun = true, Readiness = JourneyReadinessState.Ready, RunnableScenarios = ["valid-report"],
+                Journey = view.Journey with { Scenarios = [.. view.Journey.Scenarios.Select(item => item.ScenarioId == "valid-report" ? item with { Inputs = inputs } : item)] },
+            })],
+        };
+        var cut = Render();
+        cut.Find("[data-testid=ijp-tab-rapportmottak]").Click();
+
+        cut.Find("[data-key=reporter] select").GetAttribute("value").Should().Be("reporter-a", "the only approved reporter is resolved, not typed");
+        cut.Find("[data-key=child] select").GetAttribute("value").Should().Be("synthetic-child-1");
+        cut.Find("[data-key=child] select").Change("");
+        cut.Find("[data-testid=ijp-start]").Click();
+        cut.Find("[data-testid=ijp-ack]").Change(true);
+        await cut.Find("[data-testid=ijp-confirm-run]").ClickAsync(new MouseEventArgs());
+
+        var sent = _api.Started.Should().ContainSingle().Subject.Inputs;
+        sent.Should().Contain("reporter", "reporter-a").And.NotContainKey("child", "the tester chose \"Choose…\"; a default never overrides that");
+    }
+
+    [Fact]
     public void ABackendDenial_KeepsRunDisabled_WithTheBackendsReason()
     {
         Services.AddSingleton<IExecutionAccessApiService>(new FixedAccess(new ExecutionAccessView(ExecutionAccessMode.None, false,

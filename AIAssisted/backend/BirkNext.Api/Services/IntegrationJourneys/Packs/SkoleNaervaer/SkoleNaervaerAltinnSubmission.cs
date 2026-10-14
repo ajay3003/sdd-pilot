@@ -94,6 +94,9 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
     public const string Registered = "registered";
     public const string Supplied = "supplied";
     public const string Generated = "generated";
+    /// <summary>The child comes from the approved test data, chosen by alias (<see cref="ChildKey"/>); its identifier is resolved in the backend.</summary>
+    public const string Approved = "approved";
+    public const string ChildKey = "child";
 
     /// <summary>The reporter must be one of the scenario's offered options (the configured aliases and, when offered, the interactive fallback).</summary>
     public static (string Value, string Summary) PrepareReporter(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs, List<string> errors)
@@ -106,7 +109,8 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
             : $"Reporter: synthetic TEST reporter alias {value} (unattended ID-porten TEST; the TestID identifier is not recorded).");
     }
 
-    public static JourneyInputPreparation Prepare(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs)
+    /// <param name="approvedChild">Resolves an approved child's alias to its identifier for this scenario (null when not approved). Server-side only.</param>
+    public static JourneyInputPreparation Prepare(JourneyScenarioDescriptor scenario, IReadOnlyDictionary<string, string> inputs, Func<string, string?>? approvedChild = null)
     {
         var errors = new List<string>();
         var reporter = PrepareReporter(scenario, inputs, errors);
@@ -115,7 +119,17 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
         if (!allowed.Contains(source, StringComparer.Ordinal)) errors.Add($"The identity source \"{source}\" is not allowed for this scenario.");
 
         var identifier = inputs.GetValueOrDefault(SkoleNaervaerAltinnForm.ChildIdentifier)?.Trim() ?? "";
-        if (source == Generated)
+        var childAlias = "";
+        if (source == Approved)
+        {
+            childAlias = inputs.GetValueOrDefault(ChildKey)?.Trim() ?? "";
+            var offered = scenario.Inputs?.FirstOrDefault(item => item.Key == ChildKey)?.Options?.Any(item => item.Value == childAlias) == true;
+            if (identifier.Length > 0) errors.Add("Leave the child identifier empty when an approved synthetic child is used.");
+            if (!offered) errors.Add("Choose one of the approved synthetic children for this scenario.");
+            identifier = offered ? approvedChild?.Invoke(childAlias) ?? "" : "";
+            if (offered && !SyntheticPersonIdentifier.IsSynthetic(identifier)) errors.Add("The approved synthetic child is not available in the approved test data.");
+        }
+        else if (source == Generated)
         {
             if (identifier.Length > 0) errors.Add("Leave the child identifier empty when BirkNext generates one.");
             identifier = SyntheticPersonIdentifier.Generate();
@@ -140,7 +154,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [ReporterKey] = reporter.Value, [IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier,
+            [ReporterKey] = reporter.Value, [IdentitySourceKey] = source, [SkoleNaervaerAltinnForm.ChildIdentifier] = identifier, [ChildKey] = childAlias,
             [SkoleNaervaerAltinnForm.PeriodFrom] = from!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [SkoleNaervaerAltinnForm.PeriodTo] = to!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             [SkoleNaervaerAltinnForm.PlannedHours] = planned!.Value.ToString("R", CultureInfo.InvariantCulture),
@@ -148,6 +162,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
         };
         var declaration = source switch
         {
+            Approved => $"approved synthetic child {childAlias} from the approved test data, declared {(scenario.ScenarioId == "person-not-found" ? "not registered" : "registered")} in Person (not verified by BirkNext)",
             Registered => "declared registered synthetic test person (known child; not verified by BirkNext)",
             Supplied => "supplied synthetic identifier, declared not registered in Person (unknown child; not verified by BirkNext)",
             _ => "generated synthetic identifier, assumed not registered in Person (unknown child; not verified by BirkNext)",
@@ -155,7 +170,7 @@ public sealed record SkoleNaervaerReportInput(string IdentitySource, string Chil
         return new JourneyInputPreparation(values, [],
         [
             reporter.Summary,
-            $"Child: synthetic identifier {SyntheticPersonIdentifier.Reference(identifier)} — {declaration}.",
+            source == Approved ? $"Child: {declaration}." : $"Child: synthetic identifier {SyntheticPersonIdentifier.Reference(identifier)} — {declaration}.",
             $"Period: {values[SkoleNaervaerAltinnForm.PeriodFrom]} – {values[SkoleNaervaerAltinnForm.PeriodTo]}.",
             $"Planned hours: {values[SkoleNaervaerAltinnForm.PlannedHours]} · actual attendance hours: {values[SkoleNaervaerAltinnForm.ActualHours]}.",
             .. scenario.Inputs?.Any(item => item.Key == PriorReportKey) == true ? ["Tester declared an earlier overlapping report for this child (not verified by BirkNext)."] : Array.Empty<string>(),
