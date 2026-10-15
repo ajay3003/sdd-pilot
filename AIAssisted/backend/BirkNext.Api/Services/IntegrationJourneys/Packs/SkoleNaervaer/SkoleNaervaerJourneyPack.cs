@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.ActiveEventTesting.Providers.SkoleNaervaer;
 using BirkNext.Api.Services.AltinnTesting;
+using BirkNext.Api.Services.ContractEvolution;
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Integrations;
 using BirkNext.SourceDomains;
@@ -481,6 +482,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             : contract.RequiredUnboundFields.Count == 0 ? "None."
                 : $"{contract.RequiredUnboundFields.Count} required field(s) are not filled by BirkNext ({string.Join(", ", contract.RequiredUnboundFields.Take(10).Select(field => field.Path))}). They must come from the app itself — not verified; Altinn's validation step of the first live run will show it.",
             Blocking: false));
+        if (SkoleNaervaerContractProfile.Analyze(flow.AppContract) is { } impact && ProducerBlock(impact) is { } producerBlock)
+            checks.Add(new("contract-impact", "Contract change: BirkNext producer", false, producerBlock));
         var process = contract.Process;
         checks.Add(new("process-plan", "Process contract", process.Confirmed, process.Confirmed
             ? $"{ProcessStatusLabel(process.Status)}: process/next × {process.Transitions} ({string.Join(" → ", process.PlannedTasks.Select(task => $"{task.TaskId} ({task.TaskType})"))}), {process.Operation.ToLowerInvariant()}; maximum {process.MaxTransitions} process transition(s). {process.ExpectedPostCondition} A data task's process/next is authorized by \"write\"."
@@ -581,6 +584,48 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     internal const string SourceAnalysisSource = "Source Analysis";
     internal const string BirkNextSource = "BirkNext";
     private static string ClientIdSource(string clientSource) => clientSource.StartsWith("Local", StringComparison.Ordinal) ? LocalSource : IqrSource;
+
+    /// <summary>
+    /// The Altinn form's contract impact as one readiness row: unchanged, or changed with the BirkNext producer's compatibility, the first
+    /// incompatible boundary and the downstream boundaries that are not evaluated. Blocking (mandatory) only when the form changed since the
+    /// confirmed contract and BirkNext's payload may no longer satisfy it; compatible downstream is never claimed without evidence.
+    /// </summary>
+    internal static JourneyPrerequisite ContractImpactRow(ContractImpactResult? impact)
+    {
+        const string Key = "contract-impact", Label = "Contract change impact";
+        if (impact is null)
+            return new(Key, Label, JourneyPrerequisiteCategory.Contract, JourneyReadinessState.NotConfigured,
+                "Not evaluated: no live form schema has been read (Read public TT02 metadata).", Mandatory: false, Scenarios: SubmissionScenarios) { Source = MetadataSource };
+        var downstream = string.Join("; ", impact.Boundaries.Where(item => item.BoundaryId != "producer")
+            .Select(item => $"{item.Label}: {CompatibilityLabel(item.Overall)}{(item.Potential ? " (potential)" : "")}"));
+        if (!impact.BaselineAvailable)
+            return new(Key, Label, JourneyPrerequisiteCategory.Contract, JourneyReadinessState.Partial,
+                $"Not evaluated: no confirmed baseline of the form contract yet (fingerprint {Short(impact.CurrentFingerprint)}).", Mandatory: false, Scenarios: SubmissionScenarios) { Source = MetadataSource };
+        if (!impact.Changed)
+            return new(Key, Label, JourneyPrerequisiteCategory.Contract, JourneyReadinessState.Ready,
+                $"Unchanged since the confirmed contract (fingerprint {Short(impact.CurrentFingerprint)}). Compatible is a contract statement, not runtime observed.",
+                Mandatory: false, Scenarios: SubmissionScenarios) { Source = MetadataSource };
+        var block = ProducerBlock(impact);
+        var first = impact.FirstIncompatibleBoundary is { } boundary ? $" First incompatible boundary: {boundary.Label} — {boundary.Reasons.FirstOrDefault()}" : "";
+        return new(Key, Label, JourneyPrerequisiteCategory.Contract, block is null ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
+            $"Contract changed ({impact.Changes.Count} change(s), fingerprint {Short(impact.PreviousFingerprint ?? "")} → {Short(impact.CurrentFingerprint)}). " +
+            $"{block ?? "BirkNext producer: compatible."}{first} Downstream: {downstream}. Overall: {CompatibilityLabel(impact.Overall)}.",
+            Mandatory: block is not null, Scenarios: SubmissionScenarios) { Source = MetadataSource };
+    }
+
+    /// <summary>Why BirkNext's payload may no longer satisfy a changed form contract (structurally or by business meaning), or null.</summary>
+    internal static string? ProducerBlock(ContractImpactResult impact) =>
+        impact.Changed && impact.Boundaries.FirstOrDefault(item => item.BoundaryId == "producer") is { Overall: not ContractCompatibility.Compatible } producer
+            ? $"BirkNext producer: {CompatibilityLabel(producer.Overall)} — {string.Join(" ", producer.Reasons.Take(3))} Update the payload mapping or review the change, then accept the reviewed contract; nothing is generated for unknown business fields."
+            : null;
+
+    internal static string CompatibilityLabel(ContractCompatibility compatibility) => compatibility switch
+    {
+        ContractCompatibility.Compatible => "Compatible",
+        ContractCompatibility.Breaking => "Breaking change",
+        ContractCompatibility.NeedsReview => "Needs review",
+        _ => "Not evaluated",
+    };
 
     internal static string ProcessStatusLabel(AltinnProcessContractStatus status) => status switch
     {
@@ -742,6 +787,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         },
                         contract.Process.Confirmed ? contract.Process.Summary : $"{ProcessStatusLabel(contract.Process.Status)} — {string.Join(" ", contract.Process.Reasons)}",
                         Scenarios: SubmissionScenarios, Mandatory: false) { Source = MetadataSource },
+                    ContractImpactRow(SkoleNaervaerContractProfile.Analyze(flow.AppContract)),
                     new JourneyPrerequisite("report-xsd", "Report XSD (MM validation)", JourneyPrerequisiteCategory.Contract,
                         xsdBound ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
                         xsdBound ? "An XML Schema from Source Analysis is bound to the message flow. XSD exists ≠ runtime payload validated."

@@ -259,7 +259,17 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         };
     }
 
-    private static SourceContract? XmlSchema(EvidenceFile file, SourceEvidenceContext context)
+    private static SourceContract? XmlSchema(EvidenceFile file, SourceEvidenceContext context) => XmlSchema(file, context.Files.Select(f => f.Path));
+
+    /// <summary>
+    /// Reads one XML Schema with the canonical, hardened reader (DTDs prohibited, no resolver, size-bounded): the same structural evidence
+    /// Source Analysis records. Imports and includes are never fetched; <paramref name="packagePaths"/> only says which referenced files exist.
+    /// Throws <see cref="XmlException"/> or <see cref="XmlSchemaException"/> for a document that is not a readable schema.
+    /// </summary>
+    public static SourceContract ReadXmlSchema(string path, string content, IEnumerable<string>? packagePaths = null) =>
+        XmlSchema(new EvidenceFile(path, content, SourceFileRole.Contract, "XML Schema"), packagePaths ?? [path])!;
+
+    private static SourceContract? XmlSchema(EvidenceFile file, IEnumerable<string> packagePaths)
     {
         var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 2_000_000 };
         using (var schemaReader = XmlReader.Create(new StringReader(file.Content), settings))
@@ -377,7 +387,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
 
         var dependencies = schema.Elements().Where(x => x.Name == xs + "import" || x.Name == xs + "include" || x.Name == xs + "redefine")
             .Select(x => new XmlSchemaDependencyEvidence(x.Name.LocalName, (string?)x.Attribute("namespace"), (string?)x.Attribute("schemaLocation"),
-                SchemaLocationExists(file.Path, (string?)x.Attribute("schemaLocation"), context.Files.Select(f => f.Path))))
+                SchemaLocationExists(file.Path, (string?)x.Attribute("schemaLocation"), packagePaths)))
             .ToList();
         var limitations = new List<string>
         {

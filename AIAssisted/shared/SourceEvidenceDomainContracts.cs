@@ -524,7 +524,7 @@ public enum SourceEvidenceChangeKind { Added, Removed, Changed }
 /// <summary>Contract-specific change classes; only a compatibility rule may call one breaking.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ContractChangeClass { None, OperationAdded, OperationRemoved, FieldAddedOptional, FieldAddedRequired, FieldRemoved, TypeChanged, RequirednessChanged, TypeAdded, TypeRemoved,
-    CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged }
+    CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged, EnumValueAdded, EnumValueRemoved, OrderChanged }
 
 public sealed record SourceEvidenceChange(SourceEvidenceDomain Domain, SourceEvidenceChangeKind Kind, string Area, string Key, string Name, string Detail,
     ContractChangeClass ContractChange = ContractChangeClass.None, ContractCompatibilityConcern? CompatibilityConcern = null);

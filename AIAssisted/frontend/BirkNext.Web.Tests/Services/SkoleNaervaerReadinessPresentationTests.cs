@@ -36,6 +36,7 @@ public sealed class SkoleNaervaerReadinessPresentationTests
             Row("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata"),
             Row("public-metadata", "Public TT02 process metadata", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata", mandatory: false),
             Row("process-contract", "Process contract (current operation)", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata", mandatory: false),
+            Row("contract-impact", "Contract change impact", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata"),
             Row("test-reporter", "Approved test reporter", JourneyPrerequisiteCategory.SyntheticData, "Integration Quality Review"),
             Row("synthetic-data", "Known synthetic child (test data)", JourneyPrerequisiteCategory.SyntheticData, "Approved test data"),
             new("backend-build", "Backend build", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.Ready, "Running commit.", Mandatory: false) { Source = "BirkNext" },
@@ -120,5 +121,14 @@ public sealed class SkoleNaervaerReadinessPresentationTests
         var action = SkoleNaervaerReadinessPresentation.ActionFor(Rows("integration:report-intake").Single(item => item.Key == "integration:report-intake"), "dev");
         action.Label.Should().Be("Open Target Environment → Integrations");
         action.Href.Should().Contain("tab=integrations").And.Contain("profile=dev");
+    }
+
+    [Fact]
+    public void AContractChangeTheProducerCannotSatisfy_IsAContractBlocker_WithAReviewAction()
+    {
+        var attention = SkoleNaervaerReadinessPresentation.NeedsAttention(Rows("contract-impact"));
+        attention.Select(row => row.Key).Should().Equal("contract-impact");
+        SkoleNaervaerReadinessPresentation.Decision(attention).Should().Be(("E", "Payload / contract blocker"));
+        SkoleNaervaerReadinessPresentation.ActionFor(attention.Single(), "dev-env").Label.Should().Be("Review contract changes");
     }
 }

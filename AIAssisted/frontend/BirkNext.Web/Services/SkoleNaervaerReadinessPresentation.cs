@@ -12,7 +12,7 @@ public static class SkoleNaervaerReadinessPresentation
     /// <summary>The run inputs a Rapportmottak submission needs, in the order a tester reads them.</summary>
     public static readonly IReadOnlyList<string> RunInputs =
     [
-        "trusted-environment", "integration:report-intake", "altinn-environment", "altinn-app", "submission-contract", "public-metadata", "process-contract",
+        "trusted-environment", "integration:report-intake", "altinn-environment", "altinn-app", "submission-contract", "public-metadata", "process-contract", "contract-impact",
         "idporten-client", "redirect-uri", "client-secret", "unattended-provider", "synthetic-reporter", "reporter-profile", "app-policy", "test-reporter", "synthetic-data",
     ];
 
@@ -72,6 +72,7 @@ public static class SkoleNaervaerReadinessPresentation
         "synthetic-reporter" or "reporter-profile" => new("Open approved reporter setup", null, "local"),
         "synthetic-data" => new("Select approved test data", null, "local"),
         "public-metadata" or "submission-contract" or "process-contract" => new("Read public TT02 metadata", null, "contract"),
+        "contract-impact" => new("Review contract changes", null, "contract"),
         _ => new("View details", null, "advanced"),
     };
 
@@ -87,7 +88,7 @@ public static class SkoleNaervaerReadinessPresentation
         if (Any("idporten-client", "redirect-uri", "client-secret", "unattended-provider", "reporter-auth")) return ("B", "ID-porten configuration incomplete");
         if (Any("synthetic-reporter", "reporter-profile", "reporter-role", "test-reporter", "synthetic-data")) return ("C", "Reporter / test identity incomplete");
         if (Any("trusted-environment") || keys.Any(key => key.StartsWith("integration:", StringComparison.Ordinal))) return ("D", "Trusted target / integration incomplete");
-        if (Any("altinn-app", "altinn-environment", "submission-contract", "public-metadata", "process-contract", "app-policy")) return ("E", "Payload / contract blocker");
+        if (Any("altinn-app", "altinn-environment", "submission-contract", "public-metadata", "process-contract", "app-policy", "contract-impact")) return ("E", "Payload / contract blocker");
         return ("F", "Other blocker (see technical details)");
     }
 }

@@ -192,7 +192,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=snt-tt02-decision]").GetAttribute("data-code").Should().Be("B"));
         page.Find("[data-testid=snt-tt02-decision]").TextContent.Should().Contain("ID-porten configuration incomplete");
         var resolved = page.FindAll("[data-testid=snt-resolved-item]");
-        resolved.Should().HaveCount(15, "every other run input was resolved");
+        resolved.Should().HaveCount(16, "every other run input was resolved (including the contract change impact)");
         page.Find("[data-testid=snt-resolved-item][data-key=idporten-client] .snt-source").TextContent.Should().Be("Integration Quality Review");
         page.Find("[data-testid=snt-resolved-item][data-key=redirect-uri] .snt-source").TextContent.Should().Be("Local execution config");
         page.Find("[data-testid=snt-resolved-item][data-key=synthetic-data] .snt-source").TextContent.Should().Be("Approved test data");

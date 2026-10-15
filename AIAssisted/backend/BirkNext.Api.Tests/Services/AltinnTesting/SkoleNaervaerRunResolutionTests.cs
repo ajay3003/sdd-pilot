@@ -5,6 +5,7 @@ using BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 using BirkNext.Api.Tests.Services.ActiveEventTesting;
 using BirkNext.Api.Tests.Services.IntegrationJourneys;
 using BirkNext.Integrations;
+using BirkNext.SourceDomains;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -361,5 +362,108 @@ public sealed class SkoleNaervaerRunResolutionTests
                 if (SyntheticPersonIdentifier.IsSynthetic(candidate)) return candidate;
             }
         throw new InvalidOperationException("No synthetic identifier found.");
+    }
+
+    // ── Contract change impact (generic contract-evolution engine, Skolenærvær profile) ──────────────────────────────
+
+    /// <summary>The live form changes while the confirmed baseline stays (as before a review); nothing is fetched again.</summary>
+    private static void LiveFormChanges(Bed bed, Func<IReadOnlyList<AltinnSchemaField>, IEnumerable<AltinnSchemaField>> change)
+    {
+        var record = bed.Harness.MessageFlows.Contract!;
+        bed.Harness.MessageFlows.Contract = record with { PublicMetadata = record.PublicMetadata! with { Fields = [.. change(record.PublicMetadata.Fields!)] } };
+    }
+
+    [Fact]
+    public async Task ContractImpact_Unchanged_IsReady_AndBlocksNothing()
+    {
+        var bed = await ReadyAsync();
+        var view = await RapportmottakAsync(bed);
+        Row(view, "contract-impact").Should().Match<JourneyPrerequisite>(row => row.State == JourneyReadinessState.Ready && !row.Mandatory && row.Source == "Live Altinn metadata");
+        Row(view, "contract-impact").Detail.Should().StartWith("Unchanged since the confirmed contract").And.Contain("not runtime observed");
+        view.RunnableScenarios.Should().Contain("valid-report");
+    }
+
+    [Fact]
+    public async Task ContractImpact_ARequiredFieldBirkNextDoesNotProduce_BlocksTheRealRunAndTheDryRun_AtTheProducerBoundary()
+    {
+        var bed = await ReadyAsync();
+        LiveFormChanges(bed, fields => [.. fields, new AltinnSchemaField("Valuta", "string", null, true)]);
+        var view = await RapportmottakAsync(bed);
+
+        var row = Row(view, "contract-impact");
+        (row.State, row.Mandatory).Should().Be((JourneyReadinessState.NotReady, true));
+        row.Detail.Should().Contain("BirkNext producer: Breaking change").And.Contain("Valuta").And.Contain("First incompatible boundary: BirkNext → Altinn")
+            .And.Contain("nothing is generated for unknown business fields");
+        row.Detail.Should().Contain("MU → MM (transport): Not evaluated (potential)").And.Contain("Bufdata: Not evaluated (potential)", "downstream is never claimed compatible without evidence");
+        view.RunnableScenarios.Should().NotContain("valid-report", "the real run is gated");
+
+        var inputs = view.Journey.Scenarios.Single(item => item.ScenarioId == "valid-report").Inputs!.Where(input => input.Default is not null).ToDictionary(input => input.Key, input => input.Default!);
+        inputs[SkoleNaervaerAltinnForm.PeriodFrom] = "2026-09-01"; inputs[SkoleNaervaerAltinnForm.PeriodTo] = "2026-09-30";
+        inputs[SkoleNaervaerAltinnForm.PlannedHours] = "100"; inputs[SkoleNaervaerAltinnForm.ActualHours] = "92";
+        var validation = await Service(bed).ValidateAsync(new IntegrationJourneyRunRequest
+        {
+            EnvironmentId = Env, PackId = SkoleNaervaerJourneyPack.Id, JourneyId = SkoleNaervaerJourneyPack.RapportmottakId, ScenarioId = "valid-report", Inputs = inputs,
+        }, default);
+        validation.Checks.Should().ContainSingle(check => check.Key == "contract-impact").Which.Passed.Should().BeFalse();
+        bed.Kit.Http.Calls.Should().BeEmpty("contract impact is computed from stored evidence; nothing is fetched or submitted");
+    }
+
+    [Fact]
+    public async Task ContractImpact_AnOptionalTechnicalHeaderField_IsCompatible_AndDoesNotBlock()
+    {
+        var bed = await ReadyAsync();
+        LiveFormChanges(bed, fields => [.. fields, new AltinnSchemaField("Meldingshode.Sporingsnummer", "string", null, false)]);
+        var view = await RapportmottakAsync(bed);
+        var row = Row(view, "contract-impact");
+        (row.State, row.Mandatory).Should().Be((JourneyReadinessState.Partial, false));
+        row.Detail.Should().Contain("BirkNext producer: compatible.");
+        view.RunnableScenarios.Should().Contain("valid-report");
+    }
+
+    [Fact]
+    public async Task ContractImpact_AnOptionalBusinessField_NeedsBusinessReview_BeforeARealRun()
+    {
+        var bed = await ReadyAsync();
+        LiveFormChanges(bed, fields => [.. fields, new AltinnSchemaField("Fravaersaarsak", "string", null, false)]);
+        var view = await RapportmottakAsync(bed);
+        var row = Row(view, "contract-impact");
+        (row.State, row.Mandatory).Should().Be((JourneyReadinessState.NotReady, true));
+        row.Detail.Should().Contain("BirkNext producer: Needs review").And.Contain("business meaning");
+        row.Detail.Should().NotContain("First incompatible boundary", "needing review is not a known incompatibility");
+    }
+
+    [Fact]
+    public void SkolenaervaerSemantics_ClassifyByExplicitPathsOnly_AndNeverMapANewCodeValue()
+    {
+        var rules = new SkoleNaervaerContractSemantics();
+        rules.Assess(new(ContractChangeClass.FieldRemoved, "Klient/Identifikator/Fodselsnummer", "x", null, ""))!.Compatibility.Should().Be(ContractCompatibility.Breaking);
+        rules.Assess(new(ContractChangeClass.FieldAddedOptional, "Klient/Identifikator/DufNummer", null, "x", ""))!.Compatibility.Should().Be(ContractCompatibility.NeedsReview);
+        rules.Assess(new(ContractChangeClass.EnumValueAdded, "Fravaer/Type", null, "Permisjon", ""))!
+            .Should().Match<ContractSemanticAssessment>(item => item.Compatibility == ContractCompatibility.NeedsReview && item.Reason.Contains("never mapped"));
+        rules.Assess(new(ContractChangeClass.FieldAddedOptional, "Meldingshode/Sporingsnummer", null, "x", ""))!.Compatibility.Should().Be(ContractCompatibility.Compatible);
+        rules.Assess(new(ContractChangeClass.TypeChanged, "Periode/StartDato", "string:date", "string:date-time", ""))!.Compatibility.Should().Be(ContractCompatibility.NeedsReview);
+    }
+
+    [Fact]
+    public void SkolenaervaerGraph_IsData_MmInputAndMappingAreSeparate_AndOnlyMappingsLinkContracts()
+    {
+        var graph = SkoleNaervaerContractProfile.Graph("altinn:app:form");
+        graph.Boundaries.Select(item => (item.Id, item.Role)).Should().Equal(
+            ("producer", ContractBoundaryRole.Produces), ("altinn-to-mu", ContractBoundaryRole.Maps), ("mu-transport", ContractBoundaryRole.Transports),
+            ("mm-input", ContractBoundaryRole.Consumes), ("mm-to-skole", ContractBoundaryRole.Maps), ("skole-intake", ContractBoundaryRole.Consumes),
+            ("skole-to-bufdata", ContractBoundaryRole.Maps), ("bufdata", ContractBoundaryRole.Consumes));
+        graph.Boundaries.Where(item => item.ContractId == "altinn:app:form").Select(item => item.Id).Should().Equal("producer", "altinn-to-mu");
+        graph.Boundaries.Where(item => item.Role == ContractBoundaryRole.Maps).Should().OnlyContain(item => item.Mapping == null, "no mapping is imported as data yet, so none is guessed");
+        graph.Boundaries.Should().OnlyContain(item => item.Evidence.Length > 0);
+    }
+
+    [Fact]
+    public void AltinnComparer_NoLongerAcceptsANonFieldFormChangeSilently()
+    {
+        var before = new AltinnContractSnapshot { AppId = AltinnTestKit.AppId, FormDataTypeId = "model", Fingerprint = "a", XmlRootElement = "Root", Fields = [new("A", "string", null, false)] };
+        var after = before with { Fingerprint = "b", Fields = [new("A", "string", null, true)] };
+        var changes = AltinnContractComparer.Compare(before, after, DateTimeOffset.UtcNow);
+        changes.Impact.Should().Be(AltinnContractChangeImpact.NeedsReview, "a field that became required must be reviewed, not auto-accepted");
+        changes.Changes.Should().ContainSingle(change => change.Area == "Form contract").Which.Detail.Should().Contain("optional → required");
     }
 }

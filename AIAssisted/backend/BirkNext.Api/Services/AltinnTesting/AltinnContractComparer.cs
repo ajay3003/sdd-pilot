@@ -43,6 +43,14 @@ public static class AltinnContractComparer
             if (!fieldsBefore.SetEquals(fieldsAfter))
                 Add("Form fields", $"{fieldsBefore.Count} fields", $"{fieldsAfter.Count} fields (+{fieldsAfter.Except(fieldsBefore).Count()} −{fieldsBefore.Except(fieldsAfter).Count()})",
                     AltinnContractChangeImpact.NeedsReview, "The form schema changed; the field bindings are checked again.");
+            // Everything else the generic form contract captures (requiredness, formats, XML namespace and root) must not be accepted silently.
+            else if (AltinnContractEvolution.ToContractSnapshot(before) is { } formBefore && AltinnContractEvolution.ToContractSnapshot(after) is { } formAfter
+                && formBefore.Fingerprint != formAfter.Fingerprint)
+            {
+                var structural = BirkNext.Api.Services.ContractEvolution.ContractDiff.Compare(formBefore, formAfter);
+                Add("Form contract", Short(formBefore.Fingerprint), Short(formAfter.Fingerprint), AltinnContractChangeImpact.NeedsReview,
+                    $"The form contract changed beyond field names and types: {string.Join("; ", structural.Take(5).Select(change => change.Detail))}");
+            }
         }
 
         var (d0, d1) = (before.DeployedProcess, after.DeployedProcess);
