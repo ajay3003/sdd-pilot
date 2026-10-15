@@ -19,7 +19,7 @@ unresolved, each with the owner that resolves it.
 | Report-intake integration | Integration Quality Review + Target Environment |
 | App, environment, ID-porten client id, scopes, test reporter reference, synthetic identity set | Integration Quality Review → Altinn test configuration |
 | Enabled, redirect URI, client secret (as *Available*/*Missing*), app-policy confirmation | Local execution config |
-| Synthetic reporter and its profile confirmation, approved synthetic children | Approved test data (local execution config) |
+| Synthetic reporter and its profile confirmation, approved synthetic children | Test Data catalog, fed by the local execution config) |
 | Task, data type, process contract, contract fingerprint | Live Altinn metadata (anonymous reads) |
 
 - Automatic resolution does not create configuration or identities. It never generates a child, invents a redirect URI or switches

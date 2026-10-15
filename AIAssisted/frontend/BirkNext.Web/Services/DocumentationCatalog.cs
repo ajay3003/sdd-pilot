@@ -97,6 +97,7 @@ public static class DocumentationCatalog
         ["critical-e2e-regression"] = new("Runs configured safety-gated critical browser journeys.", "Configured journeys, target and browser/runtime readiness.", "A journey covers only its recorded steps and cannot prove full correctness."),
         ["test-coverage-review"] = new("Shows what is already tested, at which level and boundary, which parts of each system journey are not verified, and where QA may repeat developer tests.", "The current (and optional baseline) Source Analysis snapshot with its per-test facts, architecture journeys, the workspace requirements and acceptance scenarios, imported test results and Critical E2E flows.", "It never certifies coverage or removes tests: discovered ≠ executed ≠ passed, mocks ≠ real integrations, and no coverage percentage is computed."),
         ["ai-generated-code-review"] = new("Reviews source for risk patterns common after generated or AI-assisted changes, with deterministic rules.", "The current (and optional baseline) Source Analysis snapshot, its contract/configuration/dependency/test evidence, and the workspace requirement graph.", "It never determines who or what wrote the code; no indicators observed does not mean the code is correct."),
+        ["test-data"] = new("Shows the approved typed test data every test can use: values, payloads, files, entity references, data sets and expected results.", "The configured catalog (TestData section) and the local approved configuration (synthetic TestID reporters and persons).", "Approved is not validated, and resolving test data never creates it; sensitive values are never shown."),
         ["admin/system-settings"] = new("Configures platform, targets, capabilities and diagnostics.", "Host settings and Target Environment profiles.", "Visibility/configuration is not support, applicability or verification."),
         ["ai-change-auditor"] = new("Optionally reviews AI-generated changes when enabled.", "AI configuration and submitted change context.", "Optional; not a core workflow and not a substitute for deterministic evidence.")
     };
@@ -237,6 +238,7 @@ public static class DocumentationCatalog
             ("critical-e2e-regression","Critical E2E Regression","/critical-e2e-regression","testing","Quality & Testing",null,null),
             ("test-coverage-review","Test Coverage & Overlap Review","/test-coverage-review","test-coverage-review","Quality & Testing",null,null),
             ("ai-generated-code-review","AI-Generated Code Review","/ai-generated-code-review","ai-generated-code-review","Quality & Testing",null,null),
+            ("test-data","Test Data","/test-data","testing","Quality & Testing",null,null),
             ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
             ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","integration-journeys","Extensions",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),

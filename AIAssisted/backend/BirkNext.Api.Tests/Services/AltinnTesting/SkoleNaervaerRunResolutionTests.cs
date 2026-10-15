@@ -111,7 +111,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         sources["integration:report-intake"].Should().Be("Integration Quality Review + Target Environment");
         (sources["idporten-client"], sources["altinn-app"], sources["test-reporter"]).Should().Be(("Integration Quality Review", "Integration Quality Review", "Integration Quality Review"));
         (sources["redirect-uri"], sources["client-secret"], sources["unattended-provider"]).Should().Be(("Local execution config", "Local execution config", "Local execution config"));
-        (sources["synthetic-reporter"], sources["reporter-profile"], sources["synthetic-data"]).Should().Be(("Approved test data", "Approved test data", "Approved test data"));
+        (sources["synthetic-reporter"], sources["reporter-profile"], sources["synthetic-data"]).Should().Be(("Test Data", "Test Data", "Test Data"));
         (sources["public-metadata"], sources["submission-contract"], sources["process-contract"]).Should().Be(("Live Altinn metadata", "Live Altinn metadata", "Live Altinn metadata"));
         Row(view, "synthetic-data").Detail.Should().StartWith("Resolved: synthetic-child-1").And.Contain("not verified");
         Row(view, "synthetic-reporter").Detail.Should().StartWith($"Resolved: {AltinnTestKit.ReporterAlias}").And.Contain("Configured is not authenticated");
@@ -465,5 +465,72 @@ public sealed class SkoleNaervaerRunResolutionTests
         var changes = AltinnContractComparer.Compare(before, after, DateTimeOffset.UtcNow);
         changes.Impact.Should().Be(AltinnContractChangeImpact.NeedsReview, "a field that became required must be reviewed, not auto-accepted");
         changes.Changes.Should().ContainSingle(change => change.Area == "Form contract").Which.Detail.Should().Contain("optional → required");
+    }
+
+    // ── Test data through the generic Test Data capability ───────────────────────────────────────────────────────────
+
+    private static AltinnTestKit TestDataKit(params SyntheticChildOptions[] children)
+    {
+        var kit = new AltinnTestKit().ConfigureUnattended();
+        kit.Options.SyntheticChildren = [.. children];
+        return kit;
+    }
+
+    [Fact]
+    public void ReporterAndChild_ResolveThroughTheGenericTestDataResolver_ByAliasOnly()
+    {
+        var kit = TestDataKit(new SyntheticChildOptions { Alias = "synthetic-child-1", Label = "Synthetic child 1", TestPersonIdentifier = ChildIdentifier });
+        var result = new SkoleNaervaerTestData(kit.Options).Resolve(knownToPerson: true);
+
+        result.Satisfied.Should().BeTrue(string.Join("; ", result.Roles.Select(role => role.Reason)));
+        result.Role(SkoleNaervaerTestData.ReporterRole)!.Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.AssetAlias == AltinnTestKit.ReporterAlias && role.Source == "Local approved configuration");
+        result.Role(SkoleNaervaerTestData.ChildRole)!.AssetAlias.Should().Be("synthetic-child-1");
+        NothingSensitive(JsonSerializer.Serialize(result), "a resolution carries aliases only");
+
+        var catalog = new BirkNext.Api.Services.TestData.TestDataCatalog([new AltinnTestDataProvider(kit.Options)]).View();
+        catalog.Assets.Select(asset => (asset.Alias, asset.Kind, asset.Sensitivity)).Should().BeEquivalentTo(new[]
+        {
+            (AltinnTestKit.ReporterAlias, BirkNext.TestData.TestDataKind.EntityReference, BirkNext.TestData.TestDataSensitivity.Sensitive),
+            ("synthetic-child-1", BirkNext.TestData.TestDataKind.EntityReference, BirkNext.TestData.TestDataSensitivity.Sensitive),
+        });
+        NothingSensitive(JsonSerializer.Serialize(catalog), "the Test Data page never receives an identifier");
+    }
+
+    [Fact]
+    public void SeveralChildrenWithoutADefault_AreAmbiguous_AndAnExplicitChoiceIsRespected()
+    {
+        var kit = TestDataKit(new SyntheticChildOptions { Alias = "synthetic-child-1", TestPersonIdentifier = ChildIdentifier },
+            new SyntheticChildOptions { Alias = "synthetic-child-2", TestPersonIdentifier = OtherChildIdentifier });
+        var data = new SkoleNaervaerTestData(kit.Options);
+
+        data.DefaultChild(knownToPerson: true).Should().BeNull("no single default decides");
+        data.Resolve(knownToPerson: true).Role(SkoleNaervaerTestData.ChildRole)!
+            .Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.State == BirkNext.TestData.TestDataResolutionState.Ambiguous && role.Candidates.Count == 2);
+        data.Resolve(knownToPerson: true, new Dictionary<string, string> { [SkoleNaervaerTestData.ChildRole] = "synthetic-child-2" }).Role(SkoleNaervaerTestData.ChildRole)!
+            .Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.State == BirkNext.TestData.TestDataResolutionState.Selected && role.AssetAlias == "synthetic-child-2");
+    }
+
+    [Fact]
+    public void SeveralReporters_AreNeverPickedAutomatically_AndAMissingReporterIsUnresolved()
+    {
+        var kit = TestDataKit(new SyntheticChildOptions { Alias = "synthetic-child-1", TestPersonIdentifier = ChildIdentifier });
+        kit.Options.UnattendedIdPortenTest.Reporters.Add(new SyntheticReporterOptions { Alias = "reporter-b", TestIdPersonIdentifier = Synthetic("0587", "07"), AltinnProfileConfirmed = true });
+        new SkoleNaervaerTestData(kit.Options).DefaultReporter.Should().BeNull();
+        new SkoleNaervaerTestData(kit.Options).Resolve(knownToPerson: true).Role(SkoleNaervaerTestData.ReporterRole)!.State.Should().Be(BirkNext.TestData.TestDataResolutionState.Ambiguous);
+
+        kit.Options.UnattendedIdPortenTest.Reporters.Clear();
+        var missing = new SkoleNaervaerTestData(kit.Options).Resolve(knownToPerson: true);
+        missing.Satisfied.Should().BeFalse();
+        missing.Role(SkoleNaervaerTestData.ReporterRole)!.Should().Match<BirkNext.TestData.TestDataRoleResolution>(role => role.State == BirkNext.TestData.TestDataResolutionState.Unresolved && role.Reason.Contains("Nothing is generated"));
+    }
+
+    [Fact]
+    public void AChildThatIsTheReportersPerson_IsNeverResolved()
+    {
+        var kit = TestDataKit(new SyntheticChildOptions { Alias = "synthetic-child-1", TestPersonIdentifier = AltinnTestKit.ReporterIdentifier });
+        var result = new SkoleNaervaerTestData(kit.Options).Resolve(knownToPerson: true);
+        result.Role(SkoleNaervaerTestData.ChildRole)!.State.Should().Be(BirkNext.TestData.TestDataResolutionState.Unresolved);
+        result.Satisfied.Should().BeFalse();
+        JsonSerializer.Serialize(result).Should().NotContain(AltinnTestKit.ReporterIdentifier);
     }
 }

@@ -547,6 +547,14 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
+// Test Data: a general typed catalog (values, payloads, files, entity references, expected results, data sets) fed by providers. Sensitive
+// values stay in the backend; consumers resolve role requirements against it (selection only, never generation).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.ConfiguredTestDataProvider(
+    sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.TestData.TestDataOptions.Section).Get<BirkNext.Api.Services.TestData.TestDataOptions>()
+        ?? new BirkNext.Api.Services.TestData.TestDataOptions(), sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider, BirkNext.Api.Services.AltinnTesting.AltinnTestDataProvider>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>()));
+
 // Altinn app testing (Skolenærvær Rapportmottak): TT02 App API steps executed by the shared journey runner after the tester's own
 // ID-porten TEST sign-in. One named client, request guard on every call, no redirects; tokens in process memory only.
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.AltinnTesting.AltinnTestingOptions.Section)

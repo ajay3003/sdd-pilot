@@ -30,15 +30,15 @@ public sealed class SkoleNaervaerReadinessPresentationTests
             Row("idporten-client", "ID-porten TEST client", JourneyPrerequisiteCategory.Authentication, "Integration Quality Review", mandatory: false),
             Row("redirect-uri", "Registered redirect URI", JourneyPrerequisiteCategory.Authentication, "Local execution config", mandatory: false),
             Row("client-secret", "Client secret", JourneyPrerequisiteCategory.Authentication, "Local execution config", mandatory: false),
-            Row("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData, "Approved test data", mandatory: false),
-            Row("reporter-profile", "Reporter Altinn profile", JourneyPrerequisiteCategory.SyntheticData, "Approved test data", mandatory: false),
+            Row("synthetic-reporter", "Synthetic reporter", JourneyPrerequisiteCategory.SyntheticData, "Test Data", mandatory: false),
+            Row("reporter-profile", "Reporter Altinn profile", JourneyPrerequisiteCategory.SyntheticData, "Test Data", mandatory: false),
             Row("app-policy", "App authorization policy", JourneyPrerequisiteCategory.Authorization, "Local execution config"),
             Row("submission-contract", "Altinn app contract", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata"),
             Row("public-metadata", "Public TT02 process metadata", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata", mandatory: false),
             Row("process-contract", "Process contract (current operation)", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata", mandatory: false),
             Row("contract-impact", "Contract change impact", JourneyPrerequisiteCategory.Contract, "Live Altinn metadata"),
             Row("test-reporter", "Approved test reporter", JourneyPrerequisiteCategory.SyntheticData, "Integration Quality Review"),
-            Row("synthetic-data", "Known synthetic child (test data)", JourneyPrerequisiteCategory.SyntheticData, "Approved test data"),
+            Row("synthetic-data", "Known synthetic child (test data)", JourneyPrerequisiteCategory.SyntheticData, "Test Data"),
             new("backend-build", "Backend build", JourneyPrerequisiteCategory.Executor, JourneyReadinessState.Ready, "Running commit.", Mandatory: false) { Source = "BirkNext" },
         ];
     }
@@ -104,8 +104,8 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     [InlineData("redirect-uri", "Configure local execution", null, "local")]
     [InlineData("client-secret", "Configure local execution", null, "local")]
     [InlineData("unattended-provider", "Configure local execution", null, "local")]
-    [InlineData("reporter-profile", "Open approved reporter setup", null, "local")]
-    [InlineData("synthetic-data", "Select approved test data", null, "local")]
+    [InlineData("reporter-profile", "Open Test Data", "/test-data", null)]
+    [InlineData("synthetic-data", "Open Test Data", "/test-data", null)]
     [InlineData("trusted-environment", "Open Target Environment", "/admin/system-settings?section=target-environments", null)]
     [InlineData("public-metadata", "Read public TT02 metadata", null, "contract")]
     public void EachBlocker_PointsToItsOwner_NeverToTheTargetApplicationForAuthentication(string key, string label, string? href, string? group)

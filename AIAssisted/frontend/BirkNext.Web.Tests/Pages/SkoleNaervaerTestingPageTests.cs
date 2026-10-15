@@ -195,7 +195,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         resolved.Should().HaveCount(16, "every other run input was resolved (including the contract change impact)");
         page.Find("[data-testid=snt-resolved-item][data-key=idporten-client] .snt-source").TextContent.Should().Be("Integration Quality Review");
         page.Find("[data-testid=snt-resolved-item][data-key=redirect-uri] .snt-source").TextContent.Should().Be("Local execution config");
-        page.Find("[data-testid=snt-resolved-item][data-key=synthetic-data] .snt-source").TextContent.Should().Be("Approved test data");
+        page.Find("[data-testid=snt-resolved-item][data-key=synthetic-data] .snt-source").TextContent.Should().Be("Test Data");
         page.FindAll("[data-testid=snt-attention-item]").Select(li => li.GetAttribute("data-key")).Should().Equal("client-secret");
         page.Find("[data-testid=snt-status]").TextContent.Should().Contain("1 blocker").And.NotContain("2 blockers", "resolved inputs are not counted");
 

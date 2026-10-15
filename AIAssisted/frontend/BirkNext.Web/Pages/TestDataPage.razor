@@ -1,0 +1,187 @@
+@page "/test-data"
+@using BirkNext.TestData
+@using BirkNext.Web.Components
+@inject IServiceProvider Services
+
+<PageTitle>Test Data</PageTitle>
+
+@* Test Data: any approved typed value, payload, file, entity reference, data set or expected result used to prepare, execute or verify a
+   test. Read-only catalog of safe summaries: aliases and metadata; a sensitive value never reaches the browser. *@
+<div class="td-page" data-testid="td-page" aria-busy="@(_loading ? "true" : "false")">
+    <PageHeader Title="Test Data" Description="Approved typed test data — values, payloads, files, entity references, data sets and expected results — from every configured source. Aliases and metadata only; sensitive values stay in the backend." />
+
+    @if (_loading)
+    {
+        <p role="status" data-testid="td-loading">Loading test data…</p>
+    }
+    else if (_error is not null)
+    {
+        <p role="alert" class="td-error" data-testid="td-error">@_error</p>
+    }
+    else if (_catalog is { } catalog)
+    {
+        <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
+            <label>Data kind
+                <select class="form-control" data-testid="td-filter-kind" @bind="_kind">
+                    <option value="">All</option>
+                    @foreach (var kind in catalog.Assets.Select(asset => asset.Kind).Distinct().Order()) { <option value="@kind">@KindLabel(kind)</option> }
+                </select>
+            </label>
+            <label>Environment
+                <select class="form-control" data-testid="td-filter-environment" @bind="_environment">
+                    <option value="">All</option>
+                    @foreach (var environment in catalog.Assets.Select(EnvironmentLabel).Distinct().Order()) { <option value="@environment">@environment</option> }
+                </select>
+            </label>
+            <label>Status
+                <select class="form-control" data-testid="td-filter-status" @bind="_status">
+                    <option value="">All</option>
+                    @foreach (var approval in Enum.GetValues<TestDataApproval>()) { <option value="@approval">@approval</option> }
+                </select>
+            </label>
+        </div>
+
+        <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
+            <h2 id="td-assets-heading">Assets <span class="td-count">(@Filtered(catalog).Count of @catalog.Assets.Count)</span></h2>
+            @if (catalog.Assets.Count == 0)
+            {
+                <p data-testid="td-empty">No test data is configured yet. Assets come from the sources below; BirkNext never generates identities or business data.</p>
+            }
+            else
+            {
+                <ul class="td-assets">
+                    @foreach (var asset in Filtered(catalog))
+                    {
+                        var open = _openId == asset.Id;
+                        <li class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind">
+                            <div class="td-asset-head">
+                                <span class="td-alias">@asset.Alias</span>
+                                <span class="td-pill td-pill-@Tone(asset)">@asset.Approval</span>
+                                <button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"td-detail-{Slug(asset.Id)}")"
+                                        data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button>
+                            </div>
+                            <dl class="td-facts">
+                                <div><dt>Kind</dt><dd data-testid="td-kind">@KindLabel(asset.Kind)</dd></div>
+                                <div><dt>Type</dt><dd data-testid="td-type">@TypeLabel(asset)</dd></div>
+                                <div><dt>Environment</dt><dd>@EnvironmentLabel(asset)</dd></div>
+                                <div><dt>Validation</dt><dd data-testid="td-validation">@asset.Validation</dd></div>
+                                <div><dt>Source</dt><dd>@asset.Source</dd></div>
+                                <div><dt>Value</dt><dd data-testid="td-value">@ValueLabel(asset)</dd></div>
+                            </dl>
+                            @if (asset.Capabilities.Count > 0)
+                            {
+                                <p class="td-capabilities" data-testid="td-capabilities">@foreach (var capability in asset.Capabilities) { <span class="td-tag">@capability</span> }</p>
+                            }
+                            @if (open)
+                            {
+                                <div class="td-detail" id="@($"td-detail-{Slug(asset.Id)}")" data-testid="td-detail">
+                                    <dl class="td-facts">
+                                        <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
+                                        <div><dt>Validation detail</dt><dd>@(asset.ValidationDetail ?? "—")</dd></div>
+                                        @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
+                                        @if (asset.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd class="td-mono">@fingerprint[..12]…</dd></div> }
+                                        @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
+                                        @if (asset.IsDefault) { <div><dt>Default</dt><dd>Yes — chosen when several qualify</dd></div> }
+                                    </dl>
+                                    @if (_detail?.Asset.Id == asset.Id && _detail.Preview is { } preview)
+                                    {
+                                        <pre class="td-preview" tabindex="0" aria-label="Value preview" data-testid="td-preview">@preview</pre>
+                                    }
+                                    <p class="td-note" data-testid="td-preview-note">@(_detail?.Asset.Id == asset.Id ? _detail.PreviewNote : _detailError ?? "Loading…")</p>
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        @if (catalog.Sets.Count > 0)
+        {
+            <section class="td-card" aria-labelledby="td-sets-heading" data-testid="td-sets">
+                <h2 id="td-sets-heading">Data sets</h2>
+                <ul class="td-assets">
+                    @foreach (var set in catalog.Sets)
+                    {
+                        <li class="td-asset" data-testid="td-set">
+                            <div class="td-asset-head"><span class="td-alias">@set.Alias</span><span class="td-pill td-pill-@(set.Approval == TestDataApproval.Approved ? "ready" : "attention")">@set.Approval</span></div>
+                            <p class="td-note">@(set.Environment ?? "Any environment") · @set.Bindings.Count asset(s)@(set.Capabilities.Count > 0 ? $" · {string.Join(", ", set.Capabilities)}" : "")</p>
+                            <ul class="td-bindings">@foreach (var binding in set.Bindings) { <li><span>@binding.Role</span> → <span class="td-mono">@binding.AssetAlias</span></li> }</ul>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
+            <h2 id="td-sources-heading">Sources</h2>
+            <ul class="td-sources">
+                @foreach (var source in catalog.Sources)
+                {
+                    <li data-testid="td-source"><strong>@source.Label</strong> — @source.AssetCount asset(s)@(source.SetCount > 0 ? $", {source.SetCount} data set(s)" : ""). <span class="td-note">@source.Description</span></li>
+                }
+            </ul>
+            <p class="td-note">Approved for test use is not the same as valid: an approved negative fixture is deliberately invalid. Resolving test data never creates it.</p>
+        </section>
+    }
+</div>
+
+@code {
+    private ITestDataApiService? _api;
+    private TestDataCatalogView? _catalog;
+    private TestDataAssetDetail? _detail;
+    private string? _error, _detailError, _openId;
+    private bool _loading = true;
+    private string _kind = "", _environment = "", _status = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _api = TestDataApiService.Resolve(Services);
+            (_catalog, _error) = await _api.CatalogAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "The Test Data catalog could not be reached: the backend address is not configured."; }
+        finally { _loading = false; }
+    }
+
+    private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog) => catalog.Assets
+        .Where(asset => _kind.Length == 0 || asset.Kind.ToString() == _kind)
+        .Where(asset => _environment.Length == 0 || EnvironmentLabel(asset) == _environment)
+        .Where(asset => _status.Length == 0 || asset.Approval.ToString() == _status).ToList();
+
+    private async Task ToggleAsync(TestDataAssetSummary asset)
+    {
+        if (_openId == asset.Id) { _openId = null; return; }
+        _openId = asset.Id; _detail = null; _detailError = null;
+        if (_api is null) return;
+        var (detail, error) = await _api.AssetAsync(asset.Id);
+        _detail = detail; _detailError = error;
+    }
+
+    internal static string KindLabel(TestDataKind kind) => kind switch
+    {
+        TestDataKind.EntityReference => "Entity reference",
+        TestDataKind.ExpectedResult => "Expected result",
+        TestDataKind.ReferenceData => "Reference data",
+        _ => kind.ToString(),
+    };
+
+    internal static string TypeLabel(TestDataAssetSummary asset) =>
+        asset.Kind == TestDataKind.Scalar ? asset.ValueType.ToString()
+        : asset.Kind == TestDataKind.EntityReference ? asset.EntityType ?? "Entity"
+        : asset.ExpectsAbsence ? "Expects absence" : asset.MediaType ?? "—";
+
+    private static string EnvironmentLabel(TestDataAssetSummary asset) => asset.Environment ?? "Any environment";
+
+    /// <summary>A non-sensitive scalar shows its value; anything else only says whether a value is available — never the value.</summary>
+    internal static string ValueLabel(TestDataAssetSummary asset) =>
+        asset.DisplayValue is { } value ? value
+        : asset.ExpectsAbsence ? "Nothing expected"
+        : asset.Sensitivity == TestDataSensitivity.Sensitive ? (asset.ValueAvailable ? "Available securely" : "Not available")
+        : asset.ValueAvailable ? "Available (see details)" : "Not available";
+
+    private static string Tone(TestDataAssetSummary asset) => asset.Approval == TestDataApproval.Approved ? "ready" : "attention";
+
+    private static string Slug(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+}
