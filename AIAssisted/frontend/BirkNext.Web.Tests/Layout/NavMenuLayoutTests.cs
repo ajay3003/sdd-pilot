@@ -275,7 +275,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("project-inputs", new[] { "project-import", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document" })]
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
-    [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "ai-generated-code-review", "test-data" })]
+    [InlineData("quality-testing", new[] { "test-coverage-review", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "ai-generated-code-review", "test-data" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "admin/system-settings" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)

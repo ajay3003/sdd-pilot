@@ -131,6 +131,7 @@ public static class NavigationCatalog
             new("test-coverage-review", "Test Coverage & Overlap Review", "nav-icon-task-alignment", Always),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review"),
             new("api-quality-review", "API Quality Review", "nav-icon-constitution-compliance", f => f.ApiQualityReview, ReviewId: "api-quality-review"),
+            new("integration-topology", "Integration Topology", "nav-icon-source-analysis", Always, Hint: "components, interfaces (REST, GraphQL, messaging, file/storage) and connections with their sources"),
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review"),
             new("performance-test-review", "Performance Test Review", "nav-icon-constitution-compliance", Always, ReviewId: "performance-test-review"),
             new("critical-e2e-regression", "Critical E2E Regression", "nav-icon-constitution-compliance", f => f.CriticalE2ERegression, ReviewId: "critical-e2e-regression"),

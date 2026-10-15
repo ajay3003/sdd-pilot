@@ -1,0 +1,58 @@
+@using BirkNext.IntegrationTopology
+@using P = BirkNext.Web.Services.TopologyPresentation
+@inject IServiceProvider Services
+
+@* Integration Quality Review's read-only view of its integrations in the canonical Integration Topology: each configured integration's
+   connection, interfaces, status and every source that states it. Interfaces are not edited here; integrations are configured where they
+   always were (Target Environment → Integrations). *@
+<section class="ti" aria-labelledby="@($"{_id}-heading")" data-testid="ti-panel">
+    <h3 id="@($"{_id}-heading")">Integrations in the topology</h3>
+    @if (string.IsNullOrWhiteSpace(EnvironmentId)) { <p role="status">Select a Target Environment.</p> }
+    else if (_loading) { <p role="status" data-testid="ti-loading">Loading Integration Topology…</p> }
+    else if (_error is not null) { <p role="alert" data-testid="ti-error">@_error</p> }
+    else if (_connections.Count == 0) { <p data-testid="ti-empty">No configured integration states a connection yet.</p> }
+    else
+    {
+        <ul class="ti-list">
+            @foreach (var (connection, integrations) in _connections)
+            {
+                <li data-testid="ti-connection" data-status="@connection.Status">
+                    <strong>@Name(connection.ProducerComponentId) → @Name(connection.ConsumerComponentId)</strong>
+                    <span class="ti-pill ti-pill-@P.Tone(connection.Status)">@P.Status(connection.Status)</span>
+                    <span class="ti-note">@P.Type(connection.Type) · @(connection.Address ?? connection.Protocol) · sources: @P.Sources(connection.Provenance) · integration @string.Join(", ", integrations)</span>
+                    @foreach (var note in connection.Notes) { <span class="ti-note ti-warn">@note</span> }
+                </li>
+            }
+        </ul>
+    }
+    <p class="ti-note"><a href="/integration-topology" data-testid="ti-open">Open Integration Topology</a> · configured ≠ discovered ≠ observed; the contract review below is unchanged.</p>
+</section>
+
+@code {
+    [Parameter] public string? EnvironmentId { get; set; }
+
+    private readonly string _id = "ti-" + Guid.NewGuid().ToString("N")[..8];
+    private IntegrationTopologyView? _view;
+    private List<(TopologyConnection Connection, List<string> Integrations)> _connections = [];
+    private string? _error, _loadedFor;
+    private bool _loading;
+
+    private string Name(string id) => _view?.Components.FirstOrDefault(item => item.Id == id)?.Name ?? id;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(EnvironmentId) || _loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        _loading = true;
+        try
+        {
+            var (view, error) = await IntegrationTopologyApiService.Resolve(Services).GetAsync(EnvironmentId, []);
+            _view = view;
+            _error = error;
+            _connections = [.. (view?.Connections ?? []).Select(connection => (connection, integrations: connection.Provenance.Where(item => item.Source == TopologySource.IntegrationCatalog).Select(item => item.Reference).Distinct().ToList()))
+                .Where(item => item.integrations.Count > 0)];
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "Integration Topology could not be reached."; }
+        finally { _loading = false; }
+    }
+}

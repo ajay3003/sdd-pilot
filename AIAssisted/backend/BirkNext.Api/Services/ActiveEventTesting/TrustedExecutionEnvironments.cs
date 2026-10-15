@@ -14,7 +14,17 @@ public sealed record TrustedExecutionEnvironment(
     bool ExecutionAllowed,
     string? TargetUrl,
     IReadOnlyList<string> IntegrationIds,
-    IReadOnlyDictionary<string, string> MonitoringReferences);
+    IReadOnlyDictionary<string, string> MonitoringReferences)
+{
+    /// <summary>The components (services) that run in this environment and where (configuration only; read by Integration Topology).</summary>
+    public IReadOnlyList<TrustedComponent> Components { get; init; } = [];
+}
+
+/// <summary>
+/// One component of a trusted environment (<c>TargetEnvironments:Trusted:n:Components:m</c>): its name, base address and, optionally, the
+/// relative path of its OpenAPI document. Where it runs, not what it exposes: interfaces come from discovery.
+/// </summary>
+public sealed record TrustedComponent(string Name, string? BaseUrl, string? OpenApiPath);
 
 public interface ITrustedExecutionEnvironmentRegistry
 {
@@ -38,7 +48,11 @@ public sealed class TrustedExecutionEnvironmentRegistry(IReadOnlyList<TrustedExe
             string.IsNullOrWhiteSpace(section["TargetUrl"]) ? null : section["TargetUrl"]!.Trim(),
             section.GetSection("IntegrationIds").GetChildren().Select(item => (item.Value ?? "").Trim()).Where(item => item.Length > 0).ToArray(),
             section.GetSection("MonitoringReferences").GetChildren().Where(item => !string.IsNullOrWhiteSpace(item.Value))
-                .ToDictionary(item => item.Key, item => item.Value!, StringComparer.Ordinal)))
+                .ToDictionary(item => item.Key, item => item.Value!, StringComparer.Ordinal))
+        {
+            Components = [.. section.GetSection("Components").GetChildren().Where(item => !string.IsNullOrWhiteSpace(item["Name"]))
+                .Select(item => new TrustedComponent(item["Name"]!.Trim(), item["BaseUrl"]?.Trim(), item["OpenApiPath"]?.Trim()))],
+        })
         .ToArray());
 
     public TrustedExecutionEnvironment? Resolve(string environmentId, out string reason)

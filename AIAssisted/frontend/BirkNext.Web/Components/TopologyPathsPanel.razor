@@ -1,0 +1,71 @@
+@using BirkNext.IntegrationTopology
+@using P = BirkNext.Web.Services.TopologyPresentation
+@inject IServiceProvider Services
+
+@* A domain profile's expected paths resolved against the canonical Integration Topology. Read-only: no endpoint is entered or edited here.
+   A step is resolved only by configured, discovered or observed evidence; expected alone never resolves it, and resolved ≠ observed. *@
+<section class="tp" aria-labelledby="@($"{_id}-heading")" data-testid="tp-panel" aria-busy="@(_loading ? "true" : "false")">
+    <h3 id="@($"{_id}-heading")">@Title</h3>
+    @if (string.IsNullOrWhiteSpace(EnvironmentId))
+    {
+        <p role="status" data-testid="tp-no-environment">Select a Target Environment to resolve the expected flow.</p>
+    }
+    else if (_loading)
+    {
+        <p role="status" data-testid="tp-loading">Resolving the expected flow from Integration Topology…</p>
+    }
+    else if (_error is not null)
+    {
+        <p role="alert" data-testid="tp-error">@_error</p>
+    }
+    else
+    {
+        @foreach (var path in _paths)
+        {
+            <div class="tp-path" data-testid="tp-path" data-path="@path.PathId" data-resolved="@(path.Resolved ? "true" : "false")">
+                <p class="tp-path-title"><strong>@path.Label</strong> <span class="tp-pill tp-pill-@(path.Resolved ? "ready" : "attention")">@(path.Resolved ? "Resolved" : $"{path.Steps.Count(step => step.State != TopologyPathState.Resolved)} unresolved")</span></p>
+                <ol class="tp-steps">
+                    @foreach (var step in path.Steps)
+                    {
+                        <li data-testid="tp-step" data-state="@step.State">
+                            <span aria-hidden="true">@(step.State == TopologyPathState.Resolved ? "✓" : step.State == TopologyPathState.Conflict ? "!" : "○")</span>
+                            <span class="tp-step-label">@step.Label</span>
+                            <span class="tp-note">@(step.State == TopologyPathState.Resolved ? $"{P.Status(step.Evidence)} · observed: {(step.Observed ? "yes" : "no")}" : step.State.ToString())</span>
+                            <span class="tp-note tp-detail">@step.Detail</span>
+                        </li>
+                    }
+                </ol>
+            </div>
+        }
+        <p class="tp-note"><a href="/integration-topology" data-testid="tp-open">Open Integration Topology</a> to see every component, interface and source. Expected ≠ observed.</p>
+    }
+</section>
+
+@code {
+    [Parameter] public string? EnvironmentId { get; set; }
+    [Parameter, EditorRequired] public string ProfileId { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "Expected flow";
+
+    private readonly string _id = "tp-" + Guid.NewGuid().ToString("N")[..8];
+    private IReadOnlyList<TopologyPathResult> _paths = [];
+    private string? _error, _loadedFor;
+    private bool _loading;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(EnvironmentId) || _loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        _loading = true;
+        try
+        {
+            var api = IntegrationTopologyApiService.Resolve(Services);
+            var observations = Services.GetService(typeof(IEndpointDiscoveryService)) is IEndpointDiscoveryService discovery
+                ? TopologyObservations.From(discovery.GetSnapshot(EnvironmentId)) : [];
+            var (paths, error) = await api.PathsAsync(EnvironmentId, ProfileId, observations);
+            _paths = paths ?? [];
+            _error = error;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "Integration Topology could not be reached."; }
+        finally { _loading = false; }
+    }
+}

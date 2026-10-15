@@ -91,7 +91,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.FindAll(".snt-tabs a[aria-current=page]").Select(a => a.TextContent).Should().Equal("Overview");
         page.FindAll(".snt-panel").Should().ContainSingle().Which.Id.Should().Be("snt-overview");
         page.FindAll(".snt-links a").Select(a => a.GetAttribute("href")).Should().Equal(
-            "/integration-quality-review", "/admin/system-settings?section=target-environments", "/source-analysis", "/test-coverage-review");
+            "/integration-topology", "/integration-quality-review", "/admin/system-settings?section=target-environments", "/source-analysis", "/test-coverage-review");
     }
 
     [Fact]

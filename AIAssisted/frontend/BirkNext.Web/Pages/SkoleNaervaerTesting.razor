@@ -68,8 +68,14 @@
                 </ul>
             }
 
+            @if (_profile is not null)
+            {
+                <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected flow (Integration Topology)" />
+            }
+
             <h3 class="snt-subheading">Quick actions</h3>
             <p class="snt-links">
+                <a href="/integration-topology">Open Integration Topology</a>
                 <a href="/integration-quality-review">Open Integration Quality Review</a>
                 <a href="/admin/system-settings?section=target-environments">Open Target Environments</a>
                 <a href="/source-analysis">Open Source Analysis</a>

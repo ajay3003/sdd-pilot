@@ -1,0 +1,11 @@
+.tp { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.tp h3 { font-size: 1rem; margin: 0; }
+.tp-path-title { margin: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.tp-steps { margin: 0.25rem 0 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.tp-steps li { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: baseline; min-width: 0; }
+.tp-step-label { font-weight: 600; }
+.tp-note { color: var(--text-muted, #57606a); font-size: 0.85rem; overflow-wrap: anywhere; }
+.tp-detail { flex-basis: 100%; }
+.tp-pill { border-radius: 999px; padding: 0 0.5rem; font-size: 0.75rem; font-weight: 600; }
+.tp-pill-ready { background: #dafbe1; color: #116329; }
+.tp-pill-attention { background: #fff8c5; color: #6a4b00; }

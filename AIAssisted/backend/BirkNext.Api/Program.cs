@@ -547,6 +547,20 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
+// Integration Topology: one canonical view of components, interfaces and connections, merged from Target Environment, Source Analysis, the
+// integration catalog, Altinn metadata, explicit OpenAPI discovery and supplied runtime observations. Rebuilt on every read; nothing stored.
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProfile, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerTopologyProfile>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.ProfileTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.TargetEnvironmentTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.SourceArchitectureTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.AltinnTesting.AltinnTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.IntegrationCatalogTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.OpenApiTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.ObservationTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.IntegrationTopologyService>();
+builder.Services.AddHttpClient(BirkNext.Api.Services.IntegrationTopology.OpenApiTopologyProvider.ClientName, client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // Test Data: a general typed catalog (values, payloads, files, entity references, expected results, data sets) fed by providers. Sensitive
 // values stay in the backend; consumers resolve role requirements against it (selection only, never generation).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.ConfiguredTestDataProvider(

@@ -1,0 +1,168 @@
+@page "/integration-topology"
+@using BirkNext.IntegrationTopology
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using P = BirkNext.Web.Services.TopologyPresentation
+@inject IServiceProvider Services
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject IJSRuntime JS
+
+<PageTitle>Integration Topology</PageTitle>
+
+@* Integration Topology: the canonical view of an environment's components, their interfaces (REST, GraphQL, messaging, file/storage,
+   external applications) and the connections between them, each with the provenance of every source. Read-only; rebuilt from the sources on
+   every load. Configured ≠ discovered ≠ observed, and nothing here means healthy or contract-compatible. *@
+<div class="it-page" data-testid="it-page" aria-busy="@(_loading ? "true" : "false")">
+    <PageHeader Title="Integration Topology" Description="Components, their interfaces and the connections between them, merged from Target Environment, Source Analysis, the integration catalog, application metadata, OpenAPI documents and runtime observations. Every element shows its sources." />
+    @if (_profile is not null)
+    {
+        <div class="it-actions" role="group" aria-label="Topology actions">
+            <button type="button" class="btn-secondary" data-testid="it-refresh" disabled="@_loading" @onclick="() => LoadAsync(false)">Refresh</button>
+            <button type="button" class="btn-primary" data-testid="it-discover" disabled="@_loading" @onclick="() => LoadAsync(true)">Discover interfaces</button>
+            <span class="it-note">Discover interfaces reads the OpenAPI documents trusted components declare (their own host only).</span>
+        </div>
+    }
+
+    @if (_profile is null && !_loading)
+    {
+        <p role="status" data-testid="it-no-environment">Select a Target Environment to see its topology. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></p>
+    }
+    else if (_loading && _view is null)
+    {
+        <p role="status" data-testid="it-loading">Building the topology from its sources…</p>
+    }
+    @if (_error is not null) { <p role="alert" class="it-error" data-testid="it-error">@_error</p> }
+
+    @if (_view is { } view)
+    {
+        <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · @view.Components.Count component(s), @view.Components.Sum(item => item.Interfaces.Count) interface(s), @view.Connections.Count connection(s)</p>
+
+        <section class="it-card" aria-labelledby="it-sources-heading" data-testid="it-sources">
+            <h2 id="it-sources-heading">Sources</h2>
+            <ul class="it-sources">
+                @foreach (var source in view.Sources)
+                {
+                    <li data-testid="it-source" data-state="@source.State"><span class="it-pill it-pill-@(source.State == TopologySourceState.Used ? "ready" : "muted")">@P.Source(source.Source)</span> <span class="it-note">@source.Detail</span></li>
+                }
+            </ul>
+        </section>
+
+        <section class="it-card" aria-labelledby="it-components-heading" data-testid="it-components">
+            <h2 id="it-components-heading">Components</h2>
+            @if (view.Components.Count == 0)
+            {
+                <p data-testid="it-empty">No source states any component for this environment yet. Analyze source in Source Analysis, configure integrations, or declare the environment's components.</p>
+            }
+            <ul class="it-components">
+                @foreach (var component in view.Components)
+                {
+                    var selected = _selected == component.Id;
+                    <li class="it-component" data-testid="it-component" data-name="@component.Name" data-status="@component.Status">
+                        <button type="button" class="it-component-button" aria-expanded="@(selected ? "true" : "false")" aria-controls="it-detail" data-testid="it-select" @onclick="() => Select(component.Id)">
+                            <span class="it-name">@component.Name</span>
+                            <span class="it-pill it-pill-@P.Tone(component.Status)">@P.Status(component.Status)</span>
+                            <span class="it-note">@(component.Interfaces.Count == 0 ? "no interfaces known" : string.Join(" · ", component.Interfaces.GroupBy(item => item.Type).Select(group => $"{group.Count()} {P.Type(group.Key)}")))</span>
+                        </button>
+                    </li>
+                }
+            </ul>
+        </section>
+
+        @if (view.Components.FirstOrDefault(item => item.Id == _selected) is { } detail)
+        {
+            <section class="it-card" id="it-detail" aria-labelledby="it-detail-heading" data-testid="it-detail">
+                <h2 id="it-detail-heading" tabindex="-1">@detail.Name</h2>
+                <dl class="it-facts">
+                    <div><dt>Location</dt><dd data-testid="it-location">@(detail.Location ?? "Not stated by any source")</dd></div>
+                    <div><dt>Status</dt><dd>@P.Status(detail.Status)</dd></div>
+                    <div><dt>Sources</dt><dd>@P.Sources(detail.Provenance)</dd></div>
+                </dl>
+                @foreach (var group in detail.Interfaces.GroupBy(item => item.Type))
+                {
+                    <h3 class="it-subheading">@P.Type(group.Key)</h3>
+                    <ul class="it-interfaces">
+                        @foreach (var item in group)
+                        {
+                            <li data-testid="it-interface" data-type="@item.Type" data-status="@item.Status">
+                                <span class="it-mono">@(item.Operation is { } op ? $"{op} " : "")@item.Address</span>
+                                <span class="it-pill it-pill-@P.Tone(item.Status)">@P.Status(item.Status)</span>
+                                <span class="it-note">@P.Direction(item.Direction) · @item.Protocol · @P.Sources(item.Provenance)@(item.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
+                                @foreach (var note in item.Notes) { <span class="it-note it-warn">@note</span> }
+                            </li>
+                        }
+                    </ul>
+                }
+                @{ var related = view.Connections.Where(item => item.ProducerComponentId == detail.Id || item.ConsumerComponentId == detail.Id).ToList(); }
+                <h3 class="it-subheading">Connections</h3>
+                @if (related.Count == 0) { <p class="it-note">No source states a connection for this component.</p> }
+                <ul class="it-interfaces">@foreach (var connection in related) { <li data-testid="it-detail-connection">@Connection(view, connection)</li> }</ul>
+            </section>
+        }
+
+        <details class="it-card it-all" data-testid="it-connections">
+            <summary>All connections (@view.Connections.Count)</summary>
+            <ul class="it-interfaces">@foreach (var connection in view.Connections) { <li data-testid="it-connection" data-status="@connection.Status">@Connection(view, connection)</li> }</ul>
+        </details>
+        <p class="it-note">Configured ≠ discovered ≠ observed. Observed needs runtime evidence; a resolved interface or connection is not healthy and not contract-compatible.</p>
+    }
+</div>
+
+@code {
+    private IIntegrationTopologyApiService? _api;
+    private FrontendAnalysisProfile? _profile;
+    private IntegrationTopologyView? _view;
+    private string? _error, _selected;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
+            _api = IntegrationTopologyApiService.Resolve(Services);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "Integration Topology could not be reached: the backend address is not configured."; }
+        if (_profile is not null && _api is not null) await LoadAsync(false);
+        else _loading = false;
+    }
+
+    private async Task LoadAsync(bool discover)
+    {
+        if (_profile is null || _api is null) return;
+        _loading = true; _error = null;
+        try
+        {
+            var observations = Observations();
+            var (view, error) = discover ? await _api.DiscoverAsync(_profile.Id, observations) : await _api.GetAsync(_profile.Id, observations);
+            if (view is not null) _view = view;
+            _error = error;
+        }
+        finally { _loading = false; }
+    }
+
+    /// <summary>This browser's runtime observations for the environment (Endpoint Discovery evidence), sent for merging only.</summary>
+    private List<TopologyObservation> Observations()
+    {
+        if (_profile is null || Services.GetService(typeof(IEndpointDiscoveryService)) is not IEndpointDiscoveryService discovery) return [];
+        try { return TopologyObservations.From(discovery.GetSnapshot(_profile.Id)); }
+        catch (InvalidOperationException) { return []; }
+    }
+
+    private async Task Select(string id)
+    {
+        _selected = _selected == id ? null : id;
+        if (_selected is null) return;
+        await Task.Yield();
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "it-detail-heading"); } catch (JSException) { }
+    }
+
+    private RenderFragment Connection(IntegrationTopologyView view, TopologyConnection connection) =>
+        @<span class="it-connection">
+            <strong>@ComponentName(view, connection.ProducerComponentId) → @ComponentName(view, connection.ConsumerComponentId)</strong>
+            <span class="it-pill it-pill-@P.Tone(connection.Status)">@P.Status(connection.Status)</span>
+            <span class="it-note">@P.Type(connection.Type) · @(connection.Address ?? connection.Protocol) · @P.Sources(connection.Provenance)@(connection.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
+            @foreach (var note in connection.Notes) { <span class="it-note it-warn">@note</span> }
+        </span>;
+
+    private static string ComponentName(IntegrationTopologyView view, string id) => view.Components.FirstOrDefault(item => item.Id == id)?.Name ?? id;
+}
