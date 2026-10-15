@@ -135,9 +135,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             return Snapshot(ProjectImportSourceState.Created, snapshot);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (SourceSnapshotPersistenceException)
+        catch (SourceSnapshotPersistenceException failure)
         {
-            return Failed(detection, "SOURCE_SNAPSHOT_SAVE_FAILED", "The source snapshot could not be saved. No new snapshot is available; retry without choosing the archive again.");
+            return Failed(detection, "SOURCE_SNAPSHOT_SAVE_FAILED", $"The source snapshot could not be saved. {failure.Reason}");
         }
         catch (Exception ex)
         {

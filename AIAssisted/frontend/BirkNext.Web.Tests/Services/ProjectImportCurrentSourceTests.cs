@@ -46,7 +46,7 @@ public sealed class ProjectImportCurrentSourceTests
     {
         var staged = ProjectImportPresentation.CurrentSource(Record(nameof(ProjectImportSourceState.Failed), staging: Guid.NewGuid(), until: Now.AddMinutes(30)), Now);
         staged.CanRetry.Should().BeTrue();
-        staged.Detail.Should().Contain("still staged");
+        staged.Detail.Should().Be("Source analysis did not complete, so no snapshot exists.", "the retry button is the action; the reason is said once");
         var expired = ProjectImportPresentation.CurrentSource(Record(nameof(ProjectImportSourceState.Failed), staging: Guid.NewGuid(), until: Now.AddMinutes(-1)), Now);
         expired.CanRetry.Should().BeFalse();
         expired.Detail.Should().Contain("choose the same ZIP again");

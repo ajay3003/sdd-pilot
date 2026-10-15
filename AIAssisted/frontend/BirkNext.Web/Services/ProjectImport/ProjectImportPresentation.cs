@@ -159,8 +159,8 @@ public static class ProjectImportPresentation
                 record.SourceMessage ?? "Source Analysis is turned off, so no source snapshot was created.", null, false, true),
             ProjectImportSourceState.Failed => new(ProjectImportTone.Partial, "Source detected — snapshot not created",
                 (record.SourceMessage ?? "Source analysis did not complete, so no snapshot exists.") + (canRetry
-                    ? " The archive is still staged: create the snapshot without choosing it again."
-                    : " The staged archive is no longer kept: choose the same ZIP again to create the snapshot."), null, canRetry, true),
+                    ? ""
+                    : " The uploaded archive is no longer kept; choose the same ZIP again to create the snapshot."), null, canRetry, true),
             _ => new(ProjectImportTone.Partial, "Source state unknown",
                 "This import has no recorded source outcome. Choose the archive again to create its Source Analysis snapshot.", null, false, false),
         };

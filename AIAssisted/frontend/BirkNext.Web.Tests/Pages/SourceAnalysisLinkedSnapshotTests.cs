@@ -96,7 +96,7 @@ public sealed class SourceAnalysisLinkedSnapshotTests : BunitContext
 
         var cut = Open($"source-analysis?snapshot={missing:D}");
 
-        cut.Find("[data-testid=sa-source-state]").TextContent.Should().Be("None");
+        cut.Find("[data-testid=sa-source-state]").TextContent.Should().Be("Linked snapshot missing");
         cut.Find("#sa-empty-heading").TextContent.Should().Be("Linked source snapshot not found");
         cut.Find("[data-testid=sa-empty-reason]").GetAttribute("data-reason").Should().Be("LinkedSnapshotMissing");
         cut.Find("[data-testid=sa-empty-reason]").TextContent.Should().Contain(missing.ToString()[..8]);
@@ -138,6 +138,37 @@ public sealed class SourceAnalysisLinkedSnapshotTests : BunitContext
         cut.Find("#sa-empty-heading").TextContent.Should().Be("Source detected, but no snapshot was created");
         cut.Find("[data-testid=sa-empty-reason]").TextContent.Should().Contain("could not be saved");
         cut.Find("[data-testid=sa-empty-reason-import]").GetAttribute("href").Should().Be("project-import");
+    }
+
+    [Fact]
+    public void FailedSnapshotSave_IsStatedOnce_AndCanBeRetriedHere_SelectingTheCreatedSnapshot()
+    {
+        var preview = ProjectImportActivationTests.Preview(new string('m', 64), source: true) with { ProjectName = "M2LB" };
+        var failed = ProjectImportActivationTests.Commit(preview, ProjectImportSourceState.Failed) with { StagedUntil = DateTimeOffset.UtcNow.AddHours(1) };
+        failed = failed with { Source = failed.Source with { CanRetry = true, Message = "The source snapshot could not be saved. The database schema is out of date: a table or column the snapshot needs is missing. Restart the BirkNext API so it applies its pending migrations, then retry." } };
+        new ProjectImportActivation(_repository).Activate(preview, ProjectImportArtifactDiscovery.From(preview), failed);
+        var created = Snapshot("M2LB.zip", 'm', DateTimeOffset.UtcNow, preview.ImportId);
+        _import.Setup(a => a.CommitAsync(preview.StagingId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProjectImportActivationTests.Commit(preview, ProjectImportSourceState.Created, created.Id), (SourceUploadFailure?)null));
+
+        var unrelated = Snapshot("other.zip", 'o', DateTimeOffset.UtcNow.AddHours(1));
+        _snapshots = [unrelated];
+
+        var cut = Open();
+
+        Selected(cut).Should().BeEmpty("an unrelated newer snapshot is never presented as the imported project's current snapshot");
+        cut.Find("[data-testid=sa-source-state]").TextContent.Should().Be("Not created — save failed");
+        var reason = cut.Find("[data-testid=sa-empty-reason]").TextContent;
+        reason.Should().Contain("database schema is out of date");
+        System.Text.RegularExpressions.Regex.Matches(reason, "without choosing").Should().BeEmpty("the reason is stated once, without repeated retry instructions");
+        _snapshots = [unrelated, created];
+
+        cut.Find("[data-testid=sa-retry-import-snapshot]").Click();
+
+        cut.WaitForAssertion(() => Selected(cut).Should().Be(created.Id.ToString()));
+        cut.Find("[data-testid=sa-source-state]").TextContent.Should().Be("Current");
+        _repository.SddLifecycle.ProjectImports.Single().SourceSnapshotId.Should().Be(created.Id);
+        _import.Verify(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "no new upload");
     }
 
     [Fact]

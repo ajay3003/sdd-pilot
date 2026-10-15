@@ -5,13 +5,52 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Integrations;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace BirkNext.Api.Services.Integrations.SourceEvidence;
 
 public sealed class InvalidSourceSelectionException(string message) : Exception(message);
-public sealed class SourceSnapshotPersistenceException : Exception { }
 
-public sealed class IqrSourceStore(AppDbContext db)
+/// <summary>
+/// The database refused a source snapshot. <see cref="Reason"/> is a safe, user-facing explanation of the database error class (never values
+/// from the archive); <see cref="SqlState"/>, table and column name the failing operation for the log.
+/// </summary>
+public sealed class SourceSnapshotPersistenceException(string reason, string? sqlState = null, string? table = null, string? column = null) : Exception(reason)
+{
+    public SourceSnapshotPersistenceException() : this(Classify(null).Reason) { }
+    public string Reason { get; } = reason;
+    public string? SqlState { get; } = sqlState;
+    public string? Table { get; } = table;
+    public string? Column { get; } = column;
+
+    /// <summary>A safe explanation per PostgreSQL error class. Undefined table/column means the schema is behind the application.</summary>
+    public static (string Reason, string? SqlState, string? Table, string? Column) Classify(Exception? error)
+    {
+        var pg = error as PostgresException ?? error?.InnerException as PostgresException;
+        var reason = pg?.SqlState switch
+        {
+            PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable =>
+                "The database schema is out of date: a table or column the snapshot needs is missing. Restart the BirkNext API so it applies its pending migrations, then retry.",
+            PostgresErrorCodes.UntranslatableCharacter or PostgresErrorCodes.CharacterNotInRepertoire =>
+                "The snapshot contains characters the database cannot store.",
+            PostgresErrorCodes.DiskFull => "The database is out of disk space.",
+            PostgresErrorCodes.QueryCanceled => "The database cancelled the save because it took too long.",
+            PostgresErrorCodes.StringDataRightTruncation => "A snapshot value is longer than the database column allows.",
+            PostgresErrorCodes.UniqueViolation or PostgresErrorCodes.ForeignKeyViolation => "The snapshot conflicts with data already stored.",
+            _ => "The database refused the snapshot.",
+        };
+        return (reason, pg?.SqlState, pg?.TableName, pg?.ColumnName ?? UndefinedName(pg));
+    }
+
+    // PostgreSQL reports an undefined column only in its message ("column \"x\" of relation \"y\" does not exist"): a schema name, never a value.
+    private static string? UndefinedName(PostgresException? pg) =>
+        pg?.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable
+            ? System.Text.RegularExpressions.Regex.Match(pg.MessageText, "\"([A-Za-z0-9_]{1,63})\"").Groups[1].Value is { Length: > 0 } name ? name : null
+            : null;
+}
+
+public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? logger = null)
 {
     /// <summary>The owner id of snapshots ingested by Source Analysis (the one source-upload entry point). Other owner ids are snapshots an
     /// earlier version uploaded per integration in Integration Quality Review: kept and readable, never offered for new review scopes.</summary>
@@ -218,7 +257,15 @@ public sealed class IqrSourceStore(AppDbContext db)
         }
         try { await db.SaveChangesAsync(ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception) { throw new SourceSnapshotPersistenceException(); }
+        catch (Exception ex)
+        {
+            // Never swallowed silently: the error class, SQL state and the schema object are logged (no archive content, no values).
+            var (reason, sqlState, table, column) = SourceSnapshotPersistenceException.Classify(ex);
+            logger?.LogError("Source snapshot save failed. Exception {ExceptionType}; inner {InnerType}; SQL state {SqlState}; table {Table}; column {Column}; snapshot {SnapshotId}",
+                ex.GetType().Name, ex.InnerException?.GetType().Name, sqlState ?? "-", table ?? "-", column ?? "-", snapshot.Id);
+            db.ChangeTracker.Clear();
+            throw new SourceSnapshotPersistenceException(reason, sqlState, table, column);
+        }
         return snapshot;
 
         Task ReportProgressAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new BirkNext.ProjectImport.ProjectImportCommitEvent

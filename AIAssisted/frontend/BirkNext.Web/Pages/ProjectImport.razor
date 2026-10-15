@@ -44,7 +44,7 @@
                     }
                     else if (currentSource.CanRetry)
                     {
-                        <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">Create source snapshot</button>
+                        <button type="button" class="btn-primary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source snapshot")</button>
                     }
                     @if (FirstExplorer(current) is { } explorer) { <a class="btn-secondary" href="@explorer.Route" data-testid="pi-current-open-documents">Open @explorer.Label</a> }
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
@@ -186,7 +186,7 @@
                     @if (source.CanRetry)
                     {
                         <div class="pi-actions">
-                            <button type="button" class="btn-secondary" data-testid="pi-retry-source" disabled="@_retrying" @onclick="RetrySourceAsync">Create source snapshot</button>
+                            <button type="button" class="btn-secondary" data-testid="pi-retry-source" disabled="@_retrying" @onclick="RetrySourceAsync">@(_retrying ? "Retrying…" : "Retry creating source snapshot")</button>
                         </div>
                         <p class="pi-muted">The archive stays staged until @(_commit.StagedUntil?.ToLocalTime().ToString("HH:mm") ?? "it expires"), so no new upload is needed.</p>
                     }

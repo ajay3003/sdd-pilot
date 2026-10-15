@@ -118,10 +118,10 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         IqrSourceSnapshot snapshot;
         try { snapshot = await store.AnalyzeValidatedAsync(environmentId, integrationId, fileName, bytes, validation.Workspace!, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (SourceSnapshotPersistenceException)
+        catch (SourceSnapshotPersistenceException failure)
         {
             return Failure(StatusCodes.Status500InternalServerError,
-                new("SOURCE_SNAPSHOT_SAVE_FAILED", "persistence", "The source snapshot could not be saved. No new snapshot is available."), bytes.Length, validation.EntryCount);
+                new("SOURCE_SNAPSHOT_SAVE_FAILED", "persistence", $"The source snapshot could not be saved. {failure.Reason}"), bytes.Length, validation.EntryCount);
         }
         catch (Exception ex)
         {

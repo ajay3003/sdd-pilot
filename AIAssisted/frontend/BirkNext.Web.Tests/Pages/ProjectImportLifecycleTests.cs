@@ -223,7 +223,8 @@ public sealed class ProjectImportLifecycleTests : BunitContext
             Source = new ProjectImportSourceResult { State = ProjectImportSourceState.Created, SnapshotId = snapshot, SnapshotStatus = SourceAnalysisStatus.Ready },
         };
         var cut = Render<ProjectImportPage>();
-        cut.Find("[data-testid=pi-current-source-detail]").TextContent.Should().Contain("could not be saved").And.Contain("still staged");
+        cut.Find("[data-testid=pi-current-source-detail]").TextContent.Should().Be("The source snapshot could not be saved.");
+        cut.Find("[data-testid=pi-current-retry-source]").TextContent.Should().Be("Retry creating source snapshot");
 
         cut.Find("[data-testid=pi-current-retry-source]").Click();
 

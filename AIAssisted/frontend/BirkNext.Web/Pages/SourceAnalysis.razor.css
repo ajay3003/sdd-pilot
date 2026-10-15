@@ -84,3 +84,7 @@ a.sa-file-button:focus-visible { outline: 2px solid var(--clr-link, #2563eb); ou
 .sa-action-list dt { font-size: .8rem; font-weight: 600; color: var(--clr-text-muted); text-transform: uppercase; letter-spacing: .04em; }
 .sa-action-list dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; min-width: 0; }
 @media (max-width: 600px) { .sa-action-list > div { grid-template-columns: minmax(0, 1fr); } }
+
+/* Why nothing is selected, and the one action that fixes it (retry from the staged archive) beside the way back to Import Project. */
+.sa-empty-reason { margin: .25rem 0 .5rem; }
+.sa-empty-reason-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: .25rem 0 1rem; }
