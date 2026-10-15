@@ -224,6 +224,24 @@
                             <article class="ss-package"><div><strong>@saved.ProfileName</strong><span>@saved.FileName · @saved.SavedAt.ToLocalTime().ToString("g") · schema @saved.PackageFingerprint[..12]@(saved.Provenance?.SourceSnapshotId is { } xmlSnapshot ? $" · snapshot {xmlSnapshot}" : "")</span></div>
                                 <button class="ss-action" @onclick="() => ReopenXml(saved.Id)">Reopen XML</button>
                                 <button class="ss-text-button" @onclick="() => RemoveXml(saved.Id)">Remove XML artifact</button>
+                                @if (saved.TestData is { } registration)
+                                {
+                                    <p class="ss-testdata" data-testid="ss-testdata-registered">Registered as Test Data: <strong>@registration.Alias</strong> · @(registration.Intent == SchemaXmlTestDataRegistration.NegativeTest ? "Negative test" : "Positive fixture") · @(registration.Approved ? "Approved" : "Draft")
+                                        <a class="ss-text-button" href="test-data" data-testid="ss-testdata-open">Open in Test Data</a>
+                                        <button class="ss-text-button" @onclick="() => UnregisterXml(saved.Id)" data-testid="ss-testdata-unregister">Remove from Test Data</button></p>
+                                }
+                                else if (_registeringXml == saved.Id)
+                                {
+                                    <fieldset class="ss-testdata-form" data-testid="ss-testdata-form">
+                                        <legend>Register as reusable Test Data</legend>
+                                        <label>Alias <input @bind="_registerAlias" maxlength="64" data-testid="ss-testdata-alias" aria-describedby="ss-testdata-alias-help" /></label>
+                                        <span class="ss-help" id="ss-testdata-alias-help">Lowercase letters, digits and hyphens. Consumers refer to the fixture by this alias.</span>
+                                        <label>Intent <select @bind="_registerIntent" data-testid="ss-testdata-intent"><option value="@SchemaXmlTestDataRegistration.Positive">Positive fixture</option><option value="@SchemaXmlTestDataRegistration.NegativeTest">Negative test (expected to be invalid)</option></select></label>
+                                        <label class="ss-check"><input type="checkbox" @bind="_registerApproved" data-testid="ss-testdata-approved" /> Approved for test use</label>
+                                        <div class="ss-actions"><button class="ss-action" @onclick="() => RegisterXml(saved.Id)" data-testid="ss-testdata-register">Register</button><button class="ss-text-button" @onclick="() => _registeringXml = null">Cancel</button></div>
+                                    </fieldset>
+                                }
+                                else { <button class="ss-text-button" @onclick="() => StartRegistering(saved)" data-testid="ss-testdata-start">Register as Test Data</button> }
                             </article>
                         }</div>
                     }
@@ -723,6 +741,39 @@
         { _xmlArtifactError = "The saved XML's XSD file is not present in the active package."; return; }
         _fileName = saved.FileName; _xml = saved.Xml; _validationMessage = null;
         _xmlArtifactError = ""; _xmlArtifactStatus = "Reopened XML artifact. Validate it again against the active schema before use.";
+    }
+    private Guid? _registeringXml;
+    private string _registerAlias = "", _registerIntent = SchemaXmlTestDataRegistration.Positive;
+    private bool _registerApproved;
+    private void StartRegistering(SavedSchemaXml saved)
+    {
+        _registeringXml = saved.Id; _registerIntent = SchemaXmlTestDataRegistration.Positive; _registerApproved = false;
+        _registerAlias = new string(System.IO.Path.GetFileNameWithoutExtension(saved.FileName).ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
+    }
+    /// <summary>Explicit registration only: a saved document becomes reusable Test Data with the alias, intent and approval the user chose.</summary>
+    private async Task RegisterXml(Guid id)
+    {
+        if (SavedXml is not { } store) return;
+        try { store.Register(id, ProjectScope(), _registerAlias, _registerIntent, _registerApproved); }
+        catch (InvalidDataException e) { _xmlArtifactError = e.Message; return; }
+        _registeringXml = null;
+        await PersistSavedXml("Registered as Test Data. Test Data validates it against its schema and shows it under the Schema Studio source.",
+            "The registration is held in this session, but durable workspace save could not be confirmed.");
+    }
+    private async Task UnregisterXml(Guid id)
+    {
+        if (SavedXml?.Unregister(id, ProjectScope()) != true) return;
+        await PersistSavedXml("Removed from Test Data. The saved XML stays in Schema Studio.",
+            "The registration was removed from this session, but durable workspace save could not be confirmed.");
+    }
+    private async Task PersistSavedXml(string done, string notConfirmed)
+    {
+        if (SavedXml is not { } store || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
+        repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(ProjectScope()),
+            "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
+        var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+        if (autoSave is null || !await autoSave.SaveNowAsync()) _xmlArtifactError = notConfirmed;
+        else { _xmlArtifactError = ""; _xmlArtifactStatus = done; }
     }
     private async Task RemoveXml(Guid id)
     {

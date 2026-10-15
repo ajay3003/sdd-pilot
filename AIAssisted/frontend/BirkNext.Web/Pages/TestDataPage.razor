@@ -1,14 +1,18 @@
 @page "/test-data"
 @using BirkNext.TestData
 @using BirkNext.Web.Components
+@using P = BirkNext.Web.Services.TestDataPresentation
 @inject IServiceProvider Services
 
 <PageTitle>Test Data</PageTitle>
 
-@* Test Data: any approved typed value, payload, file, entity reference, data set or expected result used to prepare, execute or verify a
-   test. Read-only catalog of safe summaries: aliases and metadata; a sensitive value never reaches the browser. *@
+@* Test Data: the one catalog of reusable approved typed data — values, payloads, files, entity references, data sets and expected results —
+   used to prepare, execute or verify a test. Read-only safe summaries: aliases and metadata; a sensitive value never reaches the browser.
+   Approval, validation and intent are three separate facts. Provider-specific explanation lives in each source's details. *@
 <div class="td-page" data-testid="td-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Test Data" Description="Approved typed test data — values, payloads, files, entity references, data sets and expected results — from every configured source. Aliases and metadata only; sensitive values stay in the backend." />
+    <PageHeader Title="Test Data" Description="Reusable approved test data for test execution and verification." />
+    <p class="td-lead" data-testid="td-lead">Values, payloads, files, entity references, data sets and expected results come from configured sources.</p>
+    <p class="td-safety" role="note" data-testid="td-safety"><span aria-hidden="true">🔒</span> Sensitive values are never displayed in the UI. They stay in the backend and are used only when a test runs.</p>
 
     @if (_loading)
     {
@@ -20,119 +24,174 @@
     }
     else if (_catalog is { } catalog)
     {
-        <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
-            <label>Data kind
-                <select class="form-control" data-testid="td-filter-kind" @bind="_kind">
-                    <option value="">All</option>
-                    @foreach (var kind in catalog.Assets.Select(asset => asset.Kind).Distinct().Order()) { <option value="@kind">@KindLabel(kind)</option> }
-                </select>
-            </label>
-            <label>Environment
-                <select class="form-control" data-testid="td-filter-environment" @bind="_environment">
-                    <option value="">All</option>
-                    @foreach (var environment in catalog.Assets.Select(EnvironmentLabel).Distinct().Order()) { <option value="@environment">@environment</option> }
-                </select>
-            </label>
-            <label>Status
-                <select class="form-control" data-testid="td-filter-status" @bind="_status">
-                    <option value="">All</option>
-                    @foreach (var approval in Enum.GetValues<TestDataApproval>()) { <option value="@approval">@approval</option> }
-                </select>
-            </label>
-        </div>
-
-        <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
-            <h2 id="td-assets-heading">Assets <span class="td-count">(@Filtered(catalog).Count of @catalog.Assets.Count)</span></h2>
-            @if (catalog.Assets.Count == 0)
-            {
-                <p data-testid="td-empty">No test data is configured yet. Assets come from the sources below; BirkNext never generates identities or business data.</p>
-            }
-            else
-            {
-                <ul class="td-assets">
-                    @foreach (var asset in Filtered(catalog))
-                    {
-                        var open = _openId == asset.Id;
-                        <li class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind">
-                            <div class="td-asset-head">
-                                <span class="td-alias">@asset.Alias</span>
-                                <span class="td-pill td-pill-@Tone(asset)">@asset.Approval</span>
-                                <button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"td-detail-{Slug(asset.Id)}")"
-                                        data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button>
-                            </div>
-                            <dl class="td-facts">
-                                <div><dt>Kind</dt><dd data-testid="td-kind">@KindLabel(asset.Kind)</dd></div>
-                                <div><dt>Type</dt><dd data-testid="td-type">@TypeLabel(asset)</dd></div>
-                                <div><dt>Environment</dt><dd>@EnvironmentLabel(asset)</dd></div>
-                                <div><dt>Validation</dt><dd data-testid="td-validation">@asset.Validation</dd></div>
-                                @if (asset.Schema is { } schema)
-                                {
-                                    <div><dt>Schema</dt><dd data-testid="td-schema">@(schema.Label ?? schema.SchemaPath)@(asset.SchemaCheck?.SchemaVersion is { } version ? $" {version}" : "")</dd></div>
-                                    <div><dt>Schema validation</dt><dd data-testid="td-schema-status">@SchemaStatusLabel(asset.SchemaCheck)</dd></div>
-                                }
-                                <div><dt>Source</dt><dd>@asset.Source</dd></div>
-                                <div><dt>Value</dt><dd data-testid="td-value">@ValueLabel(asset)</dd></div>
-                            </dl>
-                            @if (asset.Capabilities.Count > 0)
-                            {
-                                <p class="td-capabilities" data-testid="td-capabilities">@foreach (var capability in asset.Capabilities) { <span class="td-tag">@capability</span> }</p>
-                            }
-                            @if (open)
-                            {
-                                <div class="td-detail" id="@($"td-detail-{Slug(asset.Id)}")" data-testid="td-detail">
-                                    <dl class="td-facts">
-                                        <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
-                                        <div><dt>Validation detail</dt><dd>@(asset.ValidationDetail ?? "—")</dd></div>
-                                        @if (asset.SchemaCheck is { } check)
-                                        {
-                                            <div><dt>Schema detail</dt><dd data-testid="td-schema-detail">@check.Detail@if (check.Issues.Count > 0) { <ul class="td-schema-issues">@foreach (var issue in check.Issues) { <li>@issue</li> }</ul> }</dd></div>
-                                            @if (check.SourceSnapshotId is { } snapshot) { <div><dt>Schema source</dt><dd class="td-mono">Source Analysis snapshot @snapshot.ToString("D")[..8]…@(check.SchemaFingerprint is { } fp ? $" · XSD {fp[..12]}…" : "")</dd></div> }
-                                            <div><dt>Approval vs. validity</dt><dd>Approval is independent: an approved negative fixture can be deliberately invalid.</dd></div>
-                                        }
-                                        @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
-                                        @if (asset.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd class="td-mono">@fingerprint[..12]…</dd></div> }
-                                        @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
-                                        @if (asset.IsDefault) { <div><dt>Default</dt><dd>Yes — chosen when several qualify</dd></div> }
-                                    </dl>
-                                    @if (_detail?.Asset.Id == asset.Id && _detail.Preview is { } preview)
-                                    {
-                                        <pre class="td-preview" tabindex="0" aria-label="Value preview" data-testid="td-preview">@preview</pre>
-                                    }
-                                    <p class="td-note" data-testid="td-preview-note">@(_detail?.Asset.Id == asset.Id ? _detail.PreviewNote : _detailError ?? "Loading…")</p>
-                                </div>
-                            }
-                        </li>
-                    }
-                </ul>
-            }
-        </section>
-
-        @if (catalog.Sets.Count > 0)
+        @if (catalog.Assets.Count == 0)
         {
-            <section class="td-card" aria-labelledby="td-sets-heading" data-testid="td-sets">
-                <h2 id="td-sets-heading">Data sets</h2>
-                <ul class="td-assets">
-                    @foreach (var set in catalog.Sets)
-                    {
-                        <li class="td-asset" data-testid="td-set">
-                            <div class="td-asset-head"><span class="td-alias">@set.Alias</span><span class="td-pill td-pill-@(set.Approval == TestDataApproval.Approved ? "ready" : "attention")">@set.Approval</span></div>
-                            <p class="td-note">@(set.Environment ?? "Any environment") · @set.Bindings.Count asset(s)@(set.Capabilities.Count > 0 ? $" · {string.Join(", ", set.Capabilities)}" : "")</p>
-                            <ul class="td-bindings">@foreach (var binding in set.Bindings) { <li><span>@binding.Role</span> → <span class="td-mono">@binding.AssetAlias</span></li> }</ul>
-                        </li>
-                    }
-                </ul>
+            var empty = P.Empty(catalog);
+            <section class="td-card td-empty" aria-labelledby="td-empty-heading" data-testid="td-empty" data-kind="@empty">
+                <h2 id="td-empty-heading">@(empty switch { P.EmptyKind.ConfiguredButEmpty => "Configured sources contain no assets yet", P.EmptyKind.SourcesUnavailable => "Test data sources could not be read", _ => "No test data available yet" })</h2>
+                <p>@(empty switch
+                {
+                    P.EmptyKind.ConfiguredButEmpty => "A source is configured, but it currently supplies no assets. Add assets to that source, or register a fixture from a supported workflow.",
+                    P.EmptyKind.SourcesUnavailable => "No assets could be listed because a source is unavailable; its card below says why.",
+                    _ => "Reusable test data appears here when a configured source supplies it, or when you register a fixture from a supported workflow.",
+                })</p>
+                <p class="td-note">Possible sources: @string.Join(", ", catalog.Sources.Select(source => source.Label)).@if (catalog.Sources.Any(source => source.Id == "schema-studio")) { <text> Schema Studio can generate XML that you save and register as reusable Test Data.</text> } BirkNext never generates identities or business data.</p>
+                <div class="td-actions">
+                    <a class="btn-primary td-action" href="@P.UserGuideHref" data-testid="td-empty-configure">How to configure Test Data</a>
+                    @if (catalog.Sources.Any(source => source.Id == "schema-studio")) { <a class="btn-secondary td-action" href="@P.SchemaStudioHref" data-testid="td-empty-schema-studio">Open Schema Studio</a> }
+                </div>
             </section>
+        }
+        else
+        {
+            var shown = Filtered(catalog);
+            <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
+                <h2 id="td-assets-heading">Assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
+                <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
+                    @Filter("Data kind", "td-filter-kind", _kind, v => _kind = v, catalog.Assets.Select(a => a.Kind).Distinct().Order().Select(k => (k.ToString(), P.KindLabel(k))))
+                    @Filter("Environment", "td-filter-environment", _environment, v => _environment = v, catalog.Assets.Select(P.EnvironmentLabel).Distinct().Order().Select(e => (e, e)))
+                    @Filter("Approval", "td-filter-approval", _approval, v => _approval = v, catalog.Assets.Select(a => a.Approval).Distinct().Order().Select(a => (a.ToString(), P.ApprovalLabel(a))))
+                    @Filter("Validation", "td-filter-validation", _validation, v => _validation = v, catalog.Assets.Select(P.ValidationLabel).Distinct().Order().Select(v => (v, v)))
+                    @Filter("Intent", "td-filter-intent", _intent, v => _intent = v, catalog.Assets.Select(P.IntentLabel).Distinct().Order().Select(v => (v, v)))
+                    @Filter("Source", "td-filter-source", _source, v => _source = v, catalog.Assets.Select(a => a.Source).Distinct().Order().Select(s => (s, s)))
+                    @if (FiltersActive) { <button type="button" class="btn-secondary td-clear" data-testid="td-clear-filters" @onclick="ClearFilters">Clear filters</button> }
+                </div>
+                @if (shown.Count == 0)
+                {
+                    <p class="td-inline-empty" data-testid="td-no-match">No test data matches the selected filters. <button type="button" class="td-link-button" @onclick="ClearFilters">Clear filters</button></p>
+                }
+                else
+                {
+                    <table class="td-table" data-testid="td-asset-table">
+                        <caption class="visually-hidden">Test data assets: approval, validation and intent are separate columns</caption>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Environment</th><th scope="col">Approval</th><th scope="col">Validation</th><th scope="col">Intent</th><th scope="col">Source</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var asset in shown)
+                            {
+                                var open = _openId == asset.Id;
+                                var detailId = $"td-detail-{Slug(asset.Id)}";
+                                <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind">
+                                    <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }</th>
+                                    <td data-label="Kind" data-testid="td-kind">@P.KindLabel(asset.Kind)</td>
+                                    <td data-label="Environment">@P.EnvironmentLabel(asset)</td>
+                                    <td data-label="Approval"><span class="td-pill td-pill-@P.ApprovalTone(asset.Approval)" data-testid="td-approval">@P.ApprovalLabel(asset.Approval)</span></td>
+                                    <td data-label="Validation"><span class="td-pill td-pill-@P.ValidationTone(asset)" data-testid="td-validation">@P.ValidationLabel(asset)</span></td>
+                                    <td data-label="Intent"><span class="td-intent" data-testid="td-intent">@P.IntentLabel(asset)</span></td>
+                                    <td data-label="Source" data-testid="td-asset-source">@asset.Source</td>
+                                    <td class="td-row-action"><button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
+                                                aria-label="@($"{(open ? "Hide" : "Show")} details for {asset.Alias}")" data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button></td>
+                                </tr>
+                                <tr class="td-detail-row" id="@detailId" hidden="@(!open)" data-testid="td-detail-row">
+                                    <td colspan="8">
+                                        <div class="td-detail" data-testid="td-detail">
+                                            <section aria-label="Asset facts">
+                                                <dl class="td-facts">
+                                                    <div><dt>Type</dt><dd data-testid="td-type">@P.TypeLabel(asset)</dd></div>
+                                                    <div><dt>Value</dt><dd data-testid="td-value">@P.ValueLabel(asset)</dd></div>
+                                                    <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
+                                                    @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
+                                                    @if (asset.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd class="td-mono">@fingerprint[..12]…</dd></div> }
+                                                    @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
+                                                    @if (asset.IsDefault) { <div><dt>Default</dt><dd>Yes — chosen when several qualify</dd></div> }
+                                                </dl>
+                                            </section>
+                                            <section aria-label="Approval, validation and intent">
+                                                <dl class="td-facts td-status-facts">
+                                                    <div><dt>Approval</dt><dd data-testid="td-approval-detail">@P.ApprovalLabel(asset.Approval)@(asset.ApprovalDetail is { } why ? $" — {why}" : "")</dd></div>
+                                                    <div><dt>Validation</dt><dd data-testid="td-validation-detail">@P.ValidationLabel(asset)@(asset.ValidationDetail is { } detail ? $" — {detail}" : "")</dd></div>
+                                                    <div><dt>Intent</dt><dd data-testid="td-intent-detail">@P.IntentLabel(asset) — @P.IntentHelp(asset)</dd></div>
+                                                    @if (asset.Schema is { } schema)
+                                                    {
+                                                        <div><dt>Schema</dt><dd data-testid="td-schema">@(schema.Label ?? schema.SchemaPath)@(asset.SchemaCheck?.SchemaVersion is { } version ? $" {version}" : "")</dd></div>
+                                                        <div><dt>Schema validation</dt><dd data-testid="td-schema-status">@P.ValidationLabel(asset)</dd></div>
+                                                    }
+                                                    @if (asset.SchemaCheck is { } check)
+                                                    {
+                                                        <div class="td-wide"><dt>Schema detail</dt><dd data-testid="td-schema-detail">@check.Detail@if (check.Issues.Count > 0) { <ul class="td-schema-issues">@foreach (var issue in check.Issues) { <li>@issue</li> }</ul> }</dd></div>
+                                                    }
+                                                </dl>
+                                                <p class="td-note">Approval is independent: an approved negative fixture can be deliberately invalid, and revalidation never changes approval.</p>
+                                            </section>
+                                            <section aria-label="Provenance" data-testid="td-provenance">
+                                                <h3 class="td-subheading">Provenance</h3>
+                                                <dl class="td-facts">
+                                                    <div><dt>Source</dt><dd data-testid="td-provenance-source">@asset.Source</dd></div>
+                                                    @foreach (var fact in asset.Provenance) { <div><dt>@fact.Label</dt><dd class="td-mono" data-testid="td-provenance-fact">@fact.Value</dd></div> }
+                                                    @if (asset.SchemaCheck is { SourceSnapshotId: { } snapshot } schemaCheck)
+                                                    {
+                                                        <div><dt>Schema source</dt><dd class="td-mono" data-testid="td-schema-source">Source Analysis snapshot @snapshot.ToString("D")[..8]…@(schemaCheck.SchemaFingerprint is { } fp ? $" · XSD {fp[..Math.Min(12, fp.Length)]}…" : "")</dd></div>
+                                                    }
+                                                </dl>
+                                                <p class="td-links">
+                                                    @if (P.SourceAnalysisHref(asset.SchemaCheck?.SourceSnapshotId ?? asset.Schema?.SourceSnapshotId) is { } snapshotHref) { <a href="@snapshotHref" data-testid="td-open-snapshot">Open source snapshot</a> }
+                                                    @if (asset.SourceId == "schema-studio") { <a href="@P.SchemaStudioHref" data-testid="td-open-schema-studio">Open Schema Studio</a> }
+                                                </p>
+                                            </section>
+                                            @if (asset.Capabilities.Count > 0)
+                                            {
+                                                <p class="td-capabilities" data-testid="td-capabilities"><span class="visually-hidden">Capabilities: </span>@foreach (var capability in asset.Capabilities) { <span class="td-tag">@capability</span> }</p>
+                                            }
+                                            @if (open)
+                                            {
+                                                @if (_detail?.Asset.Id == asset.Id && _detail.Preview is { } preview)
+                                                {
+                                                    <pre class="td-preview" tabindex="0" aria-label="Value preview" data-testid="td-preview">@preview</pre>
+                                                }
+                                                <p class="td-note" data-testid="td-preview-note">@(_detail?.Asset.Id == asset.Id ? _detail.PreviewNote : _detailError ?? "Loading…")</p>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            @if (catalog.Sets.Count > 0)
+            {
+                <section class="td-card" aria-labelledby="td-sets-heading" data-testid="td-sets">
+                    <h2 id="td-sets-heading">Data sets <span class="td-count">(@catalog.Sets.Count)</span></h2>
+                    <ul class="td-sets">
+                        @foreach (var set in catalog.Sets)
+                        {
+                            <li class="td-set" data-testid="td-set">
+                                <div class="td-set-head"><span class="td-alias">@set.Alias</span><span class="td-pill td-pill-@P.ApprovalTone(set.Approval)">@P.ApprovalLabel(set.Approval)</span><span class="td-note">@set.Source</span></div>
+                                <p class="td-note">@(set.Environment ?? "Any environment") · @set.Bindings.Count @(set.Bindings.Count == 1 ? "asset" : "assets")@(set.Capabilities.Count > 0 ? $" · {string.Join(", ", set.Capabilities)}" : "")</p>
+                                <ul class="td-bindings">@foreach (var binding in set.Bindings) { <li><span>@binding.Role</span> → <span class="td-mono">@binding.AssetAlias</span></li> }</ul>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
         }
 
         <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
             <h2 id="td-sources-heading">Sources</h2>
-            <ul class="td-sources">
+            <ul class="td-source-grid">
                 @foreach (var source in catalog.Sources)
                 {
-                    <li data-testid="td-source"><strong>@source.Label</strong> — @source.AssetCount asset(s)@(source.SetCount > 0 ? $", {source.SetCount} data set(s)" : ""). <span class="td-note">@source.Description</span></li>
+                    var action = P.SourceAction(source);
+                    <li class="td-source-card" data-testid="td-source" data-source="@source.Id" data-status="@source.Status">
+                        <div class="td-source-head">
+                            <h3 id="@($"td-source-{source.Id}")">@source.Label</h3>
+                            <span class="td-pill td-pill-@P.SourceTone(source)" data-testid="td-source-status"><span class="visually-hidden">Status: </span>@P.SourceStatusLabel(source)</span>
+                        </div>
+                        <p class="td-source-count" data-testid="td-source-count">@source.AssetCount @(source.AssetCount == 1 ? "asset" : "assets")@(source.SetCount > 0 ? $" · {source.SetCount} data {(source.SetCount == 1 ? "set" : "sets")}" : "")</p>
+                        <p class="td-note">@source.Description</p>
+                        @if (source.Problem is { } problem) { <p class="td-source-problem" role="alert" data-testid="td-source-problem">Source unavailable: @problem</p> }
+                        <div class="td-source-actions">
+                            @if (source.Detail is { } detail)
+                            {
+                                <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="@($"td-source-details-{source.Id}")" Class="disclosure-inline disclosure-small">
+                                    <p class="td-note" data-testid="td-source-detail">@detail</p>
+                                </ReviewDisclosure>
+                            }
+                            @if (action is { } a) { <a class="td-source-action" href="@a.Href" data-testid="td-source-action" aria-describedby="@($"td-source-{source.Id}")">@a.Label</a> }
+                        </div>
+                    </li>
                 }
             </ul>
-            <p class="td-note">Approved for test use is not the same as valid: an approved negative fixture is deliberately invalid. Resolving test data never creates it.</p>
         </section>
     }
 </div>
@@ -143,7 +202,10 @@
     private TestDataAssetDetail? _detail;
     private string? _error, _detailError, _openId;
     private bool _loading = true;
-    private string _kind = "", _environment = "", _status = "";
+    private string _kind = "", _environment = "", _approval = "", _validation = "", _intent = "", _source = "";
+
+    private bool FiltersActive => (_kind + _environment + _approval + _validation + _intent + _source).Length > 0;
+    private void ClearFilters() { _kind = _environment = _approval = _validation = _intent = _source = ""; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -158,8 +220,22 @@
 
     private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog) => catalog.Assets
         .Where(asset => _kind.Length == 0 || asset.Kind.ToString() == _kind)
-        .Where(asset => _environment.Length == 0 || EnvironmentLabel(asset) == _environment)
-        .Where(asset => _status.Length == 0 || asset.Approval.ToString() == _status).ToList();
+        .Where(asset => _environment.Length == 0 || P.EnvironmentLabel(asset) == _environment)
+        .Where(asset => _approval.Length == 0 || asset.Approval.ToString() == _approval)
+        .Where(asset => _validation.Length == 0 || P.ValidationLabel(asset) == _validation)
+        .Where(asset => _intent.Length == 0 || P.IntentLabel(asset) == _intent)
+        .Where(asset => _source.Length == 0 || asset.Source == _source).ToList();
+
+    /// <summary>One labelled filter; options are only the values that occur, so no filter can select nothing by construction.</summary>
+    private RenderFragment Filter(string label, string testId, string value, Action<string> set, IEnumerable<(string Value, string Label)> options) => __builder =>
+    {
+        <label>@label
+            <select class="form-control" data-testid="@testId" value="@value" @onchange="e => set(e.Value?.ToString() ?? string.Empty)">
+                <option value="">All</option>
+                @foreach (var option in options) { <option value="@option.Value">@option.Label</option> }
+            </select>
+        </label>
+    };
 
     private async Task ToggleAsync(TestDataAssetSummary asset)
     {
@@ -169,40 +245,6 @@
         var (detail, error) = await _api.AssetAsync(asset.Id);
         _detail = detail; _detailError = error;
     }
-
-    internal static string KindLabel(TestDataKind kind) => kind switch
-    {
-        TestDataKind.EntityReference => "Entity reference",
-        TestDataKind.ExpectedResult => "Expected result",
-        TestDataKind.ReferenceData => "Reference data",
-        _ => kind.ToString(),
-    };
-
-    internal static string TypeLabel(TestDataAssetSummary asset) =>
-        asset.Kind == TestDataKind.Scalar ? asset.ValueType.ToString()
-        : asset.Kind == TestDataKind.EntityReference ? asset.EntityType ?? "Entity"
-        : asset.ExpectsAbsence ? "Expects absence" : asset.MediaType ?? "—";
-
-    private static string EnvironmentLabel(TestDataAssetSummary asset) => asset.Environment ?? "Any environment";
-
-    /// <summary>A non-sensitive scalar shows its value; anything else only says whether a value is available — never the value.</summary>
-    internal static string ValueLabel(TestDataAssetSummary asset) =>
-        asset.DisplayValue is { } value ? value
-        : asset.ExpectsAbsence ? "Nothing expected"
-        : asset.Sensitivity == TestDataSensitivity.Sensitive ? (asset.ValueAvailable ? "Available securely" : "Not available")
-        : asset.ValueAvailable ? "Available (see details)" : "Not available";
-
-    private static string SchemaStatusLabel(TestDataSchemaCheck? check) => check?.Status switch
-    {
-        null => "Not checked",
-        TestDataSchemaStatus.Validated => "Valid",
-        TestDataSchemaStatus.Invalid => "Invalid",
-        TestDataSchemaStatus.SchemaUnavailable => "Schema unavailable",
-        TestDataSchemaStatus.DependencyUnresolved => "Dependency unresolved",
-        _ => "Not evaluated",
-    };
-
-    private static string Tone(TestDataAssetSummary asset) => asset.Approval == TestDataApproval.Approved ? "ready" : "attention";
 
     private static string Slug(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
 }

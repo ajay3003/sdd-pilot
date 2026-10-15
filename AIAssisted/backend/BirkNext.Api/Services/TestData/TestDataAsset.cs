@@ -36,6 +36,10 @@ public sealed record TestDataAsset
     public List<string> Capabilities { get; init; } = [];
     public TestDataSensitivity Sensitivity { get; init; } = TestDataSensitivity.Sensitive;
     public string Source { get; init; } = "";
+    /// <summary>The provider the asset came from; set by <see cref="TestDataCatalog"/>.</summary>
+    public string SourceId { get; init; } = "";
+    /// <summary>Labelled provenance facts (identifiers only, never values).</summary>
+    public List<TestDataFact> Provenance { get; init; } = [];
     public bool IsDefault { get; init; }
     public DateTimeOffset? ExpiresAt { get; init; }
     public bool ExpectsAbsence { get; init; }
@@ -67,4 +71,8 @@ public interface ITestDataProvider
     string Description { get; }
     IReadOnlyList<TestDataAsset> Assets();
     IReadOnlyList<TestDataSet> Sets() => [];
+    /// <summary>Whether anything is configured for this source at all (it may still hold no approved assets).</summary>
+    bool Configured => Assets().Count > 0 || Sets().Count > 0;
+    /// <summary>Provider-specific explanation (for example which local configuration it reads), shown only as source detail.</summary>
+    string? Detail => null;
 }

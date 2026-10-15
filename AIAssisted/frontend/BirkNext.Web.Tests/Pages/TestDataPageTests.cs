@@ -55,12 +55,14 @@ public sealed class TestDataPageTests : BunitContext
         var page = Render<TestDataPage>();
         var rows = page.FindAll("[data-testid=td-asset]").ToDictionary(row => row.GetAttribute("data-alias")!);
         rows.Keys.Should().BeEquivalentTo("period-lock-day", "normal-report", "expected-record", "reporter-a");
-        rows["period-lock-day"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("10");
-        rows["period-lock-day"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("Integer");
-        rows["normal-report"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("application/xml");
+        // Value and type are detail facts: each asset's detail row follows its summary row.
+        var details = rows.ToDictionary(row => row.Key, row => row.Value.NextElementSibling!);
+        details["period-lock-day"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("10");
+        details["period-lock-day"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("Integer");
+        details["normal-report"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("application/xml");
         rows["expected-record"].QuerySelector("[data-testid=td-kind]")!.TextContent.Should().Be("Expected result");
         rows["reporter-a"].QuerySelector("[data-testid=td-kind]")!.TextContent.Should().Be("Entity reference");
-        rows["reporter-a"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("Available securely");
+        details["reporter-a"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("Available securely");
         page.Markup.Should().NotContain(RawIdentifier);
         page.FindAll("[data-testid=td-set]").Should().ContainSingle().Which.TextContent.Should().Contain("Reporter").And.Contain("reporter-a");
         page.FindAll("[data-testid=td-source]").Should().HaveCount(2);
@@ -77,7 +79,8 @@ public sealed class TestDataPageTests : BunitContext
         page.FindAll("[data-testid=td-asset]").Single(row => row.GetAttribute("data-alias") == "reporter-a").QuerySelector("[data-testid=td-toggle]")!.Click();
         page.FindAll("[data-testid=td-preview]").Should().BeEmpty();
         page.Find("[data-testid=td-preview-note]").TextContent.Should().Contain("never shown");
-        page.Find("[data-testid=td-sensitivity]").TextContent.Should().Be("Sensitive");
+        page.FindAll("[data-testid=td-asset]").Single(row => row.GetAttribute("data-alias") == "reporter-a").NextElementSibling!
+            .QuerySelector("[data-testid=td-sensitivity]")!.TextContent.Should().Be("Sensitive");
     }
 
     [Fact]

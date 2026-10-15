@@ -567,6 +567,13 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
     sp.GetRequiredService<IConfiguration>().GetSection(BirkNext.Api.Services.TestData.TestDataOptions.Section).Get<BirkNext.Api.Services.TestData.TestDataOptions>()
         ?? new BirkNext.Api.Services.TestData.TestDataOptions(), sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider, BirkNext.Api.Services.AltinnTesting.AltinnTestDataProvider>();
+// Schema Studio fixtures explicitly registered for reuse, read from the saved-XML workspace artifacts (read-only, per call).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.SchemaStudioTestDataProvider(() =>
+{
+    using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+    return scope.ServiceProvider.GetRequiredService<AppDbContext>().SavedWorkspaceArtifacts.AsNoTracking()
+        .Where(artifact => artifact.ArtifactType == BirkNext.Api.Models.ArtifactType.SchemaStudioGeneratedXml).Select(artifact => artifact.Content).ToList();
+}));
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>()));
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataSchemaValidationService>();

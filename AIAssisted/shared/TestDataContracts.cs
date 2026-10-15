@@ -57,9 +57,15 @@ public sealed record TestDataAssetSummary
     public TestDataApproval Approval { get; init; }
     public TestDataValidation Validation { get; init; }
     public string? ValidationDetail { get; init; }
+    /// <summary>Why the asset is not approved (for example a configuration problem). Approval and validation are independent facts.</summary>
+    public string? ApprovalDetail { get; init; }
     public List<string> Capabilities { get; init; } = [];
     public TestDataSensitivity Sensitivity { get; init; }
     public string Source { get; init; } = "";
+    /// <summary>The provider id behind <see cref="Source"/>, so the browser can relate an asset to its source card.</summary>
+    public string SourceId { get; init; } = "";
+    /// <summary>Where the asset came from (source identity, snapshot, schema fingerprint, origin) — labels and identifiers only, never values.</summary>
+    public List<TestDataFact> Provenance { get; init; } = [];
     public bool ValueAvailable { get; init; }
     public bool IsDefault { get; init; }
     public DateTimeOffset? ExpiresAt { get; init; }
@@ -89,7 +95,19 @@ public sealed record TestDataSetSummary
     public string Source { get; init; } = "";
 }
 
-public sealed record TestDataSourceSummary(string Id, string Label, string Description, int AssetCount, int SetCount);
+/// <summary>One labelled provenance fact (for example "Source snapshot" → an id). Never a test data value.</summary>
+public sealed record TestDataFact(string Label, string Value);
+
+/// <summary>
+/// A source's state as a fact, not a judgement: Empty and NotConfigured are not failures. Unavailable means the provider could not be
+/// read; its problem is scoped to that source and never hides the others.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataSourceStatus { Available, Empty, NotConfigured, Unavailable }
+
+/// <summary>A source of test data. <see cref="Detail"/> carries provider-specific explanation that the generic page shows only on request.</summary>
+public sealed record TestDataSourceSummary(string Id, string Label, string Description, int AssetCount, int SetCount,
+    TestDataSourceStatus Status = TestDataSourceStatus.Available, string? Detail = null, string? Problem = null);
 
 public sealed record TestDataCatalogView(List<TestDataAssetSummary> Assets, List<TestDataSetSummary> Sets, List<TestDataSourceSummary> Sources);
 

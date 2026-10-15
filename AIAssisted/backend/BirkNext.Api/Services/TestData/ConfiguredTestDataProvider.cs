@@ -69,6 +69,7 @@ public sealed class ConfiguredTestDataProvider(TestDataOptions options, string c
     public string Id => "configured";
     public string Label => "Configured catalog";
     public string Description => "Typed values, payloads, files, expected results and data sets declared in the TestData configuration section.";
+    public string? Detail => $"Read from the TestData configuration section; files only from the {options.Root} folder (at most 1 MB each). Nothing is fetched or generated.";
 
     public IReadOnlyList<TestDataAsset> Assets() => [.. options.Assets.Where(item => !string.IsNullOrWhiteSpace(item.Alias)).Select(item =>
     {
@@ -81,6 +82,10 @@ public sealed class ConfiguredTestDataProvider(TestDataOptions options, string c
             Source = Label, IsDefault = item.IsDefault, ExpiresAt = item.ExpiresAt, ExpectsAbsence = item.ExpectsAbsence,
             Value = value is null ? null : new TestDataValue(value), Schema = item.Schema?.ToReference(),
             Validation = problem is null ? null : TestDataValidation.Unavailable, ValidationDetail = problem,
+            // The file name is provenance only when it was read safely from inside the root; a rejected reference is never echoed.
+            Provenance = item.File is { Length: > 0 } fileName && problem is null
+                ? [new("Configuration", "TestData:Assets"), new("File", fileName)]
+                : [new("Configuration", "TestData:Assets")],
         };
     })];
 

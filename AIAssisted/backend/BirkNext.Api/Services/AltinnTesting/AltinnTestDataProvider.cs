@@ -24,7 +24,9 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
 
     public string Id => "altinn-local";
     public string Label => SourceLabel;
-    public string Description => "Approved synthetic TestID reporters and synthetic persons from the local Altinn testing configuration (process-scope environment variables). Identifiers are never shown.";
+    public string Description => "Approved local test references supplied by environment or test configuration. Identifiers are never shown.";
+    public string? Detail => "Currently includes approved synthetic TestID reporters (AltinnTesting:UnattendedIdPortenTest:Reporters) and synthetic persons (AltinnTesting:SyntheticChildren) from the local Altinn testing configuration, set as process-scope environment variables.";
+    public bool Configured => options.UnattendedIdPortenTest.Reporters.Count > 0 || options.SyntheticChildren.Count > 0;
 
     public IReadOnlyList<TestDataAsset> Assets()
     {
@@ -41,6 +43,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 ValidationDetail = reporter.AltinnProfileConfirmed ? "Altinn TT02 profile confirmed (configured confirmation; not an authentication)." : "Altinn TT02 profile not confirmed.",
                 Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel,
                 Value = string.IsNullOrWhiteSpace(reporter.TestIdPersonIdentifier) ? null : new TestDataValue(reporter.TestIdPersonIdentifier.Trim()),
+                Provenance = [new("Configuration", "AltinnTesting:UnattendedIdPortenTest:Reporters")],
             });
         }
         foreach (var child in options.SyntheticChildren.Where(item => !string.IsNullOrWhiteSpace(item.Alias)))
@@ -55,6 +58,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
                 ValidationDetail = child.KnownToPerson ? "Declared known to Person; not verified by BirkNext." : "Declared unknown to Person; not verified by BirkNext.",
                 Sensitivity = TestDataSensitivity.Sensitive, Source = SourceLabel, IsDefault = child.Default,
                 Value = string.IsNullOrWhiteSpace(child.TestPersonIdentifier) ? null : new TestDataValue(child.TestPersonIdentifier.Trim()),
+                Provenance = [new("Configuration", "AltinnTesting:SyntheticChildren")],
             });
         }
         return assets;
