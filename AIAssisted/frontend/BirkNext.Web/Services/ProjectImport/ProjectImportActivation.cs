@@ -72,7 +72,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.DetectedRoles = discovery.Roles.Where(r => r.State == SampleRoleState.Detected).Select(r => r.Role.ToString()).ToList();
         record.AmbiguousRoles = discovery.AmbiguousRoles.Select(r => r.Role.ToString()).ToList();
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
-        ApplySource(record, commit?.Source, preview.Source.Detected);
+        ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
 
         lifecycle.CurrentProjectImportId = preview.ImportId;
         var scope = ProjectImportScope.For(preview.ImportId)!;
@@ -94,10 +94,10 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     }
 
     /// <summary>Records the source outcome of a retried commit on the current import (the documents are unchanged).</summary>
-    public void UpdateSource(string importId, ProjectImportSourceResult source)
+    public void UpdateSource(string importId, ProjectImportSourceResult source, Guid? stagingId = null, DateTimeOffset? stagedUntil = null)
     {
         if (repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is not { } record) return;
-        ApplySource(record, source, sourceDetected: true);
+        ApplySource(record, source, sourceDetected: true, stagingId ?? record.SourceStagingId, stagedUntil);
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
     }
@@ -112,10 +112,15 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         repository.NotifyArtifactsChanged();
     }
 
-    private static void ApplySource(SddProjectImportRecord record, ProjectImportSourceResult? source, bool sourceDetected)
+    private static void ApplySource(SddProjectImportRecord record, ProjectImportSourceResult? source, bool sourceDetected, Guid? stagingId, DateTimeOffset? stagedUntil)
     {
         record.SourceState = (source?.State ?? (sourceDetected ? ProjectImportSourceState.NotCreated : ProjectImportSourceState.NotDetected)).ToString();
         record.SourceSnapshotId = source?.SnapshotId;
         record.SourceAnalyzedAt = source?.AnalyzedAt;
+        record.SourceMessage = source?.SnapshotId is null ? source?.Message : null;
+        // Only a recoverable source part keeps a reference to its staged archive; a settled import has nothing to retry.
+        var retryable = source is { CanRetry: true, SnapshotId: null };
+        record.SourceStagingId = retryable ? stagingId : null;
+        record.SourceStagedUntil = retryable ? stagedUntil : null;
     }
 }

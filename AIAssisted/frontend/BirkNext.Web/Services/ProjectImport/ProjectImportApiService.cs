@@ -77,6 +77,6 @@ public sealed class ProjectImportApiService(HttpClient http) : IProjectImportApi
     public async Task DiscardAsync(Guid stagingId, CancellationToken ct = default)
     {
         try { using var _ = await http.DeleteAsync($"api/project-import/{stagingId}", ct); }
-        catch (HttpRequestException) { /* the staging expires on its own */ }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { /* the staging expires on its own */ }
     }
 }

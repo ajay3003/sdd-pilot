@@ -120,7 +120,7 @@ public sealed class ProjectImportPageTests : BunitContext
         cut.Find("[data-testid=pi-snapshot-id]").TextContent.Should().Be(snapshot.ToString()[..8]);
         cut.Find("[data-testid=pi-import-id]").TextContent.Should().Be(_preview.ImportId);
         cut.Find("[data-testid=pi-result]").TextContent.Should().Contain("Imported is not reviewed or approved");
-        cut.Find("[data-testid=pi-open-source]").GetAttribute("href").Should().Be("source-analysis");
+        cut.Find("[data-testid=pi-open-source]").GetAttribute("href").Should().Be($"source-analysis?snapshot={snapshot:D}", "the exact snapshot is linked by id");
         cut.Find("[data-testid=pi-open-documents]").GetAttribute("href").Should().Be("constitution-explorer");
         cut.Find("[data-testid=pi-target]").TextContent.Should().Contain("Selected").And.Contain("does not own or change the source snapshot");
         _previews.Should().Be(1, "the archive is uploaded once");

@@ -12,6 +12,7 @@
 @inject ProjectApplicabilityState Applicability
 @inject IWorkspaceAutoSaveService AutoSave
 @inject IJSRuntime JS
+@inject IServiceProvider ServiceProvider
 @implements IDisposable
 
 @* Project Import: one archive, uploaded once. Its documents become artifacts in the Shared Artifact Repository and its source becomes a
@@ -32,10 +33,19 @@
                     <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
                     <div><dt>Imported</dt><dd>@current.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                     <div><dt>Project documents</dt><dd data-testid="pi-current-documents">@DocumentsFact(current)</dd></div>
-                    <div><dt>Source</dt><dd data-testid="pi-current-source">@SourceFact(current)</dd></div>
+                    @{ var currentSource = ProjectImportPresentation.CurrentSource(current, DateTimeOffset.UtcNow); }
+                    <div><dt>Source</dt><dd data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")"><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@currentSource.Status</span> <span class="pi-muted" data-testid="pi-current-source-detail">@currentSource.Detail</span></dd></div>
                 </dl>
+                @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }
                 <div class="pi-actions">
-                    <a class="btn-secondary" href="source-analysis" data-testid="pi-current-open-source">Open Source Analysis</a>
+                    @if (currentSource.SnapshotId is { } currentSnapshot)
+                    {
+                        <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(currentSnapshot)" data-testid="pi-current-open-source">Open Source Analysis</a>
+                    }
+                    else if (currentSource.CanRetry)
+                    {
+                        <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">Create source snapshot</button>
+                    }
                     @if (FirstExplorer(current) is { } explorer) { <a class="btn-secondary" href="@explorer.Route" data-testid="pi-current-open-documents">Open @explorer.Label</a> }
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
                 </div>
@@ -55,7 +65,7 @@
             </ul>
             <div class="pi-actions">
                 <label class="pi-file-button">
-                    <InputFile class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" />
+                    <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
                     <span aria-hidden="true">Choose project ZIP</span>
                 </label>
                 <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
@@ -116,7 +126,7 @@
 
         <div class="pi-columns">
             <ProjectImportArtifacts Discovery="discovery" />
-            <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source)" />
+            <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source, SourceAnalysisAvailable)" />
         </div>
         @TargetEnvironmentFact
 
@@ -193,7 +203,10 @@
 
         <div class="pi-actions" data-testid="pi-next">
             @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
-            <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="source-analysis" data-testid="pi-open-source">Open Source Analysis</a>
+            @if (_commit?.Source.SnapshotId is { } resultSnapshot)
+            {
+                <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="@ProjectImportPresentation.SourceAnalysisHref(resultSnapshot)" data-testid="pi-open-source">Open Source Analysis</a>
+            }
             <a class="btn-secondary" href="getting-started" data-testid="pi-open-workflow">Recommended Workflow</a>
             <button type="button" class="btn-secondary" data-testid="pi-import-another" @onclick="Reset">Import another project</button>
         </div>
@@ -215,6 +228,9 @@
     private bool _saveWarning;
     private bool _retrying;
     private ProjectImportCommitEvent? _progress;
+    /// <summary>Changes on every reset or failure: the file input is re-created, so choosing the very same ZIP again always fires a change.</summary>
+    private int _inputGeneration;
+    private string? _currentRetryMessage;
     private DateTimeOffset? _importStartedAt;
     private TimeSpan _elapsed;
     private System.Threading.Timer? _elapsedTimer;
@@ -243,7 +259,7 @@
         {
             await using var stream = args.File.OpenReadStream(50 * 1024 * 1024);
             var (preview, error) = await Api.PreviewAsync(args.File.Name, stream);
-            if (preview is null) { _failure = error; _phase = Phase.Choose; StopElapsedTimer(); return; }
+            if (preview is null) { _failure = error; _inputGeneration++; _phase = Phase.Choose; StopElapsedTimer(); _focusId = "pi-choose-file"; return; }
             _preview = preview;
             _phase = Phase.Classifying;
             _classified = 0;
@@ -295,7 +311,7 @@
             StopElapsedTimer();
             _failure = error;
             _phase = error?.Code == "IMPORT_STAGING_EXPIRED" ? Phase.Choose : Phase.Preview;
-            if (_phase == Phase.Choose) { _preview = null; _discovery = null; }
+            if (_phase == Phase.Choose) { _preview = null; _discovery = null; _inputGeneration++; }
             return;
         }
         _commit = commit;
@@ -330,7 +346,7 @@
             if (commit is not null)
             {
                 _commit = commit;
-                Activation.UpdateSource(preview.ImportId, commit.Source);
+                Activation.UpdateSource(preview.ImportId, commit.Source, commit.StagingId, commit.StagedUntil);
                 _saveWarning = !await AutoSave.SaveNowAsync();
                 if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
             }
@@ -343,20 +359,58 @@
         finally { _retrying = false; }
     }
 
-    private async Task CancelAsync()
+    private void CancelAsync()
     {
-        if (_preview is { } preview) await Api.DiscardAsync(preview.StagingId);
+        // The preview is replaced at once; releasing the staged archive must never block or undo the reset (it also expires on its own).
+        var staging = _preview?.StagingId;
         Reset();
+        if (staging is { } stagingId) _ = DiscardQuietlyAsync(stagingId);
     }
 
+    private async Task DiscardQuietlyAsync(Guid stagingId)
+    {
+        try { await Api.DiscardAsync(stagingId); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { /* the staging expires on its own */ }
+    }
+
+    /// <summary>Clears every archive-specific value (preview, roles, source, fingerprint, name, errors, progress) and re-creates the file input.</summary>
     private void Reset()
     {
         StopElapsedTimer();
-        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false;
-        _progress = null;
+        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false; _retrying = false;
+        _progress = null; _fileName = null; _classified = 0; _classifyTotal = 0;
+        _inputGeneration++;
         _phase = Phase.Choose;
-        _focusId = "pi-choose-heading";
+        _focusId = "pi-choose-file";
     }
+
+    private async Task RetryCurrentSourceAsync(SddProjectImportRecord record)
+    {
+        if (record.SourceStagingId is not { } stagingId) return;
+        _retrying = true; _currentRetryMessage = null;
+        try
+        {
+            var (commit, error) = await Api.CommitAsync(stagingId);
+            if (commit is not null)
+            {
+                Activation.UpdateSource(record.ImportId, commit.Source, commit.StagingId, commit.StagedUntil);
+                _saveWarning = !await AutoSave.SaveNowAsync();
+                if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
+                else _currentRetryMessage = commit.Source.Message ?? "The source snapshot could still not be created.";
+            }
+            else if (error is not null)
+            {
+                // An expired staging cannot be retried; the record says so instead of offering the action again.
+                Activation.UpdateSource(record.ImportId, new ProjectImportSourceResult { State = ProjectImportSourceState.Failed, Message = error.Message,
+                    CanRetry = error.Code != "IMPORT_STAGING_EXPIRED" }, error.Code == "IMPORT_STAGING_EXPIRED" ? null : stagingId, record.SourceStagedUntil);
+                _currentRetryMessage = error.Message;
+            }
+        }
+        catch (HttpRequestException ex) { _currentRetryMessage = BackendRequestClassifier.FromException("Project import", ex).UserMessage; }
+        finally { _retrying = false; }
+    }
+
+    private bool SourceAnalysisAvailable => ServiceProvider.GetService<FeatureVisibilityService>() is not { IsLoaded: true } visibility || visibility.SourceAnalysis;
 
     private void CloseCurrent()
     {
@@ -364,7 +418,7 @@
         _ = AutoSave.SaveNowAsync();
     }
 
-    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _phase = Phase.Choose; }
+    private void Fail(SourceUploadFailure failure) { StopElapsedTimer(); _failure = failure; _inputGeneration++; _phase = Phase.Choose; _focusId = "pi-choose-file"; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -415,13 +469,6 @@
     private static string DocumentsFact(SddProjectImportRecord record) =>
         record.ArtifactDocumentCount == 0 ? "No supported project documents" :
         string.Join(", ", record.DetectedRoles.Concat(record.AmbiguousRoles.Select(r => r + " (choose)")).Select(Label));
-
-    private static string SourceFact(SddProjectImportRecord record) => record.SourceState switch
-    {
-        nameof(ProjectImportSourceState.Created) or nameof(ProjectImportSourceState.Reused) => $"Snapshot {record.SourceSnapshotId?.ToString()[..8]}",
-        nameof(ProjectImportSourceState.NotDetected) => "No source detected",
-        _ => "Source detected, no snapshot yet",
-    };
 
     private static string Label(string role) => Enum.TryParse<WorkspaceArtifactType>(role.Replace(" (choose)", ""), out var type)
         ? BirkNext.Web.Services.Explorers.ArtifactExplorerRoles.Label(type) + (role.EndsWith(" (choose)") ? " (choose)" : "")

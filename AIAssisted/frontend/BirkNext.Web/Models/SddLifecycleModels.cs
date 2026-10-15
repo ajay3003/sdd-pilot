@@ -52,6 +52,11 @@ public sealed class SddProjectImportRecord
     public string SourceState { get; set; } = "";
     public Guid? SourceSnapshotId { get; set; }
     public DateTimeOffset? SourceAnalyzedAt { get; set; }
+    /// <summary>Why no snapshot was created (NotCreated/Failed), as the backend stated it. Never a stack trace.</summary>
+    public string? SourceMessage { get; set; }
+    /// <summary>The staged archive that a failed source part can be retried from, while it is kept (<see cref="SourceStagedUntil"/>).</summary>
+    public Guid? SourceStagingId { get; set; }
+    public DateTimeOffset? SourceStagedUntil { get; set; }
 }
 
 /// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>

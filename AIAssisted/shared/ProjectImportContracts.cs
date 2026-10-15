@@ -64,7 +64,7 @@ public sealed record ProjectImportPreview
     public List<ProjectImportDocument> Documents { get; init; } = [];
     public List<ProjectImportSkippedDocument> SkippedDocuments { get; init; } = [];
     public ProjectImportSourceDetection Source { get; init; } = new();
-    /// <summary>Files that are neither readable documents nor source Source Analysis reads (images, scripts, binaries…). A count, not a failure.</summary>
+    /// <summary>Files that are neither readable documents nor source files that Source Analysis reads (images, scripts, binaries…). A count, not a failure.</summary>
     public int OtherFiles { get; init; }
     public DateTimeOffset StagedAt { get; init; }
     public DateTimeOffset ExpiresAt { get; init; }
@@ -81,7 +81,7 @@ public sealed record ProjectImportPreview
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ProjectImportSourceState
 {
-    /// <summary>The archive has no source Source Analysis reads. Neutral.</summary>
+    /// <summary>The archive has no source files that Source Analysis reads. Neutral.</summary>
     NotDetected,
     /// <summary>A new immutable source snapshot was created from the staged archive.</summary>
     Created,

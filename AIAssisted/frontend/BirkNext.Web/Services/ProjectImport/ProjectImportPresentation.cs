@@ -1,5 +1,6 @@
 using BirkNext.Integrations;
 using BirkNext.ProjectImport;
+using BirkNext.Web.Models;
 using BirkNext.Web.Services.Explorers;
 using BirkNext.Web.Services.SampleProjects;
 
@@ -23,6 +24,12 @@ public enum ProjectImportTone { Available, Neutral, Partial, Rejected }
 public sealed record ProjectImportRoleRow(WorkspaceArtifactType Role, string Label, ProjectImportTone Tone, string Status, string Detail);
 
 public sealed record ProjectImportSourceRow(ProjectImportTone Tone, string Status, string Detail);
+
+/// <summary>
+/// The source part of the current imported project, from its stored outcome. <see cref="SnapshotId"/> is set only when Source Analysis holds
+/// the snapshot (Created/Reused); <see cref="CanRetry"/> only while the staged archive can still create it without choosing the ZIP again.
+/// </summary>
+public sealed record ProjectImportCurrentSource(ProjectImportTone Tone, string Status, string Detail, Guid? SnapshotId, bool CanRetry, bool SourceDetected);
 
 public static class ProjectImportPresentation
 {
@@ -113,7 +120,7 @@ public static class ProjectImportPresentation
     public static ProjectImportSourceRow SourcePreview(ProjectImportSourceDetection source, bool sourceAnalysisAvailable = true)
     {
         if (!source.Detected)
-            return new(ProjectImportTone.Neutral, "No source detected", "This archive has no source Source Analysis reads. Project documents can still be imported.");
+            return new(ProjectImportTone.Neutral, "No source detected", "This archive contains no source files that Source Analysis reads. Project documents can still be imported.");
         if (!sourceAnalysisAvailable)
             return new(ProjectImportTone.Partial, "Source detected", "Source Analysis is turned off, so no source snapshot will be created.");
         return new(ProjectImportTone.Available, "Source detected", $"{Count(source.SourceFiles, "source file")} — a new Source Analysis snapshot will be created.");
@@ -131,6 +138,36 @@ public static class ProjectImportPresentation
         ProjectImportSourceState.NotCreated => new(ProjectImportTone.Partial, "Snapshot not created", source.Message ?? "Source was detected, but no snapshot was created."),
         _ => new(ProjectImportTone.Partial, "Snapshot not created — retry available", source.Message ?? "Source analysis did not complete. No snapshot was created."),
     };
+
+    /// <summary>
+    /// The current imported project's source part, from its stored outcome. Every state is distinct: a snapshot that exists, no source in the
+    /// archive, Source Analysis turned off, and a failed snapshot (retryable only while the archive is still staged). An unknown or empty
+    /// stored state never claims a snapshot.
+    /// </summary>
+    public static ProjectImportCurrentSource CurrentSource(SddProjectImportRecord record, DateTimeOffset now)
+    {
+        var state = Enum.TryParse<ProjectImportSourceState>(record.SourceState, out var parsed) ? parsed : (ProjectImportSourceState?)null;
+        if (record.SourceSnapshotId is { } snapshot && state is ProjectImportSourceState.Created or ProjectImportSourceState.Reused or null)
+            return new(ProjectImportTone.Available, $"Snapshot {snapshot.ToString()[..8]}", state == ProjectImportSourceState.Reused
+                ? "The current Source Analysis snapshot of this archive was reused." : "Source Analysis snapshot created from this archive.", snapshot, false, true);
+        var canRetry = record.SourceStagingId is not null && record.SourceStagedUntil is { } until && until > now;
+        return state switch
+        {
+            ProjectImportSourceState.NotDetected => new(ProjectImportTone.Neutral, "No source in this archive",
+                "The archive contains no source files that Source Analysis reads, so no snapshot exists for this project.", null, false, false),
+            ProjectImportSourceState.NotCreated => new(ProjectImportTone.Partial, "Source detected — no snapshot",
+                record.SourceMessage ?? "Source Analysis is turned off, so no source snapshot was created.", null, false, true),
+            ProjectImportSourceState.Failed => new(ProjectImportTone.Partial, "Source detected — snapshot not created",
+                (record.SourceMessage ?? "Source analysis did not complete, so no snapshot exists.") + (canRetry
+                    ? " The archive is still staged: create the snapshot without choosing it again."
+                    : " The staged archive is no longer kept: choose the same ZIP again to create the snapshot."), null, canRetry, true),
+            _ => new(ProjectImportTone.Partial, "Source state unknown",
+                "This import has no recorded source outcome. Choose the archive again to create its Source Analysis snapshot.", null, false, false),
+        };
+    }
+
+    /// <summary>Source Analysis opened on one exact snapshot (by id, never by name or "the newest").</summary>
+    public static string SourceAnalysisHref(Guid snapshotId) => $"source-analysis?snapshot={snapshotId:D}";
 
     /// <summary>
     /// The Target Environment beside an import. Never a prerequisite or a note about the import: source snapshots and documents need no
