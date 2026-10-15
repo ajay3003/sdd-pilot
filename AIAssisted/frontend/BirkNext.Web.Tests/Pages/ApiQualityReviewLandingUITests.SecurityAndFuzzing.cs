@@ -190,7 +190,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-auth-enforcement-note]").TextContent.Should().Contain("authorization is not tested");
         page.FindAll("[data-testid=aqr-header-row]").Select(r => r.GetAttribute("data-result")).Should().Equal("Pass", "NotApplicable");
         page.Find("[data-testid=aqr-header-expectations-note]").TextContent.Should().Contain("API review safety settings").And.Contain("presence only");
-        page.Find("[data-testid=aqr-security-note]").TextContent.Should().Contain("synthetic foreign origin").And.Contain("cookies are inspected by Frontend Quality Review").And.Contain("does not establish that the API is secure");
+        page.Find("[data-testid=aqr-security-scope]").TextContent.Should().Contain("synthetic foreign origin").And.Contain("cookies are inspected by Frontend Quality Review").And.Contain("does not establish that the API is secure");
     }
 
     private const string ApiReviewEngineProbe = "query { __typename }";

@@ -122,7 +122,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
         var readiness = page.Find("[data-testid=aqr-readiness]");
         readiness.GetAttribute("data-readiness").Should().Be("Blocked");
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot start").And.NotContain("limitations");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot run").And.NotContain("limitations");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
             "Both selected APIs require authenticated access, but no authenticated API context is available.");
         page.FindAll("[data-testid=aqr-readiness-limitations]").Should().BeEmpty("a blocker is not presented as a limitation");
@@ -249,13 +249,13 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         Toggle(page, "aqr-targets-disclosure").Click();
 
         // Exact endpoint and row action are first-class scope evidence.
-        page.FindAll("[data-testid=aqr-targets-table] > thead th").Select(th => th.TextContent).Should().Equal("API", "Type", "Full endpoint", "Access", "Operations", "Contract / schema", "Action");
+        page.FindAll("[data-testid=aqr-targets-table] > thead th").Select(th => th.TextContent).Should().Equal("API", "Type", "Access", "Operations", "Contract/schema", "Action");
         var rest = page.Find("[data-testid=aqr-target][data-type=Rest]");
-        rest.QuerySelectorAll("td").Select(td => td.GetAttribute("data-label")).Should().Equal("Type", "Full endpoint", "Access", "Operations", "Contract / schema", "Action");
+        rest.QuerySelectorAll("td").Select(td => td.GetAttribute("data-label")).Should().Equal("Type", "Access", "Operations", "Contract/schema", "Action");
         rest.QuerySelector("[data-testid=aqr-target-type]")!.TextContent.Should().Be("REST");
         rest.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Contain("Authenticated").And.Contain("Not ready");
         rest.QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("2 · 1 write (not executed)");
-        rest.QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("No OpenAPI contract");
+        rest.QuerySelector("[data-testid=aqr-target-contract] .aqr-contract-status")!.TextContent.Should().Be("Not configured");
 
         var ops = Toggle(page, $"aqr-ops-{rest.GetAttribute("data-target-id")}");
         ops.GetAttribute("aria-expanded").Should().Be("false");
@@ -275,7 +275,7 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         var page = Render(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic, rejectedPreviously);
 
         var gql = page.Find("[data-testid=aqr-target][data-type=GraphQl]");
-        gql.QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be(expected);
+        gql.QuerySelector("[data-testid=aqr-target-contract] .aqr-contract-status")!.TextContent.Should().Be(expected);
         gql.TextContent.Should().NotContain("will be retrieved").And.NotContain("Schema available").And.NotContainAny("failed", "Failed");
     }
 

@@ -291,7 +291,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         rows[0].QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("3 · 1 write (not executed)");
         rows[1].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon GraphQL");
         // Pre-run this is a plan. The schema has not been fetched yet, so the row does not say it is available.
-        rows[1].QuerySelector("[data-testid=aqr-target-contract]")!.TextContent.Should().Be("Retrieval will be attempted during review");
+        rows[1].QuerySelector("[data-testid=aqr-target-contract] .aqr-contract-status")!.TextContent.Should().Be("Retrieval will be attempted during review");
 
         var opsToggle = page.Find($"[data-testid='aqr-ops-{RestId}-toggle']");
         opsToggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -356,7 +356,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         Register(Context(swagger: $"https://{ApiHost}/swagger/v1/swagger.json"), authenticated: true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-contract-row][data-protocol='REST']").GetAttribute("data-state").Should().Be("Available"));
-        page.Find("[data-testid=aqr-target][data-type='Rest'] [data-testid=aqr-target-contract]").TextContent.Should().Be("OpenAPI contract");
+        page.Find("[data-testid=aqr-target][data-type='Rest'] [data-testid=aqr-target-contract] .aqr-contract-status").TextContent.Should().Be("Configured");
     }
 
     // 12/14/15. Read-only visible, blocking reason, results hidden before a run.
@@ -435,7 +435,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-coverage-row][data-coverage='Contracts']").TextContent.Should().Contain("No REST contract configured").And.Contain("GraphQL runtime schema available");
 
         // Simplified overview table with expandable service details.
-        page.FindAll("[data-testid=aqr-services-table] thead th").Select(h => h.TextContent).Should().Equal("Service", "Type", "Access", "Review status", "Contract", "Source findings");
+        page.FindAll("[data-testid=aqr-services-table] thead th").Select(h => h.TextContent).Should().Equal("Service", "Type", "Access", "Review status", "Contract/schema", "Source findings");
         var rows = page.FindAll("[data-testid=aqr-service-row]");
         rows.Should().HaveCount(2);
         // "Reviewed": the service took part in the review. Whether every domain was covered is the contract column's job.
@@ -456,7 +456,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
 
         // Manual review and limitations are distinct from findings.
         var manual = page.Find("[data-testid=aqr-manual-review]");
-        manual.TextContent.Should().Contain("Manual review still required").And.Contain("Access control between roles/tenants").And.Contain("not findings");
+        manual.TextContent.Should().Contain("Manual review obligations").And.Contain("Access control between roles/tenants").And.Contain("not findings");
         manual.QuerySelectorAll(".aqr-sev").Should().BeEmpty();
         var limitations = page.Find("[data-testid=aqr-limitations]");
         limitations.TextContent.Should().Contain("intentionally read-only");
@@ -500,7 +500,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-tab-findings]").Click();
         page.Find("[data-testid=aqr-tabpanel]").GetAttribute("data-tab").Should().Be("Findings");
         page.Find("[data-testid=aqr-tab-findings]").GetAttribute("aria-selected").Should().Be("true");
-        page.FindAll("[data-testid=aqr-findings-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Severity", "Service", "Type", "Endpoint / operation", "Finding", "Details");
+        page.FindAll("[data-testid=aqr-findings-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Severity", "Service", "Type", "Endpoint / operation", "Finding", "Logical issue", "Details");
         var rows = page.FindAll("[data-testid=aqr-finding-row]");
         rows.Should().HaveCount(3, "stub report generates 2 for REST + 1 for GraphQL");
         rows[0].TextContent.Should().Contain("Autorisasjon");
@@ -551,7 +551,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
             toggle.TextContent.Trim().Should().NotBeEmpty();
         }
         page.FindAll("h1").Should().ContainSingle();
-        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Review result", "Key issues", "Review details"]);
+        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Review result", "Key issues", "Technical & execution details"]);
         page.FindAll("[data-testid=aqr-target-checkbox]").Should().OnlyContain(c => c.HasAttribute("aria-label") && c.HasAttribute("id"));
         page.FindAll("table thead th").Should().OnlyContain(th => th.GetAttribute("scope") == "col");
         page.FindAll(".aqr-pill, .aqr-sev").Should().OnlyContain(p => p.TextContent.Trim().Length > 0, "state chips carry text");

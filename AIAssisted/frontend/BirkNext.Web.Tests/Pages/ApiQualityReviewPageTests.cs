@@ -102,7 +102,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         Register(Context(), authenticated: false, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked"));
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot start");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot run");
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().NotContain("can run with limitations");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
             "Both selected APIs require authenticated access, but no authenticated API context is available.");

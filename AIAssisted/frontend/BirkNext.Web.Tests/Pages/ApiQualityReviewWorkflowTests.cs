@@ -164,12 +164,13 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
     // 1, 2, 3, 4, 5.
     [Fact]
-    public void PreRunReadsTargetThenScopeThenAccessThenReadinessThenRun()
+    public void PreRunReadsTheRunDecisionFirst_ThenTargetScopeAccess()
     {
         var page = Landing();
 
+        // The run decision (with Run inside it) answers "can this review run?" first; target, scope and access follow.
         PreRunOrder(page).Should().Equal(
-            "aqr-environment", "aqr-scope", "aqr-access", "aqr-readiness", "aqr-run-row", "aqr-domains", "aqr-details");
+            "aqr-readiness", "aqr-run-row", "aqr-environment", "aqr-scope", "aqr-access", "aqr-domains", "aqr-details");
 
         var run = page.Find("[data-testid=aqr-run-row] [data-testid=aqr-run]");
         run.TextContent.Trim().Should().Be("Run API Quality Review");
@@ -319,7 +320,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.Find("[data-testid=aqr-details]").QuerySelector("[data-testid=aqr-contracts-disclosure]").Should().NotBeNull();
         Collapsed(page, "aqr-contracts-disclosure").Should().BeTrue();
-        Toggle(page, "aqr-contracts-disclosure").TextContent.Should().Contain("Contract details").And.Contain("No previous baseline");
+        Toggle(page, "aqr-contracts-disclosure").TextContent.Should().Contain("Contract/schema details").And.Contain("No previous baseline");
 
         Toggle(page, "aqr-contracts-disclosure").Click();
 
@@ -410,8 +411,11 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             .Select(e => e.GetAttribute("data-testid"))
             .Should().Equal("aqr-result-summary", "aqr-key-findings", "aqr-tabpanel", "aqr-result-details");
 
-        // 32, 33, 34. Coverage, the read-only explanation and the configuration are all collapsed detail now.
-        foreach (var id in new[] { "aqr-coverage-disclosure", "aqr-limitations", "aqr-readonly", "aqr-targets-disclosure", "aqr-access-details" })
+        // 32, 33, 34. Coverage is a compact visible summary; read-only policy, authentication and the target inventory are
+        // collapsed technical detail inside the one Technical & execution details section.
+        page.Find("[data-testid=aqr-coverage]").Closest("[data-testid=aqr-tabpanel]").Should().NotBeNull();
+        Collapsed(page, "aqr-technical").Should().BeTrue();
+        foreach (var id in new[] { "aqr-readonly", "aqr-targets-disclosure", "aqr-access-details" })
         {
             Collapsed(page, id).Should().BeTrue($"{id} is supporting detail after a run");
             Body(page, id).Closest("[data-testid=aqr-result-details]").Should().NotBeNull();
@@ -449,7 +453,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         page.Find("[data-testid=aqr-manual-count]").TextContent.Should().StartWith("3 areas remain");
 
         // 38. The finding total counts findings only; the three obligations are not added to it.
-        page.Find("[data-testid=aqr-all-findings]").TextContent.Should().Be("All source findings (2)");
+        page.Find("[data-testid=aqr-all-findings]").TextContent.Should().Be("View all 2 source findings in Findings");
         var severities = page.FindAll("[data-testid=aqr-sev]").Select(s => s.TextContent.Trim()).ToList();
         severities.Should().Contain("Low 2");
         severities.Sum(s => int.Parse(s.Split(' ')[^1])).Should().Be(2, "severity counts are finding counts, nothing else");
@@ -518,7 +522,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.FindAll("h1").Should().ContainSingle();
         var h2 = page.FindAll("h2").Select(h => h.TextContent.Trim()).ToList();
-        h2.Should().Contain(["Target", "API scope", "Access", "What will be reviewed", "API targets", "Additional active checks", "Evidence & advanced details"]);
+        h2.Should().Contain(["Target", "API scope", "Access", "What will be reviewed", "API targets", "Optional active checks", "Diagnostics & setup"]);
         h2.Should().OnlyHaveUniqueItems();
 
         foreach (var toggle in page.FindAll(".disclosure-toggle"))

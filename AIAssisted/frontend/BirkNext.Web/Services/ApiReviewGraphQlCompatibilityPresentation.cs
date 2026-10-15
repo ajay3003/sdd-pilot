@@ -143,7 +143,7 @@ public static class ApiReviewGraphQlCompatibilityPresentation
             else if (!string.IsNullOrWhiteSpace(target.ContractSource))
                 items.Add(new($"{noun}{documents} · configured schema artifact available — compatibility can be assessed", ApiReviewReadinessItemState.Ok));
             else if (introspectionUnavailablePreviously)
-                items.Add(new($"{noun}{documents} · no configured schema artifact and the runtime schema was unavailable last time — compatibility is assessed only if introspection succeeds (add a trusted SDL under Review details → GraphQL schema artifacts)", ApiReviewReadinessItemState.Warning));
+                items.Add(new($"{noun}{documents} · no configured schema artifact and the runtime schema was unavailable last time — compatibility is assessed only if introspection succeeds (configure a trusted SDL schema fallback under Diagnostics & setup)", ApiReviewReadinessItemState.Warning));
             else
                 items.Add(new($"{noun}{documents} · runtime schema will be retrieved during the review for compatibility", ApiReviewReadinessItemState.Ok));
         }

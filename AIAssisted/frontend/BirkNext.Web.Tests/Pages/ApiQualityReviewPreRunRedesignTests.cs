@@ -27,9 +27,9 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Review can run with limitations").And.Contain("REST contract validation unavailable");
         page.Find("[data-testid=aqr-domain][data-domain=contracts] [data-testid=aqr-domain-state]").TextContent.Should().Be("Limited");
         page.Find("[data-testid=aqr-domain][data-domain=contracts] [data-testid=aqr-domain-limitation]").TextContent.Should().Contain("OpenAPI");
-        page.Find("[data-testid=aqr-add-openapi]").TextContent.Should().Be("Configure OpenAPI URL");
+        page.Find("[data-testid=aqr-add-openapi]").TextContent.Should().Be("Configure contract");
         page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract]").TextContent.Should().Contain("Retrieval will be attempted during review");
-        page.Find("[data-testid=aqr-add-schema]").TextContent.Should().Be("Add schema artifact");
+        page.Find("[data-testid=aqr-add-schema]").TextContent.Should().Be("Configure schema fallback");
         page.Find("[data-testid=aqr-target-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
     }
 
@@ -42,7 +42,7 @@ public sealed partial class ApiQualityReviewLandingUITests
 
         page.FindAll("[data-testid=aqr-overview], [data-testid=aqr-run-row], [data-testid=aqr-domains], [data-testid=aqr-target-section], [data-testid=aqr-additional-checks], [data-testid=aqr-details]")
             .Select(e => e.GetAttribute("data-testid"))
-            .Should().Equal("aqr-overview", "aqr-run-row", "aqr-domains", "aqr-target-section", "aqr-additional-checks", "aqr-details");
+            .Should().Equal("aqr-run-row", "aqr-overview", "aqr-domains", "aqr-target-section", "aqr-additional-checks", "aqr-details");
         page.Find("[data-testid=aqr-fuzzing-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=aqr-authorization-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=aqr-configure-authorization]").GetAttribute("href")

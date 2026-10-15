@@ -119,7 +119,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         var rows = page.FindAll("[data-testid=aqr-gql-operation-row]");
         var compatible = rows.Single(r => r.GetAttribute("data-compatibility") == "Compatible");
         compatible.QuerySelector("[data-testid=aqr-gql-contract]")!.TextContent.Should().Be("Compatible");
-        compatible.QuerySelector("[data-testid=aqr-gql-deprecated]")!.TextContent.Should().Contain("Observation: `Rolle.navn` is deprecated");
-        rows.Single(r => r.GetAttribute("data-compatibility") == "NotAssessed").TextContent.Should().Contain("only a persisted-query hash was observed");
+        compatible.NextElementSibling!.QuerySelector("[data-testid=aqr-gql-deprecated]")!.TextContent.Should().Contain("Observation: `Rolle.navn` is deprecated");
+        rows.Single(r => r.GetAttribute("data-compatibility") == "NotAssessed").NextElementSibling!.TextContent.Should().Contain("only a persisted-query hash was observed");
     }
 }

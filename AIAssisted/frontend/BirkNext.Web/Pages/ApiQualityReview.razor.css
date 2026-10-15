@@ -231,7 +231,8 @@
     color: var(--clr-text-body);
 }
 .aqr-sev-count { font-variant-numeric: tabular-nums; }
-.aqr-sev-zero { opacity: 0.7; }
+/* A zero count is quieter but still readable text (opacity dropped Critical below WCAG AA contrast). */
+.aqr-sev.aqr-sev-zero { color: var(--clr-text-subtle); background: var(--clr-surface); border-color: var(--clr-border); }
 .aqr-sev-critical { color: var(--clr-danger); background: var(--clr-danger-bg); border-color: var(--clr-danger-border); }
 .aqr-sev-high { color: var(--clr-warning); background: var(--clr-warning-bg-light); border-color: var(--clr-warning-border); }
 .aqr-sev-medium { color: #854d0e; background: #fef9c3; border-color: #fde68a; }
@@ -580,3 +581,91 @@
 .aqr-gql-technology-list { margin-bottom: .2rem; }
 .aqr-gql-technology-list dd { overflow-wrap: anywhere; }
 .aqr-payload-detail { display: block; font-size: 0.8rem; overflow-wrap: anywhere; }
+
+/* ── Workflow simplification: run decision, diagnostics, canonical findings, grouped security ─────────────────── */
+
+/* Run decision: the primary pre-run status. Blockers, limitations and informational items are separate groups. */
+.aqr-decision { display: grid; gap: 0.75rem; margin-bottom: 1rem; }
+.aqr-decision-kicker { margin: 0; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--clr-text-subtle); }
+.aqr-decision h2 { margin: 0.1rem 0 0.25rem; font-size: 1.2rem; }
+.aqr-decision-groups { display: grid; gap: 0.6rem 1.25rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.aqr-decision-group h3 { margin: 0 0 0.3rem; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--clr-text-subtle); }
+.aqr-decision-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; font-size: 0.9rem; }
+.aqr-decision-group li { display: flex; gap: 0.35rem; min-width: 0; overflow-wrap: anywhere; }
+.aqr-decision-blocking h3, .aqr-readiness-item-blocking span { color: var(--clr-danger); }
+.aqr-decision-limitation h3 { color: var(--clr-warning-text, var(--clr-text-heading)); }
+.aqr-decision .aqr-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin: 0; padding-top: 0.75rem; border-top: 1px solid var(--clr-border); }
+.aqr-run-note { font-size: 0.85rem; }
+.aqr-section-lead { margin: 0 0 0.6rem; font-size: 0.88rem; }
+
+/* Diagnostics & setup / Technical & execution details: one collapsed section holding the detail disclosures. */
+.aqr-page ::deep .aqr-diagnostics > .disclosure-body { display: grid; gap: 0.5rem; padding-top: 0.5rem; }
+
+/* Target table: endpoint under the API name; contract/schema as source · status · fallback lines. */
+.aqr-page ::deep .aqr-target-endpoint-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: 0.8rem; min-width: 0; }
+.aqr-page ::deep .aqr-contract-source { display: block; font-weight: 600; }
+.aqr-page ::deep .aqr-contract-status, .aqr-page ::deep .aqr-contract-fallback { display: block; font-size: 0.85rem; }
+
+/* Post-run Overview: three compact sections. */
+.aqr-overview-section { display: grid; gap: 0.4rem; margin-bottom: 1rem; min-width: 0; }
+.aqr-overview-section > h3 { margin: 0; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+/* Coverage: one compact line per area (label · value · detail), stacked on a phone. */
+.aqr-overview-section .aqr-coverage-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.aqr-overview-section .aqr-coverage-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.15rem 0.75rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--clr-border); }
+.aqr-overview-section .aqr-coverage-row:last-child { border-bottom: 0; }
+.aqr-overview-section .aqr-coverage-row dt { font-size: 0.85rem; font-weight: 600; color: var(--clr-text-heading); }
+.aqr-overview-section .aqr-coverage-row dd { margin: 0; display: flex; flex-wrap: wrap; gap: 0.1rem 0.6rem; align-items: baseline; font-size: 0.9rem; min-width: 0; }
+.aqr-overview-section .aqr-coverage-detail { font-size: 0.82rem; }
+.aqr-manual-areas { display: flex; flex-wrap: wrap; gap: 0.35rem 0.5rem; margin: 0; padding: 0; list-style: none; }
+.aqr-manual-areas li { padding: 0.2rem 0.6rem; border: 1px solid var(--clr-border); border-radius: 999px; background: var(--clr-surface); font-size: 0.85rem; overflow-wrap: anywhere; }
+.aqr-overview-section > p { margin: 0; }
+@media (max-width: 600px) { .aqr-overview-section .aqr-coverage-row { grid-template-columns: minmax(0, 1fr); } }
+.aqr-issue-legend { font-size: 0.85rem; }
+.aqr-key-issue-link { margin-left: auto; font-size: 0.85rem; }
+.aqr-tab-count { margin-left: 0.25rem; padding: 0 0.4rem; border-radius: 999px; background: var(--clr-surface); font-size: 0.78rem; }
+
+/* Area tabs: compact finding summary that links to the canonical list. */
+.aqr-finding-summary { margin-top: 1rem; padding: 0.6rem 0.8rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); }
+.aqr-finding-summary p { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.75rem; margin: 0; }
+.aqr-finding-summary .aqr-empty { display: block; margin: 0; }
+.aqr-contract-badge { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin: 0.25rem 0 0.5rem; }
+.aqr-scope-note-strong { font-weight: 600; }
+
+/* Findings filters. */
+.aqr-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 0.9rem; margin: 0.5rem 0; }
+.aqr-filters label { display: grid; gap: 0.2rem; font-size: 0.82rem; font-weight: 600; min-width: 0; }
+.aqr-filters select { max-width: 16rem; min-height: 2.25rem; }
+
+/* Security: summary strip then subsections. */
+.aqr-security-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 0.5rem; margin: 0.75rem 0 1rem; }
+.aqr-security-summary > div { display: grid; gap: 0.1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.aqr-security-summary dt { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-subtle); }
+.aqr-security-summary dd { margin: 0; font-size: 0.92rem; overflow-wrap: anywhere; }
+.aqr-subsection { display: grid; gap: 0.4rem; margin: 0 0 1.25rem; padding-top: 0.75rem; border-top: 1px solid var(--clr-border); min-width: 0; }
+.aqr-subsection > h3 { margin: 0; font-size: 1rem; }
+.aqr-subsection > p { margin: 0; }
+.aqr-page ::deep .aqr-table-caption { caption-side: top; text-align: left; padding: 0.4rem 0.75rem; font-weight: 600; font-size: 0.85rem; }
+
+/* Compact tables: short summary rows, detail in an expandable row; they fit a tablet without a 48rem floor. */
+.aqr-page ::deep .aqr-operations-table, .aqr-page ::deep .aqr-findings-table, .aqr-page ::deep [data-testid=aqr-gql-operations],
+.aqr-page ::deep [data-testid=aqr-cors-matrix], .aqr-page ::deep [data-testid=aqr-contracts-table], .aqr-page ::deep .aqr-checks-table { min-width: 34rem; }
+.aqr-inline-evidence { margin-top: 0.3rem; font-size: 0.82rem; }
+.aqr-inline-evidence summary { cursor: pointer; color: var(--clr-primary); }
+.aqr-break { overflow-wrap: anywhere; word-break: break-word; }
+.aqr-state-muted { color: var(--clr-text-subtle); }
+
+@media (max-width: 760px) {
+    .aqr-filters label, .aqr-filters select { width: 100%; max-width: none; }
+    .aqr-tabs .aqr-tab { min-height: 2.75rem; }
+    .aqr-decision .aqr-run-row > * { flex: 1 1 100%; }
+}
+
+/* Scroll affordance: a table that is wider than its region shows an edge shadow on the side that has more columns. */
+.aqr-page ::deep .aqr-tablewrap {
+    background:
+        linear-gradient(to right, var(--clr-surface-white) 30%, transparent) left center / 2rem 100% no-repeat local,
+        linear-gradient(to left, var(--clr-surface-white) 30%, transparent) right center / 2rem 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, 0.2), transparent) left center / 0.75rem 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.2), transparent) right center / 0.75rem 100% no-repeat scroll,
+        var(--clr-surface-white);
+}

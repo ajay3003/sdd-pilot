@@ -69,7 +69,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: true, history);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Ready);
-        readiness.Title.Should().Be("Ready to review");
+        readiness.Title.Should().Be("Review can run");
         readiness.SelectedCount.Should().Be(2);
         readiness.CanRun.Should().BeTrue();
     }

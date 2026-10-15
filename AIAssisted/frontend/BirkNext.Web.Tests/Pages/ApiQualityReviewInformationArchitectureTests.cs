@@ -82,7 +82,8 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find($"[data-testid=aqr-tab-{tab}]").Click();
         page.Find($"[data-testid=aqr-tab-{tab}]").GetAttribute("aria-selected").Should().Be("true");
         foreach (var id in ids) page.FindAll($"[data-testid={id}]").Should().BeEmpty();
-        page.Find("[data-testid=aqr-review-details-link]").Click();
+        page.FindAll("[data-testid=aqr-review-details-link]").Should().BeEmpty("technical details live on Overview only, in one collapsed section");
+        page.Find("[data-testid=aqr-tab-overview]").Click();
         foreach (var id in ids) page.FindAll($"[data-testid={id}]").Should().ContainSingle();
         page.Find("[data-testid=aqr-manual-review]").TextContent.Should().Contain("not findings");
     }
@@ -99,7 +100,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-gql-counts]").TextContent.Should().Be("6 observed operations · compatibility not assessed — schema unavailable");
         panel.TextContent.Should().NotContain("0 observed operations").And.NotContain("0 / 6").And.NotContain("0 compatible");
         // Runtime and contract are separate columns: never executed, and not assessed.
-        page.FindAll("[data-testid=aqr-gql-operations] tbody tr").Should().HaveCount(6)
+        page.FindAll("[data-testid=aqr-gql-operations] [data-testid=aqr-gql-operation-row]").Should().HaveCount(6)
             .And.OnlyContain(r => r.TextContent.Contains("Not executed (observed only)") && r.TextContent.Contains("Not assessed"));
         // The safe __typename query is the review's own request, listed once and never counted as an observed operation.
         page.FindAll("[data-testid=aqr-operation-row]").Select(r => r.TextContent).Should().ContainSingle(r => r.Contains("query { __typename }"));
@@ -131,7 +132,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         var row = page.Find("[data-testid=aqr-operation-row]");
         row.Children[1].TextContent.Should().Contain("Successful");
         row.Children[2].TextContent.Should().Be("200");
-        row.Children[6].TextContent.Should().Contain("Warnings: 1").And.NotContain("Pass");
+        row.Children[4].TextContent.Should().Contain("Warnings: 1").And.NotContain("Pass");
     }
 
     [Fact]
@@ -157,6 +158,6 @@ public sealed partial class ApiQualityReviewLandingUITests
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-targets-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("true"));
         page.Find("[data-testid=aqr-memory-only-help]").TextContent.Should().Contain("backend runtime").And.Contain("not exposed to the review result");
-        page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract]").TextContent.Should().Be("Retrieval will be attempted during review");
+        page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract] .aqr-contract-status").TextContent.Should().Be("Retrieval will be attempted during review");
     }
 }

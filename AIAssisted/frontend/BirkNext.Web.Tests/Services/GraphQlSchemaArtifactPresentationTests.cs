@@ -52,7 +52,7 @@ public sealed class GraphQlSchemaArtifactPresentationTests
     {
         var item = ApiReviewGraphQlCompatibilityPresentation.Readiness([Gql("a", Op("A"))], true).Single();
         item.State.Should().Be(ApiReviewReadinessItemState.Warning);
-        item.Label.Should().Contain("add a trusted SDL under Review details → GraphQL schema artifacts");
+        item.Label.Should().Contain("configure a trusted SDL schema fallback under Diagnostics & setup");
     }
 
     [Fact]

@@ -81,7 +81,10 @@ public static class ApiReviewPresentation
             ? $"Required ({AuthenticationPresentation.ProviderLabel(context.AuthenticationType)})"
             : "Not required for frontend entry point";
 
-    public const string PerformanceScopeNote = "API response timing observed by the review's own requests (backend gateway to the API). Not end-user or production performance.";
+    public const string PerformanceScopeNote = "API response timing from the review's own requests (backend gateway to the API). This is not a load test. Not end-user or production performance.";
+
+    /// <summary>The short Security tab lead; the full scope (<see cref="SecurityScopeNote"/>) is one disclosure away.</summary>
+    public const string SecurityLead = "Passive, read-only security checks on the assessed targets. No findings here does not establish that the API is secure.";
 
     /// <summary>
     /// The one source of what a person still has to review. The summary said three areas and the limitations said five,
@@ -273,11 +276,11 @@ public static class ApiReviewPresentation
                         "The backend did not report authenticated capability; confirm it is running, then return here."),
                     _ => ("no authenticated API context is available", null),
                 };
-                return new(ApiReviewReadinessLevel.Blocked, "Review cannot start",
+                return new(ApiReviewReadinessLevel.Blocked, "Review cannot run",
                     $"{subject} authenticated access, but {missing}.", chosen.Count, [], eligibility.ActionText, href, help,
                     $"Run unavailable — authenticated API context is required for the selected {(chosen.Count == 1 ? "API" : "APIs")}.");
             }
-            return new(ApiReviewReadinessLevel.Blocked, "Review cannot start", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href,
+            return new(ApiReviewReadinessLevel.Blocked, "Review cannot run", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href,
                 RunUnavailableReason: $"Run unavailable — {eligibility.Reason}");
         }
 
@@ -329,7 +332,7 @@ public static class ApiReviewPresentation
                 $"{eligibility.Reason} {string.Join(". ", limitations)}.".Trim(), chosen.Count, items,
                 authMissing ? ApiReviewRunEligibility.NoAuthContextAction : null,
                 authMissing ? AuthenticationHref(context) : null)
-            : new(ApiReviewReadinessLevel.Ready, "Ready to review", eligibility.Reason, chosen.Count, items, null, null);
+            : new(ApiReviewReadinessLevel.Ready, "Review can run", eligibility.Reason, chosen.Count, items, null, null);
     }
 
     // ── Targets ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -536,7 +539,7 @@ public static class ApiReviewPresentation
     /// </summary>
     public static IReadOnlyList<ApiReviewLogicalIssue> LogicalIssues(ApiReviewReport report) =>
         report.Findings
-            .GroupBy(f => $"{RuleIdOf(f)}|{f.Endpoint}|{f.Severity}", StringComparer.Ordinal)
+            .GroupBy(LogicalIssueKey, StringComparer.Ordinal)
             .Select(g =>
             {
                 var first = g.First();
@@ -545,6 +548,55 @@ public static class ApiReviewPresentation
             })
             .OrderBy(i => i.Severity).ThenBy(i => i.Type).ThenBy(i => i.Title, StringComparer.Ordinal).ThenBy(i => i.Endpoint, StringComparer.Ordinal)
             .ToList();
+
+    /// <summary>The logical issue a source finding belongs to (typed rule + endpoint + severity) — see <see cref="LogicalIssues"/>.</summary>
+    public static string LogicalIssueKey(ApiReviewFinding finding) => $"{RuleIdOf(finding)}|{finding.Endpoint}|{finding.Severity}";
+
+    /// <summary>
+    /// The result tab that owns a finding type. Each type has exactly one area, so area counts always add up to the Findings
+    /// total; the REST and GraphQL tabs summarise by service instead.
+    /// </summary>
+    public static string FindingArea(ApiReviewFindingType type) => type switch
+    {
+        ApiReviewFindingType.Contract or ApiReviewFindingType.Documentation or ApiReviewFindingType.Drift => "Contracts",
+        ApiReviewFindingType.Security or ApiReviewFindingType.AccessControl => "Security",
+        ApiReviewFindingType.Errors => "Errors",
+        ApiReviewFindingType.Performance => "Performance",
+        ApiReviewFindingType.Rest => "REST",
+        _ => "GraphQL",
+    };
+
+    /// <summary>Security tab summary: one compact line per subsection, counted from the report's own evidence.</summary>
+    public static IReadOnlyList<(string Key, string Title, string Value)> SecuritySummary(ApiReviewReport report)
+    {
+        var enforcement = report.Targets.Where(t => t.AuthenticationEnforcement is { } e && e.Status != ApiAuthenticationEnforcementStatus.NotApplicable).Select(t => t.AuthenticationEnforcement!.Status).ToList();
+        var cors = report.Targets.SelectMany(t => t.CorsProbes).ToList();
+        var headers = report.Targets.SelectMany(t => t.SecurityHeaders).ToList();
+        var docs = report.Targets.Where(t => t.DocumentationExposure is not null).GroupBy(t => t.DocumentationExposure!.Origin).Select(g => g.First().DocumentationExposure!).ToList();
+        static string Counts<T>(IEnumerable<T> items, Func<T, string> label) =>
+            string.Join(" · ", items.GroupBy(label).OrderByDescending(g => g.Count()).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}"));
+        return
+        [
+            ("authentication", "Authentication", enforcement.Count == 0 ? "Not applicable" : Counts(enforcement, ApiFuzzingPresentation.EnforcementLabel)),
+            ("cors", "CORS", cors.Count == 0 ? "No preflights recorded" : Counts(cors, o => o.Assessment switch
+            {
+                BirkNext.RuntimeSecurity.CorsAssessment.AsExpected => "Expected",
+                BirkNext.RuntimeSecurity.CorsAssessment.Observation => "Observation",
+                BirkNext.RuntimeSecurity.CorsAssessment.NotVerified => "Not verified",
+                _ => "Unexpected",
+            })),
+            ("headers", "Headers", headers.Count == 0 ? "Not assessed" : headers.Count(h => h.Result == SecurityHeaderOutcome.Missing) is var missing and > 0
+                ? $"{missing} expected header{(missing == 1 ? "" : "s")} missing" : "Expected headers present"),
+            ("documentation", "Documentation exposure", docs.Count == 0 ? "Not verified" : Counts(docs, d => d.Assessment switch
+            {
+                BirkNext.RuntimeSecurity.ApiDocumentationAssessment.AsExpected => "As expected",
+                BirkNext.RuntimeSecurity.ApiDocumentationAssessment.NoExpectation => "No expectation configured",
+                BirkNext.RuntimeSecurity.ApiDocumentationAssessment.UnexpectedExposure => "Unexpected exposure",
+                BirkNext.RuntimeSecurity.ApiDocumentationAssessment.UnexpectedAbsence => "Unexpected absence",
+                _ => "Not verified",
+            })),
+        ];
+    }
 
     /// <summary>The typed rule id. Reports recorded before <see cref="ApiReviewFinding.RuleId"/> existed carry it as the
     /// prefix of <see cref="ApiReviewFinding.Id"/> ("sec-no-hsts-12345"), whose numeric suffix is per observation.</summary>
