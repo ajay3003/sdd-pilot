@@ -48,8 +48,18 @@
                 </details>
             </div>
         }
-        <p data-testid="atp-app"><span class="atp-pill atp-pill-@(contract.AppApproved ? "ready" : "neutral")">@(contract.AppApproved ? "Approved app" : "App not ready")</span>
-            <span class="atp-mono">@(contract.ConfiguredAppId ?? "no app id")</span> <span class="atp-muted">@contract.AppDetail</span></p>
+        @if (contract.ConfiguredAppId is not null)
+        {
+            <p data-testid="atp-app"><span class="atp-pill atp-pill-@(contract.AppApproved ? "ready" : "neutral")">@(contract.AppApproved ? "Approved app" : "App not ready")</span>
+                <span class="atp-mono">@contract.ConfiguredAppId</span> <span class="atp-muted">@contract.AppDetail</span></p>
+        }
+        @if (DefaultsPending(contract))
+        {
+            <p data-testid="atp-defaults">
+                @if (contract.ConfiguredEnvironment == ExternalTestEnvironment.Unknown) { <span data-testid="atp-default-environment">Environment <strong>Test</strong></span> }
+                @if (contract.ConfiguredAppId is null) { <span data-testid="atp-default-app">App <span class="atp-mono">@SkoleNaervaerAltinnDefaults.AppIdentifier</span></span> }
+                <span class="atp-muted">Default for Skolenærvær; saved to Integration Quality Review when you read the public TT02 metadata.</span></p>
+        }
         <fieldset class="atp-source" data-testid="atp-source">
             <legend>Contract source</legend>
             <label class="atp-option"><input type="radio" name="@($"{_id}-source")" checked="@(_source == "source")" data-testid="atp-source-analysis" @onchange="@(() => _source = "source")" />
@@ -79,7 +89,7 @@
         else
         {
             <div class="atp-actions">
-                <button type="button" class="btn-secondary" data-testid="atp-read-public" disabled="@(_busy || !contract.AppApproved)" @onclick="ReadPublicAsync">Read public TT02 metadata</button>
+                <button type="button" class="btn-secondary" data-testid="atp-read-public" disabled="@(_busy || !(contract.AppApproved || DefaultsPending(contract)))" @onclick="ReadPublicAsync">Read public TT02 metadata</button>
             </div>
             <p class="atp-muted">Read-only, anonymous GETs: application metadata, the form's JSON schema, the app's deployed OpenAPI document and its authorization policy (hash only).
                 Nothing is submitted and nobody signs in.</p>
@@ -332,6 +342,8 @@
             var contract = await Api.ContractAsync(EnvironmentId);
             _contract = contract.Value;
             _snapshotId = _contract?.SourceCandidates.FirstOrDefault()?.SnapshotId.ToString() ?? "";
+            // Without an app source in Source Analysis, the public TT02 metadata is the only source: start there.
+            if (_contract is { SourceCandidates.Count: 0 }) _source = "public";
             _error = contract.Error;
             await LoadAccessAsync();
             if (CanExecute)
@@ -376,6 +388,11 @@
         _ => item.State == JourneyReadinessState.Ready ? "Ready" : "Not ready",
     };
 
+    /// <summary>Whether the IQR Altinn test configuration lacks the environment or app, so the Skolenærvær defaults apply when the metadata is
+    /// read (an unreported environment counts as configured).</summary>
+    private static bool DefaultsPending(AltinnAppContractView contract) =>
+        contract.ConfiguredAppId is null || contract.ConfiguredEnvironment == ExternalTestEnvironment.Unknown;
+
     private async Task UseSourceAsync() => await RunAsync(async () =>
     {
         var result = await Api!.UseSourceAnalysisAsync(EnvironmentId, Guid.TryParse(_snapshotId, out var id) ? id : null);
@@ -385,7 +402,7 @@
 
     private async Task ReadPublicAsync() => await RunAsync(async () =>
     {
-        var result = await Api!.ReadPublicMetadataAsync(EnvironmentId);
+        var result = await Api!.ReadSkoleNaervaerPublicMetadataAsync(EnvironmentId);
         if (result.Value is { } contract) _contract = contract;
         _error = result.Error;
         await RefreshDerivedAsync();

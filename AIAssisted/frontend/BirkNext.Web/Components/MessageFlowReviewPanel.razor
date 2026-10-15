@@ -206,7 +206,18 @@
     }
 
     private void LoadGeneric() => Load(MessageFlowReviewExamples.GenericFixture, new AltinnTestConfiguration(), []);
-    private void LoadPilot() => Load(MessageFlowReviewExamples.SkolenærværDocumented, MessageFlowReviewExamples.SkolenærværInitialConfiguration, MessageFlowReviewExamples.SkolenærværTestCases);
+    /// <summary>Loads the Skolenærvær pilot with its default environment and app; an environment or app already entered here is kept.</summary>
+    private void LoadPilot()
+    {
+        var initial = MessageFlowReviewExamples.SkolenærværInitialConfiguration;
+        var current = Enum.TryParse<ExternalTestEnvironment>(_environment, out var environment) ? environment : ExternalTestEnvironment.Unknown;
+        var config = initial with
+        {
+            Environment = current == ExternalTestEnvironment.Unknown ? initial.Environment : current,
+            AppIdentifier = Empty(_app) ?? initial.AppIdentifier,
+        };
+        Load(MessageFlowReviewExamples.SkolenærværDocumented, config, MessageFlowReviewExamples.SkolenærværTestCases);
+    }
     private void Load(MessageFlowDefinition flow, AltinnTestConfiguration config, IReadOnlyList<ManualIntegrationTestCase> cases)
     {
         if (_package is null) return;

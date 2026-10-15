@@ -201,6 +201,8 @@ public sealed record AltinnAppContractView
     public string EnvironmentId { get; init; } = "";
     /// <summary>The app id configured in Integration Quality Review (Altinn test configuration).</summary>
     public string? ConfiguredAppId { get; init; }
+    /// <summary>The Altinn environment configured in Integration Quality Review (null when not reported).</summary>
+    public ExternalTestEnvironment? ConfiguredEnvironment { get; init; }
     public bool AppApproved { get; init; }
     public string AppDetail { get; init; } = "";
     public string? FormDataTypeId { get; init; }

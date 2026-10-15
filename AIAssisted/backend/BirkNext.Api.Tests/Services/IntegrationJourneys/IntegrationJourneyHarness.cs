@@ -79,7 +79,12 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
 
     internal sealed class FakeMessageFlows : IIntegrationMessageFlowStore
     {
-        public AltinnTestConfiguration Configuration { get; set; } = MessageFlowReviewExamples.SkolenærværInitialConfiguration;
+        /// <summary>Unconfigured by default: the pilot's documented values without the Skolenærvær environment/app defaults, so nothing is readable or
+        /// fetched until a test configures it.</summary>
+        public AltinnTestConfiguration Configuration { get; set; } = MessageFlowReviewExamples.SkolenærværInitialConfiguration with
+        {
+            Environment = ExternalTestEnvironment.Unknown, AppIdentifier = null,
+        };
         public AltinnAppContractRecord? Contract { get; set; }
         public Task<IntegrationMessageFlowPackage> GetAsync(string environmentId, CancellationToken ct = default) =>
             Task.FromResult(new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = environmentId }, Configuration, new(false, 0, 0, [], []), [], [], Contract));
@@ -88,8 +93,13 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
             Contract = contract;
             return Task.CompletedTask;
         }
-        public Task<(IntegrationMessageFlowPackage? Package, string? Error)> SaveAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default) =>
-            throw new NotSupportedException();
+        public int Saves { get; private set; }
+        public Task<(IntegrationMessageFlowPackage? Package, string? Error)> SaveAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default)
+        {
+            Saves++;
+            Configuration = request.AltinnConfiguration;
+            return Task.FromResult<(IntegrationMessageFlowPackage?, string?)>((request with { AppContract = Contract }, null));
+        }
     }
 }
 

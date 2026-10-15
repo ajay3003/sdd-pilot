@@ -159,6 +159,51 @@ public sealed class AltinnSubmissionUiTests : BunitContext
     }
 
     [Fact]
+    public void Setup_WithoutEnvironmentOrApp_ShowsTheSkolenaervaerDefaults_AndReadsPublicMetadataWithoutReentry()
+    {
+        _altinn.ContractView = _altinn.ContractView with
+        {
+            ConfiguredAppId = null, ConfiguredEnvironment = ExternalTestEnvironment.Unknown, AppApproved = false, AppDetail = "No Altinn app id is configured.", SourceCandidates = [],
+        };
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+
+        var defaults = cut.Find("[data-testid=atp-defaults]");
+        defaults.TextContent.Should().Contain("Environment Test").And.Contain("buf/skolenaervaer").And.Contain("Default for Skolenærvær");
+        defaults.TextContent.Should().NotContainAny("Verified", "verified", "Discovered", "Live confirmed");
+        defaults.QuerySelectorAll("input, select").Should().BeEmpty("the run page gets no editable environment or app field");
+        cut.FindAll("[data-testid=atp-app]").Should().BeEmpty();
+        cut.Find("[data-testid=atp-source-public]").HasAttribute("checked").Should().BeTrue("without an app source the public metadata is the starting point");
+
+        var read = cut.Find("[data-testid=atp-read-public]");
+        read.HasAttribute("disabled").Should().BeFalse();
+        read.Click();
+        _altinn.SkoleNaervaerReads.Should().Be(1, "the backend applies the defaults to IQR and reads the metadata in one action");
+    }
+
+    [Fact]
+    public void Setup_WithAConfiguredEnvironment_DefaultsOnlyTheMissingApp()
+    {
+        _altinn.ContractView = _altinn.ContractView with { ConfiguredAppId = null, ConfiguredEnvironment = ExternalTestEnvironment.Staging, AppApproved = false };
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.FindAll("[data-testid=atp-default-environment]").Should().BeEmpty("an explicit environment is never replaced");
+        cut.Find("[data-testid=atp-default-app]").TextContent.Should().Contain("buf/skolenaervaer");
+    }
+
+    [Fact]
+    public void Setup_WithAnExplicitApp_ShowsNoDefaults_AndKeepsTheReadGatedOnApproval()
+    {
+        _altinn.ContractView = _altinn.ContractView with
+        {
+            ConfiguredAppId = "another/test-app", ConfiguredEnvironment = ExternalTestEnvironment.Test, AppApproved = false, AppDetail = "Not an approved app.",
+        };
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.FindAll("[data-testid=atp-defaults]").Should().BeEmpty();
+        cut.Find("[data-testid=atp-app]").TextContent.Should().Contain("another/test-app").And.NotContain("buf/skolenaervaer");
+        cut.Find("[data-testid=atp-source-public]").Change(true);
+        cut.Find("[data-testid=atp-read-public]").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
     public void Setup_ChoosingPublicMetadata_ReadsItWithoutAnyAddressFromTheBrowser()
     {
         var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
@@ -478,6 +523,8 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         public Task<ActiveEventApiResult<AltinnAppContractView>> ContractAsync(string environmentId, CancellationToken ct = default) => Ok(ContractView);
         public Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default) { PublicReads++; return Ok(ContractView); }
+        public int SkoleNaervaerReads { get; private set; }
+        public Task<ActiveEventApiResult<AltinnAppContractView>> ReadSkoleNaervaerPublicMetadataAsync(string environmentId, CancellationToken ct = default) { SkoleNaervaerReads++; PublicReads++; return Ok(ContractView); }
         public List<Guid?> SourceUses { get; } = [];
         public Task<ActiveEventApiResult<AltinnAppContractView>> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct = default) { SourceUses.Add(snapshotId); return Ok(Contract); }
         public Task<ActiveEventApiResult<AltinnSignInStatus>> SignInStatusAsync(string environmentId, CancellationToken ct = default) => Ok(Status);

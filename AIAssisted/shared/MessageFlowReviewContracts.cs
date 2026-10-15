@@ -117,6 +117,28 @@ public sealed record IntegrationMessageFlowPackage(MessageFlowDefinition Flow, A
 public sealed record MessageFlowSourceContractOptions(Guid SnapshotId, string ArchiveName, string Fingerprint,
     IReadOnlyList<BirkNext.SourceDomains.SourceContract> Contracts);
 
+/// <summary>
+/// The known, stable Altinn test values for Skolenærvær: TT02 (Test) and its app. They are defaults, applied only where a value is absent
+/// (Environment Unknown, no app identifier); an explicit value always wins. A default is not discovered from Altinn and not verified. Never
+/// applied to a generic or unrelated Altinn configuration, and never extended to client id, scopes, secrets or identities.
+/// </summary>
+public static class SkoleNaervaerAltinnDefaults
+{
+    public const ExternalTestEnvironment Environment = ExternalTestEnvironment.Test;
+    public const string AppIdentifier = "buf/skolenaervaer";
+
+    public static bool EnvironmentMissing(AltinnTestConfiguration config) => config.Environment == ExternalTestEnvironment.Unknown;
+    public static bool AppMissing(AltinnTestConfiguration config) => string.IsNullOrWhiteSpace(config.AppIdentifier);
+    public static bool AnyMissing(AltinnTestConfiguration config) => EnvironmentMissing(config) || AppMissing(config);
+
+    /// <summary>The configuration with the Skolenærvær defaults filled in where absent; every other value is unchanged.</summary>
+    public static AltinnTestConfiguration Apply(AltinnTestConfiguration config) => config with
+    {
+        Environment = EnvironmentMissing(config) ? Environment : config.Environment,
+        AppIdentifier = AppMissing(config) ? AppIdentifier : config.AppIdentifier,
+    };
+}
+
 public static class IntegrationMessageFlowReadiness
 {
     public static IntegrationTestReadiness Evaluate(MessageFlowDefinition flow, AltinnTestConfiguration config)
@@ -243,11 +265,12 @@ public static class MessageFlowReviewExamples
         ]
     };
 
+    /// <summary>A new Skolenærvær Altinn test configuration: the known Skolenærvær environment and app as defaults, nothing else configured.</summary>
     public static AltinnTestConfiguration SkolenærværInitialConfiguration => new()
     {
-        Environment = ExternalTestEnvironment.Unknown,
+        Environment = SkoleNaervaerAltinnDefaults.Environment,
         ProductOrServiceType = null,
-        AppIdentifier = null,
+        AppIdentifier = SkoleNaervaerAltinnDefaults.AppIdentifier,
         SubmissionMode = ExternalSubmissionMode.Unknown,
         AuthenticationType = ExternalAuthenticationType.Unknown,
         MessageType = "Skolenærværsrapport",

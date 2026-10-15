@@ -23,12 +23,13 @@ public sealed class AltinnTestingController(AltinnAppContractService contracts, 
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest(new { message = "environmentId is required." }) : Ok(await contracts.ViewAsync(environmentId, ct));
 
     /// <summary>Reads the configured app's public TT02 metadata (three anonymous GETs: application metadata, the form schema and the deployed OpenAPI contract). Nothing is submitted; nobody is authenticated.</summary>
+    /// <param name="skoleNaervaerDefaults">Skolenærvær only: first save its default environment and app where IQR has none (never replaces a value).</param>
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     [HttpPost("contract/public-metadata")]
-    public async Task<ActionResult<AltinnAppContractView>> DiscoverPublic([FromQuery] string environmentId, CancellationToken ct)
+    public async Task<ActionResult<AltinnAppContractView>> DiscoverPublic([FromQuery] string environmentId, CancellationToken ct, [FromQuery] bool skoleNaervaerDefaults = false)
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest(new { message = "environmentId is required." });
-        try { return Ok(await contracts.DiscoverPublicAsync(environmentId, ct)); }
+        try { return Ok(skoleNaervaerDefaults ? await contracts.DiscoverPublicWithSkoleNaervaerDefaultsAsync(environmentId, ct) : await contracts.DiscoverPublicAsync(environmentId, ct)); }
         catch (Exception ex) when (ex is AltinnContractException or AltinnSignInException) { return BadRequest(new { message = ex.Message }); }
         catch (HttpRequestException) { return StatusCode(StatusCodes.Status502BadGateway, new { message = "The public TT02 metadata could not be reached." }); }
         catch (System.Text.Json.JsonException) { return BadRequest(new { message = "The public TT02 metadata is not readable JSON." }); }

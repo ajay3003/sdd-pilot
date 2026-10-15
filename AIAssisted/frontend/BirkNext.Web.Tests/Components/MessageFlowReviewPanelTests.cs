@@ -157,4 +157,55 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
         (c.ReceiptMode, c.CheckpointConfigurationReference, c.CorrelationMappingReference, c.DocumentationPlatform).Should().Be(("receipt-ref", "checkpoint-ref", "correlation-ref", "Altinn 3"));
         c.ProductionBlocked.Should().BeTrue();
     }
+
+    private AltinnTestConfiguration SavedAfter(AltinnTestConfiguration stored, string load)
+    {
+        IntegrationMessageFlowPackage? saved = null;
+        _api.Setup(x => x.SaveMessageFlowReviewAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
+            .Callback<string, IntegrationMessageFlowPackage, CancellationToken>((_, package, _) => saved = package)
+            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => package);
+        var cut = RenderWith(stored);
+        cut.FindAll("button").Single(b => b.TextContent.Contains(load)).Click();
+        cut.FindAll("button").Single(b => b.TextContent.Contains("Save review configuration")).Click();
+        cut.WaitForAssertion(() => saved.Should().NotBeNull());
+        return saved!.AltinnConfiguration;
+    }
+
+    [Fact]
+    public void NewSkolenaervaerConfiguration_DefaultsToTestAndItsApp_AndDefaultsNothingElse()
+    {
+        var c = SavedAfter(new(), "Load documented Skolenærvær pilot");
+        (c.Environment, c.AppIdentifier).Should().Be((ExternalTestEnvironment.Test, "buf/skolenaervaer"));
+        c.ClientReference.Should().BeNull("no ID-porten client id is ever defaulted");
+        c.ConfiguredScopes.Should().BeEmpty();
+        c.VerifiedScopes.Should().BeEmpty();
+        (c.ReporterReference, c.SyntheticIdentitySetReference, c.ReporterApprovedForTest, c.ApprovedSyntheticData).Should().Be((null, null, false, false));
+        c.VerificationState.Should().Be(FlowEvidenceState.NotAssessed, "a default is not verified");
+    }
+
+    [Theory]
+    [InlineData(ExternalTestEnvironment.Staging, "another/test-app")]
+    [InlineData(ExternalTestEnvironment.Test, "buf/skolenaervaer")]
+    [InlineData(ExternalTestEnvironment.Test, "another/test-app")]
+    public void SkolenaervaerPilot_KeepsAnExplicitEnvironmentAndApp(ExternalTestEnvironment environment, string app)
+    {
+        var c = SavedAfter(new() { Environment = environment, AppIdentifier = app }, "Load documented Skolenærvær pilot");
+        (c.Environment, c.AppIdentifier).Should().Be((environment, app));
+    }
+
+    [Fact]
+    public void SkolenaervaerPilot_FillsOnlyTheMissingValue()
+    {
+        SavedAfter(new() { Environment = ExternalTestEnvironment.Staging }, "Load documented Skolenærvær pilot").AppIdentifier.Should().Be("buf/skolenaervaer");
+        SavedAfter(new() { AppIdentifier = "another/test-app" }, "Load documented Skolenærvær pilot").Environment.Should().Be(ExternalTestEnvironment.Test);
+    }
+
+    [Fact]
+    public void GenericOrBlankConfiguration_NeverGetsTheSkolenaervaerApp()
+    {
+        var generic = SavedAfter(new(), "Load generic example");
+        (generic.Environment, generic.AppIdentifier).Should().Be((ExternalTestEnvironment.Unknown, null));
+        var cut = RenderWith(new());
+        Field(cut, "App identifier").GetAttribute("value").Should().BeNullOrEmpty("a blank IQR configuration is generic until a pilot is loaded");
+    }
 }

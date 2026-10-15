@@ -78,6 +78,26 @@ public sealed class SkoleNaervaerRunResolutionTests
     // ── 1. Everything available ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task SkolenaervaerDefaults_SavedByTheMetadataRead_ResolveEnvironmentAndAppFromIqr()
+    {
+        var bed = await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { Environment = ExternalTestEnvironment.Unknown, AppIdentifier = null }, liveContract: false);
+        var before = await RapportmottakAsync(bed);
+        Unresolved(before).Should().Contain(["altinn-environment", "altinn-app"], "a default is not configuration until it is saved to IQR");
+
+        await bed.Kit.Contracts(bed.Harness.MessageFlows, bed.Harness.Sources).DiscoverPublicWithSkoleNaervaerDefaultsAsync(Env, default);
+
+        var after = await RapportmottakAsync(bed);
+        foreach (var key in new[] { "altinn-environment", "altinn-app" })
+        {
+            Row(after, key).State.Should().Be(JourneyReadinessState.Ready, key);
+            Row(after, key).Source.Should().Be("Integration Quality Review", key);
+        }
+        Unresolved(after).Should().BeEmpty("every other input was already configured by its own owner");
+        bed.Harness.MessageFlows.Configuration.ClientReference.Should().Be(AltinnTestKit.ClientId, "the existing client id is kept, never defaulted");
+        NothingSensitive(JsonSerializer.Serialize(after), "readiness never shows a secret or identity");
+    }
+
+    [Fact]
     public async Task EverythingAvailable_ResolvesEveryRunInput_WithItsSource_AndNoSecretOrIdentityLeavesTheBackend()
     {
         var bed = await ReadyAsync();

@@ -11,6 +11,10 @@ public interface IAltinnTestingApiService
 {
     Task<ActiveEventApiResult<AltinnAppContractView>> ContractAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Skolenærvær's read: the backend first saves the Skolenærvær default environment and app to the IQR Altinn test configuration where
+    /// none is configured (never replacing a value), then reads the public TT02 metadata anonymously.</summary>
+    Task<ActiveEventApiResult<AltinnAppContractView>> ReadSkoleNaervaerPublicMetadataAsync(string environmentId, CancellationToken ct = default) =>
+        ReadPublicMetadataAsync(environmentId, ct);
     Task<ActiveEventApiResult<AltinnAppContractView>> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct = default);
     Task<ActiveEventApiResult<AltinnSignInStatus>> SignInStatusAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<AltinnSignInStart>> StartSignInAsync(string environmentId, CancellationToken ct = default);
@@ -36,6 +40,9 @@ public sealed class AltinnTestingApiService(HttpClient http) : IAltinnTestingApi
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> ReadPublicMetadataAsync(string environmentId, CancellationToken ct = default) =>
         SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}", null, ct);
+
+    public Task<ActiveEventApiResult<AltinnAppContractView>> ReadSkoleNaervaerPublicMetadataAsync(string environmentId, CancellationToken ct = default) =>
+        SendAsync<AltinnAppContractView>(HttpMethod.Post, $"api/altinn-testing/contract/public-metadata?environmentId={E(environmentId)}&skoleNaervaerDefaults=true", null, ct);
 
     public Task<ActiveEventApiResult<AltinnAppContractView>> UseSourceAnalysisAsync(string environmentId, Guid? snapshotId, CancellationToken ct = default) =>
         SendAsync<AltinnAppContractView>(HttpMethod.Post,

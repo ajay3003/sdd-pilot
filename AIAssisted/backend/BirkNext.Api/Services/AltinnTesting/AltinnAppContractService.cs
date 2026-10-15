@@ -50,8 +50,29 @@ public sealed class AltinnAppContractService(
         var package = await messageFlows.GetAsync(environmentId, ct);
         return Evaluate(environmentId, package.AltinnConfiguration.AppIdentifier, package.AppContract) with
         {
+            ConfiguredEnvironment = package.AltinnConfiguration.Environment,
             SourceCandidates = await CandidatesAsync(environmentId, package.AltinnConfiguration.AppIdentifier?.Trim(), ct),
         };
+    }
+
+    /// <summary>
+    /// The Skolenærvær "Read public TT02 metadata": where the IQR Altinn test configuration has no environment or app, the Skolenærvær defaults
+    /// (<see cref="SkoleNaervaerAltinnDefaults"/>) are saved to it first — explicit values are never replaced — so the read, the stored
+    /// configuration and readiness use the same values. Nothing is saved unless the effective app is approved and its environment allowed.
+    /// The read itself is unchanged: anonymous GETs only.
+    /// </summary>
+    public async Task<AltinnAppContractView> DiscoverPublicWithSkoleNaervaerDefaultsAsync(string environmentId, CancellationToken ct)
+    {
+        var package = await messageFlows.GetAsync(environmentId, ct);
+        if (SkoleNaervaerAltinnDefaults.AnyMissing(package.AltinnConfiguration))
+        {
+            var effective = SkoleNaervaerAltinnDefaults.Apply(package.AltinnConfiguration);
+            _ = policy.ApprovedApp(effective.AppIdentifier?.Trim(), out var reason) ?? throw new AltinnContractException(reason);
+            if (AltinnTestingPolicy.AltinnEnvironmentBlock(effective) is { } blocked) throw new AltinnContractException(blocked);
+            var (saved, error) = await messageFlows.SaveAsync(environmentId, package with { AltinnConfiguration = effective }, ct);
+            if (saved is null) throw new AltinnContractException(error ?? "The Altinn test configuration could not be saved.");
+        }
+        return await DiscoverPublicAsync(environmentId, ct);
     }
 
     /// <summary>Reads the public TT02 metadata of the configured, approved app. Read-only GETs without credentials.</summary>
@@ -101,7 +122,7 @@ public sealed class AltinnAppContractService(
         };
         record = Reconcile(environmentId, appId!, record);
         await messageFlows.SaveAppContractAsync(environmentId, record, ct);
-        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+        return Evaluate(environmentId, appId, record) with { ConfiguredEnvironment = package.AltinnConfiguration.Environment, SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
     }
 
     /// <summary>
@@ -140,7 +161,7 @@ public sealed class AltinnAppContractService(
         if (!view.ChangesAcceptable) throw new AltinnContractException(view.ChangesDetail);
         record = record with { Confirmed = new AltinnConfirmedContract(record.PublicMetadata, clock.GetUtcNow(), $"Changes reviewed and accepted{(string.IsNullOrWhiteSpace(reviewer) ? "" : $" by {reviewer}")}"), Changes = null };
         await messageFlows.SaveAppContractAsync(environmentId, record, ct);
-        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+        return Evaluate(environmentId, appId, record) with { ConfiguredEnvironment = package.AltinnConfiguration.Environment, SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
     }
 
     /// <summary>
@@ -164,7 +185,7 @@ public sealed class AltinnAppContractService(
         };
         var record = (package.AppContract ?? new AltinnAppContractRecord(null, null)) with { ImportedOpenApi = imported };
         await messageFlows.SaveAppContractAsync(environmentId, record, ct);
-        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+        return Evaluate(environmentId, appId, record) with { ConfiguredEnvironment = package.AltinnConfiguration.Environment, SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
     }
 
     /// <summary>
@@ -211,7 +232,7 @@ public sealed class AltinnAppContractService(
             SourceAnalysis = app with { SourceSnapshotId = snapshot.Id, SourceArchive = snapshot.Archive.FileName },
         };
         await messageFlows.SaveAppContractAsync(environmentId, record, ct);
-        return Evaluate(environmentId, appId, record) with { SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
+        return Evaluate(environmentId, appId, record) with { ConfiguredEnvironment = package.AltinnConfiguration.Environment, SourceCandidates = await CandidatesAsync(environmentId, appId, ct) };
     }
 
     private async Task<IReadOnlyList<AltinnSourceCandidate>> CandidatesAsync(string environmentId, string? appId, CancellationToken ct)
