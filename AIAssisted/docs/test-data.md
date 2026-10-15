@@ -53,7 +53,25 @@ resolved asset by asset.
 Validation never means business validity. *Approved for test use* is not *valid*: an approved negative fixture (for example
 `invalid-report-missing-required-field`) is deliberately invalid and stays usable.
 
-Schema validation of fixtures is not done in the backend. Schema Studio's validator runs in the browser and is not reused here.
+### XML schema validation
+
+An XML asset may declare a schema (`TestData:Assets:n:Schema`): `SchemaPath` inside a Source Analysis snapshot's retained XSD package, and
+optionally `SourceSnapshotId` (exact snapshot), `SchemaFingerprint` (SHA-256 of that XSD), `RootElement` and `Label`. Without a snapshot id the
+newest snapshot that retains the path is used, and the result names it.
+
+The backend validates with the shared XSD capability (`shared/XmlSchemaPackages.cs`) — the same parser and validator Schema Studio runs in the
+browser and Contract Evolution normalizes with. Imports and includes resolve only inside the retained package; nothing is fetched.
+
+| Schema result | Meaning | Overall validation |
+|---|---|---|
+| Validated | Valid against the schema | Validated |
+| Invalid | Not valid (issues listed without values from the XML) | Invalid |
+| Schema unavailable | No retained XSD for the reference, or its fingerprint differs | Needs validation |
+| Dependency unresolved | An import/include is not in the retained package | Needs validation |
+| Not evaluated | Not an XML asset, or no value in the backend | unchanged |
+
+Schema validity never changes approval, and an invalid asset is never removed or disabled: an approved negative fixture is expected to be
+Invalid. A scenario that needs schema-valid data must ask for it explicitly.
 
 ### Providers
 

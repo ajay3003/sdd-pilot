@@ -22,6 +22,22 @@ public sealed class ConfiguredTestDataAsset
     /// <summary>A scalar or small inline value. A sensitive value belongs in local configuration (an environment variable), never a committed file.</summary>
     public string? Value { get; set; }
     public string? File { get; set; }
+    /// <summary>For an XML asset: the XSD (inside a Source Analysis snapshot's schema package) it must be validated against.</summary>
+    public ConfiguredTestDataSchema? Schema { get; set; }
+}
+
+/// <summary>Configuration shape of <see cref="TestDataSchemaReference"/> (<c>TestData:Assets:n:Schema</c>).</summary>
+public sealed class ConfiguredTestDataSchema
+{
+    public string SchemaPath { get; set; } = "";
+    public Guid? SourceSnapshotId { get; set; }
+    public string? SchemaFingerprint { get; set; }
+    public string? RootElement { get; set; }
+    public string? Label { get; set; }
+
+    public TestDataSchemaReference? ToReference() => string.IsNullOrWhiteSpace(SchemaPath) ? null
+        : new(SchemaPath.Trim().Replace('\\', '/'), SourceSnapshotId, string.IsNullOrWhiteSpace(SchemaFingerprint) ? null : SchemaFingerprint.Trim().ToLowerInvariant(),
+            string.IsNullOrWhiteSpace(RootElement) ? null : RootElement.Trim(), Label);
 }
 
 public sealed class ConfiguredTestDataSet
@@ -63,7 +79,7 @@ public sealed class ConfiguredTestDataProvider(TestDataOptions options, string c
             MediaType = item.MediaType, EntityType = item.EntityType, Environment = string.IsNullOrWhiteSpace(item.Environment) ? null : item.Environment.Trim(),
             Approval = item.Approval, Capabilities = [.. item.Capabilities.Select(cap => cap.Trim()).Where(cap => cap.Length > 0)], Sensitivity = item.Sensitivity,
             Source = Label, IsDefault = item.IsDefault, ExpiresAt = item.ExpiresAt, ExpectsAbsence = item.ExpectsAbsence,
-            Value = value is null ? null : new TestDataValue(value),
+            Value = value is null ? null : new TestDataValue(value), Schema = item.Schema?.ToReference(),
             Validation = problem is null ? null : TestDataValidation.Unavailable, ValidationDetail = problem,
         };
     })];

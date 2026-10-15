@@ -1,0 +1,2 @@
+# Real external schema fixtures: stored byte-for-byte (fingerprints and tests depend on the exact content); upstream whitespace is not ours to change.
+*.xsd -text -whitespace

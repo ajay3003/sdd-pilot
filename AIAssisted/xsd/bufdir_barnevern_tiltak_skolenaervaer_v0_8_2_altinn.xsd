@@ -1,0 +1,381 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="https://bufdir.no/barnevern.tiltak.skolenaervaer.v0.8.2.altinn" elementFormDefault="qualified" targetNamespace="https://bufdir.no/barnevern.tiltak.skolenaervaer.v0.8.2.altinn" version="0.8.2" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<xs:simpleType name="CHOICE_ELEMENT_Fodselsnummer__DUFnummerType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Fodselsnummer" />
+			<xs:enumeration value="DUFnummer" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="CHOICE_ELEMENT_Organisasjon__PersonType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Organisasjon" />
+			<xs:enumeration value="Person" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="FravaerRegistreringType">
+		<xs:sequence>
+			<xs:element name="Fravaer" type="FravaerType" id="BUF_958719EA-6080-46DC-8E4D-DD291CF624BC" minOccurs="0" maxOccurs="unbounded" />
+		</xs:sequence>
+	</xs:complexType>
+	<!--Fra https://bufdir.no/melding.lib.v2-->
+	<xs:complexType name="AktorIdentifikasjonType" id="BUF_309DF611-9F37-4153-B9CE-358A71CFD9A7">
+		<xs:sequence>
+			<xs:element name="CHOICE_ELEMENT_Organisasjon__Person" type="CHOICE_ELEMENT_Organisasjon__PersonType" minOccurs="0" />
+			<xs:element name="Organisasjon" type="OrganisasjonType" id="BUF_627DCE48-7FD8-4246-B13D-EE3090AF3CB8" minOccurs="0" />
+			<xs:element name="Person" type="PersonType" id="BUF_88397354-1D14-4E08-B0F5-A55240823F86" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="BydelsinfoType" id="BUF_E10C2385-F287-47BD-B6BE-8F50E626BA04">
+		<xs:sequence>
+			<xs:element name="Bydelsnummer" id="BUF_5AC38EF3-6688-47D6-A644-AADAACAD7B54">
+				<xs:annotation>
+					<xs:documentation>2-sifret bydelsnummer</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="2" />
+						<xs:maxLength value="2" />
+						<xs:pattern value="\d{2}" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Bydelsnavn" id="BUF_C4908FAA-E1E1-4F7B-8EBF-50367EF4B9F0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="1" />
+						<xs:maxLength value="70" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="FagsystemType" id="BUF_32C0FA0C-2703-4E8F-983F-5E3678D4F0C1">
+		<xs:sequence>
+			<xs:element name="Leverandor" type="xs:string" id="BUF_B7F75A62-0280-412E-B707-BB61A28335B7">
+				<xs:annotation>
+					<xs:documentation>Leverandørnavn fagsystem. Eksempler: 'Visma', 'Acos', 'Netcompany', 'Bufdir'.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Navn" type="xs:string" id="BUF_A2ED2B17-C0F5-4A07-B106-784F4D4E5BA5">
+				<xs:annotation>
+					<xs:documentation>Navn fagsystem. Eksempel: 'Familia', 'BiRK'.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Versjon" type="VersjonType" id="BUF_092CDC42-C004-40F8-AB99-BC8D740129D4" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="FodselsnummerMeldingType" id="BUF_35ADA59E-AEB1-4B61-830C-30ADADE8354C">
+		<xs:annotation>
+			<xs:documentation>Fødselsnummer (https://www.udi.no/ord-og-begreper/fodselsnummer/) eller D-nummer (https://www.udi.no/ord-og-begreper/d-nummer/)
+            </xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\d{11}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FulltNavnType" id="BUF_5C9508DE-241E-4D40-9F65-67350C31A811">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="2" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="KommuneinfoType" id="BUF_0582CDA8-73C4-4384-BC2C-61AA69D9A2F1">
+		<xs:sequence>
+			<xs:element name="Kommunenummer" type="KommunenummerType" id="BUF_07ADD908-5D2E-4504-AA20-DCC384DD5243" />
+			<xs:element name="Kommunenavn" type="KommunenavnType" id="BUF_446CA10B-493B-46A8-98A5-66B05ABF684D" />
+			<xs:element name="Bydelsinfo" type="BydelsinfoType" id="BUF_69528AB9-74DD-4FF9-9DD3-C417AC1DB863" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>
+Benyttes kun for kommuner med bydeler
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="KommunenavnType" id="BUF_786B395E-902A-4A94-B9B4-34174218D621">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1" />
+			<xs:maxLength value="70" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="KommunenummerType" id="BUF_4FB870C4-490D-4CBB-9E1F-3949F626BD1A">
+		<xs:annotation>
+			<xs:documentation>4-sifret kommunenummer</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="4" />
+			<xs:maxLength value="4" />
+			<xs:pattern value="\d{4}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="KontaktInfoType" id="BUF_CF6FF3A6-E14A-449B-BBF5-F9D96B188D6B">
+		<xs:sequence>
+			<xs:element name="Kontaktperson" type="KontaktpersonMeldingType" id="BUF_135B6A86-99D6-4A2A-BD9E-692B670A96F1">
+			</xs:element>
+			<xs:element name="AlternativKontaktperson" type="KontaktpersonMeldingType" id="BUF_3E9352C3-C977-499A-967E-8B8E090F5E6D" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="KontaktpersonMeldingType" id="BUF_B8AEE09B-0A9E-4152-A603-2B516C34977B">
+		<xs:sequence>
+			<xs:element name="Navn" type="FulltNavnType" id="BUF_10F96C62-B4F8-4F54-9618-CC51ED3A024C" />
+			<xs:element name="Telefon" type="xs:string" id="BUF_A25A946F-D70C-42C6-9B79-E6A903222137">
+				<xs:annotation>
+					<xs:documentation>Obs! Kan inneholde landkode
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="epost" type="xs:string" id="BUF_88570DF6-A1E6-4B31-9D71-F6BEBC047FAF" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="MeldingIdType" id="BUF_9731D9E9-0BE8-461B-8B29-71ADFB682C16">
+		<xs:annotation>
+			<xs:documentation>UUID i format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="MeldingsForbindelseType" id="BUF_30F7A6FE-6D88-4C5A-9881-12A69821780D">
+		<xs:annotation>
+			<xs:documentation>
+			   ([Ny] melding brukes ikke, melding er 'ny' når den ikke er relatert til tidligere melding)
+
+				- ref. til egen melding:
+				[Duplikat] Samme melding sendt igjen (av tekniske årsaker)	
+				[Oppdatering] til tidligere melding
+				[Tillegg] til melding, f.eks. vedlegg
+				[Trukket] melding (det melding gjaldt er ikke aktuelt mer)
+				[Slettet] melding (melding var sendt ved feiltakelse, skal slettes hos mottaker)
+				
+				- ref. til annen parts melding:
+				[ApplikasjonsKvittering] på mottatt melding - sendt av fagsystem
+				[SaksbehandlerKvittering] på mottatt melding - sendt av saksbehandler
+				[Svar] på mottatt melding
+				[Feil] på mottatt melding
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="Duplikat" />
+			<xs:enumeration value="Oppdatering" />
+			<xs:enumeration value="Tillegg" />
+			<xs:enumeration value="Trukket" />
+			<xs:enumeration value="Slettet" />
+			<xs:enumeration value="ApplikasjonsKvittering" />
+			<xs:enumeration value="SaksbehandlerKvittering" />
+			<xs:enumeration value="Svar" />
+			<xs:enumeration value="Feil" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="MeldingshodeType" id="BUF_88B047B1-05DD-46DF-8827-19A2981ACF7B">
+		<xs:sequence>
+			<xs:element name="Id" type="MeldingIdType" id="BUF_7F4D17A6-765F-4B89-8362-0A5E7190B129" />
+			<xs:element name="OppfolgingAvMelding" type="OppfolgingAvMeldingType" id="BUF_1DFCE9C1-F608-4E80-A32E-5B3765F55C56" minOccurs="0" />
+			<xs:element name="MeldingstypeNmsp" type="xs:string" id="BUF_8F21452E-E1DD-47D6-B9A0-F7810BF2FC1A">
+				<xs:annotation>
+					<xs:documentation>Namespace for meldingsdefinisjon</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Domene" type="xs:string" id="BUF_90CE0425-29DF-4FCB-B7DD-811E06ECDA03" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Domene for meldingen, brukes til å rute melding til rett mottaker dersom det er en generisk meldingstype (f.eks. testmelding). Er bare nødvendig ved ny melding, etterfølgende meldinger i en konversasjon (se OppfolgingAvMeldingType.MeldingsForbindelse) rutes til samme mottakersystem som startmelding</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FagsystemAvsender" type="FagsystemType" id="BUF_9A2BA0E2-24A8-43ED-B60F-8F7A7C64E66D" />
+			<xs:element name="SendtTidspunkt" type="xs:dateTime" id="BUF_D12645CF-6FE0-4EA0-86C5-D9A9EFB5F31D" />
+			<xs:element name="Avsender" type="AktorIdentifikasjonType" id="BUF_B0306846-CEB0-483F-A8C5-568B1AE3652A" />
+			<xs:element name="Mottaker" type="AktorIdentifikasjonType" id="BUF_DC79120D-91CE-47FB-B616-0EC9765C7A4F" />
+			<xs:element name="AvsendersRef" type="xs:string" id="BUF_21BDA3F9-911D-430F-AAD0-F1632B6F0E88" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Id som benyttes for å identifisere sak e.l. som en forsendelse gjelder, og som mottaker tidligere har oppgitt til formålet</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="KontaktInfoAvsender" type="KontaktInfoType" id="BUF_4CF80BAC-32E2-46B9-9257-517E31272F9C" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="MeldingType" id="BUF_8E63B786-D63F-47E5-9C40-31A2881D833F">
+		<xs:annotation>
+			<xs:documentation>Alle meldingstyper arver fra denne typen gjennom å utvide den vha. xs:extension
+			</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Meldingshode" type="MeldingshodeType" id="BUF_A96CA391-9868-4416-9C06-896EC995098C" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="OppfolgingAvMeldingType" id="BUF_D4333341-F7B5-469D-8537-F354E0D604A2">
+		<xs:annotation>
+			<xs:documentation>Brukes for alle meldinger som ikke er 'nye' ('ny' = 'første melding i en konversasjon' / 'ikke er relatert til tidligere melding')</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="MeldingsForbindelse" type="MeldingsForbindelseType" id="BUF_8F30E319-067B-409B-82A7-24C4ED74F147" />
+			<xs:element name="StartMeldingId" type="MeldingIdType" id="BUF_B19C5F5D-D146-4521-A772-698F53809FBC">
+				<xs:annotation>
+					<xs:documentation>Første meldingsid i denne konversasjonen</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MeldingId" type="MeldingIdType" id="BUF_525C26E4-E23E-4045-966C-DE6F996CB8D8">
+				<xs:annotation>
+					<xs:documentation>
+						Gjelder tidligere melding med denne id
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MottakersRef" type="ReferanseType" id="BUF_196E5FDD-6876-4DFE-97EE-50FEAD50CEC8" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="OrganisasjonsnummerType" id="BUF_15688905-2A6A-4246-AE32-87BE0C8F8FC3">
+		<xs:annotation>
+			<xs:documentation>Organisasjonsnummer fra enhetsregisteret</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="9" />
+			<xs:maxLength value="9" />
+			<xs:pattern value="\d{9}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="OrganisasjonType" id="BUF_EFC79877-C75C-4E5F-BAE7-FD810A5D885D">
+		<xs:sequence>
+			<xs:element name="Organisasjonsnummer" type="OrganisasjonsnummerType" id="BUF_E1A8CF08-6E82-4EAF-9AEC-2705C91EA02E" />
+			<xs:element name="Navn" id="BUF_65522C58-7618-4CC0-96FF-8D5845427BD1">
+				<xs:annotation>
+					<xs:documentation>Navn (Navn på tjeneste, f.eks. "Barneverntjenesten Asker kommune", Bufetat, BFE)</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="2" />
+						<xs:maxLength value="200" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Kommuneinfo" type="KommuneinfoType" id="BUF_B50BD657-4F24-46E8-B832-DA2EF456311F" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Kommunenavn meldingen gjelder, f.eks. "Asker kommune". Navnet i 'Organisasjon' kan være et annet, som f.eks. "Barneverntjenesten Asker kommune".
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PersonType" id="BUF_34ADA37E-9AD6-45A9-A743-EA1AB09DC0E6">
+		<xs:sequence>
+			<xs:element name="Fodselsnummer" type="FodselsnummerMeldingType" id="BUF_33A7F9A0-28CF-4A87-8A9B-A4F423E652E9" />
+			<xs:element name="Navn" id="BUF_7C1BA42D-ACF4-4BEB-B578-B931633FD9B9">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:minLength value="2" />
+						<xs:maxLength value="200" />
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="ReferanseType" id="BUF_3BC2D2BA-E0A9-469F-BD48-0B645917C69E">
+		<xs:annotation>
+			<xs:documentation>Id som benyttes for å identifisere sak e.l. som en forsendelse gjelder, og som mottaker tidligere har oppgitt til formålet
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string" />
+	</xs:simpleType>
+	<xs:simpleType name="VersjonType" id="BUF_7D887770-7D13-46D2-8290-4EF9230C18C8">
+		<xs:annotation>
+			<xs:documentation>
+Versjonsnummer i formen '1', '1.1', '1.1.1', '1.1.1.2345'
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1" />
+			<xs:pattern value="(\d+\.)?(\d+\.)?(\d+\.)?(\*|\d+)" />
+		</xs:restriction>
+	</xs:simpleType>
+	<!--Fra https://bufdir.no/lib.v1.1.0-->
+	<xs:simpleType name="DUFNummerType" id="BUF_2C2C3B52-194E-420B-ACE3-DBC813DFFB02">
+		<xs:annotation>
+			<xs:documentation>DUF-nummer (https://www.udi.no/ord-og-begreper/duf-nummer/)
+            </xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="12" />
+			<xs:maxLength value="12" />
+			<xs:pattern value="\d{12}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FodselsnummerType" id="BUF_48A168D0-C049-44F0-94D4-6C252FCC8D17">
+		<xs:annotation>
+			<xs:documentation>
+Fødselsnummer (https://www.udi.no/ord-og-begreper/fodselsnummer/) eller D-nummer (https://www.udi.no/ord-og-begreper/d-nummer/)
+            </xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\d{11}" />
+		</xs:restriction>
+	</xs:simpleType>
+	<!--Fra https://bufdir.no/barnevern.tiltak.skolenaervaer.v0.8.2-->
+	<xs:complexType name="FravaerType" id="BUF_9FA289DC-842E-4ABF-A10B-73F68D7A672B">
+		<xs:sequence>
+			<xs:element name="TypeFravaer" type="TypeFravaerType" id="BUF_49FE21C5-441F-4B02-BDF8-8CB064E0ED26" />
+			<xs:element name="TimerFravaer" type="xs:double" id="BUF_715F14F8-15F0-4457-BD4C-D309F17F115F" />
+		</xs:sequence>
+	</xs:complexType>
+	<!--Fra https://bufdir.no/barnevern.lib.v1.2.0-->
+	<xs:complexType name="KlientIdentifikatorType" id="BUF_13216163-4A73-4297-ABA7-7C49DF9C82FA">
+		<xs:sequence>
+			<xs:element name="CHOICE_ELEMENT_Fodselsnummer__DUFnummer" type="CHOICE_ELEMENT_Fodselsnummer__DUFnummerType" minOccurs="0" />
+			<xs:element name="Fodselsnummer" type="FodselsnummerType" id="BUF_AA59F2BF-8085-4661-88AB-E188667A612F" minOccurs="0" />
+			<xs:element name="DUFnummer" type="DUFNummerType" id="BUF_49AA99A5-7593-4FF9-9A52-7C732422D63A" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="KlientMedPseudonymType" id="BUF_4E023C90-5D3D-4D53-A041-87555E189C6D">
+		<xs:sequence>
+			<xs:element name="Identifikator" type="KlientIdentifikatorType" id="BUF_C6123353-2E9C-413B-A1C4-CA34C24EF948" minOccurs="1" />
+			<xs:element name="PseudonymId" type="xs:string" id="BUF_DD388228-3062-4114-9C5D-4230077BB9FF" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<!--Fra https://bufdir.no/barnevern.tiltak.skolenaervaer.v0.8.2-->
+	<xs:complexType name="PeriodeType" id="BUF_6D6735D9-1F5D-4976-8278-61C80D736CB1">
+		<xs:sequence>
+			<xs:element name="StartDato" type="xs:dateTime" id="BUF_24815C0F-F9EB-4EC4-BE38-50B14FF81B79" />
+			<xs:element name="SluttDato" type="xs:dateTime" id="BUF_5E4311C6-402A-4477-BC70-DCB09CAE5752" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="RapportSkolenaervaerType" id="BUF_42272DE6-5E62-400C-BFE3-6741D1C57231">
+		<xs:complexContent>
+			<xs:extension base="MeldingType">
+				<xs:sequence>
+					<xs:element name="Klient" type="KlientMedPseudonymType" id="BUF_6A6239D9-6B4V-4926-8188-82F63U75SW1" />
+					<xs:element name="Periode" type="PeriodeType" id="BUF_DAD6BE2D-ACC2-4307-A5CF-48170DC1E9A9" />
+					<xs:element name="SkolenaervaerRegistrering" type="SkolenaervaerRegistreringType" id="BUF_248A85A3-7994-49B7-BFF5-672D51ED58DD" />
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="SkolenaervaerRegistreringType" id="BUF_B5060306-DC13-45B2-999E-A69A8B07D3EF">
+		<xs:sequence>
+			<xs:element name="AntallTimerEtterPlanen" type="xs:double" id="BUF_97E70807-6BC9-4756-8333-0D83305A7156" />
+			<xs:element name="AntallTimerFaktiskNaervaer" type="xs:double" id="BUF_FBB34C6C-89ED-42ED-9384-DE651C9A9C2E" />
+			<xs:element name="FravaerRegistrering" type="FravaerRegistreringType" id="BUF_D366097D-A6A2-4FB1-9B08-E8C093C7F294" minOccurs="0" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="TypeFravaerType" id="BUF_15971729-1535-4994-B473-3E81AD7A6AF2">
+		<xs:annotation>
+			<xs:documentation>				1 = Lege/tannlege				2 = Ordinær sykdom (uten sykemelding)				3 = Sykemelding				4 = Psykiske helseutfordringer				5 = Vil ikke på skolen				6 = Skulk				7 = Annen godkjent fri				99 = Annet (ikke godkjent)      </xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="1" />
+			<xs:enumeration value="2" />
+			<xs:enumeration value="3" />
+			<xs:enumeration value="4" />
+			<xs:enumeration value="5" />
+			<xs:enumeration value="6" />
+			<xs:enumeration value="7" />
+			<xs:enumeration value="99" />
+		</xs:restriction>
+	</xs:simpleType>
+	<!--rotelement-->
+	<xs:element name="Skolenaervaer" type="RapportSkolenaervaerType" id="BUF_4D15D21B-6F25-4F7D-AEA2-FE6DCAD3D146">
+		<xs:annotation>
+			<xs:documentation>Egentlig ikke riktig med disse aktørene, er gjort for å kunne bruke dagens demoapplikasjon</xs:documentation>
+			<xs:appinfo>
+				<MeldingsForbindelse>Ny|Oppdatering</MeldingsForbindelse>
+				<AvsenderType>1.Linje</AvsenderType>
+				<MottakerType>2.Linje</MottakerType>
+			</xs:appinfo>
+		</xs:annotation>
+	</xs:element>
+</xs:schema>

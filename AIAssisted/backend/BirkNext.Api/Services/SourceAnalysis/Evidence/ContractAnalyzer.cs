@@ -413,18 +413,12 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         return SourceEvidenceRedaction.SafePath(redacted);
     }
 
+    /// <summary>Whether a schemaLocation resolves to a file in this snapshot, using the shared XSD capability's path-safety rule (no absolute or escaping paths).</summary>
     private static bool SchemaLocationExists(string schemaPath, string? location, IEnumerable<string> availablePaths)
     {
         if (string.IsNullOrWhiteSpace(location) || Uri.TryCreate(location, UriKind.Absolute, out _)) return false;
-        var path = schemaPath.Contains('/') ? schemaPath[..schemaPath.LastIndexOf('/')].Split('/').ToList() : [];
-        foreach (var segment in location.Replace('\\', '/').Split('/'))
-        {
-            if (segment is "" or ".") continue;
-            if (segment == "..") { if (path.Count == 0) return false; path.RemoveAt(path.Count - 1); }
-            else path.Add(segment);
-        }
-        var resolved = string.Join('/', path);
-        return availablePaths.Contains(resolved, StringComparer.OrdinalIgnoreCase);
+        var resolved = BirkNext.Schemas.XmlSchemaPackageAnalyzer.ResolvePackageLinkName(schemaPath, location);
+        return resolved is not null && availablePaths.Contains(resolved, StringComparer.OrdinalIgnoreCase);
     }
 
     // ── GraphQL ─────────────────────────────────────────────────────────────────────────────────────────────────────────

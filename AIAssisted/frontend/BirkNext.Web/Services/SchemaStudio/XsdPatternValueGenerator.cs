@@ -151,7 +151,9 @@ internal static class XsdPatternValueGenerator
                 foreach (var range in ranges)
                 {
                     var width = range.End - range.Start + 1;
-                    candidates.Add((char)(range.Start + random.Next(width)));
+                    // Digits are always the lowest allowed digit: generated numbers stay schema-valid but never form a
+                    // checksum-valid personal or organisation identifier (fødselsnummer, D-number, DUF, organisation number).
+                    candidates.Add(range.Start >= '0' && range.End <= '9' ? range.Start : (char)(range.Start + random.Next(width)));
                 }
                 return candidates[random.Next(candidates.Count)].ToString();
             }
@@ -180,7 +182,7 @@ internal static class XsdPatternValueGenerator
             var escaped = pattern[_position++];
             return escaped switch
             {
-                'd' => "0123456789"[random.Next(10)].ToString(),
+                'd' => "0", // identity-safe: digit runs are zeros (see the class-range rule above)
                 'D' when !inClass => "A",
                 's' => " ",
                 'S' when !inClass => "A",

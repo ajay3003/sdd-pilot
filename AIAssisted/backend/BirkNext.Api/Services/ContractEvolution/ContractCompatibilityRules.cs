@@ -43,6 +43,8 @@ public static class ContractCompatibilityRules
                 ContractChangeClass.EnumValueAdded => (ContractCompatibility.Compatible, "A new allowed value does not change what the producer writes."),
                 ContractChangeClass.NamespaceChanged => (ContractCompatibility.NeedsReview, "Whether the producer writes the new namespace needs review."),
                 ContractChangeClass.VersionChanged => (ContractCompatibility.NeedsReview, "The declared version changed; whether the producer targets it needs review."),
+                ContractChangeClass.RestrictionChanged => ByUse(ContractCompatibility.NeedsReview, $"The producer writes {change.Path}; whether its values satisfy the changed format/restriction needs review."),
+                ContractChangeClass.ImportChanged => (ContractCompatibility.NeedsReview, "A schema dependency changed; whether the producer follows it needs review."),
                 _ => (ContractCompatibility.NeedsReview, "Unclassified change: needs review."),
             };
 
@@ -66,6 +68,8 @@ public static class ContractCompatibilityRules
                 : (ContractCompatibility.NeedsReview, $"The member order of {change.Path} changed."),
             ContractChangeClass.NamespaceChanged => (ContractCompatibility.NeedsReview, "Members in another namespace are not assumed to be the same members."),
             ContractChangeClass.VersionChanged => (ContractCompatibility.NeedsReview, "The declared version changed."),
+            ContractChangeClass.RestrictionChanged => ByUse(ContractCompatibility.NeedsReview, $"The consumer reads {change.Path}; its allowed format/restriction changed."),
+            ContractChangeClass.ImportChanged => (ContractCompatibility.NeedsReview, "A schema dependency changed."),
             _ => (ContractCompatibility.NeedsReview, "Unclassified change: needs review."),
         };
     }

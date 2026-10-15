@@ -25,7 +25,7 @@ generates payloads.
 
 | Type | Normalizer | Reused parser |
 |---|---|---|
-| XML Schema (XSD) | `FromXmlSchema` / `FromXmlSchemaText` | Source Analysis' canonical reader (`ContractAnalyzer.ReadXmlSchema`): DTDs prohibited, no XML resolver, size-bounded, imports and includes never fetched |
+| XML Schema (XSD) | `FromXmlSchemaPackage` / `FromXmlSchemaText` | The shared XSD capability (`shared/XmlSchemaPackages.cs`, also used by Schema Studio and Test Data): effective schema with inheritance, cross-file types and restrictions; DTDs prohibited, imports/includes resolve only inside the package, never fetched. Each node keeps its declaring file; the snapshot lists every schema file with namespace, version and fingerprint |
 | JSON Schema-like field lists | `FromFields` | Any flattened field list (for example an Altinn form schema) |
 | OpenAPI | `FromOpenApi` | The existing OpenAPI extractor's normalized contract (operations, parameters, request fields) |
 
@@ -51,6 +51,8 @@ Compatible but semantically *Needs review*, so it needs review overall.
 | Namespace changed | Needs review | Needs review: same names in another namespace are not assumed equivalent |
 | Member order changed (XSD sequence) | Needs review if written | Breaking for a strict validator, otherwise Needs review |
 | Declared version changed | Needs review | Needs review where the consumer declares supported versions |
+| Format/restriction changed (pattern, length, bounds, digits) | Needs review if written | Needs review if read |
+| Schema dependency changed (an imported/included file) | Needs review | Needs review; the changed members carry the file as provenance |
 
 Other rules:
 - A party whose paths are unknown gets *Needs review*, never Compatible.
@@ -106,6 +108,8 @@ the business impact requires it, and the payload mapping changes when BirkNext m
 
 - **Not imported as data:** the Altinn → MU transformation, MM's read paths, the MM → Skole field mapping and Skole's JSON fields. Their boundaries are *Not evaluated*, never Compatible.
 - **The two flat XSDs** (`skolenaervaer.v2.0.0.flat.xsd` and `.flat.m2lb.xsd`) are not in this repository, and nothing references them. Their roles cannot be proven from BirkNext's evidence.
+  The Altinn form schemas v0.8.2 and v2.0.0 (`AIAssisted/xsd`) are test fixtures: their comparison exercises namespace, version, enumeration, requiredness and root-type changes.
+- **XSD fingerprints** use normalizer version 2 (`ContractSnapshots.XmlSchemaNormalizerVersion`); an XSD fingerprint from version 1 never equals a version 2 one. JSON and OpenAPI fingerprints are unchanged.
 - **Not yet built:**
   - Impact Analysis and Quality Review do not consume contract-change results.
   - Snapshots are not kept as a separate history; the Altinn form's confirmed baseline is stored with the IQR configuration as before.

@@ -1,0 +1,37 @@
+.sr-view { display: grid; gap: .75rem; min-width: 0; }
+.sr-heading { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: .75rem; }
+.sr-heading h3, .sr-view h3 { margin: 0; }
+.sr-root { display: grid; gap: .25rem; font-weight: 600; }
+.sr-root select { min-height: 2.25rem; max-width: 100%; }
+.sr-note { margin: 0; color: #536174; }
+.sr-warning { margin: 0; padding: .5rem .75rem; border-left: 4px solid #f0a800; background: #fff8e6; color: #18212f; }
+.sr-table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid #d5dbe5; border-radius: 6px; }
+.sr-table-wrap:focus-visible { outline: 3px solid #2864b4; outline-offset: 2px; }
+.sr-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.sr-table th, .sr-table td { padding: .45rem .6rem; text-align: left; vertical-align: top; border-bottom: 1px solid #d5dbe5; }
+.sr-table thead th { background: #f6f8fb; position: sticky; top: 0; }
+.sr-table tbody th { font-weight: 600; }
+.sr-problem td { background: #fff8e6; }
+.sr-sub { display: block; color: #536174; font-weight: 400; }
+.sr-mono, .sr-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; overflow-wrap: anywhere; }
+.sr-doc { white-space: pre-line; margin: .15rem 0 0; }
+.sr-muted { color: #536174; }
+.sr-name { font-weight: 600; overflow-wrap: anywhere; }
+.sr-occ { color: #536174; }
+.sr-values { margin: .2rem 0 0; padding-left: 1.1rem; }
+.sr-rules { display: grid; gap: .25rem; }
+.sr-label { font-weight: 600; }
+.sr-business { border: 1px solid #d5dbe5; border-radius: 6px; padding: .75rem 1rem; min-width: 0; }
+.sr-business h4 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.sr-business-list, .sr-tree, .sr-tree ul { list-style: none; margin: .25rem 0 0; padding-left: 1.1rem; border-left: 2px solid #d5dbe5; }
+.sr-business-list li, .sr-tree li { margin: .35rem 0; overflow-wrap: anywhere; }
+.sr-tree { padding-left: .5rem; }
+.sr-link { background: none; border: 0; padding: 0; color: #174d86; text-decoration: underline; cursor: pointer; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.sr-link:focus-visible { outline: 3px solid #2864b4; outline-offset: 2px; }
+.sr-list { margin: 0; padding-left: 1.1rem; }
+@media (max-width: 600px) {
+    .sr-table { font-size: .82rem; }
+    .sr-table th, .sr-table td { padding: .35rem .4rem; }
+}
+/* Long namespaces, fingerprints and schema locations wrap instead of widening the page (scoped CSS does not inherit the page's rule). */
+.sr-view p, .sr-view li, .sr-view td, .sr-view th, .sr-view small, .sr-view code { overflow-wrap: anywhere; }

@@ -248,10 +248,10 @@ public sealed class SchemaStudioServiceTests
         Assert.Contains(SchemaStudioService.RunGeneratedTests(package), test => test.Path == "/Record/@code"
             && test.Rule == "wrong datatype" && test.Actual == "Invalid" && test.Outcome == "Pass");
 
-        var profiles = new TestDataProfilesService();
-        var profile = profiles.Create("integer attributes", package.Fingerprint, null, TestDataProfileKind.GenericValid, 42);
+        var profiles = new SchemaGenerationProfilesService();
+        var profile = profiles.Create("integer attributes", package.Fingerprint, null, SchemaGenerationProfileKind.GenericValid, 42);
         profiles.Edit(profile.Id, profile.Name, profile.Kind, profile.Seed,
-            [new TestDataProfileRule("/Record/@code", TestDataValueMode.Synthetic, Minimum: 17, Maximum: 17)]);
+            [new SchemaGenerationRule("/Record/@code", SchemaGenerationValueMode.Synthetic, Minimum: 17, Maximum: 17)]);
         var savedProfile = profiles.Profiles.Single();
         var values = profiles.GenerateValues(package, savedProfile);
         var xml = SchemaStudioService.GenerateProfileXml(package, "Record", values, savedProfile);

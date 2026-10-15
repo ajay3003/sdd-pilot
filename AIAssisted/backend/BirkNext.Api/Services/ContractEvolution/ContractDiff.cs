@@ -24,9 +24,9 @@ public static class ContractDiff
         var after = current.Nodes.ToDictionary(node => node.Path, StringComparer.Ordinal);
         foreach (var node in current.Nodes.Where(node => !before.ContainsKey(node.Path)))
             changes.Add(new(node.Required ? ContractChangeClass.FieldAddedRequired : ContractChangeClass.FieldAddedOptional, node.Path, null, Describe(node),
-                $"Added {(node.Required ? "required" : "optional")} {node.Kind} {node.Path}."));
+                $"Added {(node.Required ? "required" : "optional")} {node.Kind} {node.Path}.", node.DeclaredIn));
         foreach (var node in previous.Nodes.Where(node => !after.ContainsKey(node.Path)))
-            changes.Add(new(ContractChangeClass.FieldRemoved, node.Path, Describe(node), null, $"Removed {node.Kind} {node.Path}."));
+            changes.Add(new(ContractChangeClass.FieldRemoved, node.Path, Describe(node), null, $"Removed {node.Kind} {node.Path}.", node.DeclaredIn));
         foreach (var node in current.Nodes.Where(node => before.ContainsKey(node.Path)))
         {
             var old = before[node.Path];
@@ -43,6 +43,30 @@ public static class ContractDiff
                 changes.Add(new(ContractChangeClass.EnumValueRemoved, node.Path, value, null, $"{node.Path}: value \"{value}\" removed."));
             if (!namespaceChanged && !string.Equals(old.Namespace, node.Namespace, StringComparison.Ordinal))
                 changes.Add(new(ContractChangeClass.NamespaceChanged, node.Path, old.Namespace, node.Namespace, $"{node.Path}: namespace {old.Namespace ?? "(none)"} → {node.Namespace ?? "(none)"}."));
+            var oldRestrictions = old.Restrictions ?? [];
+            var newRestrictions = node.Restrictions ?? [];
+            if (!oldRestrictions.Order(StringComparer.Ordinal).SequenceEqual(newRestrictions.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+                changes.Add(new(ContractChangeClass.RestrictionChanged, node.Path, Restrictions(oldRestrictions), Restrictions(newRestrictions),
+                    $"{node.Path}: format/restriction [{Restrictions(oldRestrictions)}] → [{Restrictions(newRestrictions)}].", node.DeclaredIn ?? old.DeclaredIn));
+        }
+
+        // Dependency provenance: which schema files changed, appeared or disappeared (their structure is already compared above).
+        if (previous.Dependencies is { } beforeDependencies && current.Dependencies is { } afterDependencies)
+        {
+            var oldFiles = beforeDependencies.Where(d => d.Fingerprint.Length > 0).ToDictionary(d => d.File, StringComparer.OrdinalIgnoreCase);
+            var newFiles = afterDependencies.Where(d => d.Fingerprint.Length > 0).ToDictionary(d => d.File, StringComparer.OrdinalIgnoreCase);
+            foreach (var dependency in afterDependencies.Where(d => d.Fingerprint.Length > 0 && d.Kind != "root"))
+            {
+                if (!oldFiles.TryGetValue(dependency.File, out var was))
+                    changes.Add(new(ContractChangeClass.ImportChanged, "#dependency/" + dependency.File, null, dependency.Fingerprint,
+                        $"Schema dependency {dependency.File} was added ({dependency.Kind} from {dependency.ReferencedBy ?? "the package"}).", dependency.File));
+                else if (was.Fingerprint != dependency.Fingerprint)
+                    changes.Add(new(ContractChangeClass.ImportChanged, "#dependency/" + dependency.File, was.Fingerprint, dependency.Fingerprint,
+                        $"Schema dependency {dependency.File} changed ({dependency.Kind} from {dependency.ReferencedBy ?? "the package"}); members declared there carry it as provenance.", dependency.File));
+            }
+            foreach (var dependency in beforeDependencies.Where(d => d.Fingerprint.Length > 0 && d.Kind != "root" && !newFiles.ContainsKey(d.File)))
+                changes.Add(new(ContractChangeClass.ImportChanged, "#dependency/" + dependency.File, dependency.Fingerprint, null,
+                    $"Schema dependency {dependency.File} was removed.", dependency.File));
         }
 
         // Order matters only among members both snapshots have, under the same parent (an XSD sequence); an insertion alone is not a reorder.
@@ -57,8 +81,11 @@ public static class ContractDiff
         }
         if (changes.Count == 0)
             changes.Add(new(ContractChangeClass.None, "", previous.Fingerprint, current.Fingerprint, "The fingerprint changed but no structural difference was classified."));
-        return changes;
+        return [.. changes.Select(change => change.DeclaredIn is null && after.TryGetValue(change.Path, out var node) && node.DeclaredIn is not null
+            ? change with { DeclaredIn = node.DeclaredIn } : change)];
     }
+
+    private static string Restrictions(IEnumerable<string> restrictions) => string.Join("; ", restrictions.Order(StringComparer.Ordinal));
 
     public static string Parent(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
 

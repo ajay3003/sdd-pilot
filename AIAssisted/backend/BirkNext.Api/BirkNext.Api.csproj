@@ -88,6 +88,7 @@
     <Compile Include="../../shared/SourceEvidenceDomainContracts.cs" Link="Models/SourceEvidenceDomainContracts.cs" />
     <Compile Include="../../shared/ContractEvolutionContracts.cs" Link="Models/ContractEvolutionContracts.cs" />
     <Compile Include="../../shared/TestDataContracts.cs" Link="Models/TestDataContracts.cs" />
+    <Compile Include="../../shared/XmlSchemaPackages.cs" Link="Models/XmlSchemaPackages.cs" />
     <Compile Include="../../shared/IntegrationTopologyContracts.cs" Link="Models/IntegrationTopologyContracts.cs" />
     <Compile Include="../../shared/SourceInfrastructureIdentityContracts.cs" Link="Models/SourceInfrastructureIdentityContracts.cs" />
     <Compile Include="../../shared/ApplicabilityContracts.cs" Link="Models/ApplicabilityContracts.cs" />

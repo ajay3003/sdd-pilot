@@ -3,6 +3,10 @@
 .ss-page h2 { margin: 0 0 .55rem; font-size: 1.25rem; }
 .ss-page h3 { margin: 1.2rem 0 .45rem; font-size: 1.05rem; }
 .ss-page p { line-height: 1.55; }
+/* Fingerprints, snapshot ids and schema paths are long unbreakable tokens: let them wrap instead of widening the page. */
+.ss-package { flex-wrap: wrap; }
+.ss-package > * { min-width: 0; }
+.ss-page p, .ss-page li, .ss-page small, .ss-page td, .ss-page dd, .ss-page summary { overflow-wrap: anywhere; }
 .ss-note,.ss-warning { padding: .8rem 1rem; border-left: 4px solid #3b82f6; background: #eff6ff; border-radius: .35rem; }
 .ss-import,.ss-workspace,.ss-card { margin: 1.2rem 0; padding: 1rem; border: 1px solid #d5dbe5; border-radius: .65rem; background: var(--surface, #fff); }
 .ss-import p,.ss-heading p,.ss-empty { color: #536174; }

@@ -65,6 +65,11 @@
                                 <div><dt>Type</dt><dd data-testid="td-type">@TypeLabel(asset)</dd></div>
                                 <div><dt>Environment</dt><dd>@EnvironmentLabel(asset)</dd></div>
                                 <div><dt>Validation</dt><dd data-testid="td-validation">@asset.Validation</dd></div>
+                                @if (asset.Schema is { } schema)
+                                {
+                                    <div><dt>Schema</dt><dd data-testid="td-schema">@(schema.Label ?? schema.SchemaPath)@(asset.SchemaCheck?.SchemaVersion is { } version ? $" {version}" : "")</dd></div>
+                                    <div><dt>Schema validation</dt><dd data-testid="td-schema-status">@SchemaStatusLabel(asset.SchemaCheck)</dd></div>
+                                }
                                 <div><dt>Source</dt><dd>@asset.Source</dd></div>
                                 <div><dt>Value</dt><dd data-testid="td-value">@ValueLabel(asset)</dd></div>
                             </dl>
@@ -78,6 +83,12 @@
                                     <dl class="td-facts">
                                         <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
                                         <div><dt>Validation detail</dt><dd>@(asset.ValidationDetail ?? "—")</dd></div>
+                                        @if (asset.SchemaCheck is { } check)
+                                        {
+                                            <div><dt>Schema detail</dt><dd data-testid="td-schema-detail">@check.Detail@if (check.Issues.Count > 0) { <ul class="td-schema-issues">@foreach (var issue in check.Issues) { <li>@issue</li> }</ul> }</dd></div>
+                                            @if (check.SourceSnapshotId is { } snapshot) { <div><dt>Schema source</dt><dd class="td-mono">Source Analysis snapshot @snapshot.ToString("D")[..8]…@(check.SchemaFingerprint is { } fp ? $" · XSD {fp[..12]}…" : "")</dd></div> }
+                                            <div><dt>Approval vs. validity</dt><dd>Approval is independent: an approved negative fixture can be deliberately invalid.</dd></div>
+                                        }
                                         @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
                                         @if (asset.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd class="td-mono">@fingerprint[..12]…</dd></div> }
                                         @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
@@ -180,6 +191,16 @@
         : asset.ExpectsAbsence ? "Nothing expected"
         : asset.Sensitivity == TestDataSensitivity.Sensitive ? (asset.ValueAvailable ? "Available securely" : "Not available")
         : asset.ValueAvailable ? "Available (see details)" : "Not available";
+
+    private static string SchemaStatusLabel(TestDataSchemaCheck? check) => check?.Status switch
+    {
+        null => "Not checked",
+        TestDataSchemaStatus.Validated => "Valid",
+        TestDataSchemaStatus.Invalid => "Invalid",
+        TestDataSchemaStatus.SchemaUnavailable => "Schema unavailable",
+        TestDataSchemaStatus.DependencyUnresolved => "Dependency unresolved",
+        _ => "Not evaluated",
+    };
 
     private static string Tone(TestDataAssetSummary asset) => asset.Approval == TestDataApproval.Approved ? "ready" : "attention";
 

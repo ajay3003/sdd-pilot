@@ -1,0 +1,46 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+	xmlns="https://bufdir.no/melding.vedlegg.lib.v1.0.0" 
+	targetNamespace="https://bufdir.no/melding.vedlegg.lib.v1.0.0" 
+	xmlns:bg="https://bufdir.no/lib.v1.1.0" 
+	elementFormDefault="qualified" 
+	version="1.0.0">
+	
+	<xs:simpleType name="VedleggTypeType" id="BUF_7B3694CE-5A22-4840-93C7-30B5076FC322">
+		<xs:annotation>
+			<xs:documentation>
+			   Koder for kjente dokumenttyper:
+			   1 = Menneskelig lesbar versjon av XML-melding
+			  10 = Plan i henhold til barnevernsloven
+			 999 = Annet
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="1"/>
+			<xs:enumeration value="10"/>
+			<xs:enumeration value="999"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+	<xs:complexType name="VedleggType" id="BUF_7BBE0323-CE82-4AC3-9ACA-0314B6E74362">
+		<xs:annotation>
+			<xs:documentation>Standardtype, som godtar alle registrerte vedleggstyper. Spesifikke meldingstyper kan redefinere denne og bruke en begrenset liste av vedleggstyper</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Filnavn" type="xs:string" id="BUF_C4BB1E69-D4CC-4052-88C1-FB9F605B7E3C">
+				<xs:unique name="unikFilnavn">
+					<xs:selector xpath="."/>
+					<xs:field xpath="."/>
+				</xs:unique>
+			</xs:element>
+			<xs:element name="VedleggType" type="VedleggTypeType" id="BUF_C44DA075-9127-4A93-B1FD-9E6C1E85649F"/>
+			<xs:element name="Beskrivelse" type="xs:string" id="BUF_7B4340A3-D0D1-4BDE-8E5A-BA0E68B942A4" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo>
+						<enable>VedleggType=999</enable>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	
+</xs:schema>

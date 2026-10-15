@@ -40,6 +40,8 @@ public sealed record TestDataAsset
     public DateTimeOffset? ExpiresAt { get; init; }
     public bool ExpectsAbsence { get; init; }
     public TestDataValue? Value { get; init; }
+    /// <summary>For an XML asset: the XSD it is validated against through the shared XSD capability.</summary>
+    public TestDataSchemaReference? Schema { get; init; }
 }
 
 /// <summary>A data set: role → asset alias bindings chosen together for one purpose.</summary>

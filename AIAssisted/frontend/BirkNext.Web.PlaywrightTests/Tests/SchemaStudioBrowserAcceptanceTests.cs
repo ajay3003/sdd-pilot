@@ -69,7 +69,7 @@ public sealed class SchemaStudioBrowserAcceptanceTests
         await AssertNoHorizontalOverflow(page);
         await AssertAxe(page);
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Test Data Profile", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Generation Profile", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Create profile", Exact = true }).ClickAsync();
         await page.GetByLabel("Profile rule element path").SelectOptionAsync("/Record/Repeat");
         await page.GetByLabel("Occurrence count (optional, 0–100)").FillAsync("2");

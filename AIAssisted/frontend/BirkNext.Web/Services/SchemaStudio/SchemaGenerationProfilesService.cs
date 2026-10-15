@@ -1,46 +1,47 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using BirkNext.Schemas;
 
 namespace BirkNext.Web.Services.SchemaStudio;
 
-public enum TestDataProfileKind { GenericValid, Boundary, ControlledInvalid, Minimal, MaximumComplexity }
-public enum TestDataValueMode { SchemaDefault, Synthetic, Boundary, Invalid, FixedEnum, Nil }
+public enum SchemaGenerationProfileKind { GenericValid, Boundary, ControlledInvalid, Minimal, MaximumComplexity }
+public enum SchemaGenerationValueMode { SchemaDefault, Synthetic, Boundary, Invalid, FixedEnum, Nil }
 
 /// <summary>Rules contain generation instructions and ranges, never a raw real-world identity or secret.</summary>
-public sealed record TestDataProfileRule(string ElementPath, TestDataValueMode Mode, decimal? Minimum = null, decimal? Maximum = null,
+public sealed record SchemaGenerationRule(string ElementPath, SchemaGenerationValueMode Mode, decimal? Minimum = null, decimal? Maximum = null,
     int? MinimumLength = null, int? MaximumLength = null, DateOnly? DateFrom = null, DateOnly? DateTo = null,
     int? OccurrenceCount = null);
 
-public sealed record TestDataProfile(Guid Id, string Name, string SchemaFingerprint, string? ProjectScope,
-    TestDataProfileKind Kind, int Seed, IReadOnlyList<TestDataProfileRule> Rules,
+public sealed record SchemaGenerationProfile(Guid Id, string Name, string SchemaFingerprint, string? ProjectScope,
+    SchemaGenerationProfileKind Kind, int Seed, IReadOnlyList<SchemaGenerationRule> Rules,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, bool IsBuiltIn = false);
 
 /// <summary>Schema-bound profile catalog. Callers persist SnapshotJson through the current workspace artifact repository.</summary>
-public sealed class TestDataProfilesService
+public sealed class SchemaGenerationProfilesService
 {
     public const int MaxProfiles = 200;
     public const int MaxRulesPerProfile = 500;
     public const int MaxDocumentBytes = 5 * 1024 * 1024;
     internal const string NilToken = "\u0000schema-studio:nil";
-    private readonly Dictionary<Guid, TestDataProfile> _profiles = [];
+    private readonly Dictionary<Guid, SchemaGenerationProfile> _profiles = [];
     public int RejectedUnboundLegacyProfiles { get; private set; }
 
-    public IReadOnlyList<TestDataProfile> Profiles => _profiles.Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+    public IReadOnlyList<SchemaGenerationProfile> Profiles => _profiles.Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 
-    public static IReadOnlyList<TestDataProfile> BuiltIns(string schemaFingerprint, DateTimeOffset? now = null)
+    public static IReadOnlyList<SchemaGenerationProfile> BuiltIns(string schemaFingerprint, DateTimeOffset? now = null)
     {
         var at = now ?? DateTimeOffset.UnixEpoch;
         return new[]
         {
-            BuiltIn("Generic valid", TestDataProfileKind.GenericValid, 4101),
-            BuiltIn("Boundary values", TestDataProfileKind.Boundary, 4102),
-            BuiltIn("Controlled invalid values", TestDataProfileKind.ControlledInvalid, 4103),
-            BuiltIn("Minimal XML", TestDataProfileKind.Minimal, 4104),
-            BuiltIn("Maximum complexity", TestDataProfileKind.MaximumComplexity, 4105),
+            BuiltIn("Generic valid", SchemaGenerationProfileKind.GenericValid, 4101),
+            BuiltIn("Boundary values", SchemaGenerationProfileKind.Boundary, 4102),
+            BuiltIn("Controlled invalid values", SchemaGenerationProfileKind.ControlledInvalid, 4103),
+            BuiltIn("Minimal XML", SchemaGenerationProfileKind.Minimal, 4104),
+            BuiltIn("Maximum complexity", SchemaGenerationProfileKind.MaximumComplexity, 4105),
         };
 
-        TestDataProfile BuiltIn(string name, TestDataProfileKind kind, int seed)
+        SchemaGenerationProfile BuiltIn(string name, SchemaGenerationProfileKind kind, int seed)
         {
             var idBytes = SHA256.HashData(Encoding.UTF8.GetBytes(schemaFingerprint + ":" + kind));
             var id = new Guid(idBytes.AsSpan(0, 16));
@@ -48,17 +49,17 @@ public sealed class TestDataProfilesService
         }
     }
 
-    public TestDataProfile Create(string name, string schemaFingerprint, string? projectScope, TestDataProfileKind kind, int seed)
+    public SchemaGenerationProfile Create(string name, string schemaFingerprint, string? projectScope, SchemaGenerationProfileKind kind, int seed)
     {
         EnsureCapacity();
         var now = DateTimeOffset.UtcNow;
-        var profile = new TestDataProfile(Guid.NewGuid(), name.Trim(), schemaFingerprint, NormalizeScope(projectScope), kind, seed, [], now, now);
+        var profile = new SchemaGenerationProfile(Guid.NewGuid(), name.Trim(), schemaFingerprint, NormalizeScope(projectScope), kind, seed, [], now, now);
         ValidateProfile(profile);
         _profiles.Add(profile.Id, profile);
         return profile;
     }
 
-    public TestDataProfile Edit(Guid id, string name, TestDataProfileKind kind, int seed, IReadOnlyList<TestDataProfileRule> rules)
+    public SchemaGenerationProfile Edit(Guid id, string name, SchemaGenerationProfileKind kind, int seed, IReadOnlyList<SchemaGenerationRule> rules)
     {
         var current = GetEditable(id);
         var updated = current with { Name = name.Trim(), Kind = kind, Seed = seed, Rules = rules.ToArray(), UpdatedAt = DateTimeOffset.UtcNow };
@@ -67,13 +68,13 @@ public sealed class TestDataProfilesService
         return updated;
     }
 
-    public TestDataProfile Clone(Guid id, string? newName = null)
+    public SchemaGenerationProfile Clone(Guid id, string? newName = null)
     {
-        var source = _profiles.TryGetValue(id, out var profile) ? profile : throw new KeyNotFoundException("Test Data Profile was not found.");
+        var source = _profiles.TryGetValue(id, out var profile) ? profile : throw new KeyNotFoundException("Generation profile was not found.");
         return Clone(source, newName);
     }
 
-    public TestDataProfile Clone(TestDataProfile source, string? newName = null)
+    public SchemaGenerationProfile Clone(SchemaGenerationProfile source, string? newName = null)
     {
         EnsureCapacity();
         var name = string.IsNullOrWhiteSpace(newName) ? source.Name + " copy" : newName.Trim();
@@ -87,13 +88,13 @@ public sealed class TestDataProfilesService
 
     public bool Delete(Guid id) => _profiles.TryGetValue(id, out var profile) && !profile.IsBuiltIn && _profiles.Remove(id);
 
-    public bool IsCompatible(TestDataProfile profile, SchemaPackage package, string? projectScope = null) =>
+    public bool IsCompatible(SchemaGenerationProfile profile, SchemaPackage package, string? projectScope = null) =>
         (profile.SchemaFingerprint == package.Fingerprint || profile.IsBuiltIn && profile.SchemaFingerprint == "*")
         && (profile.IsBuiltIn || string.Equals(profile.ProjectScope, NormalizeScope(projectScope), StringComparison.Ordinal));
 
-    public IReadOnlyDictionary<string, string> GenerateValues(SchemaPackage package, TestDataProfile profile, string? projectScope = null)
+    public IReadOnlyDictionary<string, string> GenerateValues(SchemaPackage package, SchemaGenerationProfile profile, string? projectScope = null)
     {
-        if (!IsCompatible(profile, package, projectScope)) throw new InvalidOperationException("This Test Data Profile belongs to a different schema fingerprint or project scope.");
+        if (!IsCompatible(profile, package, projectScope)) throw new InvalidOperationException("This generation profile belongs to a different schema fingerprint or project scope.");
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var rules = profile.Rules.ToDictionary(r => r.ElementPath, StringComparer.Ordinal);
         var members = new Dictionary<string, EffectiveMember>(StringComparer.Ordinal);
@@ -117,14 +118,14 @@ public sealed class TestDataProfilesService
             if (rules.TryGetValue(path, out var occurrenceRule) && occurrenceRule.OccurrenceCount == 0) return;
             var explicitlyConfigured = rules.Keys.Any(rulePath => rulePath.Equals(path, StringComparison.Ordinal)
                 || rulePath.StartsWith(path + "/", StringComparison.Ordinal));
-            if (member.MinOccurs == "0" && profile.Kind != TestDataProfileKind.MaximumComplexity && !explicitlyConfigured)
+            if (member.MinOccurs == "0" && profile.Kind != SchemaGenerationProfileKind.MaximumComplexity && !explicitlyConfigured)
                 return;
 
             foreach (var attribute in member.Attributes ?? [])
             {
                 var attributePath = path + "/@" + attribute.Name;
                 var include = attribute.Use == "required" || attribute.DefaultValue is not null || attribute.FixedValue is not null
-                    || profile.Kind == TestDataProfileKind.MaximumComplexity || rules.ContainsKey(attributePath);
+                    || profile.Kind == SchemaGenerationProfileKind.MaximumComplexity || rules.ContainsKey(attributePath);
                 if (!include) continue;
                 var attributeModel = members[attributePath];
                 rules.TryGetValue(attributePath, out var attributeRule);
@@ -134,7 +135,7 @@ public sealed class TestDataProfilesService
             if (member.Children.Count == 0 && !(member.Type is null && member.Attributes is { Count: > 0 }))
             {
                 rules.TryGetValue(path, out var rule);
-                if (rule?.Mode == TestDataValueMode.Nil)
+                if (rule?.Mode == SchemaGenerationValueMode.Nil)
                 {
                     if (!member.Nillable) throw new InvalidOperationException($"Element {path} is not nillable in this schema.");
                     values[path] = NilToken;
@@ -150,16 +151,16 @@ public sealed class TestDataProfilesService
     public string ExportJson(Guid id)
     {
         var profile = _profiles.TryGetValue(id, out var stored) ? stored : BuiltIns("*").FirstOrDefault(p => p.Id == id)
-            ?? throw new KeyNotFoundException("Test Data Profile was not found.");
+            ?? throw new KeyNotFoundException("Generation profile was not found.");
         return JsonSerializer.Serialize(profile, new JsonSerializerOptions(JsonSerializerDefaults.Web));
     }
 
-    public string ExportJson(TestDataProfile profile) => JsonSerializer.Serialize(profile, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    public string ExportJson(SchemaGenerationProfile profile) => JsonSerializer.Serialize(profile, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
-    public TestDataProfile ImportJson(string json, string? projectScope = null, string? selectedSchemaFingerprint = null)
+    public SchemaGenerationProfile ImportJson(string json, string? projectScope = null, string? selectedSchemaFingerprint = null)
     {
         if (Encoding.UTF8.GetByteCount(json) > 256 * 1024) throw new InvalidDataException("Profile import exceeds the 256 KB limit.");
-        var imported = JsonSerializer.Deserialize<TestDataProfile>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+        var imported = JsonSerializer.Deserialize<SchemaGenerationProfile>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidDataException("Profile document is empty.");
         if (imported.SchemaFingerprint == "*")
         {
@@ -186,12 +187,12 @@ public sealed class TestDataProfilesService
     public void RestoreJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) { _profiles.Clear(); RejectedUnboundLegacyProfiles = 0; return; }
-        if (Encoding.UTF8.GetByteCount(json) > MaxDocumentBytes) throw new InvalidDataException("Saved Test Data Profiles exceed the 5 MB workspace limit.");
-        var profiles = JsonSerializer.Deserialize<TestDataProfile[]>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
-        if (profiles.Length > MaxProfiles) throw new InvalidDataException("Saved Test Data Profiles exceed the profile-count limit.");
-        if (profiles.Any(profile => profile is null)) throw new InvalidDataException("Saved Test Data Profiles contain an empty entry.");
+        if (Encoding.UTF8.GetByteCount(json) > MaxDocumentBytes) throw new InvalidDataException("Saved generation profiles exceed the 5 MB workspace limit.");
+        var profiles = JsonSerializer.Deserialize<SchemaGenerationProfile[]>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)) ?? [];
+        if (profiles.Length > MaxProfiles) throw new InvalidDataException("Saved generation profiles exceed the profile-count limit.");
+        if (profiles.Any(profile => profile is null)) throw new InvalidDataException("Saved generation profiles contain an empty entry.");
         if (profiles.Select(profile => profile.Id).Distinct().Count() != profiles.Length)
-            throw new InvalidDataException("Saved Test Data Profiles contain duplicate identities.");
+            throw new InvalidDataException("Saved generation profiles contain duplicate identities.");
         var unboundLegacy = profiles.Where(profile => profile.SchemaFingerprint == "*" && !profile.IsBuiltIn).ToArray();
         var restorable = profiles.Where(profile => profile.SchemaFingerprint != "*" || profile.IsBuiltIn).ToArray();
         foreach (var profile in restorable) ValidateProfile(profile);
@@ -200,17 +201,17 @@ public sealed class TestDataProfilesService
         RejectedUnboundLegacyProfiles = unboundLegacy.Length;
     }
 
-    private static string Value(EffectiveMember member, TestDataProfileRule? rule, TestDataProfile profile, string path)
+    private static string Value(EffectiveMember member, SchemaGenerationRule? rule, SchemaGenerationProfile profile, string path)
     {
         var random = new Random(StableSeed(profile.Seed, path));
-        if (profile.Kind == TestDataProfileKind.ControlledInvalid && rule?.Mode != TestDataValueMode.Synthetic)
+        if (profile.Kind == SchemaGenerationProfileKind.ControlledInvalid && rule?.Mode != SchemaGenerationValueMode.Synthetic)
             return "__invalid_" + random.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        if (rule?.Mode == TestDataValueMode.Invalid) return "__invalid_" + random.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (rule?.Mode == SchemaGenerationValueMode.Invalid) return "__invalid_" + random.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (member.FixedValue is not null) return member.FixedValue;
-        if (rule?.Mode == TestDataValueMode.SchemaDefault && member.DefaultValue is not null) return member.DefaultValue;
-        if (rule?.Mode == TestDataValueMode.SchemaDefault && member.DefaultValue is null && member.FixedValue is null)
+        if (rule?.Mode == SchemaGenerationValueMode.SchemaDefault && member.DefaultValue is not null) return member.DefaultValue;
+        if (rule?.Mode == SchemaGenerationValueMode.SchemaDefault && member.DefaultValue is null && member.FixedValue is null)
             throw new InvalidOperationException($"Element {path} has no XSD default or fixed value.");
-        if (rule?.Mode == TestDataValueMode.FixedEnum && !member.Facets.Any(f => f.Kind == "enumeration"))
+        if (rule?.Mode == SchemaGenerationValueMode.FixedEnum && !member.Facets.Any(f => f.Kind == "enumeration"))
             throw new InvalidOperationException($"Element {path} has no XSD enumeration constraint.");
         if (member.Facets.FirstOrDefault(f => f.Kind == "enumeration") is not null)
         {
@@ -242,13 +243,15 @@ public sealed class TestDataProfilesService
             to = Earlier(to, DateFacet(member, "maxInclusive", exclusive: false));
             to = Earlier(to, DateFacet(member, "maxExclusive", exclusive: true));
             if (to < from) throw new InvalidOperationException($"Date range for {path} is reversed.");
-            var date = rule?.Mode == TestDataValueMode.Boundary || profile.Kind == TestDataProfileKind.Boundary
+            var date = rule?.Mode == SchemaGenerationValueMode.Boundary || profile.Kind == SchemaGenerationProfileKind.Boundary
                 ? (random.Next(2) == 0 ? from : to)
                 : from.AddDays(to.DayNumber == from.DayNumber ? 0 : random.Next(to.DayNumber - from.DayNumber + 1));
             return EnsurePatterns(member, date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), path);
         }
         if (LocalType(effectiveType) == "boolean") return EnsurePatterns(member, random.Next(2) == 0 ? "true" : "false", path);
-        if (rule?.Mode == TestDataValueMode.Boundary || profile.Kind == TestDataProfileKind.Boundary)
+        // An unbounded numeric type (xs:double without facets) has no boundary to pick; it uses the regular numeric value below.
+        if ((rule?.Mode == SchemaGenerationValueMode.Boundary || profile.Kind == SchemaGenerationProfileKind.Boundary)
+            && (numericMinimum is not null || numericMaximum is not null || !IsNumeric(effectiveType)))
         {
             if (numericMinimum is { } lower && numericMaximum is { } upper && lower <= upper)
             {
@@ -289,11 +292,11 @@ public sealed class TestDataProfilesService
         var raw = "Synthetic" + random.Next(1000, 9999).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var length = Math.Clamp(Math.Max(minChars, Math.Min(raw.Length, maxChars)), 0, 4096);
         var synthetic = raw.PadRight(length, 'S')[..length];
-        return EnsurePatterns(member, profile.Kind == TestDataProfileKind.ControlledInvalid ? "!" : synthetic, path);
+        return EnsurePatterns(member, profile.Kind == SchemaGenerationProfileKind.ControlledInvalid ? "!" : synthetic, path);
     }
 
-    private static string GeneratePatternValue(EffectiveMember member, IReadOnlyList<string> patterns, TestDataProfileRule? rule,
-        TestDataProfile profile, Random random, string path)
+    private static string GeneratePatternValue(EffectiveMember member, IReadOnlyList<string> patterns, SchemaGenerationRule? rule,
+        SchemaGenerationProfile profile, Random random, string path)
     {
         var (minimumLength, maximumLength) = LengthBounds(member, rule);
         var min = minimumLength ?? 0;
@@ -303,7 +306,7 @@ public sealed class TestDataProfilesService
         {
             if (!XsdPatternValueGenerator.TryCreate(patterns[random.Next(patterns.Count)], random, out var candidate)) continue;
             if (candidate.Length > max) continue;
-            var boundary = rule?.Mode == TestDataValueMode.Boundary || profile.Kind == TestDataProfileKind.Boundary;
+            var boundary = rule?.Mode == SchemaGenerationValueMode.Boundary || profile.Kind == SchemaGenerationProfileKind.Boundary;
             var targets = boundary
                 ? new[] { maximumLength ?? candidate.Length, Math.Max(min, candidate.Length), candidate.Length }.Distinct()
                 : new[] { Math.Max(min, candidate.Length) };
@@ -325,14 +328,14 @@ public sealed class TestDataProfilesService
             throw new InvalidOperationException($"The generated value for {path} does not satisfy its XSD pattern constraint.");
         return value;
     }
-    private static bool FitsFacets(EffectiveMember member, string value, TestDataProfileRule? rule)
+    private static bool FitsFacets(EffectiveMember member, string value, SchemaGenerationRule? rule)
     {
         var (minLength, maxLength) = LengthBounds(member, rule);
         if (minLength is { } min && value.Length < min || maxLength is { } max && value.Length > max) return false;
         if (member.Facets.Where(f => f.Kind == "enumeration").Any() && !member.Facets.Any(f => f.Kind == "enumeration" && f.Value == value)) return false;
         return true;
     }
-    private static string GenerateDateTime(EffectiveMember member, TestDataProfileRule? rule, TestDataProfile profile, Random random, string path)
+    private static string GenerateDateTime(EffectiveMember member, SchemaGenerationRule? rule, SchemaGenerationProfile profile, Random random, string path)
     {
         var start = new DateTimeOffset((rule?.DateFrom ?? new DateOnly(2000, 1, 1)).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var end = new DateTimeOffset((rule?.DateTo ?? new DateOnly(2030, 12, 31)).ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc));
@@ -347,13 +350,13 @@ public sealed class TestDataProfilesService
             else if (facet.Kind == "maxExclusive" && bound <= end) end = bound.AddTicks(-1);
         }
         if (end < start) throw new InvalidOperationException($"Date range for {path} does not overlap its XSD dateTime constraints.");
-        var value = rule?.Mode == TestDataValueMode.Boundary || profile.Kind == TestDataProfileKind.Boundary
+        var value = rule?.Mode == SchemaGenerationValueMode.Boundary || profile.Kind == SchemaGenerationProfileKind.Boundary
             ? (random.Next(2) == 0 ? start : end)
             : start.AddTicks(start == end ? 0 : random.NextInt64(end.Ticks - start.Ticks + 1));
         return EnsurePatterns(member, value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture), path);
     }
     private static int? IntFacet(EffectiveMember member, string kind) => int.TryParse(member.Facets.FirstOrDefault(f => f.Kind == kind)?.Value, out var value) ? value : null;
-    private static (int? Minimum, int? Maximum) LengthBounds(EffectiveMember member, TestDataProfileRule? rule)
+    private static (int? Minimum, int? Maximum) LengthBounds(EffectiveMember member, SchemaGenerationRule? rule)
     {
         var lowerFacets = member.Facets.Where(f => f.Kind is "minLength" or "length").Select(f => int.TryParse(f.Value, out var value) ? value : (int?)null).Where(v => v.HasValue).Select(v => v!.Value).ToArray();
         var upperFacets = member.Facets.Where(f => f.Kind is "maxLength" or "length").Select(f => int.TryParse(f.Value, out var value) ? value : (int?)null).Where(v => v.HasValue).Select(v => v!.Value).ToArray();
@@ -405,7 +408,7 @@ public sealed class TestDataProfilesService
         && decimal.TryParse(facet.Value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : null;
     private static bool IsInteger(string? type) => LocalType(type) is "integer" or "int" or "long" or "short" or "byte" or "positiveInteger" or "nonNegativeInteger" or "negativeInteger" or "nonPositiveInteger" or "unsignedInt" or "unsignedLong" or "unsignedShort" or "unsignedByte";
     private static (decimal Minimum, decimal? Maximum) NumericLimits(EffectiveMember member, decimal? minimum, decimal? maximum,
-        SchemaFacet? minimumFacet, SchemaFacet? maximumFacet, TestDataProfileRule? rule)
+        SchemaFacet? minimumFacet, SchemaFacet? maximumFacet, SchemaGenerationRule? rule)
     {
         var minimumExclusive = minimumFacet?.Kind == "minExclusive" && (rule?.Minimum is null || DecimalFacet(minimumFacet) == minimum);
         var maximumExclusive = maximumFacet?.Kind == "maxExclusive" && (rule?.Maximum is null || DecimalFacet(maximumFacet) == maximum);
@@ -442,13 +445,13 @@ public sealed class TestDataProfilesService
         return BitConverter.ToInt32(hash, 0) & int.MaxValue;
     }
     private static string? NormalizeScope(string? scope) => string.IsNullOrWhiteSpace(scope) ? null : scope.Trim();
-    private void EnsureCapacity() { if (_profiles.Count >= MaxProfiles) throw new InvalidOperationException($"A workspace supports at most {MaxProfiles} custom Test Data Profiles."); }
+    private void EnsureCapacity() { if (_profiles.Count >= MaxProfiles) throw new InvalidOperationException($"A workspace supports at most {MaxProfiles} custom generation profiles."); }
     private static void ValidateName(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 120) throw new ArgumentException("Profile name must contain 1 to 120 characters.", nameof(name));
         if (name.Any(char.IsControl)) throw new ArgumentException("Profile name contains unsupported characters.", nameof(name));
     }
-    private static void ValidateProfile(TestDataProfile profile)
+    private static void ValidateProfile(SchemaGenerationProfile profile)
     {
         if (profile.Id == Guid.Empty || string.IsNullOrWhiteSpace(profile.SchemaFingerprint) || profile.SchemaFingerprint.Length > 128
             || profile.SchemaFingerprint == "*" && !profile.IsBuiltIn
@@ -460,7 +463,7 @@ public sealed class TestDataProfilesService
         if (profile.Rules.Any(rule => !Enum.IsDefined(rule.Mode)))
             throw new InvalidDataException("Profile contains an unsupported generation mode.");
     }
-    private static void ValidateRules(IReadOnlyList<TestDataProfileRule>? rules)
+    private static void ValidateRules(IReadOnlyList<SchemaGenerationRule>? rules)
     {
         if (rules is null || rules.Count > MaxRulesPerProfile) throw new InvalidDataException($"A profile supports at most {MaxRulesPerProfile} rules.");
         if (rules.Any(r => r is null || string.IsNullOrWhiteSpace(r.ElementPath) || r.ElementPath.Length > 1024 || r.ElementPath.Contains("..", StringComparison.Ordinal)
@@ -470,7 +473,7 @@ public sealed class TestDataProfilesService
         if (rules.Select(rule => rule.ElementPath).Distinct(StringComparer.Ordinal).Count() != rules.Count)
             throw new InvalidDataException("Profile contains more than one rule for the same element path.");
     }
-    private static void ValidateRulesForSchema(IEnumerable<TestDataProfileRule> rules, IReadOnlyDictionary<string, EffectiveMember> members)
+    private static void ValidateRulesForSchema(IEnumerable<SchemaGenerationRule> rules, IReadOnlyDictionary<string, EffectiveMember> members)
     {
         foreach (var rule in rules)
         {
@@ -487,26 +490,26 @@ public sealed class TestDataProfilesService
             }
             if (member.Children.Count > 0 && (rule.OccurrenceCount is null || rule.Minimum is not null || rule.Maximum is not null
                 || rule.MinimumLength is not null || rule.MaximumLength is not null || rule.DateFrom is not null || rule.DateTo is not null
-                || rule.Mode != TestDataValueMode.Synthetic))
+                || rule.Mode != SchemaGenerationValueMode.Synthetic))
                 throw new InvalidOperationException($"Complex element rules can only set an occurrence count: {rule.ElementPath}.");
             var effectiveType = member.BaseType ?? member.Type;
             if ((rule.Minimum is not null || rule.Maximum is not null) && !IsNumeric(effectiveType)) throw new InvalidOperationException($"Numeric limits can only be used with a numeric schema type: {rule.ElementPath}.");
             if ((rule.MinimumLength is not null || rule.MaximumLength is not null) && !IsStringLike(effectiveType)) throw new InvalidOperationException($"Length limits can only be used with a string schema type: {rule.ElementPath}.");
             if ((rule.DateFrom is not null || rule.DateTo is not null) && LocalType(effectiveType) is not ("date" or "dateTime")) throw new InvalidOperationException($"Date ranges can only be used with date or dateTime elements: {rule.ElementPath}.");
-            if (rule.Mode == TestDataValueMode.Nil && !member.Nillable) throw new InvalidOperationException($"Element {rule.ElementPath} is not nillable in this schema.");
-            if (rule.Mode == TestDataValueMode.SchemaDefault && member.DefaultValue is null && member.FixedValue is null) throw new InvalidOperationException($"Element {rule.ElementPath} has no XSD default or fixed value.");
-            if (rule.Mode == TestDataValueMode.FixedEnum && !member.Facets.Any(f => f.Kind == "enumeration")) throw new InvalidOperationException($"Element {rule.ElementPath} has no XSD enumeration constraint.");
+            if (rule.Mode == SchemaGenerationValueMode.Nil && !member.Nillable) throw new InvalidOperationException($"Element {rule.ElementPath} is not nillable in this schema.");
+            if (rule.Mode == SchemaGenerationValueMode.SchemaDefault && member.DefaultValue is null && member.FixedValue is null) throw new InvalidOperationException($"Element {rule.ElementPath} has no XSD default or fixed value.");
+            if (rule.Mode == SchemaGenerationValueMode.FixedEnum && !member.Facets.Any(f => f.Kind == "enumeration")) throw new InvalidOperationException($"Element {rule.ElementPath} has no XSD enumeration constraint.");
             _ = LengthBounds(member, rule);
         }
     }
 
-    private static string SerializeSnapshot(IEnumerable<TestDataProfile> profiles)
+    private static string SerializeSnapshot(IEnumerable<SchemaGenerationProfile> profiles)
     {
         var json = JsonSerializer.Serialize(profiles.ToArray(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
         if (Encoding.UTF8.GetByteCount(json) > MaxDocumentBytes)
-            throw new InvalidDataException("Test Data Profiles exceed the 5 MB workspace limit.");
+            throw new InvalidDataException("Generation profiles exceed the 5 MB workspace limit.");
         return json;
     }
 
-    private TestDataProfile GetEditable(Guid id) => _profiles.TryGetValue(id, out var profile) && !profile.IsBuiltIn ? profile : throw new InvalidOperationException("Built-in or missing profiles cannot be edited.");
+    private SchemaGenerationProfile GetEditable(Guid id) => _profiles.TryGetValue(id, out var profile) && !profile.IsBuiltIn ? profile : throw new InvalidOperationException("Built-in or missing profiles cannot be edited.");
 }

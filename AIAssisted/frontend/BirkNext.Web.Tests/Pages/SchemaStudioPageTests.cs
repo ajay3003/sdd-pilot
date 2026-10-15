@@ -36,7 +36,10 @@ public sealed class SchemaStudioPageTests : BunitContext
 
         Assert.Contains("generic", page.Markup);
         Assert.Contains("Overview", page.Markup);
-        Assert.Contains("Linked XSDs", page.Markup);
+        Assert.Contains("Schema dependencies", page.Markup);
+        Assert.Contains("Forretning", page.Markup);
+        Assert.Contains("Felt og regler", page.Markup);
+        Assert.Contains("Struktur", page.Markup);
         Assert.Contains("Effective Schema", page.Markup);
         Assert.Contains("Generated Tests", page.Markup);
     }
@@ -47,10 +50,10 @@ public sealed class SchemaStudioPageTests : BunitContext
         var schemas = new SchemaStudioService();
         schemas.Import(new Dictionary<string, string> { ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>" }, "generic.xsd");
         Services.AddSingleton(schemas);
-        Services.AddSingleton(new TestDataProfilesService());
+        Services.AddSingleton(new SchemaGenerationProfilesService());
         var page = Render<SchemaStudio>();
 
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
 
         Assert.Contains("Generic valid (built-in)", page.Markup);
         Assert.Contains("Export selected profile", page.Markup);
@@ -65,14 +68,14 @@ public sealed class SchemaStudioPageTests : BunitContext
         {
             ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>"
         }, "generic.xsd");
-        var profiles = new TestDataProfilesService();
-        profiles.Create("Other project profile", package.Fingerprint, "import:other", TestDataProfileKind.GenericValid, 1);
-        profiles.Create("Same project profile", package.Fingerprint, null, TestDataProfileKind.GenericValid, 2);
+        var profiles = new SchemaGenerationProfilesService();
+        profiles.Create("Other project profile", package.Fingerprint, "import:other", SchemaGenerationProfileKind.GenericValid, 1);
+        profiles.Create("Same project profile", package.Fingerprint, null, SchemaGenerationProfileKind.GenericValid, 2);
         Services.AddSingleton(schemas);
         Services.AddSingleton(profiles);
 
         var page = Render<SchemaStudio>();
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
 
         Assert.Contains("Same project profile", page.Markup);
         Assert.DoesNotContain("Other project profile", page.Markup);
@@ -86,16 +89,16 @@ public sealed class SchemaStudioPageTests : BunitContext
         {
             ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>"
         }, "generic.xsd");
-        var profiles = new TestDataProfilesService();
-        var profile = profiles.Create("Original profile", package.Fingerprint, null, TestDataProfileKind.GenericValid, 17);
-        var rule = new TestDataProfileRule("/root", TestDataValueMode.Synthetic, MinimumLength: 3);
+        var profiles = new SchemaGenerationProfilesService();
+        var profile = profiles.Create("Original profile", package.Fingerprint, null, SchemaGenerationProfileKind.GenericValid, 17);
+        var rule = new SchemaGenerationRule("/root", SchemaGenerationValueMode.Synthetic, MinimumLength: 3);
         profile = profiles.Edit(profile.Id, profile.Name, profile.Kind, profile.Seed, [rule]);
         Services.AddSingleton(schemas);
         Services.AddSingleton(profiles);
 
         var page = Render<SchemaStudio>();
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
-        page.Find("select[aria-label='Test Data Profile']").Change(profile.Id.ToString("D"));
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
+        page.Find("select[aria-label='Generation Profile']").Change(profile.Id.ToString("D"));
         page.FindAll("button").Single(button => button.TextContent.Contains("Load selected profile for editing", StringComparison.Ordinal)).Click();
         page.FindAll("label").Single(label => label.TextContent.Contains("New profile name", StringComparison.Ordinal)).QuerySelector("input")!.Change("Edited profile");
         page.FindAll("label").Single(label => label.TextContent.Contains("Random seed", StringComparison.Ordinal)).QuerySelector("input")!.Change("29");
@@ -130,9 +133,7 @@ public sealed class SchemaStudioPageTests : BunitContext
             new SourceSchemaFile("schemas/other/common.xsd", unrelated, Fingerprint(unrelated)),
             new SourceSchemaFile("schemas/types/common.xsd", common, Fingerprint(common)),
         };
-        var api = new Mock<IIntegrationCatalogApiService>();
-        api.Setup(client => client.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<IqrSourceSnapshot>)new[] { snapshot });
+        var api = new Mock<ISourceSchemaApiService>();
         api.Setup(client => client.ListSchemaSnapshotIndexAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SourceSchemaSnapshotIndex([new(snapshotId, "contracts.zip", snapshotFingerprint, snapshot.AnalyzedAt, true, true, 0)], false));
         api.Setup(client => client.SourceSchemasAsync(snapshotId, It.IsAny<CancellationToken>()))
@@ -170,9 +171,7 @@ public sealed class SchemaStudioPageTests : BunitContext
             Archive = new SourceArchive("contracts.zip", "snapshot-A", 3),
             AnalyzedAt = DateTimeOffset.UtcNow,
         };
-        var api = new Mock<IIntegrationCatalogApiService>();
-        api.Setup(client => client.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<IqrSourceSnapshot>)new[] { snapshot });
+        var api = new Mock<ISourceSchemaApiService>();
         api.Setup(client => client.ListSchemaSnapshotIndexAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SourceSchemaSnapshotIndex([new(snapshotId, "contracts.zip", "snapshot-A", snapshot.AnalyzedAt, true, true, 0)], false));
         api.Setup(client => client.SourceSchemasAsync(snapshotId, It.IsAny<CancellationToken>()))

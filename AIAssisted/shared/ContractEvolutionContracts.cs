@@ -31,14 +31,17 @@ public sealed record ContractDescriptor(string ContractId, SourceContractType Ty
 /// <see cref="Position"/> is the declaration order among siblings, which matters for ordered formats (an XSD sequence).
 /// </summary>
 public sealed record ContractNode(string Path, string Kind, string? DataType, bool Required, string Cardinality, List<string> EnumValues,
-    string? Namespace, int Position);
+    string? Namespace, int Position, List<string>? Restrictions = null, string? DeclaredIn = null);
+
+/// <summary>One schema file a structured contract was built from: provenance only (its structure is already in the nodes).</summary>
+public sealed record ContractSchemaDependency(string File, string Kind, string? Namespace, string? Version, string Fingerprint, string? ReferencedBy, string Status);
 
 /// <summary>A normalized contract at one moment. <see cref="Fingerprint"/> covers the normalized form only, so formatting does not change it.</summary>
 public sealed record ContractSnapshot(ContractDescriptor Descriptor, string? Namespace, List<ContractNode> Nodes, string Fingerprint,
-    DateTimeOffset CapturedAt, string Evidence);
+    DateTimeOffset CapturedAt, string Evidence, List<ContractSchemaDependency>? Dependencies = null);
 
 /// <summary>One structural difference between two snapshots. A removal plus an addition is never guessed to be a rename.</summary>
-public sealed record ContractChange(ContractChangeClass Change, string Path, string? OldValue, string? NewValue, string Detail);
+public sealed record ContractChange(ContractChangeClass Change, string Path, string? OldValue, string? NewValue, string Detail, string? DeclaredIn = null);
 
 /// <summary>A domain rule's verdict on one change (for example "business code list changed: needs review").</summary>
 public sealed record ContractSemanticAssessment(ContractCompatibility Compatibility, string Reason);

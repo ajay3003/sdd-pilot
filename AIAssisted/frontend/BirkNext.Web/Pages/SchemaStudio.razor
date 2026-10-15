@@ -1,4 +1,5 @@
 @page "/schema-studio"
+@using BirkNext.Schemas
 @using System.Text
 @using System.Xml
 @using BirkNext.Integrations
@@ -128,8 +129,15 @@
                     <dl class="ss-stats"><div><dt>Root XSD</dt><dd>@(package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"))?.Name ?? "Not identified")</dd></div><div><dt>Namespaces</dt><dd>@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div><div><dt>Dependencies</dt><dd>@package.Files.Sum(f => f.Links.Count) links · @package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null)) unresolved</dd></div><div><dt>Global declarations</dt><dd>@package.Files.Sum(f => f.Declarations.Count)</dd></div></dl>
                     <p>Current imported artifact is the version you selected for this session. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
                     break;
-                case "Linked XSDs":
+                case "Forretning":
+                case "Felt og regler":
+                case "Struktur":
+                    <SchemaReadableView Package="package" View="@_tab" OnFileSelected="OpenGraphFile" />
+                    break;
+                case "Schema dependencies":
                     var dependencyEdges = DependencyEdges(package, _graphMode).Take(1001).ToArray();
+                    <SchemaReadableView Package="package" View="Schema dependencies" OnFileSelected="OpenGraphFile" />
+                    <h3>Linked XSDs</h3>
                     <p>Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
                     <label class="ss-field">Dependency view <select @bind="_graphMode"><option>Files only</option><option>Files + namespaces</option><option>Files + types</option><option>All relationships</option></select></label>
                     <div class="ss-table-wrap"><table><thead><tr><th>File</th><th>Namespace</th><th>Relationship</th><th>Schema location</th><th>Resolution</th></tr></thead><tbody>
@@ -220,17 +228,17 @@
                         }</div>
                     }
                     break;
-                case "Test Data Profile":
+                case "Generation Profile":
                     <p>Profiles store deterministic generation rules, not real identifiers, secrets or fixed personal values. Generated values are synthetic and only XSD validity is evaluated.</p>
                     <div class="ss-profile">
                         <label>Profile
-                            <select @bind="_activeProfileId" aria-label="Test Data Profile">
-                                @foreach (var builtIn in TestDataProfilesService.BuiltIns(package.Fingerprint)) { <option value="@builtIn.Id">@builtIn.Name (built-in)</option> }
+                            <select @bind="_activeProfileId" aria-label="Generation Profile">
+                                @foreach (var builtIn in SchemaGenerationProfilesService.BuiltIns(package.Fingerprint)) { <option value="@builtIn.Id">@builtIn.Name (built-in)</option> }
                                 @foreach (var profile in AvailableProfiles(package)) { <option value="@profile.Id">@profile.Name</option> }
                             </select>
                         </label>
                         <label>New profile name <input @bind="_newProfileName" maxlength="120" /></label>
-                        <label>Profile kind <select @bind="_newProfileKind"><option value="@TestDataProfileKind.GenericValid">Generic valid</option><option value="@TestDataProfileKind.Boundary">Boundary values</option><option value="@TestDataProfileKind.ControlledInvalid">Controlled invalid</option><option value="@TestDataProfileKind.Minimal">Minimal XML</option><option value="@TestDataProfileKind.MaximumComplexity">Maximum complexity</option></select></label>
+                        <label>Profile kind <select @bind="_newProfileKind"><option value="@SchemaGenerationProfileKind.GenericValid">Generic valid</option><option value="@SchemaGenerationProfileKind.Boundary">Boundary values</option><option value="@SchemaGenerationProfileKind.ControlledInvalid">Controlled invalid</option><option value="@SchemaGenerationProfileKind.Minimal">Minimal XML</option><option value="@SchemaGenerationProfileKind.MaximumComplexity">Maximum complexity</option></select></label>
                         <label>Random seed <input type="number" @bind="_profileSeed" /></label>
                         <button class="ss-action" @onclick="CreateProfile">Create profile</button>
                         <button class="ss-text-button" @onclick="LoadProfileForEditing">Load selected profile for editing</button>
@@ -241,7 +249,7 @@
                     </div>
                     <div class="ss-profile">
                         <label>Element path <select @bind="_rulePath" aria-label="Profile rule element path"><option value="">Choose element</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @member.Member.Type</option> }</select></label>
-                        <label>Generation rule <select @bind="_ruleMode"><option value="@TestDataValueMode.Synthetic">Synthetic</option><option value="@TestDataValueMode.SchemaDefault">Use schema default</option><option value="@TestDataValueMode.Boundary">Boundary</option><option value="@TestDataValueMode.Invalid">Controlled invalid</option><option value="@TestDataValueMode.FixedEnum">Enumeration</option><option value="@TestDataValueMode.Nil">Nil (nillable element)</option></select></label>
+                        <label>Generation rule <select @bind="_ruleMode"><option value="@SchemaGenerationValueMode.Synthetic">Synthetic</option><option value="@SchemaGenerationValueMode.SchemaDefault">Use schema default</option><option value="@SchemaGenerationValueMode.Boundary">Boundary</option><option value="@SchemaGenerationValueMode.Invalid">Controlled invalid</option><option value="@SchemaGenerationValueMode.FixedEnum">Enumeration</option><option value="@SchemaGenerationValueMode.Nil">Nil (nillable element)</option></select></label>
                         <label>Minimum <input type="number" step="any" @bind="_ruleMinimum" /></label><label>Maximum <input type="number" step="any" @bind="_ruleMaximum" /></label>
                         <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" /></label>
                         <label>Date from <input type="date" @bind="_ruleDateFrom" /></label><label>Date to <input type="date" @bind="_ruleDateTo" /></label>
@@ -251,7 +259,7 @@
                     <div class="ss-actions">
                         <label>XML root <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@root.DeclaredIn)</option> }</select></label>
                         <button class="ss-action" @onclick="GenerateProfileXml">Generate XML from profile</button>
-                        <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import Test Data Profile JSON" />
+                        <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import generation profile JSON" />
                         @if (SelectedProfile() is { } exportProfile) { <a class="ss-action" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
                     </div>
                     @if (SelectedProfile() is { } activeProfile) { <p>Selected: <strong>@activeProfile.Name</strong> · @activeProfile.Kind · seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)] · @activeProfile.Rules.Count rule(s)</p> }
@@ -264,7 +272,7 @@
 </main>
 
 @code {
-    private static readonly string[] Tabs = ["Overview", "Linked XSDs", "Schema Tree", "Types", "Constraints", "Namespaces", "References", "Effective Schema", "Raw XSD", "Designer", "Compare", "Generated Tests", "Test Data Profile"];
+    private static readonly string[] Tabs = ["Overview", "Forretning", "Felt og regler", "Struktur", "Schema dependencies", "Schema Tree", "Types", "Constraints", "Namespaces", "References", "Effective Schema", "Raw XSD", "Designer", "Compare", "Generated Tests", "Generation Profile"];
     private string? _selectedId, _fileName, _error, _tab = "Overview", _draft, _xml, _validationMessage, _search;
     private string _xmlArtifactStatus = "", _xmlArtifactError = "";
     private string _graphMode = "Files + namespaces";
@@ -279,10 +287,10 @@
     private SchemaTestRunHistory? TestRuns => ServiceProvider.GetService<SchemaTestRunHistory>();
     private SchemaGeneratedXmlStore? SavedXml => ServiceProvider.GetService<SchemaGeneratedXmlStore>();
     private bool _creating;
-    private TestDataProfilesService? ProfileCatalog => ServiceProvider.GetService<TestDataProfilesService>();
+    private SchemaGenerationProfilesService? ProfileCatalog => ServiceProvider.GetService<SchemaGenerationProfilesService>();
     private string _activeProfileId = "", _newProfileName = "My synthetic profile", _profileError = "", _profileStatus = "", _rulePath = "", _profileRootName = "";
-    private TestDataProfileKind _newProfileKind = TestDataProfileKind.GenericValid;
-    private TestDataValueMode _ruleMode = TestDataValueMode.Synthetic;
+    private SchemaGenerationProfileKind _newProfileKind = SchemaGenerationProfileKind.GenericValid;
+    private SchemaGenerationValueMode _ruleMode = SchemaGenerationValueMode.Synthetic;
     private int _profileSeed = 1001, _ruleMinLength, _ruleMaxLength;
     private int? _ruleOccurrences;
     private decimal? _ruleMinimum, _ruleMaximum;
@@ -325,7 +333,7 @@
         }
         catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException or ArgumentException or XmlException or System.Xml.Schema.XmlSchemaException or InvalidOperationException)
         { _artifactError = "Saved Schema Studio workspace artifacts could not be restored safely."; }
-        var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>();
+        var sourceApi = SourceSchemaApiService.Resolve(ServiceProvider);
         if (sourceApi is null) return;
         try
         {
@@ -340,7 +348,7 @@
     private async Task LoadSourceContracts()
     {
         if (!Guid.TryParse(_sourceSnapshotId, out var snapshotId)) return;
-        var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>();
+        var sourceApi = SourceSchemaApiService.Resolve(ServiceProvider);
         if (sourceApi is null) { _sourceError = "Source Analysis is unavailable in this session."; return; }
         _sourceBusy = true; _sourceError = ""; _sourcePackage = null; _sourceContractPath = "";
         try
@@ -419,7 +427,7 @@
                 if (provenance?.SourceSnapshotId is not { } snapshotId || string.IsNullOrWhiteSpace(provenance.SourceSnapshotFingerprint))
                     throw new InvalidDataException("Saved Source Analysis reference is missing its immutable snapshot identity.");
                 var snapshotFingerprint = provenance.SourceSnapshotFingerprint;
-                var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>()
+                var sourceApi = SourceSchemaApiService.Resolve(ServiceProvider)
                     ?? throw new InvalidOperationException("Source Analysis is unavailable in this session.");
                 var source = await sourceApi.SourceSchemasAsync(snapshotId)
                     ?? throw new InvalidDataException("The exact Source Analysis snapshot no longer has an available XSD artifact.");
@@ -498,7 +506,7 @@
             ? SavedDrafts?.Find(package, file.Name, ProjectScope())?.Text ?? file.Text : null;
         _draftPreview = null; _tab = "Overview"; _validationMessage = null;
         _profileRootName = Current?.EffectiveSchema.FirstOrDefault()?.Name ?? "";
-        _activeProfileId = Current is { } current ? TestDataProfilesService.BuiltIns(current.Fingerprint)[0].Id.ToString("D") : "";
+        _activeProfileId = Current is { } current ? SchemaGenerationProfilesService.BuiltIns(current.Fingerprint)[0].Id.ToString("D") : "";
     }
     private void OpenGraphFile(string fileName) { if (Current?.Files.Any(file => file.Name == fileName) != true) return; _fileName = fileName; _tab = "Raw XSD"; }
     private void Remove(string id) { Studio.Remove(id); if (_selectedId == id) { _selectedId = Studio.Packages.FirstOrDefault()?.Id; Select(_selectedId ?? ""); } }
@@ -694,7 +702,7 @@
             var profile = SelectedProfile();
             if (profile is { IsBuiltIn: false } && ProfileCatalog is { } catalog)
                 repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()),
-                    "schema-studio-profiles.json", "Schema Studio Test Data Profiles");
+                    "schema-studio-profiles.json", "Schema Studio generation profiles");
             store.Save(package, file.Name, profile?.Name ?? "User XML", profile?.Seed, _xml, ProjectScope(), profile?.Id);
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(ProjectScope()),
                 "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
@@ -751,13 +759,13 @@
                 attribute.InheritedFrom, attribute.TypeDeclaredIn, null, attribute.Facets, [], attribute.NamespaceUri, null,
                 attribute.DefaultValue, attribute.FixedValue, BaseType: attribute.BaseType));
     }
-    private TestDataProfile? SelectedProfile()
+    private SchemaGenerationProfile? SelectedProfile()
     {
         if (Current is not { } package) return null;
-        return TestDataProfilesService.BuiltIns(package.Fingerprint).Concat(ProfileCatalog?.Profiles ?? [])
+        return SchemaGenerationProfilesService.BuiltIns(package.Fingerprint).Concat(ProfileCatalog?.Profiles ?? [])
             .FirstOrDefault(p => p.Id.ToString("D") == _activeProfileId && ProfileCatalog?.IsCompatible(p, package, ProjectScope()) == true);
     }
-    private IEnumerable<TestDataProfile> AvailableProfiles(SchemaPackage package) =>
+    private IEnumerable<SchemaGenerationProfile> AvailableProfiles(SchemaPackage package) =>
         ProfileCatalog?.Profiles.Where(profile => ProfileCatalog.IsCompatible(profile, package, ProjectScope())) ?? [];
     private string? ProjectScope() => ServiceProvider.GetService<IWorkspaceArtifactRepository>() is WorkspaceArtifactRepository repository ? repository.SessionScope : null;
     private void CreateProfile()
@@ -794,7 +802,7 @@
     {
         if (SelectedProfile() is not { IsBuiltIn: false } selected || ProfileCatalog is not { } catalog) { _profileError = "Built-in profiles cannot be deleted."; return; }
         if (!catalog.Delete(selected.Id)) { _profileError = "Profile could not be deleted."; return; }
-        _activeProfileId = Current is { } package ? TestDataProfilesService.BuiltIns(package.Fingerprint)[0].Id.ToString("D") : "";
+        _activeProfileId = Current is { } package ? SchemaGenerationProfilesService.BuiltIns(package.Fingerprint)[0].Id.ToString("D") : "";
         _profileError = ""; _profileStatus = "Profile deleted from this workspace session. Save profiles to persist the change.";
     }
     private void SaveProfileRule()
@@ -803,7 +811,7 @@
         if (string.IsNullOrWhiteSpace(_rulePath)) { _profileError = "Choose an element path."; return; }
         try
         {
-            var rules = selected.Rules.Where(r => r.ElementPath != _rulePath).Append(new TestDataProfileRule(_rulePath, _ruleMode,
+            var rules = selected.Rules.Where(r => r.ElementPath != _rulePath).Append(new SchemaGenerationRule(_rulePath, _ruleMode,
                 _ruleMinimum, _ruleMaximum, _ruleMinLength == 0 ? null : _ruleMinLength, _ruleMaxLength == 0 ? null : _ruleMaxLength,
                 _ruleDateFrom, _ruleDateTo, _ruleOccurrences)).ToArray();
             catalog.Edit(selected.Id, selected.Name, selected.Kind, selected.Seed, rules);
@@ -835,10 +843,10 @@
         { _profileError = "Workspace artifact storage is unavailable."; return; }
         try
         {
-            repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()), "schema-studio-profiles.json", "Schema Studio Test Data Profiles");
+            repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()), "schema-studio-profiles.json", "Schema Studio generation profiles");
             var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
             if (autoSave is null || !await autoSave.SaveNowAsync()) { _profileError = "Profiles are held in the current workspace, but durable save could not be confirmed."; return; }
-            _profileError = ""; _profileStatus = "Test Data Profiles saved to the current BirkNext workspace.";
+            _profileError = ""; _profileStatus = "Generation profiles saved to the current BirkNext workspace.";
         }
         catch (Exception e) when (e is InvalidOperationException or HttpRequestException or InvalidDataException)
         { _profileError = e is InvalidDataException ? e.Message : "Profiles could not be saved to the current workspace."; }
@@ -850,7 +858,7 @@
         {
             await using var stream = args.File.OpenReadStream(256 * 1024);
             using var reader = new StreamReader(stream, Encoding.UTF8, true);
-            var package = Current ?? throw new InvalidOperationException("Select a schema before importing a Test Data Profile.");
+            var package = Current ?? throw new InvalidOperationException("Select a schema before importing a generation profile.");
             var profile = catalog.ImportJson(await reader.ReadToEndAsync(), ProjectScope(), package.Fingerprint);
             _activeProfileId = profile.Id.ToString("D"); _profileError = ""; _profileStatus = "Profile imported. Review schema compatibility before generating XML.";
         }
@@ -906,7 +914,7 @@
     {
         foreach (var file in package.Files)
         {
-            if (file.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(file.Name, file.Name, "Linked XSDs", "filename");
+            if (file.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(file.Name, file.Name, "Schema dependencies", "filename");
             if ((file.TargetNamespace ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)) yield return new(file.TargetNamespace!, file.Name, "Namespaces", "namespace");
             foreach (var declaration in file.Declarations)
             {

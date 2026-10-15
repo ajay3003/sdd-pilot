@@ -1,0 +1,33 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" 
+	xmlns="https://bufdir.no/vedleggmelding.v2.0.0" 
+	targetNamespace="https://bufdir.no/vedleggmelding.v2.0.0"
+	xmlns:bg="https://bufdir.no/lib.v1.1.0" 
+	xmlns:mld="https://bufdir.no/melding.lib.v2" 
+	xmlns:vedl="https://bufdir.no/melding.vedlegg.lib.v1.0.0" 
+	elementFormDefault="qualified" 
+	version="2.0.0">
+	<xs:import namespace="https://bufdir.no/lib.v1.1.0" schemaLocation="bufdir.lib.v1.1.0.xsd"/>
+	<xs:import namespace="https://bufdir.no/melding.lib.v2" schemaLocation="bufdir.melding.lib.v2.xsd"/>
+	<xs:import namespace="https://bufdir.no/melding.vedlegg.lib.v1.0.0" schemaLocation="bufdir.melding.vedlegg.lib.v1.0.0.xsd"/>
+
+	<xs:complexType name="VedleggMeldingType" id="BUF_21C51915-3952-4339-ADFB-183A76D249D0">
+		<xs:complexContent>
+			<xs:extension base="mld:MeldingType">
+				<xs:sequence>
+					<xs:element name="Vedlegg" type="vedl:VedleggType" minOccurs="0" maxOccurs="unbounded" id="BUF_93E202FD-9E16-4073-B832-27372A302886">
+						<xs:annotation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>		
+	</xs:complexType>
+
+	<xs:element name="Vedlegg" type="VedleggMeldingType" id="BUF_D380216B-FE93-4D2D-A9D4-44BC7EFEA482">
+		<xs:annotation>
+			<xs:documentation>
+				Vedleggsmelding, brukes når vedlegg skal ettersendes tidligere melding
+			</xs:documentation>
+		</xs:annotation>
+	</xs:element>
+</xs:schema>

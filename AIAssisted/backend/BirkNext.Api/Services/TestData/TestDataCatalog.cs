@@ -78,6 +78,7 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             IsDefault = asset.IsDefault, ExpiresAt = asset.ExpiresAt, ExpectsAbsence = asset.ExpectsAbsence,
             Fingerprint = structured ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(asset.Value!.Reveal()))).ToLowerInvariant() : null,
             DisplayValue = asset.Kind == TestDataKind.Scalar && asset.Sensitivity != TestDataSensitivity.Sensitive ? asset.Value?.Reveal() : null,
+            Schema = asset.Schema,
         };
     }
 }

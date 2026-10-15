@@ -25,6 +25,22 @@ public enum TestDataApproval { Approved, Unapproved, Disabled, Expired }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestDataValidation { Unknown, Validated, NeedsValidation, Invalid, Unavailable }
 
+/// <summary>
+/// The XSD an XML asset is checked against: a schema file inside a Source Analysis snapshot's retained XSD package. With
+/// <see cref="SourceSnapshotId"/> the exact snapshot is used; without it the newest snapshot that contains <see cref="SchemaPath"/> is used and
+/// reported. <see cref="SchemaFingerprint"/> (SHA-256 of that file), when set, must match or the schema counts as unavailable.
+/// </summary>
+public sealed record TestDataSchemaReference(string SchemaPath, Guid? SourceSnapshotId = null, string? SchemaFingerprint = null,
+    string? RootElement = null, string? Label = null);
+
+/// <summary>Schema validity of an XML asset. Independent of approval: an approved negative fixture is expected to be Invalid.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataSchemaStatus { Validated, Invalid, SchemaUnavailable, DependencyUnresolved, NotEvaluated }
+
+/// <summary>Result of validating an XML asset with the shared XSD validator. Issues never contain values from the XML.</summary>
+public sealed record TestDataSchemaCheck(TestDataSchemaStatus Status, string Schema, string Detail, List<string> Issues,
+    Guid? SourceSnapshotId = null, string? SchemaFingerprint = null, string? SchemaVersion = null);
+
 /// <summary>One asset as the browser sees it: alias and metadata. <see cref="DisplayValue"/> is set only for a non-sensitive scalar.</summary>
 public sealed record TestDataAssetSummary
 {
@@ -52,6 +68,10 @@ public sealed record TestDataAssetSummary
     /// <summary>SHA-256 of a structured or file value, so a run can say exactly which fixture it used. Never the content.</summary>
     public string? Fingerprint { get; init; }
     public string? DisplayValue { get; init; }
+    /// <summary>The XSD this XML asset is validated against, when declared.</summary>
+    public TestDataSchemaReference? Schema { get; init; }
+    /// <summary>Shared-validator result for <see cref="Schema"/>; null until checked or when no schema is declared.</summary>
+    public TestDataSchemaCheck? SchemaCheck { get; init; }
 }
 
 public sealed record TestDataRoleBinding(string Role, string AssetAlias);
