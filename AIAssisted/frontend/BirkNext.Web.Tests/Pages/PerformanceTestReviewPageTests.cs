@@ -341,7 +341,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "readiness");
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-readiness-item][data-key=environment]").TextContent.Should().Contain("Blocked — unsafe environment").And.Contain("Production environments cannot be used"));
         Tab(cut, "run");
-        cut.Find("[data-testid=pt-run-start]").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("[data-testid=pt-run-start]").Should().BeEmpty("a blocked run offers no Run button that cannot run");
+        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Cannot run yet").And.Contain("Production environments cannot be used");
     }
 
     [Fact]
@@ -567,11 +568,11 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         var cut = Page();
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Ready"));
 
-        cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Performance test status: ");
+        cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
         cut.Find("[data-testid=pt-card-target]").ClassList.Should().Contain("ptc-accent-info");
         Status(cut, "pt-env-safety").Should().Be("Allowed");
         cut.Find("[data-testid=pt-card-environment]").TextContent.Should().Contain("Non-production");
-        cut.Find("[data-testid=pt-readiness-count]").TextContent.Should().Be("4 of 4 required checks ready");
+        cut.Find("[data-testid=pt-readiness-count]").TextContent.Should().Be("4 of 4 required checks ready for this definition");
         cut.FindAll("[data-testid=pt-target-chips] li").Select(li => li.TextContent.Trim()).Should().Equal("✓ REST", "✓ HTTP", "✓ GraphQL queries");
         cut.FindAll("[data-testid=pt-run-reason]").Should().BeEmpty();
         cut.Find("[data-testid=pt-next-step]").GetAttribute("data-tone").Should().Be("Ready");
@@ -593,7 +594,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("#pt-run-reason").TextContent.Should().Be("Save the definition before running.");
         cut.Find("[data-testid=pt-tab-overview]").Click();
         cut.Find("[data-testid=pt-next-step]").TextContent.Should().Contain("Save this test definition");
-        cut.Find("[data-testid=pt-next-action]").TextContent.Should().Be("Save definition");
+        cut.FindAll("[data-testid=pt-next-action]").Should().BeEmpty("the one Save action lives in the definition header");
+        cut.FindAll("[data-testid=pt-save]").Should().ContainSingle().Which.HasAttribute("disabled").Should().BeFalse();
     }
 
     [Fact]
@@ -751,5 +753,135 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         D.Thresholds([]).Label.Should().Be("None — measured only");
         D.Resources(null).Tone.Should().Be(PtTone.Neutral);
         D.Phases(new PerformanceWorkload { WarmupSeconds = 0, RampUpSeconds = 30, SteadyStateSeconds = 60, RampDownSeconds = 10 }).Select(p => p.Key).Should().Equal("rampup", "steady", "rampdown");
+    }
+
+    // ── Workflow simplification: one Save, one technical-details block, grouped sections, honest empty states ─────────
+
+    [Fact]
+    public void TechnicalDetails_RenderOnce_CollapsedByDefault_OnEveryTab()
+    {
+        Register();
+        var cut = Page();
+        foreach (var tab in new[] { "overview", "scenario", "workload", "thresholds", "resources", "readiness", "run", "results", "compare", "history" })
+        {
+            Tab(cut, tab);
+            cut.FindAll("[data-testid=pt-technical]").Should().ContainSingle($"the {tab} tab shares the one technical-details block");
+            cut.Find("[data-testid=pt-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+            cut.Find("[data-testid=pt-technical-toggle]").TextContent.Should().Contain("Show technical details");
+        }
+        cut.Find("[data-testid=pt-technical-toggle]").Click();
+        cut.Find("[data-testid=pt-technical-toggle]").TextContent.Should().Contain("Hide technical details");
+    }
+
+    [Fact]
+    public void Save_IsOnePageLevelAction_DirtyAcrossDefineTabs_AndNoTabSaveBars()
+    {
+        Register();
+        var cut = Page();
+        cut.FindAll("[data-testid=pt-save]").Should().ContainSingle();
+        cut.FindAll("[data-testid=pt-header-save]").Should().BeEmpty();
+        cut.FindAll("[data-testid=pt-readiness-save]").Should().BeEmpty();
+        cut.Find("[data-testid=pt-save]").HasAttribute("disabled").Should().BeTrue("nothing to save on a clean saved definition");
+        cut.Find("[data-testid=pt-save-hint]").TextContent.Should().Be("Saved as v2.");
+
+        Tab(cut, "workload");
+        cut.Find("[data-testid=pt-rampdown]").Change("15");
+        var dirtyState = Status(cut, "pt-definition-state");
+        dirtyState.Should().NotBe("Saved");
+        cut.Find("[data-testid=pt-save]").HasAttribute("disabled").Should().BeFalse();
+        cut.Find("[data-testid=pt-save-hint]").TextContent.Should().Contain("Unsaved changes");
+
+        foreach (var tab in new[] { "thresholds", "resources", "readiness", "run", "history" })
+        {
+            Tab(cut, tab);
+            cut.FindAll("[data-testid=pt-save]").Should().ContainSingle($"the {tab} tab keeps the one Save");
+            Status(cut, "pt-definition-state").Should().Be(dirtyState, "dirty state survives switching tabs");
+        }
+
+        cut.Find("[data-testid=pt-save]").Click();
+        cut.WaitForAssertion(() => _api.Calls.Should().Contain("update"));
+    }
+
+    [Fact]
+    public void Save_Failure_IsVisible_KeepsTheDraft_AndOffersRetry()
+    {
+        Register();
+        _api.SaveResult = PerformanceApiResult<PerformanceTestDefinition>.Fail("Steady state exceeds the policy limit.");
+        var cut = Page();
+        Tab(cut, "thresholds");
+        cut.Find("[data-testid=pt-add-threshold]").Click();
+        cut.Find("[data-testid=pt-save]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-save-error]").TextContent.Should().Contain("Steady state exceeds the policy limit."));
+        cut.Find("[data-testid=pt-save-error]").GetAttribute("role").Should().Be("alert");
+        Status(cut, "pt-save-state").Should().Be("Save failed");
+        cut.Find("[data-testid=pt-save]").TextContent.Should().Be("Retry save");
+        cut.FindAll("[data-testid=pt-threshold-row]").Should().HaveCount(2, "a failed save never reverts the draft");
+    }
+
+    [Fact]
+    public void Tabs_AreGrouped_DefineExecuteAnalyze_WithOverviewAlone()
+    {
+        Register();
+        var cut = Page();
+        cut.Find("[data-testid=pt-tabs]").TagName.Should().Be("NAV");
+        var groups = cut.FindAll("[data-testid=pt-tab-group]");
+        groups.Select(g => g.GetAttribute("data-group")).Should().Equal("Define", "Execute", "Analyze");
+        groups[0].QuerySelectorAll(".ptc-tab").Select(b => b.GetAttribute("data-testid")).Should().Equal("pt-tab-scenario", "pt-tab-workload", "pt-tab-thresholds", "pt-tab-resources");
+        groups[1].QuerySelectorAll(".ptc-tab").Select(b => b.GetAttribute("data-testid")).Should().Equal("pt-tab-readiness", "pt-tab-run");
+        groups[2].QuerySelectorAll(".ptc-tab").Select(b => b.GetAttribute("data-testid")).Should().Equal("pt-tab-results", "pt-tab-compare", "pt-tab-history");
+        foreach (var g in groups) cut.Find("#" + g.GetAttribute("aria-labelledby")).TextContent.Should().Be(g.GetAttribute("data-group"));
+        cut.FindAll(".ptc-tab").Should().HaveCount(10);
+    }
+
+    [Fact]
+    public void Workload_Timeline_ListsEveryPhase_IncludingRampDown_OnWorkloadAndOverview()
+    {
+        Register(definitions: [Definition with { Workload = new PerformanceWorkload { WarmupSeconds = 10, RampUpSeconds = 30, SteadyStateSeconds = 120, RampDownSeconds = 20 } }]);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-timeline-visual]"));
+        Labels(cut).Should().Equal("Warm-up", "Ramp-up", "Steady state", "Ramp-down");
+        Tab(cut, "workload");
+        Labels(cut).Should().Equal("Warm-up", "Ramp-up", "Steady state", "Ramp-down");
+        cut.Find("[data-testid=pt-timeline-visual] .ptc-phase-rampdown .ptc-phase-time").TextContent.Should().Be("2 min 40 s–3 min 0 s · 20 s");
+        cut.Find("[data-testid=pt-safety-meaning]").TextContent.Should().Contain("not");
+
+        static List<string> Labels(IRenderedComponent<PerformanceTestReview> c) => c.FindAll("[data-testid=pt-timeline-visual] .ptc-phase-label").Select(l => l.TextContent).ToList();
+    }
+
+    [Fact]
+    public void EmptyStates_ExplainWhatEachTabWillShow()
+    {
+        Register(definitions: []);
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Needs configuration"));
+
+        Tab(cut, "resources");
+        cut.Find("[data-testid=prc-disabled]").TextContent.Should().Contain("optional and off");
+        Tab(cut, "readiness");
+        cut.Find("[data-testid=pt-readiness-unsaved]");
+        cut.FindAll("[data-testid=pt-precheck]").Should().NotBeEmpty();
+        Tab(cut, "run");
+        cut.Find("[data-testid=pt-run-blocked]").TextContent.Should().Contain("Cannot run yet");
+        cut.FindAll("[data-testid=pt-run-start]").Should().BeEmpty();
+        cut.Find("[data-testid=pt-run-go-readiness]").Click();
+        cut.Find("[data-testid=pt-tab-readiness]").GetAttribute("aria-pressed").Should().Be("true");
+        Tab(cut, "results");
+        cut.Find("[data-testid=pt-no-results]").TextContent.Should().Contain("No performance run yet");
+        Tab(cut, "compare");
+        cut.Find("[data-testid=pt-compare-empty]").TextContent.Should().Contain("No comparable runs yet");
+        Tab(cut, "history");
+        cut.Find("[data-testid=pt-history-empty]");
+    }
+
+    [Fact]
+    public void EngineAvailable_IsNotTestReadiness()
+    {
+        Register(definitions: []);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-engine-meaning]").TextContent.Should().Contain("Available does not mean this test is ready to run"));
+        cut.Find("#pt-card-ready-h").TextContent.Should().Contain("Test readiness");
+        cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
+        Status(cut, "pt-status").Should().Be("Needs configuration", "an available engine does not make an unsaved draft ready");
     }
 }

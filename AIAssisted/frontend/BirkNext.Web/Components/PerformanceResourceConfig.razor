@@ -12,6 +12,20 @@
             ? "Soak workload: longer controlled runs provide stronger resource-stability evidence."
             : $"{w.Purpose} workload: resource trends from short runs are descriptive. Longer controlled (soak) runs provide stronger resource-stability evidence.")</p>
     }
+    @if (!C.Enabled)
+    {
+        <section class="prc-off" aria-labelledby="prc-off-h" data-testid="prc-disabled">
+            <h3 id="prc-off-h">Resource observation is optional and off</h3>
+            <p>When enabled, each run also records:</p>
+            <ul data-testid="prc-capabilities">
+                <li>memory and CPU of the components you select from the approved list</li>
+                <li>optionally, the health of the k6 load generator itself</li>
+                <li>your own stability and drift policies (none is preset)</li>
+                <li>a comparison with the active baseline’s resource evidence</li>
+            </ul>
+            <p class="sd-muted" data-testid="prc-target-count">@(Targets.Count == 0 ? "No approved components are configured for this environment yet; an administrator adds them (PerformanceTests:Resources:Targets)." : $"{Targets.Count} approved component(s) available in this environment.")</p>
+        </section>
+    }
     <div class="prc-check">
         <input type="checkbox" id="prc-enabled" checked="@(C.Enabled)" @onchange="e => Update(c => c with { Enabled = e.Value is true })" data-testid="prc-enabled" />
         <label for="prc-enabled">Enable resource observation</label>

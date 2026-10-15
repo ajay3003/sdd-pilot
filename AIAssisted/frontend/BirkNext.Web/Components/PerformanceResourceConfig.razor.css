@@ -12,3 +12,9 @@
 .prc-table { min-width: 60rem; }
 .prc-table input { width: 6.5rem; }
 .prc-table select { max-width: 13rem; }
+
+/* Disabled state: what enabling adds, so the tab never looks unfinished. */
+.prc-off { display: grid; gap: .35rem; padding: .8rem 1rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-border-hover); border-radius: var(--radius-lg); background: var(--clr-surface); }
+.prc-off h3 { margin: 0; font-size: 1rem; }
+.prc-off p { margin: 0; }
+.prc-off ul { margin: 0; padding-left: 1.2rem; display: grid; gap: .15rem; font-size: .9rem; }

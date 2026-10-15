@@ -68,23 +68,6 @@
 .sd-pill.ptc-tone-baseline { border-color: var(--clr-accent-border); background: var(--clr-accent-bg); color: var(--ptc-violet-text); }
 .sd-pill.ptc-tone-resource { border-color: #99f6e4; background: var(--ptc-teal-bg); color: var(--ptc-teal); }
 
-/* ── Status strip ───────────────────────────────────── */
-
-.ptc-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.25rem;
-    margin: 0;
-    padding: 0.6rem 0.9rem;
-    list-style: none;
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-lg);
-    background: linear-gradient(90deg, var(--clr-info-bg-light), var(--clr-surface-white) 60%);
-}
-
-.ptc-strip li { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
-.ptc-strip-label { color: var(--clr-text-muted); font-size: 0.76rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-
 /* ── Cards ──────────────────────────────────────────── */
 
 .ptc-primary {
@@ -192,9 +175,13 @@
 .ptc-def-facts dt { font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted); }
 .ptc-def-facts dd { margin: 0.15rem 0 0; font-size: 0.9rem; font-weight: 600; }
 
-/* ── Tabs (buttons with aria-pressed, the established pattern) ── */
+/* ── Navigation: Overview + Define / Execute / Analyze groups (buttons with aria-pressed, the established pattern). The row wraps, so every
+   section stays visible at every width — nothing scrolls out of sight. ── */
 
-.ptc-tabs { position: relative; display: flex; gap: 0.1rem; overflow-x: auto; border-bottom: 1px solid var(--clr-border); scrollbar-width: thin; max-width: 100%; }
+.ptc-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 1.25rem; padding-bottom: 0.1rem; border-bottom: 1px solid var(--clr-border); max-width: 100%; }
+.ptc-tab-group { display: grid; gap: 0.1rem; min-width: 0; padding-left: 1rem; border-left: 1px solid var(--clr-border); }
+.ptc-tab-group-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--clr-text-muted); padding-left: 0.85rem; }
+.ptc-tab-group-tabs { display: flex; flex-wrap: wrap; gap: 0.1rem; }
 
 .ptc-tab {
     flex: 0 0 auto;
@@ -256,28 +243,25 @@
 .ptc-stats dd { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--clr-text-heading); }
 .ptc-tile-actions { display: flex; gap: 0.5rem; margin: 0; }
 
-/* ── Workload timeline (a visually hidden sentence states the same phases) ── */
+/* ── Workload timeline: the bar is proportional and textless; the legend wraps, so no phase is ever clipped
+   (a visually hidden sentence states the same phases). ── */
 
-.ptc-timeline { min-width: 0; }
-.ptc-phases { display: flex; gap: 3px; margin: 0.25rem 0 0; padding: 0; list-style: none; min-width: 0; }
+.ptc-timeline { display: grid; gap: 0.45rem; min-width: 0; }
+.ptc-phase-bar { display: flex; gap: 3px; height: 0.7rem; min-width: 0; }
+.ptc-phase-segment { min-width: 6px; border-radius: 999px; }
+.ptc-phase-bar .ptc-phase-warmup { background: var(--clr-border-hover); }
+.ptc-phase-bar .ptc-phase-rampup { background: var(--clr-info); }
+.ptc-phase-bar .ptc-phase-steady { background: var(--ptc-teal); }
+.ptc-phase-bar .ptc-phase-rampdown { background: var(--ptc-indigo); }
 
-.ptc-phase {
-    display: grid;
-    gap: 0.1rem;
-    min-width: 4.5rem;
-    padding: 0.4rem 0.5rem;
-    border-radius: var(--radius-md);
-    border: 1px solid transparent;
-    font-size: 0.74rem;
-    overflow: hidden;
-}
-
-.ptc-phase-label { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ptc-phase-time { color: var(--clr-text-body); white-space: nowrap; }
-.ptc-phase-warmup { background: var(--clr-border-subtle); border-color: var(--clr-border); color: var(--clr-text-body); }
-.ptc-phase-rampup { background: var(--clr-info-bg); border-color: var(--clr-info-border); color: var(--clr-info); }
-.ptc-phase-steady { background: var(--ptc-teal-bg); border-color: #99f6e4; color: var(--ptc-teal); }
-.ptc-phase-rampdown { background: var(--ptc-indigo-bg); border-color: #c7d2fe; color: var(--ptc-indigo); }
+.ptc-phases { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr)); gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.ptc-phase { display: grid; gap: 0.1rem; min-width: 0; padding: 0.35rem 0.55rem; border: 1px solid var(--clr-border); border-left-width: 4px; border-radius: var(--radius-md); background: var(--clr-surface-white); font-size: 0.76rem; }
+.ptc-phase-label { font-weight: 700; overflow-wrap: anywhere; }
+.ptc-phase-time { color: var(--clr-text-body); overflow-wrap: anywhere; }
+.ptc-phases .ptc-phase-warmup { border-left-color: var(--clr-border-hover); }
+.ptc-phases .ptc-phase-rampup { border-left-color: var(--clr-info); }
+.ptc-phases .ptc-phase-steady { border-left-color: var(--ptc-teal); }
+.ptc-phases .ptc-phase-rampdown { border-left-color: var(--ptc-indigo); }
 
 /* ── Readiness tab ──────────────────────────────────── */
 
@@ -324,17 +308,85 @@
 .ptc-tech dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .ptc-tech code { word-break: break-all; }
 
+/* ── Header status, definition header and the one Save action ── */
+
+.ptc-status-line { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.ptc-status-label { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--clr-text-muted); }
+.ptc-def-save { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin-left: auto; }
+.ptc-save-hint { font-size: 0.82rem; color: var(--clr-text-muted); max-width: 26rem; }
+.ptc-save-error { flex-basis: 100%; margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--clr-danger-border); border-left: 4px solid var(--clr-danger); border-radius: var(--radius-md); background: var(--clr-danger-bg-light); color: var(--ptc-danger-text); font-size: 0.86rem; }
+
+/* ── Form building blocks: panels, grids, compact fields, actions ── */
+
+.ptc-panel { display: grid; gap: 0.5rem; align-content: start; min-width: 0; margin: 0; padding: 0.8rem 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-lg); background: var(--clr-surface-white); }
+.ptc-panel > legend { padding: 0 0.3rem; font-size: 0.92rem; font-weight: 700; color: var(--clr-text-heading); }
+.ptc-panel > h3 { margin: 0; font-size: 0.95rem; }
+.ptc-split { display: grid; gap: 1rem; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+.ptc-context { background: var(--clr-surface); }
+.ptc-readonly-tag { margin-left: 0.35rem; padding: 0 0.45rem; border-radius: 999px; background: var(--clr-border-subtle); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted); vertical-align: middle; }
+.ptc-context-facts { display: grid; gap: 0.6rem; margin: 0; }
+.ptc-context-facts dt { font-size: 0.76rem; font-weight: 600; color: var(--clr-text-muted); }
+.ptc-context-facts dd { display: grid; gap: 0.1rem; margin: 0; min-width: 0; }
+
+.ptc-grid { display: grid; gap: 0.6rem 0.9rem; }
+.ptc-grid label { display: grid; gap: 0.2rem; min-width: 0; font-size: 0.88rem; }
+.ptc-grid select { width: 100%; max-width: 18rem; }
+.ptc-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ptc-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ptc-num { width: 100%; max-width: 9rem; }
+.ptc-workload-form { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.ptc-inline-field { display: grid; gap: 0.2rem; max-width: 26rem; font-size: 0.88rem; }
+
+.ptc-step-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
+.ptc-step-title { font-weight: 700; font-size: 0.95rem; }
+.ptc-step-form { grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); }
+
+.ptc-add { justify-self: start; }
+.ptc-remove { min-height: 2rem; padding: 0.25rem 0.65rem; border: 1px solid var(--clr-danger-border); border-radius: var(--radius-md); background: var(--clr-surface-white); color: var(--ptc-danger-text); font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ptc-remove:hover { background: var(--clr-danger-bg-light); }
+.ptc-remove:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+
+.ptc-compact-table { width: auto !important; }
+.ptc-compact-table th, .ptc-compact-table td { padding: 0.3rem 0.5rem; vertical-align: middle; }
+.ptc-compact-table select { max-width: 14rem; }
+.ptc-compact-table input { width: 7rem; }
+.ptc-inline-empty { margin: 0; padding: 0.6rem 0.8rem; border: 1px dashed var(--clr-border-hover); border-radius: var(--radius-md); color: var(--clr-text-muted); font-size: 0.88rem; }
+
+/* ── Workload safety limits: readable stats, the configured workload highlighted ── */
+
+.ptc-limits { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr)); gap: 0.5rem; margin: 0; }
+.ptc-limits > div { display: grid; gap: 0.15rem; padding: 0.5rem 0.7rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.ptc-limits dt { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted); }
+.ptc-limits dd { display: grid; margin: 0; font-size: 1rem; font-weight: 700; color: var(--clr-text-heading); overflow-wrap: anywhere; }
+.ptc-limits .ptc-sub { font-weight: 500; }
+.ptc-limits-this { border-color: #c7d2fe !important; background: var(--ptc-indigo-bg) !important; }
+
+/* ── Readiness before saving, blocked/empty states, compact tiles, technical details ── */
+
+.ptc-prechecks { display: grid; gap: 0.45rem; margin: 0; padding: 0.8rem 1rem; list-style: none; border: 1px solid var(--clr-border); border-radius: var(--radius-lg); background: var(--clr-surface-white); }
+.ptc-prechecks li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; font-size: 0.88rem; }
+.ptc-empty-blocked .ptc-empty-icon { background: var(--clr-warning-bg); color: var(--clr-warning); }
+.ptc-tile-compact { padding: 0.7rem 0.9rem; }
+.ptc-technical-section { padding-top: 0.75rem; border-top: 1px solid var(--clr-border); }
+
 @media (max-width: 900px) {
     .ptc-tile-wide { grid-column: auto; }
     .ptc-header-side { justify-items: start; }
     .ptc-actions { justify-content: flex-start; }
     .ptc-run-reason { text-align: left; }
+    .ptc-split { grid-template-columns: minmax(0, 1fr); }
+    .ptc-grid-3, .ptc-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ptc-def-save { margin-left: 0; }
 }
 
 @media (max-width: 600px) {
     .ptc-actions > button { flex: 1 1 100%; }
-    .ptc-phases { flex-direction: column; }
-    .ptc-phase { flex-basis: auto; }
     .ptc-tech { grid-template-columns: minmax(0, 1fr); }
     .ptc-callout, .ptc-empty { grid-template-columns: minmax(0, 1fr); }
+    .ptc-grid-3, .ptc-grid-4 { grid-template-columns: minmax(0, 1fr); }
+    .ptc-tabs { display: grid; gap: 0.6rem; }
+    .ptc-tab-group { padding-left: 0; border-left: 0; }
+    .ptc-tab-group-label { padding-left: 0.2rem; }
+    .ptc-tab { min-height: 2.75rem; }
+    .ptc-remove, .ptc-add, .ptc-def-save .btn-primary { min-height: 2.75rem; }
 }
