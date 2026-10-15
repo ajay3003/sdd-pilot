@@ -82,6 +82,67 @@ public sealed class SchemaStudioServiceTests
     }
 
     [Fact]
+    public void GeneratedLengthBoundaryCasesUseExactValuesAndDoNotInventAnImpossibleBelowZeroCase()
+    {
+        var minimumSchema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}" targetNamespace="urn:length" xmlns="urn:length" elementFormDefault="qualified">
+              <xs:element name="Record"><xs:complexType><xs:sequence><xs:element name="Value"><xs:simpleType><xs:restriction base="xs:string"><xs:minLength value="600"/></xs:restriction></xs:simpleType></xs:element></xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var minimumPackage = new SchemaStudioService().Import(new Dictionary<string, string> { ["minimum.xsd"] = minimumSchema }, "minimum");
+        var minimumBoundary = Assert.Single(minimumPackage.GeneratedTests, test => test.Rule == "minLength boundary");
+        Assert.Equal(600, minimumBoundary.Value.Length);
+        Assert.True(minimumBoundary.ExpectedValid);
+        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(minimumPackage, "minimum.xsd",
+            SchemaStudioService.GenerateTestXml(minimumPackage, minimumBoundary)));
+        var belowMinimum = Assert.Single(minimumPackage.GeneratedTests, test => test.Rule == "below minLength");
+        Assert.Equal(599, belowMinimum.Value.Length);
+        Assert.False(belowMinimum.ExpectedValid);
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(minimumPackage, "minimum.xsd",
+            SchemaStudioService.GenerateTestXml(minimumPackage, belowMinimum)));
+
+        var maximumSchema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}" targetNamespace="urn:length" xmlns="urn:length" elementFormDefault="qualified">
+              <xs:element name="Record"><xs:complexType><xs:sequence><xs:element name="Value"><xs:simpleType><xs:restriction base="xs:string"><xs:maxLength value="900"/></xs:restriction></xs:simpleType></xs:element></xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var maximumPackage = new SchemaStudioService().Import(new Dictionary<string, string> { ["maximum.xsd"] = maximumSchema }, "maximum");
+        var maximumBoundary = Assert.Single(maximumPackage.GeneratedTests, test => test.Rule == "maxLength boundary");
+        Assert.Equal(900, maximumBoundary.Value.Length);
+        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(maximumPackage, "maximum.xsd",
+            SchemaStudioService.GenerateTestXml(maximumPackage, maximumBoundary)));
+        var aboveMaximum = Assert.Single(maximumPackage.GeneratedTests, test => test.Rule == "above maxLength");
+        Assert.Equal(901, aboveMaximum.Value.Length);
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(maximumPackage, "maximum.xsd",
+            SchemaStudioService.GenerateTestXml(maximumPackage, aboveMaximum)));
+
+        var zeroMinimumSchema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}"><xs:element name="Value"><xs:simpleType><xs:restriction base="xs:string"><xs:minLength value="0"/></xs:restriction></xs:simpleType></xs:element></xs:schema>
+            """;
+        var zeroMinimumPackage = new SchemaStudioService().Import(new Dictionary<string, string> { ["zero.xsd"] = zeroMinimumSchema }, "zero");
+        Assert.DoesNotContain(zeroMinimumPackage.GeneratedTests, test => test.Rule == "below minLength");
+    }
+
+    [Fact]
+    public void SavedTestHistoryDoesNotExposeEnumerationLiteralsThroughGeneratedTestIds()
+    {
+        const string literal = "sensitive-enumeration-fixture-7f1c";
+        var schema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}"><xs:element name="Record"><xs:complexType><xs:sequence>
+              <xs:element name="Code"><xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="{{literal}}"/></xs:restriction></xs:simpleType></xs:element>
+            </xs:sequence></xs:complexType></xs:element></xs:schema>
+            """;
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["private-enum.xsd"] = schema }, "private-enum");
+        var test = Assert.Single(package.GeneratedTests, item => item.Rule == "known enumeration");
+        Assert.Equal(literal, test.Value);
+        Assert.DoesNotContain(literal, test.Id, StringComparison.Ordinal);
+
+        var history = new SchemaTestRunHistory();
+        history.Add(package, "Generic valid", 1, SchemaStudioService.RunGeneratedTests(package));
+        Assert.DoesNotContain(literal, history.SnapshotJson(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CapsCrossFileRelationshipsAndMarksTheResultAsTruncated()
     {
         var elements = string.Concat(Enumerable.Range(0, 1_005).Select(i => $"<xs:element name=\"Field{i}\" type=\"t:Shared\"/>"));
@@ -93,6 +154,18 @@ public sealed class SchemaStudioServiceTests
 
         Assert.Equal(SchemaStudioService.MaxRelationships, package.References.Count);
         Assert.True(package.ReferencesTruncated);
+    }
+
+    [Fact]
+    public void CapsGeneratedTestCandidatesDuringDerivationAndMarksTheSetAsTruncated()
+    {
+        var elements = string.Join("", Enumerable.Range(0, 1600).Select(index =>
+            $"<xs:element name=\"Field{index}\" type=\"xs:integer\"/>"));
+        var schema = $"<xs:schema xmlns:xs=\"{Ns}\" targetNamespace=\"urn:bounded-tests\" xmlns=\"urn:bounded-tests\" elementFormDefault=\"qualified\"><xs:element name=\"Record\"><xs:complexType><xs:sequence>{elements}</xs:sequence></xs:complexType></xs:element></xs:schema>";
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["bounded.xsd"] = schema }, "bounded");
+
+        Assert.Equal(5000, package.GeneratedTests.Count);
+        Assert.True(package.GeneratedTestsTruncated);
     }
 
     [Fact]
@@ -128,12 +201,94 @@ public sealed class SchemaStudioServiceTests
         var outcomes = SchemaStudioService.RunGeneratedTests(package, maxTests: 100);
         Assert.Contains(outcomes, r => r.Rule == "known enumeration" && r.ExpectedValid && r.Actual == "Valid" && r.Outcome == "Pass");
         Assert.Contains(outcomes, r => r.Rule == "unknown enumeration" && !r.ExpectedValid && r.Actual == "Invalid" && r.Outcome == "Pass");
+        var invalidEnumOutcome = Assert.Single(outcomes.Where(r => r.Rule == "unknown enumeration"));
+        var recordedBaseline = Assert.Single(outcomes.Where(result => result.BaselineXml.Length > 0));
+        Assert.Equal(recordedBaseline.BaselineId, invalidEnumOutcome.BaselineId);
+        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(package, "profile.xsd", recordedBaseline.BaselineXml));
+        Assert.Contains("__unknown_value__", invalidEnumOutcome.Xml);
         Assert.Contains(outcomes, r => r.Rule == "optional element omitted" && r.ExpectedValid && r.Actual == "Valid");
         Assert.Contains(outcomes, r => r.Rule == "pattern match" && r.Actual == "Valid" && r.Outcome == "Pass");
         Assert.Contains(outcomes, r => r.Rule == "pattern non-match" && r.Actual == "Invalid" && r.Outcome == "Pass");
         Assert.Contains(outcomes, r => r.Rule == "wrong namespace" && r.Actual == "Invalid" && r.Outcome == "Pass");
+        Assert.Contains(outcomes, r => r.Rule == "wrong namespace prefix binding" && r.Actual == "Invalid" && r.Outcome == "Pass");
+        var wrongPrefixBinding = Assert.Single(package.GeneratedTests.Where(test => test.Rule == "wrong namespace prefix binding"));
+        var wrongPrefixXml = SchemaStudioService.GenerateTestXml(package, wrongPrefixBinding);
+        Assert.Contains("ss:Record", wrongPrefixXml);
+        Assert.Contains("xmlns:ss=\"urn:schema-studio:wrong-prefix-binding\"", wrongPrefixXml);
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(package, "profile.xsd", wrongPrefixXml));
         Assert.True(outcomes.Any(r => r.Rule == "wrong datatype" && r.Actual == "Invalid" && r.Outcome == "Pass"), string.Join("\n", outcomes.Where(r => r.Rule == "wrong datatype")));
         Assert.Contains(outcomes, r => r.Rule == "choice with multiple branches" && r.Actual == "Invalid" && r.Outcome == "Pass");
+        var invalidProfileOutcomes = SchemaStudioService.RunGeneratedTests(package, new Dictionary<string, string> { ["/Record/Code"] = "outside-enum" }, maxTests: 2);
+        Assert.All(invalidProfileOutcomes, result => Assert.Equal("Not evaluated", result.Outcome));
+    }
+
+    [Fact]
+    public void ResolvesRequiredAttributesAndGeneratesProfiledAndMissingAttributeCases()
+    {
+        var schema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}" targetNamespace="urn:attribute" xmlns="urn:attribute" elementFormDefault="qualified">
+              <xs:element name="Record"><xs:complexType><xs:attribute name="code" type="xs:integer" use="required"/><xs:attribute name="label" type="xs:string"/></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["attributes.xsd"] = schema }, "attributes");
+        var root = Assert.Single(package.EffectiveSchema);
+        var required = Assert.Single(root.Attributes!, attribute => attribute.Name == "code");
+        Assert.Equal("attributes.xsd", required.DeclaredIn);
+        Assert.Equal("required", required.Use);
+
+        var missing = Assert.Single(package.GeneratedTests.Where(test => test.Rule == "missing required attribute"));
+        var missingXml = SchemaStudioService.GenerateTestXml(package, missing);
+        Assert.DoesNotContain("code=", missingXml);
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(package, "attributes.xsd", missingXml));
+        var result = Assert.Single(SchemaStudioService.RunGeneratedTests(package).Where(test => test.Rule == "missing required attribute"));
+        Assert.Equal("Pass", result.Outcome);
+        var wrongType = Assert.Single(package.GeneratedTests.Where(test => test.Rule == "wrong datatype" && test.Path == "/Record/@code"));
+        var wrongTypeXml = SchemaStudioService.GenerateTestXml(package, wrongType);
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(package, "attributes.xsd", wrongTypeXml));
+        Assert.Contains(SchemaStudioService.RunGeneratedTests(package), test => test.Path == "/Record/@code"
+            && test.Rule == "wrong datatype" && test.Actual == "Invalid" && test.Outcome == "Pass");
+
+        var profiles = new TestDataProfilesService();
+        var profile = profiles.Create("integer attributes", package.Fingerprint, null, TestDataProfileKind.GenericValid, 42);
+        profiles.Edit(profile.Id, profile.Name, profile.Kind, profile.Seed,
+            [new TestDataProfileRule("/Record/@code", TestDataValueMode.Synthetic, Minimum: 17, Maximum: 17)]);
+        var savedProfile = profiles.Profiles.Single();
+        var values = profiles.GenerateValues(package, savedProfile);
+        var xml = SchemaStudioService.GenerateProfileXml(package, "Record", values, savedProfile);
+        Assert.Contains("code=\"17\"", xml);
+        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(package, "attributes.xsd", xml));
+    }
+
+    [Fact]
+    public void WrongDatatypeCandidatesCoverSignedUnsignedAndFloatingPointXsdTypes()
+    {
+        var schema = $$"""
+            <xs:schema xmlns:xs="{{Ns}}" targetNamespace="urn:datatype-mutations" xmlns="urn:datatype-mutations" elementFormDefault="qualified">
+              <xs:element name="Record"><xs:complexType><xs:sequence>
+                <xs:element name="Negative" type="xs:negativeInteger"/>
+                <xs:element name="NonPositive" type="xs:nonPositiveInteger"/>
+                <xs:element name="UnsignedByte" type="xs:unsignedByte"/>
+                <xs:element name="UnsignedShort" type="xs:unsignedShort"/>
+                <xs:element name="UnsignedInt" type="xs:unsignedInt"/>
+                <xs:element name="UnsignedLong" type="xs:unsignedLong"/>
+                <xs:element name="FloatValue" type="xs:float"/>
+                <xs:element name="DoubleValue" type="xs:double"/>
+              </xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["types.xsd"] = schema }, "types.xsd");
+        var expectedPaths = new[]
+        {
+            "/Record/Negative", "/Record/NonPositive", "/Record/UnsignedByte", "/Record/UnsignedShort",
+            "/Record/UnsignedInt", "/Record/UnsignedLong", "/Record/FloatValue", "/Record/DoubleValue"
+        };
+
+        var mutations = package.GeneratedTests.Where(test => test.Rule == "wrong datatype" && expectedPaths.Contains(test.Path)).ToArray();
+        Assert.Equal(expectedPaths.Length, mutations.Length);
+        var results = SchemaStudioService.RunGeneratedTests(package, maxTests: 100);
+        foreach (var path in expectedPaths)
+            Assert.Contains(results, result => result.Path == path && result.Rule == "wrong datatype"
+                && !result.ExpectedValid && result.Actual == "Invalid" && result.Outcome == "Pass");
     }
 
     [Fact]
@@ -141,6 +296,53 @@ public sealed class SchemaStudioServiceTests
     {
         var malicious = "<!DOCTYPE x [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><xs:schema xmlns:xs='http://www.w3.org/2001/XMLSchema'><xs:annotation><xs:documentation>&xxe;</xs:documentation></xs:annotation></xs:schema>";
         Assert.ThrowsAny<Exception>(() => new SchemaStudioService().Import(new Dictionary<string, string> { ["bad.xsd"] = malicious }, "bad"));
+    }
+
+    [Fact]
+    public void XMLValidationProhibitsDtdAndEnforcesNodeAndNestingLimits()
+    {
+        var package = new SchemaStudioService().Import(new Dictionary<string, string>
+        {
+            ["instance.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"Root\" type=\"xs:string\"/></xs:schema>"
+        }, "instance");
+
+        var dtd = "<!DOCTYPE Root [<!ENTITY xxe SYSTEM 'file:///not-read'>]><Root>&xxe;</Root>";
+        Assert.StartsWith("Invalid against", SchemaStudioService.ValidateXml(package, "instance.xsd", dtd));
+
+        var deep = "<Root>" + string.Concat(Enumerable.Repeat("<x>", SchemaStudioService.MaxNestingDepth))
+            + "v" + string.Concat(Enumerable.Repeat("</x>", SchemaStudioService.MaxNestingDepth)) + "</Root>";
+        Assert.Contains("nesting limit", SchemaStudioService.ValidateXml(package, "instance.xsd", deep));
+
+        var manyNodes = "<Root>" + string.Concat(Enumerable.Repeat("<x/>", SchemaStudioService.MaxXmlNodes)) + "</Root>";
+        Assert.Contains("node validation limit", SchemaStudioService.ValidateXml(package, "instance.xsd", manyNodes));
+    }
+
+    [Fact]
+    public void XMLGenerationStopsAtTheBoundedNodeLimitAndReportsMutationAsNotEvaluated()
+    {
+        var schema = $"""
+            <xs:schema xmlns:xs="{Ns}">
+              <xs:element name="Root"><xs:complexType><xs:sequence>
+                <xs:element name="A" minOccurs="100" maxOccurs="100"><xs:complexType><xs:sequence>
+                  <xs:element name="B" minOccurs="100" maxOccurs="100"><xs:complexType><xs:sequence>
+                    <xs:element name="C" minOccurs="100" maxOccurs="100"><xs:complexType><xs:sequence>
+                      <xs:element name="Value" type="xs:string" minOccurs="100" maxOccurs="100"/>
+                    </xs:sequence></xs:complexType></xs:element>
+                  </xs:sequence></xs:complexType></xs:element>
+                </xs:sequence></xs:complexType></xs:element>
+              </xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        var package = new SchemaStudioService().Import(new Dictionary<string, string> { ["large-output.xsd"] = schema }, "large-output.xsd");
+        Assert.Equal("Valid", package.Validation);
+
+        var results = SchemaStudioService.RunGeneratedTests(package, maxTests: 1);
+
+        var result = Assert.Single(results);
+        Assert.Equal("Not evaluated", result.Actual);
+        Assert.Equal("Not evaluated", result.Outcome);
+        Assert.Contains("node generation limit", result.Diagnostic);
+        Assert.Empty(result.Xml);
     }
 
     [Fact]

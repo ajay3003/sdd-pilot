@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using BirkNext.Api.Controllers;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
@@ -324,6 +325,186 @@ public sealed class IqrSourceEvidenceTests
         (await store.GetAsync("dev", "other", a.Id)).Should().BeNull();
         historical.SourceSnapshots.Single().DeploymentCorrelation.Should().Be("Deployment/source correlation not established");
     }
+
+    [Fact]
+    public async Task SourceAnalysisStoresOnlyBoundedXsdArtifactsBesideTheirExactSnapshot()
+    {
+        const string main = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" targetNamespace=\"urn:main\"><xs:include schemaLocation=\"types/common.xsd\"/><xs:element name=\"Root\" type=\"xs:string\"/></xs:schema>";
+        const string common = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" targetNamespace=\"urn:main\"><xs:simpleType name=\"Code\"><xs:restriction base=\"xs:string\"/></xs:simpleType></xs:schema>";
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var store = new IqrSourceStore(db);
+        var bytes = Zip(("service.csproj", Project), ("schemas/main.xsd", main), ("schemas/types/common.xsd", common));
+        var validation = IqrSourceArchiveReader.ReadDetailed("contracts.zip", bytes);
+        validation.IsValid.Should().BeTrue();
+        var snapshot = await store.AnalyzeValidatedAsync("dev", IqrSourceStore.SourceAnalysisOwner, "contracts.zip", bytes,
+            validation.Workspace!, projectImport: new BirkNext.ProjectImport.ProjectImportProvenance
+            {
+                ImportId = "import-contract-project-01", ArchiveFileName = "contracts.zip",
+                ArchiveSha256 = validation.Workspace!.Archive.Sha256, ImportedAt = DateTimeOffset.UtcNow,
+            });
+
+        snapshot.Should().NotBeNull();
+        var artifact = await store.FindSchemaArtifactAsync(snapshot!.Id);
+        artifact.Should().NotBeNull();
+        artifact!.SnapshotFingerprint.Should().Be(snapshot.Archive.Sha256);
+        artifact.SourceArchiveName.Should().Be("contracts.zip");
+        artifact.ProjectImportId.Should().Be("import-contract-project-01");
+        artifact.IsComplete.Should().BeTrue();
+        var files = JsonSerializer.Deserialize<List<SourceSchemaFileDto>>(artifact.PackageJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        files.Select(f => f.Path).Should().Contain("schemas/main.xsd").And.Contain("schemas/types/common.xsd");
+        files.Single(f => f.Path == "schemas/main.xsd").Fingerprint.Should().NotBeNullOrWhiteSpace();
+        files.Single(f => f.Path == "schemas/main.xsd").Text.Should().Be(main);
+        files.Single(f => f.Path == "schemas/types/common.xsd").Text.Should().Be(common);
+        (await db.IqrSourceSnapshots.SingleAsync()).EvidenceJson.Should().NotContain(main).And.NotContain(common,
+            "schema reuse is stored as a separate snapshot-bound artifact, while the evidence snapshot remains content-free");
+        var nonSource = await store.AnalyzeAsync("dev", "person", "other.zip", Zip(("schema.xsd", main)));
+        (await store.FindSchemaArtifactAsync(nonSource.Snapshot!.Id)).Should().BeNull("legacy per-integration uploads are not offered as Source Analysis contracts");
+    }
+
+    [Fact]
+    public async Task SourceAnalysisSchemaCaptureDisclosesFilesOmittedByPackageLimit()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var schemas = Enumerable.Range(0, 101).Select(i => ($"schemas/{i:D3}.xsd", "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"/>"));
+        var store = new IqrSourceStore(db);
+        var (snapshot, error) = await store.AnalyzeAsync("dev", IqrSourceStore.SourceAnalysisOwner, "many-contracts.zip", Zip([("service.csproj", Project), .. schemas]));
+        error.Should().BeNull();
+        var artifact = await store.FindSchemaArtifactAsync(snapshot!.Id);
+        artifact.Should().NotBeNull();
+        artifact!.IsComplete.Should().BeFalse();
+        artifact.OmittedFiles.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task OlderSourceAnalysisSnapshotReturnsAnExplicitUnavailableArtifactWithoutAnHttpError()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = Guid.NewGuid(), IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            Archive = new("legacy.zip", new string('a', 64), 1), AnalyzedAt = DateTimeOffset.UtcNow,
+        };
+        db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord
+        {
+            Id = snapshot.Id, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            EvidenceJson = JsonSerializer.Serialize(snapshot), AnalyzedAt = snapshot.AnalyzedAt,
+        });
+        await db.SaveChangesAsync();
+        var controller = new IqrSourceEvidenceController(new IqrSourceStore(db),
+            Moq.Mock.Of<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IqrSourceEvidenceController>.Instance);
+
+        var response = await controller.Schemas(snapshot.Id, default);
+        var body = response.Result.Should().BeOfType<Microsoft.AspNetCore.Mvc.OkObjectResult>().Which.Value
+            .Should().BeOfType<SourceSchemaPackageDto>().Which;
+        body.IsAvailable.Should().BeFalse();
+        body.SnapshotFingerprint.Should().Be(snapshot.Archive.Sha256);
+        body.Files.Should().BeEmpty();
+        body.UnavailableReason.Should().Contain("Reimport the source archive");
+    }
+
+    [Fact]
+    public async Task SourceSchemaEndpointReturnsOnlyTheArtifactBoundToTheRequestedSnapshot()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var snapshotId = Guid.NewGuid();
+        const string fingerprint = "snapshot-bound-fingerprint";
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            Archive = new("contracts.zip", fingerprint, 1), AnalyzedAt = DateTimeOffset.UtcNow,
+            Repository = new BirkNext.SourceEvidence.SourceRepositoryIdentity("repo-key", "Example source project", "archive root"),
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-123", ArchiveFileName = "contracts.zip", ArchiveSha256 = fingerprint },
+        };
+        var files = new List<SourceSchemaFileDto> { new("schemas/main.xsd", "<schema/>", "file-fingerprint") };
+        db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            EvidenceJson = JsonSerializer.Serialize(snapshot), AnalyzedAt = snapshot.AnalyzedAt,
+        });
+        db.SourceSchemaArtifacts.Add(new SourceSchemaArtifactRecord
+        {
+            SnapshotId = snapshotId, SnapshotFingerprint = fingerprint, SourceArchiveName = "contracts.zip",
+            ProjectImportId = "import-123", CapturedAt = snapshot.AnalyzedAt, IsComplete = true, PackageJson = JsonSerializer.Serialize(files),
+        });
+        await db.SaveChangesAsync();
+        var controller = new IqrSourceEvidenceController(new IqrSourceStore(db),
+            Moq.Mock.Of<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IqrSourceEvidenceController>.Instance);
+
+        var response = await controller.Schemas(snapshotId, default);
+
+        var body = response.Result.Should().BeOfType<Microsoft.AspNetCore.Mvc.OkObjectResult>().Which.Value
+            .Should().BeOfType<SourceSchemaPackageDto>().Which;
+        body.IsAvailable.Should().BeTrue();
+        body.SnapshotId.Should().Be(snapshotId);
+        body.SnapshotFingerprint.Should().Be(fingerprint);
+        body.ProjectImportId.Should().Be("import-123");
+        body.SourceProjectName.Should().Be("Example source project");
+        body.Files.Should().ContainSingle().Which.Path.Should().Be("schemas/main.xsd");
+    }
+
+    [Fact]
+    public async Task SourceSchemaEndpointRejectsArtifactWhoseFingerprintDoesNotMatchSnapshot()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var snapshotId = Guid.NewGuid();
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            Archive = new("contracts.zip", "snapshot-fingerprint", 1), AnalyzedAt = DateTimeOffset.UtcNow,
+        };
+        db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            EvidenceJson = JsonSerializer.Serialize(snapshot), AnalyzedAt = snapshot.AnalyzedAt,
+        });
+        db.SourceSchemaArtifacts.Add(new SourceSchemaArtifactRecord
+        {
+            SnapshotId = snapshotId, SnapshotFingerprint = "different-snapshot-fingerprint", SourceArchiveName = "contracts.zip",
+            CapturedAt = snapshot.AnalyzedAt, IsComplete = true, PackageJson = "[]",
+        });
+        await db.SaveChangesAsync();
+        var controller = new IqrSourceEvidenceController(new IqrSourceStore(db),
+            Moq.Mock.Of<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IqrSourceEvidenceController>.Instance);
+
+        var response = await controller.Schemas(snapshotId, default);
+
+        response.Result.Should().BeOfType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task SourceSchemaEndpointRejectsArtifactWhoseProjectImportIdentityDoesNotMatchSnapshot()
+    {
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var snapshotId = Guid.NewGuid();
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            Archive = new("contracts.zip", "same-snapshot-fingerprint", 1), AnalyzedAt = DateTimeOffset.UtcNow,
+            ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = "import-current" },
+        };
+        db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord
+        {
+            Id = snapshotId, IntegrationId = IqrSourceStore.SourceAnalysisOwner,
+            EvidenceJson = JsonSerializer.Serialize(snapshot), AnalyzedAt = snapshot.AnalyzedAt,
+        });
+        db.SourceSchemaArtifacts.Add(new SourceSchemaArtifactRecord
+        {
+            SnapshotId = snapshotId, SnapshotFingerprint = "same-snapshot-fingerprint", SourceArchiveName = "contracts.zip",
+            ProjectImportId = "import-other", CapturedAt = snapshot.AnalyzedAt, IsComplete = true, PackageJson = "[]",
+        });
+        await db.SaveChangesAsync();
+        var controller = new IqrSourceEvidenceController(new IqrSourceStore(db),
+            Moq.Mock.Of<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<IqrSourceEvidenceController>.Instance);
+
+        var response = await controller.Schemas(snapshotId, default);
+
+        response.Result.Should().BeOfType<Microsoft.AspNetCore.Mvc.ConflictObjectResult>();
+    }
+
     [Fact] public void IqrDomainsUseImplementationEvidenceWithoutFormalOrRuntimeOverclaim()
     {
         var snapshot = Analyze(("src/Worker.cs", "public class Worker { public void Process() { securityGuard.Check(); processor.UpdateCheckpointAsync(); logger.LogError(\"error\"); switch(table) { case \"Person\": Map(); break; } } }"));

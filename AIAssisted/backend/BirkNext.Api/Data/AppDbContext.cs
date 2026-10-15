@@ -9,6 +9,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
+    public DbSet<SourceSchemaArtifactRecord> SourceSchemaArtifacts => Set<SourceSchemaArtifactRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
     public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
     public DbSet<ActiveEventSyntheticIdentityRecord> ActiveEventSyntheticIdentities => Set<ActiveEventSyntheticIdentityRecord>();
@@ -51,6 +52,20 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<SourceSchemaArtifactRecord>(entity =>
+        {
+            entity.ToTable("source_schema_artifacts");
+            entity.HasKey(x => x.SnapshotId);
+            entity.Property(x => x.SnapshotId).HasColumnName("snapshot_id");
+            entity.Property(x => x.SnapshotFingerprint).HasColumnName("snapshot_fingerprint").HasMaxLength(128).IsRequired();
+            entity.Property(x => x.SourceArchiveName).HasColumnName("source_archive_name").HasMaxLength(500).IsRequired();
+            entity.Property(x => x.ProjectImportId).HasColumnName("project_import_id").HasMaxLength(128);
+            entity.Property(x => x.CapturedAt).HasColumnName("captured_at");
+            entity.Property(x => x.IsComplete).HasColumnName("is_complete");
+            entity.Property(x => x.OmittedFiles).HasColumnName("omitted_files");
+            entity.Property(x => x.PackageJson).HasColumnName("package_json").HasColumnType("text").IsRequired();
+            entity.HasOne<IqrSourceSnapshotRecord>().WithMany().HasForeignKey(x => x.SnapshotId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<ImpactAnalysisRunRecord>(entity =>
         {
             entity.ToTable("impact_analysis_runs");

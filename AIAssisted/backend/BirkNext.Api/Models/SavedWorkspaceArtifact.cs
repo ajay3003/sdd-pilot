@@ -11,7 +11,12 @@ public enum ArtifactType
     ADR,
     Contract,
     Quickstart,
-    Other
+    Other,
+    SchemaStudio,
+    SchemaStudioPackages,
+    SchemaStudioTestRuns,
+    SchemaStudioDrafts,
+    SchemaStudioGeneratedXml
 }
 
 public class SavedWorkspaceArtifact

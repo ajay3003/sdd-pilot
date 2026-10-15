@@ -33,12 +33,42 @@ public sealed class IqrSourceStore(AppDbContext db)
         return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
     }
 
+    /// <summary>Lists only Source Analysis snapshot metadata needed by Schema Studio; never returns the large evidence document.</summary>
+    public async Task<(IReadOnlyList<SourceSchemaSnapshotIndexItem> Items, bool IsTruncated)> ListSchemaSnapshotIndexAsync(
+        int take = 500, CancellationToken ct = default)
+    {
+        var limit = Math.Clamp(take, 1, 500);
+        var rows = await (from snapshot in db.IqrSourceSnapshots.AsNoTracking()
+                          where snapshot.IntegrationId == SourceAnalysisOwner
+                          join artifact in db.SourceSchemaArtifacts.AsNoTracking()
+                              on snapshot.Id equals artifact.SnapshotId into artifacts
+                          from artifact in artifacts.DefaultIfEmpty()
+                          orderby snapshot.AnalyzedAt descending, snapshot.Id descending
+                          select new
+                          {
+                              snapshot.Id,
+                              snapshot.AnalyzedAt,
+                              ArchiveName = artifact == null ? null : artifact.SourceArchiveName,
+                              ProjectImportId = artifact == null ? null : artifact.ProjectImportId,
+                              Fingerprint = artifact == null ? null : artifact.SnapshotFingerprint,
+                              IsComplete = artifact != null && artifact.IsComplete,
+                              OmittedFiles = artifact == null ? 0 : artifact.OmittedFiles,
+                          }).Take(limit + 1).ToListAsync(ct);
+        var items = rows.Take(limit).Select(row => new SourceSchemaSnapshotIndexItem(row.Id, row.ArchiveName,
+            row.Fingerprint, row.AnalyzedAt, row.ArchiveName is not null, row.IsComplete, row.OmittedFiles, row.ProjectImportId)).ToArray();
+        return (items, rows.Count > limit);
+    }
+
     /// <summary>Exactly this Source Analysis snapshot, or null. Whatever target was active when it was created does not matter.</summary>
     public async Task<IqrSourceSnapshot?> FindSourceAnalysisAsync(Guid id, CancellationToken ct = default)
     {
         var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.IntegrationId == SourceAnalysisOwner, ct);
         return record is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(record.EvidenceJson, Json);
     }
+
+    /// <summary>Returns only the XSD package captured for this exact immutable source snapshot.</summary>
+    public Task<SourceSchemaArtifactRecord?> FindSchemaArtifactAsync(Guid snapshotId, CancellationToken ct = default) =>
+        db.SourceSchemaArtifacts.AsNoTracking().FirstOrDefaultAsync(x => x.SnapshotId == snapshotId, ct);
     /// <summary>Every snapshot available with this environment: the workspace's Source Analysis snapshots (whatever target, if any, was active
     /// when they were created) plus the legacy per-integration snapshots an earlier version stored for this environment. Newest first.</summary>
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default)
@@ -158,6 +188,34 @@ public sealed class IqrSourceStore(AppDbContext db)
         await ReportProgressAsync("Saving source snapshot", "Persisting one immutable Source Analysis snapshot.");
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
+        if (integrationId == SourceAnalysisOwner)
+        {
+            const int maxSchemaFiles = 100;
+            const long maxSchemaBytes = 20L * 1024 * 1024;
+            var xsdFiles = (workspace.EvidenceFiles ?? []).Where(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(f => f.Path, StringComparer.Ordinal).ToArray();
+            var selected = new List<object>();
+            long storedBytes = 0;
+            foreach (var file in xsdFiles)
+            {
+                var bytesCount = Encoding.UTF8.GetByteCount(file.Content);
+                if (selected.Count >= maxSchemaFiles || bytesCount > IqrSourceArchiveReader.MaxFileBytes || storedBytes + bytesCount > maxSchemaBytes) continue;
+                selected.Add(new { path = file.Path.Replace('\\', '/'), text = file.Content,
+                    fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(file.Content))).ToLowerInvariant() });
+                storedBytes += bytesCount;
+            }
+            db.SourceSchemaArtifacts.Add(new SourceSchemaArtifactRecord
+            {
+                SnapshotId = snapshot.Id,
+                SnapshotFingerprint = snapshot.Archive.Sha256,
+                SourceArchiveName = snapshot.Archive.FileName,
+                ProjectImportId = snapshot.ProjectImport?.ImportId,
+                CapturedAt = snapshot.AnalyzedAt,
+                IsComplete = selected.Count == xsdFiles.Length,
+                OmittedFiles = xsdFiles.Length - selected.Count,
+                PackageJson = JsonSerializer.Serialize(selected, Json),
+            });
+        }
         try { await db.SaveChangesAsync(ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new SourceSnapshotPersistenceException(); }
@@ -225,3 +283,6 @@ public sealed class IqrSourceStore(AppDbContext db)
         return file is null ? null : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(file.Content))).ToLowerInvariant();
     }
 }
+
+public sealed record SourceSchemaSnapshotIndexItem(Guid Id, string? ArchiveName, string? Fingerprint,
+    DateTimeOffset AnalyzedAt, bool HasSchemaArtifact, bool IsComplete, int OmittedFiles, string? ProjectImportId = null);

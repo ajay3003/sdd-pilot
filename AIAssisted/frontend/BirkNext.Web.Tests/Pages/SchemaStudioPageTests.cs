@@ -1,7 +1,12 @@
 using BirkNext.Web.Pages;
+using BirkNext.Integrations;
+using BirkNext.Web.Services;
 using BirkNext.Web.Services.SchemaStudio;
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
+using System.Security.Cryptography;
+using System.Text;
+using Moq;
 
 namespace BirkNext.Web.Tests.Pages;
 
@@ -35,6 +40,156 @@ public sealed class SchemaStudioPageTests : BunitContext
         Assert.Contains("Effective Schema", page.Markup);
         Assert.Contains("Generated Tests", page.Markup);
     }
+
+    [Fact]
+    public void BuiltInProfileCanBeOpenedAndExportedWithoutRenderFailure()
+    {
+        var schemas = new SchemaStudioService();
+        schemas.Import(new Dictionary<string, string> { ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>" }, "generic.xsd");
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(new TestDataProfilesService());
+        var page = Render<SchemaStudio>();
+
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
+
+        Assert.Contains("Generic valid (built-in)", page.Markup);
+        Assert.Contains("Export selected profile", page.Markup);
+        Assert.Contains("Random seed", page.Markup);
+    }
+
+    [Fact]
+    public void ProfilePickerHidesProfilesScopedToOtherProjects()
+    {
+        var schemas = new SchemaStudioService();
+        var package = schemas.Import(new Dictionary<string, string>
+        {
+            ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>"
+        }, "generic.xsd");
+        var profiles = new TestDataProfilesService();
+        profiles.Create("Other project profile", package.Fingerprint, "import:other", TestDataProfileKind.GenericValid, 1);
+        profiles.Create("Same project profile", package.Fingerprint, null, TestDataProfileKind.GenericValid, 2);
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(profiles);
+
+        var page = Render<SchemaStudio>();
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
+
+        Assert.Contains("Same project profile", page.Markup);
+        Assert.DoesNotContain("Other project profile", page.Markup);
+    }
+
+    [Fact]
+    public void SavedProfileCanBeOpenedAndEditedWithoutChangingItsRules()
+    {
+        var schemas = new SchemaStudioService();
+        var package = schemas.Import(new Dictionary<string, string>
+        {
+            ["generic.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"root\" type=\"xs:string\"/></xs:schema>"
+        }, "generic.xsd");
+        var profiles = new TestDataProfilesService();
+        var profile = profiles.Create("Original profile", package.Fingerprint, null, TestDataProfileKind.GenericValid, 17);
+        var rule = new TestDataProfileRule("/root", TestDataValueMode.Synthetic, MinimumLength: 3);
+        profile = profiles.Edit(profile.Id, profile.Name, profile.Kind, profile.Seed, [rule]);
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(profiles);
+
+        var page = Render<SchemaStudio>();
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Test Data Profile").Click();
+        page.Find("select[aria-label='Test Data Profile']").Change(profile.Id.ToString("D"));
+        page.FindAll("button").Single(button => button.TextContent.Contains("Load selected profile for editing", StringComparison.Ordinal)).Click();
+        page.FindAll("label").Single(label => label.TextContent.Contains("New profile name", StringComparison.Ordinal)).QuerySelector("input")!.Change("Edited profile");
+        page.FindAll("label").Single(label => label.TextContent.Contains("Random seed", StringComparison.Ordinal)).QuerySelector("input")!.Change("29");
+        page.FindAll("button").Single(button => button.TextContent.Contains("Update selected profile", StringComparison.Ordinal)).Click();
+
+        var edited = Assert.Single(profiles.Profiles);
+        Assert.Equal("Edited profile", edited.Name);
+        Assert.Equal(29, edited.Seed);
+        Assert.Equal([rule], edited.Rules);
+        Assert.Contains("Profile updated", page.Markup);
+    }
+
+    [Fact]
+    public void SourceAnalysisSnapshotOpensNestedIncludedSchemaWithImmutableProvenance()
+    {
+        const string xs = "http://www.w3.org/2001/XMLSchema";
+        const string main = $"<xs:schema xmlns:xs=\"{xs}\" targetNamespace=\"urn:source\" xmlns=\"urn:source\" elementFormDefault=\"qualified\"><xs:include schemaLocation=\"types/common.xsd\"/><xs:element name=\"Root\" type=\"RootType\"/><xs:complexType name=\"RootType\"><xs:sequence><xs:element name=\"Code\" type=\"CommonCode\"/></xs:sequence></xs:complexType></xs:schema>";
+        const string common = $"<xs:schema xmlns:xs=\"{xs}\" targetNamespace=\"urn:source\" xmlns=\"urn:source\"><xs:simpleType name=\"CommonCode\"><xs:restriction base=\"xs:string\"><xs:minLength value=\"2\"/></xs:restriction></xs:simpleType></xs:schema>";
+        const string unrelated = $"<xs:schema xmlns:xs=\"{xs}\" targetNamespace=\"urn:source\" xmlns=\"urn:source\"><xs:simpleType name=\"CommonCode\"><xs:restriction base=\"xs:string\"><xs:minLength value=\"7\"/></xs:restriction></xs:simpleType></xs:schema>";
+        var snapshotId = Guid.NewGuid();
+        const string snapshotFingerprint = "snapshot-fingerprint-immutable";
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = snapshotId,
+            IntegrationId = "source-analysis",
+            Archive = new SourceArchive("contracts.zip", snapshotFingerprint, 3),
+            AnalyzedAt = DateTimeOffset.UtcNow,
+        };
+        var files = new[]
+        {
+            new SourceSchemaFile("schemas/main.xsd", main, Fingerprint(main)),
+            new SourceSchemaFile("schemas/other/common.xsd", unrelated, Fingerprint(unrelated)),
+            new SourceSchemaFile("schemas/types/common.xsd", common, Fingerprint(common)),
+        };
+        var api = new Mock<IIntegrationCatalogApiService>();
+        api.Setup(client => client.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<IqrSourceSnapshot>)new[] { snapshot });
+        api.Setup(client => client.ListSchemaSnapshotIndexAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaSnapshotIndex([new(snapshotId, "contracts.zip", snapshotFingerprint, snapshot.AnalyzedAt, true, true, 0)], false));
+        api.Setup(client => client.SourceSchemasAsync(snapshotId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaPackage(snapshotId, snapshotFingerprint, "contracts.zip", snapshot.AnalyzedAt, true, 0, files));
+        var schemas = new SchemaStudioService();
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(api.Object);
+
+        var page = Render<SchemaStudio>();
+        page.Find("select[aria-label='Source Analysis snapshot']").Change(snapshotId.ToString("D"));
+        page.FindAll("button").Single(button => button.TextContent.Contains("Load XSDs from snapshot", StringComparison.Ordinal)).Click();
+        page.FindAll("button").Single(button => button.TextContent.Contains("Open contract in Schema Studio", StringComparison.Ordinal)).Click();
+
+        var package = Assert.Single(schemas.Packages);
+        Assert.True(package.Validation == "Valid", string.Join("\n", package.Diagnostics));
+        Assert.Equal(snapshotId, package.Provenance!.SourceSnapshotId);
+        Assert.Equal(snapshotFingerprint, package.Provenance.SourceSnapshotFingerprint);
+        Assert.Equal("schemas/main.xsd", package.Provenance.SelectedContractPath);
+        Assert.DoesNotContain(package.Files, file => file.Name == "schemas/other/common.xsd");
+        Assert.Equal("schemas/types/common.xsd", package.Files.Single(file => file.Name == "schemas/main.xsd").Links.Single().ResolvedFile);
+        var code = Assert.Single(Assert.Single(package.EffectiveSchema).Children);
+        Assert.Equal("CommonCode", code.Type);
+        Assert.Equal("schemas/types/common.xsd", code.TypeDeclaredIn);
+        Assert.Contains("schemas/main.xsd", page.Markup);
+    }
+
+    [Fact]
+    public void SourceAnalysisArtifactsFromAnotherSnapshotAreRejected()
+    {
+        var snapshotId = Guid.NewGuid();
+        var snapshot = new IqrSourceSnapshot
+        {
+            Id = snapshotId,
+            IntegrationId = "source-analysis",
+            Archive = new SourceArchive("contracts.zip", "snapshot-A", 3),
+            AnalyzedAt = DateTimeOffset.UtcNow,
+        };
+        var api = new Mock<IIntegrationCatalogApiService>();
+        api.Setup(client => client.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<IqrSourceSnapshot>)new[] { snapshot });
+        api.Setup(client => client.ListSchemaSnapshotIndexAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaSnapshotIndex([new(snapshotId, "contracts.zip", "snapshot-A", snapshot.AnalyzedAt, true, true, 0)], false));
+        api.Setup(client => client.SourceSchemasAsync(snapshotId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaPackage(snapshotId, "snapshot-B", "contracts.zip", snapshot.AnalyzedAt, true, 0, []));
+        var schemas = new SchemaStudioService();
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(api.Object);
+
+        var page = Render<SchemaStudio>();
+        page.Find("select[aria-label='Source Analysis snapshot']").Change(snapshotId.ToString("D"));
+        page.FindAll("button").Single(button => button.TextContent.Contains("Load XSDs from snapshot", StringComparison.Ordinal)).Click();
+
+        Assert.Contains("do not match the selected immutable Source Analysis snapshot", page.Markup);
+        Assert.Empty(schemas.Packages);
+    }
+
+    private static string Fingerprint(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     [Fact]
     public void CreateWizardAndStructuredDesignerSaveASeparateVersion()
@@ -96,5 +251,108 @@ public sealed class SchemaStudioPageTests : BunitContext
         Assert.Equal(2, service.Packages.Count);
         Assert.Equal("Valid", service.Packages[0].Validation);
         Assert.Contains(Assert.Single(service.Packages[0].EffectiveSchema).Children, member => member.Name == "NewElement");
+    }
+
+    [Fact]
+    public void DesignerAddsBoundedRepeatedEnumElementAndPreservesExistingXsdPrefix()
+    {
+        const string xs = "http://www.w3.org/2001/XMLSchema";
+        var service = new SchemaStudioService();
+        service.Import(new Dictionary<string, string>
+        {
+            ["prefixed.xsd"] = $"<xsd:schema xmlns:xsd=\"{xs}\" targetNamespace=\"urn:designer\" xmlns=\"urn:designer\" elementFormDefault=\"qualified\"><xsd:element name=\"Record\"><xsd:complexType><xsd:sequence /></xsd:complexType></xsd:element></xsd:schema>"
+        }, "prefixed");
+        Services.AddSingleton(service);
+        var page = Render<SchemaStudio>();
+
+        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+        page.Find("input[aria-label='Child element name']").Change("Status");
+        page.Find("select[aria-label='Minimum occurrences']").Change("1");
+        page.Find("select[aria-label='Maximum occurrences']").Change("2");
+        page.Find("input[aria-label='Enumeration values']").Change("Ready, Done");
+        page.FindAll("button").Single(button => button.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
+        page.FindAll("button").Single(button => button.TextContent.Contains("Preview and validate draft", StringComparison.Ordinal)).Click();
+
+        Assert.Contains("Draft compilation: Valid", page.Markup);
+        page.FindAll("button").Single(button => button.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
+        var saved = service.Packages.OrderByDescending(package => package.ImportedAt).First();
+        var member = Assert.Single(Assert.Single(saved.EffectiveSchema).Children);
+        Assert.Equal("1", member.MinOccurs);
+        Assert.Equal("2", member.MaxOccurs);
+        Assert.Equal(new[] { "Ready", "Done" }, member.Facets.Where(facet => facet.Kind == "enumeration").Select(facet => facet.Value));
+        Assert.Equal("Valid", saved.Validation);
+    }
+
+    [Fact]
+    public void DesignerWorkingDraftCanBeSavedAndReopenedFromWorkspaceArtifact()
+    {
+        var schemas = new SchemaStudioService();
+        var package = schemas.Import(new Dictionary<string, string>
+        {
+            ["draft.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"Root\" type=\"xs:string\"/></xs:schema>"
+        }, "draft");
+        var repository = new WorkspaceArtifactRepository();
+        var autoSave = Mock.Of<IWorkspaceAutoSaveService>(service => service.SaveNowAsync() == Task.FromResult(true));
+        var drafts = new SchemaStudioDraftStore();
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(repository);
+        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
+        Services.AddSingleton(autoSave);
+        Services.AddSingleton(drafts);
+
+        var firstPage = Render<SchemaStudio>();
+        firstPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+        var input = (AngleSharp.Html.Dom.IHtmlTextAreaElement)firstPage.Find("textarea[aria-label='Edit XSD source']");
+        const string edited = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"ChangedRoot\" type=\"xs:string\"/></xs:schema>";
+        input.Change(edited);
+        firstPage.FindAll("button").Single(button => button.TextContent.Contains("Save working draft", StringComparison.Ordinal)).Click();
+        Assert.Contains("Saved draft for draft.xsd", firstPage.Markup);
+        Assert.Equal(edited, drafts.Find(package, "draft.xsd")?.Text);
+
+        drafts.RestoreJson(null);
+        var reopenedPage = Render<SchemaStudio>();
+        reopenedPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+
+        Assert.Equal(edited, drafts.Find(package, "draft.xsd")?.Text);
+        Assert.Contains("draft", repository.Get(WorkspaceArtifactType.SchemaStudioDrafts)!.Text);
+    }
+
+    [Fact]
+    public async Task GeneratedXmlRequiresExplicitSaveAndReopensFromWorkspaceArtifact()
+    {
+        var schemas = new SchemaStudioService();
+        schemas.Import(new Dictionary<string, string>
+        {
+            ["saved.xsd"] = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"Root\" type=\"xs:string\"/></xs:schema>"
+        }, "saved");
+        var repository = new WorkspaceArtifactRepository();
+        var store = new SchemaGeneratedXmlStore();
+        var autoSave = Mock.Of<IWorkspaceAutoSaveService>(service => service.SaveNowAsync() == Task.FromResult(true));
+        Services.AddSingleton(schemas);
+        Services.AddSingleton(store);
+        Services.AddSingleton(repository);
+        Services.AddSingleton<IWorkspaceArtifactRepository>(repository);
+        Services.AddSingleton(autoSave);
+
+        var firstPage = Render<SchemaStudio>();
+        firstPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generated Tests").Click();
+        var xmlInput = firstPage.Find("textarea[aria-label='XML instance to validate']");
+        xmlInput.Change("<Root>synthetic value</Root>");
+        await firstPage.FindAll("button").Single(button => button.TextContent == "Save XML artifact").ClickAsync();
+        Assert.Contains("XML artifact saved", firstPage.Markup);
+        Assert.Equal(1, store.Documents.Count);
+        Assert.Equal("<Root>synthetic value</Root>", Assert.Single(store.Documents).Xml);
+        Assert.Contains("synthetic value", repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml)!.Text);
+
+        store.RestoreJson(null);
+        var reopenedPage = Render<SchemaStudio>();
+        Assert.Equal("<Root>synthetic value</Root>", Assert.Single(store.Documents).Xml);
+        reopenedPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generated Tests").Click();
+        await reopenedPage.FindAll("button").Single(button => button.TextContent == "Reopen XML").ClickAsync();
+
+        Assert.Contains("Reopened XML artifact", reopenedPage.Markup);
+        await reopenedPage.FindAll("button").Single(button => button.TextContent == "Validate XML").ClickAsync();
+        Assert.Contains("Valid against", reopenedPage.Markup);
+        Assert.Contains("Validate it again against the active schema", reopenedPage.Markup);
     }
 }

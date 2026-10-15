@@ -59,6 +59,11 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();
+builder.Services.AddSingleton<TestDataProfilesService>();
+builder.Services.AddSingleton<SchemaStudioWorkspaceStore>();
+builder.Services.AddSingleton<SchemaTestRunHistory>();
+builder.Services.AddSingleton<SchemaGeneratedXmlStore>();
+  builder.Services.AddSingleton<SchemaStudioDraftStore>();
 builder.Services.AddSingleton<MarkdownRenderingService>();
 
 // Strawberry Shake registers concrete mutation classes but omits interface mappings.

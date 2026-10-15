@@ -1,4 +1,5 @@
-.ss-page { max-width: 1180px; margin: 0 auto; padding: 1.25rem; color: var(--text-primary, #18212f); }
+.ss-page { box-sizing: border-box; width: 100%; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 1.25rem; color: var(--text-primary, #18212f); }
+.ss-page *, .ss-page *::before, .ss-page *::after { box-sizing: border-box; }
 .ss-page h2 { margin: 0 0 .55rem; font-size: 1.25rem; }
 .ss-page h3 { margin: 1.2rem 0 .45rem; font-size: 1.05rem; }
 .ss-page p { line-height: 1.55; }
@@ -35,7 +36,9 @@
 .ss-editor { min-height: 24rem; white-space: pre; font: 14px/1.5 Consolas,monospace; }
 .ss-xml { min-height: 10rem; }
 .ss-field,.ss-profile label { display: inline-flex; flex-direction: column; gap: .3rem; margin: .5rem .8rem .5rem 0; }
-.ss-field select,.ss-profile input { min-width: 12rem; max-width: 100%; padding: .45rem; }
+.ss-field { display: flex; width: min(100%, 32rem); min-width: 0; max-width: 100%; }
+.ss-field select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: .45rem; }
+.ss-profile input { box-sizing: border-box; min-width: 12rem; max-width: 100%; padding: .45rem; }
 .ss-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .ss-result { padding: .7rem; border: 1px solid #aeb8c7; border-radius: .4rem; }
 .ss-profile { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }

@@ -1362,6 +1362,15 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("saved_workspaces", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Models.IqrSourceSnapshotRecord", null)
+                        .WithMany()
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SavedWorkspaceArtifact", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1598,6 +1607,52 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("EnvironmentId", "CreatedAt");
 
                     b.ToTable("security_expectation_discoveries", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
+                {
+                    b.Property<string>("ProjectImportId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("project_import_id");
+
+                    b.Property<Guid>("SnapshotId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("captured_at");
+
+                    b.Property<bool>("IsComplete")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_complete");
+
+                    b.Property<int>("OmittedFiles")
+                        .HasColumnType("integer")
+                        .HasColumnName("omitted_files");
+
+                    b.Property<string>("PackageJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("package_json");
+
+                    b.Property<string>("SnapshotFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("snapshot_fingerprint");
+
+                    b.Property<string>("SourceArchiveName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source_archive_name");
+
+                    b.HasKey("SnapshotId");
+
+                    b.ToTable("source_schema_artifacts", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.TestCoverageDecisionRecord", b =>

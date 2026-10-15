@@ -2,6 +2,7 @@ using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Integrations;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace BirkNext.Api.Controllers;
 
@@ -17,6 +18,50 @@ namespace BirkNext.Api.Controllers;
 public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider sources,
     ILogger<IqrSourceEvidenceController> logger) : ControllerBase
 {
+    private static readonly JsonSerializerOptions SchemaJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Small snapshot index for Schema Studio selectors; source evidence payloads stay on the server.</summary>
+    [HttpGet("schema-index")]
+    public async Task<ActionResult<SourceSchemaSnapshotIndexDto>> SchemaIndex(CancellationToken ct)
+    {
+        var (items, isTruncated) = await store.ListSchemaSnapshotIndexAsync(ct: ct);
+        return Ok(new SourceSchemaSnapshotIndexDto(items, isTruncated));
+    }
+
+    /// <summary>Loads the bounded XSD-only artifact captured for one exact Source Analysis snapshot.</summary>
+    [HttpGet("{snapshotId:guid}/schemas")]
+    public async Task<ActionResult<SourceSchemaPackageDto>> Schemas(Guid snapshotId, CancellationToken ct)
+    {
+        var snapshot = await store.FindSourceAnalysisAsync(snapshotId, ct);
+        if (snapshot is null) return NotFound(new { error = "Source Analysis snapshot was not found." });
+        var artifact = await store.FindSchemaArtifactAsync(snapshotId, ct);
+        if (artifact is null)
+            return Ok(new SourceSchemaPackageDto(snapshot.Id, snapshot.Archive.Sha256, snapshot.Archive.FileName,
+                snapshot.AnalyzedAt, false, 0, [], false,
+                "XSD content was not retained in this snapshot. Reimport the source archive in Source Analysis to create a new snapshot with reusable XSD artifacts.",
+                snapshot.ProjectImport?.ImportId, SourceProjectName(snapshot)));
+        if (!string.Equals(artifact.SnapshotFingerprint, snapshot.Archive.Sha256, StringComparison.Ordinal))
+            return Conflict(new { error = "The stored schema artifact does not match this source snapshot." });
+        if (!string.Equals(artifact.ProjectImportId, snapshot.ProjectImport?.ImportId, StringComparison.Ordinal))
+            return Conflict(new { error = "The stored schema artifact does not match this source project's import identity." });
+        try
+        {
+            var files = JsonSerializer.Deserialize<List<SourceSchemaFileDto>>(artifact.PackageJson, SchemaJson) ?? [];
+            return Ok(new SourceSchemaPackageDto(snapshot.Id, snapshot.Archive.Sha256, snapshot.Archive.FileName,
+                snapshot.AnalyzedAt, artifact.IsComplete, artifact.OmittedFiles, files,
+                ProjectImportId: artifact.ProjectImportId, SourceProjectName: SourceProjectName(snapshot)));
+        }
+        catch (JsonException)
+        {
+            logger.LogError("Stored schema artifact could not be read for snapshot {SnapshotId}", snapshotId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "The stored schema artifact is unavailable." });
+        }
+    }
+
+    private static string? SourceProjectName(BirkNext.Integrations.IqrSourceSnapshot snapshot) =>
+        !string.IsNullOrWhiteSpace(snapshot.Repository?.DisplayName) ? snapshot.Repository.DisplayName
+        : snapshot.Projects.FirstOrDefault(project => !string.IsNullOrWhiteSpace(project.Name))?.Name;
+
     /// <summary>Integration Quality Review's view of Source Analysis: snapshots for binding one to an integration (read-only metadata).</summary>
     [HttpGet("scope")]
     public async Task<ActionResult<BirkNext.SourceEvidence.ReviewSourceOptions>> Scope([FromQuery] string? environmentId, [FromQuery] Guid? primary, CancellationToken ct)
@@ -99,3 +144,9 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
             entryPath = failure.EntryPath, actual = failure.Actual, limit = failure.Limit });
     }
 }
+
+public sealed record SourceSchemaFileDto(string Path, string Text, string Fingerprint);
+public sealed record SourceSchemaPackageDto(Guid SnapshotId, string SnapshotFingerprint, string SourceArchiveName,
+    DateTimeOffset AnalyzedAt, bool IsComplete, int OmittedFiles, IReadOnlyList<SourceSchemaFileDto> Files,
+    bool IsAvailable = true, string? UnavailableReason = null, string? ProjectImportId = null, string? SourceProjectName = null);
+public sealed record SourceSchemaSnapshotIndexDto(IReadOnlyList<SourceSchemaSnapshotIndexItem> Snapshots, bool IsTruncated);

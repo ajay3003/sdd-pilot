@@ -1,0 +1,208 @@
+@using BirkNext.Web.Services.SchemaStudio
+@using Microsoft.AspNetCore.Components.Web
+
+<section class="ss-graph" aria-labelledby="ss-graph-title">
+    <div class="ss-graph-heading">
+        <div>
+            <h3 id="ss-graph-title">Relationship graph</h3>
+            <p>Files, namespaces and referenced declarations from this package. Select a node to inspect its relationships and open its source file.</p>
+        </div>
+        <label>Search graph <input type="search" @bind="_search" @bind:event="oninput" aria-label="Search relationship graph" /></label>
+        <label>Relationship type
+            <select @bind="_filter" aria-label="Filter graph relationship type">
+                <option value="All">All relationships</option><option value="Imports">Imports</option><option value="Includes">Includes</option><option value="Namespace">Namespaces</option>
+                <option value="Type">Type references</option><option value="Extends">Inheritance</option><option value="Element">Element references</option>
+            </select>
+        </label>
+        <label>Zoom <input type="range" min="0.6" max="1.6" step="0.1" @bind="_zoom" aria-label="Graph zoom" /> <span>@_zoom.ToString("P0")</span></label>
+    </div>
+    @{ var graph = BuildGraph(); }
+    @if (graph.OmittedNodes > 0 || graph.OmittedEdges > 0 || Package.ReferencesTruncated)
+    {
+        <p class="ss-warning" role="status">The graph is bounded to @MaxNodes nodes and @MaxEdges relationships. This view omits @graph.OmittedNodes node(s) and @graph.OmittedEdges relationship(s)@(Package.ReferencesTruncated ? "; the source reference set was also capped at 1,000" : ""). Use References and Linked XSDs for the bounded relationship lists.</p>
+    }
+    <div class="ss-graph-frame" tabindex="0" aria-label="Scrollable schema relationship graph. Use the search and filter controls, then select a node with Enter or Space.">
+        <svg class="ss-graph-svg" viewBox="0 0 @graph.Width @graph.Height" role="group" aria-labelledby="ss-graph-svg-title ss-graph-svg-desc" style="width:@(graph.Width * _zoom)px;height:@(graph.Height * _zoom)px">
+            <title id="ss-graph-svg-title">Schema relationship graph</title>
+            <desc id="ss-graph-svg-desc">@graph.Nodes.Count nodes and @graph.Edges.Count relationships are displayed.</desc>
+            <defs><marker id="ss-graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" /></marker></defs>
+            @foreach (var edge in graph.Edges)
+            {
+                var isHighlighted = _selectedNodeId is null || edge.From.Id == _selectedNodeId || edge.To.Id == _selectedNodeId;
+                <g class="ss-graph-edge @(isHighlighted ? "highlighted" : "muted")" aria-label="@edge.Kind: @edge.From.Label to @edge.To.Label">
+                    <line x1="@(edge.From.X + NodeWidth)" y1="@(edge.From.Y + NodeHeight / 2)" x2="@edge.To.X" y2="@(edge.To.Y + NodeHeight / 2)" marker-end="url(#ss-graph-arrow)" />
+                    <text x="@((edge.From.X + NodeWidth + edge.To.X) / 2)" y="@((edge.From.Y + edge.To.Y) / 2 + 4)">@edge.Kind</text>
+                </g>
+            }
+            @foreach (var node in graph.Nodes)
+            {
+                <g class="ss-graph-node @(node.Id == _selectedNodeId ? "selected" : "") @(node.IsUnresolved ? "unresolved" : "")"
+                   transform="translate(@node.X @node.Y)" role="button" tabindex="0" aria-label="@NodeDescription(node)" aria-pressed="@(node.Id == _selectedNodeId)"
+                   @onclick="() => SelectNode(node)" @onkeydown="args => OnNodeKeyDown(args, node)">
+                    <rect width="@NodeWidth" height="@NodeHeight" rx="8" />
+                    <text class="ss-graph-label" x="12" y="23">@ShortLabel(node.Label)</text>
+                    <text class="ss-graph-kind" x="12" y="44">@node.Kind</text>
+                    <text class="ss-graph-namespace" x="12" y="64">@(string.IsNullOrWhiteSpace(node.Namespace) ? "" : ShortLabel(node.Namespace))</text>
+                </g>
+            }
+        </svg>
+    </div>
+    @if (SelectedNode(graph) is { } selected)
+    {
+        <article class="ss-graph-details" aria-live="polite">
+            <h4>@selected.Label <small>@selected.Kind</small></h4>
+            <p>@(selected.IsUnresolved ? $"Unresolved schema location: {selected.SourceLocation}" : $"Source file: {selected.FileName} · namespace: {selected.Namespace ?? "(none)"}")</p>
+            @if (selected.Declarations.Count > 0) { <p>Declarations: @string.Join(", ", selected.Declarations.Take(20))@(selected.Declarations.Count > 20 ? $" and {selected.Declarations.Count - 20} more" : "")</p> }
+            @{ var related = graph.Edges.Where(e => e.From.Id == selected.Id || e.To.Id == selected.Id).ToArray(); }
+            @if (related.Length > 0)
+            {
+                <ul><li>@related.Count(e => e.To.Id == selected.Id) incoming relationship(s)</li><li>@related.Count(e => e.From.Id == selected.Id) outgoing relationship(s)</li></ul>
+                <ul class="ss-graph-related">@foreach (var edge in related.Take(40)) { <li>@edge.Kind: @edge.From.Label → @edge.To.Label@(edge.SourcePath is null ? "" : $" · {edge.SourcePath}")</li> }</ul>
+            }
+            @if (!selected.IsUnresolved && selected.FileName is { } file) { <button class="ss-text-button" @onclick="() => OnFileSelected.InvokeAsync(file)">Open source evidence</button> }
+        </article>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SchemaPackage Package { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnFileSelected { get; set; }
+
+    private const int MaxNodes = 200;
+    private const int MaxEdges = 1000;
+    private const int NodeWidth = 196;
+    private const int NodeHeight = 78;
+    private string _filter = "All";
+    private string _search = "";
+    private string? _selectedNodeId;
+    private double _zoom = 1;
+
+    private GraphData BuildGraph()
+    {
+        var nodes = new Dictionary<string, GraphNode>(StringComparer.Ordinal);
+        var omittedNodeIds = new HashSet<string>(StringComparer.Ordinal);
+        var omittedEdgesDuringBuild = 0;
+        var files = Package.Files.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var file in Package.Files)
+        {
+            var id = FileId(file.Name);
+            nodes[id] = new(id, file.Name, "XSD file", file.Name, file.TargetNamespace,
+                file.Declarations.Select(d => d.Name).Distinct(StringComparer.Ordinal).ToArray(), false, null, 0, 0);
+        }
+
+        var edges = new List<GraphEdge>();
+        foreach (var file in Package.Files.Where(file => !string.IsNullOrWhiteSpace(file.TargetNamespace)))
+        {
+            if (!KindMatches("Namespace")) continue;
+            var namespaceId = "namespace:" + file.TargetNamespace;
+            if (!nodes.TryGetValue(namespaceId, out var namespaceNode))
+            {
+                if (nodes.Count >= MaxNodes) { omittedNodeIds.Add(namespaceId); omittedEdgesDuringBuild++; continue; }
+                namespaceNode = new(namespaceId, file.TargetNamespace!, "Namespace", null, file.TargetNamespace, [], false, null, 0, 0);
+                nodes[namespaceId] = namespaceNode;
+            }
+            if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
+            edges.Add(new(nodes[FileId(file.Name)], namespaceNode, "Namespace", file.Name, file.TargetNamespace));
+        }
+        foreach (var file in Package.Files)
+        foreach (var declaration in file.Declarations)
+        {
+            var declarationId = DeclarationId(file.Name, declaration);
+            if (!nodes.ContainsKey(declarationId))
+            {
+                if (nodes.Count >= MaxNodes) { omittedNodeIds.Add(declarationId); omittedEdgesDuringBuild++; continue; }
+                nodes[declarationId] = new(declarationId, declaration.Name, "Global " + declaration.Kind, file.Name,
+                    file.TargetNamespace, [], false, null, 0, 0);
+            }
+            if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
+            var relation = declaration.Kind switch
+            {
+                "element" => "Declares element",
+                "attribute" => "Declares attribute",
+                "simpleType" or "complexType" => "Declares type",
+                _ => "Declares " + declaration.Kind
+            };
+            edges.Add(new(nodes[FileId(file.Name)], nodes[declarationId], relation, file.Name, declaration.Path));
+        }
+        foreach (var file in Package.Files)
+        foreach (var link in file.Links)
+        {
+            if (!KindMatches(link.Kind)) continue;
+            if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
+            var source = nodes[FileId(file.Name)];
+            GraphNode target;
+            if (link.ResolvedFile is { } targetFile && files.ContainsKey(targetFile)) target = nodes[FileId(targetFile)];
+            else
+            {
+                var missingId = "unresolved:" + file.Name + ":" + (link.Location ?? "(no schemaLocation)");
+                if (nodes.TryGetValue(missingId, out var existingTarget)) target = existingTarget;
+                else
+                {
+                    if (nodes.Count >= MaxNodes) { omittedNodeIds.Add(missingId); omittedEdgesDuringBuild++; continue; }
+                    target = new(missingId, link.Location ?? "Unresolved schema", "Unresolved " + link.Kind.ToLowerInvariant(), null, link.Namespace, [], true, link.Location, 0, 0);
+                    nodes[missingId] = target;
+                }
+            }
+            edges.Add(new(source, target, link.Kind, file.Name, link.Location));
+        }
+        foreach (var reference in Package.References)
+        {
+            if (!KindMatches(reference.Kind) || !nodes.TryGetValue(FileId(reference.SourceFile), out var source) || !files.ContainsKey(reference.TargetFile)) continue;
+            if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
+            var targetDeclaration = files[reference.TargetFile].Declarations.FirstOrDefault(declaration => declaration.Name == reference.Name
+                && (reference.Kind is "extends" or "uses type"
+                    ? declaration.Kind is "simpleType" or "complexType"
+                    : reference.Kind == "references element" ? declaration.Kind == "element" : declaration.Kind == "attribute"));
+            if (targetDeclaration is null) continue;
+            var targetId = DeclarationId(reference.TargetFile, targetDeclaration);
+            if (!nodes.TryGetValue(targetId, out var target))
+            {
+                if (nodes.Count >= MaxNodes) { omittedNodeIds.Add(targetId); omittedEdgesDuringBuild++; continue; }
+                target = new(targetId, reference.Name, reference.Kind + " declaration", reference.TargetFile,
+                    files[reference.TargetFile].TargetNamespace, [], false, null, 0, 0);
+                nodes[targetId] = target;
+            }
+            edges.Add(new(source, target, reference.Kind, reference.SourceFile, reference.Path));
+        }
+
+        var query = _search.Trim();
+        var matched = nodes.Values.Where(n => query.Length == 0 || NodeDescription(n).Contains(query, StringComparison.OrdinalIgnoreCase)
+                || n.Declarations.Any(d => d.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(n => n.IsUnresolved).ThenBy(n => n.Kind == "XSD file" ? 0 : 1).ThenBy(n => n.Label, StringComparer.OrdinalIgnoreCase).ToArray();
+        var visible = matched.Take(MaxNodes).ToArray();
+        var visibleIds = visible.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+        var filteredEdges = edges.Where(e => visibleIds.Contains(e.From.Id) && visibleIds.Contains(e.To.Id))
+            .DistinctBy(e => (e.From.Id, e.To.Id, e.Kind, e.SourcePath)).ToArray();
+        var shownEdges = filteredEdges.Take(MaxEdges).ToArray();
+        var positions = visible.Select((node, index) => node with { X = 24 + (index % 4) * 226, Y = 26 + (index / 4) * 112 }).ToDictionary(n => n.Id, StringComparer.Ordinal);
+        var positionedEdges = shownEdges.Select(e => e with { From = positions[e.From.Id], To = positions[e.To.Id] }).ToArray();
+        return new(positions.Values.OrderBy(n => n.Y).ThenBy(n => n.X).ToArray(), positionedEdges,
+            24 + 4 * 226, Math.Max(140, ((visible.Length + 3) / 4) * 112 + 24),
+            Math.Max(0, matched.Length - visible.Length) + omittedNodeIds.Count,
+            omittedEdgesDuringBuild + Math.Max(0, filteredEdges.Length - shownEdges.Length));
+    }
+
+    private bool KindMatches(string kind) => _filter == "All"
+        || _filter == "Namespace" && kind.Equals("Namespace", StringComparison.OrdinalIgnoreCase)
+        || _filter == "Imports" && kind.Contains("import", StringComparison.OrdinalIgnoreCase)
+        || _filter == "Includes" && kind.Contains("include", StringComparison.OrdinalIgnoreCase)
+        || _filter == "Type" && kind.Contains("type", StringComparison.OrdinalIgnoreCase)
+        || _filter == "Extends" && (kind.Contains("extend", StringComparison.OrdinalIgnoreCase) || kind.Contains("inherit", StringComparison.OrdinalIgnoreCase))
+        || _filter == "Element" && kind.Contains("element", StringComparison.OrdinalIgnoreCase);
+    private static string FileId(string name) => "file:" + name;
+    private static string DeclarationId(string file, SchemaDeclaration declaration) =>
+        "declaration:" + file + ":" + declaration.Kind + ":" + declaration.Name + ":" + declaration.Path;
+    private static string NodeDescription(GraphNode node) => node.IsUnresolved ? $"Unresolved: {node.Label}" : $"{node.Kind}: {node.Label}; {node.FileName}; namespace {node.Namespace ?? "none"}";
+    private static string ShortLabel(string value) => value.Length > 27 ? value[..24] + "…" : value;
+    private GraphNode? SelectedNode(GraphData graph) => graph.Nodes.FirstOrDefault(n => n.Id == _selectedNodeId);
+    private void SelectNode(GraphNode node) => _selectedNodeId = node.Id;
+    private void OnNodeKeyDown(KeyboardEventArgs args, GraphNode node)
+    {
+        if (args.Key is "Enter" or " ") SelectNode(node);
+    }
+
+    private sealed record GraphNode(string Id, string Label, string Kind, string? FileName, string? Namespace,
+        IReadOnlyList<string> Declarations, bool IsUnresolved, string? SourceLocation, int X, int Y);
+    private sealed record GraphEdge(GraphNode From, GraphNode To, string Kind, string? SourceFile, string? SourcePath);
+    private sealed record GraphData(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphEdge> Edges, int Width, int Height, int OmittedNodes, int OmittedEdges);
+}

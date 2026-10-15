@@ -1,14 +1,70 @@
 @page "/schema-studio"
 @using System.Text
 @using System.Xml
+@using BirkNext.Integrations
+@using BirkNext.Web.Components
+@using BirkNext.Web.Services
 @using BirkNext.Web.Services.SchemaStudio
 @using Microsoft.AspNetCore.Components.Forms
 @inject SchemaStudioService Studio
+@inject IServiceProvider ServiceProvider
 
 <PageTitle>Schema Studio</PageTitle>
 <main class="ss-page">
-    <PageHeader Title="Schema Studio" Description="A generic workspace for exploring, comparing and testing XML Schema (XSD) contracts. Imports are analyzed locally in this browser session; schemas are never fetched from remote locations." />
+    <PageHeader Title="Schema Studio" Description="A generic workspace for exploring, comparing and testing XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
     <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p>
+    <section class="ss-import" aria-labelledby="ss-source-title">
+        <h2 id="ss-source-title">Reuse Source Analysis XSDs</h2>
+        <p>Choose one immutable Source Analysis snapshot. Schema files are loaded only from that snapshot; newer uploads are never substituted.</p>
+        @if (_sourceSnapshots.Count == 0) { <p class="ss-empty">No Source Analysis snapshots are available in this workspace.</p> }
+        else
+        {
+            @if (_sourceSnapshotIndexTruncated) { <p class="ss-warning" role="status">Showing the newest 500 Source Analysis snapshots. Older snapshots are omitted from this selector.</p> }
+            <label class="ss-field">Source snapshot
+                <select @bind="_sourceSnapshotId" aria-label="Source Analysis snapshot">
+                    <option value="">Choose snapshot</option>
+                    @foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.Id">@SnapshotLabel(snapshot)</option> }
+                </select>
+            </label>
+            <button class="ss-action" disabled="@(_sourceSnapshotId.Length == 0 || _sourceBusy)" @onclick="LoadSourceContracts">Load XSDs from snapshot</button>
+            @if (_sourcePackage is { } sourcePackage)
+            {
+                <p class="ss-note">@sourcePackage.Files.Count XSD file(s) bound to @sourcePackage.SourceArchiveName, snapshot @sourcePackage.SnapshotId. Fingerprint <code>@sourcePackage.SnapshotFingerprint</code>.</p>
+                @if (!sourcePackage.IsComplete) { <p class="ss-warning" role="status">This snapshot's schema capture is partial: @sourcePackage.OmittedFiles XSD file(s) were omitted by storage limits. The resulting package will remain Partial.</p> }
+                <label class="ss-field">Contract XSD
+                    <select @bind="_sourceContractPath" aria-label="Discovered XSD contract">
+                        @foreach (var file in sourcePackage.Files) { <option value="@file.Path">@file.Path · @file.Text.Length.ToString("N0") characters</option> }
+                    </select>
+                </label>
+                <button class="ss-action" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
+            }
+        }
+        @if (_sourceBusy) { <p role="status">Loading XSD artifacts from the selected snapshot…</p> }
+        @if (!string.IsNullOrWhiteSpace(_sourceError)) { <p class="ss-error" role="alert">@_sourceError</p> }
+    </section>
+    <section class="ss-import" aria-labelledby="ss-saved-title">
+        <h2 id="ss-saved-title">Saved schema analyses</h2>
+        <p>Save a package to this BirkNext workspace to reopen it later. Source Analysis packages keep an exact snapshot reference instead of copying the XSD files.</p>
+        @{ var savedPackages = SavedPackages?.Packages.Where(p => p.ProjectScope == ProjectScope()).ToArray() ?? []; }
+        @if (savedPackages.Length == 0)
+        { <p class="ss-empty">No saved schema analyses in this workspace.</p> }
+        else
+        {
+            <div class="ss-package-list">
+                @foreach (var saved in savedPackages)
+                {
+                    <article class="ss-package">
+                        <div><strong>@saved.Name</strong><span>@(saved.Files is null ? "Source Analysis snapshot reference" : "Saved local XSD package") · @saved.SavedAt.ToLocalTime().ToString("g")</span><code>@saved.Fingerprint[..Math.Min(12, saved.Fingerprint.Length)]</code></div>
+                        @if (saved.Provenance?.SourceSnapshotId is { } snapshotId) { <small>Snapshot @snapshotId · @saved.Provenance.SourceArchiveName</small> }
+                        <button class="ss-action" @onclick="() => OpenSavedSchema(saved.Id)">Reopen analysis</button>
+                        <button class="ss-text-button" @onclick="() => RemoveSavedSchema(saved.Id)">Remove saved analysis</button>
+                    </article>
+                }
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-result" role="status">@_artifactStatus</p> }
+        @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
+    </section>
     <section class="ss-import" aria-labelledby="ss-import-title">
         <h2 id="ss-import-title">Import XSD files or a package</h2>
         <label class="ss-upload">Choose one or more .xsd files <InputFile accept=".xsd" multiple OnChange="ImportFiles" aria-label="Choose XSD files" /></label>
@@ -51,7 +107,12 @@
         <div class="ss-heading"><div><h2 id="ss-current-title">@package.Name</h2><p>@package.Files.Count XSD file(s) · @package.Validation · Fingerprint <code>@package.Fingerprint</code></p></div>
                 @if (CurrentFile is { } active) { <a class="ss-action" download="@active.Name" href="@Download(active.Text, "application/xml")">Export current XSD</a> }
                 <a class="ss-action" download="@(package.Name + ".zip")" href="@Download(Convert.ToBase64String(SchemaStudioService.ExportZip(package)), "application/zip", true)">Export package ZIP</a>
+                <button class="ss-action" @onclick="SaveCurrentSchema">Save analysis to workspace</button>
             </div>
+            @if (package.Provenance is { } provenance)
+            {
+                <p class="ss-note">Source evidence: @(provenance.SourceProjectName ?? provenance.SourceArchiveName) · archive @provenance.SourceArchiveName@(string.IsNullOrWhiteSpace(provenance.ProjectImportId) ? "" : $" · Project Import {provenance.ProjectImportId}") · snapshot @provenance.SourceSnapshotId · contract @provenance.SelectedContractPath · fingerprint @provenance.ContractFingerprint. This analysis remains bound to the selected snapshot.</p>
+            }
             <label class="ss-search">Search this package <input type="search" @bind="_search" @bind:event="oninput" placeholder="Element, type, namespace, filename, facet" /></label>
             @if (!string.IsNullOrWhiteSpace(_search))
             {
@@ -74,6 +135,7 @@
                     <div class="ss-table-wrap"><table><thead><tr><th>File</th><th>Namespace</th><th>Relationship</th><th>Schema location</th><th>Resolution</th></tr></thead><tbody>
                     @foreach (var f in package.Files) { <tr><td><button class="ss-link" @onclick="() => _fileName = f.Name">@f.Name</button></td><td>@(f.TargetNamespace ?? "—")</td><td>Root file</td><td>—</td><td>Available</td></tr>@foreach (var link in f.Links) { <tr><td>@f.Name</td><td>@(link.Namespace ?? "—")</td><td>@link.Kind</td><td>@(link.Location ?? "—")</td><td>@(link.ResolvedFile is null ? "Unresolved" : "Resolved: " + link.ResolvedFile)</td></tr> } }
                     </tbody></table></div>
+                    <SchemaRelationshipGraph Package="package" OnFileSelected="OpenGraphFile" />
                     <h3>Dependency relationships</h3>
                     @if (dependencyEdges.Length > SchemaStudioService.MaxRelationships || (package.ReferencesTruncated && _graphMode is "Files + types" or "All relationships"))
                     {
@@ -87,7 +149,7 @@
                     break;
                 case "Effective Schema":
                     <p>Effective logical view resolves linked type use and inheritance while preserving provenance. Physical XSD files remain separate.</p>
-                    @foreach (var root in package.EffectiveSchema) { <article class="ss-card"><h3>@root.Name <small>root · declared in @root.DeclaredIn</small></h3><ul class="ss-tree">@foreach (var member in root.Children) { @RenderMember(member) }</ul></article> }
+                    @foreach (var root in package.EffectiveSchema) { <article class="ss-card"><h3>@root.Name <small>root · declared in @root.DeclaredIn</small></h3>@if (root.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in root.Attributes) { @RenderAttribute(attribute) }</ul> }<ul class="ss-tree">@foreach (var member in root.Children) { @RenderMember(member) }</ul></article> }
                     @if (package.EffectiveSchema.Count == 0) { <p>No global root elements were found.</p> }
                     break;
                 case "Types":
@@ -113,11 +175,13 @@
                     <pre class="ss-raw"><code>@(CurrentFile?.Text)</code></pre>
                     break;
                 case "Designer":
-                    <p>Schema Designer. Add a child to an inline or named complex root type, or edit the XSD draft below. Saving always creates a separate version.</p>
+                    <p>Schema Designer drafts are separate from imported source evidence. The structured helper adds an element to the root sequence and can set occurrence bounds, enumerations, or inclusive numeric bounds. Other edits use the XSD draft and are accepted only when the full linked package compiles.</p>
                     <label class="ss-field">File <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
-                    <div class="ss-create"><label>Child element <input @bind="_newChildName" /></label><label>Type <select @bind="_newChildType"><option value="xs:string">String</option><option value="xs:decimal">Decimal</option><option value="xs:integer">Integer</option><option value="xs:boolean">Boolean</option><option value="xs:date">Date</option></select></label><label>Occurrence <select @bind="_newChildMin"><option value="1">Required</option><option value="0">Optional</option></select></label><button class="ss-action" @onclick="AddDraftElement">Add child element</button></div>
+                    <div class="ss-create"><label>Child element <input aria-label="Child element name" @bind="_newChildName" /></label><label>Type <select aria-label="Child element type" @bind="_newChildType"><option value="xs:string">String</option><option value="xs:decimal">Decimal</option><option value="xs:integer">Integer</option><option value="xs:boolean">Boolean</option><option value="xs:date">Date</option></select></label><label>Minimum occurrences <select aria-label="Minimum occurrences" @bind="_newChildMin"><option value="1">1 (required)</option><option value="0">0 (optional)</option><option value="2">2</option></select></label><label>Maximum occurrences <select aria-label="Maximum occurrences" @bind="_newChildMax"><option value="1">1</option><option value="2">2</option><option value="unbounded">Unbounded</option></select></label><label>Enumeration values, comma separated <input aria-label="Enumeration values" @bind="_newChildEnumeration" /></label><label>Inclusive minimum number <input aria-label="Minimum numeric value" inputmode="decimal" @bind="_newChildNumericMinimum" /></label><label>Inclusive maximum number <input aria-label="Maximum numeric value" inputmode="decimal" @bind="_newChildNumericMaximum" /></label><button class="ss-action" @onclick="AddDraftElement">Add child element</button></div>
                     <textarea class="ss-editor" @bind="_draft" aria-label="Edit XSD source"></textarea>
-                    <button class="ss-action" @onclick="SaveDraft">Validate and save new version</button>
+                    <div class="ss-actions"><button class="ss-text-button" @onclick="SaveWorkingDraft">Save working draft</button><button class="ss-text-button" @onclick="PreviewDraft">Preview and validate draft</button><button class="ss-text-button" @onclick="RevertDraft">Revert draft</button><button class="ss-action" @onclick="SaveDraft">Validate and save new version</button></div>
+                    @if (!string.IsNullOrWhiteSpace(_draftStatus)) { <p role="status">@_draftStatus</p> }
+                    @if (_draftPreview is { } draftPreview) { <p role="status">Draft compilation: @draftPreview.Validation · @draftPreview.Files.Count file(s) · @draftPreview.References.Count relationship(s).</p>@if (draftPreview.Validation != "Valid") { <ul class="ss-warning">@foreach (var diagnostic in draftPreview.Diagnostics) { <li>@diagnostic</li> }</ul> } else { <h3>Preview changes</h3><ul>@foreach (var change in Compare(package, draftPreview)) { <li>@change</li> }</ul><p>Linked references affected by the selected file edit are re-resolved before saving.</p> } }
                     break;
                 case "Compare":
                     <p>Compare immutable package fingerprints and declaration summaries. Import a second version to compare it with the current package.</p>
@@ -126,20 +190,73 @@
                 case "Generated Tests":
                     <p>Cases derive from XSD declarations and constraints. They test schema behavior only, not business or integration behavior.</p>
                     <p>Cases run locally against the imported package. Expected validity and actual validator output are shown separately.</p>
+                    @if (package.GeneratedTestsTruncated) { <p class="ss-warning" role="status">Only the first 5,000 derived test candidates are available here; some candidate tests were omitted. Effective Schema and Constraints still show the analyzed XSD evidence.</p> }
                     <div class="ss-actions"><button class="ss-action" @onclick="RunGeneratedTests">Run generated tests (first 100)</button></div>
                     <div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Derived case</th><th>Value or mutation</th><th>Expected</th><th>Source XSD</th><th>Action</th></tr></thead><tbody>@foreach (var test in package.GeneratedTests) { <tr><td>@test.Path</td><td>@test.Rule</td><td><code>@test.Value</code></td><td>@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.SourceFile</td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML</button></td></tr> }</tbody></table></div>
-                    @if (_testResults.Count > 0) { <h3>Test results</h3><div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Case</th><th>Expected</th><th>Actual</th><th>Outcome</th><th>Evidence</th></tr></thead><tbody>@foreach (var result in _testResults) { <tr><td>@result.Path</td><td>@result.Rule</td><td>@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Actual</td><td>@result.Outcome</td><td><details><summary>Diagnostic and generated XML</summary><p>@result.Diagnostic</p><pre class="ss-raw"><code>@result.Xml</code></pre></details></td></tr> }</tbody></table></div> }
+                    @if (_testResults.Count > 0) { <h3>Test results</h3><div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Case</th><th>Expected</th><th>Actual</th><th>Outcome</th><th>Evidence</th></tr></thead><tbody>@foreach (var result in _testResults) { <tr><td>@result.Path</td><td>@result.Rule</td><td>@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Actual</td><td>@result.Outcome</td><td><details><summary>Diagnostic, valid baseline and mutated XML</summary><p>@result.Diagnostic</p>@if (!string.IsNullOrWhiteSpace(result.BaselineId)) { <p>Baseline: @result.BaselineId</p> }@if (result.BaselineXml.Length > 0) { <h4>Valid baseline XML</h4><pre class="ss-raw"><code>@result.BaselineXml</code></pre> }@if (result.Xml.Length > 0) { <h4>Mutated XML</h4><pre class="ss-raw"><code>@result.Xml</code></pre> }</details></td></tr> }</tbody></table></div> }
+                    @if (TestRuns?.Runs.Where(r => r.PackageFingerprint == package.Fingerprint && r.ProjectScope == ProjectScope()).Take(10).ToArray() is { Length: > 0 } savedRuns)
+                    {
+                        <h3>Saved validation history</h3><p>History stores schema, snapshot and profile identity with sanitized outcomes. Generated XML is not retained in run history.</p>
+                        <div class="ss-table-wrap"><table><thead><tr><th>Run</th><th>Profile</th><th>Results</th><th>Pass</th><th>Fail</th><th>Not evaluated</th></tr></thead><tbody>
+                        @foreach (var run in savedRuns) { <tr><td>@run.CreatedAt.ToLocalTime().ToString("g")<br /><small>@run.PackageFingerprint[..Math.Min(12, run.PackageFingerprint.Length)] · @run.Provenance?.SourceSnapshotId</small></td><td>@run.ProfileName · seed @(run.Seed?.ToString() ?? "not set")</td><td>@run.Results.Count</td><td>@run.Results.Count(r => r.Outcome == "Pass")</td><td>@run.Results.Count(r => r.Outcome == "Fail")</td><td>@run.Results.Count(r => r.Outcome == "Not evaluated")</td></tr> }
+                        </tbody></table></div>
+                    }
                     <label class="ss-field">Validate XML against <select @bind="_fileName">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
                     <textarea class="ss-editor ss-xml" @bind="_xml" aria-label="XML instance to validate"></textarea>
-                    <div class="ss-actions"><button class="ss-action" @onclick="GenerateXml">Generate minimum example</button><button class="ss-action" @onclick="ValidateXml">Validate XML</button></div>
+                    <p class="ss-note">Saving XML stores its content in this BirkNext workspace. Review user-entered values before saving.</p>
+                    <div class="ss-actions"><button class="ss-action" @onclick="GenerateXml">Generate minimum example</button><button class="ss-action" @onclick="ValidateXml">Validate XML</button><button class="ss-text-button" @onclick="SaveCurrentXml">Save XML artifact</button>@if (!string.IsNullOrWhiteSpace(_xml)) { <a class="ss-action" download="schema-studio.xml" href="@Download(_xml, "application/xml")">Export XML</a> }</div>
                     @if (_validationMessage is not null) { <p role="status" class="ss-result">@_validationMessage</p> }
+                    @if (!string.IsNullOrWhiteSpace(_xmlArtifactStatus)) { <p role="status" class="ss-result">@_xmlArtifactStatus</p> }
+                    @if (!string.IsNullOrWhiteSpace(_xmlArtifactError)) { <p role="alert" class="ss-error">@_xmlArtifactError</p> }
+                    @if (SavedXml?.Documents.Where(item => item.PackageFingerprint == package.Fingerprint && item.ProjectScope == ProjectScope()).Take(10).ToArray() is { Length: > 0 } savedXml)
+                    {
+                        <h3>Saved XML artifacts</h3>
+                        <div class="ss-package-list">@foreach (var saved in savedXml)
+                        {
+                            <article class="ss-package"><div><strong>@saved.ProfileName</strong><span>@saved.FileName · @saved.SavedAt.ToLocalTime().ToString("g") · schema @saved.PackageFingerprint[..12]@(saved.Provenance?.SourceSnapshotId is { } xmlSnapshot ? $" · snapshot {xmlSnapshot}" : "")</span></div>
+                                <button class="ss-action" @onclick="() => ReopenXml(saved.Id)">Reopen XML</button>
+                                <button class="ss-text-button" @onclick="() => RemoveXml(saved.Id)">Remove XML artifact</button>
+                            </article>
+                        }</div>
+                    }
                     break;
                 case "Test Data Profile":
-                    <p>Profile values are separate from the schema contract and are held only in this component state.</p>
-                    <div class="ss-profile"><label>Element/path <input @bind="_profilePath" list="ss-profile-paths" /></label><datalist id="ss-profile-paths">@foreach (var testPath in package.GeneratedTests.Select(t => t.Path).Distinct()) { <option value="@testPath"></option> }</datalist><label>Test value <input @bind="_profileValue" /></label><label>Value source <select @bind="_profileSource"><option>Manual</option><option>Generated valid</option><option>Boundary</option><option>Generated invalid</option></select></label><button class="ss-action" @onclick="AddProfile">Add or update value</button></div>
-                    <div class="ss-actions"><button class="ss-text-button" @onclick='() => GenerateProfileValue("Generated valid")'>Generate valid value</button><button class="ss-text-button" @onclick='() => GenerateProfileValue("Boundary")'>Generate boundary value</button><button class="ss-text-button" @onclick='() => GenerateProfileValue("Generated invalid")'>Generate invalid value</button></div>
-                    @if (_profileRows.Count > 0) { <div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Type</th><th>Constraint</th><th>Value</th><th>Source</th><th>Status</th><th>Action</th></tr></thead><tbody>@foreach (var row in _profileRows) { <tr><td>@row.Path</td><td>@(Current?.GeneratedTests.FirstOrDefault(t => t.Path == row.Path)?.SourceFile ?? "XSD-derived")</td><td>@string.Join(", ", Current?.EffectiveSchema.SelectMany(FlattenMembers).FirstOrDefault(m => m.Name == row.Path.Split('/').Last())?.Facets.Select(f => f.Kind + "=" + f.Value) ?? [])</td><td><input @bind="row.Value" aria-label="Profile value for @row.Path" /></td><td>@row.Source</td><td>Draft</td><td><button class="ss-text-button" @onclick="() => RemoveProfile(row)">Remove</button></td></tr> }</tbody></table></div> }
-                    @if (_profileError is not null) { <p class="ss-error" role="alert">@_profileError</p> }
+                    <p>Profiles store deterministic generation rules, not real identifiers, secrets or fixed personal values. Generated values are synthetic and only XSD validity is evaluated.</p>
+                    <div class="ss-profile">
+                        <label>Profile
+                            <select @bind="_activeProfileId" aria-label="Test Data Profile">
+                                @foreach (var builtIn in TestDataProfilesService.BuiltIns(package.Fingerprint)) { <option value="@builtIn.Id">@builtIn.Name (built-in)</option> }
+                                @foreach (var profile in AvailableProfiles(package)) { <option value="@profile.Id">@profile.Name</option> }
+                            </select>
+                        </label>
+                        <label>New profile name <input @bind="_newProfileName" maxlength="120" /></label>
+                        <label>Profile kind <select @bind="_newProfileKind"><option value="@TestDataProfileKind.GenericValid">Generic valid</option><option value="@TestDataProfileKind.Boundary">Boundary values</option><option value="@TestDataProfileKind.ControlledInvalid">Controlled invalid</option><option value="@TestDataProfileKind.Minimal">Minimal XML</option><option value="@TestDataProfileKind.MaximumComplexity">Maximum complexity</option></select></label>
+                        <label>Random seed <input type="number" @bind="_profileSeed" /></label>
+                        <button class="ss-action" @onclick="CreateProfile">Create profile</button>
+                        <button class="ss-text-button" @onclick="LoadProfileForEditing">Load selected profile for editing</button>
+                        <button class="ss-text-button" @onclick="EditSelectedProfile">Update selected profile</button>
+                        <button class="ss-text-button" @onclick="CloneProfile">Clone selected</button>
+                        <button class="ss-text-button" @onclick="DeleteProfile">Delete selected</button>
+                        <button class="ss-text-button" @onclick="SaveProfiles">Save profiles to current workspace</button>
+                    </div>
+                    <div class="ss-profile">
+                        <label>Element path <select @bind="_rulePath" aria-label="Profile rule element path"><option value="">Choose element</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @member.Member.Type</option> }</select></label>
+                        <label>Generation rule <select @bind="_ruleMode"><option value="@TestDataValueMode.Synthetic">Synthetic</option><option value="@TestDataValueMode.SchemaDefault">Use schema default</option><option value="@TestDataValueMode.Boundary">Boundary</option><option value="@TestDataValueMode.Invalid">Controlled invalid</option><option value="@TestDataValueMode.FixedEnum">Enumeration</option><option value="@TestDataValueMode.Nil">Nil (nillable element)</option></select></label>
+                        <label>Minimum <input type="number" step="any" @bind="_ruleMinimum" /></label><label>Maximum <input type="number" step="any" @bind="_ruleMaximum" /></label>
+                        <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" /></label>
+                        <label>Date from <input type="date" @bind="_ruleDateFrom" /></label><label>Date to <input type="date" @bind="_ruleDateTo" /></label>
+                        <label>Occurrence count (optional, 0–100) <input type="number" min="0" max="100" @bind="_ruleOccurrences" /></label>
+                        <button class="ss-action" @onclick="SaveProfileRule">Save generation rule</button>
+                    </div>
+                    <div class="ss-actions">
+                        <label>XML root <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@root.DeclaredIn)</option> }</select></label>
+                        <button class="ss-action" @onclick="GenerateProfileXml">Generate XML from profile</button>
+                        <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import Test Data Profile JSON" />
+                        @if (SelectedProfile() is { } exportProfile) { <a class="ss-action" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
+                    </div>
+                    @if (SelectedProfile() is { } activeProfile) { <p>Selected: <strong>@activeProfile.Name</strong> · @activeProfile.Kind · seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)] · @activeProfile.Rules.Count rule(s)</p> }
+                    @if (!string.IsNullOrWhiteSpace(_profileError)) { <p class="ss-error" role="alert">@_profileError</p> }
+                    @if (!string.IsNullOrWhiteSpace(_profileStatus)) { <p class="ss-result" role="status">@_profileStatus</p> }
                     break;
             }
         </section>
@@ -148,18 +265,220 @@
 
 @code {
     private static readonly string[] Tabs = ["Overview", "Linked XSDs", "Schema Tree", "Types", "Constraints", "Namespaces", "References", "Effective Schema", "Raw XSD", "Designer", "Compare", "Generated Tests", "Test Data Profile"];
-    private string? _selectedId, _fileName, _error, _tab = "Overview", _draft, _xml, _validationMessage, _profilePath, _profileValue, _profileSource = "Manual", _profileError, _search;
+    private string? _selectedId, _fileName, _error, _tab = "Overview", _draft, _xml, _validationMessage, _search;
+    private string _xmlArtifactStatus = "", _xmlArtifactError = "";
     private string _graphMode = "Files + namespaces";
+    private IReadOnlyList<SourceSchemaSnapshotSummary> _sourceSnapshots = [];
+    private bool _sourceSnapshotIndexTruncated;
+    private SourceSchemaPackage? _sourcePackage;
+    private string _sourceSnapshotId = "", _sourceContractPath = "", _sourceError = "", _draftStatus = "";
+    private bool _sourceBusy;
+    private string _artifactStatus = "", _artifactError = "";
+    private SchemaStudioWorkspaceStore? SavedPackages => ServiceProvider.GetService<SchemaStudioWorkspaceStore>();
+    private SchemaStudioDraftStore? SavedDrafts => ServiceProvider.GetService<SchemaStudioDraftStore>();
+    private SchemaTestRunHistory? TestRuns => ServiceProvider.GetService<SchemaTestRunHistory>();
+    private SchemaGeneratedXmlStore? SavedXml => ServiceProvider.GetService<SchemaGeneratedXmlStore>();
     private bool _creating;
-    private string _newSchemaName = "new-schema", _newNamespace = "urn:example:schema", _newRoot = "Root", _newChildName = "NewElement", _newChildType = "xs:string", _newChildMin = "1";
-    private readonly List<ProfileValue> _profileRows = [];
+    private TestDataProfilesService? ProfileCatalog => ServiceProvider.GetService<TestDataProfilesService>();
+    private string _activeProfileId = "", _newProfileName = "My synthetic profile", _profileError = "", _profileStatus = "", _rulePath = "", _profileRootName = "";
+    private TestDataProfileKind _newProfileKind = TestDataProfileKind.GenericValid;
+    private TestDataValueMode _ruleMode = TestDataValueMode.Synthetic;
+    private int _profileSeed = 1001, _ruleMinLength, _ruleMaxLength;
+    private int? _ruleOccurrences;
+    private decimal? _ruleMinimum, _ruleMaximum;
+    private DateOnly? _ruleDateFrom, _ruleDateTo;
+    private string _newSchemaName = "new-schema", _newNamespace = "urn:example:schema", _newRoot = "Root", _newChildName = "NewElement", _newChildType = "xs:string", _newChildMin = "1", _newChildMax = "1";
+    private string _newChildEnumeration = "", _newChildNumericMinimum = "", _newChildNumericMaximum = "";
     private readonly List<SchemaTestResult> _testResults = [];
+    private SchemaPackage? _draftPreview;
     private SchemaPackage? Current => Studio.Packages.FirstOrDefault(p => p.Id == _selectedId);
     private SchemaFile? CurrentFile => Current?.Files.FirstOrDefault(f => f.Name == _fileName) ?? Current?.Files.FirstOrDefault();
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        if (Studio.Packages.FirstOrDefault() is { } latest) Select(latest.Id);
+        try
+        {
+            var repository = ServiceProvider.GetService<IWorkspaceArtifactRepository>();
+            SavedDrafts?.RestoreJson(repository?.Get(WorkspaceArtifactType.SchemaStudioDrafts)?.Text);
+            if (Studio.Packages.FirstOrDefault() is { } latest) Select(latest.Id);
+            if (repository?.Get(WorkspaceArtifactType.SchemaStudio) is { } savedProfiles)
+            {
+                ProfileCatalog?.RestoreJson(savedProfiles.Text);
+                var rejected = ProfileCatalog?.RejectedUnboundLegacyProfiles ?? 0;
+                if (rejected > 0)
+                    _profileStatus = $"Skipped {rejected} legacy profile(s) whose wildcard schema identity was not bound to a specific XSD. Other profiles were restored.";
+            }
+            if (repository?.Get(WorkspaceArtifactType.SchemaStudioTestRuns) is { } savedRuns)
+                TestRuns?.RestoreJson(savedRuns.Text);
+            if (repository?.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml) is { } savedXml)
+                SavedXml?.RestoreJson(savedXml.Text);
+            if (repository?.Get(WorkspaceArtifactType.SchemaStudioPackages) is { } savedSchemas && SavedPackages is { } store)
+            {
+                store.RestoreJson(savedSchemas.Text);
+                foreach (var saved in store.Packages.Where(p => p.ProjectScope == ProjectScope() && p.Files is not null))
+                {
+                    if (Studio.Packages.Any(p => p.Fingerprint == saved.Fingerprint && p.Provenance?.SourceSnapshotId == saved.Provenance?.SourceSnapshotId)) continue;
+                    var restored = store.ReopenLocal(saved, Studio);
+                    if (Current is null) Select(restored.Id);
+                }
+            }
+        }
+        catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException or ArgumentException or XmlException or System.Xml.Schema.XmlSchemaException or InvalidOperationException)
+        { _artifactError = "Saved Schema Studio workspace artifacts could not be restored safely."; }
+        var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>();
+        if (sourceApi is null) return;
+        try
+        {
+            var index = await sourceApi.ListSchemaSnapshotIndexAsync();
+            _sourceSnapshots = index?.Snapshots ?? [];
+            _sourceSnapshotIndexTruncated = index?.IsTruncated ?? false;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        { _sourceError = "Source Analysis snapshots could not be loaded. Local XSD import remains available."; }
+    }
+
+    private async Task LoadSourceContracts()
+    {
+        if (!Guid.TryParse(_sourceSnapshotId, out var snapshotId)) return;
+        var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>();
+        if (sourceApi is null) { _sourceError = "Source Analysis is unavailable in this session."; return; }
+        _sourceBusy = true; _sourceError = ""; _sourcePackage = null; _sourceContractPath = "";
+        try
+        {
+            var snapshot = _sourceSnapshots.FirstOrDefault(s => s.Id == snapshotId);
+            if (snapshot is null)
+            { _sourceError = "The selected Source Analysis snapshot is no longer available in the current snapshot index."; return; }
+            if (!snapshot.HasSchemaArtifact)
+            { _sourceError = "This immutable Source Analysis snapshot did not retain XSD artifacts. Reimport the source archive to create a reusable schema snapshot."; return; }
+            var artifact = await sourceApi.SourceSchemasAsync(snapshotId);
+            if (artifact is null)
+            { _sourceError = "The selected Source Analysis snapshot's XSD artifact is unavailable."; return; }
+            if (!artifact.IsAvailable)
+            { _sourceError = artifact.UnavailableReason ?? "This Source Analysis snapshot has no reusable XSD artifacts."; return; }
+            if (artifact.SnapshotId != snapshot.Id || string.IsNullOrWhiteSpace(snapshot.Fingerprint)
+                || !string.Equals(artifact.SnapshotFingerprint, snapshot.Fingerprint, StringComparison.Ordinal))
+            { _sourceError = "The returned XSD artifacts do not match the selected immutable Source Analysis snapshot."; return; }
+            if (!string.Equals(artifact.ProjectImportId, snapshot.ProjectImportId, StringComparison.Ordinal))
+            { _sourceError = "The returned XSD artifacts do not match the selected project import identity."; return; }
+            _sourcePackage = artifact;
+            _sourceContractPath = artifact.Files.FirstOrDefault(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))?.Path ?? "";
+            if (_sourceContractPath.Length == 0) _sourceError = "The selected snapshot contains no stored XSD files.";
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        { _sourceError = "The XSD artifacts could not be loaded from this snapshot."; }
+        finally { _sourceBusy = false; }
+    }
+
+    private void OpenSourceContract()
+    {
+        if (_sourcePackage is not { } source || source.Files.Count == 0 || _sourceContractPath.Length == 0) return;
+        try
+        {
+            var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in source.Files)
+            {
+                var path = file.Path.Replace('\\', '/');
+                if (!files.TryAdd(path, file.Text)) throw new InvalidDataException("The snapshot contains duplicate XSD paths.");
+                var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(file.Text))).ToLowerInvariant();
+                if (!string.Equals(actual, file.Fingerprint, StringComparison.Ordinal)) throw new InvalidDataException("An XSD file fingerprint did not match the selected snapshot artifact.");
+            }
+            var contractFiles = SchemaStudioService.ContractPackageFiles(files, _sourceContractPath);
+            var provenance = new SchemaProvenance("Source Analysis", source.SourceArchiveName, source.SnapshotId,
+                source.SnapshotFingerprint, source.AnalyzedAt, _sourceContractPath, "", source.IsComplete, source.OmittedFiles,
+                source.ProjectImportId, source.SourceProjectName);
+            var package = Studio.Import(contractFiles, source.SourceArchiveName, provenance);
+            Select(package.Id); _fileName = _sourceContractPath; _sourceError = "";
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or InvalidOperationException or XmlException or System.Xml.Schema.XmlSchemaException)
+        { _sourceError = e.Message; }
+    }
+
+    private static string SnapshotLabel(SourceSchemaSnapshotSummary snapshot)
+    {
+        var name = string.IsNullOrWhiteSpace(snapshot.ArchiveName) ? $"Source snapshot {snapshot.Id.ToString("N")[..8]}" : snapshot.ArchiveName;
+        var fingerprint = string.IsNullOrWhiteSpace(snapshot.Fingerprint) ? "fingerprint unavailable" : snapshot.Fingerprint[..Math.Min(12, snapshot.Fingerprint.Length)];
+        var import = string.IsNullOrWhiteSpace(snapshot.ProjectImportId) ? "Source Analysis upload" : $"Project Import {snapshot.ProjectImportId}";
+        return $"{name} · {import} · {snapshot.AnalyzedAt.ToLocalTime():g} · {fingerprint} · {(snapshot.HasSchemaArtifact ? "XSD available" : "XSD not retained")}";
+    }
+
+    private async Task OpenSavedSchema(string id)
+    {
+        if (SavedPackages?.Packages.FirstOrDefault(p => p.Id == id && p.ProjectScope == ProjectScope()) is not { } saved) return;
+        try
+        {
+            SchemaPackage package;
+            if (saved.Files is not null)
+            {
+                var alreadyOpen = Studio.Packages.FirstOrDefault(p => p.Fingerprint == saved.Fingerprint
+                    && p.Provenance?.SourceSnapshotId == saved.Provenance?.SourceSnapshotId);
+                package = alreadyOpen ?? SavedPackages!.ReopenLocal(saved, Studio);
+            }
+            else
+            {
+                var provenance = saved.Provenance;
+                if (provenance?.SourceSnapshotId is not { } snapshotId || string.IsNullOrWhiteSpace(provenance.SourceSnapshotFingerprint))
+                    throw new InvalidDataException("Saved Source Analysis reference is missing its immutable snapshot identity.");
+                var snapshotFingerprint = provenance.SourceSnapshotFingerprint;
+                var sourceApi = ServiceProvider.GetService<IIntegrationCatalogApiService>()
+                    ?? throw new InvalidOperationException("Source Analysis is unavailable in this session.");
+                var source = await sourceApi.SourceSchemasAsync(snapshotId)
+                    ?? throw new InvalidDataException("The exact Source Analysis snapshot no longer has an available XSD artifact.");
+                if (source.SnapshotId != snapshotId || !string.Equals(source.SnapshotFingerprint, snapshotFingerprint, StringComparison.Ordinal))
+                    throw new InvalidDataException("The reopened XSD artifact does not match the saved immutable snapshot.");
+                if (!string.Equals(source.ProjectImportId, provenance.ProjectImportId, StringComparison.Ordinal))
+                    throw new InvalidDataException("The reopened XSD artifact does not match the saved Project Import identity.");
+                var files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var file in source.Files)
+                {
+                    if (!files.TryAdd(file.Path.Replace('\\', '/'), file.Text)) throw new InvalidDataException("The snapshot contains duplicate XSD paths.");
+                    var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(file.Text))).ToLowerInvariant();
+                    if (!string.Equals(actual, file.Fingerprint, StringComparison.Ordinal)) throw new InvalidDataException("An XSD file fingerprint did not match the saved snapshot.");
+                }
+                if (provenance.SelectedContractPath is not { Length: > 0 } contract)
+                    throw new InvalidDataException("The saved Source Analysis reference does not identify a selected contract.");
+                var contractFiles = SchemaStudioService.ContractPackageFiles(files, contract);
+                package = Studio.Import(contractFiles, saved.Name, provenance with { SourceCaptureComplete = source.IsComplete, OmittedSourceFiles = source.OmittedFiles });
+            }
+            if (!string.Equals(package.Fingerprint, saved.Fingerprint, StringComparison.Ordinal))
+            {
+                Studio.Remove(package.Id);
+                throw new InvalidDataException("Reopened XSD content does not match the fingerprint recorded with the saved analysis.");
+            }
+            Select(package.Id);
+            if (saved.Provenance?.SelectedContractPath is { Length: > 0 } selectedPath) _fileName = selectedPath;
+            _artifactError = ""; _artifactStatus = $"Reopened {saved.Name} with fingerprint {saved.Fingerprint[..Math.Min(12, saved.Fingerprint.Length)]}.";
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or InvalidOperationException or XmlException or System.Xml.Schema.XmlSchemaException or HttpRequestException)
+        { _artifactError = e.Message; }
+    }
+
+    private async Task SaveCurrentSchema()
+    {
+        if (Current is not { } package || SavedPackages is not { } store
+            || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository)
+        { _artifactError = "Workspace artifact storage is unavailable."; return; }
+        try
+        {
+            store.Save(package, ProjectScope());
+            repository.Set(WorkspaceArtifactType.SchemaStudioPackages, store.SnapshotJson(ProjectScope()), "schema-studio-packages.json", "Schema Studio saved analyses");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync())
+                throw new InvalidOperationException("The saved analysis is in the current session, but durable workspace save could not be confirmed.");
+            _artifactError = ""; _artifactStatus = $"Saved {package.Name} to the current BirkNext workspace.";
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or HttpRequestException)
+        { _artifactError = e.Message; }
+    }
+
+    private async Task RemoveSavedSchema(string id)
+    {
+        if (SavedPackages is not { } store || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
+        if (!store.Remove(id, ProjectScope())) return;
+        repository.Set(WorkspaceArtifactType.SchemaStudioPackages, store.SnapshotJson(ProjectScope()), "schema-studio-packages.json", "Schema Studio saved analyses");
+        var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+        if (autoSave is null || !await autoSave.SaveNowAsync())
+        { _artifactError = "Removal is applied in this session, but durable workspace save could not be confirmed."; return; }
+        _artifactError = ""; _artifactStatus = "Removed the saved analysis from this workspace.";
     }
 
     private async Task ImportFiles(InputFileChangeEventArgs args)
@@ -172,9 +491,24 @@
         try { await using var stream = args.File.OpenReadStream(SchemaStudioService.MaxPackageBytes); using var buffer = new MemoryStream(); await stream.CopyToAsync(buffer); buffer.Position = 0; var files = SchemaStudioService.ReadZip(buffer); Select(Studio.Import(files, args.File.Name).Id); _error = null; }
         catch (Exception e) when (e is InvalidDataException or IOException or DecoderFallbackException or ArgumentException or InvalidOperationException or XmlException or System.Xml.Schema.XmlSchemaException) { _error = e.Message; }
     }
-    private void Select(string id) { _selectedId = id; _fileName = Current?.Files.FirstOrDefault()?.Name; _draft = CurrentFile?.Text; _tab = "Overview"; _validationMessage = null; }
+    private void Select(string id)
+    {
+        _selectedId = id; _fileName = Current?.Files.FirstOrDefault()?.Name;
+        _draft = Current is { } package && CurrentFile is { } file
+            ? SavedDrafts?.Find(package, file.Name, ProjectScope())?.Text ?? file.Text : null;
+        _draftPreview = null; _tab = "Overview"; _validationMessage = null;
+        _profileRootName = Current?.EffectiveSchema.FirstOrDefault()?.Name ?? "";
+        _activeProfileId = Current is { } current ? TestDataProfilesService.BuiltIns(current.Fingerprint)[0].Id.ToString("D") : "";
+    }
+    private void OpenGraphFile(string fileName) { if (Current?.Files.Any(file => file.Name == fileName) != true) return; _fileName = fileName; _tab = "Raw XSD"; }
     private void Remove(string id) { Studio.Remove(id); if (_selectedId == id) { _selectedId = Studio.Packages.FirstOrDefault()?.Id; Select(_selectedId ?? ""); } }
-    private void FileChanged(ChangeEventArgs e) { _fileName = e.Value?.ToString(); _draft = CurrentFile?.Text; }
+    private void FileChanged(ChangeEventArgs e)
+    {
+        _fileName = e.Value?.ToString();
+        _draft = Current is { } package && CurrentFile is { } file
+            ? SavedDrafts?.Find(package, file.Name, ProjectScope())?.Text ?? file.Text : null;
+        _draftPreview = null;
+    }
     private void CreateSchema()
     {
         try
@@ -202,6 +536,13 @@
             var document = System.Xml.Linq.XDocument.Load(reader);
             var xs = System.Xml.Linq.XNamespace.Get("http://www.w3.org/2001/XMLSchema");
             var schema = document.Root ?? throw new InvalidDataException("XSD schema root is missing.");
+            var typePrefix = schema.GetPrefixOfNamespace(xs);
+            if (string.IsNullOrWhiteSpace(typePrefix))
+            {
+                typePrefix = "xs";
+                while (schema.GetNamespaceOfPrefix(typePrefix) is not null) typePrefix += "d";
+                schema.Add(new System.Xml.Linq.XAttribute(System.Xml.Linq.XNamespace.Xmlns + typePrefix, xs));
+            }
             var root = schema.Elements(xs + "element").FirstOrDefault() ?? throw new InvalidDataException("A global root element is required before adding child elements.");
             var complex = root.Element(xs + "complexType");
             if (complex is null && root.Attribute("type") is { } typeAttribute)
@@ -219,41 +560,308 @@
             compositor ??= new System.Xml.Linq.XElement(xs + "sequence");
             if (compositor.Parent is null) contentType.Add(compositor);
             if (compositor.Elements(xs + "element").Any(e => (string?)e.Attribute("name") == _newChildName)) throw new InvalidDataException("A child with that name already exists in the sequence.");
-            compositor.Add(new System.Xml.Linq.XElement(xs + "element", new System.Xml.Linq.XAttribute("name", _newChildName), new System.Xml.Linq.XAttribute("type", _newChildType), new System.Xml.Linq.XAttribute("minOccurs", _newChildMin), new System.Xml.Linq.XAttribute("maxOccurs", "1")));
+            if (!int.TryParse(_newChildMin, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var minimumOccurrences)
+                || minimumOccurrences is < 0 or > 2 || _newChildMax is not ("1" or "2" or "unbounded")
+                || _newChildMax != "unbounded" && int.Parse(_newChildMax, System.Globalization.CultureInfo.InvariantCulture) < minimumOccurrences)
+                throw new InvalidDataException("Occurrence bounds must use a supported minimum and a maximum at least as large.");
+            var enumerations = _newChildEnumeration.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (enumerations.Length > 100 || enumerations.Any(value => value.Length > 256 || value.Any(char.IsControl)))
+                throw new InvalidDataException("Use at most 100 enumeration values, each no longer than 256 printable characters.");
+            var hasNumericMinimum = !string.IsNullOrWhiteSpace(_newChildNumericMinimum);
+            var hasNumericMaximum = !string.IsNullOrWhiteSpace(_newChildNumericMaximum);
+            var numericType = _newChildType is "xs:decimal" or "xs:integer";
+            if ((hasNumericMinimum || hasNumericMaximum) && !numericType)
+                throw new InvalidDataException("Inclusive numeric bounds require the Decimal or Integer element type.");
+            if (hasNumericMinimum && !decimal.TryParse(_newChildNumericMinimum, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out _))
+                throw new InvalidDataException("Enter a valid invariant-culture numeric minimum.");
+            if (hasNumericMaximum && !decimal.TryParse(_newChildNumericMaximum, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out _))
+                throw new InvalidDataException("Enter a valid invariant-culture numeric maximum.");
+            if (hasNumericMinimum && hasNumericMaximum
+                && decimal.Parse(_newChildNumericMinimum, System.Globalization.CultureInfo.InvariantCulture) > decimal.Parse(_newChildNumericMaximum, System.Globalization.CultureInfo.InvariantCulture))
+                throw new InvalidDataException("The inclusive numeric minimum cannot exceed the maximum.");
+            var added = new System.Xml.Linq.XElement(xs + "element", new System.Xml.Linq.XAttribute("name", _newChildName),
+                new System.Xml.Linq.XAttribute("minOccurs", _newChildMin), new System.Xml.Linq.XAttribute("maxOccurs", _newChildMax));
+            var selectedType = _newChildType.Replace("xs:", typePrefix + ":", StringComparison.Ordinal);
+            if (enumerations.Length == 0 && !hasNumericMinimum && !hasNumericMaximum)
+                added.Add(new System.Xml.Linq.XAttribute("type", selectedType));
+            else
+            {
+                var restriction = new System.Xml.Linq.XElement(xs + "restriction", new System.Xml.Linq.XAttribute("base", selectedType));
+                foreach (var value in enumerations) restriction.Add(new System.Xml.Linq.XElement(xs + "enumeration", new System.Xml.Linq.XAttribute("value", value)));
+                if (hasNumericMinimum) restriction.Add(new System.Xml.Linq.XElement(xs + "minInclusive", new System.Xml.Linq.XAttribute("value", _newChildNumericMinimum.Trim())));
+                if (hasNumericMaximum) restriction.Add(new System.Xml.Linq.XElement(xs + "maxInclusive", new System.Xml.Linq.XAttribute("value", _newChildNumericMaximum.Trim())));
+                added.Add(new System.Xml.Linq.XElement(xs + "simpleType", restriction));
+            }
+            compositor.Add(added);
             _draft = document.ToString(); _error = null;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or System.Xml.XmlException or InvalidOperationException) { _error = e.Message; }
     }
-    private void SaveDraft() { if (Current is null || CurrentFile is null || _draft is null) return; try { var files = Current.Files.ToDictionary(f => f.Name, f => f.Name == CurrentFile.Name ? _draft : f.Text, StringComparer.OrdinalIgnoreCase); Select(Studio.Import(files, Current.Name + " version").Id); _error = null; } catch (Exception e) when (e is InvalidDataException or XmlException) { _error = e.Message; } }
-    private void GenerateXml() { if (CurrentFile is { } file) { _xml = SchemaStudioService.GenerateMinimumXml(file); _validationMessage = null; } }
-    private void GenerateXml(SchemaTestCase test) { if (Current is { } package) { _xml = SchemaStudioService.GenerateTestXml(package, test, ProfileValues()); _fileName = test.SourceFile; _validationMessage = null; } }
-    private void ValidateXml() { _validationMessage = Current is { } p && _xml is not null && _fileName is not null ? SchemaStudioService.ValidateXml(p, _fileName, _xml) : "Not evaluated: select a schema and enter XML."; }
-    private void RunGeneratedTests() { if (Current is { } package) _testResults.AddRange(SchemaStudioService.RunGeneratedTests(package, ProfileValues(), 100).Where(r => _testResults.All(existing => existing.TestId != r.TestId))); }
-    private void AddProfile()
+    private void PreviewDraft()
     {
-        if (string.IsNullOrWhiteSpace(_profilePath)) { _profileError = "Choose an element path from this schema package."; return; }
-        var existing = _profileRows.FirstOrDefault(p => p.Path == _profilePath);
-        if (existing is not null) { existing.Value = _profileValue ?? ""; existing.Source = _profileSource ?? "Manual"; }
-        else if (_profileRows.Count < 500) _profileRows.Add(new(_profilePath, _profileValue ?? "", _profileSource ?? "Manual"));
-        else { _profileError = "A profile is limited to 500 values."; return; }
-        _profileError = null;
-    }
-    private void GenerateProfileValue(string source)
-    {
-        if (string.IsNullOrWhiteSpace(_profilePath)) { _profileError = "Choose an element path first."; return; }
-        var candidates = Current?.GeneratedTests.Where(t => t.Path == _profilePath).ToArray() ?? [];
-        var selected = source switch
+        if (Current is not { } current || CurrentFile is not { } file || _draft is null) return;
+        try
         {
-            "Generated valid" => candidates.FirstOrDefault(t => t.ExpectedValid && !t.Rule.Contains("omitted", StringComparison.OrdinalIgnoreCase)),
-            "Generated invalid" => candidates.FirstOrDefault(t => !t.ExpectedValid && t.Rule is "unknown enumeration" or "above maxLength" or "wrong datatype"),
-            _ => candidates.FirstOrDefault(t => t.Rule.Contains("boundary", StringComparison.OrdinalIgnoreCase))
-        };
-        _profileValue = selected?.Value ?? (source == "Generated valid" ? "value" : "");
-        _profileSource = source; _profileError = null;
+            var files = current.Files.ToDictionary(f => f.Name, f => f.Name == file.Name ? _draft : f.Text, StringComparer.OrdinalIgnoreCase);
+            _draftPreview = new SchemaStudioService().Import(files, current.Name + " draft", current.Provenance);
+            _error = null;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or XmlException or System.Xml.Schema.XmlSchemaException or InvalidOperationException) { _error = e.Message; _draftPreview = null; }
     }
-    private void RemoveProfile(ProfileValue row) => _profileRows.Remove(row);
-    private IReadOnlyDictionary<string, string> ProfileValues() => _profileRows.ToDictionary(p => p.Path, p => p.Value, StringComparer.Ordinal);
-    private static IEnumerable<EffectiveMember> FlattenMembers(EffectiveMember root) { foreach (var child in root.Children) { yield return child; foreach (var nested in FlattenMembers(child)) yield return nested; } }
+    private async Task SaveWorkingDraft()
+    {
+        if (Current is not { } package || CurrentFile is not { } file || _draft is null
+            || SavedDrafts is not { } drafts || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository)
+        { _error = "Workspace draft storage is unavailable."; return; }
+        try
+        {
+            drafts.Save(package, file.Name, _draft, ProjectScope());
+            repository.Set(WorkspaceArtifactType.SchemaStudioDrafts, drafts.SnapshotJson(ProjectScope()),
+                "schema-studio-drafts.json", "Schema Studio Designer drafts");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync())
+                throw new InvalidOperationException("The draft is in this session, but durable workspace save could not be confirmed.");
+            _draftStatus = $"Saved draft for {file.Name}; imported schema evidence is unchanged.";
+            _artifactError = ""; _error = null;
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or HttpRequestException)
+        { _artifactError = e.Message; _draftStatus = "The draft is available in this session, but durable save could not be confirmed."; }
+    }
+    private async Task RevertDraft()
+    {
+        if (Current is { } package && CurrentFile is { } file && SavedDrafts is { } drafts
+            && ServiceProvider.GetService<IWorkspaceArtifactRepository>() is { } repository)
+        {
+            drafts.Remove(package, file.Name, ProjectScope());
+            repository.Set(WorkspaceArtifactType.SchemaStudioDrafts, drafts.SnapshotJson(ProjectScope()),
+                "schema-studio-drafts.json", "Schema Studio Designer drafts");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync())
+                _artifactError = "The draft was reverted in this session, but durable removal could not be confirmed.";
+        }
+        _draft = CurrentFile?.Text; _draftPreview = null; _error = null;
+        _draftStatus = "Reverted the working draft to the selected imported XSD.";
+    }
+    private void SaveDraft()
+    {
+        if (Current is not { } current || CurrentFile is not { } file || _draft is null) return;
+        PreviewDraft();
+        if (_draftPreview is not { Validation: "Valid" } preview) { _error = "Draft was not saved. Fix structural, well-formedness and linked-schema errors first."; return; }
+        try
+        {
+            var files = current.Files.ToDictionary(f => f.Name, f => f.Name == file.Name ? _draft : f.Text, StringComparer.OrdinalIgnoreCase);
+            var provenance = current.Provenance is { } source ? source with { SourceKind = "Schema Studio draft", ContractFingerprint = "" } : null;
+            var saved = Studio.Import(files, current.Name + " version", provenance);
+            if (saved.Validation != "Valid") { Studio.Remove(saved.Id); _error = "Draft validation changed before save; no version was retained."; return; }
+            Select(saved.Id); _error = null;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or XmlException or System.Xml.Schema.XmlSchemaException or InvalidOperationException) { _error = e.Message; }
+    }
+    private void GenerateXml() { if (CurrentFile is { } file) { _xml = SchemaStudioService.GenerateMinimumXml(file); _validationMessage = null; } }
+    private void GenerateXml(SchemaTestCase test)
+    {
+        if (Current is not { } package) return;
+        try { _xml = SchemaStudioService.GenerateTestXml(package, test, ProfileValues()); _fileName = test.SourceFile; _validationMessage = null; }
+        catch (InvalidDataException e) { _xml = ""; _validationMessage = "Not evaluated: " + e.Message; }
+    }
+    private void ValidateXml() { _validationMessage = Current is { } p && _xml is not null && _fileName is not null ? SchemaStudioService.ValidateXml(p, _fileName, _xml) : "Not evaluated: select a schema and enter XML."; }
+    private async Task RunGeneratedTests()
+    {
+        if (Current is not { } package) return;
+        var results = SchemaStudioService.RunGeneratedTests(package, ProfileValues(), 100);
+        _testResults.AddRange(results.Where(r => _testResults.All(existing => existing.TestId != r.TestId)));
+        if (TestRuns is not { } history || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
+        try
+        {
+            var profile = SelectedProfile();
+            history.Add(package, profile?.Name ?? "Generated test candidates", profile?.Seed, results, ProjectScope(), profile?.Id);
+            repository.Set(WorkspaceArtifactType.SchemaStudioTestRuns, history.SnapshotJson(ProjectScope()), "schema-studio-test-runs.json", "Schema Studio validation history");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync())
+                _artifactError = "Validation ran locally, but durable test history could not be confirmed.";
+            else _artifactError = "";
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or HttpRequestException)
+        { _artifactError = "Validation ran locally, but its sanitized history could not be saved."; }
+    }
+    private async Task SaveCurrentXml()
+    {
+        if (Current is not { } package || CurrentFile is not { } file || string.IsNullOrWhiteSpace(_xml)
+            || SavedXml is not { } store || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository)
+        { _xmlArtifactError = "Select a schema and enter or generate XML before saving."; return; }
+        try
+        {
+            var profile = SelectedProfile();
+            if (profile is { IsBuiltIn: false } && ProfileCatalog is { } catalog)
+                repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()),
+                    "schema-studio-profiles.json", "Schema Studio Test Data Profiles");
+            store.Save(package, file.Name, profile?.Name ?? "User XML", profile?.Seed, _xml, ProjectScope(), profile?.Id);
+            repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(ProjectScope()),
+                "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync())
+                throw new InvalidOperationException("XML is held in this session, but durable workspace save could not be confirmed.");
+            _xmlArtifactError = ""; _xmlArtifactStatus = "XML artifact saved with its schema, source snapshot and profile identity.";
+        }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException or HttpRequestException)
+        { _xmlArtifactError = e.Message; }
+    }
+    private void ReopenXml(Guid id)
+    {
+        if (Current is not { } package || SavedXml?.Documents.FirstOrDefault(item => item.Id == id && item.ProjectScope == ProjectScope()) is not { } saved) return;
+        if (saved.PackageFingerprint != package.Fingerprint)
+        { _xmlArtifactError = "This saved XML belongs to a different schema fingerprint. Open that saved schema package first."; return; }
+        if (!package.Files.Any(file => file.Name == saved.FileName))
+        { _xmlArtifactError = "The saved XML's XSD file is not present in the active package."; return; }
+        _fileName = saved.FileName; _xml = saved.Xml; _validationMessage = null;
+        _xmlArtifactError = ""; _xmlArtifactStatus = "Reopened XML artifact. Validate it again against the active schema before use.";
+    }
+    private async Task RemoveXml(Guid id)
+    {
+        if (SavedXml?.Remove(id, ProjectScope()) != true
+            || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
+        repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, SavedXml.SnapshotJson(ProjectScope()),
+            "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
+        var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+        if (autoSave is null || !await autoSave.SaveNowAsync()) _xmlArtifactError = "The XML artifact was removed from this session, but durable deletion could not be confirmed.";
+        else { _xmlArtifactError = ""; _xmlArtifactStatus = "Saved XML artifact removed from the workspace."; }
+    }
+    private IEnumerable<(string Path, EffectiveMember Member)> ProfileMembers(SchemaPackage package)
+    {
+        foreach (var root in package.EffectiveSchema)
+        {
+            foreach (var attribute in ProfileAttributes(root, "/" + root.Name)) yield return attribute;
+            foreach (var member in FlattenMembers(root)) yield return ("/" + root.Name + member.Path, member.Member);
+        }
+    }
+    private static IEnumerable<(string Path, EffectiveMember Member)> FlattenMembers(EffectiveMember root, string path = "")
+    {
+        foreach (var child in root.Children)
+        {
+            var childPath = path + "/" + child.Name;
+            yield return (childPath, child);
+            foreach (var attribute in ProfileAttributes(child, childPath)) yield return attribute;
+            foreach (var nested in FlattenMembers(child, childPath)) yield return nested;
+        }
+    }
+    private static IEnumerable<(string Path, EffectiveMember Member)> ProfileAttributes(EffectiveMember owner, string path)
+    {
+        foreach (var attribute in owner.Attributes ?? [])
+            yield return (path + "/@" + attribute.Name, new EffectiveMember(attribute.Name, attribute.Type, "1", "1", attribute.DeclaredIn,
+                attribute.InheritedFrom, attribute.TypeDeclaredIn, null, attribute.Facets, [], attribute.NamespaceUri, null,
+                attribute.DefaultValue, attribute.FixedValue, BaseType: attribute.BaseType));
+    }
+    private TestDataProfile? SelectedProfile()
+    {
+        if (Current is not { } package) return null;
+        return TestDataProfilesService.BuiltIns(package.Fingerprint).Concat(ProfileCatalog?.Profiles ?? [])
+            .FirstOrDefault(p => p.Id.ToString("D") == _activeProfileId && ProfileCatalog?.IsCompatible(p, package, ProjectScope()) == true);
+    }
+    private IEnumerable<TestDataProfile> AvailableProfiles(SchemaPackage package) =>
+        ProfileCatalog?.Profiles.Where(profile => ProfileCatalog.IsCompatible(profile, package, ProjectScope())) ?? [];
+    private string? ProjectScope() => ServiceProvider.GetService<IWorkspaceArtifactRepository>() is WorkspaceArtifactRepository repository ? repository.SessionScope : null;
+    private void CreateProfile()
+    {
+        if (Current is not { } package || ProfileCatalog is not { } catalog) return;
+        try { var profile = catalog.Create(_newProfileName, package.Fingerprint, ProjectScope(), _newProfileKind, _profileSeed); _activeProfileId = profile.Id.ToString("D"); _profileError = ""; _profileStatus = "Profile created. Save it to the current workspace to reopen it after restart."; }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException) { _profileError = e.Message; }
+    }
+    private void LoadProfileForEditing()
+    {
+        if (SelectedProfile() is not { IsBuiltIn: false } selected)
+        { _profileError = "Choose a saved profile. Built-in profiles are read-only."; return; }
+        _newProfileName = selected.Name; _newProfileKind = selected.Kind; _profileSeed = selected.Seed;
+        _profileError = ""; _profileStatus = "Edit the name, profile kind or seed, then update the selected profile.";
+    }
+    private void EditSelectedProfile()
+    {
+        if (SelectedProfile() is not { IsBuiltIn: false } selected || ProfileCatalog is not { } catalog)
+        { _profileError = "Choose a saved profile. Built-in profiles are read-only."; return; }
+        try
+        {
+            catalog.Edit(selected.Id, _newProfileName, _newProfileKind, _profileSeed, selected.Rules);
+            _profileError = ""; _profileStatus = "Profile updated. Save profiles to persist the change.";
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or InvalidDataException) { _profileError = e.Message; }
+    }
+    private void CloneProfile()
+    {
+        if (SelectedProfile() is not { } source || ProfileCatalog is not { } catalog) return;
+        try { var clone = catalog.Clone(source, source.Name + " copy"); _activeProfileId = clone.Id.ToString("D"); _profileError = ""; }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException) { _profileError = e.Message; }
+    }
+    private void DeleteProfile()
+    {
+        if (SelectedProfile() is not { IsBuiltIn: false } selected || ProfileCatalog is not { } catalog) { _profileError = "Built-in profiles cannot be deleted."; return; }
+        if (!catalog.Delete(selected.Id)) { _profileError = "Profile could not be deleted."; return; }
+        _activeProfileId = Current is { } package ? TestDataProfilesService.BuiltIns(package.Fingerprint)[0].Id.ToString("D") : "";
+        _profileError = ""; _profileStatus = "Profile deleted from this workspace session. Save profiles to persist the change.";
+    }
+    private void SaveProfileRule()
+    {
+        if (SelectedProfile() is not { IsBuiltIn: false } selected || ProfileCatalog is not { } catalog) { _profileError = "Clone or create a profile before editing rules."; return; }
+        if (string.IsNullOrWhiteSpace(_rulePath)) { _profileError = "Choose an element path."; return; }
+        try
+        {
+            var rules = selected.Rules.Where(r => r.ElementPath != _rulePath).Append(new TestDataProfileRule(_rulePath, _ruleMode,
+                _ruleMinimum, _ruleMaximum, _ruleMinLength == 0 ? null : _ruleMinLength, _ruleMaxLength == 0 ? null : _ruleMaxLength,
+                _ruleDateFrom, _ruleDateTo, _ruleOccurrences)).ToArray();
+            catalog.Edit(selected.Id, selected.Name, selected.Kind, selected.Seed, rules);
+            _profileError = ""; _profileStatus = "Generation rule saved. The rule stores constraints and generation behavior only.";
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidDataException or InvalidOperationException) { _profileError = e.Message; }
+    }
+    private void GenerateProfileXml()
+    {
+        if (Current is not { } package || SelectedProfile() is not { } profile || ProfileCatalog is not { } catalog) return;
+        try
+        {
+            if (!catalog.IsCompatible(profile, package, ProjectScope())) throw new InvalidOperationException("Profile is not compatible with this schema/project.");
+            var values = catalog.GenerateValues(package, profile, ProjectScope());
+            var root = package.EffectiveSchema.FirstOrDefault(r => r.Name == _profileRootName)?.Name ?? package.EffectiveSchema.FirstOrDefault()?.Name;
+            if (root is null) throw new InvalidDataException("The effective schema has no global root.");
+            _xml = SchemaStudioService.GenerateProfileXml(package, root, values, profile);
+            _fileName = package.EffectiveSchema.First(r => r.Name == root).DeclaredIn;
+            _validationMessage = SchemaStudioService.ValidateXml(package, _fileName, _xml);
+            _profileError = "";
+            _profileStatus = $"Generated deterministically with seed {profile.Seed}. {_validationMessage}";
+            _tab = "Generated Tests";
+        }
+        catch (Exception e) when (e is InvalidOperationException or InvalidDataException) { _profileError = e.Message; }
+    }
+    private async Task SaveProfiles()
+    {
+        if (ProfileCatalog is not { } catalog || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository)
+        { _profileError = "Workspace artifact storage is unavailable."; return; }
+        try
+        {
+            repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()), "schema-studio-profiles.json", "Schema Studio Test Data Profiles");
+            var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
+            if (autoSave is null || !await autoSave.SaveNowAsync()) { _profileError = "Profiles are held in the current workspace, but durable save could not be confirmed."; return; }
+            _profileError = ""; _profileStatus = "Test Data Profiles saved to the current BirkNext workspace.";
+        }
+        catch (Exception e) when (e is InvalidOperationException or HttpRequestException or InvalidDataException)
+        { _profileError = e is InvalidDataException ? e.Message : "Profiles could not be saved to the current workspace."; }
+    }
+    private async Task ImportProfile(InputFileChangeEventArgs args)
+    {
+        if (ProfileCatalog is not { } catalog) return;
+        try
+        {
+            await using var stream = args.File.OpenReadStream(256 * 1024);
+            using var reader = new StreamReader(stream, Encoding.UTF8, true);
+            var package = Current ?? throw new InvalidOperationException("Select a schema before importing a Test Data Profile.");
+            var profile = catalog.ImportJson(await reader.ReadToEndAsync(), ProjectScope(), package.Fingerprint);
+            _activeProfileId = profile.Id.ToString("D"); _profileError = ""; _profileStatus = "Profile imported. Review schema compatibility before generating XML.";
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException or ArgumentException or InvalidOperationException)
+        { _profileError = e.Message; }
+    }
+    private IReadOnlyDictionary<string, string> ProfileValues()
+    {
+        if (Current is not { } package || SelectedProfile() is not { } profile || ProfileCatalog is not { } catalog) return new Dictionary<string, string>();
+        try { return catalog.GenerateValues(package, profile, ProjectScope()); } catch (InvalidOperationException) { return new Dictionary<string, string>(); }
+    }
     private static int UsageCount(SchemaPackage package, string name) => package.Files.SelectMany(f => f.Declarations).Sum(d => (d.Type?.Split(':').LastOrDefault() == name ? 1 : 0) + (d.BaseType?.Split(':').LastOrDefault() == name ? 1 : 0) + d.Children.Count(e => e.Type?.Split(':').LastOrDefault() == name));
     private static IEnumerable<string> DependencyEdges(SchemaPackage package, string mode)
     {
@@ -272,11 +880,25 @@
         builder.AddContent(seq++, $"{member.Type ?? "inline"} · {member.MinOccurs}..{member.MaxOccurs} · declared in {member.DeclaredIn}");
         if (member.InheritedFrom is not null) builder.AddContent(seq++, $" · inherited from {member.InheritedFrom}");
         if (member.TypeDeclaredIn is not null) builder.AddContent(seq++, $" · type declared in {member.TypeDeclaredIn}");
+        if (member.BaseType is not null && member.BaseType != member.Type) builder.AddContent(seq++, $" · base type {member.BaseType}");
         if (member.Compositor is not null) builder.AddContent(seq++, $" · {member.Compositor}");
         builder.CloseElement();
         if (member.Facets.Count > 0) { builder.OpenElement(seq++, "small"); builder.AddContent(seq++, " · " + string.Join(", ", member.Facets.Select(f => f.Kind + "=" + f.Value))); builder.CloseElement(); }
+        if (member.Attributes is { Count: > 0 }) { builder.OpenElement(seq++, "ul"); foreach (var attribute in member.Attributes) builder.AddContent(seq++, RenderAttribute(attribute)); builder.CloseElement(); }
         if (member.Children.Count > 0) { builder.OpenElement(seq++, "ul"); foreach (var child in member.Children) builder.AddContent(seq++, RenderMember(child)); builder.CloseElement(); }
         builder.CloseElement();
+    };
+    private static RenderFragment RenderAttribute(EffectiveAttribute attribute) => builder =>
+    {
+        var seq = 0;
+        builder.OpenElement(seq++, "li"); builder.OpenElement(seq++, "strong"); builder.AddContent(seq++, "@" + attribute.Name); builder.CloseElement();
+        builder.AddContent(seq++, " "); builder.OpenElement(seq++, "small");
+        builder.AddContent(seq++, $"{attribute.Type ?? "inline"} · {attribute.Use} · declared in {attribute.DeclaredIn}");
+        if (attribute.InheritedFrom is not null) builder.AddContent(seq++, $" · inherited from {attribute.InheritedFrom}");
+        if (attribute.TypeDeclaredIn is not null) builder.AddContent(seq++, $" · type declared in {attribute.TypeDeclaredIn}");
+        if (attribute.BaseType is not null && attribute.BaseType != attribute.Type) builder.AddContent(seq++, $" · base type {attribute.BaseType}");
+        if (attribute.Facets.Count > 0) builder.AddContent(seq++, " · " + string.Join(", ", attribute.Facets.Select(f => f.Kind + "=" + f.Value)));
+        builder.CloseElement(); builder.CloseElement();
     };
     private static string Download(string text, string mime, bool isBase64 = false) => $"data:{mime};base64,{(isBase64 ? text : Convert.ToBase64String(Encoding.UTF8.GetBytes(text)))}";
     private void Jump(string file, string tab) { _fileName = file; _tab = tab; _draft = CurrentFile?.Text; }
@@ -301,11 +923,5 @@
         foreach (var k in before.Keys.Except(after.Keys)) yield return $"Needs review: declaration removed — {k}";
         foreach (var k in after.Keys.Except(before.Keys)) yield return $"Informational: declaration added — {k}";
         foreach (var k in before.Keys.Intersect(after.Keys)) { if (before[k].Type != after[k].Type || before[k].BaseType != after[k].BaseType) yield return $"Potentially breaking: type/base changed — {k}"; if (before[k].Facets != after[k].Facets) yield return $"Needs review: constraints changed — {k}"; }
-    }
-    private sealed class ProfileValue(string path, string value, string source)
-    {
-        public string Path { get; } = path;
-        public string Value { get; set; } = value;
-        public string Source { get; set; } = source;
     }
 }

@@ -42,6 +42,14 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
     };
 }
 
+public sealed record SourceSchemaFile(string Path, string Text, string Fingerprint);
+public sealed record SourceSchemaPackage(Guid SnapshotId, string SnapshotFingerprint, string SourceArchiveName,
+    DateTimeOffset AnalyzedAt, bool IsComplete, int OmittedFiles, IReadOnlyList<SourceSchemaFile> Files,
+    bool IsAvailable = true, string? UnavailableReason = null, string? ProjectImportId = null, string? SourceProjectName = null);
+public sealed record SourceSchemaSnapshotSummary(Guid Id, string? ArchiveName, string? Fingerprint,
+    DateTimeOffset AnalyzedAt, bool HasSchemaArtifact, bool IsComplete, int OmittedFiles, string? ProjectImportId = null);
+public sealed record SourceSchemaSnapshotIndex(IReadOnlyList<SourceSchemaSnapshotSummary> Snapshots, bool IsTruncated);
+
 /// <summary>
 /// Client for the backend integration catalog (Target Environment → Integrations) and Integration Quality Review over it.
 /// The catalog is persisted by the backend; this client never holds a secret — authentication is a mechanism name.
@@ -49,6 +57,14 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 public interface IIntegrationCatalogApiService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    async Task<SourceSchemaSnapshotIndex> ListSchemaSnapshotIndexAsync(CancellationToken ct = default)
+    {
+        var snapshots = await ListSourceSnapshotsAsync("", ct);
+        return new(snapshots.Select(snapshot => new SourceSchemaSnapshotSummary(snapshot.Id, snapshot.Archive.FileName,
+            snapshot.Archive.Sha256, snapshot.AnalyzedAt, true, true, 0, snapshot.ProjectImport?.ImportId)).ToArray(), false);
+    }
+    /// <summary>Gets XSD-only content captured for this exact immutable Source Analysis snapshot; never substitutes a newer snapshot.</summary>
+    Task<SourceSchemaPackage?> SourceSchemasAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult<SourceSchemaPackage?>(null);
     /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
     Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
@@ -141,6 +157,15 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         catch (HttpRequestException) { return null; }
     }
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
+    public async Task<SourceSchemaSnapshotIndex> ListSchemaSnapshotIndexAsync(CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<SourceSchemaSnapshotIndex>("api/source-analysis/schema-index", Json, ct)
+        ?? new SourceSchemaSnapshotIndex([], false);
+    public async Task<SourceSchemaPackage?> SourceSchemasAsync(Guid snapshotId, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<SourceSchemaPackage>($"api/source-analysis/{snapshotId:D}/schemas", Json, ct); }
+        catch (HttpRequestException) { return null; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
     public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default)
     {
         var (snapshot, failure) = await AnalyzeSourceSnapshotDetailedAsync(environmentId, fileName, content, ct);

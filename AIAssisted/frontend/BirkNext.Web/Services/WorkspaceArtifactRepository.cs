@@ -75,7 +75,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     {
         if (!string.IsNullOrWhiteSpace(text))
         {
-            CaptureRevision(type, text, fileName, sourcePath);
+            if (type is not (WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages or WorkspaceArtifactType.SchemaStudioTestRuns or WorkspaceArtifactType.SchemaStudioDrafts or WorkspaceArtifactType.SchemaStudioGeneratedXml))
+                CaptureRevision(type, text, fileName, sourcePath);
             var hash = RuntimeHelpers.GetHashCode(this);
             System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] Set({type}) hash={hash}");
             _artifacts[type] = new WorkspaceArtifact(text, DateTime.UtcNow, fileName, sourcePath, lastModified);
@@ -238,7 +239,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.ProjectImports ??= [];
             foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
             foreach (var (type, artifact) in GetAllArtifacts())
-                CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
+                if (type is not (WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages or WorkspaceArtifactType.SchemaStudioTestRuns or WorkspaceArtifactType.SchemaStudioDrafts or WorkspaceArtifactType.SchemaStudioGeneratedXml))
+                    CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
         }
         catch (JsonException)
         {

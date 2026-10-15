@@ -1,0 +1,26 @@
+.ss-graph { margin: 1.25rem 0; padding: 1rem; border: 1px solid #cbd5e1; border-radius: .65rem; background: #f8fafc; }
+.ss-graph-heading { display: flex; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.ss-graph-heading > div { flex: 1 1 20rem; }
+.ss-graph-heading h3 { margin-top: 0; }
+.ss-graph-heading label { display: inline-flex; flex-direction: column; gap: .3rem; }
+.ss-graph-heading input[type="search"],.ss-graph-heading select { min-width: 10rem; max-width: 100%; padding: .45rem; }
+.ss-graph-heading input[type="range"] { width: 8rem; }
+.ss-graph-frame { width: 100%; max-height: 36rem; overflow: auto; border: 1px solid #cbd5e1; border-radius: .4rem; background: white; touch-action: pan-x pan-y; }
+.ss-graph-frame:focus-visible,.ss-graph-node:focus-visible { outline: 3px solid #b45309; outline-offset: 2px; }
+.ss-graph-svg { display: block; min-width: 100%; }
+.ss-graph-svg marker path { fill: #536174; }
+.ss-graph-edge line { stroke: #64748b; stroke-width: 2; }
+.ss-graph-edge text { fill: #334155; font-size: 10px; text-anchor: middle; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+.ss-graph-edge.muted { opacity: .15; }
+.ss-graph-edge.highlighted line { stroke: #245d91; }
+.ss-graph-node { cursor: pointer; }
+.ss-graph-node rect { fill: #eff6ff; stroke: #245d91; stroke-width: 2; }
+.ss-graph-node.selected rect { fill: #dbeafe; stroke: #9a5b00; stroke-width: 4; }
+.ss-graph-node.unresolved rect { fill: #fff1f2; stroke: #b42318; stroke-dasharray: 5 3; }
+.ss-graph-label { fill: #172b4d; font-size: 12px; font-weight: 700; }
+.ss-graph-kind,.ss-graph-namespace { fill: #475569; font-size: 10px; }
+.ss-graph-details { margin-top: .75rem; padding: .75rem; border: 1px solid #cbd5e1; border-radius: .4rem; background: white; overflow-wrap: anywhere; }
+.ss-graph-details h4 { margin: 0; }
+.ss-graph-details h4 small { font-weight: 400; color: #475569; }
+.ss-graph-related { max-height: 15rem; overflow: auto; }
+@media (max-width: 600px) { .ss-graph { padding: .7rem; } .ss-graph-heading > div { flex-basis: 100%; } .ss-graph-heading label { flex: 1 1 100%; } .ss-graph-heading input[type="search"],.ss-graph-heading select { min-width: 0; width: 100%; } }
