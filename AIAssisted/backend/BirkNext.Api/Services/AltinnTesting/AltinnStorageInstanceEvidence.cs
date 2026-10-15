@@ -38,7 +38,7 @@ public sealed record AltinnStorageInstanceEvidence(
 /// instance has no side effect; the app's GET instance is deliberately not used because it updates the read status for person callers.
 /// The request passes <see cref="AltinnTestingRequestGuard"/>; nothing else is ever sent.
 /// </summary>
-public sealed class AltinnStorageInstanceReader(IHttpClientFactory http)
+public sealed class AltinnStorageInstanceReader(IHttpClientFactory http, AltinnTestingPolicy policy)
 {
     private static readonly Regex GuidPattern = new("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", RegexOptions.CultureInvariant);
     private static readonly Regex DigitRun = new(@"\d{4,}", RegexOptions.CultureInvariant);
@@ -49,7 +49,7 @@ public sealed class AltinnStorageInstanceReader(IHttpClientFactory http)
     {
         var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
         client.MaxResponseContentBufferSize = MaxResponseBytes; // an instance document is a few KB; anything larger is refused, not parsed
-        using var request = new HttpRequestMessage(HttpMethod.Get, AltinnTestingPolicy.StorageInstance(instanceOwnerPartyId, instanceGuid));
+        using var request = new HttpRequestMessage(HttpMethod.Get, policy.Endpoints.StorageInstance(instanceOwnerPartyId, instanceGuid));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         using var response = await client.SendAsync(request, ct);

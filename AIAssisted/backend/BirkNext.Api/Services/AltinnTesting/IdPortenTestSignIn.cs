@@ -11,14 +11,14 @@ namespace BirkNext.Api.Services.AltinnTesting;
 public sealed class AltinnSignInException(string message) : Exception(message);
 
 /// <summary>Refuses any request outside the Altinn testing policy, whatever code built it. Applied to the one named client used here.</summary>
-public sealed class AltinnTestingRequestGuard : DelegatingHandler
+public sealed class AltinnTestingRequestGuard(AltinnTestingPolicy policy) : DelegatingHandler
 {
     public const string ClientName = "altinn-testing";
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-        request.RequestUri is { } uri && AltinnTestingPolicy.RequestBlock(uri) is null
+        request.RequestUri is { } uri && policy.RequestBlock(uri) is null
             ? base.SendAsync(request, cancellationToken)
-            : throw new AltinnSignInException($"Blocked request: {(request.RequestUri is { } blocked ? AltinnTestingPolicy.RequestBlock(blocked) : "no URL")}");
+            : throw new AltinnSignInException($"Blocked request: {(request.RequestUri is { } blocked ? policy.RequestBlock(blocked) : "no URL")}");
 }
 
 public interface IAltinnTestTokens
@@ -155,7 +155,7 @@ public sealed class IdPortenTestSignIn(
             expiresIn = json.RootElement.TryGetProperty("expires_in", out var expires) && expires.TryGetInt32(out var seconds) ? seconds : 120;
         }
 
-        using var exchange = new HttpRequestMessage(HttpMethod.Get, AltinnTestingPolicy.AltinnTokenExchange);
+        using var exchange = new HttpRequestMessage(HttpMethod.Get, policy.Endpoints.TokenExchange);
         exchange.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idPortenToken);
         using var exchanged = await client.SendAsync(exchange, ct);
         if (!exchanged.IsSuccessStatusCode)

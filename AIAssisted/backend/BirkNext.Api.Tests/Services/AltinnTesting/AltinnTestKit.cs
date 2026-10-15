@@ -17,6 +17,12 @@ internal sealed class AltinnTestKit
 {
     public const string AppId = "buf/skolenaervaer";
     public const string AppBase = "https://buf.apps.tt02.altinn.no/buf/skolenaervaer/";
+    /// <summary>The default TT02 platform base (the central default in <see cref="AltinnEnvironmentEndpointOptions"/>).</summary>
+    public const string Platform = AltinnEnvironmentEndpointOptions.Tt02PlatformBaseUrl;
+    public const string TokenExchange = Platform + "authentication/api/v1/exchange/id-porten";
+    public const string StorageInstances = Platform + "storage/api/v1/instances/";
+    /// <summary>A policy with the default (shipped) endpoint configuration.</summary>
+    public static AltinnTestingPolicy DefaultPolicy => new(new AltinnTestingOptions());
     public const string IdPortenToken = "idporten-access-token-DO-NOT-PERSIST";
     public const string AltinnToken = "altinn-tt02-token-DO-NOT-PERSIST";
     public const string AuthorizationCode = "authorization-code-DO-NOT-PERSIST";
@@ -38,7 +44,16 @@ internal sealed class AltinnTestKit
         IdPortenTest = new IdPortenTestOptions { RedirectUri = "http://localhost:5000/api/altinn-testing/sign-in/callback" },
     };
     public AltinnTestingPolicy Policy => new(Options);
-    public IHttpClientFactory Factory => new GuardedFactory(Http);
+    public IHttpClientFactory Factory => new GuardedFactory(Http, Policy);
+
+    /// <summary>Moves the Altinn TT02 hosts through the central endpoint configuration only; the fake answers on the new hosts.</summary>
+    public AltinnTestKit UseEndpoints(string platformBaseUrl, string appsDomain)
+    {
+        Options.Endpoints = new AltinnEndpointOptions { Test = new AltinnEnvironmentEndpointOptions { PlatformBaseUrl = platformBaseUrl, AppsDomain = appsDomain } };
+        Http.Platform = platformBaseUrl;
+        Http.AppBase = $"https://buf.{appsDomain}/buf/skolenaervaer/";
+        return this;
+    }
 
     /// <summary>Approved synthetic reporter, ID-porten TEST client secret and registered redirect for unattended authentication; optionally the
     /// service owner's app-policy confirmation (without it, submissions stay Not ready).</summary>
@@ -243,9 +258,9 @@ internal sealed class AltinnTestKit
         await Contracts(harness.MessageFlows, harness.Sources).UseSourceAnalysisAsync("dev-env", null, default);
     }
 
-    private sealed class GuardedFactory(HttpMessageHandler inner) : IHttpClientFactory
+    private sealed class GuardedFactory(HttpMessageHandler inner, AltinnTestingPolicy policy) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new(new AltinnTestingRequestGuard { InnerHandler = inner }, disposeHandler: false);
+        public HttpClient CreateClient(string name) => new(new AltinnTestingRequestGuard(policy) { InnerHandler = inner }, disposeHandler: false);
     }
 }
 
@@ -254,6 +269,9 @@ internal sealed class FakeAltinn : HttpMessageHandler
 {
     public sealed record Call(HttpMethod Method, Uri Uri, string? Authorization, string? Body);
     public List<Call> Calls { get; } = [];
+    /// <summary>The Altinn platform base and app base this fake answers on (TT02 defaults; <see cref="AltinnTestKit.UseEndpoints"/> moves them).</summary>
+    public string Platform { get; set; } = AltinnTestKit.Platform;
+    public string AppBase { get; set; } = AltinnTestKit.AppBase;
     /// <summary>Status overrides per stage: discovery, token, exchange, metadata, schema, party, instance, data, validate, next, read.</summary>
     public Dictionary<string, HttpStatusCode> Fail { get; } = new(StringComparer.Ordinal);
     public string ValidationJson { get; set; } = "[]";
@@ -291,20 +309,20 @@ internal sealed class FakeAltinn : HttpMessageHandler
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         Calls.Add(new Call(request.Method, request.RequestUri!, request.Headers.Authorization?.ToString(), body));
         var url = request.RequestUri!.ToString();
-        var instance = $"{AltinnTestKit.AppBase}instances/{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}";
+        var instance = $"{AppBase}instances/{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}";
         var (stage, json) = (request.Method.Method, url) switch
         {
             ("GET", "https://test.idporten.no/.well-known/openid-configuration") => ("discovery",
                 $$"""{"issuer":"{{DiscoveryIssuer}}","authorization_endpoint":"{{AuthorizationEndpoint}}","token_endpoint":"https://test.idporten.no/token","token_endpoint_auth_methods_supported":[{{string.Join(",", AuthMethods.Select(item => $"\"{item}\""))}}],"response_modes_supported":["query","form_post"]}"""),
             ("GET", var u) when u.StartsWith("https://login.test.idporten.no/authorize?", StringComparison.Ordinal) => ("authorize", ""),
             ("POST", "https://test.idporten.no/token") => ("token", $$"""{"access_token":"{{AltinnTestKit.IdPortenToken}}","expires_in":120,"id_token":"not-used"}"""),
-            ("GET", AltinnTestingPolicy.AltinnTokenExchange) => ("exchange", $"\"{AltinnTestKit.AltinnToken}\""),
-            ("GET", $"{AltinnTestKit.AppBase}api/v1/applicationmetadata") => ("metadata", MetadataJson),
-            ("GET", $"{AltinnTestKit.AppBase}api/jsonschema/model") => ("schema", AltinnTestKit.Schema(doubleEncoded: true)),
-            ("GET", $"{AltinnTestKit.AppBase}v1/customOpenapi.json") when OpenApiJson is not null => ("openapi", OpenApiJson),
-            ("GET", "https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy") when PolicyXml is not null => ("policy", PolicyXml),
-            ("GET", $"{AltinnTestKit.AppBase}api/authorization/parties/current?returnPartyObject=true") => ("party", $$"""{"partyId":{{AltinnTestKit.PartyId}},"name":"Synthetic reporter"}"""),
-            ("POST", var u) when u == $"{AltinnTestKit.AppBase}instances?instanceOwnerPartyId={AltinnTestKit.PartyId}" => ("instance", Instance(ended: false)),
+            ("GET", var u) when u == $"{Platform}authentication/api/v1/exchange/id-porten" => ("exchange", $"\"{AltinnTestKit.AltinnToken}\""),
+            ("GET", var u) when u == $"{AppBase}api/v1/applicationmetadata" => ("metadata", MetadataJson),
+            ("GET", var u) when u == $"{AppBase}api/jsonschema/model" => ("schema", AltinnTestKit.Schema(doubleEncoded: true)),
+            ("GET", var u) when u == $"{AppBase}v1/customOpenapi.json" && OpenApiJson is not null => ("openapi", OpenApiJson),
+            ("GET", var u) when u == $"{Platform}resourceregistry/api/v1/resource/app_buf_skolenaervaer/policy" && PolicyXml is not null => ("policy", PolicyXml),
+            ("GET", var u) when u == $"{AppBase}api/authorization/parties/current?returnPartyObject=true" => ("party", $$"""{"partyId":{{AltinnTestKit.PartyId}},"name":"Synthetic reporter"}"""),
+            ("POST", var u) when u == $"{AppBase}instances?instanceOwnerPartyId={AltinnTestKit.PartyId}" => ("instance", Instance(ended: false)),
             ("PUT", var u) when u == $"{instance}/data/{AltinnTestKit.DataGuid:D}" || u == $"{instance}/data/{AltinnTestKit.DataGuid:D}/type/model" => ("data", "{}"),
             // Creating the form data element: app-lib's typed route answers DataPostResponse, the generic route a DataElement.
             ("POST", var u) when u == $"{instance}/data/type/model" => ("data", "{\"newDataElementId\":\"" + AltinnTestKit.DataGuid.ToString("D") + "\",\"instance\":{}}"),
@@ -313,7 +331,7 @@ internal sealed class FakeAltinn : HttpMessageHandler
             ("PUT", var u) when u == $"{instance}/process/next" => ("next", NextJson),
             ("GET", var u) when u == instance && !Advanced => ("live", LiveInstanceJson ?? Instance(ended: false)),
             ("GET", var u) when u == instance => ("read", Instance(ended: true)),
-            ("GET", var u) when u == $"{AltinnTestingPolicy.Tt02StorageInstances}{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}" => ("storage", StorageInstanceJson),
+            ("GET", var u) when u == $"{Platform}storage/api/v1/instances/{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}" => ("storage", StorageInstanceJson),
             _ => ("unknown", ""),
         };
         if (stage == "unknown") return new HttpResponseMessage(HttpStatusCode.NotFound);

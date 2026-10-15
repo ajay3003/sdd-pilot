@@ -423,7 +423,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         var app = altinnPolicy.ApprovedApp(config.AppIdentifier, out _);
         var endpoints = new List<Uri>
         {
-            new(AltinnTestingPolicy.IdPortenTestDiscovery), new("https://login.test.idporten.no/authorize"), new("https://test.idporten.no/token"), new(AltinnTestingPolicy.AltinnTokenExchange),
+            new(AltinnTestingPolicy.IdPortenTestDiscovery), new(AltinnTestingPolicy.IdPortenTestAuthorization), new(AltinnTestingPolicy.IdPortenTestToken),
         };
         string? addressProblem = null;
         if (app is { } a)
@@ -431,14 +431,15 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             // Every App API address the run would use, built from the contract's operation paths (sample ids only), must pass the same guard.
             try
             {
-                var addresses = AltinnAppEndpoints.Create(AltinnTestingPolicy.AppBase(a.Org, a.App), $"{a.Org}/{a.App}", contract.Operations, contract.OperationsSource);
+                endpoints.Add(altinnPolicy.Endpoints.TokenExchange);
+                var addresses = AltinnAppEndpoints.Create(altinnPolicy.Endpoints.AppBase(a.Org, a.App), $"{a.Org}/{a.App}", contract.Operations, contract.OperationsSource);
                 var sample = new Guid("00000000-0000-4000-8000-000000000001");
                 endpoints.AddRange([addresses.CreateInstance(1), addresses.Instance(1, sample), addresses.CreateData(1, sample, contract.FormDataTypeId ?? "form"),
                     addresses.UpdateData(1, sample, sample, contract.FormDataTypeId ?? "form"), addresses.Validate(1, sample), addresses.ProcessNext(1, sample)]);
             }
             catch (AltinnContractException ex) { addressProblem = ex.Message; }
         }
-        var blocked = endpoints.Select(uri => (uri, reason: AltinnTestingPolicy.RequestBlock(uri))).Where(item => item.reason is not null).ToList();
+        var blocked = endpoints.Select(uri => (uri, reason: altinnPolicy.RequestBlock(uri))).Where(item => item.reason is not null).ToList();
         checks.Add(new("endpoints", "Endpoint allowlist", blocked.Count == 0 && app is not null && addressProblem is null,
             app is null ? "No approved app: the app endpoint cannot be built." : addressProblem is not null ? addressProblem : blocked.Count == 0
                 ? $"{endpoints.Count} endpoints (ID-porten TEST, Altinn TT02 exchange, and the approved app's operations · {contract.OperationsSource}) all pass the request guard."

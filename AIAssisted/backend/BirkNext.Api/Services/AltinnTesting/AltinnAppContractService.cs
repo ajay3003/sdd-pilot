@@ -83,7 +83,7 @@ public sealed class AltinnAppContractService(
         var approved = policy.ApprovedApp(appId, out var reason) ?? throw new AltinnContractException(reason);
         if (AltinnTestingPolicy.AltinnEnvironmentBlock(package.AltinnConfiguration) is { } blocked) throw new AltinnContractException(blocked);
         var client = http.CreateClient(AltinnTestingRequestGuard.ClientName);
-        var baseUri = AltinnTestingPolicy.AppBase(approved.Org, approved.App);
+        var baseUri = policy.Endpoints.AppBase(approved.Org, approved.App);
         var documents = new List<(string Name, string Text)>();
 
         var metadataText = await GetTextAsync(client, new Uri(baseUri, "api/v1/applicationmetadata"), ct);
@@ -194,7 +194,7 @@ public sealed class AltinnAppContractService(
     /// </summary>
     private async Task<AltinnObservedPolicy> ReadPolicyAsync(HttpClient client, string org, string app, CancellationToken ct)
     {
-        var source = AltinnTestingPolicy.PolicySource(org, app);
+        var source = policy.Endpoints.PolicySource(org, app);
         try
         {
             using var response = await client.GetAsync(source, ct);

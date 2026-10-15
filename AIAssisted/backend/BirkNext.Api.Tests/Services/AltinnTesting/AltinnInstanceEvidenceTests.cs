@@ -20,16 +20,16 @@ public sealed class AltinnInstanceEvidenceTests
 {
     private const string Env = ActiveEventTestHarness.Env;
     private const string Tester = "11111111-1111-1111-1111-111111111111";
-    private static readonly string StorageUrl = $"{AltinnTestingPolicy.Tt02StorageInstances}{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}";
+    private static readonly string StorageUrl = $"{AltinnTestKit.StorageInstances}{AltinnTestKit.PartyId}/{AltinnTestKit.InstanceGuid:D}";
 
     // ── Policy and input ───────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void TheStorageRead_IsBuiltOnlyFromTheFixedTt02Base_APartyIdAndAGuid()
     {
-        AltinnTestingPolicy.StorageInstance(AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid).ToString().Should().Be(StorageUrl);
-        AltinnTestingPolicy.RequestBlock(new Uri(StorageUrl)).Should().BeNull("platform.tt02.altinn.no is the approved TT02 Storage host");
-        FluentActions.Invoking(() => AltinnTestingPolicy.StorageInstance(0, Guid.NewGuid())).Should().Throw<ArgumentOutOfRangeException>();
+        AltinnTestKit.DefaultPolicy.Endpoints.StorageInstance(AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid).ToString().Should().Be(StorageUrl);
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri(StorageUrl)).Should().BeNull("platform.tt02.altinn.no is the approved TT02 Storage host");
+        FluentActions.Invoking(() => AltinnTestKit.DefaultPolicy.Endpoints.StorageInstance(0, Guid.NewGuid())).Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Theory]
@@ -39,7 +39,7 @@ public sealed class AltinnInstanceEvidenceTests
     [InlineData("https://platform.tt02.altinn.no.example.com/storage/api/v1/instances/1/x")]
     [InlineData("https://example.com/storage/api/v1/instances/1/x")]
     public void LocalSwaggerHosts_ProductionAndArbitraryHosts_AreRefused(string url) =>
-        AltinnTestingPolicy.RequestBlock(new Uri(url)).Should().NotBeNull();
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri(url)).Should().NotBeNull();
 
     [Theory]
     [InlineData("50012345", "6a1b2c3d-0000-4000-8000-000000000001", true)]
@@ -125,7 +125,7 @@ public sealed class AltinnInstanceEvidenceTests
     {
         var kit = new AltinnTestKit();
         kit.Http.StorageInstanceJson = $$"""{ "padding": "{{new string('x', AltinnStorageInstanceReader.MaxResponseBytes + 1)}}" }""";
-        await new AltinnStorageInstanceReader(kit.Factory).Invoking(item => item.ReadAsync(AltinnTestKit.AltinnToken, AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid, default))
+        await new AltinnStorageInstanceReader(kit.Factory, kit.Policy).Invoking(item => item.ReadAsync(AltinnTestKit.AltinnToken, AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid, default))
             .Should().ThrowAsync<HttpRequestException>();
     }
 
@@ -264,7 +264,7 @@ public sealed class AltinnInstanceEvidenceTests
 
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
-        await new AltinnStorageInstanceReader(kit.Factory).Invoking(item => item.ReadAsync(AltinnTestKit.AltinnToken, AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid, cancelled.Token))
+        await new AltinnStorageInstanceReader(kit.Factory, kit.Policy).Invoking(item => item.ReadAsync(AltinnTestKit.AltinnToken, AltinnTestKit.PartyId, AltinnTestKit.InstanceGuid, cancelled.Token))
             .Should().ThrowAsync<OperationCanceledException>();
         kit.Http.Calls.Should().BeEmpty();
     }
@@ -306,7 +306,7 @@ public sealed class AltinnInstanceEvidenceTests
         });
         harness.Enroll("dev:http:altinn-skolenaervaer");
         harness.Executors.Add(Executor(harness, kit));
-        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), kit.Authenticator(harness.Tokens), new AltinnStorageInstanceReader(kit.Factory), TimeProvider.System));
+        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), kit.Authenticator(harness.Tokens), new AltinnStorageInstanceReader(kit.Factory, kit.Policy), TimeProvider.System));
         return harness;
     }
 

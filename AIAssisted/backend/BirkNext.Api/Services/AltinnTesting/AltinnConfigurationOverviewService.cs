@@ -31,8 +31,12 @@ public sealed class AltinnConfigurationOverviewService(IIntegrationMessageFlowSt
             TargetConfiguration, approved is null ? appReason : "Integration Quality Review app identifier, approved by the backend (AltinnTesting:ApprovedApps). A different app needs an explicit configuration change."));
         items.Add(new("environment", "Altinn environment", config.Environment.ToString(), AltinnTestingPolicy.AltinnEnvironmentBlock(config) is null ? "TT02" : "Blocked",
             TargetConfiguration, AltinnTestingPolicy.AltinnEnvironmentBlock(config) ?? "Test (TT02); Production is refused by name on every request."));
-        items.Add(new("host", "TT02 app host", approved is { } app ? $"{app.Org}.apps.tt02.altinn.no" : null, approved is null ? "Missing" : "Derived",
-            "Derived from the approved app id", "Built only from the approved org/app; deployed metadata is read from it and never redirects BirkNext to another host."));
+        string? host = null, hostProblem = null;
+        try { host = approved is { } app ? policy.Endpoints.AppBase(app.Org, app.App).Host : null; }
+        catch (AltinnContractException ex) { hostProblem = ex.Message; }
+        items.Add(new("host", "TT02 app host", host, hostProblem is not null ? "Blocked" : approved is null ? "Missing" : "Derived",
+            "Derived from the approved app id and the configured TT02 apps domain (AltinnTesting:Endpoints:Test)",
+            hostProblem ?? "Built only from the approved org/app; deployed metadata is read from it and never redirects BirkNext to another host. Configured, not verified."));
 
         var live = record?.PublicMetadata is { } published && published.AppId == contract.ConfiguredAppId ? published : null;
         var deployed = live?.DeployedProcess;

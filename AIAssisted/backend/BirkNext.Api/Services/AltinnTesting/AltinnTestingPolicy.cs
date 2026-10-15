@@ -29,6 +29,8 @@ public sealed class AltinnTestingOptions
     public int MaxProcessTransitions { get; set; } = 1;
     /// <summary>After how many hours a live read of the deployed contract is shown as "Refresh recommended" (bounded default 24; 1–720).</summary>
     public int ContractRefreshRecommendedAfterHours { get; set; } = 24;
+    /// <summary>The Altinn host addresses per logical environment (defaults: TT02). The one place to change when Altinn moves a host.</summary>
+    public AltinnEndpointOptions Endpoints { get; set; } = new();
 }
 
 /// <summary>
@@ -127,21 +129,38 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
 {
     public const string IdPortenTestIssuer = "https://test.idporten.no";
     public const string IdPortenTestDiscovery = "https://test.idporten.no/.well-known/openid-configuration";
-    public const string AltinnTokenExchange = "https://platform.tt02.altinn.no/authentication/api/v1/exchange/id-porten";
+    /// <summary>ID-porten TEST's authorization and token endpoints as published by its discovery document (the runtime reads them from
+    /// discovery; these are the expected values a dry run checks against the request guard). ID-porten is its own endpoint family, never
+    /// derived from an Altinn address.</summary>
+    public const string IdPortenTestAuthorization = "https://login.test.idporten.no/authorize";
+    public const string IdPortenTestToken = "https://test.idporten.no/token";
     public const string CallbackPath = "/api/altinn-testing/sign-in/callback";
-    /// <summary>Altinn Storage (TT02). Its GET instance is read-only; the app's own GET instance marks the instance read for person callers.</summary>
-    public const string Tt02StorageInstances = "https://platform.tt02.altinn.no/storage/api/v1/instances/";
-
-    /// <summary>The Storage read of one instance, built only from the fixed TT02 base, a positive numeric party id and a GUID.</summary>
-    public static Uri StorageInstance(long instanceOwnerPartyId, Guid instanceGuid) =>
-        instanceOwnerPartyId > 0 ? new Uri($"{Tt02StorageInstances}{instanceOwnerPartyId.ToString(System.Globalization.CultureInfo.InvariantCulture)}/{instanceGuid:D}")
-            : throw new ArgumentOutOfRangeException(nameof(instanceOwnerPartyId));
-
     private static readonly string[] IdPortenTestHosts = ["test.idporten.no", "login.test.idporten.no"];
     private static readonly string[] ProductionHosts = ["idporten.no", "login.idporten.no", "altinn.no", "www.altinn.no", "platform.altinn.no"];
     private static readonly Regex AppIdPattern = new("^(?<org>[a-z0-9][a-z0-9-]{0,62})/(?<app>[a-z0-9][a-z0-9-]{0,62})$", RegexOptions.CultureInvariant);
 
     public AltinnTestingOptions Options => options;
+
+    private AltinnEndpoints? _endpoints;
+    /// <summary>
+    /// The Altinn TT02 addresses (<c>AltinnTesting:Endpoints:Test</c>): the single source for every Altinn URL BirkNext builds or allows.
+    /// Throws <see cref="AltinnContractException"/> naming the configuration key when they are missing or invalid.
+    /// </summary>
+    public AltinnEndpoints Endpoints => _endpoints ??= AltinnEndpoints.Create(options.Endpoints?.Test, "Test", IsProductionHost);
+
+    /// <summary>The addresses of a logical Altinn environment: Test (TT02) only. Production and every other environment have none.</summary>
+    public AltinnEndpoints? EndpointsFor(ExternalTestEnvironment environment, out string reason)
+    {
+        if (environment != ExternalTestEnvironment.Test)
+        {
+            reason = environment == ExternalTestEnvironment.Production
+                ? "Altinn Production has no endpoint in BirkNext and is never contacted."
+                : $"The Altinn environment {environment} has no endpoint; Altinn app testing runs only in TT02 (Test).";
+            return null;
+        }
+        reason = "Altinn TT02 (Test) addresses from backend configuration (AltinnTesting:Endpoints:Test). Configured, not verified.";
+        return Endpoints;
+    }
 
     /// <summary>(org, app) when the id has the exact Altinn shape and is approved by backend configuration.</summary>
     public (string Org, string App)? ApprovedApp(string? appId, out string reason)
@@ -159,25 +178,29 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         return (match.Groups["org"].Value, match.Groups["app"].Value);
     }
 
-    /// <summary>The TT02 base address of an approved app. Built only from the validated org/app — never from request input.</summary>
-    public static Uri AppBase(string org, string app) => new($"https://{org}.apps.tt02.altinn.no/{org}/{app}/");
-
-    /// <summary>Approves one outgoing request: https, an ID-porten TEST or Altinn TT02 host, no credentials in the URL, no production host.</summary>
-    public static string? RequestBlock(Uri uri)
+    /// <summary>
+    /// Approves one outgoing request: https on the default port, no credentials in the URL, never a production host, and only an ID-porten
+    /// TEST host or a host of the configured Altinn TT02 endpoints (<see cref="Endpoints"/>; misconfigured endpoints allow no Altinn host).
+    /// </summary>
+    public string? RequestBlock(Uri uri)
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != Uri.UriSchemeHttps) return "Only https requests are allowed.";
         if (!string.IsNullOrEmpty(uri.UserInfo)) return "Credentials in a URL are not allowed.";
         if (uri.Port != 443) return "Only the default https port is allowed.";
         var host = uri.Host.ToLowerInvariant();
-        if (ProductionHosts.Contains(host) || host.EndsWith(".apps.altinn.no", StringComparison.Ordinal)) return $"{host} is a production host and is never contacted.";
-        if (IdPortenTestHosts.Contains(host) || host == "platform.tt02.altinn.no" || IsTt02AppHost(host)) return null;
-        return $"{host} is not an approved ID-porten TEST or Altinn TT02 host.";
+        if (IsProductionHost(host)) return $"{host} is a production host and is never contacted.";
+        if (IdPortenTestHosts.Contains(host)) return null;
+        AltinnEndpoints endpoints;
+        try { endpoints = Endpoints; }
+        catch (AltinnContractException ex) { return ex.Message; }
+        return endpoints.IsAltinnHost(host) ? null : $"{host} is not an approved ID-porten TEST or Altinn TT02 host.";
     }
 
-    public static bool IsIdPortenTestHost(Uri uri) => uri.Scheme == Uri.UriSchemeHttps && IdPortenTestHosts.Contains(uri.Host.ToLowerInvariant()) && uri.Port == 443;
+    /// <summary>Production ID-porten and Altinn hosts: a fixed safety denylist, checked before any allowlist and never configurable.</summary>
+    public static bool IsProductionHost(string host) =>
+        ProductionHosts.Contains(host) || host.EndsWith(".apps.altinn.no", StringComparison.Ordinal);
 
-    private static bool IsTt02AppHost(string host) =>
-        host.EndsWith(".apps.tt02.altinn.no", StringComparison.Ordinal) && host.Count(c => c == '.') == 4 && AppIdPattern.IsMatch(host.Split('.')[0] + "/x");
+    public static bool IsIdPortenTestHost(Uri uri) => uri.Scheme == Uri.UriSchemeHttps && IdPortenTestHosts.Contains(uri.Host.ToLowerInvariant()) && uri.Port == 443;
 
     /// <summary>The Altinn environment configured in Integration Quality Review must be TT02 (Test) and Production must stay blocked.</summary>
     public static string? AltinnEnvironmentBlock(AltinnTestConfiguration config) =>
@@ -351,10 +374,13 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         return confirmation;
     }
 
-    private static string Short(string sha) => sha.Trim()[..Math.Min(12, sha.Trim().Length)];
+    private string? PolicySourceOrNull(string org, string app)
+    {
+        try { return Endpoints.PolicySource(org, app).ToString(); }
+        catch (AltinnContractException) { return null; }
+    }
 
-    /// <summary>The TT02 Resource Registry address of an approved app's authorization policy (anonymous, read-only).</summary>
-    public static Uri PolicySource(string org, string app) => new($"https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_{org}_{app}/policy");
+    private static string Short(string sha) => sha.Trim()[..Math.Min(12, sha.Trim().Length)];
 
     private AltinnAppPolicyConfirmation? ConfirmedAppPolicy(string? appId, out string detail)
     {
@@ -381,14 +407,13 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
     /// Why a recorded confirmation cannot stand for the app's TT02 policy, or null: it must be for TT02, a recorded policy source must be that
     /// app's own TT02 Resource Registry policy (never another app or a Production host), and a recorded hash must be a SHA-256 hex digest.
     /// </summary>
-    public static string? ConfirmationProblem(AltinnAppPolicyConfirmation confirmation)
+    public string? ConfirmationProblem(AltinnAppPolicyConfirmation confirmation)
     {
         if (!string.Equals(confirmation.Environment?.Trim(), "TT02", StringComparison.Ordinal))
             return $"the confirmation for {confirmation.AppId} is for the environment \"{confirmation.Environment}\", not TT02.";
         if (!string.IsNullOrWhiteSpace(confirmation.PolicySource)
             && AppIdPattern.Match(confirmation.AppId.Trim()) is { Success: true } app
-            && !string.Equals(confirmation.PolicySource.Trim(),
-                $"https://platform.tt02.altinn.no/resourceregistry/api/v1/resource/app_{app.Groups["org"].Value}_{app.Groups["app"].Value}/policy", StringComparison.Ordinal))
+            && !string.Equals(confirmation.PolicySource.Trim(), PolicySourceOrNull(app.Groups["org"].Value, app.Groups["app"].Value), StringComparison.Ordinal))
             return $"the recorded policy source is not {confirmation.AppId}'s TT02 Resource Registry policy.";
         if (!string.IsNullOrWhiteSpace(confirmation.PolicySha256) && !Sha256Hex.IsMatch(confirmation.PolicySha256.Trim()))
             return "the recorded policy hash is not a SHA-256 hex digest.";

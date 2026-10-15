@@ -311,7 +311,7 @@ public sealed class SkoleNaervaerAltinnExecutor(IServiceScopeFactory scopes, Alt
                 : Result(context, JourneyStepState.NotVerified, $"Failed stage: {stage.Value}", $"{auth.Detail} Nothing was sent to the Altinn app.", facts: [mode, stage]);
         }
 
-        var appBase = AltinnTestingPolicy.AppBase(app.Org, app.App);
+        var appBase = policy.Endpoints.AppBase(app.Org, app.App);
         var (result, party) = await altinn.CurrentPartyAsync(appBase, auth.Token!, ct);
         if (!result.Success || party is null)
             return Result(context, JourneyStepState.NotVerified, $"{Http(result)} · failed stage: Altinn app authorization",

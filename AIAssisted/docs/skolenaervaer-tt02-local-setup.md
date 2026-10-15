@@ -58,8 +58,10 @@ with its source.
 Ownership:
 - **You / the environment configure:** the ID-porten TEST client, redirect URI, secret, reporters, profile confirmation, trusted
   target and approved synthetic test data.
-- **BirkNext discovers from the deployed app:** the TT02 host, process tasks, data type, App API endpoints and contract
-  fingerprint.
+- **BirkNext discovers from the deployed app:** process tasks, data type, App API endpoints and contract fingerprint.
+- **Central Altinn addresses:** the TT02 platform and apps hosts come from `AltinnTesting:Endpoints:Test` (defaults
+  `https://platform.tt02.altinn.no/` and `apps.tt02.altinn.no`). IQR stores only *Environment = Test*. If Altinn moves a TT02 host,
+  change these two values (configuration or environment variable); no Skolenærvær code changes. Configured is not verified.
 - **Confirmed policy evidence:** the app policy's source, hash, roles, actions and authentication level. It is re-checked on every
   metadata read.
 
@@ -77,7 +79,8 @@ The browser never holds a secret.
 | Reporter role / security level / environment | `…:Reporters:<n>:AltinnRole` (`PRIV`, the only supported role), `:AcrValue` (`idporten-loa-substantial`), `:AllowedEnvironment` (`TT02`) | backend (defaults) |
 | Approved app (target boundary) | `AltinnTesting:ApprovedApps` (currently `buf/skolenaervaer`); another app or organisation needs an explicit change here and in IQR | backend |
 | App policy confirmation | `AltinnTesting:ConfirmedAppPolicies` with `PolicySha256` (currently confirmed for `buf/skolenaervaer`, TT02) | backend (confirmed evidence) |
-| TT02 host, process tasks, data type, endpoints, app-lib version | discovered by **Read public TT02 metadata** from the approved app; never configured | deployed metadata |
+| TT02 platform and apps hosts | `AltinnTesting:Endpoints:Test:PlatformBaseUrl`, `:AppsDomain` (TT02 defaults; override in configuration or `AltinnTesting__Endpoints__Test__…`) | backend (central) |
+| Process tasks, data type, endpoints, app-lib version | discovered by **Read public TT02 metadata** from the approved app; never configured | deployed metadata |
 | Trusted target + enrolled integrations | `TargetEnvironments:Trusted:<n>:EnvironmentId`, `:DisplayName`, `:EnvironmentType`, `:ExecutionAllowed`, `:TargetUrl`, `:IntegrationIds:<m>` | backend (env var) |
 | Client id, scopes, app, environment, reporter reference | IQR → Altinn test configuration: *Client / app reference*, *Configured scopes*, *App identifier*, *Environment*, *Test reporter reference* + *Reporter access approved for this test* | IQR (UI) |
 | Approved synthetic child | IQR → *Approved synthetic identity-set reference* + *Test data is approved synthetic data*; the child identifier itself is entered per run and never stored | IQR (UI) + run input |

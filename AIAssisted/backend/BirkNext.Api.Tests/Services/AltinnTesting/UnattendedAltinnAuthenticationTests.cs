@@ -292,10 +292,10 @@ public sealed class UnattendedAltinnAuthenticationTests
     [Fact]
     public void ProductionIdPortenAndAltinnHosts_StayBlockedForEveryRequest()
     {
-        AltinnTestingPolicy.RequestBlock(new Uri("https://login.idporten.no/authorize?login_hint=testid:x")).Should().Contain("production");
-        AltinnTestingPolicy.RequestBlock(new Uri("https://idporten.no/token")).Should().Contain("production");
-        AltinnTestingPolicy.RequestBlock(new Uri("https://platform.altinn.no/authentication/api/v1/exchange/id-porten")).Should().Contain("production");
-        AltinnTestingPolicy.RequestBlock(new Uri("https://attacker.example/cb?code=x")).Should().NotBeNull();
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri("https://login.idporten.no/authorize?login_hint=testid:x")).Should().Contain("production");
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri("https://idporten.no/token")).Should().Contain("production");
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri("https://platform.altinn.no/authentication/api/v1/exchange/id-porten")).Should().Contain("production");
+        AltinnTestKit.DefaultPolicy.RequestBlock(new Uri("https://attacker.example/cb?code=x")).Should().NotBeNull();
     }
 
     // ── The one-click Rapportmottak run ────────────────────────────────────────────────────────────────────────────────
@@ -502,7 +502,7 @@ public sealed class UnattendedAltinnAuthenticationTests
         harness.Enroll("dev:http:altinn-skolenaervaer");
         var authenticator = kit.Authenticator(harness.Tokens);
         harness.Executors.Add(new SkoleNaervaerAltinnExecutor(Scopes(harness, kit), authenticator, new AltinnAppApiClient(kit.Factory), TimeProvider.System));
-        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), authenticator, new AltinnStorageInstanceReader(kit.Factory), TimeProvider.System));
+        harness.Observers.Add(new SkoleNaervaerAltinnInstanceObserver(Scopes(harness, kit), authenticator, new AltinnStorageInstanceReader(kit.Factory, kit.Policy), TimeProvider.System));
         return harness;
     }
 

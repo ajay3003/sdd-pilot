@@ -247,7 +247,7 @@ public sealed class UnattendedIdPortenTestAuthentication(IHttpClientFactory http
         }
 
         // 4. Altinn TT02 exchange: the ID-porten access token (not the id_token) for an Altinn token.
-        using var exchange = new HttpRequestMessage(HttpMethod.Get, AltinnTestingPolicy.AltinnTokenExchange);
+        using var exchange = new HttpRequestMessage(HttpMethod.Get, policy.Endpoints.TokenExchange);
         exchange.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var exchanged = await client.SendAsync(exchange, ct);
         if (!exchanged.IsSuccessStatusCode)

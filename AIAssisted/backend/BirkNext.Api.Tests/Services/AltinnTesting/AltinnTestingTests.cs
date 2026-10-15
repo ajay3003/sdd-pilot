@@ -45,7 +45,7 @@ public sealed class AltinnTestingTests
     [InlineData("https://user:pass@test.idporten.no/token", false)]
     [InlineData("https://evil.apps.tt02.altinn.no.example.com/x", false)]
     public void OnlyIdPortenTestAndAltinnTt02Hosts_AreReachable(string url, bool allowed) =>
-        (AltinnTestingPolicy.RequestBlock(new Uri(url)) is null).Should().Be(allowed);
+        (AltinnTestKit.DefaultPolicy.RequestBlock(new Uri(url)) is null).Should().Be(allowed);
 
     [Fact]
     public async Task TheRequestGuard_RefusesABlockedHost_BeforeAnythingIsSent()
@@ -153,7 +153,7 @@ public sealed class AltinnTestingTests
         var token = kit.Http.Calls.Single(call => call.Uri.AbsolutePath == "/token");
         token.Uri.Query.Should().BeEmpty("the code travels in the POST body, never in a URL");
         token.Body.Should().Contain("grant_type=authorization_code").And.Contain("code_verifier=");
-        kit.Http.Calls.Single(call => call.Uri.ToString() == AltinnTestingPolicy.AltinnTokenExchange).Authorization.Should().Be($"Bearer {AltinnTestKit.IdPortenToken}");
+        kit.Http.Calls.Single(call => call.Uri.ToString() == AltinnTestKit.TokenExchange).Authorization.Should().Be($"Bearer {AltinnTestKit.IdPortenToken}");
         cache.Get(Tester, Env).Should().Be(AltinnTestKit.AltinnToken);
         cache.Get("someone-else", Env).Should().BeNull("a token belongs to the person who signed in");
         (await signIn.StatusAsync(Tester, Env, default)).SignedIn.Should().BeTrue();
@@ -539,6 +539,27 @@ public sealed class AltinnTestingTests
         after.CanRun.Should().BeTrue();
         after.Prerequisites.Single(item => item.Key == "observation").State.Should().Be(JourneyReadinessState.Partial, "MU/MM/report steps have no observer");
         after.StepStatus.Where(step => step.StepId.StartsWith("altinn-", StringComparison.Ordinal)).Should().OnlyContain(step => step.Observable, "a registered executor produces their evidence");
+    }
+
+    [Fact]
+    public async Task MovingTheCentralTestEndpoint_MovesTheMetadataReadAndTheRealRun_Together()
+    {
+        var kit = new AltinnTestKit().UseEndpoints("https://platform.altinn-test-moved.example/", "apps.altinn-test-moved.example");
+        await using var harness = Harness(kit);
+        await kit.ConfigureReadyAsync(harness);
+        await kit.Contracts(harness.MessageFlows, harness.Sources).DiscoverPublicAsync(Env, default);
+        var metadataHosts = kit.Http.Calls.Select(call => call.Uri.Host).Distinct().ToArray();
+        kit.Http.Calls.Clear();
+        harness.Tokens.Hold(Tester, Env, AltinnTestKit.AltinnToken);
+
+        var run = await Service(harness, kit).StartAsync(Request("valid-report", Inputs("registered", SyntheticPersonIdentifier.Generate(), "2026-10-01", "2026-10-31", "100", "92")), Tester, default);
+
+        run.Steps.Take(6).Should().OnlyContain(step => step.State == JourneyStepState.Verified, string.Join(" | ", run.Steps.Take(6).Select(step => $"{step.StepId}: {step.Reason}")));
+        var runHosts = kit.Http.Calls.Select(call => call.Uri.Host).Distinct().ToArray();
+        metadataHosts.Should().BeEquivalentTo(["buf.apps.altinn-test-moved.example", "platform.altinn-test-moved.example"]);
+        runHosts.Should().Equal(["buf.apps.altinn-test-moved.example"]);
+        metadataHosts.Concat(runHosts).Should().NotContain(host => host.Contains("tt02.altinn.no", StringComparison.Ordinal), "metadata and execution use the same configured source");
+        kit.Policy.Endpoints.TokenExchange.Host.Should().Be("platform.altinn-test-moved.example", "the unattended token exchange follows the same configuration");
     }
 
     [Fact]
