@@ -88,34 +88,73 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     private const string AltinnAppSource = "Altinn Skolenærvær app";
     private const string ApiDocument = "OpenAPI / Swagger document";
+    private const string AppReference = "Altinn app reference in configuration (e.g. an event subscription) or OpenAPI / Swagger document";
+    /// <summary>Which app's values are meant when a source declares several apps (an Altinn route's app segment).</summary>
+    private const string AppScope = "skolenaervaer";
 
     /// <summary>The Altinn values Rapportmottak needs, by generic semantic key: any artifact an analyzer reads may provide them (the app's
     /// OpenAPI document provides all of them; no process.bpmn or applicationmetadata.json is required for these values).</summary>
     public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration { get; } =
     [
-        new("altinn-app-route", "Altinn app (org/app)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, AltinnAppSource, ApiDocument,
-            "Which app Rapportmottak submits to.", "Integration Quality Review → Extensions → Altinn") { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier" },
-        new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, ApiDocument,
-            "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment" },
+        new("altinn-environment", "Altinn environment", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationEnvironment, AltinnAppSource, AppReference,
+            "Which Altinn platform the app is tested on (only Test is ever applied).", "Integration Quality Review → Extensions → Altinn")
+            { PrerequisiteKey = "altinn-environment", ConsumerField = "Environment", ScopeHint = AppScope, AutoApply = true },
+        new("altinn-app-route", "Altinn app (org/app)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, AltinnAppSource, AppReference,
+            "Which app Rapportmottak submits to.", "Integration Quality Review → Extensions → Altinn")
+            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier", ScopeHint = AppScope, AutoApply = true },
+        new("altinn-base-url", "Altinn app base URL", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationBaseUrl, AltinnAppSource, AppReference,
+            "The app's address on the test platform (a safe reference; BirkNext builds its calls from the backend endpoints).", "Integration Quality Review → Extensions → Altinn")
+            { PrerequisiteKey = "altinn-app", ConsumerField = "Safe base URL reference", ScopeHint = AppScope, AutoApply = true },
+        new("altinn-event-webhook", "Report intake webhook", BirkNext.SourceDomains.SourceConfigurationKeys.EndpointEventWebhook, "Report intake receiver (MU)",
+            "Application configuration (Altinn event subscription)", "Where Altinn delivers the app's completed instances.", "Integration Quality Review → Extensions → Altinn")
+            { PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, AutoApply = true },
+        new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, AppReference,
+            "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment", ScopeHint = AppScope },
         new("altinn-form-data-type", "Form data type", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType, AltinnAppSource, ApiDocument,
-            "The data element the report is written to.", "Altinn app contract") { PrerequisiteKey = "submission-contract" },
+            "The data element the report is written to.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope },
         new("altinn-content-type", "Form content type", BirkNext.SourceDomains.SourceConfigurationKeys.PayloadContentType, AltinnAppSource, ApiDocument,
-            "How the report payload is sent.", "Altinn app contract") { PrerequisiteKey = "submission-contract" },
+            "How the report payload is sent.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope },
         new("altinn-process-task", "Process task", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationTaskId, AltinnAppSource, ApiDocument,
-            "The task the form belongs to before process/next.", "Altinn app contract") { PrerequisiteKey = "process-contract" },
+            "The task the form belongs to before process/next.", "Altinn app contract") { PrerequisiteKey = "process-contract", ScopeHint = AppScope },
         new("altinn-auth-scheme", "Authentication scheme", BirkNext.SourceDomains.SourceConfigurationKeys.AuthenticationScheme, AltinnAppSource, ApiDocument,
             "How callers authenticate. The QA client's registration, redirect URI and scopes are not in the document and are not verified by it.", "Local execution config")
-            { PrerequisiteKey = "idporten-client" },
+            { PrerequisiteKey = "idporten-client", ScopeHint = AppScope },
     ];
 
     /// <summary>What is stored for the requirements: the app identifier (IQR → Extensions → Altinn) and the backend's test host for that app.</summary>
     public async Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct)
     {
-        var appIdentifier = (await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration?.AppIdentifier;
-        var values = new Dictionary<string, string?> { ["altinn-app-route"] = string.IsNullOrWhiteSpace(appIdentifier) ? null : appIdentifier };
+        var config = (await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration ?? new AltinnTestConfiguration();
+        var appIdentifier = config.AppIdentifier;
+        string? Stored(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+        var values = new Dictionary<string, string?>
+        {
+            ["altinn-app-route"] = Stored(appIdentifier), ["altinn-base-url"] = Stored(config.BaseUrlReference), ["altinn-event-webhook"] = Stored(config.EndpointReference),
+            ["altinn-environment"] = config.Environment == ExternalTestEnvironment.Unknown ? null : config.Environment.ToString(),
+        };
         if (altinnPolicy.ApprovedApp(appIdentifier, out _) is { } app)
             values["altinn-test-server"] = altinnPolicy.Endpoints.AppBase(app.Org, app.App).GetLeftPart(UriPartial.Authority);
         return values;
+    }
+
+    /// <summary>Stores safe source-derived values into EMPTY Altinn test-configuration fields only (IQR → Extensions → Altinn), through the
+    /// normal message-flow save (credential protection included). Environment is only ever set to Test; nothing else is touched.</summary>
+    public async Task<IReadOnlyList<string>> ApplyConfigurationAsync(JourneyPackContext context, IReadOnlyDictionary<string, string> values, CancellationToken ct)
+    {
+        var package = await messageFlows.GetAsync(context.EnvironmentId, ct);
+        var config = package.AltinnConfiguration ?? new AltinnTestConfiguration();
+        var applied = new List<string>();
+        if (values.TryGetValue("altinn-environment", out var environment) && environment == nameof(ExternalTestEnvironment.Test) && config.Environment == ExternalTestEnvironment.Unknown)
+        { config = config with { Environment = ExternalTestEnvironment.Test }; applied.Add("altinn-environment"); }
+        if (values.TryGetValue("altinn-app-route", out var route) && string.IsNullOrWhiteSpace(config.AppIdentifier))
+        { config = config with { AppIdentifier = route }; applied.Add("altinn-app-route"); }
+        if (values.TryGetValue("altinn-base-url", out var baseUrl) && string.IsNullOrWhiteSpace(config.BaseUrlReference))
+        { config = config with { BaseUrlReference = baseUrl }; applied.Add("altinn-base-url"); }
+        if (values.TryGetValue("altinn-event-webhook", out var webhook) && string.IsNullOrWhiteSpace(config.EndpointReference))
+        { config = config with { EndpointReference = webhook }; applied.Add("altinn-event-webhook"); }
+        if (applied.Count == 0) return [];
+        var (saved, _) = await messageFlows.SaveAsync(context.EnvironmentId, package with { AltinnConfiguration = config }, ct);
+        return saved is null ? [] : applied;
     }
 
     /// <summary>The canonical source-evidence binding of the configured integration that fulfils this journey's report-intake requirement.</summary>

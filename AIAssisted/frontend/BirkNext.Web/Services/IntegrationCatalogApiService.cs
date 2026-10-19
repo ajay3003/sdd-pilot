@@ -106,6 +106,9 @@ public interface IIntegrationCatalogApiService
         new MessageFlowDefinition { EnvironmentId = environmentId, Name = "Message flow review" }, new AltinnTestConfiguration(), new(false, 0, 0, [], []), [], []));
     Task<IntegrationMessageFlowPackage> SaveMessageFlowReviewAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) => Task.FromException<IntegrationMessageFlowPackage>(new NotSupportedException("Message flow configuration is unavailable."));
     Task<MessageFlowSourceContractOptions?> MessageFlowSourceContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<MessageFlowSourceContractOptions?>(null);
+    /// <summary>Saves, returning the backend's reasons (section, field, why — never the value) when it refuses.</summary>
+    async Task<(IntegrationMessageFlowPackage? Package, MessageFlowSaveProblem? Problem)> SaveMessageFlowReviewDetailedAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) =>
+        (await SaveMessageFlowReviewAsync(environmentId, package, ct), null);
 
     // SCIM identity provisioning. Default members keep other implementations (test fakes) valid; the backend client overrides them.
     /// <summary>The environment's latest SCIM source analysis and stored safe-check history.</summary>
@@ -506,6 +509,19 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<IntegrationMessageFlowPackage> SaveMessageFlowReviewAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) =>
         await Read<IntegrationMessageFlowPackage>(await http.PutAsJsonAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, ct), ct);
+
+    public async Task<(IntegrationMessageFlowPackage? Package, MessageFlowSaveProblem? Problem)> SaveMessageFlowReviewDetailedAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default)
+    {
+        using var response = await http.PutAsJsonAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, ct);
+        if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationMessageFlowPackage>(Json, ct), null);
+        MessageFlowSaveProblem? problem = null;
+        try { problem = await response.Content.ReadFromJsonAsync<MessageFlowSaveProblem>(Json, ct); } catch (System.Text.Json.JsonException) { }
+        return (null, problem is { Message.Length: > 0 } ? problem : new MessageFlowSaveProblem(response.StatusCode switch
+        {
+            System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized => "Saving needs the integration-configuration permission.",
+            _ => $"The configuration could not be saved (HTTP {(int)response.StatusCode}).",
+        }, []));
+    }
 
     public async Task<MessageFlowSourceContractOptions?> MessageFlowSourceContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default)
     {

@@ -246,6 +246,32 @@
     private FrontendAnalysisProfile? _profile;
     private string _sourceSummary = "Not available";
     private TestPackSourceGuidance? _guidance;
+    private BirkNext.SourceDomains.SourceConfigurationApplyResult? _applyResult;
+    private string? _applyError;
+    private bool _applying;
+
+    /// <summary>Values the bound source declares that are safe to store into empty fields (an explicit action; never over a stored value).</summary>
+    private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> ApplicableSourceValues =>
+        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && item.ConfiguredValue is null).ToList() ?? [];
+
+    private async Task ApplySourceValuesAsync()
+    {
+        if (_profile is null || Services.GetService<IIntegrationJourneysApiService>() is not { } journeys) return;
+        _applying = true; _applyError = null;
+        try
+        {
+            var result = await journeys.ApplySourceGuidanceAsync(_profile.Id, PackId, _disposed.Token);
+            _applyResult = result.Value;
+            _applyError = result.Value is null ? result.Error ?? "The values could not be applied." : null;
+            if (result.Value is { Applied.Count: > 0 })
+            {
+                _pack = (await journeys.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId) ?? _pack;
+                _guidance = (await journeys.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token)).Value ?? _guidance;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _applyError = "The values could not be applied."; }
+        finally { _applying = false; }
+    }
 
     /// <summary>"6 values: 4 suggested from bound source · 1 conflict …" — every state in words.</summary>
     private static string GuidanceSummary(TestPackSourceGuidance guidance)
@@ -426,8 +452,21 @@
         <div class="snt-actions" data-testid="snt-rapport-actions">
             <button type="button" class="btn-primary" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">Open Rapportmottak run</button>
             <a class="btn-secondary" href="/integration-quality-review?view=extensions" data-testid="snt-configure-altinn">Configure Altinn</a>
+            @if (ApplicableSourceValues.Count > 0)
+            {
+                <button type="button" class="btn-secondary" data-testid="snt-apply-source" disabled="@_applying" @onclick="ApplySourceValuesAsync">Apply safe source-derived configuration (@ApplicableSourceValues.Count)</button>
+            }
             <a class="btn-secondary" href="/admin/system-settings?section=target-environments" data-testid="snt-open-target">Open Target Environment</a>
         </div>
+        @if (_applyResult is { } applied)
+        {
+            <div class="snt-apply-result" role="status" data-testid="snt-apply-result">
+                <p><strong>@(applied.Applied.Count == 0 ? "Nothing was applied." : $"Applied {applied.Applied.Count} value{(applied.Applied.Count == 1 ? "" : "s")} from the bound source (stored as configuration; not runtime verified):")</strong></p>
+                @if (applied.Applied.Count > 0) { <ul>@foreach (var item in applied.Applied) { <li data-testid="snt-applied-item" data-key="@item.Key">@item.Label: <code>@item.Value</code> <span class="snt-muted">· @item.Provenance</span></li> }</ul> }
+                @if (applied.NotApplied.Count > 0) { <ul class="snt-muted">@foreach (var item in applied.NotApplied) { <li data-testid="snt-not-applied-item" data-key="@item.Key">@item.Label — @item.Reason</li> }</ul> }
+            </div>
+        }
+        @if (_applyError is not null) { <p role="alert" data-testid="snt-apply-error">@_applyError</p> }
         <p class="snt-muted">Opening the run sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
     };
 

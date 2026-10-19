@@ -11,6 +11,14 @@ public interface IIntegrationMessageFlowStore
 {
     Task<IntegrationMessageFlowPackage> GetAsync(string environmentId, CancellationToken ct = default);
     Task<(IntegrationMessageFlowPackage? Package, string? Error)> SaveAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default);
+    /// <summary>As <see cref="SaveAsync"/>, with every rejected field when the package carries credential material.</summary>
+    async Task<(IntegrationMessageFlowPackage? Package, MessageFlowSaveProblem? Problem)> SaveDetailedAsync(string environmentId, IntegrationMessageFlowPackage request, CancellationToken ct = default)
+    {
+        var fields = MessageFlowCredentialGuard.Validate(request);
+        if (fields.Count > 0) return (null, new MessageFlowSaveProblem(MessageFlowCredentialGuard.Summary, fields));
+        var (package, error) = await SaveAsync(environmentId, request, ct);
+        return (package, error is null ? null : new MessageFlowSaveProblem(error, []));
+    }
     /// <summary>Stores the Altinn app contract evidence with this environment's configuration (only the Altinn contract service writes it).</summary>
     Task SaveAppContractAsync(string environmentId, AltinnAppContractRecord contract, CancellationToken ct = default);
 }
@@ -54,7 +62,9 @@ public sealed class IntegrationMessageFlowStore(AppDbContext db, TimeProvider? t
             AltinnConfiguration = config, AppContract = null });
         var json = JsonSerializer.Serialize(package, Json);
         if (json.Length > 1_000_000) return (null, "Message flow configuration exceeds the 1 MB limit.");
-        if (ContainsCredentialLikeValue(json)) return (null, "Credential-like or raw personal-identifier-like values are not accepted. Store references only; do not enter tokens, passwords, private keys, connection strings or personal identifiers.");
+        // Per field: user-entered values only, judged by content (a field named "Key reference" is not a key; "Bearer JWT" is a mechanism).
+        if (MessageFlowCredentialGuard.Validate(package) is { Count: > 0 } rejected)
+            return (null, $"{MessageFlowCredentialGuard.Summary} {string.Join(" ", rejected.Select(error => error.Reason))}");
 
         var row = await db.IntegrationMessageFlows.SingleOrDefaultAsync(r => r.EnvironmentId == environmentId, ct);
         var storedContract = row is null ? null : JsonSerializer.Deserialize<IntegrationMessageFlowPackage>(row.DocumentJson, Json)?.AppContract;
@@ -104,9 +114,4 @@ public sealed class IntegrationMessageFlowStore(AppDbContext db, TimeProvider? t
         };
     }
 
-    private static bool ContainsCredentialLikeValue(string json) =>
-        Regex.IsMatch(json, "(?i)(password|passwd|client[_-]?secret|access[_-]?token|refresh[_-]?token|private[_-]?key|connectionstring|sas[_-]?token)\\s*[:=]") ||
-        Regex.IsMatch(json, "(?i)https?://[^/\\s:@]+:[^/\\s@]+@") ||
-        Regex.IsMatch(json, "(?i)https?://[^\\s\"']+[?&](sig|token|code|key|password)=") ||
-        Regex.IsMatch(json, "(?<!\\d)\\d{11}(?!\\d)");
 }

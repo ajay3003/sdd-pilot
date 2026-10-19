@@ -184,6 +184,19 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     }
 
     [Fact]
+    public void AnHttpApiIntegration_ShowsNoEventStreamFields()
+    {
+        var cut = Open();
+        cut.Find("[data-testid=ip-add]").Click();
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.HttpApi));
+        cut.FindAll("[data-testid=ip-edit-consumer-group]").Should().BeEmpty("an HTTP/API integration has no consumer group");
+        cut.FindAll("[data-testid=ip-edit-delete-expectation]").Should().BeEmpty("delete/tombstone semantics belong to CDC event streams");
+        cut.Markup.Should().Contain("B. Endpoint").And.Contain("Container app (optional)").And.NotContain("e.g. BirkM2LB.dbo.Person");
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.EventHub));
+        cut.FindAll("[data-testid=ip-edit-consumer-group]").Should().ContainSingle("event streams keep their fields");
+    }
+
+    [Fact]
     public void TheConsumerGroupHelperNeverAssumesDefault()
     {
         var cut = Open();

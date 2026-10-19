@@ -175,53 +175,121 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         cut.Find("[data-testid=sd-config-declared-row]").GetAttribute("data-state").Should().Be("Conflict");
     }
 
-    // ── Altinn provider: app identifier prefill from the bound source ───────────────────────────────────────────────
+    // ── Altinn provider: prefill hints from the pack's bound source guidance ────────────────────────────────────────────
 
-    [Fact]
-    public void The_Altinn_app_identifier_offers_the_bound_route_and_using_it_does_not_save()
+    private static SourceConfigurationSuggestion Field(string key, string field, string semanticKey, string? value, SourceSuggestionState state = SourceSuggestionState.Suggested,
+        params string[] conflicting) => new(new SourceConfigurationRequirement(key, field, semanticKey, "App", "Configuration", "p", "IQR") { ConsumerField = field, AutoApply = true }, state)
+    {
+        Value = value,
+        Candidates = (conflicting.Length > 0 ? conflicting : [value!]).Select(item => new SourceConfigurationCandidate(item,
+            [Declared(semanticKey, item, "Hub/appsettings.Development.json", "AltinnWebhookSettings:Subscriptions:0:SourceFilter (line 36)", SourceConfigurationEvidenceKind.ApplicationConfig)])).ToArray(),
+        BoundSources = ["hub.zip"],
+    };
+
+    private (Mock<IIntegrationCatalogApiService> Api, IRenderedComponent<MessageFlowReviewPanel> Cut) RenderPanel(AltinnTestConfiguration config, TestPackSourceGuidance? guidance, bool bound = true)
     {
         var api = new Mock<IIntegrationCatalogApiService>();
-        var config = new AltinnTestConfiguration { AppIdentifier = null };
         api.Setup(x => x.GetMessageFlowReviewAsync("pilot", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = "pilot", Name = "Message flow review" }, config, new(false, 0, 0, [], []), [], []));
         api.Setup(x => x.IqrSourceScopeAsync("pilot", null, It.IsAny<CancellationToken>())).ReturnsAsync(new BirkNext.SourceEvidence.ReviewSourceOptions());
-        var bound = Guid.NewGuid();
-        api.Setup(x => x.ListEvidenceBindingsAsync("pilot", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new IntegrationEvidenceBinding { EnvironmentId = "pilot", IntegrationId = "pilot:report-intake", SnapshotId = bound, ArchiveName = "app.zip", Fingerprint = new string('e', 64) }]);
-        api.Setup(x => x.SourceConfigurationAsync("pilot", "pilot:report-intake", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationSourceConfiguration("pilot:report-intake", null, [Resolution(SourceConfigurationResolutionState.Declared, "shop/parcels")]));
+        api.Setup(x => x.ListEvidenceBindingsAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(bound
+            ? [new IntegrationEvidenceBinding { EnvironmentId = "pilot", IntegrationId = "pilot:report-intake", SnapshotId = Guid.NewGuid(), ArchiveName = "hub.zip", Fingerprint = new string('e', 64) }]
+            : []);
         var journeys = new Mock<IIntegrationJourneysApiService>();
         journeys.Setup(x => x.PacksAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>(
-            [new IntegrationJourneyPackView { Journeys = [new IntegrationJourneyView { MatchedIntegrations = [new("report-intake", "pilot:report-intake", "Report intake", IntegrationKind.HttpApi, true, "Configured.")] }] }],
+            [new IntegrationJourneyPackView { PackId = "demo", Journeys = [new IntegrationJourneyView { MatchedIntegrations = [new("report-intake", "pilot:report-intake", "Report intake", IntegrationKind.HttpApi, true, "Configured.")] }] }],
             null, HttpStatusCode.OK));
+        journeys.Setup(x => x.SourceGuidanceAsync("pilot", "demo", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<TestPackSourceGuidance>(guidance, null, HttpStatusCode.OK));
         Services.AddSingleton(api.Object);
         Services.AddSingleton(journeys.Object);
+        return (api, Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot")));
+    }
 
-        var cut = Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot"));
+    private static TestPackSourceGuidance HubGuidance() => new("demo",
+    [
+        Field("env", "Environment", "Application.Environment", "Test"),
+        Field("route", "App identifier", "Application.Route", "shop/parcels"),
+        Field("base", "Safe base URL reference", "Application.BaseUrl", "https://shop.apps.test.example.invalid/shop/parcels"),
+        Field("hook", "Endpoint reference", "Endpoint.EventWebhook", "https://hub.example.invalid/api/hook"),
+    ]);
+
+    private static string Input(IRenderedComponent<MessageFlowReviewPanel> cut, string label) =>
+        cut.FindAll("label").Single(item => item.TextContent.Trim().StartsWith(label, StringComparison.Ordinal)).QuerySelector("input, select")!.GetAttribute("value") ?? "";
+
+    [Fact]
+    public void Every_field_shows_its_bound_suggestion_and_using_them_fills_only_empty_fields_without_saving()
+    {
+        var (api, cut) = RenderPanel(new AltinnTestConfiguration { EndpointReference = "https://explicit.example.invalid/hook" }, HubGuidance());
         cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-app-suggestion-value]").TextContent.Should().Be("shop/parcels"));
-        cut.Find("[data-testid=mfr-app-suggestion-use]").Click();
-        cut.FindAll("label").Single(label => label.TextContent.Trim().StartsWith("App identifier", StringComparison.Ordinal)).QuerySelector("input")!.GetAttribute("value").Should().Be("shop/parcels");
-        api.Verify(x => x.SaveMessageFlowReviewAsync(It.IsAny<string>(), It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()), Times.Never,
-            "a suggestion fills the form; only Save stores it");
+        cut.Find("[data-testid=mfr-environment-suggestion-value]").TextContent.Should().Be("Test");
+        cut.Find("[data-testid=mfr-base-url-suggestion-value]").TextContent.Should().Be("https://shop.apps.test.example.invalid/shop/parcels");
+        cut.Find("[data-testid=mfr-endpoint-suggestion-differs]").TextContent.Should().Contain("It is kept");
+        cut.Markup.Should().Contain("Configuration · Hub/appsettings.Development.json → AltinnWebhookSettings:Subscriptions:0:SourceFilter (line 36)");
+        cut.Find("[data-testid=mfr-use-source-values]").TextContent.Should().Be("Use 3 safe source values");
+        cut.Find("[data-testid=mfr-use-source-values]").Click();
+        Input(cut, "App identifier").Should().Be("shop/parcels");
+        Input(cut, "Safe base URL reference").Should().Be("https://shop.apps.test.example.invalid/shop/parcels");
+        Input(cut, "Endpoint reference").Should().Be("https://explicit.example.invalid/hook", "an explicit value is never replaced");
+        cut.FindAll("label").Single(item => item.TextContent.Trim().StartsWith("Environment", StringComparison.Ordinal)).QuerySelector("select")!
+            .QuerySelector("option[selected]")?.GetAttribute("value").Should().Be("Test");
+        api.Verify(x => x.SaveMessageFlowReviewDetailedAsync(It.IsAny<string>(), It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()), Times.Never,
+            "filling the form saves nothing");
+    }
+
+    [Fact]
+    public void A_conflict_offers_no_value_and_production_is_never_offered_for_the_environment()
+    {
+        var guidance = new TestPackSourceGuidance("demo",
+        [
+            Field("env", "Environment", "Application.Environment", "Production"),
+            Field("hook", "Endpoint reference", "Endpoint.EventWebhook", null, SourceSuggestionState.Conflict, "https://a.invalid/hook", "https://b.invalid/hook"),
+        ]);
+        var (_, cut) = RenderPanel(new AltinnTestConfiguration(), guidance);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-endpoint-suggestion]").GetAttribute("data-state").Should().Be("Conflict"));
+        cut.FindAll("[data-testid=mfr-environment-suggestion]").Should().BeEmpty("only Test is ever offered from source");
+        cut.FindAll("[data-testid=mfr-use-source-values]").Should().BeEmpty();
     }
 
     [Fact]
     public void Without_a_binding_no_source_value_is_offered_or_requested()
     {
-        var api = new Mock<IIntegrationCatalogApiService>();
-        api.Setup(x => x.GetMessageFlowReviewAsync("pilot", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = "pilot", Name = "Message flow review" }, new AltinnTestConfiguration(), new(false, 0, 0, [], []), [], []));
-        api.Setup(x => x.IqrSourceScopeAsync("pilot", null, It.IsAny<CancellationToken>())).ReturnsAsync(new BirkNext.SourceEvidence.ReviewSourceOptions());
-        api.Setup(x => x.ListEvidenceBindingsAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        var journeys = new Mock<IIntegrationJourneysApiService>();
-        journeys.Setup(x => x.PacksAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>(
-            [new IntegrationJourneyPackView { Journeys = [new IntegrationJourneyView { MatchedIntegrations = [new("report-intake", "pilot:report-intake", "Report intake", IntegrationKind.HttpApi, true, "Configured.")] }] }],
-            null, HttpStatusCode.OK));
-        Services.AddSingleton(api.Object);
-        Services.AddSingleton(journeys.Object);
-        var cut = Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot"));
+        var (_, cut) = RenderPanel(new AltinnTestConfiguration(), HubGuidance(), bound: false);
         cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-unbound]"));
         cut.FindAll("[data-testid=mfr-app-suggestion]").Should().BeEmpty();
-        api.Verify(x => x.SourceConfigurationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never, "the newest snapshot never stands in for a binding");
+        cut.FindAll("[data-testid=mfr-use-source-values]").Should().BeEmpty("the newest snapshot never stands in for a binding");
+    }
+
+    // ── Save: field-specific refusal, never the value ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_refused_save_names_each_field_and_never_shows_the_value()
+    {
+        var (api, cut) = RenderPanel(new AltinnTestConfiguration(), null, bound: false);
+        api.Setup(x => x.SaveMessageFlowReviewDetailedAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IntegrationMessageFlowPackage?)null, new MessageFlowSaveProblem("Credential-like values are not accepted.",
+                [new ConfigurationFieldError("Authentication", "Client / app reference", "altinnConfiguration.clientReference", "Client / app reference was rejected because it appears to contain a JSON Web Token.")])));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-save]"));
+        cut.Find("[data-testid=mfr-save]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-save-error-field]").TextContent
+            .Should().Be("Authentication → Client / app reference: Client / app reference was rejected because it appears to contain a JSON Web Token."));
+        cut.Find("[data-testid=mfr-save-error]").GetAttribute("role").Should().Be("alert");
+        cut.Markup.Should().NotContain("Remove any credential-like value");
+    }
+
+    [Fact]
+    public void A_successful_save_sends_no_snapshot_without_a_schema_contract()
+    {
+        var (api, cut) = RenderPanel(new AltinnTestConfiguration(), HubGuidance());
+        IntegrationMessageFlowPackage? sent = null;
+        api.Setup(x => x.SaveMessageFlowReviewDetailedAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
+            .Callback<string, IntegrationMessageFlowPackage, CancellationToken>((_, package, _) => sent = package)
+            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => ((IntegrationMessageFlowPackage?)package, (MessageFlowSaveProblem?)null));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-save]"));
+        cut.FindAll("label").Single(item => item.TextContent.Trim().StartsWith("Environment", StringComparison.Ordinal)).QuerySelector("select")!.Change("Test");
+        cut.Find("[data-testid=mfr-save]").Click();
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        sent!.AltinnConfiguration.Environment.Should().Be(ExternalTestEnvironment.Test);
+        sent.AltinnConfiguration.SourceSnapshotId.Should().BeNull("the bound snapshot is IQR's; it is only sent with a selected schema contract");
+        cut.Find("[data-testid=mfr-saved]").TextContent.Should().Be("Saved");
     }
 }

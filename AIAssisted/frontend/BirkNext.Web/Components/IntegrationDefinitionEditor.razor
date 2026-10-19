@@ -38,7 +38,7 @@
     </fieldset>
 
     <fieldset class="ip-fieldset">
-        <legend>B. Messaging endpoint</legend>
+        <legend>@(_model.Kind == IntegrationKind.HttpApi ? "B. Endpoint" : "B. Messaging endpoint")</legend>
         <label class="ip-field">Platform
             <select class="form-control" data-testid="ip-edit-platform" @bind="_model.PlatformId">
                 <option value="">None</option>
@@ -49,16 +49,20 @@
             <input class="form-control ip-mono" data-testid="ip-edit-topic" @bind="_model.EndpointOrTopic" @bind:event="oninput" @onblur='() => Touch("topic")' aria-required="true" aria-invalid="@Invalid("topic", string.IsNullOrWhiteSpace(_model.EndpointOrTopic))" />
         </label>
         @if (Show("topic") && string.IsNullOrWhiteSpace(_model.EndpointOrTopic)) { <span class="ip-field-error" role="status">This field is required.</span> }
-        <label class="ip-field">Consumer group
-            <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Unknown / not configured" aria-describedby="ip-edit-consumer-group-help" />
-        </label>
-        <p class="ip-muted" id="ip-edit-consumer-group-help" data-testid="ip-edit-consumer-group-help">Consumer group is required for checkpoint/lag review. Leave blank if not confirmed — <code>$Default</code> is never assumed.</p>
+        @* Consumer groups, source tables and delete/tombstone semantics belong to event streams (CDC); an HTTP/API integration has none. *@
+        @if (!IsHttpApi)
+        {
+            <label class="ip-field">Consumer group
+                <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Unknown / not configured" aria-describedby="ip-edit-consumer-group-help" />
+            </label>
+            <p class="ip-muted" id="ip-edit-consumer-group-help" data-testid="ip-edit-consumer-group-help">Consumer group is required for checkpoint/lag review. Leave blank if not confirmed — <code>$Default</code> is never assumed.</p>
+        }
     </fieldset>
 
     <fieldset class="ip-fieldset">
         <legend>C. Flow</legend>
         <label class="ip-field">Producer <input class="form-control" data-testid="ip-edit-producer" @bind="_model.Producer" /></label>
-        <label class="ip-field">Source <input class="form-control ip-mono" @bind="_model.SourceResource" placeholder="e.g. BirkM2LB.dbo.Person" /></label>
+        @if (!IsHttpApi) { <label class="ip-field">Source <input class="form-control ip-mono" @bind="_model.SourceResource" placeholder="e.g. BirkM2LB.dbo.Person" /></label> }
         <label class="ip-field">Consumer <input class="form-control" data-testid="ip-edit-consumer" @bind="_model.ConsumerName" /></label>
         <label class="ip-field">Consumer mapping
             <select class="form-control" data-testid="ip-edit-mapping" @bind="_model.MappingState">
@@ -66,16 +70,19 @@
             </select>
         </label>
         <label class="ip-field">Consumer application (logical) <input class="form-control ip-mono" @bind="_model.ConsumerLogicalName" /></label>
-        <label class="ip-field">Container app <input class="form-control ip-mono" @bind="_model.ConsumerContainerApp" /></label>
-        <label class="ip-field">Managed identity <input class="form-control ip-mono" @bind="_model.ConsumerManagedIdentity" /></label>
-        <label class="ip-field">Delete / tombstone expectation
-            <select class="form-control" data-testid="ip-edit-delete-expectation" @bind="_model.DeleteExpectation">
-                <option value="@CdcDeleteExpectation.NotSpecified">Not specified</option>
-                <option value="@CdcDeleteExpectation.DeleteEventOnly">Delete event only (no tombstone)</option>
-                <option value="@CdcDeleteExpectation.DeleteEventAndTombstone">Delete event followed by a tombstone</option>
-                <option value="@CdcDeleteExpectation.TombstoneNotExpected">Tombstones not expected</option>
-            </select>
-        </label>
+        <label class="ip-field">Container app (optional) <input class="form-control ip-mono" @bind="_model.ConsumerContainerApp" /></label>
+        <label class="ip-field">Managed identity (optional) <input class="form-control ip-mono" @bind="_model.ConsumerManagedIdentity" /></label>
+        @if (!IsHttpApi)
+        {
+            <label class="ip-field">Delete / tombstone expectation
+                <select class="form-control" data-testid="ip-edit-delete-expectation" @bind="_model.DeleteExpectation">
+                    <option value="@CdcDeleteExpectation.NotSpecified">Not specified</option>
+                    <option value="@CdcDeleteExpectation.DeleteEventOnly">Delete event only (no tombstone)</option>
+                    <option value="@CdcDeleteExpectation.DeleteEventAndTombstone">Delete event followed by a tombstone</option>
+                    <option value="@CdcDeleteExpectation.TombstoneNotExpected">Tombstones not expected</option>
+                </select>
+            </label>
+        }
     </fieldset>
 
     <fieldset class="ip-fieldset">
@@ -131,6 +138,7 @@
 </section>
 
 @code {
+    private bool IsHttpApi => _model.Kind == IntegrationKind.HttpApi;
     [Parameter] public IntegrationDefinition? Original { get; set; }
     [Parameter] public IReadOnlyList<IntegrationPlatform> Platforms { get; set; } = [];
     [Parameter] public EventCallback<IntegrationDefinition> OnSave { get; set; }

@@ -3,6 +3,7 @@ using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Integrations;
+using BirkNext.SourceDomains;
 
 namespace BirkNext.Api.Services.IntegrationJourneys;
 
@@ -15,6 +16,9 @@ public interface IIntegrationJourneyService
     /// <summary>Per configuration requirement of the pack: what its IQR-bound source declares (suggested, conflict, available but not bound).</summary>
     Task<TestPackSourceGuidance> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct) =>
         Task.FromResult(new TestPackSourceGuidance(packId, []));
+    /// <summary>Stores the pack's safe, bound, unambiguous source-derived values into empty fields (explicit action; never over stored values).</summary>
+    Task<SourceConfigurationApplyResult> ApplySourceConfigurationAsync(string environmentId, string packId, CancellationToken ct) =>
+        Task.FromResult(new SourceConfigurationApplyResult([], []));
     IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog();
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
@@ -111,6 +115,36 @@ public sealed class IntegrationJourneyService(
             Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
                 "Declared in source is not runtime verified."],
         };
+    }
+
+    public async Task<SourceConfigurationApplyResult> ApplySourceConfigurationAsync(string environmentId, string packId, CancellationToken ct)
+    {
+        var pack = packs.Find(packId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
+        var guidance = await SourceGuidanceAsync(environmentId, packId, ct);
+        var eligible = new Dictionary<string, SourceConfigurationSuggestion>(StringComparer.Ordinal);
+        var notApplied = new List<SourceConfigurationNotApplied>();
+        foreach (var suggestion in guidance.Suggestions.Where(item => item.Requirement.AutoApply))
+        {
+            var reason = suggestion.State switch
+            {
+                SourceSuggestionState.Conflict => "Review required: the bound source declares different values.",
+                SourceSuggestionState.AvailableNotBound => "Available but not bound: bind the snapshot in Integration Quality Review → Evidence first.",
+                SourceSuggestionState.NotDeclared => "Not declared in the bound source.",
+                _ when suggestion.ConfiguredValue is not null => "A value is already configured; it is kept.",
+                _ when suggestion.Value is null || Integrations.MessageFlowCredentialGuard.Reason(suggestion.Value) is not null => "The value is not a safe reference.",
+                _ => null,
+            };
+            if (reason is null) eligible[suggestion.Requirement.Key] = suggestion;
+            else notApplied.Add(new(suggestion.Requirement.Key, suggestion.Requirement.Label, reason));
+        }
+        if (eligible.Count == 0) return new SourceConfigurationApplyResult([], notApplied);
+        var stored = await pack.ApplyConfigurationAsync(await ContextAsync(environmentId, ct), eligible.ToDictionary(item => item.Key, item => item.Value.Value!), ct);
+        foreach (var key in eligible.Keys.Except(stored))
+            notApplied.Add(new(key, eligible[key].Requirement.Label, "Not stored: the field is not empty or the consumer does not accept this value."));
+        return new SourceConfigurationApplyResult(
+            [.. stored.Where(eligible.ContainsKey).Select(key => new SourceConfigurationApplied(key, eligible[key].Requirement.Label, eligible[key].Value!,
+                string.Join("; ", eligible[key].Candidates.SelectMany(candidate => candidate.Provenance).Select(SourceAnalysis.SourceConfigurationGuidance.Provenance).Distinct())))],
+            notApplied);
     }
 
     /// <summary>The IQR-bound snapshots of the configured integrations that fulfil this pack's requirements, in requirement order.</summary>

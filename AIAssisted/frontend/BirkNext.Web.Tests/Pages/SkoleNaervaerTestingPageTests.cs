@@ -278,6 +278,31 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void Rapportmottak_offers_to_apply_safe_bound_values_only_on_an_explicit_click_and_reports_what_was_stored()
+    {
+        WithTarget();
+        _journeys.Guidance = new("skolenaervaer",
+        [
+            new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-app-route", "Altinn app (org/app)", "Application.Route", "App", "Configuration", "p", "IQR")
+                { ConsumerField = "App identifier", AutoApply = true }, BirkNext.SourceDomains.SourceSuggestionState.Suggested) { Value = "buf/skolenaervaer", BoundSources = ["hub.zip"] },
+            new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-event-webhook", "Report intake webhook", "Endpoint.EventWebhook", "MU", "Configuration", "p", "IQR")
+                { ConsumerField = "Endpoint reference", AutoApply = true }, BirkNext.SourceDomains.SourceSuggestionState.Suggested) { Value = "https://hub.invalid/hook", ConfiguredValue = "https://explicit.invalid" },
+            new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-test-server", "Altinn test server", "Environment.Server.Test", "App", "Configuration", "p", "Backend"),
+                BirkNext.SourceDomains.SourceSuggestionState.Suggested) { Value = "https://x.invalid" },
+        ]);
+        _journeys.ApplyResult = new([new("altinn-app-route", "Altinn app (org/app)", "buf/skolenaervaer", "Configuration hub/appsettings.Development.json → Altinn:StorageAppId (line 14)")],
+            [new("altinn-event-webhook", "Report intake webhook", "A value is already configured; it is kept.")]);
+        var page = Open("rapportmottak");
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-apply-source]").TextContent.Should().Be("Apply safe source-derived configuration (1)",
+            "only an auto-applicable, unconfigured suggestion counts"));
+        _journeys.Calls.Should().NotContain("apply-source", "nothing is applied by opening the page");
+        page.Find("[data-testid=snt-apply-source]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-applied-item]").TextContent.Should().Contain("buf/skolenaervaer").And.Contain("Altinn:StorageAppId"));
+        page.Find("[data-testid=snt-apply-result]").TextContent.Should().Contain("not runtime verified");
+        page.Find("[data-testid=snt-not-applied-item]").TextContent.Should().Contain("already configured; it is kept");
+    }
+
+    [Fact]
     public void Without_a_binding_the_overview_says_so()
     {
         WithTarget();
@@ -512,6 +537,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         public TestPackDescriptor Descriptor { get; set; } = SkolenaervaerDescriptor();
         public ArchitectureRuleReport? Rules { get; set; }
         public TestPackSourceGuidance? Guidance { get; set; }
+        public BirkNext.SourceDomains.SourceConfigurationApplyResult? ApplyResult { get; set; }
+
+        public Task<ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>> ApplySourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
+        {
+            Calls.Add("apply-source");
+            return Task.FromResult(new ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>(ApplyResult, ApplyResult is null ? "refused" : null, HttpStatusCode.OK));
+        }
 
         public Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
         {

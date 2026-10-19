@@ -660,7 +660,10 @@ public sealed class SkoleNaervaerRunResolutionTests
         var readinessBefore = (await RapportmottakAsync(bed)).Prerequisites.Select(row => (row.Key, row.State)).ToArray();
 
         var guidance = await GuidanceAsync(bed);
-        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && !item.RuntimeVerified);
+        var fromOpenApi = new[] { "altinn-app-route", "altinn-test-server", "altinn-form-data-type", "altinn-content-type", "altinn-process-task", "altinn-auth-scheme" };
+        fromOpenApi.Select(key => guidance[key]).Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && !item.RuntimeVerified);
+        guidance.Values.Should().OnlyContain(item => !item.RuntimeVerified);
+        guidance["altinn-event-webhook"].State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.NotDeclared, "an API document declares no event subscription");
         guidance["altinn-app-route"].Value.Should().Be("buf/skolenaervaer");
         guidance["altinn-test-server"].Value.Should().Be("https://buf.apps.tt02.altinn.no");
         guidance["altinn-form-data-type"].Value.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
@@ -668,7 +671,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         guidance["altinn-process-task"].Value.Should().Be("Task_1");
         guidance["altinn-auth-scheme"].Value.Should().Be("Bearer JWT");
         guidance["altinn-test-server"].Candidates.Single().Provenance.Single().Location.Should().Be("servers[1]");
-        guidance.Values.Should().OnlyContain(item => item.BoundSources.SequenceEqual(new[] { "skolenaervaer-app.zip" }), "provenance names the bound snapshot");
+        fromOpenApi.Select(key => guidance[key]).Should().OnlyContain(item => item.BoundSources.SequenceEqual(new[] { "skolenaervaer-app.zip" }), "provenance names the bound snapshot");
         guidance["altinn-process-task"].Requirement.EvidenceType.Should().Be("OpenAPI / Swagger document", "no process.bpmn is required for the task");
 
         // Configured next to suggested — and nothing was written or changed by reading guidance.
@@ -686,7 +689,9 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await ReadyAsync();
         bed.Harness.Sources.Snapshots.Add(snapshot);
         var guidance = await GuidanceAsync(bed);
-        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound && item.Value == null && item.Candidates.Count == 0);
+        guidance.Values.Where(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.NotDeclared)
+            .Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound && item.Value == null && item.Candidates.Count == 0);
+        guidance.Values.Should().NotContain(item => item.Value != null, "an unbound snapshot offers no value");
         guidance["altinn-test-server"].UnboundSources.Should().Equal("skolenaervaer-app.zip");
         guidance["altinn-test-server"].Detail.Should().Contain("not bound in Integration Quality Review").And.Contain("not source verified");
     }
@@ -712,8 +717,168 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await ReadyAsync();
         var guidance = await GuidanceAsync(bed);
         guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.NotDeclared
-            && item.Detail.Contains("OpenAPI / Swagger document", StringComparison.Ordinal) && item.Detail.Contains("Altinn Skolenærvær app", StringComparison.Ordinal));
+            && item.Detail.Contains(item.Requirement.EvidenceType, StringComparison.Ordinal) && item.Detail.Contains(item.Requirement.LogicalSource, StringComparison.Ordinal));
         guidance.Values.Should().NotContain(item => item.Detail.Contains("process.bpmn", StringComparison.Ordinal) || item.Detail.Contains("skolenaervaer.json", StringComparison.Ordinal),
             "a requirement names the evidence type, never a particular file");
+    }
+
+    // ── Safe source-derived setup from the bound report-intake source (message hub configuration) ─────────────────────────
+
+    /// <summary>A message hub's development settings as Source Analysis reads them: two Altinn event subscriptions (two apps) and an app id.
+    /// Synthetic; shaped like a real hub's configuration. Nothing here is contacted.</summary>
+    private static string HubSettings(string skoleEndpoint = "https://hub.example.invalid/api/altinn/webhook", string? extraSkoleEndpoint = null)
+    {
+        string Subscription(string trigger, string endpoint, string app) =>
+            "{ \"Trigger\": \"" + trigger + "\", \"Endpoint\": \"" + endpoint + "\", \"SourceFilter\": \"https://buf.apps.tt02.altinn.no/buf/" + app + "\" }";
+        var subscriptions = new List<string> { Subscription("Webhook", skoleEndpoint, "skolenaervaer"), Subscription("FormOrder", "https://hub.example.invalid/api/altinn/order-form", "other-app") };
+        if (extraSkoleEndpoint is not null) subscriptions.Add(Subscription("Webhook", extraSkoleEndpoint, "skolenaervaer"));
+        return "{ \"Altinn\": { \"PlatformUrl\": \"https://platform.tt02.altinn.no\", \"StorageAppId\": \"buf/skolenaervaer\" }, "
+            + "\"AltinnWebhookSettings\": { \"Subscriptions\": [ " + string.Join(", ", subscriptions) + " ] } }";
+    }
+
+    private static IqrSourceSnapshot HubSnapshot(string archive, string settings, DateTimeOffset? at = null) => new()
+    {
+        Id = Guid.NewGuid(), Archive = new(archive, new string('c', 64), 1), AnalyzedAt = at ?? DateTimeOffset.UtcNow,
+        EvidenceDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(("Hub.Service/Hub.Service.csproj", "<Project Sdk=\"Microsoft.NET.Sdk.Web\"></Project>"),
+            ("Hub.Service/appsettings.Development.json", settings)),
+    };
+
+    private static async Task<Bed> UnconfiguredAsync() =>
+        await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { Environment = ExternalTestEnvironment.Unknown, AppIdentifier = null, BaseUrlReference = null, EndpointReference = null }, liveContract: false);
+
+    private static int MandatoryReady(IntegrationJourneyView view) => view.Prerequisites.Count(item => item.Mandatory && item.State == JourneyReadinessState.Ready);
+
+    [Fact]
+    public async Task TheHubConfiguration_DeclaresTheAppRouteBaseUrlTestEnvironmentAndWebhook_PerApp_WithoutConflict()
+    {
+        var values = SourceConfigurationValueCollectorValues(HubSnapshot("hub.zip", HubSettings()));
+        values.Where(value => value.SemanticKey == SourceConfigurationKeys.ApplicationRoute && value.Scope == "buf/skolenaervaer")
+            .Select(value => value.Location).Should().HaveCount(2, "the subscription's source filter and the app id agree");
+        values.Should().Contain(value => value.SemanticKey == SourceConfigurationKeys.ApplicationBaseUrl && value.Value == "https://buf.apps.tt02.altinn.no/buf/skolenaervaer");
+        values.Should().Contain(value => value.SemanticKey == SourceConfigurationKeys.ApplicationEnvironment && value.Value == "Test" && value.Scope == "buf/skolenaervaer");
+        var webhook = values.Single(value => value.SemanticKey == SourceConfigurationKeys.EndpointEventWebhook && value.Scope == "buf/skolenaervaer");
+        webhook.Value.Should().Be("https://hub.example.invalid/api/altinn/webhook");
+        webhook.Attributes.Should().Contain("Trigger", "Webhook");
+        webhook.Artifact.Should().Be("Hub.Service/appsettings.Development.json");
+        SourceConfigurationResolver.Resolve(values).Should().NotContain(item => item.State == SourceConfigurationResolutionState.Conflict,
+            "two subscribed apps are two scopes, not one app with two routes");
+    }
+
+    private static IReadOnlyList<SourceConfigurationValue> SourceConfigurationValueCollectorValues(IqrSourceSnapshot snapshot) =>
+        BirkNext.Api.Services.SourceAnalysis.Evidence.SourceConfigurationValueCollector.Values(snapshot.EvidenceDomains);
+
+    [Fact]
+    public async Task ApplyingSafeSourceConfiguration_FillsOnlyEmptyFields_AndResolvesExactlyEnvironmentAndApp()
+    {
+        var bed = await UnconfiguredAsync();
+        var hub = HubSnapshot("Tiltak hub.zip", HubSettings());
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        var before = await RapportmottakAsync(bed);
+        Row(before, "altinn-environment").State.Should().NotBe(JourneyReadinessState.Ready);
+        Row(before, "altinn-app").State.Should().NotBe(JourneyReadinessState.Ready);
+        var otherBefore = before.Prerequisites.Where(item => item.Key is not ("altinn-environment" or "altinn-app")).Select(item => (item.Key, item.State)).ToArray();
+
+        var guidance = await GuidanceAsync(bed);
+        guidance["altinn-environment"].Value.Should().Be("Test");
+        guidance["altinn-app-route"].Value.Should().Be("buf/skolenaervaer");
+        guidance["altinn-app-route"].Candidates.Single().Provenance.Should().HaveCount(2, "source filter and app id agree");
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().BeNull("reading guidance applies nothing");
+
+        var result = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        result.Applied.Select(item => item.Key).Should().BeEquivalentTo(["altinn-environment", "altinn-app-route", "altinn-base-url", "altinn-event-webhook"]);
+        result.Applied.Should().OnlyContain(item => item.Provenance.Contains("Hub.Service/appsettings.Development.json", StringComparison.Ordinal));
+        var config = bed.Harness.MessageFlows.Configuration;
+        config.Environment.Should().Be(ExternalTestEnvironment.Test);
+        config.AppIdentifier.Should().Be("buf/skolenaervaer");
+        config.BaseUrlReference.Should().Be("https://buf.apps.tt02.altinn.no/buf/skolenaervaer");
+        config.EndpointReference.Should().Be("https://hub.example.invalid/api/altinn/webhook");
+        config.ClientReference.Should().Be(AltinnTestKit.ReadyConfiguration.ClientReference, "nothing else is touched");
+        config.VerifiedScopes.Should().BeEmpty("source never verifies");
+
+        var after = await RapportmottakAsync(bed);
+        Row(after, "altinn-environment").State.Should().Be(JourneyReadinessState.Ready);
+        Row(after, "altinn-app").State.Should().Be(JourneyReadinessState.Ready);
+        // Environment and app resolve from the applied values; the app policy resolves because the backend holds an independently confirmed
+        // policy for that app — it only needed to know which app. Nothing else changes.
+        after.Prerequisites.Where(item => before.Prerequisites.Single(old => old.Key == item.Key).State != item.State).Select(item => item.Key)
+            .Should().BeEquivalentTo(["altinn-environment", "altinn-app", "app-policy"]);
+        MandatoryReady(after).Should().Be(MandatoryReady(before) + 3);
+        after.Prerequisites.Where(item => item.Key is not ("altinn-environment" or "altinn-app" or "app-policy")).Select(item => (item.Key, item.State)).Should().Equal(
+            otherBefore.Where(item => item.Key != "app-policy"), "no unrelated blocker changes");
+        after.Maturity.RuntimeVerified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ExplicitConfiguration_IsNeverOverwritten_ByApplying()
+    {
+        var bed = await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { EndpointReference = "https://explicit.example.invalid/hook", BaseUrlReference = null }, liveContract: false);
+        var hub = HubSnapshot("hub.zip", HubSettings());
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        var before = bed.Harness.MessageFlows.Configuration;
+        var result = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        result.Applied.Select(item => item.Key).Should().Equal("altinn-base-url");
+        result.NotApplied.Should().Contain(item => item.Key == "altinn-event-webhook" && item.Reason.Contains("already configured"));
+        bed.Harness.MessageFlows.Configuration.EndpointReference.Should().Be("https://explicit.example.invalid/hook");
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().Be(before.AppIdentifier);
+    }
+
+    [Fact]
+    public async Task AnUnboundSnapshot_OrANewerUnboundOne_ConfiguresNothing()
+    {
+        var bed = await UnconfiguredAsync();
+        bed.Harness.Sources.Snapshots.Add(HubSnapshot("unbound.zip", HubSettings()));
+        var unbound = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        unbound.Applied.Should().BeEmpty();
+        unbound.NotApplied.Should().OnlyContain(item => item.Reason.StartsWith("Available but not bound", StringComparison.Ordinal));
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().BeNull();
+
+        var bound = HubSnapshot("bound.zip", HubSettings("https://bound.example.invalid/hook"), DateTimeOffset.UtcNow.AddDays(-3));
+        bed.Harness.Sources.Snapshots.Add(bound);
+        bed.Harness.Bindings.Bind(ReportIntake, bound);
+        bed.Harness.Sources.Snapshots.Add(HubSnapshot("newer.zip", HubSettings("https://newer.example.invalid/hook"), DateTimeOffset.UtcNow.AddDays(1)));
+        await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        bed.Harness.MessageFlows.Configuration.EndpointReference.Should().Be("https://bound.example.invalid/hook", "a newer unbound snapshot never replaces the bound one");
+    }
+
+    [Fact]
+    public async Task ConflictingValuesForTheSameApp_AreReviewRequired_AndNotApplied()
+    {
+        var bed = await UnconfiguredAsync();
+        var hub = HubSnapshot("hub.zip", HubSettings(extraSkoleEndpoint: "https://second.example.invalid/hook"));
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        (await GuidanceAsync(bed))["altinn-event-webhook"].State.Should().Be(SourceSuggestionState.Conflict);
+        var result = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        result.NotApplied.Should().ContainSingle(item => item.Key == "altinn-event-webhook").Which.Reason.Should().StartWith("Review required");
+        bed.Harness.MessageFlows.Configuration.EndpointReference.Should().BeNull();
+        result.Applied.Select(item => item.Key).Should().Contain("altinn-app-route", "an unrelated value without conflict is still applied");
+    }
+
+    [Fact]
+    public async Task ACredentialBearingSourceValue_IsNeverApplied()
+    {
+        var bed = await UnconfiguredAsync();
+        var hub = HubSnapshot("hub.zip", HubSettings("https://hub.example.invalid/api/altinn/webhook?code=SECRET_SENTINEL_abc"));
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        (bed.Harness.MessageFlows.Configuration.EndpointReference ?? "").Should().NotContain("SECRET_SENTINEL").And.NotContain("code=");
+        JsonSerializer.Serialize(await GuidanceAsync(bed)).Should().NotContain("SECRET_SENTINEL");
+    }
+
+    [Fact]
+    [Trait("Category", "LocalFixture")]
+    public async Task TheLocalOpenApiFixture_NeverConfiguresTheRealIntegration_WhenItIsNotTheBoundSource()
+    {
+        if (FixtureSnapshot() is not { } fixture) return;
+        var bed = await UnconfiguredAsync();
+        var hub = HubSnapshot("Tiltak hub.zip", HubSettings());
+        bed.Harness.Sources.Snapshots.AddRange([hub, fixture]);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        var result = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        result.Applied.Should().OnlyContain(item => !item.Provenance.Contains("skolenaervaer.json", StringComparison.Ordinal), "only the bound import supplies values");
+        (await GuidanceAsync(bed)).Values.SelectMany(item => item.BoundSources).Should().OnlyContain(name => name == "Tiltak hub.zip");
     }
 }

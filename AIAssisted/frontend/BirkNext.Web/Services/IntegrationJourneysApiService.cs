@@ -20,6 +20,9 @@ public interface IIntegrationJourneysApiService
     /// <summary>The pack's source guidance: per declared configuration requirement, what its IQR-bound source declares (never applied).</summary>
     Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default) =>
         Task.FromResult(new ActiveEventApiResult<TestPackSourceGuidance>(null, "Source guidance is not available.", null));
+    /// <summary>Stores the pack's safe, bound, unambiguous source-derived values into EMPTY fields (an explicit action; needs the configuration permission).</summary>
+    Task<ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>> ApplySourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>(null, "Applying source values is not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
     /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
     Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
@@ -47,6 +50,12 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default) =>
         GetAsync<TestPackSourceGuidance>($"api/integration-journeys/packs/{E(packId)}/source-guidance?environmentId={E(environmentId)}", ct);
+
+    public async Task<ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>> ApplySourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsync($"api/integration-journeys/packs/{E(packId)}/source-guidance/apply?environmentId={E(environmentId)}", null, ct);
+        return await ReadAsync<BirkNext.SourceDomains.SourceConfigurationApplyResult>(response, ct);
+    }
 
     public async Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)
     {

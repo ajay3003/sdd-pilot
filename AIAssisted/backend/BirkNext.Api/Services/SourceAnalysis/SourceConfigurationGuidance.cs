@@ -22,12 +22,14 @@ public static class SourceConfigurationGuidance
             var fromBound = bound.SelectMany(snapshot => Values(snapshot, requirement)).ToArray();
             if (fromBound.Length > 0)
             {
-                var resolutions = SourceConfigurationResolver.Resolve(fromBound);
-                var candidates = resolutions.SelectMany(item => item.Candidates).ToArray();
+                // One candidate per value with every artifact behind it (scopes were already narrowed by the requirement's hint).
+                var candidates = fromBound.GroupBy(value => value.Value, StringComparer.Ordinal)
+                    .Select(group => new SourceConfigurationCandidate(group.Key, group.DistinctBy(item => (item.Artifact, item.Location)).ToArray())).ToArray();
                 var distinct = candidates.Select(item => item.Value).Distinct(StringComparer.Ordinal).ToArray();
                 var boundSources = bound.Where(snapshot => fromBound.Any(value => Values(snapshot, requirement).Contains(value))).Select(snapshot => snapshot.Archive.FileName).Distinct().ToArray();
                 // A declared set (token providers, schemes …) is listed, not in conflict.
-                if (distinct.Length > 1 && SourceConfigurationKeys.MultiValued.Contains(requirement.SemanticKey))
+                // A value meant to be applied is one value: several are a conflict even for a key that may list several.
+                if (distinct.Length > 1 && SourceConfigurationKeys.MultiValued.Contains(requirement.SemanticKey) && !requirement.AutoApply)
                     return new SourceConfigurationSuggestion(requirement, SourceSuggestionState.Suggested)
                     {
                         Value = string.Join(", ", distinct), Candidates = candidates, BoundSources = boundSources, ConfiguredValue = configuredValue,
@@ -79,7 +81,8 @@ public static class SourceConfigurationGuidance
     /// the requirement names (same environment role or none; sensitive entries never give a value).</summary>
     public static IReadOnlyList<SourceConfigurationValue> Values(IqrSourceSnapshot snapshot, SourceConfigurationRequirement requirement)
     {
-        var declared = (snapshot.EvidenceDomains?.ConfigurationValues?.Values ?? []).Where(value => value.SemanticKey == requirement.SemanticKey && value.Value is not null).ToList();
+        var declared = Evidence.SourceConfigurationValueCollector.Values(snapshot.EvidenceDomains)
+            .Where(value => value.SemanticKey == requirement.SemanticKey && value.Value is not null && InScope(value.Scope, requirement.ScopeHint)).ToList();
         if (requirement.ConfigurationKeys.Count == 0) return declared;
         var role = RoleOf(requirement.SemanticKey);
         var keys = requirement.ConfigurationKeys.Select(key => key.ToLowerInvariant()).ToHashSet(StringComparer.Ordinal);
@@ -97,6 +100,11 @@ public static class SourceConfigurationGuidance
         }
         return declared;
     }
+
+    /// <summary>A value is in the requirement's scope when no hint is given, when it states no scope, or when its scope is the hint or ends
+    /// with "/{hint}" (an app route's app segment).</summary>
+    public static bool InScope(string? scope, string? hint) =>
+        hint is null || scope is null || scope.Equals(hint, StringComparison.OrdinalIgnoreCase) || scope.EndsWith("/" + hint, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The environment role a semantic key names ("Environment.Server.Test" → Test), or null.</summary>
     public static SourceEnvironmentRole? RoleOf(string semanticKey) =>

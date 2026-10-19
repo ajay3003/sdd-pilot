@@ -26,7 +26,7 @@ public sealed class IntegrationEvidenceBindingsController(IIntegrationEvidenceBi
         if (binding is null) return Ok(new IntegrationSourceConfiguration(integrationId, null, []));
         var snapshot = await store.FindSourceAnalysisAsync(binding.SnapshotId, ct);
         return Ok(new IntegrationSourceConfiguration(integrationId, binding,
-            BirkNext.SourceDomains.SourceConfigurationResolver.Resolve(snapshot?.EvidenceDomains?.ConfigurationValues?.Values ?? [])));
+            BirkNext.SourceDomains.SourceConfigurationResolver.Resolve(BirkNext.Api.Services.SourceAnalysis.Evidence.SourceConfigurationValueCollector.Values(snapshot?.EvidenceDomains))));
     }
 
     [HttpGet]

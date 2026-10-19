@@ -24,9 +24,17 @@
         <div class="mfr-actions">
             <button type="button" class="btn-secondary" @onclick="LoadGeneric">Load generic example</button>
             <button type="button" class="btn-secondary" @onclick="LoadPilot">Load documented Skolenærvær pilot</button>
-            <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving…" : "Save review configuration")</button>
-            @if (_saved) { <span role="status">Saved</span> }
-            @if (_error is not null) { <span role="alert">@_error</span> }
+            <button type="button" class="btn-primary" data-testid="mfr-save" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving…" : "Save review configuration")</button>
+            @if (_saved) { <span role="status" data-testid="mfr-saved">Saved</span> }
+            @if (_error is not null)
+            {
+                <div role="alert" class="mfr-save-error" data-testid="mfr-save-error"><span>@_error</span>
+                    @if (_fieldErrors.Count > 0)
+                    {
+                        <ul data-testid="mfr-save-error-fields">@foreach (var field in _fieldErrors) { <li data-testid="mfr-save-error-field" data-path="@field.Path"><strong>@field.Section → @field.Field:</strong> @field.Reason</li> }</ul>
+                    }
+                </div>
+            }
         </div>
         <p class="mfr-note">Saved separately from Target Environment integration settings. Configuration is not verification; no messages are sent or consumed here.</p>
         <section class="mfr-card" aria-labelledby="mfr-flow-heading">
@@ -107,11 +115,20 @@
             <div class="mfr-groups mfr-sections">
             <ReviewDisclosure Text="Application" CollapseText="Application" Hint="@SectionHint(_environment != "Unknown", _product, _app, _submission != "Unknown", _baseUrl, _endpoint)" TestId="mfr-section-application" Class="mfr-section">
             <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend><div class="mfr-form">
+                <SourceValueHint Resolution="@Hint("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" />
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
-                <SourceValueHint Resolution="RouteSuggestion" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
+                <SourceValueHint Resolution="@Hint("App identifier")" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
-                <label>Safe base URL reference<input @bind="_baseUrl" /></label><label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
+                <label>Safe base URL reference<input @bind="_baseUrl" /></label>
+                <SourceValueHint Resolution="@Hint("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" />
+                <label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
+                <SourceValueHint Resolution="@Hint("Endpoint reference")" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
+                @if (SafeEmptySuggestions.Count > 0)
+                {
+                    <p class="mfr-source-fill"><button type="button" class="btn-secondary" data-testid="mfr-use-source-values" @onclick="UseSourceValues">Use @SafeEmptySuggestions.Count safe source value@(SafeEmptySuggestions.Count == 1 ? "" : "s")</button>
+                        <span class="mfr-muted"> Fills only empty fields from the bound source; nothing is saved until you save.</span></p>
+                }
             </div></fieldset>
             </ReviewDisclosure>
             <ReviewDisclosure Text="Authentication" CollapseText="Authentication" Hint="@SectionHint(_auth != "Unknown", _client, _tenant, _documentedScopes, _scopes)" TestId="mfr-section-authentication" Class="mfr-section">
@@ -219,9 +236,44 @@
     private IntegrationMessageFlowPackage? _package;
     /// <summary>The canonical binding of the report-intake integration (Integration Quality Review → Evidence), or null.</summary>
     private IntegrationEvidenceBinding? _binding;
-    private IntegrationSourceConfiguration? _sourceConfiguration;
-    private BirkNext.SourceDomains.SourceConfigurationResolution? RouteSuggestion =>
-        _sourceConfiguration?.Values.FirstOrDefault(item => item.SemanticKey == BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute);
+    private TestPackSourceGuidance? _guidance;
+
+    /// <summary>The bound source's value for a form field (by the requirement's consumer field), as a hint: a value, a conflict, or nothing.</summary>
+    private BirkNext.SourceDomains.SourceConfigurationResolution? Hint(string field) =>
+        _guidance?.Suggestions.FirstOrDefault(item => item.Requirement.ConsumerField == field
+            && (item.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict || (item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested
+                && (field != "Environment" || item.Value == "Test")))) is { } suggestion
+            ? new(suggestion.Requirement.SemanticKey, BirkNext.SourceDomains.SourceEnvironmentRole.Any,
+                suggestion.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict ? BirkNext.SourceDomains.SourceConfigurationResolutionState.Conflict : BirkNext.SourceDomains.SourceConfigurationResolutionState.Declared,
+                suggestion.Candidates)
+            : null;
+
+    /// <summary>Safe, unambiguous bound suggestions whose form field is still empty.</summary>
+    private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> SafeEmptySuggestions =>
+        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && item.Value is not null
+            && item.Requirement.ConsumerField is { } field && FieldEmpty(field) && (field != "Environment" || item.Value == "Test")).ToList() ?? [];
+
+    private bool FieldEmpty(string field) => field switch
+    {
+        "Environment" => _environment == "Unknown",
+        "App identifier" => string.IsNullOrWhiteSpace(_app),
+        "Safe base URL reference" => string.IsNullOrWhiteSpace(_baseUrl),
+        "Endpoint reference" => string.IsNullOrWhiteSpace(_endpoint),
+        _ => false,
+    };
+
+    /// <summary>Fills the empty fields from the bound source (Environment only ever to Test). Nothing is saved until Save.</summary>
+    private void UseSourceValues()
+    {
+        foreach (var item in SafeEmptySuggestions)
+            switch (item.Requirement.ConsumerField)
+            {
+                case "Environment": _environment = "Test"; break;
+                case "App identifier": _app = item.Value!; break;
+                case "Safe base URL reference": _baseUrl = item.Value!; break;
+                case "Endpoint reference": _endpoint = item.Value!; break;
+            }
+    }
     private string? _bindingIntegration;
     /// <summary>A snapshot id saved in this configuration before bindings existed; shown, never silently replaced.</summary>
     private Guid? _legacySnapshot;
@@ -230,6 +282,7 @@
     private string _sourceContract = "";
     private bool _busy, _saving, _saved, _syntheticApproved, _reporterApproved;
     private string? _error;
+    private IReadOnlyList<ConfigurationFieldError> _fieldErrors = [];
     private string _name = "Message flow review", _environment = "Unknown", _product = "", _app = "", _submission = "Unknown", _auth = "Unknown", _baseUrl = "", _tenant = "", _client = "", _documentedScopes = "", _scopes = "", _certificate = "", _key = "", _reporterType = "", _reporter = "", _identitySet = "", _channel = "", _queue = "", _payload = "", _messageType = "", _contract = "", _version = "", _checkpoint = "", _correlation = "", _endpoint = "", _receipt = "", _documentation = "", _documentationPlatform = "";
     private DateOnly? _documentationRetrievedOn;
     private string _newNode = "", _newOwner = "", _fromNode = "", _toNode = "", _mechanism = "", _errorCondition = "", _errorOwner = "", _errorHandling = "", _retryPolicy = "", _holdPolicy = "", _deadLetterPolicy = "";
@@ -260,9 +313,9 @@
             var resolved = await AltinnSourceBinding.ResolveAsync(Api, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId!);
             _bindingIntegration = resolved.IntegrationName;
             _binding = resolved.Binding;
-            // Source-declared values of the bound snapshot (e.g. the app route an OpenAPI document declares) — suggestions, never applied.
-            _sourceConfiguration = resolved.Binding is not null && resolved.IntegrationId is { } integrationId
-                ? await Api.SourceConfigurationAsync(EnvironmentId!, integrationId) : null;
+            // The pack's source guidance for this provider's fields: bound evidence only, never applied by loading.
+            _guidance = resolved.Binding is not null && resolved.PackId is { } packId && Services.GetService<IIntegrationJourneysApiService>() is { } journeys
+                && journeys.SourceGuidanceAsync(EnvironmentId!, packId) is { } read ? (await read)?.Value : null;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
     }
@@ -316,7 +369,7 @@
     private async Task SaveAsync()
     {
         if (_package is null || string.IsNullOrWhiteSpace(EnvironmentId)) return;
-        _saving = true; _error = null; _saved = false;
+        _saving = true; _error = null; _saved = false; _fieldErrors = [];
         try
         {
             var cfg = _package.AltinnConfiguration with { Environment = Enum.Parse<ExternalTestEnvironment>(_environment), ProductOrServiceType = Empty(_product), AppIdentifier = Empty(_app), BaseUrlReference = Empty(_baseUrl), TenantReference = Empty(_tenant),
@@ -327,12 +380,21 @@
                 EndpointReference = Empty(_endpoint), ApprovedSyntheticData = _syntheticApproved, ProductionBlocked = true };
             cfg = cfg with { DocumentationReferences = _documentation.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
                 DocumentationPlatform = Empty(_documentationPlatform), DocumentationRetrievedOn = _documentationRetrievedOn };
-            // The schema's snapshot is the canonical binding; a saved legacy value is kept only while no binding exists (never reassigned silently).
-            cfg = cfg with { SourceSnapshotId = EffectiveSnapshot, SourceContractId = Empty(_sourceContract) };
-            _package = await Api.SaveMessageFlowReviewAsync(EnvironmentId, _package with { Flow = _package.Flow with { Name = _name }, AltinnConfiguration = cfg });
+            // A snapshot is stored only with a selected XML Schema contract (the schema's snapshot: the canonical binding, or a saved legacy value
+            // while no binding exists — never reassigned silently). Without a contract nothing source-related is sent.
+            var contract = Empty(_sourceContract);
+            cfg = cfg with { SourceSnapshotId = contract is null ? null : EffectiveSnapshot, SourceContractId = contract };
+            var (saved, problem) = await Api.SaveMessageFlowReviewDetailedAsync(EnvironmentId, _package with { Flow = _package.Flow with { Name = _name }, AltinnConfiguration = cfg });
+            if (saved is null)
+            {
+                _error = problem?.Errors.Count > 0 ? "Configuration was not saved. These fields need attention (the values are not shown):" : $"Configuration was not saved. {problem?.Message}";
+                _fieldErrors = problem?.Errors ?? [];
+                return;
+            }
+            _package = saved;
             Apply(_package.AltinnConfiguration); _legacySnapshot = _package.AltinnConfiguration.SourceSnapshotId; _saved = true;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Configuration could not be saved. Remove any credential-like value and enter references only."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Configuration could not be saved: the backend did not answer."; }
         finally { _saving = false; }
     }
     private static string? Empty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

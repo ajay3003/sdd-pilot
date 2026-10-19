@@ -37,6 +37,9 @@ public sealed record SourceConfigurationValue
     public string Basis { get; init; } = "";
     /// <summary>The logical source the artifact describes (an API title, a component), when the artifact names it.</summary>
     public string? LogicalSource { get; init; }
+    /// <summary>The application/component the value belongs to (an app route, an API, a project) when the evidence states it. Values of
+    /// different scopes never conflict: two apps in one configuration file are two apps, not one app with two routes.</summary>
+    public string? Scope { get; init; }
     public ArchitectureEvidenceState Confidence { get; init; } = ArchitectureEvidenceState.Confirmed;
     public bool Sensitive { get; init; }
     public bool SecretReference { get; init; }
@@ -48,6 +51,12 @@ public sealed record SourceConfigurationValue
 public static class SourceConfigurationKeys
 {
     public const string ApplicationRoute = "Application.Route";
+    /// <summary>The application's base address (scheme, host and route path), e.g. a hosted app's URL.</summary>
+    public const string ApplicationBaseUrl = "Application.BaseUrl";
+    /// <summary>The environment role the application's address belongs to ("Test", "Production"), when the provider can tell deterministically.</summary>
+    public const string ApplicationEnvironment = "Application.Environment";
+    /// <summary>An endpoint that receives the application's events (an event subscription's webhook).</summary>
+    public const string EndpointEventWebhook = "Endpoint.EventWebhook";
     public const string ApplicationDisplayName = "Application.DisplayName";
     public const string ApplicationVersion = "Application.Version";
     public const string ApplicationDataType = "Application.DataType";
@@ -80,7 +89,7 @@ public static class SourceConfigurationKeys
     public static readonly IReadOnlySet<string> MultiValued = new HashSet<string>(StringComparer.Ordinal)
     {
         ApplicationDataType, ApplicationTaskId, ApplicationTaskName, AuthenticationScheme, AuthenticationTokenProvider, EndpointInstanceCreate, EndpointInstanceRead,
-        EndpointDataWrite, EndpointProcessNext, EndpointValidate, EndpointApplicationMetadata, EndpointOptions, EndpointAuthenticationExchange, EndpointLocalTestToken,
+        EndpointDataWrite, EndpointEventWebhook, EndpointProcessNext, EndpointValidate, EndpointApplicationMetadata, EndpointOptions, EndpointAuthenticationExchange, EndpointLocalTestToken,
         ContractSchemaReference, PayloadContentType, MessagingServiceBusTopic, MessagingServiceBusSubscription, MessagingServiceBusQueue, MessagingEventHubName,
         MessagingEventHubConsumerGroup, MessagingServiceBusNamespace, MessagingEventHubNamespace,
     };
@@ -110,6 +119,8 @@ public sealed record SourceConfigurationCandidate(string? Value, IReadOnlyList<S
 public sealed record SourceConfigurationResolution(string SemanticKey, SourceEnvironmentRole Environment, SourceConfigurationResolutionState State,
     IReadOnlyList<SourceConfigurationCandidate> Candidates)
 {
+    /// <summary>The application/component the values belong to, when stated.</summary>
+    public string? Scope { get; init; }
     /// <summary>The single value when there is no conflict.</summary>
     public string? Value => State == SourceConfigurationResolutionState.Conflict ? null : Candidates.FirstOrDefault()?.Value;
 }
@@ -131,7 +142,18 @@ public sealed record SourceConfigurationRequirement(string Key, string Label, st
     public IReadOnlyList<string> ConfigurationKeys { get; init; } = [];
     /// <summary>The value a person must still verify at runtime (always true for declared source values).</summary>
     public bool RuntimeVerificationRequired { get; init; } = true;
+    /// <summary>Which application/component's value is meant when the source declares several (matches a value's scope exactly or as its
+    /// last route segment). Null: any scope; several different values are then a conflict.</summary>
+    public string? ScopeHint { get; init; }
+    /// <summary>The value is safe, non-secret and meant to be source-derived: "Apply safe source-derived configuration" may store it into an
+    /// EMPTY consumer field (never over a stored value, never on a conflict, never from an unbound snapshot).</summary>
+    public bool AutoApply { get; init; }
 }
+
+/// <summary>What one "apply safe source-derived configuration" stored, and what it left alone and why.</summary>
+public sealed record SourceConfigurationApplied(string Key, string Label, string Value, string Provenance);
+public sealed record SourceConfigurationNotApplied(string Key, string Label, string Reason);
+public sealed record SourceConfigurationApplyResult(IReadOnlyList<SourceConfigurationApplied> Applied, IReadOnlyList<SourceConfigurationNotApplied> NotApplied);
 
 /// <summary>Declared in source ≠ suggested ≠ configured ≠ runtime verified. Suggested = a single value in source the consumer's canonical
 /// binding provides; AvailableNotBound = only an unbound snapshot declares it (never used); Conflict = bound artifacts disagree.</summary>
@@ -160,17 +182,18 @@ public static class SourceConfigurationResolver
 {
     /// <summary>Groups values by key and environment. Values of multi-valued keys are listed, never in conflict.</summary>
     public static IReadOnlyList<SourceConfigurationResolution> Resolve(IEnumerable<SourceConfigurationValue> values) =>
-        values.GroupBy(value => (value.SemanticKey, value.Environment))
-            .OrderBy(group => group.Key.SemanticKey, StringComparer.Ordinal).ThenBy(group => group.Key.Environment)
+        values.GroupBy(value => (value.SemanticKey, value.Environment, Scope: value.Scope ?? ""))
+            .OrderBy(group => group.Key.SemanticKey, StringComparer.Ordinal).ThenBy(group => group.Key.Environment).ThenBy(group => group.Key.Scope, StringComparer.Ordinal)
             .SelectMany(group =>
             {
                 var candidates = group.GroupBy(value => value.Value, StringComparer.Ordinal)
                     .Select(byValue => new SourceConfigurationCandidate(byValue.Key, byValue.DistinctBy(item => (item.Artifact, item.Location)).ToArray())).ToArray();
+                var scope = group.Key.Scope.Length == 0 ? null : group.Key.Scope;
                 if (SourceConfigurationKeys.MultiValued.Contains(group.Key.SemanticKey))
                     return candidates.Select(candidate => new SourceConfigurationResolution(group.Key.SemanticKey, group.Key.Environment,
-                        candidate.Provenance.Count > 1 ? SourceConfigurationResolutionState.Agreed : SourceConfigurationResolutionState.Declared, [candidate]));
+                        candidate.Provenance.Count > 1 ? SourceConfigurationResolutionState.Agreed : SourceConfigurationResolutionState.Declared, [candidate]) { Scope = scope });
                 var state = candidates.Length > 1 ? SourceConfigurationResolutionState.Conflict
                     : candidates[0].Provenance.Count > 1 ? SourceConfigurationResolutionState.Agreed : SourceConfigurationResolutionState.Declared;
-                return [new SourceConfigurationResolution(group.Key.SemanticKey, group.Key.Environment, state, candidates)];
+                return [new SourceConfigurationResolution(group.Key.SemanticKey, group.Key.Environment, state, candidates) { Scope = scope }];
             }).ToArray();
 }

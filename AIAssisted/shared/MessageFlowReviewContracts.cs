@@ -114,6 +114,12 @@ public sealed record ManualIntegrationTestCase(string Name, string Purpose, stri
 public sealed record IntegrationMessageFlowPackage(MessageFlowDefinition Flow, AltinnTestConfiguration AltinnConfiguration,
     IntegrationTestReadiness Readiness, IReadOnlyList<string> ManualTestPlan, IReadOnlyList<ManualIntegrationTestCase> TestCases,
     AltinnAppContractRecord? AppContract = null);
+/// <summary>One rejected configuration field: where it is (section and label as the form shows them, JSON path) and why. Never the value.</summary>
+public sealed record ConfigurationFieldError(string Section, string Field, string Path, string Reason);
+
+/// <summary>Why a message-flow save was refused: a summary and, for field problems, every offending field.</summary>
+public sealed record MessageFlowSaveProblem(string Message, IReadOnlyList<ConfigurationFieldError> Errors);
+
 public sealed record MessageFlowSourceContractOptions(Guid SnapshotId, string ArchiveName, string Fingerprint,
     IReadOnlyList<BirkNext.SourceDomains.SourceContract> Contracts);
 

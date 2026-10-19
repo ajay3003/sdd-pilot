@@ -66,6 +66,9 @@ public static class SourceEvidenceAnalyzer
 {
     public const int Version = 1;
 
+    /// <summary>Provider adapters that recognize provider-specific configuration values in the analyzed domains.</summary>
+    internal static readonly IReadOnlyList<ISourceConfigurationValueProducer> SourceConfigurationValueProducers = [new AltinnTesting.AltinnSourceConfigurationProducer()];
+
     public static SourceEvidenceDomainsSnapshot Analyze(Guid sourceSnapshotId, IqrSourceArchiveReader.Workspace workspace, DateTimeOffset at, ArchitectureSnapshot? architecture,
         DatabaseArchitectureSnapshot? database, SourceObservabilitySnapshot? observability, IntegrationPathEvidence? integrationPath, CancellationToken ct = default) =>
         Analyze(sourceSnapshotId, workspace, ArchitectureInput.From(sourceSnapshotId, workspace), at, architecture, database, observability, integrationPath, ct, out _);
@@ -106,7 +109,7 @@ public static class SourceEvidenceAnalyzer
             CiCd = context.CiCd ?? context.Envelope(new PipelineEvidence(), SourceEvidenceDomain.CiCd, 0),
             Contracts = context.Contracts ?? context.Envelope(new ContractEvidence(), SourceEvidenceDomain.Contracts, 0),
             CrossDomain = context.CrossDomain ?? context.Envelope(new CrossDomainEvidence(), SourceEvidenceDomain.CrossDomain, 0),
-            ConfigurationValues = SourceConfigurationValueCollector.Collect(context),
+            ConfigurationValues = SourceConfigurationValueCollector.Collect(context, SourceConfigurationValueProducers),
         };
     }
 

@@ -47,6 +47,10 @@ public interface IIntegrationJourneyPack
     /// configured next to suggested. Default: nothing stored.</summary>
     Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct) =>
         Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?>());
+    /// <summary>Stores safe source-derived values (requirement key → value) into the pack's consumers' EMPTY fields only, and returns the keys
+    /// it stored. The caller has already checked that each value is bound, unambiguous and not credential material. Default: stores nothing.</summary>
+    Task<IReadOnlyList<string>> ApplyConfigurationAsync(JourneyPackContext context, IReadOnlyDictionary<string, string> values, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>([]);
     /// <summary>Whether the pack's runs are kept in the shared journey history.</summary>
     bool SupportsHistory => true;
     /// <summary>Whether a configured IQR integration fulfils one of this pack's integration requirements.</summary>

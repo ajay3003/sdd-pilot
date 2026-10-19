@@ -20,12 +20,15 @@ internal static class OpenApiConfigurationReader
     {
         var path = SourceEvidenceRedaction.SafePath(artifact);
         var title = root["info"]?.Str("title") is { } t ? SourceEvidenceRedaction.SafePath(t) : null;
+        string? scope = null;
         SourceConfigurationValue Value(string key, string? value, SourceConfigurationGroup group, string location, string basis,
             ArchitectureEvidenceState confidence = ArchitectureEvidenceState.Confirmed, SourceEnvironmentRole environment = SourceEnvironmentRole.Any, Dictionary<string, string>? attributes = null) => new()
         {
             SemanticKey = key, Value = value, Group = group, Environment = environment, EvidenceKind = SourceConfigurationEvidenceKind.OpenApi, Artifact = path,
-            Location = location, Basis = basis, LogicalSource = title, Confidence = confidence, Attributes = attributes ?? [],
+            Location = location, Basis = basis, LogicalSource = title, Scope = scope, Confidence = confidence, Attributes = attributes ?? [],
         };
+        // The document describes one API: its values share a scope (its route, else its title), so two APIs never conflict.
+        scope = Route(DistinctPaths(root), out _) ?? title;
         var values = new List<SourceConfigurationValue>();
 
         // ── Identity ──
@@ -158,6 +161,8 @@ internal static class OpenApiConfigurationReader
                             $"content type of multipart part {SourceEvidenceRedaction.SafePath(part)}", attributes: new() { ["DataType"] = SourceEvidenceRedaction.SafePath(part) }));
         return values;
     }
+
+    private static string[] DistinctPaths(YamlNode root) => (root["paths"]?.Entries ?? []).Select(entry => entry.Key).Distinct(StringComparer.Ordinal).ToArray();
 
     /// <summary>The environment role a server's own description states; a loopback host is Local by its address. Ambiguous → Unclassified.</summary>
     internal static (SourceEnvironmentRole Role, string Basis, ArchitectureEvidenceState Confidence) Role(string? description, string url)

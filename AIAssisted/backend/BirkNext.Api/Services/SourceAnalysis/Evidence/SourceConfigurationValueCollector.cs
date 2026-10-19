@@ -9,6 +9,14 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// subscriptions, queues, hubs, consumer groups — per environment when an environment file changes the name). A computed or unresolved name
 /// is not a value. Declared in source only: a declaration does not prove the resource exists, is reachable or is used.
 /// </summary>
+/// <summary>A provider adapter that recognizes provider-specific values in already analyzed evidence (it reads the domains; it parses no file
+/// of its own and contacts nothing). Registered with the analyzers; the collector itself names no provider.</summary>
+internal interface ISourceConfigurationValueProducer
+{
+    string Name { get; }
+    IEnumerable<SourceConfigurationValue> Produce(ConfigurationEvidence? configuration);
+}
+
 internal static class SourceConfigurationValueCollector
 {
     private static readonly Dictionary<string, string> Messaging = new(StringComparer.Ordinal)
@@ -19,9 +27,15 @@ internal static class SourceConfigurationValueCollector
         ["Event Hub consumer group"] = SourceConfigurationKeys.MessagingEventHubConsumerGroup,
     };
 
-    public static SourceConfigurationValuesEvidence Collect(SourceEvidenceContext context)
+    public static SourceConfigurationValuesEvidence Collect(SourceEvidenceContext context, IReadOnlyList<ISourceConfigurationValueProducer>? producers = null)
     {
+        producers ??= [];
         var values = new List<SourceConfigurationValue>(context.DeclaredConfiguration);
+        foreach (var producer in producers)
+        {
+            try { values.AddRange(producer.Produce(context.Configuration)); }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException) { }
+        }
         foreach (var resource in context.Infrastructure?.Resources ?? [])
         {
             if (resource.Kind != "resource" || !Messaging.TryGetValue(resource.CategoryDetail, out var key)) continue;
@@ -41,10 +55,24 @@ internal static class SourceConfigurationValueCollector
         {
             Values = values,
             Producers = ["OpenAPI / Swagger: info, servers (by description), path route, endpoint roles, security schemes, token providers, request schemas, data-type and process-task tables",
-                "Infrastructure as Code: messaging resource names declared as safe literals (Terraform, Bicep, ARM)"],
+                "Infrastructure as Code: messaging resource names declared as safe literals (Terraform, Bicep, ARM)", .. producers.Select(producer => producer.Name)],
             Limitations = ["Declared in source: not configured, not reachable, not runtime verified.", "Examples in API documents are documentation and are never read as configuration.",
                 "Application configuration files (appsettings, Helm values …) are listed under Configuration; a test pack maps a key to a semantic value only by declaring it."],
         };
+    }
+
+    /// <summary>The values of a stored snapshot: what was collected at analysis, plus what the registered producers recognize in its stored
+    /// configuration entries (so a snapshot analyzed before a producer existed is read the same way; nothing is re-analyzed).</summary>
+    public static IReadOnlyList<SourceConfigurationValue> Values(SourceEvidenceDomainsSnapshot? domains)
+    {
+        if (domains is null) return [];
+        var values = new List<SourceConfigurationValue>(domains.ConfigurationValues?.Values ?? []);
+        foreach (var producer in SourceEvidenceAnalyzer.SourceConfigurationValueProducers)
+        {
+            try { values.AddRange(producer.Produce(domains.Configuration)); }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException) { }
+        }
+        return values.DistinctBy(value => (value.SemanticKey, value.Value, value.Artifact, value.Location, value.Scope)).ToArray();
     }
 
     public static SourceEnvironmentRole Role(SourceEnvironmentLabel? label) => label?.Kind switch

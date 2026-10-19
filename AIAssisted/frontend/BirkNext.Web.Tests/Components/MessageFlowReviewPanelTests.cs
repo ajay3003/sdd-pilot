@@ -179,9 +179,9 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
     public void EveryFieldIsStillEditable_AndSaved_WhereverItIsShown()
     {
         IntegrationMessageFlowPackage? saved = null;
-        _api.Setup(x => x.SaveMessageFlowReviewAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
+        _api.Setup(x => x.SaveMessageFlowReviewDetailedAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
             .Callback<string, IntegrationMessageFlowPackage, CancellationToken>((_, package, _) => saved = package)
-            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => package);
+            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => ((IntegrationMessageFlowPackage?)package, (MessageFlowSaveProblem?)null));
         var cut = RenderWith(new());
         var values = new Dictionary<string, string>
         {
@@ -205,9 +205,9 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
     private AltinnTestConfiguration SavedAfter(AltinnTestConfiguration stored, string load)
     {
         IntegrationMessageFlowPackage? saved = null;
-        _api.Setup(x => x.SaveMessageFlowReviewAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
+        _api.Setup(x => x.SaveMessageFlowReviewDetailedAsync("pilot", It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()))
             .Callback<string, IntegrationMessageFlowPackage, CancellationToken>((_, package, _) => saved = package)
-            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => package);
+            .ReturnsAsync((string _, IntegrationMessageFlowPackage package, CancellationToken _) => ((IntegrationMessageFlowPackage?)package, (MessageFlowSaveProblem?)null));
         var cut = RenderWith(stored);
         cut.FindAll("button").Single(b => b.TextContent.Contains(load)).Click();
         cut.FindAll("button").Single(b => b.TextContent.Contains("Save review configuration")).Click();
