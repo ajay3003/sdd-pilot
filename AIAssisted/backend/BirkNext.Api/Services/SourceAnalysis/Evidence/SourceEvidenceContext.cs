@@ -55,6 +55,8 @@ internal sealed class SourceEvidenceContext
     public SourceConfigurationModel ConfigurationModel { get; } = new();
     /// <summary>Raw values other analyzers read (tfvars, Bicep parameters, ConfigMap data, pipeline variables), handed to Configuration in memory so nothing is parsed twice.</summary>
     public List<PendingConfigurationValue> PendingConfiguration { get; } = [];
+    /// <summary>Configuration values declared under generic semantic keys by analyzers (e.g. OpenAPI), collected into the snapshot.</summary>
+    public List<SourceConfigurationValue> DeclaredConfiguration { get; } = [];
     public List<DomainCapability> Capabilities { get; } = [];
 
     public IEnumerable<EvidenceFile> Role(SourceFileRole role) => Files.Where(f => f.Role == role);

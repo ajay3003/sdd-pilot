@@ -44,7 +44,8 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             new(SourceEvidenceDomain.Contracts, "Protobuf", DomainSupport.Partial, "Messages, fields and services by pattern."),
             new(SourceEvidenceDomain.Contracts, "Message contracts (C#)", DomainSupport.Partial, "Event classes found by the integration-path analyzer (implementation contracts, not formal schemas)."),
             new(SourceEvidenceDomain.Contracts, "Generated clients", DomainSupport.Partial, "Strawberry Shake, NSwag, OpenAPI Generator and OpenApiReference configuration."),
-            new(SourceEvidenceDomain.Contracts, "Altinn 3 app", DomainSupport.Partial, "applicationmetadata.json, the form data type's *.schema.json and a sequential process.bpmn in the same app folder; consumed by Altinn app testing."),
+            new(SourceEvidenceDomain.Contracts, "Altinn 3 app", DomainSupport.Partial, "applicationmetadata.json, the form data type's *.schema.json and a sequential process.bpmn in the same app folder, or the app's OpenAPI document (route, form data type, process tasks); consumed by Altinn app testing."),
+            new(SourceEvidenceDomain.Contracts, "OpenAPI configuration values", DomainSupport.Partial, "Servers by their described environment, the shared path route, security schemes, token providers, endpoint roles, request schemas and data-type/process-task tables; examples are never read as configuration."),
         ]);
         var contracts = new List<SourceContract>();
         var diagnostics = new List<SourceDomainDiagnostic>();
@@ -56,7 +57,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             {
                 var contract = file.Technology switch
                 {
-                    "OpenAPI" => OpenApi(file, extractor),
+                    "OpenAPI" => OpenApi(file, extractor, context),
                     "AsyncAPI" => AsyncApi(file),
                     "JSON Schema" => JsonSchema(file),
                     "XML Schema" => XmlSchema(file, context),
@@ -100,7 +101,8 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             StatusReason = contracts.Count == 0 ? "No source contract detected. The API may still have a contract generated at runtime (e.g. served OpenAPI or GraphQL introspection)." : null,
             Technologies = [.. contracts.Select(c => SourceDomainText.Label(c.Type)).Distinct().Order(StringComparer.Ordinal)],
             Contracts = [.. contracts.OrderBy(c => c.Type).ThenBy(c => c.File, StringComparer.Ordinal)], Diagnostics = diagnostics,
-            AltinnApps = AltinnTesting.AltinnAppSourceExtractor.Extract(context.Files.Select(file => (file.Path, file.Content)).ToArray(), context.SourceSnapshotId, context.ExtractedAt),
+            AltinnApps = AltinnTesting.AltinnAppSourceExtractor.Extract(context.Files.Select(file => (file.Path, file.Content)).ToArray(), context.SourceSnapshotId, context.ExtractedAt,
+                context.DeclaredConfiguration),
             Limitations = [SourceDomainText.SourceBoundary, "A contract in source does not prove the deployed API or message flow is compatible with it; runtime schemas stay primary in API Quality Review.",
                 "Breaking-change classification needs compatibility rules; changes are classified, never judged here."],
         }, SourceEvidenceDomain.Contracts, Version);
@@ -154,8 +156,20 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
 
     private static readonly string[] Methods = ["get", "put", "post", "delete", "patch", "head", "options", "trace"];
 
-    private static SourceContract? OpenApi(EvidenceFile file, OpenApiExtractor extractor)
+    private static SourceContract? OpenApi(EvidenceFile file, OpenApiExtractor extractor, SourceEvidenceContext context)
     {
+        // Configuration values the document declares (servers, route, security, data types, tasks …): read once from the same parse tree.
+        if (file.Role != SourceFileRole.Test)
+        {
+            YamlNode? tree;
+            if (file.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                using var parsed = JsonDocument.Parse(file.Content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                tree = JsonTree(parsed.RootElement, 1);
+            }
+            else tree = MiniYaml.Parse(file.Content);
+            if (tree is not null) context.DeclaredConfiguration.AddRange(OpenApiConfigurationReader.Read(file.Path, tree));
+        }
         if (file.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
             var result = extractor.Extract(file.Content);

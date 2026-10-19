@@ -5,15 +5,19 @@
    are never shown: sensitive entries show their kind only. Different environments are variants, not conflicts. Configured ≠ deployed. *@
 <section class="sd-workspace" aria-labelledby="sd-config-heading" data-testid="configuration-workspace">
     <SourceDomainHeader Title="Configuration" Slug="config" Result="C" Note="@SourceEvidenceDomainsPresentation.ConfigurationNote" HeadingId="sd-config-heading" />
-    @if (!SourceEvidenceDomainsPresentation.Assessed(C))
+    @if (!SourceEvidenceDomainsPresentation.Assessed(C) && Declared.Count == 0)
     {
         <div class="sd-empty" data-testid="sd-config-not-assessed"><p><strong>@(C.Status == SourceDomainStatus.NotDetected ? "No supported configuration files detected in the selected source." : SourceDomainText.Label(C.Status))</strong></p></div>
         <SourceDomainLimitations Slug="config" Result="C" Capabilities="Capabilities" />
     }
     else
     {
-        <SourceViewNav Label="Configuration views" Views="Tabs" @bind-Current="_tab" Prefix="sd-config-tab" />
-        @if (_tab == "Overview")
+        <SourceViewNav Label="Configuration views" Views="Tabs" Current="@Tab" CurrentChanged="value => _tab = value" Prefix="sd-config-tab" />
+        @if (Tab == DeclaredTab)
+        {
+            @DeclaredValues
+        }
+        else if (Tab == "Overview")
         {
             @* Four headline counts; every other count is a row of the category breakdown or a secondary signal below it. *@
             <dl class="sd-summary sd-summary-primary" data-testid="sd-config-overview">
@@ -54,7 +58,7 @@
             }
             <SourceDomainLimitations Slug="config" Result="C" Capabilities="Capabilities" />
         }
-        else if (_tab == "Entries")
+        else if (Tab == "Entries")
         {
             var rows = SourceEvidenceDomainsPresentation.Filter(C.Entries, _filter).ToList();
             <section class="sd-panel" aria-labelledby="sd-config-entries-heading" data-testid="sd-config-entries">
@@ -88,7 +92,7 @@
                 @if (rows.Count > _limit) { <button type="button" class="btn-secondary" data-testid="sd-config-more" @onclick="() => _limit += 300">Show more (@(rows.Count - _limit) remaining)</button> }
             </section>
         }
-        else if (_tab == "Files")
+        else if (Tab == "Files")
         {
             <section class="sd-panel" aria-labelledby="sd-config-files-heading" data-testid="sd-config-files">
                 <h3 id="sd-config-files-heading">Configuration sources <span class="sd-count">@C.Files.Count</span></h3>
@@ -111,8 +115,52 @@
     [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
     private ConfigurationEvidence C => Evidence.Configuration;
     private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.Configuration);
-    private static readonly string[] Tabs = ["Overview", "Entries", "Files", "Changes"];
+    private const string DeclaredTab = "Declared values";
+    private IReadOnlyList<SourceConfigurationValue> Declared => Evidence.ConfigurationValues?.Values ?? [];
+    /// <summary>Configuration files give the usual views; values declared by other artifacts (API documents, IaC) add "Declared values".</summary>
+    private string[] Tabs => SourceEvidenceDomainsPresentation.Assessed(C)
+        ? Declared.Count > 0 ? ["Overview", DeclaredTab, "Entries", "Files", "Changes"] : ["Overview", "Entries", "Files", "Changes"]
+        : [DeclaredTab];
     private string _tab = "Overview";
+    private string Tab => Tabs.Contains(_tab) ? _tab : Tabs[0];
+
+    /// <summary>Values artifacts declare under generic semantic keys, grouped; each with its artifact and location. Agreeing artifacts are one row
+    /// with several sources; disagreeing ones are a conflict. Declared in source: never configured, never runtime verified.</summary>
+    private RenderFragment DeclaredValues => __builder =>
+    {
+        var resolutions = SourceConfigurationResolver.Resolve(Declared);
+        var conflicts = resolutions.Count(item => item.State == SourceConfigurationResolutionState.Conflict);
+        <section class="sd-panel" aria-labelledby="sd-config-declared-heading" data-testid="sd-config-declared">
+            <h3 id="sd-config-declared-heading">Declared values <span class="sd-count">@resolutions.Count</span></h3>
+            <p class="sd-muted" data-testid="sd-config-declared-note">Declared in source by API documents and Infrastructure as Code · runtime not verified · not configuration until a person accepts it where it is used.
+                @if (conflicts > 0) { <strong role="status" data-testid="sd-config-declared-conflicts"> @conflicts configuration conflict@(conflicts == 1 ? "" : "s").</strong> }</p>
+            @foreach (var group in resolutions.GroupBy(item => item.Candidates.SelectMany(c => c.Provenance).First().Group).OrderBy(group => group.Key))
+            {
+                var dense = group.Key is SourceConfigurationGroup.ApiEndpoints or SourceConfigurationGroup.Contract;
+                <ReviewDisclosure Text="@($"{SourceGuidancePresentation.Group(group.Key)} ({group.Count()})")" CollapseText="@($"Hide {SourceGuidancePresentation.Group(group.Key)}")"
+                                  Expanded="!dense" TestId="sd-config-declared-group" Class="disclosure-inline">
+                    <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"Declared values: {SourceGuidancePresentation.Group(group.Key)}")">
+                        <table data-testid="sd-config-declared-table">
+                            <thead><tr><th scope="col">Semantic key</th><th scope="col">Value</th><th scope="col">Environment</th><th scope="col">Source</th><th scope="col">State</th></tr></thead>
+                            <tbody>
+                                @foreach (var item in group)
+                                {
+                                    <tr data-testid="sd-config-declared-row" data-key="@item.SemanticKey" data-state="@item.State">
+                                        <th scope="row"><code>@item.SemanticKey</code></th>
+                                        <td>@foreach (var candidate in item.Candidates) { <div class="sd-path">@(candidate.Value ?? "(sensitive — not shown)")</div> }</td>
+                                        <td>@(item.Environment == SourceEnvironmentRole.Any ? "—" : item.Environment.ToString())</td>
+                                        <td>@foreach (var source in item.Candidates.SelectMany(candidate => candidate.Provenance)) { <div class="sd-path">@SourceGuidancePresentation.Kind(source.EvidenceKind) · @source.Artifact → @source.Location<span class="sd-context">@source.Basis</span></div> }</td>
+                                        <td>@(item.State switch { SourceConfigurationResolutionState.Conflict => "Configuration conflict", SourceConfigurationResolutionState.Agreed => "Declared · sources agree", _ => "Declared in source" })<span class="sd-context">Runtime not verified</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
+            }
+            @if (Evidence.ConfigurationValues?.Limitations is { Count: > 0 } limitations) { <ul class="sd-list sd-muted">@foreach (var item in limitations) { <li>@item</li> }</ul> }
+        </section>
+    };
     private SourceEvidenceDomainsPresentation.ConfigFilter _filter = new();
     private int _limit = 300;
 }

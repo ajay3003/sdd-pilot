@@ -86,6 +86,7 @@
     <Compile Include="../../shared/ReviewSourceContracts.cs" Link="Models/ReviewSourceContracts.cs" />
     <Compile Include="../../shared/SourceObservabilityContracts.cs" Link="Models/SourceObservabilityContracts.cs" />
     <Compile Include="../../shared/SourceEvidenceDomainContracts.cs" Link="Models/SourceEvidenceDomainContracts.cs" />
+    <Compile Include="../../shared/SourceConfigurationValueContracts.cs" Link="Models/SourceConfigurationValueContracts.cs" />
     <Compile Include="../../shared/ContractEvolutionContracts.cs" Link="Models/ContractEvolutionContracts.cs" />
     <Compile Include="../../shared/TestDataContracts.cs" Link="Models/TestDataContracts.cs" />
     <Compile Include="../../shared/XmlSchemaPackages.cs" Link="Models/XmlSchemaPackages.cs" />

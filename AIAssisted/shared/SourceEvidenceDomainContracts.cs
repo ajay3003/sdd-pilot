@@ -512,6 +512,8 @@ public sealed record SourceEvidenceDomainsSnapshot
     public PipelineEvidence CiCd { get; init; } = new() { Domain = SourceEvidenceDomain.CiCd };
     public ContractEvidence Contracts { get; init; } = new() { Domain = SourceEvidenceDomain.Contracts };
     public CrossDomainEvidence CrossDomain { get; init; } = new() { Domain = SourceEvidenceDomain.CrossDomain };
+    /// <summary>Configuration values the artifacts declare under generic semantic keys (null on snapshots analyzed before it existed).</summary>
+    public SourceConfigurationValuesEvidence? ConfigurationValues { get; init; }
 
     [JsonIgnore] public IEnumerable<SourceDomainResult> Domains => [Infrastructure, Configuration, CiCd, Contracts, CrossDomain];
 }

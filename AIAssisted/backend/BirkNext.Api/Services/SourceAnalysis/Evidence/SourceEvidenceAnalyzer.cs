@@ -106,6 +106,7 @@ public static class SourceEvidenceAnalyzer
             CiCd = context.CiCd ?? context.Envelope(new PipelineEvidence(), SourceEvidenceDomain.CiCd, 0),
             Contracts = context.Contracts ?? context.Envelope(new ContractEvidence(), SourceEvidenceDomain.Contracts, 0),
             CrossDomain = context.CrossDomain ?? context.Envelope(new CrossDomainEvidence(), SourceEvidenceDomain.CrossDomain, 0),
+            ConfigurationValues = SourceConfigurationValueCollector.Collect(context),
         };
     }
 

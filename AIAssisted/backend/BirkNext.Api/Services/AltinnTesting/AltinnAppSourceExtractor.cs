@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using BirkNext.Integrations;
+using BirkNext.SourceDomains;
 
 namespace BirkNext.Api.Services.AltinnTesting;
 
@@ -9,13 +10,16 @@ namespace BirkNext.Api.Services.AltinnTesting;
 /// Source Analysis → Contracts: the Altinn 3 apps whose source is in a snapshot. Runs inside ingestion on files the canonical archive reader
 /// already validated (it opens no archive of its own). For every <c>applicationmetadata.json</c> it records the app id, the single form data
 /// type, that type's JSON schema (flattened) and the sequential process tasks from <c>process.bpmn</c> — each only when the files are found in
-/// the same app folder and are unambiguous. Nothing is guessed; what is missing is noted.
+/// the same app folder and are unambiguous. An app's OpenAPI document is equally valid evidence: the generic OpenAPI configuration values of
+/// the snapshot (route, the one form data type, its content type and task, the process tasks) describe the app without applicationmetadata.json
+/// or process.bpmn, and fill what the app folder does not provide. Nothing is guessed; what is missing is noted.
 /// </summary>
 public static class AltinnAppSourceExtractor
 {
     private const int MaxApps = 20;
 
-    public static List<AltinnContractSnapshot> Extract(IReadOnlyList<(string Path, string Content)> files, Guid snapshotId, DateTimeOffset analyzedAt)
+    public static List<AltinnContractSnapshot> Extract(IReadOnlyList<(string Path, string Content)> files, Guid snapshotId, DateTimeOffset analyzedAt,
+        IReadOnlyList<SourceConfigurationValue>? declared = null)
     {
         var apps = new List<AltinnContractSnapshot>();
         var normalized = files.Select(file => (Path: file.Path.Replace('\\', '/'), Text: file.Content.TrimStart('﻿'))).ToArray();
@@ -77,7 +81,51 @@ public static class AltinnAppSourceExtractor
                 SourceSnapshotId = snapshotId,
             });
         }
+        foreach (var described in FromOpenApi(normalized, declared ?? [], snapshotId, analyzedAt))
+        {
+            var index = apps.FindIndex(app => string.Equals(app.AppId, described.AppId, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) { if (apps.Count < MaxApps) apps.Add(described); continue; }
+            // The app folder wins for what it states; the OpenAPI document fills only what it does not (e.g. tasks without a process.bpmn).
+            var app = apps[index];
+            var filled = app.ProcessTasks is null && described.ProcessTasks is not null;
+            apps[index] = app with
+            {
+                ProcessTasks = app.ProcessTasks ?? described.ProcessTasks, FormDataTaskId = app.FormDataTaskId ?? described.FormDataTaskId,
+                AllowedContentTypes = app.AllowedContentTypes.Count > 0 ? app.AllowedContentTypes : described.AllowedContentTypes,
+                Documents = [.. app.Documents, .. described.Documents.Except(app.Documents, StringComparer.Ordinal)],
+                Notes = [.. app.Notes.Where(note => !(filled && note.StartsWith("No process.bpmn", StringComparison.Ordinal))),
+                    .. filled ? [$"Process tasks from the app's OpenAPI document {described.Documents[0]} (no process.bpmn needed)."] : Array.Empty<string>()],
+            };
+        }
         return apps;
+    }
+
+    /// <summary>An app described by an OpenAPI document of the snapshot: its route is the app id; the form data type, content type, task and the
+    /// process tasks come from the same document's declared values. A document without a route describes no app.</summary>
+    private static IEnumerable<AltinnContractSnapshot> FromOpenApi((string Path, string Text)[] files, IReadOnlyList<SourceConfigurationValue> declared, Guid snapshotId, DateTimeOffset analyzedAt)
+    {
+        foreach (var document in declared.Where(value => value.EvidenceKind == SourceConfigurationEvidenceKind.OpenApi).GroupBy(value => value.Artifact, StringComparer.Ordinal))
+        {
+            string? Single(string key) => document.Where(value => value.SemanticKey == key).Select(value => value.Value).Distinct(StringComparer.Ordinal).ToArray() is [var one] ? one : null;
+            if (Single(SourceConfigurationKeys.ApplicationRoute) is not { } route || !route.Contains('/')) continue;
+            var form = document.FirstOrDefault(value => value.SemanticKey == SourceConfigurationKeys.ApplicationFormDataType);
+            var tasks = document.Where(value => value.SemanticKey == SourceConfigurationKeys.ApplicationTaskId && value.Value is not null)
+                .Select(value => new AltinnProcessTask(value.Value!, value.Attributes.GetValueOrDefault("Type") ?? "")).ToArray();
+            var contentTypes = document.Where(value => value.SemanticKey == SourceConfigurationKeys.PayloadContentType && value.Value is not null
+                && form is not null && value.Attributes.GetValueOrDefault("DataType") == form.Value).Select(value => value.Value!).Distinct(StringComparer.Ordinal).ToArray();
+            var text = files.FirstOrDefault(file => SourceAnalysis.Evidence.SourceEvidenceRedaction.SafePath(file.Path) == document.Key).Text ?? "";
+            var notes = new List<string> { $"Described by the app's OpenAPI document {document.Key}: route, form data type and process tasks are declared there; the form schema's fields are not." };
+            if (form is null) notes.Add("The OpenAPI document declares no single form data type.");
+            if (tasks.Length == 0) notes.Add("The OpenAPI document lists no process tasks.");
+            yield return new AltinnContractSnapshot
+            {
+                Source = AltinnContractSourceKind.SourceAnalysisSnapshot, AppId = route, CapturedAt = analyzedAt, Fingerprint = Fingerprint([(document.Key, text)]),
+                Documents = [document.Key], HasApplicationMetadata = false, FormDataTypeId = form?.Value,
+                FormDataTypeCandidates = form?.Value is { } id ? [id] : [], AllowedContentTypes = contentTypes,
+                ProcessTasks = tasks.Length == 0 ? null : tasks, FormDataTaskId = form?.Attributes.GetValueOrDefault("TaskId"),
+                Notes = notes, SourceSnapshotId = snapshotId,
+            };
+        }
     }
 
     private static string Name(string path) => path[(path.LastIndexOf('/') + 1)..].ToLowerInvariant();
