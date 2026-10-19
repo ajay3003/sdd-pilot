@@ -288,7 +288,11 @@ public sealed record ArchitectureResponsibilityRule(
     string TargetLabel,
     IReadOnlyList<string> TargetTokens,
     ArchitectureRuleExpectation Expectation,
-    string Rationale);
+    string Rationale)
+{
+    /// <summary>The logical source (a pack source role key) whose canonical binding the rule is assessed against. Null: any bound source of the pack.</summary>
+    public string? SourceRole { get; init; }
+}
 
 public sealed record ArchitectureRuleEvidenceItem(string File, int Line, string Symbol, string Explanation);
 
@@ -303,7 +307,54 @@ public sealed record ArchitectureRuleFinding(
     IReadOnlyList<ArchitectureRuleEvidenceItem> Evidence,
     string Provenance);
 
-public sealed record ArchitectureRuleReport(string PackId, Guid? SourceSnapshotId, string? SourceArchive, IReadOnlyList<ArchitectureRuleFinding> Findings, IReadOnlyList<string> Limitations);
+public sealed record ArchitectureRuleReport(string PackId, Guid? SourceSnapshotId, string? SourceArchive, IReadOnlyList<ArchitectureRuleFinding> Findings, IReadOnlyList<string> Limitations)
+{
+    /// <summary>Per rule: the logical source it needs and what is bound/available for it (rules may need different sources).</summary>
+    public IReadOnlyList<ArchitectureRuleSource> RuleSources { get; init; } = [];
+}
+
+/// <summary>The source a rule was (or could not be) assessed against: its required logical source, the bound snapshot used, and an available
+/// but unbound snapshot that would provide it (never used).</summary>
+public sealed record ArchitectureRuleSource(string RuleId, string? SourceRole, string? SourceRoleLabel, string? BoundArchive, string? AvailableArchive, TestPackSourceState State);
+
+// ── Logical source roles ────────────────────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// A logical source a test pack needs (a repository / application / system), identified by key — never by a file name. Its canonical evidence is
+/// the IQR binding of the pack integrations listed in <see cref="IntegrationRequirementKeys"/> (empty: any binding of the pack). A snapshot is
+/// recognized as this source deterministically by <see cref="ComponentTokens"/> (component, project or API scope names) and, for an API-described
+/// source, by an API document. Archive names are provenance only.
+/// </summary>
+public sealed record TestPackSourceRole(string Key, string Label, string Description)
+{
+    public IReadOnlyList<string> IntegrationRequirementKeys { get; init; } = [];
+    public IReadOnlyList<string> ComponentTokens { get; init; } = [];
+    /// <summary>True when the source is recognized by an API document (OpenAPI / application metadata) rather than by components.</summary>
+    public bool RequiresApiDocument { get; init; }
+    /// <summary>What a tester would import ("Repository source archive", "OpenAPI / Swagger document").</summary>
+    public string ExpectedArtifact { get; init; } = "Source archive";
+    /// <summary>Plain-language capabilities ("Meldingsutvekslermottak", "Altinn webhook") shown as "Used for".</summary>
+    public IReadOnlyList<string> Capabilities { get; init; } = [];
+    public IReadOnlyList<string> Journeys { get; init; } = [];
+}
+
+/// <summary>Bound = a canonical binding provides the source; AvailableNotBound = a stored snapshot is recognized as the source but no binding
+/// uses it (never authoritative); Missing = no snapshot is recognized as the source; ReviewRequired = the bound snapshot is not recognized as
+/// this source (wrong source context) or several snapshots match ambiguously.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestPackSourceState { Bound, AvailableNotBound, Missing, ReviewRequired }
+
+public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourceState State)
+{
+    public IReadOnlyList<string> BoundArchives { get; init; } = [];
+    public IReadOnlyList<string> AvailableArchives { get; init; } = [];
+    /// <summary>Configured integrations whose binding supplies (or would supply) this source.</summary>
+    public IReadOnlyList<string> Integrations { get; init; } = [];
+    public string Detail { get; init; } = "";
+    public string NextAction { get; init; } = "";
+    /// <summary>Where the next action is done: "source-analysis", "iqr-evidence" or "target-environment-integrations".</summary>
+    public string? NextActionTarget { get; init; }
+}
 
 // ── Execution access ────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -360,6 +411,8 @@ public sealed record TestPackCapabilityRequirement(string Key, string Label, str
 public sealed record TestPackSourceGuidance(string PackId, IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> Suggestions)
 {
     public IReadOnlyList<string> Limitations { get; init; } = [];
+    /// <summary>The pack's logical sources and their current state (bound / available but not bound / missing / review required).</summary>
+    public IReadOnlyList<TestPackSourceStatus> Sources { get; init; } = [];
 }
 
 /// <summary>One journey as the pack declares it: its flow (component chain from the declared steps) and who executes it.</summary>
@@ -378,6 +431,7 @@ public sealed record TestPackDescriptor
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities { get; init; } = [];
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities { get; init; } = [];
     public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration { get; init; } = [];
+    public IReadOnlyList<TestPackSourceRole> SourceRoles { get; init; } = [];
     public IReadOnlyList<string> ExecutionProviders { get; init; } = [];
     public bool SupportsHistory { get; init; }
     public IReadOnlyList<TestPackNavigationGroup> Navigation { get; init; } = [];

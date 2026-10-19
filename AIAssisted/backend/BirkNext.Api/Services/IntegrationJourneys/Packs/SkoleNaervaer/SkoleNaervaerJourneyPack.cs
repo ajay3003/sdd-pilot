@@ -87,6 +87,33 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     ];
 
     private const string AltinnAppSource = "Altinn Skolenærvær app";
+    public const string MuSource = "mu";
+    public const string M2lbSource = "m2lb";
+    public const string AltinnAppSourceRole = "altinn-app";
+
+    /// <summary>The logical sources Skolenærvær needs. Each is resolved through the IQR binding of its own integrations and recognized by its
+    /// components (or, for the Altinn app, by its API document) — archive names are only provenance. No single source contains everything.</summary>
+    public IReadOnlyList<TestPackSourceRole> SourceRoles { get; } =
+    [
+        new(MuSource, "MU (Meldingsutveksleren)", "The message hub that receives Altinn's webhook and forwards reports.")
+        {
+            IntegrationRequirementKeys = [ReportIntake], ComponentTokens = ["Meldingsutveksler", "Meldingsutveksleren"], ExpectedArtifact = "MU repository source archive",
+            Capabilities = ["Meldingsutveksleren", "Altinn webhook", "Altinn source filter", "Report-intake configuration"], Journeys = [RapportmottakId],
+        },
+        new(M2lbSource, "M2LB", "The downstream Skolenærvær implementation (MM, Skoletjenesten, SkoleAdapter, Utdanning, Skolenærværsrapport).")
+        {
+            IntegrationRequirementKeys = [EducationCdc, PeriodClosed],
+            ComponentTokens = ["Meldingsutvekslermottak", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],
+            ExpectedArtifact = "M2LB repository source archive",
+            Capabilities = ["Meldingsutvekslermottak (MM)", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenærværsrapport", "Period closure", "Service Bus", "Event Hub", "Contracts and XSDs"],
+            Journeys = [UtdanningsdataId, RapportmottakId, PeriodeavslutningId],
+        },
+        new(AltinnAppSourceRole, "Altinn Skolenærvær application", "The Altinn app's own API description (identity, servers, form data type, process task, authentication).")
+        {
+            ComponentTokens = ["skolenaervaer"], RequiresApiDocument = true, ExpectedArtifact = "OpenAPI / Swagger document or application metadata of the Altinn app",
+            Capabilities = ["App identity (org/app)", "Server / environment", "Form data type", "Process task", "Authentication scheme"], Journeys = [RapportmottakId],
+        },
+    ];
     private const string ApiDocument = "OpenAPI / Swagger document";
     private const string AppReference = "Altinn app reference in configuration (e.g. an event subscription) or OpenAPI / Swagger document";
     /// <summary>Which app's values are meant when a source declares several apps (an Altinn route's app segment).</summary>
@@ -98,27 +125,27 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     [
         new("altinn-environment", "Altinn environment", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationEnvironment, AltinnAppSource, AppReference,
             "Which Altinn platform the app is tested on (only Test is ever applied).", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-environment", ConsumerField = "Environment", ScopeHint = AppScope, AutoApply = true },
+            { PrerequisiteKey = "altinn-environment", ConsumerField = "Environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
         new("altinn-app-route", "Altinn app (org/app)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, AltinnAppSource, AppReference,
             "Which app Rapportmottak submits to.", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier", ScopeHint = AppScope, AutoApply = true },
+            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
         new("altinn-base-url", "Altinn app base URL", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationBaseUrl, AltinnAppSource, AppReference,
             "The app's address on the test platform (a safe reference; BirkNext builds its calls from the backend endpoints).", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-app", ConsumerField = "Safe base URL reference", ScopeHint = AppScope, AutoApply = true },
+            { PrerequisiteKey = "altinn-app", ConsumerField = "Safe base URL reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
         new("altinn-event-webhook", "Report intake webhook", BirkNext.SourceDomains.SourceConfigurationKeys.EndpointEventWebhook, "Report intake receiver (MU)",
             "Application configuration (Altinn event subscription)", "Where Altinn delivers the app's completed instances.", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, AutoApply = true },
+            { PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
         new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, AppReference,
-            "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment", ScopeHint = AppScope },
+            "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole] },
         new("altinn-form-data-type", "Form data type", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType, AltinnAppSource, ApiDocument,
-            "The data element the report is written to.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope },
+            "The data element the report is written to.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope, SourceRoles = [AltinnAppSourceRole] },
         new("altinn-content-type", "Form content type", BirkNext.SourceDomains.SourceConfigurationKeys.PayloadContentType, AltinnAppSource, ApiDocument,
-            "How the report payload is sent.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope },
+            "How the report payload is sent.", "Altinn app contract") { PrerequisiteKey = "submission-contract", ScopeHint = AppScope, SourceRoles = [AltinnAppSourceRole] },
         new("altinn-process-task", "Process task", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationTaskId, AltinnAppSource, ApiDocument,
-            "The task the form belongs to before process/next.", "Altinn app contract") { PrerequisiteKey = "process-contract", ScopeHint = AppScope },
+            "The task the form belongs to before process/next.", "Altinn app contract") { PrerequisiteKey = "process-contract", ScopeHint = AppScope, SourceRoles = [AltinnAppSourceRole] },
         new("altinn-auth-scheme", "Authentication scheme", BirkNext.SourceDomains.SourceConfigurationKeys.AuthenticationScheme, AltinnAppSource, ApiDocument,
             "How callers authenticate. The QA client's registration, redirect URI and scopes are not in the document and are not verified by it.", "Local execution config")
-            { PrerequisiteKey = "idporten-client", ScopeHint = AppScope },
+            { PrerequisiteKey = "idporten-client", ScopeHint = AppScope, SourceRoles = [AltinnAppSourceRole] },
     ];
 
     /// <summary>What is stored for the requirements: the app identifier (IQR → Extensions → Altinn) and the backend's test host for that app.</summary>
@@ -417,14 +444,14 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     /// <summary>Responsibility rules from the approved architecture. Evaluated on Source Analysis dependency evidence; not assessed without source.</summary>
     public IReadOnlyList<ArchitectureResponsibilityRule> Rules { get; } =
     [
-        new("mm-no-person", "MM performs transport/intake only — no Person lookup", "MM", ["MM"], "Person", ["Person"], ArchitectureRuleExpectation.MustNotDependOn,
-            "MM retrieves, decrypts, validates (XSD) and maps reports; Person lookup belongs to Skolenærværsrapport."),
+        new("mm-no-person", "MM performs transport/intake only — no Person lookup", "MM", ["MM", "Meldingsutvekslermottak"], "Person", ["Person"], ArchitectureRuleExpectation.MustNotDependOn,
+            "MM retrieves, decrypts, validates (XSD) and maps reports; Person lookup belongs to Skolenærværsrapport.") { SourceRole = M2lbSource },
         new("skoleadapter-no-person", "SkoleAdapter performs no Person lookup", "SkoleAdapter", ["SkoleAdapter"], "Person", ["Person"], ArchitectureRuleExpectation.MustNotDependOn,
-            "SkoleAdapter forwards education data with the external child reference; Utdanning resolves the child."),
+            "SkoleAdapter forwards education data with the external child reference; Utdanning resolves the child.") { SourceRole = M2lbSource },
         new("utdanning-person", "Utdanning owns the Person lookup for BiRK education data", "Utdanning", ["Utdanning"], "Person", ["Person"], ArchitectureRuleExpectation.MustDependOn,
-            "Utdanning links BiRK education data to the correct child through Person."),
+            "Utdanning links BiRK education data to the correct child through Person.") { SourceRole = M2lbSource },
         new("rapport-person", "Skolenærværsrapport owns the Person lookup for submitted reports", "Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"], "Person", ["Person"],
-            ArchitectureRuleExpectation.MustDependOn, "Skolenærværsrapport performs the Person lookup for incoming reports."),
+            ArchitectureRuleExpectation.MustDependOn, "Skolenærværsrapport performs the Person lookup for incoming reports.") { SourceRole = M2lbSource },
     ];
 
     /// <summary>
@@ -770,23 +797,35 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         // Integration Quality Review (the canonical evidence) counts. A component found only in an unbound stored snapshot is Partial — named
         // so it can be bound, never source verified.
         var bound = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
-        JourneyPrerequisite Source(string component, string[] tokens)
+        JourneyPrerequisite Source(string component, string[] tokens, string? role)
         {
-            var found = context.SourceSnapshots.OrderBy(snapshot => bound.Contains(snapshot.Id) ? 0 : 1)
+            // The component belongs to a logical source: only that source's binding is authoritative for it. A system that is not one of the
+            // pack's sources (an external consumer) is looked for in every bound snapshot.
+            var sourceRole = TestPackSources.Role(this, role);
+            var authoritative = sourceRole is null ? [] : TestPackSources.Authoritative(this, context, sourceRole).Select(snapshot => snapshot.Id).ToHashSet();
+            var trusted = authoritative.Count > 0 ? authoritative : bound;
+            var found = context.SourceSnapshots.OrderBy(snapshot => trusted.Contains(snapshot.Id) ? 0 : 1)
                 .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item)))
                 .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
+            var status = sourceRole is null ? null : TestPackSources.Status(this, context, sourceRole);
+            var label = sourceRole?.Label ?? component;
             return new JourneyPrerequisite($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence,
-                found.Component is null ? JourneyReadinessState.NotReady : bound.Contains(found.Snapshot.Id) ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
-                found.Component is null ? $"Not source verified: {component} source is not present in Source Analysis."
-                    : bound.Contains(found.Snapshot.Id) ? $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName} (bound in Integration Quality Review)."
-                    : $"Not source verified: component {found.Component.Name} is in snapshot {found.Snapshot.Archive.FileName}, which is not bound in Integration Quality Review → Evidence.")
+                found.Component is null ? JourneyReadinessState.NotReady : trusted.Contains(found.Snapshot.Id) ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
+                found.Component is not null && trusted.Contains(found.Snapshot.Id)
+                    ? $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName} (bound in Integration Quality Review)."
+                    : found.Component is not null
+                        ? $"Needs {label} source evidence: component {found.Component.Name} is in {found.Snapshot.Archive.FileName}, which is available but not bound in Integration Quality Review → Evidence."
+                        : status is null ? $"Not source verified: {component} source is not present in Source Analysis."
+                        : status.State == TestPackSourceState.Bound
+                            ? $"Not found in the bound {label} source ({string.Join(", ", status.BoundArchives)}): no {component} component."
+                            : $"Needs {label} source evidence: {(status.State == TestPackSourceState.Missing ? $"no {label} source is imported" : status.Detail.TrimEnd('.'))}.")
                 { Source = SourceAnalysisSource };
         }
 
         switch (journey.JourneyId)
         {
             case UtdanningsdataId:
-                return [Source("SkoleAdapter", ["SkoleAdapter"]), Source("Utdanning", ["Utdanning"])];
+                return [Source("SkoleAdapter", ["SkoleAdapter"], M2lbSource), Source("Utdanning", ["Utdanning"], M2lbSource)];
 
             case RapportmottakId:
             {
@@ -928,9 +967,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         $"{BackendBuild.Describe()} Restart the backend after changing branch, commit or configuration, then read the public TT02 metadata again.", Mandatory: false) { Source = BirkNextSource },
                     // Downstream steps (MU, MM, Skolenærværsrapport) are shown but do not gate the Altinn submission: without them those steps stay
                     // Not assessed, so a run can reach Partial at most.
-                    Source("MU", ["MU", "Meldingsutveksleren"]) with { Mandatory = false },
-                    Source("MM", ["MM", "Meldingsutvekslermottak"]) with { Mandatory = false },
-                    Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"]) with { Mandatory = false },
+                    Source("MU", ["MU", "Meldingsutveksleren", "Meldingsutveksler"], MuSource) with { Mandatory = false },
+                    Source("MM", ["MM", "Meldingsutvekslermottak"], M2lbSource) with { Mandatory = false },
+                    Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"], M2lbSource) with { Mandatory = false },
                     new JourneyPrerequisite("report-verifier", "Skolenærværsrapport verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,
                         "No read contract for the report service exists, so report state, mapping and Person lookup outcome cannot be verified.", Mandatory: false) { Source = BirkNextSource },
                     .. VerificationPrerequisites(context),
@@ -953,8 +992,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         channel is null ? "Documented in the architecture diagram only; no Service Bus channel with this name is present in Source Analysis (not source verified)."
                             : channelBound ? $"Source verified: Service Bus channel {channel.Name} ({channel.Type}) in snapshot {channelSnapshot!.Archive.FileName} (bound in Integration Quality Review)."
                             : $"Not source verified: Service Bus channel {channel.Name} ({channel.Type}) is in snapshot {channelSnapshot!.Archive.FileName}, which is not bound in Integration Quality Review → Evidence."),
-                    Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"]),
-                    Source("Bufdata", ["Bufdata"]),
+                    Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"], M2lbSource),
+                    Source("Bufdata", ["Bufdata"], null),
                     new("bufdata-verifier", "Bufdata verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,
                         "No Bufdata read/verification surface (dataset metadata, storage metadata or reporting status) is available."),
                     new("pii-check", "Dataset privacy check (no fødselsnummer/DUF)", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,

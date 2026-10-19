@@ -156,7 +156,7 @@ public sealed class ReconciliationSemanticsTests : BunitContext
             var text = File.ReadAllText(Path.Combine(root, file));
             var code = Regex.Replace(text, @"@\*.*?\*@", "", RegexOptions.Singleline);
             code = string.Join('\n', code.Split('\n').Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
-            Regex.IsMatch(code, @"Skolen|skolenaervaer|Rapportmottak|Periodeavslutning|Utdanningsdata|Altinn|TT02|M2LB", RegexOptions.IgnoreCase)
+            Regex.IsMatch(code, @"Skolen|skolenaervaer|Rapportmottak|Periodeavslutning|Utdanningsdata|Altinn|TT02|M2LB|Meldingsutveksler|SkoleAdapter|Bufdata", RegexOptions.IgnoreCase)
                 .Should().BeFalse($"{file} is generic UI; pack and provider names belong to their own pages and registrations");
         }
     }

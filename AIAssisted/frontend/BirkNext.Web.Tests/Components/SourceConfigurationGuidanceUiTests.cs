@@ -43,7 +43,7 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
     public void Every_state_is_a_distinct_word_and_runtime_is_never_verified_by_source()
     {
         Enum.GetValues<SourceSuggestionState>().Select(SourceGuidancePresentation.StateLabel).Should().OnlyHaveUniqueItems()
-            .And.BeEquivalentTo(["Not declared in source", "Available but not bound", "Suggested from bound source", "Configuration conflict"]);
+            .And.BeEquivalentTo(["Not in the bound source", "Available but not bound", "Suggested from bound source", "Configuration conflict", "Required source missing"]);
         Suggested().RuntimeVerified.Should().BeFalse();
         SourceGuidancePresentation.Configured(Suggested()).Should().Be("Not configured");
         SourceGuidancePresentation.Configured(Suggested("https://other.invalid")).Should().Be("https://other.invalid (differs from source)");
@@ -73,6 +73,24 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
     [InlineData(JourneyPrerequisiteCategory.Integration, null, true, "Source-derived configuration")]
     public void A_prerequisite_says_what_kind_of_input_it_needs(JourneyPrerequisiteCategory category, string? source, bool sourceDerived, string expected) =>
         SourceGuidancePresentation.RequirementKind(new JourneyPrerequisite("k", "K", category, JourneyReadinessState.NotReady, "d") { Source = source }, sourceDerived).Should().Be(expected);
+
+    [Fact]
+    public void An_unresolved_connection_names_the_source_that_would_state_it()
+    {
+        var guidance = new TestPackSourceGuidance("p", [])
+        {
+            Sources =
+            [
+                new(new TestPackSourceRole("hub", "Hub", "") { ComponentTokens = ["Hub"] }, TestPackSourceState.Bound) { BoundArchives = ["hub.zip"] },
+                new(new TestPackSourceRole("wh", "Warehouse", "") { ComponentTokens = ["Stock", "Warehouse"] }, TestPackSourceState.AvailableNotBound)
+                    { AvailableArchives = ["warehouse (2).zip"], NextAction = "Bind it in IQR Evidence" },
+            ],
+        };
+        SourceGuidancePresentation.ConnectionHint(SourceGuidancePresentation.ForComponents(guidance, "Hub", "Stock"))
+            .Should().Be("Required source: Warehouse. Available: warehouse (2).zip — not bound to a relevant integration. Next: Bind it in IQR Evidence.",
+                "the consuming component's source would state the connection");
+        SourceGuidancePresentation.ForComponents(guidance, "Shop", "Bank").Should().BeNull("no source claims these components");
+    }
 
     // ── Guidance list ───────────────────────────────────────────────────────────────────────────────────────────────
 

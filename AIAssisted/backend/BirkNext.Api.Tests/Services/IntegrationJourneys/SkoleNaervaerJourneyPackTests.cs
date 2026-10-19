@@ -92,7 +92,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         pack.Journeys.Single(view => view.Journey.JourneyId == "rapportmottak").Prerequisites.Single(item => item.Key == "integration:report-intake")
             .Detail.Should().Contain("No configured HttpApi integration was found for Skolenærvær – Altinn report intake");
         pack.Journeys.Single(view => view.Journey.JourneyId == "utdanningsdata").Prerequisites.Single(item => item.Key == "source:SkoleAdapter")
-            .Detail.Should().StartWith("Not source verified");
+            .Detail.Should().StartWith("Needs M2LB source evidence");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         report.Prerequisites.Single(item => item.Key == "reporter-auth").State.Should().Be(JourneyReadinessState.NotConfigured);
         report.Prerequisites.Single(item => item.Key == "submission-contract").State.Should().Be(JourneyReadinessState.NotReady);
         report.Prerequisites.Single(item => item.Key == "executor").State.Should().Be(JourneyReadinessState.NotAvailable, "no Altinn executor is registered in this harness");
-        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Not source verified");
+        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().StartWith("Needs M2LB source evidence", "MM belongs to M2LB, not to any other source");
         report.Readiness.Should().Be(JourneyReadinessState.Partial);
         report.CanRun.Should().BeFalse();
         report.Maturity.Configured.Should().BeTrue();
@@ -210,7 +210,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         harness.Sources.Snapshots.Add(Repo("meldingsutvekslermottak.zip", 'c', "M2LB.Meldingsutvekslermottak.Host"));
         var report = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
 
-        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Not source verified: component Meldingsutveksleren.Api is in snapshot meldingsutveksleren.zip, which is not bound in Integration Quality Review → Evidence.");
+        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Needs MU (Meldingsutveksleren) source evidence: component Meldingsutveksleren.Api is in meldingsutveksleren.zip, which is available but not bound in Integration Quality Review → Evidence.");
         report.Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Partial,
             "MM's own project name counts and it is found in its own archive, but an unbound snapshot is never source verified");
         report.Prerequisites.Single(item => item.Key == "source:Skolenærværsrapport").State.Should().Be(JourneyReadinessState.NotReady, "nothing is matched by a shared word such as 'Skole'");

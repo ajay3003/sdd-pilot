@@ -39,6 +39,10 @@
                             <span aria-hidden="true">@(step.State == TopologyPathState.Resolved ? "✓" : step.State == TopologyPathState.Conflict ? "!" : "○")</span>
                             <span class="tp-step-label">@step.Label</span>
                             <span class="tp-note">@(step.State == TopologyPathState.Resolved ? $"{P.Status(step.Evidence)} · observed: {(step.Observed ? "yes" : "no")}" : step.State.ToString())</span>
+                            @if (step.State != TopologyPathState.Resolved && SourceHint?.Invoke(step.From, step.To) is { } hint)
+                            {
+                                <span class="tp-note tp-source" data-testid="tp-step-source">@hint</span>
+                            }
                             <span class="tp-note tp-detail">@step.Detail</span>
                         </li>
                     }
@@ -56,6 +60,8 @@
     [Parameter] public string Title { get; set; } = "Expected flow";
     /// <summary>Counts only (expected connections, unresolved), the paths collapsed behind "View details".</summary>
     [Parameter] public bool Compact { get; set; }
+    /// <summary>Optional: why an unresolved connection is unresolved in terms of the source that would state it (from the caller's source model).</summary>
+    [Parameter] public Func<string, string, string?>? SourceHint { get; set; }
 
     private readonly string _id = "tp-" + Guid.NewGuid().ToString("N")[..8];
     private IReadOnlyList<TopologyPathResult> _paths = [];

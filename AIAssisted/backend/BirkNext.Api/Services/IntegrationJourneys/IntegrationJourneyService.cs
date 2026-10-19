@@ -97,9 +97,52 @@ public sealed class IntegrationJourneyService(
                 : ArchitectureRuleEvaluator.NotBound(pack.PackId, pack.Rules, requested,
                     $"Not assessed: snapshot {requested.Archive.FileName} is not the source evidence bound in Integration Quality Review → Evidence for this pack.");
         }
+        if (pack.Rules.Any(rule => rule.SourceRole is not null)) return RulesBySourceRole(pack, context, boundSnapshots);
         var bound = boundSnapshots.FirstOrDefault(snapshot => snapshot.Architecture is not null) ?? boundSnapshots.FirstOrDefault();
         return bound is not null ? ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, bound)
             : ArchitectureRuleEvaluator.NotBound(pack.PackId, pack.Rules, context.SourceSnapshots.FirstOrDefault(item => item.Architecture is not null));
+    }
+
+    /// <summary>
+    /// Each rule is assessed against the canonical binding of the logical source it needs (its source role), never against whichever snapshot
+    /// happens to be bound: a rule about a component of another source is "Not assessed — needs that source", not "component not found".
+    /// An available but unbound snapshot of the needed source is named, never used.
+    /// </summary>
+    private static ArchitectureRuleReport RulesBySourceRole(IIntegrationJourneyPack pack, JourneyPackContext context, IReadOnlyList<IqrSourceSnapshot> packBound)
+    {
+        var statuses = TestPackSources.Statuses(pack, context);
+        var findings = new Dictionary<string, ArchitectureRuleFinding>(StringComparer.Ordinal);
+        var sources = new List<ArchitectureRuleSource>();
+        var limitations = new List<string> { "Each rule is assessed against the bound source of the logical source it needs." };
+        foreach (var group in pack.Rules.GroupBy(rule => rule.SourceRole))
+        {
+            var rules = group.ToArray();
+            var role = TestPackSources.Role(pack, group.Key);
+            var candidates = role is null ? packBound : TestPackSources.Authoritative(pack, context, role);
+            var snapshot = candidates.FirstOrDefault(item => item.Architecture is not null) ?? candidates.FirstOrDefault();
+            var status = role is null ? null : statuses.FirstOrDefault(item => item.Role.Key == role.Key);
+            if (snapshot is null)
+            {
+                var others = statuses.Where(item => item.State == TestPackSourceState.Bound && item.Role.Key != role?.Key).Select(item => item.Role.Label).ToArray();
+                var reason = role is null ? ArchitectureRuleEvaluator.NotBoundReason
+                    : $"Not assessed — this rule requires {role.Label} source evidence."
+                      + (others.Length > 0 ? $" The currently bound source is {string.Join(", ", others)}." : " No source is bound for it.")
+                      + (status is { State: TestPackSourceState.AvailableNotBound } ? $" {string.Join(", ", status.AvailableArchives)} is available but not bound." : "")
+                      + (status is { State: TestPackSourceState.Missing } ? $" No {role.Label} source is imported." : "");
+                foreach (var finding in ArchitectureRuleEvaluator.NotBound(pack.PackId, rules, null, reason).Findings) findings[finding.RuleId] = finding;
+                sources.AddRange(rules.Select(rule => new ArchitectureRuleSource(rule.RuleId, role?.Key, role?.Label, null, status?.AvailableArchives.FirstOrDefault(),
+                    status?.State ?? TestPackSourceState.Missing)));
+                continue;
+            }
+            var report = ArchitectureRuleEvaluator.Evaluate(pack.PackId, rules, snapshot);
+            foreach (var finding in report.Findings) findings[finding.RuleId] = finding;
+            limitations.AddRange(report.Limitations);
+            sources.AddRange(rules.Select(rule => new ArchitectureRuleSource(rule.RuleId, role?.Key, role?.Label, snapshot.Archive.FileName, null, TestPackSourceState.Bound)));
+        }
+        var archives = sources.Select(item => item.BoundArchive).OfType<string>().Distinct().ToArray();
+        var single = archives.Length == 1 ? context.SourceSnapshots.FirstOrDefault(item => item.Archive.FileName == archives[0]) : null;
+        return new ArchitectureRuleReport(pack.PackId, single?.Id, archives.Length == 1 ? archives[0] : null,
+            [.. pack.Rules.Where(rule => findings.ContainsKey(rule.RuleId)).Select(rule => findings[rule.RuleId])], [.. limitations.Distinct()]) { RuleSources = sources };
     }
 
     public async Task<TestPackSourceGuidance> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct)
@@ -110,8 +153,29 @@ public sealed class IntegrationJourneyService(
             return new TestPackSourceGuidance(pack.PackId, []) { Limitations = [ReviewSourceEvidenceProvider.Disabled] };
         var context = await ContextAsync(environmentId, ct);
         var configured = await pack.ConfiguredValuesAsync(context, ct);
-        return new TestPackSourceGuidance(pack.PackId, SourceAnalysis.SourceConfigurationGuidance.Suggest(pack.RequiredConfiguration, BoundSnapshots(pack, context), context.SourceSnapshots, configured))
+        var statuses = TestPackSources.Statuses(pack, context);
+        var packBound = BoundSnapshots(pack, context);
+        var suggestions = pack.RequiredConfiguration.Select(requirement =>
         {
+            var roles = requirement.SourceRoles.Select(key => TestPackSources.Role(pack, key)).OfType<TestPackSourceRole>().ToArray();
+            if (roles.Length == 0) return SourceAnalysis.SourceConfigurationGuidance.Suggest([requirement], packBound, context.SourceSnapshots, configured)[0];
+            // Only the authoritative snapshots of the requirement's own sources count; the pool for "available but not bound" is those
+            // sources' recognized snapshots — never any other snapshot.
+            var bound = roles.SelectMany(role => TestPackSources.Authoritative(pack, context, role)).DistinctBy(item => item.Id).ToArray();
+            var available = roles.SelectMany(role => TestPackSources.Available(pack, context, role)).DistinctBy(item => item.Id).ToArray();
+            var labels = string.Join(" or ", roles.Select(role => role.Label));
+            var suggestion = SourceAnalysis.SourceConfigurationGuidance.Suggest([requirement], bound, [.. bound, .. available], configured)[0] with { SourceRoleLabel = labels };
+            if (suggestion.State != SourceSuggestionState.NotDeclared) return suggestion;
+            return bound.Length > 0
+                ? suggestion with { Detail = $"The bound {labels} source does not declare it. Expected evidence: {requirement.EvidenceType}." }
+                : available.Length > 0
+                    ? suggestion with { State = SourceSuggestionState.AvailableNotBound, UnboundSources = [.. available.Select(item => item.Archive.FileName).Distinct()],
+                        Detail = $"Needs {labels} source evidence: {string.Join(", ", available.Select(item => item.Archive.FileName).Distinct())} is available but not bound." }
+                    : suggestion with { State = SourceSuggestionState.SourceMissing, Detail = $"{labels} source is missing. Expected evidence: {requirement.EvidenceType}." };
+        }).ToArray();
+        return new TestPackSourceGuidance(pack.PackId, suggestions)
+        {
+            Sources = statuses,
             Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
                 "Declared in source is not runtime verified."],
         };

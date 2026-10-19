@@ -17,7 +17,8 @@
                 </div>
                 @if (item.Value is { } value) { <p class="sgl-value"><span class="sgl-term">Suggested</span> <code data-testid="sgl-value">@value</code></p> }
                 <dl class="sgl-facts">
-                    <div><dt>Required source</dt><dd data-testid="sgl-source">@item.Requirement.LogicalSource · @item.Requirement.EvidenceType</dd></div>
+                    <div><dt>Required source</dt><dd data-testid="sgl-source">@(item.SourceRoleLabel ?? item.Requirement.LogicalSource)</dd></div>
+                    @if (!Compact) { <div><dt>Expected evidence</dt><dd data-testid="sgl-evidence">@item.Requirement.EvidenceType</dd></div> }
                     @if (!Compact)
                     {
                         <div><dt>Current source</dt><dd data-testid="sgl-current">@(item.BoundSources.Count > 0 ? string.Join(", ", item.BoundSources) + " (bound)" : item.UnboundSources.Count > 0 ? string.Join(", ", item.UnboundSources) + " (not bound)" : "None")</dd></div>

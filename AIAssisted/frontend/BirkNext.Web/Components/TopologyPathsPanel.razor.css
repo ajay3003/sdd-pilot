@@ -9,3 +9,4 @@
 .tp-pill { border-radius: 999px; padding: 0 0.5rem; font-size: 0.75rem; font-weight: 600; }
 .tp-pill-ready { background: #dafbe1; color: #116329; }
 .tp-pill-attention { background: #fff8c5; color: #6a4b00; }
+.tp-source { flex-basis: 100%; color: #344054; font-weight: 500; }

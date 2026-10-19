@@ -26,13 +26,13 @@
         {
             <div class="snt-nav-group" role="group" aria-label="@group.Label" data-testid="snt-nav-group">
                 <span class="snt-nav-caption" aria-hidden="true">@group.Label</span>
-                <ul class="snt-nav-list">
+                <span class="snt-nav-list">
                     @foreach (var view in group.Views)
                     {
-                        <li><a href="@TabHref(view.ViewId)" class="snt-tab @(_tab == view.ViewId ? "snt-tab-active" : "")" aria-current="@(_tab == view.ViewId ? "page" : null)"
-                               data-tab="@view.ViewId" @onclick="() => SelectTabAsync(view.ViewId)" @onclick:preventDefault>@view.DisplayName</a></li>
+                        <a href="@TabHref(view.ViewId)" class="snt-tab @(_tab == view.ViewId ? "snt-tab-active" : "")" aria-current="@(_tab == view.ViewId ? "page" : null)"
+                           data-tab="@view.ViewId" @onclick="() => SelectTabAsync(view.ViewId)" @onclick:preventDefault>@view.DisplayName</a>
                     }
-                </ul>
+                </span>
             </div>
         }
     </nav>
@@ -42,19 +42,42 @@
         <section id="snt-overview" class="snt-panel" aria-labelledby="snt-overview-heading">
             <h2 id="snt-overview-heading" tabindex="-1">Overview</h2>
             <dl class="snt-context" data-testid="snt-context">
-                <div><dt>Project</dt><dd>@(Workspace.ProjectName ?? "No project selected")</dd></div>
+                <div><dt>Workspace</dt><dd data-testid="snt-workspace">@(Workspace.ProjectName is { } project ? project : "No Sample Project selected · source evidence comes from Integration Quality Review bindings")</dd></div>
                 <div><dt>Target Environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
                 <div><dt>Source evidence</dt><dd data-testid="snt-source">@_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
             </dl>
 
-            @if (_guidance is { Suggestions.Count: > 0 } guidance)
+            @if (_guidance is { } guidance && (guidance.Sources.Count > 0 || guidance.Suggestions.Count > 0))
             {
                 <section class="snt-source-requirements" aria-labelledby="snt-source-requirements-heading" data-testid="snt-source-requirements">
-                    <h3 class="snt-subheading" id="snt-source-requirements-heading">Source requirements</h3>
-                    <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(guidance) Runtime: not verified by source.</p>
-                    <ReviewDisclosure Text="@($"View {guidance.Suggestions.Count} source values")" CollapseText="Hide source values" TestId="snt-source-values" Class="disclosure-inline">
-                        <SourceGuidanceList Suggestions="guidance.Suggestions" Compact="true" TestId="snt-source-guidance" Label="Source requirements" />
-                    </ReviewDisclosure>
+                    <h3 class="snt-subheading" id="snt-source-requirements-heading">Source setup</h3>
+                    @if (guidance.Sources.Count > 0)
+                    {
+                        <ul class="snt-source-cards" data-testid="snt-source-setup" aria-label="Logical sources">
+                            @foreach (var source in guidance.Sources)
+                            {
+                                var href = SourceGuidancePresentation.ActionHref(source.NextActionTarget);
+                                <li class="snt-source-card" data-testid="snt-source-card" data-role="@source.Role.Key" data-state="@source.State">
+                                    <div class="snt-source-card-head"><strong>@source.Role.Label</strong>
+                                        <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-state">@SourceGuidancePresentation.SourceStateLabel(source.State)</span></div>
+                                    <p class="snt-source-line" data-testid="snt-source-archive">@(source.BoundArchives.Count > 0 ? $"Source: {string.Join(", ", source.BoundArchives)}"
+                                        : source.AvailableArchives.Count > 0 ? $"Available: {string.Join(", ", source.AvailableArchives)}" : $"Expected: {source.Role.ExpectedArtifact}")</p>
+                                    <p class="snt-source-line snt-muted">Used for: @string.Join(", ", source.Role.Capabilities)</p>
+                                    @if (source.State != TestPackSourceState.Bound && href is not null)
+                                    {
+                                        <a class="snt-inline-link" href="@href" data-testid="snt-source-action">@source.NextAction</a>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(guidance) Runtime verification is separate.</p>
+                    @if (guidance.Suggestions.Count > 0)
+                    {
+                        <ReviewDisclosure Text="@($"View {guidance.Suggestions.Count} source requirements")" CollapseText="Hide source requirements" TestId="snt-source-values" Class="disclosure-inline">
+                            <SourceGuidanceList Suggestions="guidance.Suggestions" TestId="snt-source-guidance" Label="Source requirements" />
+                        </ReviewDisclosure>
+                    }
                 </section>
             }
 
@@ -73,7 +96,11 @@
                             <tr role="row" class="snt-journey-row" data-testid="snt-journey" data-journey="@journey.JourneyId">
                                 <th role="rowheader" scope="row"><span class="snt-journey-name">@journey.DisplayName</span><span class="snt-flow">@journey.Flow</span></th>
                                 <td role="cell" data-label="Configuration">@Dimension("Configuration", view is null ? Unknown : TestPackPresentation.Configuration(view))</td>
-                                <td role="cell" data-label="Source evidence">@Dimension("Source evidence", view is null ? Unknown : TestPackPresentation.SourceEvidence(view))</td>
+                                <td role="cell" data-label="Source evidence">@Dimension("Source evidence", view is null ? Unknown : TestPackPresentation.SourceEvidence(view))
+                                    @if (SourceGuidancePresentation.ForJourney(_guidance, journey.JourneyId) is { Count: > 0 } sources)
+                                    {
+                                        <span class="snt-journey-sources" data-testid="snt-journey-sources">@string.Join(" · ", sources.Select(SourceGuidancePresentation.SourceShort))</span>
+                                    }</td>
                                 <td role="cell" data-label="Execution readiness" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
                                 <td role="cell" data-label="Blockers" data-testid="snt-journey-blockers">@(view is null ? "—" : BlockerCount(journey.JourneyId).ToString())</td>
                                 <td role="cell"><a class="btn-secondary snt-open" href="@TabHref(journey.JourneyId)" @onclick="() => SelectTabAsync(journey.JourneyId)" @onclick:preventDefault
@@ -97,7 +124,8 @@
             @if (_profile is not null)
             {
                 <section class="snt-topology" aria-label="Expected topology" data-testid="snt-topology">
-                    <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected topology" Compact="true" />
+                    <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected topology" Compact="true"
+                                        SourceHint="(from, to) => SourceGuidancePresentation.ConnectionHint(SourceGuidancePresentation.ForComponents(_guidance, from, to))" />
                 </section>
             }
         </section>
@@ -181,24 +209,25 @@
     {
         <section id="snt-rules" class="snt-panel" aria-labelledby="snt-rules-heading">
             <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>
-            <p>Each rule is assessed only on Source Analysis dependency evidence (the snapshot bound in Integration Quality Review). Evidence and assessment are separate: no evidence is Not assessed, never a pass.</p>
+            <p>Each rule is assessed only on Source Analysis dependency evidence from the logical source it needs, bound in Integration Quality Review. Evidence and assessment are separate: no evidence is Not assessed, never a pass.</p>
             @if (_profile is null)
             {
                 <p role="status" data-testid="snt-rules-not-ready">Not assessed: select a Target Environment and bind source evidence.</p>
             }
             else if (_rules is { } report)
             {
-                <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}" : "none — no Source Analysis snapshot is bound in Integration Quality Review → Evidence")</p>
+                <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}"
+                    : report.RuleSources.Count > 0 ? "per rule — the bound snapshot of the source each rule needs" : "none — no Source Analysis snapshot is bound in Integration Quality Review → Evidence")</p>
                 @if (report.Limitations.Count > 0) { <ul class="snt-notes" data-testid="snt-rules-limitations">@foreach (var item in report.Limitations) { <li>@item</li> }</ul> }
                 <div class="snt-scroll" role="region" tabindex="0" aria-label="Architecture rule results">
                     <table class="snt-table snt-stack" role="table" data-testid="snt-rule-results">
-                        <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Rule</th><th role="columnheader" scope="col">Evidence source</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Assessment</th><th role="columnheader" scope="col">Reason</th></tr></thead>
+                        <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Rule</th><th role="columnheader" scope="col">Required source</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Assessment</th><th role="columnheader" scope="col">Reason</th></tr></thead>
                         <tbody role="rowgroup">
                             @foreach (var finding in report.Findings)
                             {
                                 <tr role="row" data-testid="snt-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
                                     <th role="rowheader" scope="row">@finding.Title</th>
-                                    <td role="cell" data-label="Evidence source">@(report.SourceArchive ?? "Not bound")</td>
+                                    <td role="cell" data-label="Required source" data-testid="snt-rule-source">@RuleSource(report, finding)</td>
                                     <td role="cell" data-label="Evidence" data-testid="snt-rule-evidence">@RuleEvidence(report, finding)</td>
                                     <td role="cell" data-label="Assessment"><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)" data-testid="snt-rule-assessment">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
                                     <td role="cell" data-label="Reason" data-testid="snt-rule-reason">@finding.Detail</td>
@@ -276,11 +305,20 @@
     /// <summary>"6 values: 4 suggested from bound source · 1 conflict …" — every state in words.</summary>
     private static string GuidanceSummary(TestPackSourceGuidance guidance)
     {
-        var parts = guidance.Suggestions.GroupBy(item => item.State).OrderBy(group => group.Key)
-            .Select(group => $"{group.Count()} {SourceGuidancePresentation.StateLabel(group.Key).ToLowerInvariant()}");
+        var open = guidance.Suggestions.Count(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.Suggested);
+        var suggested = guidance.Suggestions.Count - open;
         var configured = guidance.Suggestions.Count(item => item.ConfiguredValue is not null);
-        return $"{guidance.Suggestions.Count} values: {string.Join(" · ", parts)} · {configured} configured.";
+        return open == 0
+            ? $"All {guidance.Suggestions.Count} source requirements are answered by bound sources ({configured} configured)."
+            : $"{open} of {guidance.Suggestions.Count} source requirements cannot yet be assessed from bound sources · {suggested} suggested · {configured} configured.";
     }
+
+    /// <summary>A rule's required source and what is bound or available for it.</summary>
+    private static string RuleSource(ArchitectureRuleReport report, ArchitectureRuleFinding finding) =>
+        report.RuleSources.FirstOrDefault(item => item.RuleId == finding.RuleId) is { } source
+            ? source.State == TestPackSourceState.Bound ? $"{source.SourceRoleLabel ?? "Bound source"} · {source.BoundArchive}"
+              : $"Needs {source.SourceRoleLabel} · {(source.AvailableArchive is { } available ? $"available: {available} (not bound)" : SourceGuidancePresentation.SourceStateLabel(source.State).ToLowerInvariant())}"
+            : report.SourceArchive ?? "Not bound";
     private IntegrationJourneyPackView? _pack;
     private TestPackDescriptor? _descriptor;
     private ArchitectureRuleReport? _rules;

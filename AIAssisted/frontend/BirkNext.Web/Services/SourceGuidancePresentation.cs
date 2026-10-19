@@ -14,7 +14,60 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.Suggested => "Suggested from bound source",
         SourceSuggestionState.AvailableNotBound => "Available but not bound",
         SourceSuggestionState.Conflict => "Configuration conflict",
-        _ => "Not declared in source",
+        SourceSuggestionState.SourceMissing => "Required source missing",
+        _ => "Not in the bound source",
+    };
+
+    // ── Logical sources (test pack source roles) ──
+
+    public static string SourceStateLabel(TestPackSourceState state) => state switch
+    {
+        TestPackSourceState.Bound => "Bound",
+        TestPackSourceState.AvailableNotBound => "Available, not bound",
+        TestPackSourceState.ReviewRequired => "Review required",
+        _ => "Missing",
+    };
+
+    public static string SourceStateTone(TestPackSourceState state) => state switch
+    {
+        TestPackSourceState.Bound => "ready",
+        TestPackSourceState.Missing => "muted",
+        _ => "attention",
+    };
+
+    /// <summary>"MU bound", "M2LB available, not bound", "Altinn … missing".</summary>
+    public static string SourceShort(TestPackSourceStatus status) => $"{status.Role.Label} {SourceStateLabel(status.State).ToLowerInvariant()}";
+
+    /// <summary>Where a source's next action is done.</summary>
+    public static string? ActionHref(string? target) => target switch
+    {
+        "source-analysis" => "/source-analysis",
+        "iqr-evidence" => "/integration-quality-review?view=evidence",
+        "target-environment-integrations" => "/admin/system-settings?section=target-environments&tab=integrations",
+        _ => null,
+    };
+
+    /// <summary>The sources a journey needs, in the pack's order.</summary>
+    public static IReadOnlyList<TestPackSourceStatus> ForJourney(TestPackSourceGuidance? guidance, string journeyId) =>
+        guidance?.Sources.Where(item => item.Role.Journeys.Contains(journeyId, StringComparer.Ordinal)).ToList() ?? [];
+
+    /// <summary>The logical source an expected connection's components belong to (by the sources' component names), if any.</summary>
+    public static TestPackSourceStatus? ForComponents(TestPackSourceGuidance? guidance, string from, string to) =>
+        guidance?.Sources.FirstOrDefault(item => !item.Role.RequiresApiDocument && item.Role.ComponentTokens.Any(token => Names(token, to)))
+        ?? guidance?.Sources.FirstOrDefault(item => !item.Role.RequiresApiDocument && item.Role.ComponentTokens.Any(token => Names(token, from)));
+
+    private static bool Names(string token, string component) =>
+        component.Split([' ', '.', '/', '-', '(', ')'], StringSplitOptions.RemoveEmptyEntries).Any(word => string.Equals(word, token, StringComparison.OrdinalIgnoreCase))
+        || string.Equals(component.Trim(), token, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Why an expected connection is unresolved, in terms of the source that would state it.</summary>
+    public static string? ConnectionHint(TestPackSourceStatus? status) => status switch
+    {
+        null => null,
+        { State: TestPackSourceState.Bound } => $"Required source: {status.Role.Label} (bound: {string.Join(", ", status.BoundArchives)}). The bound source states no such connection yet.",
+        { State: TestPackSourceState.AvailableNotBound } => $"Required source: {status.Role.Label}. Available: {string.Join(", ", status.AvailableArchives)} — not bound to a relevant integration. Next: {status.NextAction}.",
+        { State: TestPackSourceState.ReviewRequired } => $"Required source: {status.Role.Label}. {status.Detail} Next: {status.NextAction}.",
+        _ => $"Required source: {status.Role.Label} — not imported. Next: {status.NextAction}.",
     };
 
     public static string Tone(SourceSuggestionState state) => state switch
@@ -22,6 +75,7 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.Suggested => "info",
         SourceSuggestionState.Conflict => "attention",
         SourceSuggestionState.AvailableNotBound => "attention",
+        SourceSuggestionState.SourceMissing => "attention",
         _ => "muted",
     };
 
@@ -54,6 +108,7 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.Suggested => ("Nothing to configure; verify it at runtime", null),
         SourceSuggestionState.Conflict => ($"Decide which value is correct in {suggestion.Requirement.Owner}", null),
         SourceSuggestionState.AvailableNotBound => ("Bind the snapshot in Integration Quality Review → Evidence", "/integration-quality-review?view=evidence"),
+        SourceSuggestionState.SourceMissing => ($"Import the {suggestion.SourceRoleLabel ?? suggestion.Requirement.LogicalSource} source in Source Analysis", "/source-analysis"),
         _ => ($"Import the {suggestion.Requirement.EvidenceType} of {suggestion.Requirement.LogicalSource} in Source Analysis", "/source-analysis"),
     };
 

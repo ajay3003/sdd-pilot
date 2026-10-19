@@ -1,7 +1,8 @@
 .snt-page {
     display: grid;
-    gap: 1.25rem;
+    gap: .85rem;
     min-width: 0;
+    max-width: 92rem;
 }
 
 /* Section tabs: one section at a time; the current one is marked (aria-current), not only coloured. */
@@ -394,3 +395,11 @@
 
 .snt-source-requirements { margin: .75rem 0; }
 .snt-kind { display: inline-block; margin-left: .35rem; padding: 0 .4rem; border: 1px solid #94a3b8; border-radius: 4px; font-size: .74rem; color: #374151; background: #f8fafc; }
+
+/* Source setup: one compact card per logical source. */
+.snt-source-cards { list-style: none; margin: .4rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .5rem; }
+.snt-source-card { border: 1px solid var(--border-color, #d0d5dd); border-radius: 8px; padding: .5rem .7rem; display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; }
+.snt-source-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .5rem; }
+.snt-source-line { margin: 0; font-size: .86rem; }
+.snt-journey-sources { display: block; margin-top: .2rem; font-size: .78rem; color: #475467; overflow-wrap: anywhere; }
+.snt-nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem; }

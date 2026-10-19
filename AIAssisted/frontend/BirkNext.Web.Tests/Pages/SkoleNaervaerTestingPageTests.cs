@@ -249,7 +249,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         _journeys.Guidance = AltinnGuidance();
         var page = Open();
         page.WaitForAssertion(() => page.Find("[data-testid=snt-source-requirements-summary]").TextContent
-            .Should().Be("2 values: 1 available but not bound · 1 suggested from bound source · 0 configured. Runtime: not verified by source."));
+            .Should().Be("1 of 2 source requirements cannot yet be assessed from bound sources · 1 suggested · 0 configured. Runtime verification is separate."));
         page.Find("[data-testid=snt-source-values]").Should().NotBeNull("the values stay collapsed");
     }
 
@@ -300,6 +300,68 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=snt-applied-item]").TextContent.Should().Contain("buf/skolenaervaer").And.Contain("Altinn:StorageAppId"));
         page.Find("[data-testid=snt-apply-result]").TextContent.Should().Contain("not runtime verified");
         page.Find("[data-testid=snt-not-applied-item]").TextContent.Should().Contain("already configured; it is kept");
+    }
+
+    private static TestPackSourceGuidance ThreeSources() => new("skolenaervaer", [])
+    {
+        Sources =
+        [
+            new(new TestPackSourceRole("mu", "MU (Meldingsutveksleren)", "hub") { Capabilities = ["Altinn webhook"], Journeys = ["rapportmottak"], ComponentTokens = ["Meldingsutveksler"] },
+                TestPackSourceState.Bound) { BoundArchives = ["Tiltak 2 - Sikkert digitalt økosystem (1).zip"], NextAction = "Open IQR Evidence", NextActionTarget = "iqr-evidence" },
+            new(new TestPackSourceRole("m2lb", "M2LB", "downstream") { Capabilities = ["MM", "Skoletjenesten"], Journeys = ["utdanningsdata", "rapportmottak", "periodeavslutning"],
+                ComponentTokens = ["Skoletjenesten", "MM"] }, TestPackSourceState.AvailableNotBound)
+                { AvailableArchives = ["M2LB (2).zip"], NextAction = "Configure the integration in Target Environment → Integrations, then bind it in IQR Evidence", NextActionTarget = "target-environment-integrations" },
+            new(new TestPackSourceRole("altinn-app", "Altinn Skolenærvær application", "app") { RequiresApiDocument = true, ExpectedArtifact = "OpenAPI / Swagger document", Journeys = ["rapportmottak"] },
+                TestPackSourceState.Missing) { NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis" },
+        ],
+    };
+
+    [Fact]
+    public void The_overview_shows_each_logical_source_with_its_state_snapshot_and_owner_action()
+    {
+        WithTarget();
+        _journeys.Guidance = ThreeSources();
+        var page = Open();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-source-card]").Should().HaveCount(3));
+        var cards = page.FindAll("[data-testid=snt-source-card]");
+        cards.Select(card => card.QuerySelector("[data-testid=snt-source-state]")!.TextContent).Should().Equal("Bound", "Available, not bound", "Missing");
+        cards[0].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Source: Tiltak 2 - Sikkert digitalt økosystem (1).zip");
+        cards[0].QuerySelector("[data-testid=snt-source-action]").Should().BeNull("a bound source needs no action");
+        cards[1].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Available: M2LB (2).zip");
+        cards[1].QuerySelector("[data-testid=snt-source-action]")!.GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=integrations");
+        cards[2].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Expected: OpenAPI / Swagger document");
+        cards[2].QuerySelector("[data-testid=snt-source-action]")!.GetAttribute("href").Should().Be("/source-analysis");
+        page.Find("[data-testid=snt-journey][data-journey=rapportmottak] [data-testid=snt-journey-sources]").TextContent
+            .Should().Be("MU (Meldingsutveksleren) bound · M2LB available, not bound · Altinn Skolenærvær application missing");
+        page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("M2LB available, not bound");
+        page.Find("[data-testid=snt-workspace]").TextContent.Should().Contain("source evidence comes from Integration Quality Review bindings");
+        page.Markup.Should().NotContain("skolenaervaer.json", "the BirkNext OpenAPI fixture is never a manual source");
+    }
+
+    [Fact]
+    public void The_navigation_is_one_compact_tab_bar_without_list_markup()
+    {
+        WithTarget();
+        var page = Open();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-nav] a.snt-tab").Should().HaveCount(7));
+        page.FindAll("[data-testid=snt-nav] ul, [data-testid=snt-nav] li").Should().BeEmpty("no bullets, even before styles load");
+    }
+
+    [Fact]
+    public void A_rule_names_the_source_it_needs_and_what_is_available_for_it()
+    {
+        WithTarget();
+        _journeys.Rules = new ArchitectureRuleReport("skolenaervaer", null, null,
+            [new("mm-no-person", "MM performs no Person lookup", "MM", "Person", ArchitectureRuleExpectation.MustNotDependOn, ArchitectureRuleOutcome.NotAssessed,
+                "Not assessed — this rule requires M2LB source evidence. The currently bound source is MU (Meldingsutveksleren). M2LB (2).zip is available but not bound.", [], "")],
+            ["Each rule is assessed against the bound source of the logical source it needs."])
+        {
+            RuleSources = [new("mm-no-person", "m2lb", "M2LB", null, "M2LB (2).zip", TestPackSourceState.AvailableNotBound)],
+        };
+        var page = Open("architecture-rules");
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-rule-source]").TextContent.Should().Be("Needs M2LB · available: M2LB (2).zip (not bound)"));
+        page.Find("[data-testid=snt-rule-reason]").TextContent.Should().StartWith("Not assessed — this rule requires M2LB source evidence").And.NotContain("not found");
+        page.Find("[data-testid=snt-rules-provenance]").TextContent.Should().Contain("per rule");
     }
 
     [Fact]
@@ -473,7 +535,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open("architecture-rules");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-rule]").Should().HaveCount(2));
-        page.FindAll("[data-testid=snt-rule-results] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Rule", "Evidence source", "Evidence", "Assessment", "Reason");
+        page.FindAll("[data-testid=snt-rule-results] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Rule", "Required source", "Evidence", "Assessment", "Reason");
         page.FindAll("[data-testid=snt-rule]").Select(r => string.Join("|", r.QuerySelectorAll("td").Select(td => td.TextContent))).Should().Equal(
             "source.zip|Inconclusive — component not found in source|Not assessed|Not source verified.",
             "source.zip|1 dependency reference in source|Potential deviation|Potential deviation.");

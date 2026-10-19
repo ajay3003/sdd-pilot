@@ -41,6 +41,8 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities => [];
     /// <summary>Generic Test Data capabilities the pack resolves through the shared Test Data catalog. Default: none.</summary>
     IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities => [];
+    /// <summary>The logical sources the pack needs (repositories/applications), each resolved through IQR bindings. Default: none declared.</summary>
+    IReadOnlyList<TestPackSourceRole> SourceRoles => [];
     /// <summary>Configuration values the pack needs, by semantic key and logical source (never by file name). Default: none.</summary>
     IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration => [];
     /// <summary>What the pack's consumers have stored for its configuration requirements (requirement key → value), so guidance can show

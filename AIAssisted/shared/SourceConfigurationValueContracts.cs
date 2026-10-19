@@ -145,6 +145,8 @@ public sealed record SourceConfigurationRequirement(string Key, string Label, st
     /// <summary>Which application/component's value is meant when the source declares several (matches a value's scope exactly or as its
     /// last route segment). Null: any scope; several different values are then a conflict.</summary>
     public string? ScopeHint { get; init; }
+    /// <summary>The logical sources (pack source role keys) that can provide the value, in preference order. Empty: any bound source of the pack.</summary>
+    public IReadOnlyList<string> SourceRoles { get; init; } = [];
     /// <summary>The value is safe, non-secret and meant to be source-derived: "Apply safe source-derived configuration" may store it into an
     /// EMPTY consumer field (never over a stored value, never on a conflict, never from an unbound snapshot).</summary>
     public bool AutoApply { get; init; }
@@ -156,9 +158,10 @@ public sealed record SourceConfigurationNotApplied(string Key, string Label, str
 public sealed record SourceConfigurationApplyResult(IReadOnlyList<SourceConfigurationApplied> Applied, IReadOnlyList<SourceConfigurationNotApplied> NotApplied);
 
 /// <summary>Declared in source ≠ suggested ≠ configured ≠ runtime verified. Suggested = a single value in source the consumer's canonical
-/// binding provides; AvailableNotBound = only an unbound snapshot declares it (never used); Conflict = bound artifacts disagree.</summary>
+/// binding provides; AvailableNotBound = only an unbound snapshot declares it (never used); Conflict = bound artifacts disagree;
+/// NotDeclared = the required source is bound but does not declare it; SourceMissing = no snapshot of the required source exists.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceSuggestionState { NotDeclared, AvailableNotBound, Suggested, Conflict }
+public enum SourceSuggestionState { NotDeclared, AvailableNotBound, Suggested, Conflict, SourceMissing }
 
 public sealed record SourceConfigurationSuggestion(SourceConfigurationRequirement Requirement, SourceSuggestionState State)
 {
@@ -172,6 +175,8 @@ public sealed record SourceConfigurationSuggestion(SourceConfigurationRequiremen
     public IReadOnlyList<string> UnboundSources { get; init; } = [];
     /// <summary>What the consumer has stored, when it says (never overwritten by a suggestion).</summary>
     public string? ConfiguredValue { get; init; }
+    /// <summary>The logical source the value was looked for in (label), when the requirement names one.</summary>
+    public string? SourceRoleLabel { get; init; }
     /// <summary>Always false: a declared value is not runtime verified.</summary>
     public bool RuntimeVerified { get; init; }
     public string Detail { get; init; } = "";

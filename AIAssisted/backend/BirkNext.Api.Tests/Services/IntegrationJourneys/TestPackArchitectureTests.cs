@@ -138,11 +138,12 @@ public sealed class TestPackArchitectureTests
             Path.Combine(api, "Services", "SourceAnalysis", "Evidence", "OpenApiConfigurationReader.cs"),
             Path.Combine(api, "Services", "SourceAnalysis", "Evidence", "SourceConfigurationValueCollector.cs"),
             Path.Combine(api, "Services", "SourceAnalysis", "SourceConfigurationGuidance.cs"),
+            Path.Combine(api, "Services", "IntegrationJourneys", "TestPackSources.cs"),
         };
         foreach (var file in files)
         {
             File.Exists(file).Should().BeTrue(file);
-            Regex.IsMatch(File.ReadAllText(file), @"Skole|Skolen|Utdanning|Rapportmottak|Periodeavslutning|Altinn|TT02|Bufdata|M2LB", RegexOptions.IgnoreCase)
+            Regex.IsMatch(File.ReadAllText(file), @"Skole|Skolen|Utdanning|Rapportmottak|Periodeavslutning|Altinn|TT02|Bufdata|M2LB|Meldingsutveksler", RegexOptions.IgnoreCase)
                 .Should().BeFalse($"{Path.GetFileName(file)} is generic test-pack/evidence code");
         }
         // The shared descriptor and binding contracts: only code is checked (comments may cite examples).

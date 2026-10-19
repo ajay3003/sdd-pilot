@@ -716,8 +716,9 @@ public sealed class SkoleNaervaerRunResolutionTests
     {
         var bed = await ReadyAsync();
         var guidance = await GuidanceAsync(bed);
-        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.NotDeclared
-            && item.Detail.Contains(item.Requirement.EvidenceType, StringComparison.Ordinal) && item.Detail.Contains(item.Requirement.LogicalSource, StringComparison.Ordinal));
+        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.SourceMissing
+            && item.Detail.Contains(item.Requirement.EvidenceType, StringComparison.Ordinal) && item.SourceRoleLabel != null && item.Detail.Contains(item.SourceRoleLabel, StringComparison.Ordinal),
+            "without any source the required logical source is named as missing");
         guidance.Values.Should().NotContain(item => item.Detail.Contains("process.bpmn", StringComparison.Ordinal) || item.Detail.Contains("skolenaervaer.json", StringComparison.Ordinal),
             "a requirement names the evidence type, never a particular file");
     }
@@ -739,6 +740,7 @@ public sealed class SkoleNaervaerRunResolutionTests
     private static IqrSourceSnapshot HubSnapshot(string archive, string settings, DateTimeOffset? at = null) => new()
     {
         Id = Guid.NewGuid(), Archive = new(archive, new string('c', 64), 1), AnalyzedAt = at ?? DateTimeOffset.UtcNow,
+        Projects = [new("Buf.Meldingsutveksler.Service", "Hub.Service/Hub.Service.csproj", false, "Web", SourceConfidence.Confirmed)],
         EvidenceDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(("Hub.Service/Hub.Service.csproj", "<Project Sdk=\"Microsoft.NET.Sdk.Web\"></Project>"),
             ("Hub.Service/appsettings.Development.json", settings)),
     };
