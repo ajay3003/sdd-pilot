@@ -519,20 +519,42 @@ public sealed class TestEvidenceTests
         coverage.Limitations.Should().Contain(l => l.Contains("NUnit"));
     }
 
-    // ── Real pilots (run only where the developer's archives exist) ───────────────────────────────────────────────────
+    // ── Real pilots (environment-dependent) ──────────────────────────────────────────────────────────────────────────
+    // These read the developer's downloaded archives, which are replaced when a newer export is downloaded. They run only where the archive
+    // exists (Category=EnvironmentDependent, excludable with --filter "Category!=EnvironmentDependent") and never hard-code the size of an
+    // archive they do not own: expected counts are derived from the archive itself, independently of the provider under test. The
+    // deterministic coverage of the provider is the synthetic-fixture tests above.
 
     private static readonly string Downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 
+    /// <summary>Counted straight from the ZIP entries, independent of the discovery provider: test projects (a .csproj referencing
+    /// xunit.v3) and [Fact]/[Theory] attributes at the start of a line in .cs files.</summary>
+    private static (int Projects, int Definitions, int TrxPublications) CountArchive(byte[] bytes)
+    {
+        using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(bytes));
+        string Text(System.IO.Compression.ZipArchiveEntry entry) { using var reader = new StreamReader(entry.Open()); return reader.ReadToEnd(); }
+        var projects = zip.Entries.Count(entry => entry.FullName.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) && Text(entry).Contains("\"xunit.v3\"", StringComparison.Ordinal));
+        var attribute = new System.Text.RegularExpressions.Regex(@"^\s*\[(Fact|Theory)\b", System.Text.RegularExpressions.RegexOptions.Multiline);
+        var definitions = zip.Entries.Where(entry => entry.FullName.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).Sum(entry => attribute.Matches(Text(entry)).Count);
+        var publications = zip.Entries.Where(entry => entry.FullName.EndsWith(".pipeline/runtests.yml", StringComparison.OrdinalIgnoreCase))
+            .Sum(entry => System.Text.RegularExpressions.Regex.Matches(Text(entry), @"task:\s*PublishTestResults@").Count);
+        return (projects, definitions, publications);
+    }
+
     [Fact]
+    [Trait("Category", "EnvironmentDependent")]
     public void RealM2lb_DiscoversItsXunitV3TestEstate_WithTheGenericProvider()
     {
         var path = Path.Combine(Downloads, "M2LB (2).zip");
         if (!File.Exists(path)) return;
-        var (workspace, error) = IqrSourceArchiveReader.Read("M2LB (2).zip", File.ReadAllBytes(path));
+        var bytes = File.ReadAllBytes(path);
+        var (workspace, error) = IqrSourceArchiveReader.Read("M2LB (2).zip", bytes);
         error.Should().BeNull();
         var inventory = DotNetXunitTestDiscoveryProvider.Discover(Guid.NewGuid(), workspace!.Archive.Sha256, "M2LB", workspace);
+        var expected = CountArchive(bytes);
 
-        inventory.Projects.Should().HaveCount(23);
+        expected.Projects.Should().BeGreaterThan(0, "the archive is an xunit.v3 test estate");
+        inventory.Projects.Should().HaveCount(expected.Projects, "every .csproj referencing xunit.v3 is one discovered test project");
         inventory.Projects.Should().OnlyContain(p => p.Framework == "xUnit" && p.FrameworkPackage == "xunit.v3" && p.TrxReportConfigured && p.DiscoverySupported);
         inventory.Projects.Single(p => p.Name == "M2LB.Frontend.Tests").Kind.Should().Be(TestKind.FrontendComponent);
         inventory.Projects.Single(p => p.Name == "M2LB.Person.Contract.Tests").Kind.Should().Be(TestKind.Contract);
@@ -540,15 +562,15 @@ public sealed class TestEvidenceTests
         inventory.Projects.Single(p => p.Name == "M2LB.Person.Integration.Tests").Kind.Should().Be(TestKind.Integration);
         inventory.Projects.Single(p => p.Name == "M2LB.Hendelse.Unit").Kind.Should().Be(TestKind.Unit);
         inventory.Projects.Where(p => p.Packages.Any(x => x.StartsWith("Testcontainers"))).Should().NotBeEmpty();
-        // Every [Fact]/[Theory] in the archive (967 at line start), including files with C# 12 collection expressions the bundled parser predates.
-        inventory.Definitions.Should().HaveCount(967);
+        // Every [Fact]/[Theory] at the start of a line, including files with C# 12 collection expressions the bundled parser predates.
+        inventory.Definitions.Should().HaveCount(expected.Definitions);
         inventory.Definitions.Count(d => d.DefinitionKind == TestDefinitionKind.Theory).Should().BeGreaterThan(40);
-        inventory.Definitions.Count(d => d.Project == "M2LB.Tjeneste.Unit").Should().Be(30);
-        inventory.Projects.Where(p => p.Kind == TestKind.Unknown).Select(p => p.Name).Should().BeEquivalentTo(
+        inventory.Definitions.Should().Contain(d => d.Project == "M2LB.Tjeneste.Unit");
+        inventory.Projects.Where(p => p.Kind == TestKind.Unknown).Select(p => p.Name).Should().Contain(
             ["M2LB.CdcReplay.Tests", "M2LB.Person.Api.Tests", "M2LB.Person.Application.Tests", "M2LB.Person.Domain.Tests"], "a name that does not state the kind stays Unknown");
         inventory.Definitions.Select(d => d.TestDefinitionId).Should().OnlyHaveUniqueItems();
         inventory.TrxConfiguration.Should().Contain(e => e.Kind == "TrxGeneration").And.Contain(e => e.Kind == "TrxPublication");
-        inventory.TrxConfiguration.Where(e => e.Kind == "TrxPublication" && e.File.EndsWith(".pipeline/runtests.yml")).Should().HaveCount(10)
+        inventory.TrxConfiguration.Where(e => e.Kind == "TrxPublication" && e.File.EndsWith(".pipeline/runtests.yml")).Should().HaveCount(expected.TrxPublications)
             .And.OnlyContain(e => e.Detail.Contains("publishes TRX"));
         inventory.Projects.Should().NotContain(p => p.Packages.Any(x => x.Contains("Playwright")), "no Playwright in this source");
 
@@ -563,6 +585,7 @@ public sealed class TestEvidenceTests
     }
 
     [Fact]
+    [Trait("Category", "EnvironmentDependent")]
     public void RealM2lbCommon_UsesTheSameProviderWithNoSpecialCase()
     {
         var path = Path.Combine(Downloads, "M2LB.Common (1).zip");
