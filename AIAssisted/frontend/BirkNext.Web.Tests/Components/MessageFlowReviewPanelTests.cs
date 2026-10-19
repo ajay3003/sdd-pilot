@@ -120,6 +120,34 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
         cut.FindAll("label").Single(l => l.TextContent.Trim().StartsWith(label, StringComparison.Ordinal)).QuerySelector("input, select")!;
 
     [Fact]
+    public void TheProviderShowsOneSectionAtATime_WithReadinessAlwaysSummarized_AndEveryFieldStillBound()
+    {
+        var cut = RenderWith(new() { AppIdentifier = "ttd/app" }, new(false, 1, 15, [], []));
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=mfr-subnav] button").Select(button => button.TextContent).Should().Equal(
+            "Overview", "Configuration", "Readiness", "Contracts", "Checkpoints & test plan"));
+        cut.Find("[data-testid=mfr-subnav-overview]").GetAttribute("aria-current").Should().Be("true");
+        cut.Find("[data-testid=mfr-readiness-line]").TextContent.Should().Contain("1 / 15").And.Contain("Active submission blocked");
+        cut.Find("[data-testid=mfr-view-configuration]").HasAttribute("hidden").Should().BeTrue("the configuration form is not on the overview");
+        cut.Find("[data-testid=mfr-view-checkpoints]").HasAttribute("hidden").Should().BeTrue();
+
+        cut.Find("[data-testid=mfr-subnav-configuration]").Click();
+        cut.Find("[data-testid=mfr-view-configuration]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=mfr-configuration-sections]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=mfr-contract-section]").HasAttribute("hidden").Should().BeTrue("contracts are their own section");
+        cut.Find("[data-testid=mfr-view-overview]").HasAttribute("hidden").Should().BeTrue();
+        cut.Find("[data-testid=mfr-advanced] .disclosure-toggle").GetAttribute("aria-expanded").Should().Be("false", "advanced references stay collapsed");
+        Field(cut, "App identifier").GetAttribute("value").Should().Be("ttd/app", "hidden sections keep their values");
+
+        cut.Find("[data-testid=mfr-subnav-contracts]").Click();
+        cut.Find("[data-testid=mfr-contract-section]").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("[data-testid=mfr-configuration-sections]").HasAttribute("hidden").Should().BeTrue();
+
+        cut.Find("[data-testid=mfr-subnav-checkpoints]").Click();
+        cut.Find("[data-testid=mfr-view-checkpoints]").TextContent.Should().Contain("Checkpoints").And.Contain("Test plan").And.Contain("Manual test procedure");
+        cut.FindAll("[data-testid=mfr-view-checkpoints] .disclosure-toggle").Should().OnlyContain(toggle => toggle.GetAttribute("aria-expanded") == "false", "empty lists stay collapsed summaries");
+    }
+
+    [Fact]
     public void AltinnReadiness_IsCompact_PrimaryBlockersFirst_AndEveryPrerequisiteStaysBehindADisclosure()
     {
         var cut = RenderWith(new(), new(false, 1, 5,

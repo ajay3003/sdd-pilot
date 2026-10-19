@@ -59,3 +59,12 @@
 .mfr-attestation-state { font-weight: 400; color: #4b5563; font-size: .78rem; }
 ::deep .mfr-section { border: 1px solid #e5e7eb; border-radius: .4rem; padding: .3rem .5rem; min-width: 0; }
 .mfr-sections { display: grid; gap: .4rem; }
+
+/* Provider sections: a compact secondary navigation; one section is shown at a time. */
+.mfr-subnav { display: flex; flex-wrap: wrap; gap: .3rem; margin: .4rem 0 .6rem; padding-bottom: .4rem; border-bottom: 1px solid var(--clr-border, #d1d5db); }
+.mfr-subnav-item { min-height: 2rem; padding: .2rem .75rem; border: 1px solid var(--clr-border, #d1d5db); border-radius: 999px; background: var(--clr-surface-white, #fff); font-size: .84rem; cursor: pointer; }
+.mfr-subnav-active { border-color: #1d4ed8; background: #eff6ff; color: #1e3a8a; font-weight: 600; }
+.mfr-view[hidden], .mfr-view [hidden] { display: none !important; }
+.mfr-readiness-line { margin: .2rem 0; font-size: .88rem; }
+.mfr-link-button { background: none; border: none; padding: 0 0 0 .5rem; color: var(--clr-link, #2563eb); text-decoration: underline; cursor: pointer; font-size: .86rem; min-height: 24px; }
+@media (max-width: 520px) { .mfr-card { padding: .55rem; } .mfr-view .mfr-group { padding: 0; border: 0; } }

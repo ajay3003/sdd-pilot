@@ -1,4 +1,5 @@
-.iqr-page { display: grid; gap: 1rem; min-width: 0; }
+.iqr-page { display: grid; gap: .75rem; min-width: 0; max-width: 92rem; }
+.iqr-section-heading { margin: 0 0 .4rem; font-size: .95rem; }
 .iqr-muted { color: var(--clr-text-muted); font-size: .85rem; margin: 0; }
 .iqr-mono { font-family: var(--font-mono); font-size: .8rem; overflow-wrap: anywhere; }
 .iqr-banner { margin: 0; padding: .55rem .75rem; border-radius: var(--radius-md); font-size: .86rem; }

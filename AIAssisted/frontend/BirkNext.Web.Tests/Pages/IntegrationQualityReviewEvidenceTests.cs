@@ -60,6 +60,20 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
     }
 
     [Fact]
+    public void TheEvidenceWorkflowIsOneStepList_NumberedOnce_WithoutListMarkup()
+    {
+        var cut = Render<IntegrationQualityReview>();
+        var stages = cut.Find("[data-testid=iqr-evidence-stages]");
+        stages.TagName.Should().Be("DIV", "no <ol>: the browser never adds its own numbers next to the step numbers");
+        stages.GetAttribute("role").Should().Be("list");
+        var steps = cut.FindAll("[data-testid=iqr-stage]");
+        steps.Should().HaveCountGreaterThanOrEqualTo(4).And.OnlyContain(step => step.GetAttribute("role") == "listitem");
+        steps.Select(step => step.QuerySelector(".iqr-stage-number")!.TextContent).Should().Equal(Enumerable.Range(1, steps.Count).Select(n => n.ToString()),
+            "each step shows its number once, in order");
+        stages.Children.Should().NotContain(child => child.TagName == "LI", "the steps are not browser-numbered list items");
+    }
+
+    [Fact]
     public void PreRunListsEachEvidenceSourceWithItsOwnState()
     {
         var cut = Render<IntegrationQualityReview>();
