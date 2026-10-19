@@ -23,6 +23,7 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
     public FakeSources Sources { get; } = new();
     public FakeMessageFlows MessageFlows { get; } = new();
     public FakeTokens Tokens { get; } = new();
+    public FakeBindings Bindings { get; } = new();
     public List<IJourneyStepExecutor> Executors { get; } = [];
     public List<IJourneyStepObserver> Observers { get; } = [];
     public IntegrationJourneyRunStore Store { get; }
@@ -53,7 +54,7 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
     public IntegrationJourneyService Service(params IIntegrationJourneyPack[] packs) =>
         new(new IntegrationJourneyPackRegistry(packs), Active.Catalog, TrustedExecutionEnvironmentRegistry.From(Active.Configuration()), Sources, Active.Lifecycle(),
             new IntegrationJourneyRunner(Executors, Observers, TimeProvider.System), Store, new IntegrationJourneyRunGate(), TimeProvider.System,
-            NullLogger<IntegrationJourneyService>.Instance);
+            NullLogger<IntegrationJourneyService>.Instance, Bindings);
 
     public async ValueTask DisposeAsync()
     {
@@ -67,6 +68,18 @@ internal sealed class IntegrationJourneyHarness : IAsyncDisposable
         public bool SourceAnalysisEnabled { get; set; } = true;
         public Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>(Snapshots.ToArray());
         public Task<IqrSourceSnapshot?> ResolveAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult(Snapshots.FirstOrDefault(item => item.Id == snapshotId));
+    }
+
+    /// <summary>The canonical IQR evidence bindings, in memory (the real store validates against the catalog and Source Analysis).</summary>
+    internal sealed class FakeBindings : BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore
+    {
+        public List<IntegrationEvidenceBinding> Items { get; } = [];
+        public void Bind(string integrationId, IqrSourceSnapshot snapshot) =>
+            Items.Add(IntegrationEvidenceBinding.For(ActiveEventTestHarness.Env, integrationId, snapshot, DateTimeOffset.UtcNow));
+        public Task<IReadOnlyList<IntegrationEvidenceBinding>> ListAsync(string environmentId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<IntegrationEvidenceBinding>>(Items.Where(item => item.EnvironmentId == environmentId).ToArray());
+        public Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetAsync(string environmentId, IntegrationEvidenceBindingRequest request, CancellationToken ct = default) =>
+            throw new NotSupportedException("Tests bind directly.");
     }
 
     /// <summary>Stands in for a completed ID-porten TEST sign-in (a held Altinn token per person and environment).</summary>

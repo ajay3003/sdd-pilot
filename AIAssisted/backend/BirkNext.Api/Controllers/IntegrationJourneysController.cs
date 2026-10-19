@@ -33,6 +33,13 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
         catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    /// <summary>Every registered test pack, described generically from its own metadata (journeys, verification views, rules, required
+    /// capabilities, history, navigation). Configuration metadata only; no environment is needed.</summary>
+    [AllowAnonymous]
+    [HttpGet("test-packs")]
+    public ActionResult<IReadOnlyList<TestPackDescriptor>> TestPacks([FromServices] IIntegrationJourneyPackRegistry registry) =>
+        Ok(registry.Packs.Select(TestPackDescriber.Describe).ToList());
+
     /// <summary>Journey ids and design-level edges for Test Coverage, Traceability and Impact Analysis (suggested relations, never confirmed).</summary>
     [AllowAnonymous]
     [HttpGet("catalog")]

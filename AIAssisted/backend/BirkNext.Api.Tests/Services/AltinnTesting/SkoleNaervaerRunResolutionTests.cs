@@ -533,4 +533,71 @@ public sealed class SkoleNaervaerRunResolutionTests
         result.Satisfied.Should().BeFalse();
         JsonSerializer.Serialize(result).Should().NotContain(AltinnTestKit.ReporterIdentifier);
     }
+
+    // ── Reference test pack: prerequisite metadata, no false readiness, canonical evidence ───────────────────────────
+
+    /// <summary>Every implemented Rapportmottak prerequisite, with the category its metadata declares (blockers are grouped by it, never by text).</summary>
+    [Theory]
+    [InlineData("trusted-environment", JourneyPrerequisiteCategory.TrustedEnvironment)]
+    [InlineData("integration:report-intake", JourneyPrerequisiteCategory.Integration)]
+    [InlineData("altinn-environment", JourneyPrerequisiteCategory.TrustedEnvironment)]
+    [InlineData("altinn-app", JourneyPrerequisiteCategory.Integration)]
+    [InlineData("idporten-client", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("redirect-uri", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("client-secret", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("unattended-provider", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("reporter-auth", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("synthetic-reporter", JourneyPrerequisiteCategory.SyntheticData)]
+    [InlineData("reporter-profile", JourneyPrerequisiteCategory.SyntheticData)]
+    [InlineData("test-reporter", JourneyPrerequisiteCategory.SyntheticData)]
+    [InlineData("synthetic-data", JourneyPrerequisiteCategory.SyntheticData)]
+    [InlineData("app-policy", JourneyPrerequisiteCategory.Authorization)]
+    [InlineData("submission-contract", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("public-metadata", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("process-contract", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("report-xsd", JourneyPrerequisiteCategory.Contract)]
+    public async Task EveryImplementedPrerequisite_AppearsExactlyOnce_WithItsCategoryAndASource(string key, JourneyPrerequisiteCategory category)
+    {
+        var view = await RapportmottakAsync(await ReadyAsync());
+        view.Prerequisites.Where(row => row.Key == key).Should().ContainSingle($"{key} is reported exactly once");
+        Row(view, key).Category.Should().Be(category);
+        Row(view, key).Source.Should().NotBeNullOrWhiteSpace("every prerequisite names where it was resolved from");
+        view.Prerequisites.Select(row => row.Key).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task NoFalseReadiness_ConfiguredAndResolvedNeverMeanVerifiedObservedOrPassed()
+    {
+        var bed = await ReadyAsync();
+        var view = await RapportmottakAsync(bed);
+
+        view.RunnableScenarios.Should().Contain("valid-report", "every input is resolved");
+        // configured scopes ≠ verified scopes; a configured credential reference ≠ an authenticated reporter
+        bed.Harness.MessageFlows.Configuration.ConfiguredScopes.Should().NotBeEmpty();
+        bed.Harness.MessageFlows.Configuration.VerifiedScopes.Should().BeEmpty("resolving never verifies a scope");
+        Row(view, "synthetic-reporter").Detail.Should().Contain("Configured is not authenticated");
+        // a synthetic reporter alias ≠ a verified reporter profile; contract configured ≠ runtime message validated
+        Row(view, "report-xsd").State.Should().NotBe(JourneyReadinessState.Ready, "an XSD in source is never a validated runtime message");
+        // message received ≠ MM processed ≠ Skolenærværsrapport accepted: no downstream step is verifiable before a run
+        view.StepStatus.Where(step => step.StepId is not ("altinn-instance" or "altinn-data" or "altinn-validate" or "altinn-submit"))
+            .Should().OnlyContain(step => step.State != JourneyStepState.Verified && !step.Verifiable);
+        view.Maturity.RuntimeVerified.Should().BeFalse("ready to run is not runtime verified, and never passed");
+        view.Readiness.Should().Be(JourneyReadinessState.Ready, "execution readiness: the journey may be started after confirmation");
+        view.LastRun.Should().BeNull("ready to run is not a run, and never a pass");
+    }
+
+    [Fact]
+    public async Task ReportSchema_ComesFromTheCanonicalIqrBinding_AndALegacyChoiceInAnotherSnapshotIsReviewRequired()
+    {
+        var bound = new IqrSourceSnapshot { Id = Guid.NewGuid(), Archive = new("skole-app.zip", new string('b', 64), 1), AnalyzedAt = DateTimeOffset.UtcNow };
+        var bed = await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { SourceSnapshotId = bound.Id, SourceContractId = "report.xsd" });
+        bed.Harness.Sources.Snapshots.Add(bound);
+        bed.Harness.Bindings.Bind(ReportIntake, bound);
+        Row(await RapportmottakAsync(bed), "report-xsd").State.Should().Be(JourneyReadinessState.Partial, "the schema is bound through the canonical binding; XSD exists ≠ payload validated");
+
+        bed.Harness.MessageFlows.Configuration = AltinnTestKit.ReadyConfiguration with { SourceSnapshotId = Guid.NewGuid(), SourceContractId = "report.xsd" };
+        var mismatch = Row(await RapportmottakAsync(bed), "report-xsd");
+        mismatch.State.Should().Be(JourneyReadinessState.NotReady);
+        mismatch.Detail.Should().StartWith("Review required").And.Contain("nothing was reassigned automatically");
+    }
 }

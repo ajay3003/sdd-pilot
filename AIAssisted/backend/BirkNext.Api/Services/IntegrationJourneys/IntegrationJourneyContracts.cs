@@ -10,7 +10,16 @@ public sealed record JourneyPackContext(
     TrustedExecutionEnvironment? TrustedEnvironment,
     string TrustDetail,
     IntegrationCatalog Catalog,
-    IReadOnlyList<IqrSourceSnapshot> SourceSnapshots);
+    IReadOnlyList<IqrSourceSnapshot> SourceSnapshots,
+    IReadOnlyList<IntegrationEvidenceBinding>? EvidenceBindings = null)
+{
+    /// <summary>The canonical Integration Quality Review source-evidence bindings of this environment (one per integration).</summary>
+    public IReadOnlyList<IntegrationEvidenceBinding> Bindings => EvidenceBindings ?? [];
+
+    /// <summary>The snapshot an integration is bound to, if its binding still resolves to a stored snapshot.</summary>
+    public IqrSourceSnapshot? BoundSnapshot(string integrationId) =>
+        Bindings.FirstOrDefault(b => b.IntegrationId == integrationId) is { } binding ? SourceSnapshots.FirstOrDefault(s => s.Id == binding.SnapshotId) : null;
+}
 
 /// <summary>
 /// A project/domain journey pack (an extension). It declares journeys, scenarios, integration requirements, domain prerequisites and
@@ -26,6 +35,14 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<IntegrationJourneyDefinition> Journeys { get; }
     IReadOnlyList<ArchitectureResponsibilityRule> Rules { get; }
     IReadOnlyList<string> Limitations { get; }
+    /// <summary>Read-only verification views the pack offers next to its journeys (e.g. verifying what happened to one message). Default: none.</summary>
+    IReadOnlyList<TestPackView> VerificationViews => [];
+    /// <summary>Source/runtime evidence the pack needs, owned by Source Analysis or Integration Quality Review. Default: none declared.</summary>
+    IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities => [];
+    /// <summary>Generic Test Data capabilities the pack resolves through the shared Test Data catalog. Default: none.</summary>
+    IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities => [];
+    /// <summary>Whether the pack's runs are kept in the shared journey history.</summary>
+    bool SupportsHistory => true;
     /// <summary>Whether a configured IQR integration fulfils one of this pack's integration requirements.</summary>
     bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration);
     Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct);

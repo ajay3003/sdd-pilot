@@ -40,6 +40,19 @@ public class IntegrationEnvironmentStateRecord
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>
+/// The canonical Integration Quality Review source-evidence binding of one integration (shared/IqrSourceContracts.cs
+/// <c>IntegrationEvidenceBinding</c>). Key: (EnvironmentId, IntegrationId). Ids, fingerprints and names only — never source content.
+/// </summary>
+public class IntegrationEvidenceBindingRecord
+{
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string IntegrationId { get; set; } = string.Empty;
+    public Guid SnapshotId { get; set; }
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>One Integration Quality Review run, immutable once written. ResultJson holds the full result including its configuration snapshot.</summary>
 public class IntegrationReviewRunRecord
 {

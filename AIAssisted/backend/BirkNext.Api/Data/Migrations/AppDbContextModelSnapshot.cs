@@ -17,7 +17,7 @@ namespace BirkNext.Api.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.31")
+                .HasAnnotation("ProductVersion", "8.0.32")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -702,6 +702,36 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("integration_environment_states", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.IntegrationEvidenceBindingRecord", b =>
+                {
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("environment_id");
+
+                    b.Property<string>("IntegrationId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("integration_id");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("document_json");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("EnvironmentId", "IntegrationId");
+
+                    b.ToTable("integration_evidence_bindings", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.IntegrationJourneyRunRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1362,15 +1392,6 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("saved_workspaces", (string)null);
                 });
 
-            modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
-                {
-                    b.HasOne("BirkNext.Api.Models.IqrSourceSnapshotRecord", null)
-                        .WithMany()
-                        .HasForeignKey("SnapshotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("BirkNext.Api.Models.SavedWorkspaceArtifact", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1611,13 +1632,7 @@ namespace BirkNext.Api.Data.Migrations
 
             modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
                 {
-                    b.Property<string>("ProjectImportId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("project_import_id");
-
                     b.Property<Guid>("SnapshotId")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("snapshot_id");
 
@@ -1637,6 +1652,11 @@ namespace BirkNext.Api.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("package_json");
+
+                    b.Property<string>("ProjectImportId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("project_import_id");
 
                     b.Property<string>("SnapshotFingerprint")
                         .IsRequired()
@@ -2013,6 +2033,15 @@ namespace BirkNext.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.SourceSchemaArtifactRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Models.IqrSourceSnapshotRecord", null)
+                        .WithMany()
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.WorkspaceReviewProgress", b =>

@@ -34,6 +34,7 @@ public class AppDbContext : DbContext
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
+    public DbSet<IntegrationEvidenceBindingRecord> IntegrationEvidenceBindings => Set<IntegrationEvidenceBindingRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
     public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
@@ -676,6 +677,17 @@ public class AppDbContext : DbContext
             entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
             entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
+        });
+
+        modelBuilder.Entity<IntegrationEvidenceBindingRecord>(entity =>
+        {
+            entity.ToTable("integration_evidence_bindings");
+            entity.HasKey(r => new { r.EnvironmentId, r.IntegrationId });
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.IntegrationId).HasColumnName("integration_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.SnapshotId).HasColumnName("snapshot_id");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<IntegrationMessageFlowRecord>(entity =>

@@ -198,10 +198,29 @@ public sealed class SkoleNaervaerJourneyPackTests
         harness.Sources.Snapshots.Add(Repo("meldingsutvekslermottak.zip", 'c', "M2LB.Meldingsutvekslermottak.Host"));
         var report = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
 
-        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Source verified: component Meldingsutveksleren.Api in snapshot meldingsutveksleren.zip.");
-        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().Be("Source verified: component M2LB.Meldingsutvekslermottak.Host in snapshot meldingsutvekslermottak.zip.",
+        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Source verified: component Meldingsutveksleren.Api in snapshot meldingsutveksleren.zip (a stored snapshot not bound in Integration Quality Review).");
+        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().Be("Source verified: component M2LB.Meldingsutvekslermottak.Host in snapshot meldingsutvekslermottak.zip (a stored snapshot not bound in Integration Quality Review).",
             "MM's own project name counts, and it is found in its own archive rather than only in the first snapshot with architecture");
         report.Prerequisites.Single(item => item.Key == "source:Skolenærværsrapport").State.Should().Be(JourneyReadinessState.NotReady, "nothing is matched by a shared word such as 'Skole'");
+    }
+
+    [Fact]
+    public async Task SourceEvidence_PrefersTheSnapshotBoundInIqr_AndSaysSo_WithoutChangingReadiness()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        IqrSourceSnapshot Repo(string archive, params string[] components) => new()
+        {
+            Id = Guid.NewGuid(), Archive = new(archive, new string('d', 64), 10),
+            Architecture = new ArchitectureSnapshot { Components = [.. components.Select((name, index) => new ArchitectureComponent { Id = $"{archive}-{index}", Name = name })] },
+        };
+        var unbound = Repo("newer-unbound.zip", "SkoleAdapter.Worker");
+        var bound = Repo("bound.zip", "SkoleAdapter.Worker");
+        harness.Sources.Snapshots.AddRange([unbound, bound]);
+        harness.Bindings.Bind("any-integration", bound);
+        var view = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(item => item.Journey.JourneyId == "utdanningsdata");
+        var adapter = view.Prerequisites.Single(item => item.Key == "source:SkoleAdapter");
+        adapter.State.Should().Be(JourneyReadinessState.Ready);
+        adapter.Detail.Should().Be("Source verified: component SkoleAdapter.Worker in snapshot bound.zip (bound in Integration Quality Review).");
     }
 
     [Fact]
@@ -237,5 +256,46 @@ public sealed class SkoleNaervaerJourneyPackTests
         Regex.IsMatch(json, @"\b\d{11}\b").Should().BeFalse("no national identity numbers");
         Regex.IsMatch(json, @"\b\d{6,}\b").Should().BeFalse("no identifiers or account numbers at all");
         json.Should().NotContain("@", "no contact data");
+    }
+
+    [Fact]
+    public async Task Periodeavslutning_StepsAreIndependent_AndAMissingObserverIsNotAssessed_NeverFailed()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(PeriodClosed);
+        harness.Enroll(PeriodClosed.Id);
+        var closure = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "periodeavslutning");
+
+        closure.Journey.Steps.Select(step => step.StepId).Should().Equal("period-close", "dataset-prepare", "publish", "broker", "bufdata-activity", "bufdata-processed", "dataset-verify", "dataset-pii");
+        closure.StepStatus.Select(step => step.StepId).Should().Equal(closure.Journey.Steps.Select(step => step.StepId), "every step reports its own status");
+        closure.StepStatus.Should().OnlyContain(step => (step.State == JourneyStepState.NotAssessed || step.State == JourneyStepState.Configured) && !step.Observable && !step.Verifiable,
+            "without an observer a step is at most Configured (its integration exists) — never observed, failed or verified");
+        closure.StepStatus.Where(step => step.StepId is "publish" or "broker" or "bufdata-activity").Should().OnlyContain(step => step.State == JourneyStepState.Configured,
+            "configured ≠ observed: the Service Bus integration is configured, nothing was seen on it");
+        closure.StepStatus.Single(step => step.StepId == "bufdata-processed").State.Should().Be(JourneyStepState.NotAssessed, "Bufdata processed is never inferred from the broker");
+        closure.StepStatus.Should().NotContain(step => step.State == JourneyStepState.UnexpectedResult || step.State == JourneyStepState.NotVerified);
+        // Service Bus accepted ≠ Bufdata processed: the broker step and Bufdata's processing are separate steps with separate owners.
+        var broker = closure.Journey.Steps.Single(step => step.StepId == "broker");
+        var processed = closure.Journey.Steps.Single(step => step.StepId == "bufdata-processed");
+        broker.Owner.Should().NotBe(processed.Owner);
+        broker.Kind.Should().NotBe(processed.Kind);
+    }
+
+    [Fact]
+    public async Task Utdanningsdata_IsDelegated_AndStaysBlockedUntilTrustIntegrationSourceAndProviderAreAllPresent()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var untrusted = (await harness.Service(Pack(harness)).PacksAsync("unknown-env", default)).Single();
+        untrusted.EnvironmentTrusted.Should().BeFalse("an environment not enrolled in the backend trusted configuration is never trusted");
+        var education = untrusted.Journeys.Single(view => view.Journey.JourneyId == "utdanningsdata");
+        education.Journey.ExecutionMode.Should().Be(JourneyExecutionMode.DelegatedToActiveEvent);
+        education.Journey.DelegatedProviderId.Should().Be("skolenaervaer.cdc");
+        education.CanRun.Should().BeFalse();
+        education.Prerequisites.Should().Contain(item => item.Key.StartsWith("integration:", StringComparison.Ordinal) && item.State == JourneyReadinessState.NotConfigured,
+            "the education CDC integration is not configured");
+        education.Prerequisites.Where(item => item.Key.StartsWith("source:", StringComparison.Ordinal)).Should().OnlyContain(item => item.State != JourneyReadinessState.Ready,
+            "without Source Analysis evidence SkoleAdapter and Utdanning are not source verified");
+        education.Maturity.SourceVerified.Should().BeFalse();
+        education.Maturity.Configured.Should().BeFalse();
     }
 }

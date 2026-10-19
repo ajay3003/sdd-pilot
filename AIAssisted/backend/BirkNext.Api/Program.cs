@@ -461,6 +461,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore, BirkNext.Api.Services.Integrations.SourceEvidence.IntegrationEvidenceBindingStore>();
 // Project Import: one archive feeds the artifact repository (frontend) and Source Analysis. Stages are bounded, per-upload ids, and durable
 // across restarts in ProjectImport:StagingDirectory (default: a BirkNext folder under the system temp directory).
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ProjectImport.ProjectImportStagingStore(null,

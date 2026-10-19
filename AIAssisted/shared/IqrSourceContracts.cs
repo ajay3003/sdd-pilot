@@ -311,3 +311,32 @@ public sealed record SourceDataflow(string Field, List<string> Steps, SourceConf
 
 /// <summary>Explicit selection per integration. Uploading B never replaces A in a recorded run.</summary>
 public sealed record IqrSourceSelection(string IntegrationId, Guid SnapshotId);
+
+/// <summary>
+/// The canonical source-evidence binding of one configured integration, owned by Integration Quality Review. It pins one immutable Source
+/// Analysis snapshot by id and keeps that snapshot's identity (fingerprint, archive, import, analysis time) as it was when bound, so a newer
+/// snapshot never silently replaces it. Test packs and providers read this binding; they never select a second snapshot of their own.
+/// </summary>
+public sealed record IntegrationEvidenceBinding
+{
+    public string EnvironmentId { get; init; } = "";
+    public string IntegrationId { get; init; } = "";
+    public Guid SnapshotId { get; init; }
+    public string Fingerprint { get; init; } = "";
+    public string ArchiveName { get; init; } = "";
+    public DateTimeOffset AnalyzedAt { get; init; }
+    /// <summary>The Project Import the snapshot was created by, if any (provenance, never re-resolved).</summary>
+    public string? ImportId { get; init; }
+    public DateTimeOffset BoundAt { get; init; }
+
+    public static IntegrationEvidenceBinding For(string environmentId, string integrationId, IqrSourceSnapshot snapshot, DateTimeOffset boundAt) => new()
+    {
+        EnvironmentId = environmentId, IntegrationId = integrationId, SnapshotId = snapshot.Id, Fingerprint = snapshot.Archive.Sha256,
+        ArchiveName = snapshot.Archive.FileName, AnalyzedAt = snapshot.AnalyzedAt, ImportId = snapshot.ProjectImport?.ImportId, BoundAt = boundAt,
+    };
+
+    public IqrSourceSelection Selection => new(IntegrationId, SnapshotId);
+}
+
+/// <summary>Request to bind (or, with a null snapshot, unbind) one integration's source evidence.</summary>
+public sealed record IntegrationEvidenceBindingRequest(string IntegrationId, Guid? SnapshotId);

@@ -131,6 +131,8 @@ public sealed record IntegrationJourneyDefinition
     public string JourneyId { get; init; } = "";
     public string DisplayName { get; init; } = "";
     public string Description { get; init; } = "";
+    /// <summary>The journey's documented component chain for display (e.g. "A → B → C"); null derives it from the steps' From/To components.</summary>
+    public string? Flow { get; init; }
     public int Order { get; init; }
     public JourneyExecutionMode ExecutionMode { get; init; }
     /// <summary>For delegated journeys: the Active Event provider (extension) id that executes it.</summary>
@@ -336,4 +338,40 @@ public sealed record JourneyRunValidation
     /// <summary>The pack's Payload &amp; Mapping Flow for this dry run (generated and expected only — nothing is observed in a dry run).</summary>
     public PayloadFlowView? PayloadFlow { get; init; }
     public string Note { get; init; } = "Validated without any external call: nothing was authenticated, created, sent or recorded.";
+}
+
+// ── Test packs ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// A test pack is a registered journey pack seen as a whole: its journeys, verification views, rules, required capabilities and history,
+// described from the pack's own metadata. The descriptor is generic: a page renders any pack from it, and the engine never names a pack.
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestPackViewKind { Overview, Journey, Verification, Rules, History }
+
+/// <summary>One top-level view of a test pack. <c>ViewId</c> is the stable route key; for a journey view it equals the journey id.</summary>
+public sealed record TestPackView(string ViewId, string DisplayName, TestPackViewKind Kind, string? JourneyId = null, string? ScenarioId = null, string Description = "");
+
+/// <summary>A navigation group of a test pack (e.g. "Journeys", "Verify"); presentation order only.</summary>
+public sealed record TestPackNavigationGroup(string Label, IReadOnlyList<TestPackView> Views);
+
+/// <summary>A capability the pack needs from a shared owner (Integration Quality Review, Source Analysis, Test Data). Declared, never satisfied here.</summary>
+public sealed record TestPackCapabilityRequirement(string Key, string Label, string Owner, string Detail = "");
+
+/// <summary>One journey as the pack declares it: its flow (component chain from the declared steps) and who executes it.</summary>
+public sealed record TestPackJourney(string JourneyId, string DisplayName, string Flow, JourneyExecutionMode ExecutionMode, string? ExecutionProvider);
+
+public sealed record TestPackDescriptor
+{
+    public string PackId { get; init; } = "";
+    public string PackVersion { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    public string Description { get; init; } = "";
+    public IReadOnlyList<TestPackJourney> Journeys { get; init; } = [];
+    public IReadOnlyList<TestPackView> VerificationViews { get; init; } = [];
+    public IReadOnlyList<string> RuleIds { get; init; } = [];
+    public IReadOnlyList<TestPackCapabilityRequirement> RequiredIntegrationCapabilities { get; init; } = [];
+    public IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities { get; init; } = [];
+    public IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities { get; init; } = [];
+    public IReadOnlyList<string> ExecutionProviders { get; init; } = [];
+    public bool SupportsHistory { get; init; }
+    public IReadOnlyList<TestPackNavigationGroup> Navigation { get; init; } = [];
 }

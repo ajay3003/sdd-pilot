@@ -47,7 +47,8 @@ public sealed class IntegrationJourneyService(
     IntegrationJourneyRunStore history,
     IntegrationJourneyRunGate gate,
     TimeProvider clock,
-    ILogger<IntegrationJourneyService> logger) : IIntegrationJourneyService
+    ILogger<IntegrationJourneyService> logger,
+    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null) : IIntegrationJourneyService
 {
     private static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(10);
     /// <summary>Prerequisite keys of the journey's declared IQR integration requirements.</summary>
@@ -77,12 +78,37 @@ public sealed class IntegrationJourneyService(
         var pack = packs.Find(packId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
         if (!sources.SourceAnalysisEnabled)
             return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, null) with { Limitations = [ReviewSourceEvidenceProvider.Disabled] };
-        IqrSourceSnapshot? snapshot;
         if (snapshotId is { } id)
-            snapshot = await sources.ResolveAsync(environmentId, id, ct) ?? throw new IntegrationJourneyRequestException("The selected Source Analysis snapshot was not found.");
-        else
-            snapshot = (await sources.ListAsync(environmentId, ct)).FirstOrDefault(item => item.Architecture is not null);
-        return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, snapshot);
+            return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules,
+                await sources.ResolveAsync(environmentId, id, ct) ?? throw new IntegrationJourneyRequestException("The selected Source Analysis snapshot was not found."));
+        // The canonical evidence: a snapshot Integration Quality Review binds to one of this pack's integrations. Only without one is the
+        // newest snapshot with architecture evidence used, and the report says so.
+        var context = await ContextAsync(environmentId, ct);
+        if (BoundArchitectureSnapshot(pack, context) is { } bound) return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, bound);
+        var latest = context.SourceSnapshots.FirstOrDefault(item => item.Architecture is not null);
+        var report = ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, latest);
+        return latest is null ? report : report with
+        {
+            Limitations = [.. report.Limitations, "No integration of this pack has a source snapshot bound in Integration Quality Review → Evidence; the newest snapshot with architecture evidence is used."],
+        };
+    }
+
+    /// <summary>The first IQR-bound snapshot with architecture evidence among the configured integrations that fulfil this pack's requirements.</summary>
+    internal static IqrSourceSnapshot? BoundArchitectureSnapshot(IIntegrationJourneyPack pack, JourneyPackContext context) =>
+        pack.Journeys.SelectMany(journey => journey.Integrations)
+            .SelectMany(requirement => context.Catalog.Integrations.Where(integration => pack.Matches(requirement, integration)))
+            .Select(integration => context.BoundSnapshot(integration.Id))
+            .FirstOrDefault(snapshot => snapshot?.Architecture is not null);
+
+    private async Task<IReadOnlyList<IntegrationEvidenceBinding>> BindingsAsync(string environmentId, CancellationToken ct)
+    {
+        if (bindings is null) return [];
+        try { return await bindings.ListAsync(environmentId, ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.EntityFrameworkCore.DbUpdateException or System.Data.Common.DbException)
+        {
+            logger.LogWarning(ex, "Integration evidence bindings could not be read for {Environment}.", environmentId);
+            return [];
+        }
     }
 
     public IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog() => packs.Packs.SelectMany(pack => pack.Journeys.OrderBy(journey => journey.Order).Select(journey =>
@@ -516,7 +542,7 @@ public sealed class IntegrationJourneyService(
         var trusted = environments.Resolve(environmentId, out var reason);
         var configured = await catalog.GetAsync(environmentId, trusted?.EnvironmentType, trusted?.TargetUrl, ct);
         var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
-        return new JourneyPackContext(environmentId, trusted, reason, configured, snapshots);
+        return new JourneyPackContext(environmentId, trusted, reason, configured, snapshots, await BindingsAsync(environmentId, ct));
     }
 
     private async Task<IntegrationJourneyRun> BlockedAsync(IntegrationJourneyRun run, IReadOnlyList<string> reasons, CancellationToken ct)

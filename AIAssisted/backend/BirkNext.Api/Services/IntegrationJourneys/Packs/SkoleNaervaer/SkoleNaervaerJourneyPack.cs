@@ -20,7 +20,7 @@ namespace BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 /// Altinn source, contract or read surface exists in the evidence BirkNext has, so those journeys are modeled truthfully as not ready.
 /// </summary>
 public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messageFlows, AltinnTestingPolicy altinnPolicy, AltinnAppContractService altinnContracts,
-    SkoleNaervaerMessageEvidence? messageEvidence = null) : IIntegrationJourneyPack
+    SkoleNaervaerMessageEvidence? messageEvidence = null, BirkNext.Api.Services.TestData.TestDataCatalog? testDataCatalog = null) : IIntegrationJourneyPack
 {
     public const string Id = "skolenaervaer";
     public const string UtdanningsdataId = "utdanningsdata";
@@ -68,6 +68,31 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public string DisplayName => "Skolenærvær Testing";
     public string Description => "Three Skolenærvær journeys: Utdanningsdata (CDC), Rapportmottak (Altinn → MU → MM → Skolenærværsrapport) and Periodeavslutning (Service Bus → Bufdata).";
 
+    /// <summary>Message Verification: the read-only Rapportmottak scenario, offered as the pack's verification view (nothing is sent).</summary>
+    public IReadOnlyList<TestPackView> VerificationViews { get; } =
+        [new("message-verification", "Message Verification", TestPackViewKind.Verification, RapportmottakId, MessageVerificationScenario,
+            "Read-only verification of what happened to one message, from recorded and telemetry evidence.")];
+
+    public IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities { get; } =
+    [
+        new("source-architecture", "Source Analysis architecture evidence", "Source Analysis (bound in Integration Quality Review)", "Components and dependency evidence for the architecture rules."),
+        new("report-schema", "Report XML Schema", "Source Analysis (bound in Integration Quality Review)", "The submitted report's XSD, read by the shared XSD engine."),
+        new("runtime-observation", "Downstream observation", "Integration Quality Review runtime evidence", "MU, MM, Skolenærværsrapport and Bufdata observers; none is available yet."),
+    ];
+
+    public IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities { get; } =
+    [
+        new(SkoleNaervaerTestData.ReporterRole, "Synthetic reporter reference", "Test Data", "An approved, validated synthetic reporter for the target test environment."),
+        new(SkoleNaervaerTestData.ChildRole, "Approved synthetic identity", "Test Data", "An approved synthetic person declared known or unknown to Person; never a real identity."),
+    ];
+
+    /// <summary>The canonical source-evidence binding of the configured integration that fulfils this journey's report-intake requirement.</summary>
+    private IntegrationEvidenceBinding? ReportIntakeBinding(IntegrationJourneyDefinition journey, JourneyPackContext context) =>
+        journey.Integrations.Where(requirement => requirement.Key == ReportIntake)
+            .SelectMany(requirement => context.Catalog.Integrations.Where(integration => Matches(requirement, integration)))
+            .Select(integration => context.Bindings.FirstOrDefault(binding => binding.IntegrationId == integration.Id))
+            .FirstOrDefault(binding => binding is not null);
+
     public IReadOnlyList<string> Limitations =>
     [
         "Rapportmottak's Altinn steps run through the Altinn TT02 App API as an approved synthetic TestID reporter, authenticated unattended with ID-porten TEST's documented headless login (an interactive TestID sign-in remains an optional fallback). An Altinn receipt covers the Altinn steps only: MU, MM, Skolenærværsrapport and Person steps have no observer and stay Not assessed.",
@@ -80,7 +105,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     [
         new()
         {
-            PackId = Id, JourneyId = UtdanningsdataId, DisplayName = "Utdanningsdata", Order = 1, ExecutionMode = JourneyExecutionMode.DelegatedToActiveEvent,
+            PackId = Id, JourneyId = UtdanningsdataId, DisplayName = "Utdanningsdata", Flow = "BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning", Order = 1, ExecutionMode = JourneyExecutionMode.DelegatedToActiveEvent,
             DelegatedProviderId = SkoleNaervaerScenarioProvider.Id,
             Description = "BiRK education data (Utdanning, ManglendeSkoletilbud) captured by Debezium, delivered through Event Hub to SkoleAdapter, which forwards the education data and the external child reference to Utdanning. Utdanning links the record to the child through Person.",
             Integrations = [new(EducationCdc, "Skolenærvær – Education CDC", IntegrationKind.EventHub, "Debezium", "SkoleAdapter", "CDC of dbo.Utdanning / dbo.ManglendeSkoletilbud")],
@@ -99,7 +124,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         },
         new()
         {
-            PackId = Id, JourneyId = RapportmottakId, DisplayName = "Rapportmottak", Order = 2, ExecutionMode = JourneyExecutionMode.JourneyRunner,
+            PackId = Id, JourneyId = RapportmottakId, DisplayName = "Rapportmottak", Flow = "Altinn → MU → MM → Skolenærværsrapport", Order = 2, ExecutionMode = JourneyExecutionMode.JourneyRunner,
             Description = "A private institution or foster home submits a school-attendance report through Altinn; MU receives and stores the encrypted message; MM retrieves, decrypts, validates (XSD) and maps it — transport/intake only, no Person lookup; Skolenærværsrapport receives the report and performs the Person lookup.",
             Integrations = [new(ReportIntake, "Skolenærvær – Altinn report intake", IntegrationKind.HttpApi, "External reporting party (Altinn)", "MU", "Report submission through the configured Altinn test environment")],
             Steps =
@@ -129,16 +154,16 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             Scenarios =
             [
                 new("valid-report", "E2E-01 / MU-01 · Valid report", "One synthetic, typed report for a registered synthetic test child, submitted through the Altinn TT02 App API by an approved synthetic TestID reporter authenticated unattended. Covers the Altinn steps; MU/MM/report steps stay Not assessed.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, knownChild: true, [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")]),
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, testDataCatalog, knownChild: true, [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")]),
                     ExecutionEffects: SubmissionEffects),
                 new("person-not-found", "E2E-02 · Child not found in Person", "A typed report for a synthetic child that Person does not know (declared by the tester or generated). Whether the report is held is not observable yet.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, knownChild: false,
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, testDataCatalog, knownChild: false,
                     [
                         new(SkoleNaervaerReportInput.Supplied, "Synthetic identifier I supply (declared not registered)"),
                         new(SkoleNaervaerReportInput.Generated, "Generated synthetic identifier (unregistered by assumption)"),
                     ]), ExecutionEffects: SubmissionEffects),
                 new("overlapping-report", "E2E-08 · Overlapping report", "A second typed report for the same registered synthetic child with a period that overlaps an earlier report the tester declares. How overlap is marked is not observable yet.",
-                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, knownChild: true, [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")],
+                    JourneyScenarioSupport.Supported, Inputs: ReportInputs(altinnPolicy, testDataCatalog, knownChild: true, [new(SkoleNaervaerReportInput.Registered, "Registered synthetic test person (known child)")],
                         new JourneyScenarioInput(SkoleNaervaerReportInput.PriorReportKey, "Earlier overlapping report", JourneyScenarioInputKind.Choice, true,
                             "Required: a report for this child with an overlapping period was submitted earlier (for example by a previous run).",
                             [new("declared", "Yes — an earlier overlapping report exists for this child")])), ExecutionEffects: SubmissionEffects),
@@ -146,7 +171,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     "Reads one existing Altinn instance from Altinn Storage (TT02) and records its process state and data-element metadata. Read-only: nothing is created, submitted or changed. An observed instance is not a verified submission, and Altinn's storage path is not an MU blob.",
                     JourneyScenarioSupport.Supported, StateChanging: false, Inputs:
                     [
-                        Reporters(altinnPolicy),
+                        Reporters(altinnPolicy, testDataCatalog),
                         new(SkoleNaervaerInstanceReference.PartyKey, "Instance owner party id", JourneyScenarioInputKind.Reference, true,
                             "The numeric Altinn party id from the instance id (partyId/instanceGuid). Used for this read only; never stored."),
                         new(SkoleNaervaerInstanceReference.InstanceKey, "Instance GUID", JourneyScenarioInputKind.Reference, true,
@@ -175,7 +200,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         },
         new()
         {
-            PackId = Id, JourneyId = PeriodeavslutningId, DisplayName = "Periodeavslutning", Order = 3, ExecutionMode = JourneyExecutionMode.JourneyRunner,
+            PackId = Id, JourneyId = PeriodeavslutningId, DisplayName = "Periodeavslutning", Flow = "Skolenærværsrapport → Service Bus → Bufdata", Order = 3, ExecutionMode = JourneyExecutionMode.JourneyRunner,
             Description = "When a reporting period closes, Skolenærværsrapport prepares the completed dataset and publishes SkolenaervaersperiodeLukket on Service Bus; Bufdata consumes the completed reporting data. The Bufdata dataset must not contain fødselsnummer or DUF.",
             Integrations = [new(PeriodClosed, "Skolenærvær – Period Closed", IntegrationKind.ServiceBus, "Skolenærværsrapport", "Bufdata", $"{PeriodClosedEvent} after period closure")],
             Steps =
@@ -335,30 +360,30 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     /// The reporter choice: each approved synthetic TEST reporter by alias (unattended, the default) and, last, the tester's own interactive
     /// TestID sign-in as an explicit fallback. Values are aliases, never identifiers. The only usable approved reporter is preselected.
     /// </summary>
-    private static JourneyScenarioInput Reporters(AltinnTestingPolicy policy) =>
+    private static JourneyScenarioInput Reporters(AltinnTestingPolicy policy, BirkNext.Api.Services.TestData.TestDataCatalog? catalog) =>
         new(SkoleNaervaerReportInput.ReporterKey, "Reporter (Altinn TEST actor)", JourneyScenarioInputKind.Choice, true,
             "An approved synthetic TestID reporter, authenticated unattended by the backend. The reporter is the Altinn actor, separate from the child the report is about.",
             [
                 .. policy.Options.UnattendedIdPortenTest.Reporters.Where(item => AltinnTestingPolicy.ReporterProblem(item) is null)
                     .Select(item => new JourneyScenarioInputOption(item.Alias, string.IsNullOrWhiteSpace(item.Label) ? item.Alias : item.Label)),
                 new(AltinnTestingPolicy.InteractiveReporter, "Interactive TestID sign-in (fallback; sign in first)"),
-            ], new SkoleNaervaerTestData(policy.Options).DefaultReporter);
+            ], new SkoleNaervaerTestData(policy.Options, catalog).DefaultReporter);
 
     /// <summary>
     /// Typed inputs of a report scenario: reporter, identity source (limited per scenario), the approved child or the child's synthetic
     /// identifier, period and hours. When approved synthetic children apply (known or unknown to Person, per scenario), "Approved synthetic
     /// child" is offered first and preselected, and the child is preselected when the choice is deterministic; typed identifiers stay possible.
     /// </summary>
-    private static IReadOnlyList<JourneyScenarioInput> ReportInputs(AltinnTestingPolicy policy, bool knownChild, IReadOnlyList<JourneyScenarioInputOption> identitySources,
+    private static IReadOnlyList<JourneyScenarioInput> ReportInputs(AltinnTestingPolicy policy, BirkNext.Api.Services.TestData.TestDataCatalog? catalog, bool knownChild, IReadOnlyList<JourneyScenarioInputOption> identitySources,
         params JourneyScenarioInput[] extra)
     {
-        var testData = new SkoleNaervaerTestData(policy.Options);
+        var testData = new SkoleNaervaerTestData(policy.Options, catalog);
         var children = testData.Children(knownChild);
         IReadOnlyList<JourneyScenarioInputOption> sources = children.Count == 0 ? identitySources
             : [new(SkoleNaervaerReportInput.Approved, "Approved synthetic child (approved test data)"), .. identitySources];
         return
         [
-            Reporters(policy),
+            Reporters(policy, catalog),
             new(SkoleNaervaerReportInput.IdentitySourceKey, "Child identity", JourneyScenarioInputKind.Choice, true,
                 "Synthetic test identities only. Known/unknown is a declaration; BirkNext cannot check Person.", sources, children.Count > 0 ? SkoleNaervaerReportInput.Approved : null),
             .. children.Count == 0 ? Array.Empty<JourneyScenarioInput>() :
@@ -384,7 +409,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         scenario.ScenarioId == InstanceEvidenceScenario ? SkoleNaervaerInstanceReference.Prepare(scenario, inputs)
         : scenario.ScenarioId == MessageVerificationScenario ? SkoleNaervaerMessageInput.Prepare(inputs)
         : scenario.Inputs is { Count: > 0 } ? SkoleNaervaerReportInput.Prepare(scenario, inputs,
-            alias => new SkoleNaervaerTestData(altinnPolicy.Options).ChildIdentifier(alias, knownToPerson: scenario.ScenarioId != "person-not-found"))
+            alias => new SkoleNaervaerTestData(altinnPolicy.Options, testDataCatalog).ChildIdentifier(alias, knownToPerson: scenario.ScenarioId != "person-not-found"))
             : inputs.Count == 0 ? JourneyInputPreparation.None : JourneyInputPreparation.Invalid("This scenario takes no inputs.");
 
     /// <summary>
@@ -669,16 +694,19 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     public async Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct)
     {
-        // Every snapshot counts: MU, MM, Skoletjenesten and SkoleAdapter are separate repositories, usually uploaded as separate archives.
+        // Every snapshot counts: MU, MM, Skoletjenesten and SkoleAdapter are separate repositories, usually uploaded as separate archives. The
+        // snapshots bound in Integration Quality Review (the canonical evidence) are searched first, and the detail says which kind was used.
+        var bound = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
         JourneyPrerequisite Source(string component, string[] tokens)
         {
-            var found = context.SourceSnapshots
+            var found = context.SourceSnapshots.OrderBy(snapshot => bound.Contains(snapshot.Id) ? 0 : 1)
                 .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item)))
                 .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
             return new JourneyPrerequisite($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence,
                 found.Component is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
                 found.Component is null ? $"Not source verified: {component} source is not present in Source Analysis."
-                    : $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName}.") { Source = SourceAnalysisSource };
+                    : $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName}"
+                      + (bound.Contains(found.Snapshot.Id) ? " (bound in Integration Quality Review)." : " (a stored snapshot not bound in Integration Quality Review).")) { Source = SourceAnalysisSource };
         }
 
         switch (journey.JourneyId)
@@ -690,7 +718,12 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             {
                 var flow = await messageFlows.GetAsync(context.EnvironmentId, ct);
                 var config = flow.AltinnConfiguration;
-                var xsdBound = config.SourceSnapshotId is not null && !string.IsNullOrWhiteSpace(config.SourceContractId);
+                // The report schema's snapshot is the canonical IQR evidence binding of the report-intake integration; the Altinn configuration
+                // only names which XML Schema in it. A legacy snapshot id stored in the configuration is used only while no binding exists.
+                var reportBinding = ReportIntakeBinding(journey, context);
+                var schemaSnapshot = reportBinding?.SnapshotId ?? config.SourceSnapshotId;
+                var legacyMismatch = reportBinding is not null && config.SourceSnapshotId is { } legacy && legacy != reportBinding.SnapshotId;
+                var xsdBound = schemaSnapshot is not null && !string.IsNullOrWhiteSpace(config.SourceContractId) && !legacyMismatch;
                 var xsdInSource = context.SourceSnapshots.Any(snapshot => snapshot.EvidenceDomains?.Contracts.Contracts.Any(contract => contract.Type == SourceContractType.XmlSchema) == true);
                 var contract = altinnContracts.Evaluate(context.EnvironmentId, config.AppIdentifier, flow.AppContract);
                 var signIn = altinnPolicy.SignInProblems(config);
@@ -710,7 +743,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 var policyProblem = confirmation is null ? null : roles.Select(role => AltinnTestingPolicy.PolicyProblem(confirmation, role)).FirstOrDefault(item => item is not null);
                 var policyConfirmed = confirmation is not null && policyProblem is null;
                 var awaitingProfile = altinnPolicy.ReportersAwaitingProfile;
-                var testData = new SkoleNaervaerTestData(altinnPolicy.Options);
+                var testData = new SkoleNaervaerTestData(altinnPolicy.Options, testDataCatalog);
                 var knownChildren = testData.Children(knownToPerson: true);
                 var defaultChild = testData.DefaultChild(knownToPerson: true);
                 var declaredSet = config.ApprovedSyntheticData && !string.IsNullOrWhiteSpace(config.SyntheticIdentitySetReference);
@@ -790,7 +823,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     ContractImpactRow(SkoleNaervaerContractProfile.Analyze(flow.AppContract)),
                     new JourneyPrerequisite("report-xsd", "Report XSD (MM validation)", JourneyPrerequisiteCategory.Contract,
                         xsdBound ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
-                        xsdBound ? "An XML Schema from Source Analysis is bound to the message flow. XSD exists ≠ runtime payload validated."
+                        legacyMismatch ? "Review required: the XML Schema contract was chosen in another snapshot than the one bound in Integration Quality Review → Evidence. Choose the contract again; nothing was reassigned automatically."
+                        : xsdBound ? "An XML Schema from Source Analysis is bound to the message flow. XSD exists ≠ runtime payload validated."
                             : xsdInSource ? "An XML Schema exists in Source Analysis but is not bound to the message flow. XSD exists ≠ runtime payload validated."
                             : $"XSD {config.ContractVersion ?? "(version unknown)"} is documented only; not source verified.", Mandatory: false) { Source = SourceAnalysisSource },
                     new JourneyPrerequisite("test-reporter", "Approved test reporter", JourneyPrerequisiteCategory.SyntheticData,
