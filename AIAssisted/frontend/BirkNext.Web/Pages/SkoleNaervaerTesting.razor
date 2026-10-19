@@ -177,7 +177,7 @@
             }
             else if (_rules is { } report)
             {
-                <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}" : "no Source Analysis snapshot")</p>
+                <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}" : "none — no Source Analysis snapshot is bound in Integration Quality Review → Evidence")</p>
                 @if (report.Limitations.Count > 0) { <ul class="snt-notes" data-testid="snt-rules-limitations">@foreach (var item in report.Limitations) { <li>@item</li> }</ul> }
                 <div class="snt-scroll" role="region" tabindex="0" aria-label="Architecture rule results">
                     <table class="snt-table snt-stack" role="table" data-testid="snt-rule-results">
@@ -187,7 +187,7 @@
                             {
                                 <tr role="row" data-testid="snt-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
                                     <th role="rowheader" scope="row">@finding.Title</th>
-                                    <td role="cell" data-label="Evidence source">@(report.SourceArchive ?? "No source snapshot")</td>
+                                    <td role="cell" data-label="Evidence source">@(report.SourceArchive ?? "Not bound")</td>
                                     <td role="cell" data-label="Evidence" data-testid="snt-rule-evidence">@RuleEvidence(report, finding)</td>
                                     <td role="cell" data-label="Assessment"><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)" data-testid="snt-rule-assessment">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
                                     <td role="cell" data-label="Reason" data-testid="snt-rule-reason">@finding.Detail</td>
@@ -528,7 +528,7 @@
             // The canonical evidence: Integration Quality Review's bindings of the integrations this pack uses. Nothing is chosen here.
             var used = _pack?.Journeys.SelectMany(view => view.MatchedIntegrations).Select(item => item.IntegrationId).OfType<string>().ToHashSet(StringComparer.Ordinal) ?? [];
             var bindings = ((await IntegrationApi.ListEvidenceBindingsAsync(_profile.Id)) ?? []).Where(binding => used.Contains(binding.IntegrationId)).ToList();
-            _sourceSummary = bindings.Count == 0 ? "No source evidence bound to this pack's integrations · architecture rules use the newest snapshot, or are Not assessed"
+            _sourceSummary = bindings.Count == 0 ? "No source evidence bound to this pack's integrations · architecture rules are Not assessed until a snapshot is bound"
                 : string.Join(" · ", bindings.Select(binding => binding.ArchiveName).Distinct()) + $" (bound in Integration Quality Review for {bindings.Count} integration{(bindings.Count == 1 ? "" : "s")})";
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)

@@ -78,27 +78,31 @@ public sealed class IntegrationJourneyService(
         var pack = packs.Find(packId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
         if (!sources.SourceAnalysisEnabled)
             return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, null) with { Limitations = [ReviewSourceEvidenceProvider.Disabled] };
-        if (snapshotId is { } id)
-            return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules,
-                await sources.ResolveAsync(environmentId, id, ct) ?? throw new IntegrationJourneyRequestException("The selected Source Analysis snapshot was not found."));
-        // The canonical evidence: a snapshot Integration Quality Review binds to one of this pack's integrations. Only without one is the
-        // newest snapshot with architecture evidence used, and the report says so.
+        // Rules are assessed only against the canonical evidence: a snapshot Integration Quality Review binds to one of this pack's
+        // integrations. Without a binding every rule is Not assessed; the newest stored snapshot is named as a non-authoritative candidate
+        // and never evaluated. An explicitly requested snapshot is assessed only when it is one of the bound snapshots.
         var context = await ContextAsync(environmentId, ct);
-        if (BoundArchitectureSnapshot(pack, context) is { } bound) return ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, bound);
-        var latest = context.SourceSnapshots.FirstOrDefault(item => item.Architecture is not null);
-        var report = ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, latest);
-        return latest is null ? report : report with
+        var boundSnapshots = BoundSnapshots(pack, context);
+        if (snapshotId is { } id)
         {
-            Limitations = [.. report.Limitations, "No integration of this pack has a source snapshot bound in Integration Quality Review → Evidence; the newest snapshot with architecture evidence is used."],
-        };
+            var requested = await sources.ResolveAsync(environmentId, id, ct) ?? throw new IntegrationJourneyRequestException("The selected Source Analysis snapshot was not found.");
+            return boundSnapshots.Any(item => item.Id == id) ? ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, requested)
+                : ArchitectureRuleEvaluator.NotBound(pack.PackId, pack.Rules, requested,
+                    $"Not assessed: snapshot {requested.Archive.FileName} is not the source evidence bound in Integration Quality Review → Evidence for this pack.");
+        }
+        var bound = boundSnapshots.FirstOrDefault(snapshot => snapshot.Architecture is not null) ?? boundSnapshots.FirstOrDefault();
+        return bound is not null ? ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, bound)
+            : ArchitectureRuleEvaluator.NotBound(pack.PackId, pack.Rules, context.SourceSnapshots.FirstOrDefault(item => item.Architecture is not null));
     }
 
-    /// <summary>The first IQR-bound snapshot with architecture evidence among the configured integrations that fulfil this pack's requirements.</summary>
-    internal static IqrSourceSnapshot? BoundArchitectureSnapshot(IIntegrationJourneyPack pack, JourneyPackContext context) =>
+    /// <summary>The IQR-bound snapshots of the configured integrations that fulfil this pack's requirements, in requirement order.</summary>
+    internal static IReadOnlyList<IqrSourceSnapshot> BoundSnapshots(IIntegrationJourneyPack pack, JourneyPackContext context) =>
         pack.Journeys.SelectMany(journey => journey.Integrations)
             .SelectMany(requirement => context.Catalog.Integrations.Where(integration => pack.Matches(requirement, integration)))
             .Select(integration => context.BoundSnapshot(integration.Id))
-            .FirstOrDefault(snapshot => snapshot?.Architecture is not null);
+            .OfType<IqrSourceSnapshot>()
+            .DistinctBy(snapshot => snapshot.Id)
+            .ToArray();
 
     private async Task<IReadOnlyList<IntegrationEvidenceBinding>> BindingsAsync(string environmentId, CancellationToken ct)
     {

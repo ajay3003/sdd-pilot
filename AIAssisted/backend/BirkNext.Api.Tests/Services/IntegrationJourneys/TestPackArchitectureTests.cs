@@ -189,15 +189,64 @@ public sealed class TestPackArchitectureTests
         report.Limitations.Should().NotContain(item => item.Contains("newest snapshot", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task Without_a_binding_rules_fall_back_to_the_newest_snapshot_and_say_so()
+    // ── Architecture rules against every source-evidence state ──────────────────────────────────────────────────────
+
+    public enum EvidenceState { NoSnapshot, UnboundOnly, BoundToAnotherIntegration, BoundWithoutArchitecture, Bound }
+
+    /// <summary>
+    /// Rules are assessed only against the snapshot bound in IQR to one of the pack's integrations. Every other state is Not assessed: no
+    /// snapshot, an unbound snapshot (even the newest, which is named only as a non-authoritative candidate), a snapshot bound to an
+    /// integration outside the pack, and a bound snapshot without architecture analysis.
+    /// </summary>
+    [Theory]
+    [InlineData(EvidenceState.NoSnapshot, ArchitectureRuleOutcome.NotAssessed)]
+    [InlineData(EvidenceState.UnboundOnly, ArchitectureRuleOutcome.NotAssessed)]
+    [InlineData(EvidenceState.BoundToAnotherIntegration, ArchitectureRuleOutcome.NotAssessed)]
+    [InlineData(EvidenceState.BoundWithoutArchitecture, ArchitectureRuleOutcome.NotAssessed)]
+    [InlineData(EvidenceState.Bound, ArchitectureRuleOutcome.Conforms)]
+    public async Task Architecture_rules_are_assessed_only_against_the_canonical_binding(EvidenceState state, ArchitectureRuleOutcome expected)
     {
         await using var harness = new IntegrationJourneyHarness();
-        var newer = Snapshot("newer.zip", "Shop");
-        harness.Sources.Snapshots.Add(newer);
+        harness.Active.Catalog.Extra.Add(DemoIntegrationTestPack.Intake);
+        var snapshot = state == EvidenceState.BoundWithoutArchitecture ? Snapshot("source.zip") with { Architecture = null } : Snapshot("source.zip", "Shop");
+        if (state != EvidenceState.NoSnapshot) harness.Sources.Snapshots.Add(snapshot);
+        if (state is EvidenceState.Bound or EvidenceState.BoundWithoutArchitecture) harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, snapshot);
+        if (state == EvidenceState.BoundToAnotherIntegration) harness.Bindings.Bind("other:integration", snapshot);
+
         var report = await harness.Service(new DemoIntegrationTestPack()).RulesAsync(ActiveEventTestHarness.Env, "demo.parcels", null, CancellationToken.None);
-        report.SourceSnapshotId.Should().Be(newer.Id);
-        report.Limitations.Should().Contain(item => item.Contains("bound in Integration Quality Review", StringComparison.Ordinal));
+
+        report.Findings.Should().ContainSingle().Which.Outcome.Should().Be(expected);
+        if (expected == ArchitectureRuleOutcome.NotAssessed)
+            report.Findings.Should().NotContain(finding => finding.Outcome == ArchitectureRuleOutcome.Conforms || finding.Outcome == ArchitectureRuleOutcome.PotentialDeviation,
+                "an unbound or missing source never yields an assessed rule");
+        if (state is EvidenceState.UnboundOnly or EvidenceState.BoundToAnotherIntegration)
+        {
+            report.SourceSnapshotId.Should().BeNull("no snapshot was assessed");
+            report.Findings.Single().Detail.Should().Be(ArchitectureRuleEvaluator.NotBoundReason);
+            report.Limitations.Should().Contain(item => item.StartsWith("Not authoritative: source.zip", StringComparison.Ordinal), "the candidate is named for discovery only");
+        }
+        if (state is EvidenceState.Bound or EvidenceState.BoundWithoutArchitecture) report.SourceSnapshotId.Should().Be(snapshot.Id);
+    }
+
+    [Fact]
+    public async Task An_explicitly_requested_snapshot_is_assessed_only_when_it_is_the_bound_one()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(DemoIntegrationTestPack.Intake);
+        var bound = Snapshot("bound.zip", "Shop");
+        var other = Snapshot("other.zip", "Shop");
+        harness.Sources.Snapshots.AddRange([bound, other]);
+        harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, bound);
+        var service = harness.Service(new DemoIntegrationTestPack());
+
+        var unbound = await service.RulesAsync(ActiveEventTestHarness.Env, "demo.parcels", other.Id, CancellationToken.None);
+        unbound.Findings.Should().OnlyContain(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed);
+        unbound.Findings.Single().Detail.Should().Contain("other.zip is not the source evidence bound");
+        unbound.SourceSnapshotId.Should().BeNull();
+
+        var assessed = await service.RulesAsync(ActiveEventTestHarness.Env, "demo.parcels", bound.Id, CancellationToken.None);
+        assessed.Findings.Single().Outcome.Should().Be(ArchitectureRuleOutcome.Conforms);
+        assessed.SourceSnapshotId.Should().Be(bound.Id);
     }
 
     [Fact]

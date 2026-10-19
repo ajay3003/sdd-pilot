@@ -169,20 +169,32 @@ public sealed class SkoleNaervaerJourneyPackTests
     public async Task SourceAnalysisEvidence_IsReused_ForComponentsAndThePeriodClosedEventContract()
     {
         await using var harness = new IntegrationJourneyHarness();
-        harness.Sources.Snapshots.Add(new IqrSourceSnapshot
+        var snapshot = new IqrSourceSnapshot
         {
-            Archive = new("skolenaervaer.zip", new string('b', 64), 10),
+            Id = Guid.NewGuid(), Archive = new("skolenaervaer.zip", new string('b', 64), 10),
             Architecture = new ArchitectureSnapshot
             {
                 Components = [new() { Id = "c-mm", Name = "Skolenaervaer.MM.Worker" }, new() { Id = "c-rapport", Name = "Skolenaervaersrapport.Api" }],
                 MessagingChannels = [new() { Id = "ch-1", Name = "SkolenaervaersperiodeLukket", Type = MessagingChannelType.ServiceBusTopic }],
             },
-        });
-        var views = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.ToDictionary(view => view.Journey.JourneyId);
+        };
+        harness.Sources.Snapshots.Add(snapshot);
+        async Task<Dictionary<string, IntegrationJourneyView>> ViewsAsync() =>
+            (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.ToDictionary(view => view.Journey.JourneyId);
 
-        views["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Ready);
-        views["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MU").State.Should().Be(JourneyReadinessState.NotReady);
-        views["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().StartWith("Source verified");
+        // Stored but not bound: found, named, never source verified.
+        var unbound = await ViewsAsync();
+        unbound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Partial);
+        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").State.Should().Be(JourneyReadinessState.Partial);
+        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().StartWith("Not source verified").And.Contain("not bound");
+        unbound["periodeavslutning"].Maturity.SourceVerified.Should().BeFalse("an unbound snapshot never makes a journey source verified");
+
+        // Bound in IQR: the same evidence is now authoritative.
+        harness.Bindings.Bind("any-integration", snapshot);
+        var bound = await ViewsAsync();
+        bound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Ready);
+        bound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MU").State.Should().Be(JourneyReadinessState.NotReady);
+        bound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().StartWith("Source verified").And.Contain("bound in Integration Quality Review");
     }
 
     [Fact]
@@ -191,17 +203,24 @@ public sealed class SkoleNaervaerJourneyPackTests
         await using var harness = new IntegrationJourneyHarness();
         IqrSourceSnapshot Repo(string archive, char hash, params string[] components) => new()
         {
-            Archive = new(archive, new string(hash, 64), 10),
+            Id = Guid.NewGuid(), Archive = new(archive, new string(hash, 64), 10),
             Architecture = new ArchitectureSnapshot { Components = [.. components.Select((name, index) => new ArchitectureComponent { Id = $"{archive}-{index}", Name = name })] },
         };
         harness.Sources.Snapshots.Add(Repo("meldingsutveksleren.zip", 'a', "Meldingsutveksleren.Api"));
         harness.Sources.Snapshots.Add(Repo("meldingsutvekslermottak.zip", 'c', "M2LB.Meldingsutvekslermottak.Host"));
         var report = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
 
-        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Source verified: component Meldingsutveksleren.Api in snapshot meldingsutveksleren.zip (a stored snapshot not bound in Integration Quality Review).");
-        report.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().Be("Source verified: component M2LB.Meldingsutvekslermottak.Host in snapshot meldingsutvekslermottak.zip (a stored snapshot not bound in Integration Quality Review).",
-            "MM's own project name counts, and it is found in its own archive rather than only in the first snapshot with architecture");
+        report.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Not source verified: component Meldingsutveksleren.Api is in snapshot meldingsutveksleren.zip, which is not bound in Integration Quality Review → Evidence.");
+        report.Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Partial,
+            "MM's own project name counts and it is found in its own archive, but an unbound snapshot is never source verified");
         report.Prerequisites.Single(item => item.Key == "source:Skolenærværsrapport").State.Should().Be(JourneyReadinessState.NotReady, "nothing is matched by a shared word such as 'Skole'");
+
+        // Separately uploaded repositories add up once each is bound (one binding per integration).
+        harness.Bindings.Bind("integration-a", harness.Sources.Snapshots[0]);
+        harness.Bindings.Bind("integration-b", harness.Sources.Snapshots[1]);
+        var bound = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak");
+        bound.Prerequisites.Single(item => item.Key == "source:MU").Detail.Should().Be("Source verified: component Meldingsutveksleren.Api in snapshot meldingsutveksleren.zip (bound in Integration Quality Review).");
+        bound.Prerequisites.Single(item => item.Key == "source:MM").Detail.Should().Be("Source verified: component M2LB.Meldingsutvekslermottak.Host in snapshot meldingsutvekslermottak.zip (bound in Integration Quality Review).");
     }
 
     [Fact]

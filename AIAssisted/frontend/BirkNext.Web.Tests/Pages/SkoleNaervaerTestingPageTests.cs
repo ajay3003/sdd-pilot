@@ -406,9 +406,31 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             "source.zip|Inconclusive — component not found in source|Not assessed|Not source verified.",
             "source.zip|1 dependency reference in source|Potential deviation|Potential deviation.");
         page.Find("[data-testid=snt-rules-provenance]").TextContent.Should().Be("Evidence source: Source Analysis snapshot source.zip");
-        page.Find("[data-testid=snt-rules-limitations]").TextContent.Should().Contain("newest snapshot");
+        page.Find("[data-testid=snt-rules-limitations]").TextContent.Should().Contain("source structure only");
         page.Find("[data-testid=snt-rule-results]").ParentElement!.GetAttribute("role").Should().Be("region");
         page.FindAll("[data-testid=snt-person-lookup]").Should().BeEmpty("rules come from the pack's metadata, not a static list");
+    }
+
+    [Fact]
+    public void ArchitectureRules_without_a_binding_are_not_assessed_and_name_the_candidate_only_as_non_authoritative()
+    {
+        WithTarget();
+        _journeys.Rules = new ArchitectureRuleReport("skolenaervaer", null, null,
+        [
+            new("mm-no-person", "MM performs no Person lookup", "MM", "Person", ArchitectureRuleExpectation.MustNotDependOn, ArchitectureRuleOutcome.NotAssessed,
+                "Not assessed: source evidence not bound. Bind a Source Analysis snapshot to one of this pack's integrations in Integration Quality Review → Evidence.", [], ""),
+        ],
+        [
+            "Architecture rules are assessed only against the Source Analysis snapshot bound in Integration Quality Review → Evidence.",
+            "Not authoritative: newest.zip (SHA-256 abcdef012345) is a stored snapshot with architecture evidence, but it is not bound, so it was not assessed.",
+        ]);
+        var page = Open("architecture-rules");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-rule]").Should().ContainSingle());
+        page.Find("[data-testid=snt-rule]").QuerySelectorAll("td").Select(td => td.TextContent).Should().StartWith(["Not bound"]).And.Contain("Not assessed");
+        page.Find("[data-testid=snt-rules-provenance]").TextContent.Should().Contain("no Source Analysis snapshot is bound").And.NotContain("newest.zip");
+        page.Find("[data-testid=snt-rules-limitations]").TextContent.Should().Contain("Not authoritative: newest.zip");
+        page.Markup.Should().NotContain("Conforms").And.NotContain("Potential deviation");
     }
 
     // ── History ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -441,6 +463,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     {
         public IntegrationJourneyPackView Pack { get; set; } = IntegrationJourneyPanelTests.SamplePack();
         public TestPackDescriptor Descriptor { get; set; } = SkolenaervaerDescriptor();
+        public ArchitectureRuleReport? Rules { get; set; }
         public List<string> Calls { get; } = [];
         public List<IntegrationJourneyRunRequest> Started { get; } = [];
 
@@ -481,13 +504,14 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         public Task<ActiveEventApiResult<ArchitectureRuleReport>> RulesAsync(string environmentId, string packId, CancellationToken ct = default)
         {
             Calls.Add("rules");
+            if (Rules is { } rules) return Task.FromResult(new ActiveEventApiResult<ArchitectureRuleReport>(rules, null, HttpStatusCode.OK));
             return Task.FromResult(new ActiveEventApiResult<ArchitectureRuleReport>(new ArchitectureRuleReport(packId, Guid.NewGuid(), "source.zip",
             [
                 new("rapport-person", "Skolenærværsrapport owns the Person lookup", "Skolenærværsrapport", "Person", ArchitectureRuleExpectation.MustDependOn, ArchitectureRuleOutcome.NotAssessed,
                     "Not source verified.", [], "Source Analysis snapshot source.zip"),
                 new("mm-no-person", "MM performs no Person lookup", "MM", "Person", ArchitectureRuleExpectation.MustNotDependOn, ArchitectureRuleOutcome.PotentialDeviation,
                     "Potential deviation.", [new("MM/Program.cs", 42, "AddHttpClient<IPersonClient>", "Http dependency")], "Source Analysis snapshot source.zip"),
-            ], ["No integration of this pack has a source snapshot bound in Integration Quality Review → Evidence; the newest snapshot with architecture evidence is used."]), null, HttpStatusCode.OK));
+            ], ["Rules are evaluated on source structure only. They do not prove which calls happen at runtime."]), null, HttpStatusCode.OK));
         }
 
         public Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)

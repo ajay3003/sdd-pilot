@@ -556,6 +556,20 @@ public sealed class SkoleNaervaerRunResolutionTests
     [InlineData("public-metadata", JourneyPrerequisiteCategory.Contract)]
     [InlineData("process-contract", JourneyPrerequisiteCategory.Contract)]
     [InlineData("report-xsd", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("altinn-auth", JourneyPrerequisiteCategory.Authentication)]
+    [InlineData("reporter-role", JourneyPrerequisiteCategory.Authorization)]
+    [InlineData("meldingshode", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("backend-build", JourneyPrerequisiteCategory.Executor)]
+    [InlineData("executor", JourneyPrerequisiteCategory.Executor)]
+    [InlineData("observation", JourneyPrerequisiteCategory.Observation)]
+    [InlineData("source:MU", JourneyPrerequisiteCategory.SourceEvidence)]
+    [InlineData("source:MM", JourneyPrerequisiteCategory.SourceEvidence)]
+    [InlineData("source:Skolenærværsrapport", JourneyPrerequisiteCategory.SourceEvidence)]
+    [InlineData("report-verifier", JourneyPrerequisiteCategory.DownstreamVerification)]
+    [InlineData("evidence:mm-telemetry", JourneyPrerequisiteCategory.Observation)]
+    [InlineData("evidence:skole-telemetry", JourneyPrerequisiteCategory.Observation)]
+    [InlineData("evidence:skole-graphql", JourneyPrerequisiteCategory.Observation)]
+    [InlineData("contract-impact", JourneyPrerequisiteCategory.Contract)]
     public async Task EveryImplementedPrerequisite_AppearsExactlyOnce_WithItsCategoryAndASource(string key, JourneyPrerequisiteCategory category)
     {
         var view = await RapportmottakAsync(await ReadyAsync());
@@ -563,6 +577,24 @@ public sealed class SkoleNaervaerRunResolutionTests
         Row(view, key).Category.Should().Be(category);
         Row(view, key).Source.Should().NotBeNullOrWhiteSpace("every prerequisite names where it was resolved from");
         view.Prerequisites.Select(row => row.Key).Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>Every key the theory above covers individually. A new Rapportmottak prerequisite fails this test until it is covered there.</summary>
+    private static readonly string[] CoveredPrerequisites =
+    [
+        "trusted-environment", "integration:report-intake", "altinn-environment", "altinn-app", "idporten-client", "redirect-uri", "client-secret",
+        "unattended-provider", "reporter-auth", "synthetic-reporter", "reporter-profile", "test-reporter", "synthetic-data", "app-policy",
+        "submission-contract", "public-metadata", "process-contract", "report-xsd", "altinn-auth", "reporter-role", "meldingshode", "backend-build",
+        "executor", "observation", "source:MU", "source:MM", "source:Skolenærværsrapport", "report-verifier",
+        "evidence:mm-telemetry", "evidence:skole-telemetry", "evidence:skole-graphql", "contract-impact",
+    ];
+
+    [Fact]
+    public async Task EveryEmittedRapportmottakPrerequisite_IsCoveredIndividually()
+    {
+        var view = await RapportmottakAsync(await ReadyAsync());
+        view.Prerequisites.Select(row => row.Key).Should().BeEquivalentTo(CoveredPrerequisites,
+            "every implemented Rapportmottak prerequisite has its own row in the category theory; none is untested");
     }
 
     [Fact]

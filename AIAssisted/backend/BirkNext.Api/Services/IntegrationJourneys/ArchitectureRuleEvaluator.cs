@@ -71,6 +71,21 @@ public static class ArchitectureRuleEvaluator
             $"Potential deviation: no dependency of {subjectNames} on {rule.TargetLabel} was found in this snapshot. Review whether the responsibility lives elsewhere.", [], provenance);
     }
 
+    public const string NotBoundReason =
+        "Not assessed: source evidence not bound. Bind a Source Analysis snapshot to one of this pack's integrations in Integration Quality Review → Evidence.";
+
+    /// <summary>
+    /// No canonical evidence binding: every rule is Not assessed and no snapshot is evaluated. A candidate (for example the newest snapshot
+    /// with architecture evidence) is named for discovery only — explicitly non-authoritative — and can never produce a rule outcome.
+    /// </summary>
+    public static ArchitectureRuleReport NotBound(string packId, IReadOnlyList<ArchitectureResponsibilityRule> rules, IqrSourceSnapshot? candidate, string? reason = null) =>
+        new(packId, null, null, rules.Select(rule => NotAssessed(rule, reason ?? NotBoundReason, "")).ToArray(),
+        [
+            "Architecture rules are assessed only against the Source Analysis snapshot bound in Integration Quality Review → Evidence.",
+            .. candidate is null ? Array.Empty<string>()
+                : [$"Not authoritative: {candidate.Archive.FileName} (SHA-256 {Short(candidate.Archive.Sha256)}) is a stored snapshot with architecture evidence, but it is not bound, so it was not assessed."],
+        ]);
+
     private static ArchitectureRuleFinding NotAssessed(ArchitectureResponsibilityRule rule, string detail, string provenance) =>
         Finding(rule, ArchitectureRuleOutcome.NotAssessed, detail, [], provenance);
 

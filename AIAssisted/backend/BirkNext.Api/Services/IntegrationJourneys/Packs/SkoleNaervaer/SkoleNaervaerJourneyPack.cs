@@ -587,10 +587,10 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             yield return new(key, label, JourneyPrerequisiteCategory.Observation, platform is not null ? JourneyReadinessState.Ready
                     : state == MessageEvidenceProviderState.NotConfigured ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
                 platform is not null ? $"Configured: platform {platform.Id} names a telemetry source. Configured is not authorized: the backend identity's access is checked when it is read." : detail,
-                Mandatory: false, Scenarios: only);
+                Mandatory: false, Scenarios: only) { Source = TargetEnvironmentSource };
         }
         yield return new("evidence:skole-graphql", "Skoletjenesten GraphQL (coverage)", JourneyPrerequisiteCategory.Observation, JourneyReadinessState.NotAvailable,
-            "No approved GraphQL client and role (Skole:SeDekningsstatistikk / Skole:SeOppfolgingsliste) exists for BirkNext.", Mandatory: false, Scenarios: only);
+            "No approved GraphQL client and role (Skole:SeDekningsstatistikk / Skole:SeOppfolgingsliste) exists for BirkNext.", Mandatory: false, Scenarios: only) { Source = BirkNextSource };
     }
 
     /// <summary>A message verification's run record: its correlations and assertions, computed from the evidence its observer collected.</summary>
@@ -608,6 +608,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     internal const string MetadataSource = "Live Altinn metadata";
     internal const string SourceAnalysisSource = "Source Analysis";
     internal const string BirkNextSource = "BirkNext";
+    internal const string TargetEnvironmentSource = "Target Environment → Integrations";
     private static string ClientIdSource(string clientSource) => clientSource.StartsWith("Local", StringComparison.Ordinal) ? LocalSource : IqrSource;
 
     /// <summary>
@@ -694,8 +695,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     public async Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct)
     {
-        // Every snapshot counts: MU, MM, Skoletjenesten and SkoleAdapter are separate repositories, usually uploaded as separate archives. The
-        // snapshots bound in Integration Quality Review (the canonical evidence) are searched first, and the detail says which kind was used.
+        // MU, MM, Skoletjenesten and SkoleAdapter are separate repositories, usually uploaded as separate archives, so every snapshot bound in
+        // Integration Quality Review (the canonical evidence) counts. A component found only in an unbound stored snapshot is Partial — named
+        // so it can be bound, never source verified.
         var bound = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
         JourneyPrerequisite Source(string component, string[] tokens)
         {
@@ -703,10 +705,11 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item)))
                 .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
             return new JourneyPrerequisite($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence,
-                found.Component is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
+                found.Component is null ? JourneyReadinessState.NotReady : bound.Contains(found.Snapshot.Id) ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
                 found.Component is null ? $"Not source verified: {component} source is not present in Source Analysis."
-                    : $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName}"
-                      + (bound.Contains(found.Snapshot.Id) ? " (bound in Integration Quality Review)." : " (a stored snapshot not bound in Integration Quality Review).")) { Source = SourceAnalysisSource };
+                    : bound.Contains(found.Snapshot.Id) ? $"Source verified: component {found.Component.Name} in snapshot {found.Snapshot.Archive.FileName} (bound in Integration Quality Review)."
+                    : $"Not source verified: component {found.Component.Name} is in snapshot {found.Snapshot.Archive.FileName}, which is not bound in Integration Quality Review → Evidence.")
+                { Source = SourceAnalysisSource };
         }
 
         switch (journey.JourneyId)
@@ -865,16 +868,20 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
             case PeriodeavslutningId:
             {
-                var channel = context.SourceSnapshots.SelectMany(snapshot => snapshot.Architecture?.MessagingChannels ?? [])
-                    .FirstOrDefault(item => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], item.Name, item.EntityName));
+                var boundIds = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
+                var (channelSnapshot, channel) = context.SourceSnapshots.OrderBy(snapshot => boundIds.Contains(snapshot.Id) ? 0 : 1)
+                    .SelectMany(snapshot => (snapshot.Architecture?.MessagingChannels ?? []).Select(item => (Snapshot: snapshot, Channel: item)))
+                    .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], pair.Channel.Name, pair.Channel.EntityName));
+                var channelBound = channelSnapshot is not null && boundIds.Contains(channelSnapshot.Id);
                 return
                 [
                     new("domain-trigger", "Safe period-closure trigger", JourneyPrerequisiteCategory.Trigger, JourneyReadinessState.NotReady,
                         $"Operator required. {SkoleLockLifecycle} BirkNext never locks a period and never publishes the event directly."),
                     new("event-contract", $"{PeriodClosedEvent} contract", JourneyPrerequisiteCategory.Contract,
-                        channel is null ? JourneyReadinessState.NotReady : JourneyReadinessState.Ready,
+                        channel is null ? JourneyReadinessState.NotReady : channelBound ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
                         channel is null ? "Documented in the architecture diagram only; no Service Bus channel with this name is present in Source Analysis (not source verified)."
-                            : $"Source verified: Service Bus channel {channel.Name} ({channel.Type}) in Source Analysis."),
+                            : channelBound ? $"Source verified: Service Bus channel {channel.Name} ({channel.Type}) in snapshot {channelSnapshot!.Archive.FileName} (bound in Integration Quality Review)."
+                            : $"Not source verified: Service Bus channel {channel.Name} ({channel.Type}) is in snapshot {channelSnapshot!.Archive.FileName}, which is not bound in Integration Quality Review → Evidence."),
                     Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"]),
                     Source("Bufdata", ["Bufdata"]),
                     new("bufdata-verifier", "Bufdata verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,
