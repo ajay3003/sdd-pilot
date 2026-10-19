@@ -107,7 +107,11 @@ public enum TestDataSourceStatus { Available, Empty, NotConfigured, Unavailable 
 
 /// <summary>A source of test data. <see cref="Detail"/> carries provider-specific explanation that the generic page shows only on request.</summary>
 public sealed record TestDataSourceSummary(string Id, string Label, string Description, int AssetCount, int SetCount,
-    TestDataSourceStatus Status = TestDataSourceStatus.Available, string? Detail = null, string? Problem = null);
+    TestDataSourceStatus Status = TestDataSourceStatus.Available, string? Detail = null, string? Problem = null)
+{
+    /// <summary>The provider's own wording for its state (e.g. "Registered fixtures"), or null for the generic label. Never replaces Unavailable.</summary>
+    public string? StatusLabel { get; init; }
+}
 
 public sealed record TestDataCatalogView(List<TestDataAssetSummary> Assets, List<TestDataSetSummary> Sets, List<TestDataSourceSummary> Sources);
 
@@ -130,6 +134,8 @@ public sealed record TestDataRequirement
     public bool AllowEnvironmentAgnostic { get; init; } = true;
     public bool RequireValidated { get; init; }
     public bool Optional { get; init; }
+    /// <summary>Only assets from these sources (provider ids), e.g. when only that provider's executor can use the value. Empty: any source.</summary>
+    public List<string> SourceIds { get; init; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

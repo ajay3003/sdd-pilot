@@ -84,13 +84,15 @@ public static class TestDataPresentation
         : asset.Kind == TestDataKind.EntityReference ? asset.EntityType ?? "Entity"
         : asset.ExpectsAbsence ? "Expects absence" : asset.MediaType ?? "—";
 
-    public static string SourceStatusLabel(TestDataSourceSummary source) => source.Status switch
-    {
-        TestDataSourceStatus.Available => "Available",
-        TestDataSourceStatus.Empty => "Configured · 0 assets",
-        TestDataSourceStatus.NotConfigured => "Not configured",
-        _ => "Unavailable",
-    };
+    /// <summary>A source's state in its own terms, as its provider words it (a catalog is configured, approved references exist, fixtures are
+    /// registered), so "Not configured" is said only of a source that is configured; else the generic label. Unavailable is always the catalog's.</summary>
+    public static string SourceStatusLabel(TestDataSourceSummary source) => source.Status == TestDataSourceStatus.Unavailable ? "Unavailable"
+        : source.StatusLabel ?? source.Status switch
+        {
+            TestDataSourceStatus.Available => "Available",
+            TestDataSourceStatus.Empty => "Configured · 0 assets",
+            _ => "Not configured",
+        };
 
     public static string SourceTone(TestDataSourceSummary source) => source.Status switch
     {

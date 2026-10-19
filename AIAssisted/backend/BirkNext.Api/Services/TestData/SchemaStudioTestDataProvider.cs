@@ -21,6 +21,8 @@ public sealed partial class SchemaStudioTestDataProvider(Func<IReadOnlyList<stri
     private static partial Regex AliasPattern();
 
     public string Id => ProviderId;
+    public string? StatusLabel(BirkNext.TestData.TestDataSourceStatus status) =>
+        status == BirkNext.TestData.TestDataSourceStatus.Available ? "Registered fixtures" : "No registered fixtures";
     public string Label => "Schema Studio";
     public string Description => "Reusable schema-derived XML explicitly registered as Test Data from saved Schema Studio XML.";
     public string? Detail => "Only saved XML that was registered for reuse appears here; drafts, generated previews and mutations stay in Schema Studio. Values are treated as sensitive and never shown.";

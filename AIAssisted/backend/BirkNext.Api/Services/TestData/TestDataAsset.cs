@@ -75,4 +75,7 @@ public interface ITestDataProvider
     bool Configured => Assets().Count > 0 || Sets().Count > 0;
     /// <summary>Provider-specific explanation (for example which local configuration it reads), shown only as source detail.</summary>
     string? Detail => null;
+    /// <summary>The provider's own wording for a state (Available, Empty or NotConfigured), so a page never says "Not configured" of a source
+    /// that has nothing to configure. Null: the generic label. Unavailable is always the catalog's.</summary>
+    string? StatusLabel(TestDataSourceStatus status) => null;
 }

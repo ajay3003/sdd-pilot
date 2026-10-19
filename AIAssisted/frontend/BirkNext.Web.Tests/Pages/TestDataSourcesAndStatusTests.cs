@@ -26,11 +26,11 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     }
 
     private static readonly TestDataSourceSummary Configured = new("configured", "Configured catalog", "Typed assets supplied by TestData configuration.", 0, 0,
-        TestDataSourceStatus.NotConfigured, "Read from the TestData configuration section.");
+        TestDataSourceStatus.NotConfigured, "Read from the TestData configuration section.") { StatusLabel = "Not configured" };
     private static readonly TestDataSourceSummary Local = new("altinn-local", "Local approved configuration", "Approved local test references supplied by environment or test configuration.", 0, 0,
-        TestDataSourceStatus.NotConfigured, "Currently includes approved synthetic TestID reporters and synthetic persons.");
+        TestDataSourceStatus.NotConfigured, "Currently includes approved synthetic TestID reporters and synthetic persons.") { StatusLabel = "No approved assets" };
     private static readonly TestDataSourceSummary Studio = new("schema-studio", "Schema Studio", "Reusable schema-derived XML explicitly registered as Test Data.", 0, 0,
-        TestDataSourceStatus.NotConfigured, "Only saved XML that was registered for reuse appears here.");
+        TestDataSourceStatus.NotConfigured, "Only saved XML that was registered for reuse appears here.") { StatusLabel = "No registered fixtures" };
 
     private static TestDataAssetSummary Xml(string alias, TestDataApproval approval, TestDataSchemaStatus? schema, bool negative = false, string source = "Schema Studio", string sourceId = "schema-studio") => new()
     {
@@ -54,7 +54,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         new() { Id = "configured:no-record", Alias = "no-record", Kind = TestDataKind.ExpectedResult, ExpectsAbsence = true, Approval = TestDataApproval.Approved, Validation = TestDataValidation.Unknown,
             Sensitivity = TestDataSensitivity.Internal, Source = "Configured catalog", SourceId = "configured", Environment = "QA", Provenance = [new("Configuration", "TestData:Assets")] },
     ], [],
-    [Configured with { AssetCount = 2, Status = TestDataSourceStatus.Available }, Local, Studio with { AssetCount = 3, Status = TestDataSourceStatus.Available }]);
+    [Configured with { AssetCount = 2, Status = TestDataSourceStatus.Available, StatusLabel = "Configured catalog" }, Local, Studio with { AssetCount = 3, Status = TestDataSourceStatus.Available, StatusLabel = "Registered fixtures" }]);
 
     private IRenderedComponent<TestDataPage> Page(TestDataCatalogView catalog)
     {
@@ -83,17 +83,17 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         page.Find("[data-testid=td-empty-schema-studio]").GetAttribute("href").Should().Be("schema-studio");
         page.FindAll("[data-testid=td-filters]").Should().BeEmpty("filters are useless without assets");
         page.FindAll("[data-testid=td-assets]").Should().BeEmpty();
-        page.Find("[data-testid=td-safety]").TextContent.Should().Contain("Sensitive values are never displayed in the UI");
+        page.Find("[data-testid=td-safety]").TextContent.Should().Contain("Sensitive values are never displayed");
     }
 
     [Fact]
     public void ConfiguredButEmpty_IsNotTheSameMessage_AsNothingConfigured()
     {
-        var page = Page(new([], [], [Configured with { Status = TestDataSourceStatus.Empty }, Local]));
+        var page = Page(new([], [], [Configured with { Status = TestDataSourceStatus.Empty, StatusLabel = "Configured catalog · 0 assets" }, Local]));
         page.Find("[data-testid=td-empty]").GetAttribute("data-kind").Should().Be("ConfiguredButEmpty");
         page.Find("[data-testid=td-empty] h2").TextContent.Should().Be("Configured sources contain no assets yet");
         page.FindAll("[data-testid=td-empty-schema-studio]").Should().BeEmpty("no Schema Studio source, so no Schema Studio action");
-        page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-status]").TextContent.Should().Contain("Configured · 0 assets");
+        page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-status]").TextContent.Should().Contain("Configured catalog · 0 assets");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     {
         var page = Page(new([Xml("valid-report", TestDataApproval.Approved, TestDataSchemaStatus.Validated)], [],
             [Configured with { Status = TestDataSourceStatus.Unavailable, Problem = "This source could not be read (IOException). Other sources are unaffected." },
-             Studio with { AssetCount = 1, Status = TestDataSourceStatus.Available }]));
+             Studio with { AssetCount = 1, Status = TestDataSourceStatus.Available, StatusLabel = "Registered fixtures" }]));
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-problem]").TextContent.Should().Contain("Source unavailable").And.Contain("Other sources are unaffected");
         page.Find("[data-testid=td-source][data-source=configured]").GetAttribute("data-status").Should().Be("Unavailable");
         page.FindAll("[data-testid=td-asset]").Should().ContainSingle();
@@ -116,7 +116,8 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         var cards = page.FindAll("[data-testid=td-source]");
         cards.Select(c => c.GetAttribute("data-source")).Should().Equal("configured", "altinn-local", "schema-studio");
         cards.Select(c => c.QuerySelector("[data-testid=td-source-count]")!.TextContent).Should().Equal("2 assets", "0 assets", "3 assets");
-        cards.Select(c => c.QuerySelector("[data-testid=td-source-status]")!.TextContent).Should().Equal("Status: Available", "Status: Not configured", "Status: Available");
+        cards.Select(c => c.QuerySelector("[data-testid=td-source-status]")!.TextContent).Should().Equal(["Status: Configured catalog", "Status: No approved assets", "Status: Registered fixtures"],
+            "each source states its own truth; Not configured is never used mechanically");
         page.FindAll("[data-testid=td-source-count]").Sum(c => int.Parse(c.TextContent.Split(' ')[0])).Should().Be(page.FindAll("[data-testid=td-asset]").Count, "source counts reconcile with the assets");
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-action]").GetAttribute("href").Should().Be("user-guide#test-data");
         page.Find("[data-testid=td-source][data-source=schema-studio] [data-testid=td-source-action]").TextContent.Should().Be("Open Schema Studio");

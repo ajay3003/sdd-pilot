@@ -6,12 +6,13 @@ namespace BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 
 /// <summary>
 /// Skolenærvær's test-data profile: the roles a report run needs (a reporter and a synthetic child), expressed as generic
-/// <see cref="TestDataRequirement"/>s and resolved by the generic <see cref="TestDataResolver"/> over the Test Data catalog. This class holds
+/// <see cref="TestDataRequirement"/>s and resolved by the generic <see cref="TestDataResolver"/> over the shared Test Data catalog (the one
+/// reusable catalog; the requirements name the only source whose assets the Altinn executor can use). This class holds
 /// no matching logic and no storage: a value is resolved automatically only when the choice is deterministic (exactly one qualifying asset,
 /// or exactly one default); otherwise the tester chooses. Nothing is generated. Identifiers stay in the backend; callers get aliases, except
 /// the run's own form builder.
 /// </summary>
-public sealed class SkoleNaervaerTestData(AltinnTestingOptions options)
+public sealed class SkoleNaervaerTestData(AltinnTestingOptions options, TestDataCatalog? shared = null)
 {
     /// <summary>The provenance shown for values resolved here.</summary>
     public const string Source = "Test Data";
@@ -19,13 +20,16 @@ public sealed class SkoleNaervaerTestData(AltinnTestingOptions options)
     public const string ChildRole = "Child";
 
     private readonly AltinnTestDataProvider _provider = new(options);
-    private TestDataCatalog Catalog => new([_provider]);
+    /// <summary>The shared catalog when the host provides it; a unit without the host reads the same provider directly (same candidates).</summary>
+    private TestDataCatalog Catalog => shared ?? new([_provider]);
+    /// <summary>The source whose assets the Altinn run can use (its identifiers stay in this backend's local configuration).</summary>
+    public const string AltinnSourceId = "altinn-local";
 
     /// <summary>An approved synthetic TestID reporter for TT02 whose Altinn profile is confirmed.</summary>
     public static TestDataRequirement Reporter => new()
     {
         Role = ReporterRole, Kind = TestDataKind.EntityReference, EntityType = "person", Capabilities = [AltinnTestDataProvider.Reporter],
-        Environment = "TT02", AllowEnvironmentAgnostic = false, RequireValidated = true,
+        Environment = "TT02", AllowEnvironmentAgnostic = false, RequireValidated = true, SourceIds = [AltinnSourceId],
     };
 
     /// <summary>An approved synthetic child, declared known (or unknown) to Person.</summary>
@@ -33,7 +37,7 @@ public sealed class SkoleNaervaerTestData(AltinnTestingOptions options)
     {
         Role = ChildRole, Kind = TestDataKind.EntityReference, EntityType = "person",
         Capabilities = ["synthetic", AltinnTestDataProvider.Child, knownToPerson ? AltinnTestDataProvider.KnownToPerson : AltinnTestDataProvider.UnknownToPerson],
-        Environment = "TT02", AllowEnvironmentAgnostic = true,
+        Environment = "TT02", AllowEnvironmentAgnostic = true, SourceIds = [AltinnSourceId],
     };
 
     /// <summary>The reporter and the child are different persons (compared in the backend).</summary>

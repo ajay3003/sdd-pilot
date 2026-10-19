@@ -12,7 +12,7 @@
 <div class="td-page" data-testid="td-page" aria-busy="@(_loading ? "true" : "false")">
     <PageHeader Title="Test Data" Description="Reusable approved test data for test execution and verification." />
     <p class="td-lead" data-testid="td-lead">Values, payloads, files, entity references, data sets and expected results come from configured sources.</p>
-    <p class="td-safety" role="note" data-testid="td-safety"><span aria-hidden="true">🔒</span> Sensitive values are never displayed in the UI. They stay in the backend and are used only when a test runs.</p>
+    <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs.</p>
 
     @if (_loading)
     {

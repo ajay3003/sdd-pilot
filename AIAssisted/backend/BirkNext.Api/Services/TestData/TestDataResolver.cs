@@ -79,6 +79,7 @@ public static class TestDataResolver
     public static string? Exclusion(TestDataAsset asset, TestDataRequirement requirement, DateTimeOffset now)
     {
         if (asset.Kind != requirement.Kind) return $"is {asset.Kind}, not {requirement.Kind}";
+        if (requirement.SourceIds.Count > 0 && !requirement.SourceIds.Contains(asset.SourceId, StringComparer.Ordinal)) return $"comes from source {asset.SourceId}, not {string.Join(" or ", requirement.SourceIds)}";
         if (requirement.ValueType is { } type && asset.ValueType != type) return $"is {asset.ValueType}, not {type}";
         if (requirement.MediaType is { } media && TestDataValidator.MediaType(asset.MediaType) != TestDataValidator.MediaType(media)) return $"is {asset.MediaType ?? "untyped"}, not {media}";
         if (requirement.EntityType is { } entity && !string.Equals(asset.EntityType, entity, StringComparison.OrdinalIgnoreCase)) return $"refers to {asset.EntityType ?? "nothing declared"}, not {entity}";

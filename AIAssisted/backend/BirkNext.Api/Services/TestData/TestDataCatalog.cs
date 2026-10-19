@@ -68,11 +68,16 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
                 Id = set.Id, Alias = set.Alias, Label = set.Label, Environment = set.Environment, Approval = set.Approval, Capabilities = set.Capabilities,
                 Bindings = [.. set.Bindings.OrderBy(binding => binding.Key, StringComparer.Ordinal).Select(binding => new TestDataRoleBinding(binding.Key, binding.Value))], Source = set.Source,
             })],
-            [.. reads.Select(read => new TestDataSourceSummary(read.Provider.Id, read.Provider.Label, read.Provider.Description, read.Assets.Count, read.Sets.Count,
-                read.Problem is not null ? TestDataSourceStatus.Unavailable
-                : read.Assets.Count + read.Sets.Count > 0 ? TestDataSourceStatus.Available
-                : read.Configured ? TestDataSourceStatus.Empty : TestDataSourceStatus.NotConfigured,
-                read.Provider.Detail, read.Problem))]);
+            [.. reads.Select(read =>
+            {
+                var status = read.Problem is not null ? TestDataSourceStatus.Unavailable
+                    : read.Assets.Count + read.Sets.Count > 0 ? TestDataSourceStatus.Available
+                    : read.Configured ? TestDataSourceStatus.Empty : TestDataSourceStatus.NotConfigured;
+                return new TestDataSourceSummary(read.Provider.Id, read.Provider.Label, read.Provider.Description, read.Assets.Count, read.Sets.Count, status, read.Provider.Detail, read.Problem)
+                {
+                    StatusLabel = status == TestDataSourceStatus.Unavailable ? null : read.Provider.StatusLabel(status),
+                };
+            })]);
     }
 
     public TestDataAssetDetail? Detail(string id)

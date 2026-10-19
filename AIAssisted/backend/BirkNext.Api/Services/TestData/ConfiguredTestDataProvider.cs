@@ -67,6 +67,12 @@ public sealed class ConfiguredTestDataProvider(TestDataOptions options, string c
 {
     private const long MaxFileBytes = 1024 * 1024;
     public string Id => "configured";
+    public string? StatusLabel(BirkNext.TestData.TestDataSourceStatus status) => status switch
+    {
+        BirkNext.TestData.TestDataSourceStatus.Available => "Configured catalog",
+        BirkNext.TestData.TestDataSourceStatus.Empty => "Configured catalog · 0 assets",
+        _ => "Not configured",
+    };
     public string Label => "Configured catalog";
     public string Description => "Typed values, payloads, files, expected results and data sets declared in the TestData configuration section.";
     public string? Detail => $"Read from the TestData configuration section; files only from the {options.Root} folder (at most 1 MB each). Nothing is fetched or generated.";

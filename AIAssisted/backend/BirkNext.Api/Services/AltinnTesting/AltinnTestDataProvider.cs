@@ -23,6 +23,7 @@ public sealed partial class AltinnTestDataProvider(AltinnTestingOptions options)
     private static partial Regex AliasPattern();
 
     public string Id => "altinn-local";
+    public string? StatusLabel(TestDataSourceStatus status) => status == TestDataSourceStatus.Available ? "Approved local references" : "No approved assets";
     public string Label => SourceLabel;
     public string Description => "Approved local test references supplied by environment or test configuration. Identifiers are never shown.";
     public string? Detail => "Currently includes approved synthetic TestID reporters (AltinnTesting:UnattendedIdPortenTest:Reporters) and synthetic persons (AltinnTesting:SyntheticChildren) from the local Altinn testing configuration, set as process-scope environment variables.";
