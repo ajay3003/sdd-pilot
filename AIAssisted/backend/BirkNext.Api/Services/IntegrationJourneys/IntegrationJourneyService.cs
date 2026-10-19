@@ -12,6 +12,9 @@ public interface IIntegrationJourneyService
 {
     Task<IReadOnlyList<IntegrationJourneyPackView>> PacksAsync(string environmentId, CancellationToken ct);
     Task<ArchitectureRuleReport> RulesAsync(string environmentId, string packId, Guid? snapshotId, CancellationToken ct);
+    /// <summary>Per configuration requirement of the pack: what its IQR-bound source declares (suggested, conflict, available but not bound).</summary>
+    Task<TestPackSourceGuidance> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct) =>
+        Task.FromResult(new TestPackSourceGuidance(packId, []));
     IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog();
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
@@ -93,6 +96,21 @@ public sealed class IntegrationJourneyService(
         var bound = boundSnapshots.FirstOrDefault(snapshot => snapshot.Architecture is not null) ?? boundSnapshots.FirstOrDefault();
         return bound is not null ? ArchitectureRuleEvaluator.Evaluate(pack.PackId, pack.Rules, bound)
             : ArchitectureRuleEvaluator.NotBound(pack.PackId, pack.Rules, context.SourceSnapshots.FirstOrDefault(item => item.Architecture is not null));
+    }
+
+    public async Task<TestPackSourceGuidance> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct)
+    {
+        var pack = packs.Find(packId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
+        if (pack.RequiredConfiguration.Count == 0) return new TestPackSourceGuidance(pack.PackId, []);
+        if (!sources.SourceAnalysisEnabled)
+            return new TestPackSourceGuidance(pack.PackId, []) { Limitations = [ReviewSourceEvidenceProvider.Disabled] };
+        var context = await ContextAsync(environmentId, ct);
+        var configured = await pack.ConfiguredValuesAsync(context, ct);
+        return new TestPackSourceGuidance(pack.PackId, SourceAnalysis.SourceConfigurationGuidance.Suggest(pack.RequiredConfiguration, BoundSnapshots(pack, context), context.SourceSnapshots, configured))
+        {
+            Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
+                "Declared in source is not runtime verified."],
+        };
     }
 
     /// <summary>The IQR-bound snapshots of the configured integrations that fulfil this pack's requirements, in requirement order.</summary>

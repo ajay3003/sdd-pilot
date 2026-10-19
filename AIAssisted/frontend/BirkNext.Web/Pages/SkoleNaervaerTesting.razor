@@ -47,6 +47,17 @@
                 <div><dt>Source evidence</dt><dd data-testid="snt-source">@_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
             </dl>
 
+            @if (_guidance is { Suggestions.Count: > 0 } guidance)
+            {
+                <section class="snt-source-requirements" aria-labelledby="snt-source-requirements-heading" data-testid="snt-source-requirements">
+                    <h3 class="snt-subheading" id="snt-source-requirements-heading">Source requirements</h3>
+                    <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(guidance) Runtime: not verified by source.</p>
+                    <ReviewDisclosure Text="@($"View {guidance.Suggestions.Count} source values")" CollapseText="Hide source values" TestId="snt-source-values" Class="disclosure-inline">
+                        <SourceGuidanceList Suggestions="guidance.Suggestions" Compact="true" TestId="snt-source-guidance" Label="Source requirements" />
+                    </ReviewDisclosure>
+                </section>
+            }
+
             <h3 class="snt-subheading" id="snt-journeys-heading">Journeys</h3>
             @if (_initialized && _profile is null)
             {
@@ -234,6 +245,16 @@
     private readonly CancellationTokenSource _disposed = new();
     private FrontendAnalysisProfile? _profile;
     private string _sourceSummary = "Not available";
+    private TestPackSourceGuidance? _guidance;
+
+    /// <summary>"6 values: 4 suggested from bound source · 1 conflict …" — every state in words.</summary>
+    private static string GuidanceSummary(TestPackSourceGuidance guidance)
+    {
+        var parts = guidance.Suggestions.GroupBy(item => item.State).OrderBy(group => group.Key)
+            .Select(group => $"{group.Count()} {SourceGuidancePresentation.StateLabel(group.Key).ToLowerInvariant()}");
+        var configured = guidance.Suggestions.Count(item => item.ConfiguredValue is not null);
+        return $"{guidance.Suggestions.Count} values: {string.Join(" · ", parts)} · {configured} configured.";
+    }
     private IntegrationJourneyPackView? _pack;
     private TestPackDescriptor? _descriptor;
     private ArchitectureRuleReport? _rules;
@@ -375,9 +396,17 @@
                         @foreach (var item in items)
                         {
                             var action = SkoleNaervaerReadinessPresentation.ActionFor(item, _profile?.Id);
+                            var guidance = SourceGuidancePresentation.For(_guidance, item.Key);
                             <li data-key="@item.Key" data-category="@item.Category" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">✗</span>
                                 <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source" data-testid="snt-source-badge"><span class="visually-hidden">Source: </span>@TestPackPresentation.Source(item)</span>
+                                    <span class="snt-kind" data-testid="snt-kind"><span class="visually-hidden">Needs: </span>@SourceGuidancePresentation.RequirementKind(item, guidance.Count > 0)</span>
                                     <span class="snt-muted snt-row-detail">@item.Detail</span>
+                                    @if (guidance.Count > 0)
+                                    {
+                                        <ReviewDisclosure Text="Source guidance" CollapseText="Hide source guidance" TestId="snt-blocker-guidance" Class="disclosure-inline">
+                                            <SourceGuidanceList Suggestions="guidance" TestId="snt-blocker-guidance-list" Label="@($"Source guidance for {item.Label}")" />
+                                        </ReviewDisclosure>
+                                    }
                                     @if (action.Href is { } href) { <a class="snt-blocker-action" href="@href">@action.Label</a> }
                                     else if (action.Group is { } detailGroup) { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(detailGroup)">@action.Label</button> }</span></li>
                         }
@@ -521,6 +550,8 @@
         if (journeysApi is not null)
         {
             try { _pack = (await journeysApi.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+            try { if (journeysApi.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token) is { } guidance) _guidance = (await guidance)?.Value; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
         }
         try

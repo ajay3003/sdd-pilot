@@ -35,6 +35,15 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
 
     /// <summary>Every registered test pack, described generically from its own metadata (journeys, verification views, rules, required
     /// capabilities, history, navigation). Configuration metadata only; no environment is needed.</summary>
+    /// <summary>The pack's source guidance: configuration values its IQR-bound source declares. Read-only; nothing is applied.</summary>
+    [AllowAnonymous]
+    [HttpGet("packs/{packId}/source-guidance")]
+    public async Task<ActionResult<TestPackSourceGuidance>> SourceGuidance(string packId, [FromQuery] string environmentId, CancellationToken ct)
+    {
+        try { return Ok(await journeys.SourceGuidanceAsync(environmentId ?? "", packId, ct)); }
+        catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [AllowAnonymous]
     [HttpGet("test-packs")]
     public ActionResult<IReadOnlyList<TestPackDescriptor>> TestPacks([FromServices] IIntegrationJourneyPackRegistry registry) =>

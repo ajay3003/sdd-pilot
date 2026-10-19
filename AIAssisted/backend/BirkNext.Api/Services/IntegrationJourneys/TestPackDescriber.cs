@@ -38,6 +38,7 @@ public static class TestPackDescriber
             PackId = pack.PackId, PackVersion = pack.PackVersion, DisplayName = pack.DisplayName, Description = pack.Description,
             Journeys = journeys, VerificationViews = verification, RuleIds = pack.Rules.Select(rule => rule.RuleId).ToList(),
             RequiredIntegrationCapabilities = integrations, RequiredEvidenceCapabilities = pack.RequiredEvidenceCapabilities, RequiredTestDataCapabilities = pack.RequiredTestDataCapabilities,
+            RequiredConfiguration = pack.RequiredConfiguration,
             ExecutionProviders = journeys.Select(journey => journey.ExecutionProvider ?? "Shared journey runner").Distinct(StringComparer.Ordinal).ToList(),
             SupportsHistory = pack.SupportsHistory, Navigation = navigation,
         };

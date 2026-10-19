@@ -356,6 +356,12 @@ public sealed record TestPackNavigationGroup(string Label, IReadOnlyList<TestPac
 /// <summary>A capability the pack needs from a shared owner (Integration Quality Review, Source Analysis, Test Data). Declared, never satisfied here.</summary>
 public sealed record TestPackCapabilityRequirement(string Key, string Label, string Owner, string Detail = "");
 
+/// <summary>The source guidance of one pack in one environment: per declared configuration requirement, what the IQR-bound source declares.</summary>
+public sealed record TestPackSourceGuidance(string PackId, IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> Suggestions)
+{
+    public IReadOnlyList<string> Limitations { get; init; } = [];
+}
+
 /// <summary>One journey as the pack declares it: its flow (component chain from the declared steps) and who executes it.</summary>
 public sealed record TestPackJourney(string JourneyId, string DisplayName, string Flow, JourneyExecutionMode ExecutionMode, string? ExecutionProvider);
 
@@ -371,6 +377,7 @@ public sealed record TestPackDescriptor
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredIntegrationCapabilities { get; init; } = [];
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities { get; init; } = [];
     public IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities { get; init; } = [];
+    public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration { get; init; } = [];
     public IReadOnlyList<string> ExecutionProviders { get; init; } = [];
     public bool SupportsHistory { get; init; }
     public IReadOnlyList<TestPackNavigationGroup> Navigation { get; init; } = [];

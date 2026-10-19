@@ -632,4 +632,88 @@ public sealed class SkoleNaervaerRunResolutionTests
         mismatch.State.Should().Be(JourneyReadinessState.NotReady);
         mismatch.Detail.Should().StartWith("Review required").And.Contain("nothing was reassigned automatically");
     }
+
+    // ── Source guidance from the app's OpenAPI document (read-only fixture) ─────────────────────────────────────────────────
+
+    private static IqrSourceSnapshot? FixtureSnapshot()
+    {
+        if (BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.OpenApiConfigurationEvidenceTests.Fixture() is not { } text) return null;
+        return new IqrSourceSnapshot
+        {
+            Id = Guid.NewGuid(), Archive = new("skolenaervaer-app.zip", new string('e', 64), 1), AnalyzedAt = DateTimeOffset.UtcNow,
+            EvidenceDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(("skolenaervaer.json", text)),
+        };
+    }
+
+    private static async Task<IReadOnlyDictionary<string, BirkNext.SourceDomains.SourceConfigurationSuggestion>> GuidanceAsync(Bed bed) =>
+        (await Service(bed).SourceGuidanceAsync(Env, SkoleNaervaerJourneyPack.Id, default)).Suggestions.ToDictionary(item => item.Requirement.Key);
+
+    [Fact]
+    [Trait("Category", "LocalFixture")]
+    public async Task BoundOpenApi_SuggestsTheAltinnValues_WithProvenance_AndNeverConfiguresOrVerifiesThem()
+    {
+        if (FixtureSnapshot() is not { } snapshot) return;
+        var bed = await ReadyAsync();
+        bed.Harness.Sources.Snapshots.Add(snapshot);
+        bed.Harness.Bindings.Bind(ReportIntake, snapshot);
+        var before = bed.Harness.MessageFlows.Configuration;
+        var readinessBefore = (await RapportmottakAsync(bed)).Prerequisites.Select(row => (row.Key, row.State)).ToArray();
+
+        var guidance = await GuidanceAsync(bed);
+        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && !item.RuntimeVerified);
+        guidance["altinn-app-route"].Value.Should().Be("buf/skolenaervaer");
+        guidance["altinn-test-server"].Value.Should().Be("https://buf.apps.tt02.altinn.no");
+        guidance["altinn-form-data-type"].Value.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
+        guidance["altinn-content-type"].Value.Should().Be("application/xml");
+        guidance["altinn-process-task"].Value.Should().Be("Task_1");
+        guidance["altinn-auth-scheme"].Value.Should().Be("Bearer JWT");
+        guidance["altinn-test-server"].Candidates.Single().Provenance.Single().Location.Should().Be("servers[1]");
+        guidance.Values.Should().OnlyContain(item => item.BoundSources.SequenceEqual(new[] { "skolenaervaer-app.zip" }), "provenance names the bound snapshot");
+        guidance["altinn-process-task"].Requirement.EvidenceType.Should().Be("OpenAPI / Swagger document", "no process.bpmn is required for the task");
+
+        // Configured next to suggested — and nothing was written or changed by reading guidance.
+        guidance["altinn-app-route"].ConfiguredValue.Should().Be(before.AppIdentifier);
+        guidance["altinn-test-server"].ConfiguredValue.Should().Be("https://buf.apps.tt02.altinn.no", "the backend's test host for the configured app agrees with the source");
+        bed.Harness.MessageFlows.Configuration.Should().Be(before, "a suggestion is never applied");
+        (await RapportmottakAsync(bed)).Prerequisites.Select(row => (row.Key, row.State)).Should().Equal(readinessBefore, "declared values never change readiness by themselves");
+    }
+
+    [Fact]
+    [Trait("Category", "LocalFixture")]
+    public async Task UnboundOpenApi_IsAvailableButNotBound_AndOffersNoValue()
+    {
+        if (FixtureSnapshot() is not { } snapshot) return;
+        var bed = await ReadyAsync();
+        bed.Harness.Sources.Snapshots.Add(snapshot);
+        var guidance = await GuidanceAsync(bed);
+        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound && item.Value == null && item.Candidates.Count == 0);
+        guidance["altinn-test-server"].UnboundSources.Should().Equal("skolenaervaer-app.zip");
+        guidance["altinn-test-server"].Detail.Should().Contain("not bound in Integration Quality Review").And.Contain("not source verified");
+    }
+
+    [Fact]
+    [Trait("Category", "LocalFixture")]
+    public async Task AnExplicitlyConfiguredValue_IsShownNextToADifferentSuggestion_AndNeverOverwritten()
+    {
+        if (FixtureSnapshot() is not { } snapshot) return;
+        var bed = await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { AppIdentifier = "buf/another-app" }, liveContract: false);
+        bed.Harness.Sources.Snapshots.Add(snapshot);
+        bed.Harness.Bindings.Bind(ReportIntake, snapshot);
+        var route = (await GuidanceAsync(bed))["altinn-app-route"];
+        route.ConfiguredValue.Should().Be("buf/another-app");
+        route.Value.Should().Be("buf/skolenaervaer");
+        route.ConfiguredDiffers.Should().BeTrue();
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().Be("buf/another-app", "explicit configuration wins and is never silently replaced");
+    }
+
+    [Fact]
+    public async Task WithoutAnySource_TheGuidanceNamesTheExpectedEvidenceType_NotAFile()
+    {
+        var bed = await ReadyAsync();
+        var guidance = await GuidanceAsync(bed);
+        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.NotDeclared
+            && item.Detail.Contains("OpenAPI / Swagger document", StringComparison.Ordinal) && item.Detail.Contains("Altinn Skolenærvær app", StringComparison.Ordinal));
+        guidance.Values.Should().NotContain(item => item.Detail.Contains("process.bpmn", StringComparison.Ordinal) || item.Detail.Contains("skolenaervaer.json", StringComparison.Ordinal),
+            "a requirement names the evidence type, never a particular file");
+    }
 }

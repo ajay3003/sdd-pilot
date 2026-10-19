@@ -86,6 +86,38 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new(SkoleNaervaerTestData.ChildRole, "Approved synthetic identity", "Test Data", "An approved synthetic person declared known or unknown to Person; never a real identity."),
     ];
 
+    private const string AltinnAppSource = "Altinn Skolenærvær app";
+    private const string ApiDocument = "OpenAPI / Swagger document";
+
+    /// <summary>The Altinn values Rapportmottak needs, by generic semantic key: any artifact an analyzer reads may provide them (the app's
+    /// OpenAPI document provides all of them; no process.bpmn or applicationmetadata.json is required for these values).</summary>
+    public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration { get; } =
+    [
+        new("altinn-app-route", "Altinn app (org/app)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, AltinnAppSource, ApiDocument,
+            "Which app Rapportmottak submits to.", "Integration Quality Review → Extensions → Altinn") { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier" },
+        new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, ApiDocument,
+            "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment" },
+        new("altinn-form-data-type", "Form data type", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType, AltinnAppSource, ApiDocument,
+            "The data element the report is written to.", "Altinn app contract") { PrerequisiteKey = "submission-contract" },
+        new("altinn-content-type", "Form content type", BirkNext.SourceDomains.SourceConfigurationKeys.PayloadContentType, AltinnAppSource, ApiDocument,
+            "How the report payload is sent.", "Altinn app contract") { PrerequisiteKey = "submission-contract" },
+        new("altinn-process-task", "Process task", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationTaskId, AltinnAppSource, ApiDocument,
+            "The task the form belongs to before process/next.", "Altinn app contract") { PrerequisiteKey = "process-contract" },
+        new("altinn-auth-scheme", "Authentication scheme", BirkNext.SourceDomains.SourceConfigurationKeys.AuthenticationScheme, AltinnAppSource, ApiDocument,
+            "How callers authenticate. The QA client's registration, redirect URI and scopes are not in the document and are not verified by it.", "Local execution config")
+            { PrerequisiteKey = "idporten-client" },
+    ];
+
+    /// <summary>What is stored for the requirements: the app identifier (IQR → Extensions → Altinn) and the backend's test host for that app.</summary>
+    public async Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct)
+    {
+        var appIdentifier = (await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration?.AppIdentifier;
+        var values = new Dictionary<string, string?> { ["altinn-app-route"] = string.IsNullOrWhiteSpace(appIdentifier) ? null : appIdentifier };
+        if (altinnPolicy.ApprovedApp(appIdentifier, out _) is { } app)
+            values["altinn-test-server"] = altinnPolicy.Endpoints.AppBase(app.Org, app.App).GetLeftPart(UriPartial.Authority);
+        return values;
+    }
+
     /// <summary>The canonical source-evidence binding of the configured integration that fulfils this journey's report-intake requirement.</summary>
     private IntegrationEvidenceBinding? ReportIntakeBinding(IntegrationJourneyDefinition journey, JourneyPackContext context) =>
         journey.Integrations.Where(requirement => requirement.Key == ReportIntake)

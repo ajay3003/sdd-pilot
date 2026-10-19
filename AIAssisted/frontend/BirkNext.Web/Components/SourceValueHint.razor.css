@@ -1,0 +1,6 @@
+.svh { grid-column: 1 / -1; margin: -.15rem 0 .35rem; font-size: .82rem; min-width: 0; overflow-wrap: anywhere; }
+.svh-text { margin: .15rem 0; }
+.svh-label { font-weight: 600; color: #1e3a8a; }
+.svh-muted { color: #475467; }
+.svh code { word-break: break-all; }
+.svh-use { min-height: 28px; }

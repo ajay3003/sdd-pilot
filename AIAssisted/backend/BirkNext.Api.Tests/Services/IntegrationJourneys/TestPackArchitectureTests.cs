@@ -51,6 +51,10 @@ public sealed class TestPackArchitectureTests
 
         public IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities { get; } = [new("Recipient", "Synthetic recipient", "Test Data")];
 
+        public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration { get; } =
+            [new("parcel-test-server", "Parcel API test server", "Environment.Server.Test", "Parcel API", "OpenAPI / Swagger document", "Where bookings are sent in test.", "Demo settings")
+                { ConfigurationKeys = ["parcels:baseurl"] }];
+
         public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key == "intake" && integration.Id == IntakeId;
 
         public Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct) =>
@@ -131,6 +135,9 @@ public sealed class TestPackArchitectureTests
             Path.Combine(api, "Services", "IntegrationJourneys", "IntegrationJourneyContracts.cs"),
             Path.Combine(api, "Services", "Integrations", "SourceEvidence", "IntegrationEvidenceBindingStore.cs"),
             Path.Combine(api, "Controllers", "IntegrationEvidenceBindingsController.cs"),
+            Path.Combine(api, "Services", "SourceAnalysis", "Evidence", "OpenApiConfigurationReader.cs"),
+            Path.Combine(api, "Services", "SourceAnalysis", "Evidence", "SourceConfigurationValueCollector.cs"),
+            Path.Combine(api, "Services", "SourceAnalysis", "SourceConfigurationGuidance.cs"),
         };
         foreach (var file in files)
         {
@@ -139,7 +146,7 @@ public sealed class TestPackArchitectureTests
                 .Should().BeFalse($"{Path.GetFileName(file)} is generic test-pack/evidence code");
         }
         // The shared descriptor and binding contracts: only code is checked (comments may cite examples).
-        foreach (var file in new[] { Path.Combine(shared, "IntegrationJourneyContracts.cs"), Path.Combine(shared, "IqrSourceContracts.cs") })
+        foreach (var file in new[] { Path.Combine(shared, "IntegrationJourneyContracts.cs"), Path.Combine(shared, "IqrSourceContracts.cs"), Path.Combine(shared, "SourceConfigurationValueContracts.cs") })
         {
             var code = string.Join('\n', File.ReadAllLines(file).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
             Regex.IsMatch(code, @"Skole|Rapportmottak|Periodeavslutning|Utdanning|Altinn|TT02|M2LB", RegexOptions.IgnoreCase).Should().BeFalse($"{Path.GetFileName(file)} code is generic");
@@ -257,5 +264,76 @@ public sealed class TestPackArchitectureTests
         binding.Should().BeEquivalentTo(new { EnvironmentId = "env", IntegrationId = "integration", SnapshotId = snapshot.Id, Fingerprint = snapshot.Archive.Sha256,
             ArchiveName = "source.zip", AnalyzedAt = snapshot.AnalyzedAt, ImportId = "import-1" });
         binding.Selection.Should().Be(new IqrSourceSelection("integration", snapshot.Id));
+    }
+
+    // ── Source configuration guidance (generic: the demo pack, no Skolenærvær) ──────────────────────────────────────────
+
+    private const string ParcelApi = """
+        { "openapi": "3.0.1", "info": { "title": "Parcel API", "version": "1" },
+          "servers": [ { "url": "https://parcels.test.example.invalid", "description": "Test" } ],
+          "paths": { "/shop/parcels/bookings": { "post": { "responses": {} } }, "/shop/parcels/bookings/{id}": { "get": { "responses": {} } } } }
+        """;
+
+    private static IqrSourceSnapshot Analyzed(string archive, params (string Path, string Content)[] files) => new()
+    {
+        Id = Guid.NewGuid(), Archive = new(archive, new string('f', 64), 1), AnalyzedAt = DateTimeOffset.UtcNow,
+        EvidenceDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(files),
+    };
+
+    private static async Task<BirkNext.SourceDomains.SourceConfigurationSuggestion> DemoGuidanceAsync(IntegrationJourneyHarness harness) =>
+        (await harness.Service(new DemoIntegrationTestPack()).SourceGuidanceAsync(ActiveEventTestHarness.Env, "demo.parcels", CancellationToken.None)).Suggestions.Single();
+
+    [Fact]
+    public async Task Another_pack_gets_a_source_suggestion_through_the_same_generic_mechanism()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(DemoIntegrationTestPack.Intake);
+        var snapshot = Analyzed("parcels.zip", ("api/parcels.json", ParcelApi));
+        harness.Sources.Snapshots.Add(snapshot);
+        harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, snapshot);
+
+        var suggestion = await DemoGuidanceAsync(harness);
+        suggestion.State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.Suggested);
+        suggestion.Value.Should().Be("https://parcels.test.example.invalid");
+        suggestion.RuntimeVerified.Should().BeFalse();
+        suggestion.Candidates.Single().Provenance.Single().Should().Match<BirkNext.SourceDomains.SourceConfigurationValue>(value => value.Artifact == "api/parcels.json" && value.Location == "servers[0]");
+        TestPackDescriber.Describe(new DemoIntegrationTestPack()).RequiredConfiguration.Should().ContainSingle(item => item.SemanticKey == "Environment.Server.Test");
+    }
+
+    [Fact]
+    public async Task Configuration_that_agrees_aggregates_provenance_and_configuration_that_differs_is_a_conflict_without_a_suggestion()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(DemoIntegrationTestPack.Intake);
+        var agreeing = Analyzed("agree.zip", ("api/parcels.json", ParcelApi), ("src/Shop/appsettings.Test.json", """{ "Parcels": { "BaseUrl": "https://parcels.test.example.invalid" } }"""));
+        harness.Sources.Snapshots.Add(agreeing);
+        harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, agreeing);
+        var agreed = await DemoGuidanceAsync(harness);
+        agreed.State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.Suggested);
+        agreed.Candidates.Single().Provenance.Select(item => item.EvidenceKind).Should().BeEquivalentTo([BirkNext.SourceDomains.SourceConfigurationEvidenceKind.OpenApi, BirkNext.SourceDomains.SourceConfigurationEvidenceKind.ApplicationConfig]);
+
+        harness.Bindings.Items.Clear();
+        var conflicting = Analyzed("conflict.zip", ("api/parcels.json", ParcelApi), ("src/Shop/appsettings.Test.json", """{ "Parcels": { "BaseUrl": "https://elsewhere.example.invalid" } }"""));
+        harness.Sources.Snapshots.Add(conflicting);
+        harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, conflicting);
+        var conflict = await DemoGuidanceAsync(harness);
+        conflict.State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.Conflict);
+        conflict.Value.Should().BeNull("a conflict is never silently resolved");
+        conflict.Candidates.Select(item => item.Value).Should().BeEquivalentTo(["https://parcels.test.example.invalid", "https://elsewhere.example.invalid"]);
+        conflict.BoundSources.Should().Equal("conflict.zip");
+    }
+
+    [Fact]
+    public async Task A_sensitive_or_unlisted_configuration_value_is_never_used_for_a_suggestion()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(DemoIntegrationTestPack.Intake);
+        var snapshot = Analyzed("config.zip", ("src/Shop/appsettings.Test.json",
+            """{ "Parcels": { "BaseUrl": "https://user:SECRET_SENTINEL_pw@parcels.example.invalid" }, "Other": { "BaseUrl": "https://other.example.invalid" } }"""));
+        harness.Sources.Snapshots.Add(snapshot);
+        harness.Bindings.Bind(DemoIntegrationTestPack.IntakeId, snapshot);
+        var suggestion = await DemoGuidanceAsync(harness);
+        suggestion.State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.NotDeclared, "a credential-bearing URL is sensitive and an unlisted key is not this value");
+        System.Text.Json.JsonSerializer.Serialize(suggestion).Should().NotContain("SECRET_SENTINEL").And.NotContain("other.example.invalid");
     }
 }

@@ -339,4 +339,8 @@ public sealed record IntegrationEvidenceBinding
 }
 
 /// <summary>Request to bind (or, with a null snapshot, unbind) one integration's source evidence.</summary>
+/// <summary>The configuration values an integration's bound snapshot declares. No binding: no values.</summary>
+public sealed record IntegrationSourceConfiguration(string IntegrationId, IntegrationEvidenceBinding? Binding,
+    IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationResolution> Values);
+
 public sealed record IntegrationEvidenceBindingRequest(string IntegrationId, Guid? SnapshotId);

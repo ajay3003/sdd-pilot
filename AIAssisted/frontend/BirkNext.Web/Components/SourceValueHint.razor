@@ -1,0 +1,41 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* A field's source-derived suggestion from the integration's IQR-bound snapshot. "Use suggested value" fills the form only; nothing is stored
+   until the form is saved, and a stored value is never replaced automatically. A conflict offers no value. Not runtime verified. *@
+@if (Resolution is { } resolution)
+{
+    var value = resolution.Value;
+    var provenance = resolution.Candidates.SelectMany(candidate => candidate.Provenance)
+        .Select(item => $"{SourceGuidancePresentation.Kind(item.EvidenceKind)} · {item.Artifact} → {item.Location}").Distinct().ToList();
+    <div class="svh" data-testid="@TestId" data-state="@resolution.State">
+        @if (resolution.State == SourceConfigurationResolutionState.Conflict)
+        {
+            <p class="svh-text" role="status"><strong>Configuration conflict</strong> in the bound source:
+                @string.Join(" vs ", resolution.Candidates.Select(candidate => candidate.Value)). Nothing is suggested.</p>
+        }
+        else if (value is not null)
+        {
+            <p class="svh-text"><span class="svh-label">Suggested from bound source</span> <code data-testid="@($"{TestId}-value")">@value</code>
+                <span class="svh-muted">· @string.Join("; ", provenance) · not runtime verified</span></p>
+            @if (!string.Equals(value, Current?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                <p class="svh-text">
+                    @if (!string.IsNullOrWhiteSpace(Current)) { <span class="svh-muted" data-testid="@($"{TestId}-differs")">Your value differs from the source. It is kept unless you choose otherwise. </span> }
+                    <button type="button" class="btn-secondary svh-use" data-testid="@($"{TestId}-use")" @onclick="() => OnUse.InvokeAsync(value)"
+                            aria-label="@($"Use suggested value {value} for {FieldLabel}")">Use suggested value</button>
+                    <span class="svh-muted"> Fills the form; nothing is saved until you save.</span>
+                </p>
+            }
+            else { <p class="svh-muted" data-testid="@($"{TestId}-agrees")">Your value matches the source.</p> }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public SourceConfigurationResolution? Resolution { get; set; }
+    [Parameter] public string? Current { get; set; }
+    [Parameter] public string FieldLabel { get; set; } = "this field";
+    [Parameter] public EventCallback<string> OnUse { get; set; }
+    [Parameter] public string TestId { get; set; } = "source-value-hint";
+}

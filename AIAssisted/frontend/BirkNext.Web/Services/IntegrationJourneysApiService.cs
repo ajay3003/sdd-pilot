@@ -17,6 +17,9 @@ public interface IIntegrationJourneysApiService
     /// <summary>Every registered test pack described from its own metadata (journeys, verification views, rules, capabilities, navigation).</summary>
     Task<ActiveEventApiResult<IReadOnlyList<TestPackDescriptor>>> TestPacksAsync(CancellationToken ct = default) =>
         Task.FromResult(new ActiveEventApiResult<IReadOnlyList<TestPackDescriptor>>(null, "Test packs are not available.", null));
+    /// <summary>The pack's source guidance: per declared configuration requirement, what its IQR-bound source declares (never applied).</summary>
+    Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<TestPackSourceGuidance>(null, "Source guidance is not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
     /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
     Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
@@ -41,6 +44,9 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public Task<ActiveEventApiResult<ArchitectureRuleReport>> RulesAsync(string environmentId, string packId, CancellationToken ct = default) =>
         GetAsync<ArchitectureRuleReport>($"api/integration-journeys/packs/{E(packId)}/architecture-rules?environmentId={E(environmentId)}", ct);
+
+    public Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default) =>
+        GetAsync<TestPackSourceGuidance>($"api/integration-journeys/packs/{E(packId)}/source-guidance?environmentId={E(environmentId)}", ct);
 
     public async Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)
     {

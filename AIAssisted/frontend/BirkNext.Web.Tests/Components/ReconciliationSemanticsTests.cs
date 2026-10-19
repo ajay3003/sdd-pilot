@@ -148,7 +148,8 @@ public sealed class ReconciliationSemanticsTests : BunitContext
         {
             "Services/TestPackPresentation.cs", "Components/IntegrationJourneyPanel.razor", "Components/IqrSourceSetup.razor", "Components/TargetEnvironmentStateSummary.razor",
             "Components/IntegrationsPane.razor", "Pages/TestDataPage.razor", "Services/TestDataPresentation.cs", "Components/TopologyPathsPanel.razor",
-            "Services/IntegrationReviewPrerunPresentation.cs", "Pages/IntegrationQualityReview.razor",
+            "Services/IntegrationReviewPrerunPresentation.cs", "Pages/IntegrationQualityReview.razor", "Services/SourceGuidancePresentation.cs", "Components/SourceGuidanceList.razor",
+            "Components/SourceValueHint.razor", "Components/SourceDomains/ConfigurationWorkspace.razor",
         };
         foreach (var file in files)
         {

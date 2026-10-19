@@ -1,0 +1,50 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Generic source guidance: per configuration requirement, what the bound source declares — state in words (never colour only), the value,
+   where it came from, what is configured, and that it is not runtime verified. Read-only: nothing here changes configuration. *@
+@if (Suggestions.Count > 0)
+{
+    <ul class="sgl @(Compact ? "sgl-compact" : "")" data-testid="@TestId" aria-label="@Label">
+        @foreach (var item in Suggestions)
+        {
+            var action = SourceGuidancePresentation.NextAction(item);
+            <li class="sgl-item" data-testid="sgl-item" data-key="@item.Requirement.Key" data-state="@item.State">
+                <div class="sgl-head">
+                    <strong class="sgl-label">@item.Requirement.Label</strong>
+                    <span class="sgl-pill sgl-@SourceGuidancePresentation.Tone(item.State)" data-testid="sgl-state">@SourceGuidancePresentation.StateLabel(item.State)</span>
+                    @if (item.State == SourceSuggestionState.Conflict) { <span class="visually-hidden" role="status">Configuration conflict for @item.Requirement.Label</span> }
+                </div>
+                @if (item.Value is { } value) { <p class="sgl-value"><span class="sgl-term">Suggested</span> <code data-testid="sgl-value">@value</code></p> }
+                <dl class="sgl-facts">
+                    <div><dt>Required source</dt><dd data-testid="sgl-source">@item.Requirement.LogicalSource · @item.Requirement.EvidenceType</dd></div>
+                    @if (!Compact)
+                    {
+                        <div><dt>Current source</dt><dd data-testid="sgl-current">@(item.BoundSources.Count > 0 ? string.Join(", ", item.BoundSources) + " (bound)" : item.UnboundSources.Count > 0 ? string.Join(", ", item.UnboundSources) + " (not bound)" : "None")</dd></div>
+                    }
+                    <div><dt>Configured</dt><dd data-testid="sgl-configured">@SourceGuidancePresentation.Configured(item)</dd></div>
+                    <div><dt>Runtime verified</dt><dd data-testid="sgl-runtime">No — declared in source only</dd></div>
+                </dl>
+                @if (!Compact && SourceGuidancePresentation.Provenance(item) is { Count: > 0 } provenance)
+                {
+                    <ReviewDisclosure Text="Provenance" CollapseText="Hide provenance" TestId="sgl-provenance" Class="disclosure-inline">
+                        <ul class="sgl-provenance">@foreach (var line in provenance) { <li>@line</li> }</ul>
+                    </ReviewDisclosure>
+                }
+                @if (!Compact)
+                {
+                    <p class="sgl-action" data-testid="sgl-action">
+                        @if (action.Href is { } href) { <a href="@href">@action.Label</a> } else { @action.Label }
+                    </p>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SourceConfigurationSuggestion> Suggestions { get; set; } = [];
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public string TestId { get; set; } = "source-guidance";
+    [Parameter] public string Label { get; set; } = "Source guidance";
+}

@@ -15,6 +15,20 @@ namespace BirkNext.Api.Controllers;
 [Route("api/integration-review/evidence-bindings")]
 public sealed class IntegrationEvidenceBindingsController(IIntegrationEvidenceBindingStore bindings) : ControllerBase
 {
+    /// <summary>The configuration values the integration's bound snapshot declares (semantic key, value, provenance, agreement/conflict), for
+    /// consumers that offer them as suggestions. Unbound: no values — the newest snapshot never stands in. Read-only; nothing is applied.</summary>
+    [HttpGet("{integrationId}/configuration-values")]
+    public async Task<ActionResult<IntegrationSourceConfiguration>> ConfigurationValues(string integrationId, [FromQuery] string environmentId,
+        [FromServices] IqrSourceStore store, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var binding = (await bindings.ListAsync(environmentId, ct)).FirstOrDefault(item => item.IntegrationId == integrationId);
+        if (binding is null) return Ok(new IntegrationSourceConfiguration(integrationId, null, []));
+        var snapshot = await store.FindSourceAnalysisAsync(binding.SnapshotId, ct);
+        return Ok(new IntegrationSourceConfiguration(integrationId, binding,
+            BirkNext.SourceDomains.SourceConfigurationResolver.Resolve(snapshot?.EvidenceDomains?.ConfigurationValues?.Values ?? [])));
+    }
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<IntegrationEvidenceBinding>>> List([FromQuery] string environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await bindings.ListAsync(environmentId, ct));

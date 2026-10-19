@@ -230,6 +230,53 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.FindAll("select").Should().BeEmpty("no snapshot is selected on the pack page");
     }
 
+    private static TestPackSourceGuidance AltinnGuidance() => new("skolenaervaer",
+    [
+        new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-app-route", "Altinn app (org/app)", "Application.Route", "Altinn Skolenærvær app", "OpenAPI / Swagger document", "Which app.", "Integration Quality Review → Extensions → Altinn")
+            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier" }, BirkNext.SourceDomains.SourceSuggestionState.Suggested)
+        {
+            Value = "buf/skolenaervaer", BoundSources = ["skole.zip"],
+            Candidates = [new("buf/skolenaervaer", [new BirkNext.SourceDomains.SourceConfigurationValue { SemanticKey = "Application.Route", Value = "buf/skolenaervaer", Artifact = "skolenaervaer.json", Location = "paths" }])],
+        },
+        new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-test-server", "Altinn test server", "Environment.Server.Test", "Altinn Skolenærvær app", "OpenAPI / Swagger document", "TT02 host.", "Backend Altinn test endpoints")
+            { PrerequisiteKey = "altinn-environment" }, BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound) { UnboundSources = ["newer.zip"] },
+    ]);
+
+    [Fact]
+    public void The_overview_summarizes_source_requirements_by_state_and_never_claims_runtime()
+    {
+        WithTarget();
+        _journeys.Guidance = AltinnGuidance();
+        var page = Open();
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-source-requirements-summary]").TextContent
+            .Should().Be("2 values: 1 available but not bound · 1 suggested from bound source · 0 configured. Runtime: not verified by source."));
+        page.Find("[data-testid=snt-source-values]").Should().NotBeNull("the values stay collapsed");
+    }
+
+    [Fact]
+    public void A_blocker_says_what_kind_of_input_it_needs_and_shows_its_source_guidance_collapsed()
+    {
+        WithTarget();
+        _journeys.Guidance = new("skolenaervaer",
+        [
+            new(new BirkNext.SourceDomains.SourceConfigurationRequirement("altinn-auth-scheme", "Authentication scheme", "Authentication.Scheme", "Altinn Skolenærvær app", "OpenAPI / Swagger document",
+                "How callers authenticate.", "Local execution config") { PrerequisiteKey = "altinn-auth" }, BirkNext.SourceDomains.SourceSuggestionState.Suggested)
+            {
+                Value = "Bearer JWT", BoundSources = ["skole.zip"],
+                Candidates = [new("Bearer JWT", [new BirkNext.SourceDomains.SourceConfigurationValue { SemanticKey = "Authentication.Scheme", Value = "Bearer JWT", Artifact = "skolenaervaer.json", Location = "components.securitySchemes.AltinnToken" }])],
+            },
+        ]);
+        var page = Open("rapportmottak");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().HaveCount(2));
+        page.FindAll("[data-testid=snt-attention-item] [data-testid=snt-kind]").Select(kind => kind.TextContent).Should().Equal("Needs: Source-derived configuration", "Needs: Source evidence");
+        var auth = page.Find("[data-testid=snt-attention-item][data-key=altinn-auth]");
+        auth.QuerySelector("[data-testid=snt-blocker-guidance] .disclosure-toggle")!.GetAttribute("aria-expanded").Should().Be("false");
+        auth.QuerySelector("[data-testid=snt-blocker-guidance] .disclosure-toggle")!.Click();
+        page.Find("[data-testid=snt-attention-item][data-key=altinn-auth] [data-testid=sgl-value]").TextContent.Should().Be("Bearer JWT");
+        page.Find("[data-testid=snt-attention-item][data-key=altinn-auth] [data-testid=sgl-runtime]").TextContent.Should().Be("No — declared in source only");
+        page.FindAll("[data-testid=snt-attention-item][data-key='source:MM'] [data-testid=snt-blocker-guidance]").Should().BeEmpty();
+    }
+
     [Fact]
     public void Without_a_binding_the_overview_says_so()
     {
@@ -464,6 +511,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         public IntegrationJourneyPackView Pack { get; set; } = IntegrationJourneyPanelTests.SamplePack();
         public TestPackDescriptor Descriptor { get; set; } = SkolenaervaerDescriptor();
         public ArchitectureRuleReport? Rules { get; set; }
+        public TestPackSourceGuidance? Guidance { get; set; }
+
+        public Task<ActiveEventApiResult<TestPackSourceGuidance>> SourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
+        {
+            Calls.Add("source-guidance");
+            return Task.FromResult(new ActiveEventApiResult<TestPackSourceGuidance>(Guidance, Guidance is null ? "none" : null, HttpStatusCode.OK));
+        }
         public List<string> Calls { get; } = [];
         public List<IntegrationJourneyRunRequest> Started { get; } = [];
 

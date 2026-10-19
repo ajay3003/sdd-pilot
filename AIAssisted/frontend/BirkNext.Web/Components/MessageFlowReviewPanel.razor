@@ -109,6 +109,7 @@
             <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend><div class="mfr-form">
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
+                <SourceValueHint Resolution="RouteSuggestion" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
                 <label>Safe base URL reference<input @bind="_baseUrl" /></label><label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
             </div></fieldset>
@@ -218,6 +219,9 @@
     private IntegrationMessageFlowPackage? _package;
     /// <summary>The canonical binding of the report-intake integration (Integration Quality Review → Evidence), or null.</summary>
     private IntegrationEvidenceBinding? _binding;
+    private IntegrationSourceConfiguration? _sourceConfiguration;
+    private BirkNext.SourceDomains.SourceConfigurationResolution? RouteSuggestion =>
+        _sourceConfiguration?.Values.FirstOrDefault(item => item.SemanticKey == BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute);
     private string? _bindingIntegration;
     /// <summary>A snapshot id saved in this configuration before bindings existed; shown, never silently replaced.</summary>
     private Guid? _legacySnapshot;
@@ -256,6 +260,9 @@
             var resolved = await AltinnSourceBinding.ResolveAsync(Api, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId!);
             _bindingIntegration = resolved.IntegrationName;
             _binding = resolved.Binding;
+            // Source-declared values of the bound snapshot (e.g. the app route an OpenAPI document declares) — suggestions, never applied.
+            _sourceConfiguration = resolved.Binding is not null && resolved.IntegrationId is { } integrationId
+                ? await Api.SourceConfigurationAsync(EnvironmentId!, integrationId) : null;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
     }

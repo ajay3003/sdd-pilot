@@ -54,6 +54,9 @@ public interface IIntegrationCatalogApiService
     /// <summary>Binds (or with a null snapshot, unbinds) one integration's source evidence. Returns the binding or the backend's reason.</summary>
     Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default) =>
         Task.FromResult<(IntegrationEvidenceBinding?, string?)>((null, "Evidence binding is not available."));
+    /// <summary>The configuration values one integration's bound snapshot declares (no binding: none). Null when unavailable.</summary>
+    Task<IntegrationSourceConfiguration?> SourceConfigurationAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
+        Task.FromResult<IntegrationSourceConfiguration?>(null);
     /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
     Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
@@ -149,6 +152,9 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
 
     public async Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<IntegrationEvidenceBinding>>($"api/integration-review/evidence-bindings?{Env(environmentId)}", Json, ct) ?? [];
+
+    public async Task<IntegrationSourceConfiguration?> SourceConfigurationAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<IntegrationSourceConfiguration>($"api/integration-review/evidence-bindings/{Uri.EscapeDataString(integrationId)}/configuration-values?{Env(environmentId)}", Json, ct);
 
     public async Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default)
     {

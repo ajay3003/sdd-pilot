@@ -41,6 +41,12 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities => [];
     /// <summary>Generic Test Data capabilities the pack resolves through the shared Test Data catalog. Default: none.</summary>
     IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities => [];
+    /// <summary>Configuration values the pack needs, by semantic key and logical source (never by file name). Default: none.</summary>
+    IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration => [];
+    /// <summary>What the pack's consumers have stored for its configuration requirements (requirement key → value), so guidance can show
+    /// configured next to suggested. Default: nothing stored.</summary>
+    Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?>());
     /// <summary>Whether the pack's runs are kept in the shared journey history.</summary>
     bool SupportsHistory => true;
     /// <summary>Whether a configured IQR integration fulfils one of this pack's integration requirements.</summary>

@@ -1,0 +1,17 @@
+.sgl { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .6rem; }
+.sgl-item { border: 1px solid var(--clr-border, #d0d5dd); border-radius: 8px; padding: .6rem .75rem; min-width: 0; overflow-wrap: anywhere; }
+.sgl-compact .sgl-item { padding: .45rem .6rem; }
+.sgl-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.sgl-label { font-size: .92rem; }
+.sgl-pill { display: inline-block; padding: .05rem .5rem; border-radius: 999px; border: 1px solid #94a3b8; font-size: .76rem; font-weight: 600; background: #f8fafc; color: #1f2937; }
+.sgl-info { border-color: #1d4ed8; background: #eff6ff; color: #1e3a8a; }
+.sgl-attention { border-color: #b45309; background: #fffbeb; color: #78350f; }
+.sgl-muted { border-color: #94a3b8; background: #f3f4f6; color: #374151; }
+.sgl-value { margin: .35rem 0 0; }
+.sgl-value code { overflow-wrap: anywhere; word-break: break-all; }
+.sgl-term, .sgl-facts dt { color: #475467; font-weight: 600; font-size: .8rem; }
+.sgl-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: .35rem 0 0; font-size: .84rem; }
+.sgl-facts > div { display: flex; flex-wrap: wrap; gap: .3rem; min-width: 0; }
+.sgl-facts dd { margin: 0; overflow-wrap: anywhere; }
+.sgl-provenance { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .82rem; overflow-wrap: anywhere; }
+.sgl-action { margin: .35rem 0 0; font-size: .84rem; }
