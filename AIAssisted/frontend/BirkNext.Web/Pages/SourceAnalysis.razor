@@ -26,20 +26,37 @@
     {
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
     }
-    <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
     @* Source snapshots need no Target Environment: a target is runtime context, so it is shown here, never required. *@
     @if (!_loaded)
     {
+        <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
         <p class="sa-muted" role="status">Loading source snapshots…</p>
     }
     else
     {
-        @* Three separate facts: the source snapshot belongs to the workspace; the Target Environment is runtime context only. *@
-        <dl class="sa-target-context" data-testid="sa-target-context">
-            <div><dt>Source snapshot</dt><dd data-testid="sa-source-state">@SourceStateSummary</dd></div>
-            <div><dt>Target Environment</dt><dd data-testid="sa-target-state">@(_profile is null ? "Not selected" : "Selected")</dd></div>
-            <div><dt>Runtime-dependent evidence</dt><dd>@(_profile is null ? "Not available — select a Target Environment for runtime reviews" : "Available to runtime reviews")</dd></div>
-        </dl>
+        @* The one persistent evidence-mode context: every area below is source only, so areas show only their own specific limitation.
+           Separate facts: the source snapshot belongs to the workspace; the Target Environment is runtime context for other reviews. *@
+        <section class="sa-context" aria-label="Evidence context" data-testid="sa-target-context">
+            <dl class="sa-context-facts">
+                <div><dt>Evidence mode</dt><dd data-testid="sa-evidence-mode">Source only</dd></div>
+                <div><dt>Source snapshot</dt><dd data-testid="sa-source-state">@SourceStateSummary</dd></div>
+                <div><dt>Runtime verification</dt><dd data-testid="sa-runtime-verification">Not performed in Source Analysis</dd></div>
+                <div><dt>Target Environment</dt><dd data-testid="sa-target-state">@(_profile is null ? "Not selected" : "Selected")</dd></div>
+                <div><dt>Runtime-dependent evidence</dt><dd>@(_profile is null ? "Not available — select a Target Environment for runtime reviews" : "Available to runtime reviews")</dd></div>
+            </dl>
+            <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
+            <ReviewDisclosure Text="How to read statuses" CollapseText="Hide status guide" TestId="sa-status-legend" Class="disclosure-inline">
+                <dl class="sa-legend" data-testid="sa-status-legend-list">
+                    @foreach (var (dimension, examples) in StatusLegend)
+                    {
+                        <div data-dimension="@dimension">
+                            <dt>@SourceStatusPresentation.DimensionLabel(dimension)</dt>
+                            <dd>@foreach (var example in examples) { <SourceStatusBadge Dimension="dimension" Label="@example" /> } <span>@SourceStatusPresentation.DimensionHelp(dimension)</span></dd>
+                        </div>
+                    }
+                </dl>
+            </ReviewDisclosure>
+        </section>
         <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
             <h2 id="sa-snapshot-heading">Source snapshot</h2>
             <div class="sa-controls">
@@ -163,16 +180,20 @@
         }
         else
         {
+            @* Two labelled groups of real links (?area= deep links). The group names are captions, never tabs: not focusable, not clickable,
+               announced once as the group's name. The current area carries aria-current="page". *@
             <nav class="sa-areas sa-area-groups" aria-label="Source Analysis areas" data-testid="sa-areas">
                 @foreach (var (group, areas) in AreaGroups)
                 {
                     <div class="sa-area-group" role="group" aria-label="@group" data-testid="sa-area-group">
-                        <span class="sa-area-group-label" aria-hidden="true">@group</span>
-                        @foreach (var area in areas)
-                        {
-                            <button type="button" id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab @(_area == area ? "active" : "")" aria-pressed="@(_area == area ? "true" : "false")"
-                                    data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@(area == "Infrastructure" ? "Infrastructure as Code" : area)</button>
-                        }
+                        <span class="sa-area-group-label" aria-hidden="true" data-testid="sa-area-group-label">@group</span>
+                        <ul class="sa-area-list">
+                            @foreach (var area in areas)
+                            {
+                                <li><a id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab" href="@AreaHref(area)" aria-current="@(_area == area ? "page" : null)"
+                                       data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)" @onclick:preventDefault>@(area == "Infrastructure" ? "Infrastructure as Code" : area)</a></li>
+                            }
+                        </ul>
                     </div>
                 }
             </nav>
@@ -210,7 +231,7 @@
                         {
                             var headingId = $"sa-card-{card.Area.ToLowerInvariant()}";
                             <article class="sa-card sa-area-card" aria-labelledby="@headingId" data-testid="sa-area-card" data-area="@card.Area" data-status="@card.Status" data-analysis="@card.AnalysisId">
-                                <h3 id="@headingId">@card.Title <span class="sa-pill sa-pill-@card.Tone" data-testid="sa-area-status">@card.Status</span></h3>
+                                <h3 id="@headingId">@card.Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@card.Status" TestId="sa-area-status" /></h3>
                                 <p class="sa-muted">@card.Description</p>
                                 @if (card.Reason is { } reason) { <p class="sa-reason" data-testid="sa-area-reason">@reason</p> }
                                 @if (card.Metrics.Count > 0)
@@ -230,13 +251,13 @@
 
                 <section class="sa-areas-section" aria-labelledby="sa-evidence-heading" data-testid="sa-overview-evidence">
                     <h2 id="sa-evidence-heading">Source evidence</h2>
-                    <p class="sa-muted">Reusable evidence other reviews consume from this snapshot. @SourceEvidenceDomainsPresentation.Boundary</p>
+                    <p class="sa-muted">Reusable evidence other reviews consume from this snapshot. One status, one headline count and the main signal per domain — the detail is in each area.</p>
                     <ul class="sd-rows">
                         @foreach (var row in SourceEvidenceDomainsPresentation.Rows(selected))
                         {
                             var rowHeading = $"sa-row-{SourceEvidenceDomainsPresentation.Slug(row.Area)}";
                             <li class="sd-row" data-testid="sa-evidence-row" data-area="@row.Area" data-status="@row.Status" aria-labelledby="@rowHeading">
-                                <h3 id="@rowHeading">@row.Title <span class="sd-pill sd-pill-@row.Tone" data-testid="sa-evidence-status">@row.Status</span></h3>
+                                <h3 id="@rowHeading">@row.Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@row.Status" TestId="sa-evidence-status" /></h3>
                                 <div class="sd-row-body">
                                     @if (row.Metrics.Count > 0)
                                     {
@@ -254,7 +275,7 @@
                     {
                         var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
                         <section class="sa-card" aria-labelledby="sa-links-heading" data-testid="sa-cross-domain">
-                            <h3 id="sa-links-heading">Cross-source relationships <span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(evidence.CrossDomain.Status)">@SourceDomainText.Label(evidence.CrossDomain.Status)</span></h3>
+                            <h3 id="sa-links-heading">Cross-source relationships <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(evidence.CrossDomain.Status)" /></h3>
                             @if (summary.Count == 0) { <p class="sa-muted" data-testid="sa-cross-domain-empty">@(evidence.CrossDomain.StatusReason ?? "No relationships between the source-evidence domains of this snapshot.")</p> }
                             else
                             {
@@ -269,7 +290,7 @@
                                     <div class="sd-scroll" tabindex="0" role="region" aria-label="Relationship details">
                                         <table>
                                             <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Evidence</th><th scope="col">Basis</th></tr></thead>
-                                            <tbody>@foreach (var l in evidence.CrossDomain.Links.Take(300)) { <tr data-testid="sa-cross-domain-link" data-resolved="@(l.Resolved ? "true" : "false")"><th scope="row">@l.FromLabel<span class="sd-context">@SourceDomainText.Label(l.Type)</span></th><td>@l.ToLabel</td><td><span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(l.State)">@SourceDomainText.Label(l.State)</span></td><td>@l.Basis</td></tr> }</tbody>
+                                            <tbody>@foreach (var l in evidence.CrossDomain.Links.Take(300)) { <tr data-testid="sa-cross-domain-link" data-resolved="@(l.Resolved ? "true" : "false")"><th scope="row">@l.FromLabel<span class="sd-context">@SourceDomainText.Label(l.Type)</span></th><td>@l.ToLabel</td><td><SourceStatusBadge Dimension="SourceStatusDimension.Confidence" Label="@SourceDomainText.Label(l.State)" /></td><td>@l.Basis</td></tr> }</tbody>
                                         </table>
                                     </div>
                                 </ReviewDisclosure>
@@ -339,6 +360,16 @@
     private static readonly (string Group, string[] Areas)[] AreaGroups = DocumentationCatalog.SourceAnalysisGroups
         .Select(group => (group.Label, group.Areas.ToArray())).ToArray();
     private static string AreaSlug(string area) => area.Replace("/", "");
+    /// <summary>The deep link of an area: the current query (selected snapshot, return target) with only the area replaced.</summary>
+    private string AreaHref(string area) => Navigation.GetUriWithQueryParameter("area", area);
+    /// <summary>The four status dimensions with the labels each one uses — kept apart in the legend as on every page.</summary>
+    private static readonly (SourceStatusDimension Dimension, string[] Examples)[] StatusLegend =
+    [
+        (SourceStatusDimension.Completeness, ["Complete", "Partial", "Not detected"]),
+        (SourceStatusDimension.Confidence, ["Confirmed", "Strongly supported", "Inferred", "Unresolved"]),
+        (SourceStatusDimension.Observation, ["Detected", "Partial", "Needs review", "Not found"]),
+        (SourceStatusDimension.ParserSupport, ["Supported", "Partial"]),
+    ];
     private static readonly string[] ValidAreas = ["Infrastructure", "Configuration", "CI/CD", "Contracts", "Architecture", "Observability", "Database", "Overview"];
     private string _area = "Overview";
     private string? _focusDatabase;

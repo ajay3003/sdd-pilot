@@ -1,0 +1,14 @@
+@using BirkNext.Web.Services
+
+@* One status badge of one status dimension (see SourceStatusPresentation). The dimension decides the shape and the palette, so a Partial
+   analysis, a Partial parser and a Needs-review observation never look alike. Text is always present: colour is never the only signal. *@
+<span class="sa-status sa-status-@Dimension.ToString().ToLowerInvariant() sa-tone-@SourceStatusPresentation.Tone(Dimension, Label) @Class"
+      title="@SourceStatusPresentation.Meaning(Dimension, Label)" data-dimension="@Dimension" data-testid="@TestId">@if (HiddenPrefix is { } prefix) { <span class="visually-hidden">@prefix</span> }@Label</span>
+@code {
+    [Parameter, EditorRequired] public SourceStatusDimension Dimension { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    /// <summary>Screen-reader context read before the label (e.g. "Analysis status: ") where no column header or heading gives it.</summary>
+    [Parameter] public string? HiddenPrefix { get; set; }
+    [Parameter] public string? TestId { get; set; }
+    [Parameter] public string? Class { get; set; }
+}

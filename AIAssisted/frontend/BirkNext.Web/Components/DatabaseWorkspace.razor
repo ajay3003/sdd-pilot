@@ -2,12 +2,19 @@
 @using System.Text.Json
 @using System.Net
 @using BirkNext.Web.Services
+@using BirkNext.Web.Components.SourceDomains
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
 <section class="database-workspace" aria-labelledby="db-heading" data-testid="database-workspace">
-    <h2 id="db-heading">Database <span class="db-pill" data-testid="db-status">@StatusLabel(Snapshot.Status)</span></h2>
-    <p class="db-limitation" role="note" data-testid="db-limitation">@SourceBoundary.Database</p>
+    <div class="sa-section-head">
+        <h2 id="db-heading">Database <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@StatusLabel(Snapshot.Status)" TestId="db-status" /></h2>
+        <div class="sa-section-actions" role="group" aria-label="Export database" data-testid="db-actions">
+            <button type="button" class="sa-action-btn" data-testid="db-export" @onclick="ExportHtml">Export HTML</button>
+            <button type="button" class="sa-action-btn" data-testid="db-export-json" @onclick="ExportJson">Export JSON</button>
+        </div>
+    </div>
+    <p class="sa-scope-note" role="note" data-testid="db-limitation">@SourceBoundary.Database</p>
     <div class="db-meta">
         <span class="db-muted">Source <code title="@Snapshot.SourceFingerprint" data-testid="db-fingerprint">@SourceBoundary.ShortFingerprint(Snapshot.SourceFingerprint)</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</span>
         <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="db-about" Class="disclosure-inline">
@@ -15,10 +22,7 @@
             <p class="db-muted">Full source fingerprint <code>@Snapshot.SourceFingerprint</code></p>
         </ReviewDisclosure>
     </div>
-    <nav class="db-tabs" aria-label="Database views">
-        @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab)" data-testid="@($"db-tab-{tab.ToLowerInvariant()}")" @onclick="() => _tab = tab">@tab</button> }
-        <button type="button" @onclick="ExportHtml">Export HTML</button><button type="button" @onclick="ExportJson">Export JSON</button>
-    </nav>
+    <SourceViewNav Label="Database views" Views="Tabs" @bind-Current="_tab" Prefix="db-tab" TestId="db-views" />
     @if (_tab == "Overview")
     {
         @* Summary first → structured detail → evidence drill-down. *@
@@ -92,13 +96,12 @@
                 </ReviewDisclosure>
             }
         </section>
-        <section class="db-panel" aria-labelledby="db-limitations-heading" data-testid="db-limitations">
-            <h3 id="db-limitations-heading">Analysis limitations <span class="db-count">@Snapshot.Diagnostics.Count</span></h3>
-            <p class="db-muted">General notes and limits of the source extraction (for example physical database identity and migration ordering).</p>
-            <ReviewDisclosure Text="View analysis limitations" CollapseText="Hide analysis limitations" TestId="db-limitations-detail" Class="disclosure-inline">
+        <div class="sa-disclosures" data-testid="db-limitations">
+            <ReviewDisclosure Text="@($"Analysis limitations ({Snapshot.Diagnostics.Count})")" CollapseText="Hide analysis limitations" TestId="db-limitations-detail" Class="disclosure-inline">
+                <p class="db-muted">General notes and limits of the source extraction (for example physical database identity and migration ordering).</p>
                 <ul class="db-list">@foreach (var diagnostic in Snapshot.Diagnostics) { <li>@diagnostic</li> }</ul>
             </ReviewDisclosure>
-        </section>
+        </div>
     }
     else if (_tab == "Changes")
     {

@@ -64,7 +64,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     public void Overview_StatesTheSourceOnlyBoundary_CountsAndDiagnostics_WithoutPassFail()
     {
         var cut = RenderModel();
-        cut.Find("[data-testid=arch-limitation]").TextContent.Should().Be("Source-derived only — deployment/runtime not verified.");
+        cut.Find("[data-testid=arch-limitation]").TextContent.Should().Be(SourceBoundary.Architecture, "the area names its own limitation; the generic source-only note is stated once on the page");
         cut.Find("[data-testid=arch-limitation-full]").TextContent.Should().Be(ArchitectureSnapshot.SourceLimitation, "the full boundary stays one click away");
         cut.Find("[data-testid=arch-status]").TextContent.Should().Be("Partial");
         var overview = cut.Find("[data-testid=arch-overview]").TextContent;

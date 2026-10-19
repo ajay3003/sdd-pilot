@@ -217,10 +217,10 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         card.GetAttribute("data-analysis").Should().Be(observability.Id.ToString());
         card.QuerySelector("[data-testid=sa-area-status]")!.TextContent.Should().Be("Partial");
         card.QuerySelectorAll("[data-testid=sa-metric]").Select(m => (m.GetAttribute("data-metric"), m.QuerySelector("dd")!.TextContent)).Should().Equal(
-            ("Components with tracing", "1"), ("Correlation boundaries", "4"), ("Log calls", "15"), ("Findings needing review", "4"), ("Unresolved boundaries", "1"));
+            ("Correlation boundaries", "4"), ("Findings needing review", "4"), ("Unresolved boundaries", "1"));
         card.QuerySelector("[data-testid=sa-area-limitation]")!.TextContent.Should().Be(SourceObservabilityPresentation.CardLimitation);
         cut.Find("[data-testid=sa-open-observability]").Click();
-        cut.Find("[data-testid=area-observability]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=area-observability]").GetAttribute("aria-current").Should().Be("page");
         cut.Find("[data-testid=obs-fingerprint]").GetAttribute("title").Should().Be(observability.SourceFingerprint);
         api.Verify(a => a.AnalyzeSourceSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "opening Observability never re-analyzes");
 

@@ -18,6 +18,11 @@ public sealed record SourceLinkSummary(SourceEvidenceLinkType Type, string Label
 public static class SourceEvidenceDomainsPresentation
 {
     public const string Boundary = SourceDomainText.SourceBoundary;
+    // Domain-specific limitations shown on each domain page; the generic "source only" boundary is stated once, at the top of Source Analysis.
+    public const string InfrastructureNote = "Declared in source — whether resources exist, are reachable or are permitted is not verified.";
+    public const string ConfigurationNote = "Values as written in source files — deployed settings are not verified.";
+    public const string PipelineNote = "Defined in pipeline files — execution, results and deployments are not assessed.";
+    public const string ContractsNote = "Source contracts — deployed API and message compatibility are not verified.";
     public static readonly IReadOnlyList<string> Areas = ["Infrastructure", "Configuration", "CI/CD", "Contracts"];
     public const string HistoricalNote = "This historical source snapshot predates the source-evidence domains. Upload the same source archive to create a new immutable analysis.";
 
@@ -63,17 +68,13 @@ public static class SourceEvidenceDomainsPresentation
         SourceDomainResult result = area switch { "Infrastructure" => e.Infrastructure, "Configuration" => e.Configuration, "CI/CD" => e.CiCd, _ => e.Contracts };
         var status = SourceDomainText.Label(result.Status);
         if (!Assessed(result)) return new(area, title, description, status, Tone(result.Status), result.StatusReason, []);
+        // One headline count per domain on the landing page; the breakdowns (types, categories, steps) belong to the domain page.
         List<SourceAreaMetric> metrics = area switch
         {
-            "Infrastructure" => [new("Resources", e.Infrastructure.Resources.Count(r => r.Kind == "resource")), new("Modules", e.Infrastructure.Modules.Count),
-                new("Access assignments", e.Infrastructure.AccessAssignments.Count), new("Environments", e.Infrastructure.Environments.Count)],
-            "Configuration" => [new("Entries", e.Configuration.Entries.Count), new("Files", e.Configuration.Files.Count), new("Environments", NamedEnvironments(e.Configuration)),
-                new("Sensitive values", e.Configuration.Entries.Count(x => x.Sensitivity != ConfigurationSensitivity.None))],
-            "CI/CD" => [new("Pipelines", e.CiCd.Pipelines.Count(p => !p.IsTemplate)), new("Templates", e.CiCd.Pipelines.Count(p => p.IsTemplate)),
-                new("Test steps", e.CiCd.Pipelines.Sum(p => p.Steps.Count(x => IsTest(x.Kind)))), new("Deployment stages", e.CiCd.Pipelines.Sum(p => p.Stages.Count(x => x.Deployment)))],
-            _ => [new("Contracts", e.Contracts.Contracts.Count), new("REST / OpenAPI", e.Contracts.Contracts.Count(c => c.Type == SourceContractType.OpenApi)),
-                new("GraphQL", e.Contracts.Contracts.Count(c => c.Type is SourceContractType.GraphQlSchema or SourceContractType.GraphQlOperations)),
-                new("Messages / events", e.Contracts.Contracts.Count(c => c.Type is SourceContractType.MessageContract or SourceContractType.AsyncApi or SourceContractType.Protobuf))],
+            "Infrastructure" => [new("Resources", e.Infrastructure.Resources.Count(r => r.Kind == "resource"))],
+            "Configuration" => [new("Entries", e.Configuration.Entries.Count)],
+            "CI/CD" => [new("Pipelines", e.CiCd.Pipelines.Count(p => !p.IsTemplate))],
+            _ => [new("Contracts", e.Contracts.Contracts.Count)],
         };
         var technologies = result.Technologies.Count == 0 ? null : string.Join(" · ", result.Technologies.Take(4));
         return new(area, title, description, status, Tone(result.Status), technologies, metrics);
@@ -145,6 +146,53 @@ public static class SourceEvidenceDomainsPresentation
         return steps;
     }
 
+    /// <summary>A presentation group of pipelines: either the variants of one pipeline that differ only by an environment suffix in the name
+    /// (e.g. orders-dev / orders-qa), or a single pipeline (Stem null). Grouping never implies ownership or deployment.</summary>
+    public sealed record PipelineGroup(string? Stem, IReadOnlyList<PipelineDefinition> Pipelines, IReadOnlyList<string> Variants, bool Templates = false);
+
+    private static readonly System.Text.RegularExpressions.Regex VariantSuffix = new(
+        @"^(?<stem>.*[A-Za-z0-9].*?)[-_. ](?<env>dev|development|test|tst|qa|uat|int|sit|stage|staging|preprod|prod|prd|production)$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>The name stem and environment suffix of a pipeline name ("orders-qa" → ("orders", "qa")), or null when the name has none.</summary>
+    public static (string Stem, string Variant)? NameVariant(string name) =>
+        VariantSuffix.Match(name.Trim()) is { Success: true } m && m.Groups["stem"].Value.Trim().Length >= 2 ? (m.Groups["stem"].Value.Trim(), m.Groups["env"].Value) : null;
+
+    /// <summary>Runnable pipelines grouped only where at least two names share a stem and differ only by an environment suffix; every other
+    /// pipeline stays on its own. Templates come last as their own group. Order follows the pipeline file order; nothing is dropped.</summary>
+    public static IReadOnlyList<PipelineGroup> PipelineGroups(PipelineEvidence evidence)
+    {
+        var runnable = evidence.Pipelines.Where(p => !p.IsTemplate).OrderBy(p => p.File, StringComparer.Ordinal).ToList();
+        var byStem = runnable.Select(p => (Pipeline: p, Variant: NameVariant(p.Name)))
+            .Where(x => x.Variant is not null).GroupBy(x => x.Variant!.Value.Stem, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() >= 2 && g.Select(x => x.Variant!.Value.Variant.ToLowerInvariant()).Distinct().Count() == g.Count())
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var groups = new List<PipelineGroup>();
+        var placed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in runnable)
+        {
+            if (placed.Contains(p.Id)) continue;
+            if (NameVariant(p.Name) is { } v && byStem.TryGetValue(v.Stem, out var members))
+            {
+                groups.Add(new(v.Stem, members.Select(x => x.Pipeline).ToList(), members.Select(x => x.Variant!.Value.Variant).ToList()));
+                foreach (var m in members) placed.Add(m.Pipeline.Id);
+            }
+            else { groups.Add(new(null, [p], [])); placed.Add(p.Id); }
+        }
+        var templates = evidence.Pipelines.Where(p => p.IsTemplate).OrderBy(p => p.File, StringComparer.Ordinal).ToList();
+        if (templates.Count > 0) groups.Add(new(null, templates, [], Templates: true));
+        return groups;
+    }
+
+    public static string TriggerTypeLabel(string type) => type switch
+    {
+        "pull-request" => "Pull request", "push" => "Push", "schedule" => "Schedule", "manual" => "Manual", "none" => "No CI trigger", "pipeline-resource" => "Another pipeline", _ => type,
+    };
+
+    /// <summary>The compact trigger summary of a row (distinct trigger types only); branches, paths and cron stay in the expandable detail.</summary>
+    public static string TriggerTypes(PipelineDefinition p) => p.IsTemplate ? "Included by other pipelines"
+        : p.Triggers.Count == 0 ? "None declared" : string.Join(", ", p.Triggers.Select(t => TriggerTypeLabel(t.Type)).Distinct());
+
     public static string TriggerText(PipelineTrigger t)
     {
         var parts = new List<string> { t.Type switch { "pull-request" => "Pull request", "push" => "Push", "schedule" => "Schedule", "manual" => "Manual", "none" => "No CI trigger", "pipeline-resource" => "Another pipeline", _ => t.Type } };
@@ -159,6 +207,27 @@ public static class SourceEvidenceDomainsPresentation
     // ── Contracts ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
     public static string Owner(SourceContract c) => c.Producer is { } p ? $"Producer: {p}" : c.ConsumerHints.Count > 0 ? $"Consumer: {string.Join(", ", c.ConsumerHints)}" : "No owning component";
+
+    /// <summary>The ownership role shown in its own column (the same rule as <see cref="Owner"/>: a producer wins over consumer hints).</summary>
+    public static string OwnerRole(SourceContract c) => c.Producer is not null ? "Producer" : c.ConsumerHints.Count > 0 ? "Consumer" : "—";
+
+    public static string OwnerComponent(SourceContract c) => c.Producer ?? (c.ConsumerHints.Count > 0 ? string.Join(", ", c.ConsumerHints) : "No owning component");
+
+    /// <summary>What the old "Read" column showed: <see cref="SourceContract.ParseSupport"/>, i.e. how far the analyzer could read the contract file.</summary>
+    public const string ParserCoverageHelp = "Parser coverage is how far the analyzer could read the contract file. Supported: read by a structured reader. Partial: read heuristically, or some constructs ($ref, fragments, payload schemas) were not resolved. It is not contract quality, compatibility or a pass/fail result.";
+
+    /// <summary>One contract-type group of the Contracts page. Operations / Types columns are shown only where they mean something for the type.</summary>
+    public sealed record ContractGroup(string Key, string Label, SourceContractType[] Types, bool Operations, bool TypeCounts);
+
+    /// <summary>The five contract groups, in page order. Every <see cref="SourceContractType"/> belongs to exactly one group.</summary>
+    public static readonly IReadOnlyList<ContractGroup> ContractGroups =
+    [
+        new("rest", "REST / OpenAPI", [SourceContractType.OpenApi], true, true),
+        new("graphql", "GraphQL", [SourceContractType.GraphQlSchema, SourceContractType.GraphQlOperations], true, true),
+        new("messages", "Messages / events", [SourceContractType.MessageContract, SourceContractType.AsyncApi], true, true),
+        new("clients", "Generated clients", [SourceContractType.GeneratedClient], false, false),
+        new("other", "Other schemas", [SourceContractType.JsonSchema, SourceContractType.XmlSchema, SourceContractType.Protobuf], false, true),
+    ];
 
     public static IEnumerable<SourceContract> FilterContracts(IEnumerable<SourceContract> contracts, string type, string search) => contracts.Where(c =>
         (type.Length == 0 || c.Type.ToString() == type) && (search.Length == 0 || $"{c.Name} {c.File} {c.Producer} {string.Join(" ", c.ConsumerHints)}".Contains(search, StringComparison.OrdinalIgnoreCase)));

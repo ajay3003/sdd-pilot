@@ -18,9 +18,9 @@ public sealed record SourceAreaCard(string Area, string Title, string Descriptio
 public static class SourceAnalysisOverview
 {
     public const string SafetyNote = "Source only: no live Azure, database, messaging or HTTP connection is used.";
-    // The page carries the full source-only note; cards keep a short form (full text in the Architecture / Database areas).
-    public const string ArchitectureCardLimitation = "Source-derived only · deployment/runtime not verified";
-    public const string DatabaseCardLimitation = "Source-derived only · deployed schema not verified";
+    // The page states once that everything is source only; a card names only its own area-specific limitation.
+    public const string ArchitectureCardLimitation = "Deployment and runtime state not verified";
+    public const string DatabaseCardLimitation = "Deployed schema and physical database identity not verified";
 
     /// <summary>What each area will provide once the uploaded archive is analyzed (shown while analyzing — never as zero counts).</summary>
     public static readonly IReadOnlyList<string> ArchitectureProvides = ["Components", "Dependencies", "Messaging channels", "Datastores", "External systems"];
@@ -53,14 +53,11 @@ public static class SourceAnalysisOverview
         var status = StatusLabel(a.Status);
         if (a.Status == ArchitectureStatus.Unsupported)
             return new("Architecture", title, description, status, Tone(status), a.Limitations.FirstOrDefault(x => x != ArchitectureSnapshot.SourceLimitation) ?? "No supported project type was found in this source snapshot.", [], "View architecture details", ArchitectureCardLimitation, a.SnapshotId);
-        var unresolved = a.UnresolvedItems.Count();
-        // Counts are the structured metrics; no sentence repeats them.
+        // Overview is a summary: the size of the system, its messaging surface and where it is unresolved. The full counts live in the area.
         List<SourceAreaMetric> metrics =
         [
-            new("Components", a.Components.Count), new("Dependencies", a.Dependencies.Count), new("Messaging channels", a.MessagingChannels.Count),
-            new("Data stores", a.DataStores.Count), new("External systems", a.ExternalSystems.Count),
+            new("Components", a.Components.Count), new("Messaging channels", a.MessagingChannels.Count), new("Unresolved dependencies", a.UnresolvedItems.Count()),
         ];
-        if (unresolved > 0) metrics.Add(new("Unresolved dependencies", unresolved));
         return new("Architecture", title, description, status, Tone(status), null, metrics, action, ArchitectureCardLimitation, a.SnapshotId);
     }
 
@@ -75,10 +72,9 @@ public static class SourceAnalysisOverview
                 "View observability details", SourceObservabilityPresentation.CardLimitation, o.Id);
         List<SourceAreaMetric> metrics =
         [
-            new("Components with tracing", o.Correlation.ComponentsWithTracing), new("Correlation boundaries", o.Boundaries.Count),
-            new("Log calls", SourceObservabilityPresentation.LogCalls(o)), new("Findings needing review", SourceObservabilityPresentation.NeedsReview(o)),
+            new("Correlation boundaries", o.Boundaries.Count), new("Findings needing review", SourceObservabilityPresentation.NeedsReview(o)),
+            new("Unresolved boundaries", o.Correlation.PropagationUnresolved),
         ];
-        if (o.Correlation.PropagationUnresolved > 0) metrics.Add(new("Unresolved boundaries", o.Correlation.PropagationUnresolved));
         return new("Observability", title, description, status, Tone(status), null, metrics, action, SourceObservabilityPresentation.CardLimitation, o.Id);
     }
 
@@ -94,10 +90,8 @@ public static class SourceAnalysisOverview
         var tables = d.Databases.SelectMany(x => x.Schemas.SelectMany(s => s.Tables)).ToList();
         List<SourceAreaMetric> metrics =
         [
-            new("Database candidates", d.Databases.Count), new("Tables / entities", tables.Count), new("Relationships", tables.Sum(t => t.Relationships.Count)),
-            new("Indexes", tables.Sum(t => t.Indexes.Count)),
+            new("Database candidates", d.Databases.Count), new("Tables / entities", tables.Count), new("Unresolved evidence", d.UnresolvedEvidence.Count),
         ];
-        if (d.UnresolvedEvidence.Count > 0) metrics.Add(new("Unresolved evidence", d.UnresolvedEvidence.Count));
         if (d.Conflicts.Count > 0) metrics.Add(new("Conflicts", d.Conflicts.Count));
         return new("Database", title, description, status, Tone(status), null, metrics, action, DatabaseCardLimitation, d.SnapshotId);
     }

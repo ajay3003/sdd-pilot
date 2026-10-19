@@ -1,6 +1,7 @@
 @using BirkNext.SourceArchitecture
 @using BirkNext.Web.Services
 @using System.Text.Json
+@using BirkNext.Web.Components.SourceDomains
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject IReportExportService ExportService
@@ -8,8 +9,14 @@
 @* Source Analysis → Architecture. Its own model (ArchitectureSnapshot); datastores only link to the separate Database area.
    Everything shown is source-derived design evidence — never deployed topology, never runtime traffic. *@
 <section class="arch" aria-labelledby="arch-heading" data-testid="architecture-workspace">
-    <h2 id="arch-heading">Architecture <span class="arch-pill" data-testid="arch-status">@StatusLabel(Snapshot.Status)</span></h2>
-    <p class="arch-limitation" role="note" data-testid="arch-limitation">@SourceBoundary.Architecture</p>
+    <div class="sa-section-head">
+        <h2 id="arch-heading">Architecture <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceAnalysisOverview.StatusLabel(Snapshot.Status)" TestId="arch-status" />@if (Snapshot.Status == ArchitectureStatus.Complete) { <span class="arch-muted" data-testid="arch-status-note">all supported sources analyzed — not a claim of correctness</span> }</h2>
+        <div class="sa-section-actions" role="group" aria-label="Export architecture" data-testid="arch-actions">
+            <button type="button" class="sa-action-btn" data-testid="arch-export" @onclick="ExportHtml">Export HTML</button>
+            <button type="button" class="sa-action-btn" data-testid="arch-export-json" @onclick="ExportJson">Export JSON</button>
+        </div>
+    </div>
+    <p class="sa-scope-note" role="note" data-testid="arch-limitation">@SourceBoundary.Architecture</p>
     <div class="arch-meta">
         <span class="arch-muted">Source <code title="@Snapshot.SourceFingerprint" data-testid="arch-fingerprint">@SourceBoundary.ShortFingerprint(Snapshot.SourceFingerprint)</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</span>
         <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="arch-about" Class="disclosure-inline">
@@ -17,11 +24,7 @@
             <p class="arch-muted">Full source fingerprint <code>@Snapshot.SourceFingerprint</code></p>
         </ReviewDisclosure>
     </div>
-    <nav class="arch-tabs" aria-label="Architecture views">
-        @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab)" data-testid="@($"arch-tab-{tab.ToLowerInvariant()}")" @onclick="() => SelectTab(tab)">@tab</button> }
-        <button type="button" data-testid="arch-export" @onclick="ExportHtml">Export HTML</button>
-        <button type="button" data-testid="arch-export-json" @onclick="ExportJson">Export JSON</button>
-    </nav>
+    <SourceViewNav Label="Architecture views" Views="Tabs" Current="@_tab" CurrentChanged="SelectTab" Prefix="arch-tab" TestId="arch-views" />
 
     @if (_tab == "Overview")
     {
@@ -90,13 +93,12 @@
                 </ReviewDisclosure>
             }
         </section>
-        <section class="arch-panel" aria-labelledby="arch-limitations-heading" data-testid="arch-limitations">
-            <h3 id="arch-limitations-heading">Analysis limitations <span class="arch-count">@Snapshot.Limitations.Count</span></h3>
-            <p class="arch-muted">General limits of source analysis — they apply to the whole snapshot.</p>
-            <ReviewDisclosure Text="View analysis limitations" CollapseText="Hide analysis limitations" TestId="arch-limitations-detail" Class="disclosure-inline">
+        <div class="sa-disclosures" data-testid="arch-limitations">
+            <ReviewDisclosure Text="@($"Analysis limitations ({Snapshot.Limitations.Count})")" CollapseText="Hide analysis limitations" TestId="arch-limitations-detail" Class="disclosure-inline">
+                <p class="arch-muted">General limits of source analysis — they apply to the whole snapshot.</p>
                 <ul class="arch-list">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul>
             </ReviewDisclosure>
-        </section>
+        </div>
     }
     else if (_tab == "Dependencies")
     {

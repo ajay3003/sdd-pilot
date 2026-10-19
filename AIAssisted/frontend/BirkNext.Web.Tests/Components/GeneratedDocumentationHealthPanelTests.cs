@@ -188,7 +188,7 @@ public sealed class GeneratedDocumentationHealthPanelTests : BunitContext
             Modules = [new GeneratedDocumentationModule { ModuleId = "m", Freshness = GeneratedDocumentationFreshnessStatus.Stale, GeneratorIds = ["w"] }],
         };
         var some = Render<GeneratedDocumentationSourceSummary>(p => p.Add(x => x.Snapshot, new IqrSourceSnapshot { GeneratedDocumentation = stale }));
-        some.Find("[data-testid=sa-generated-docs-status]").TextContent.Should().Be("Needs review");
+        some.Find("[data-testid=sa-generated-docs-status]").TextContent.Should().Be("Review recommended", "staleness is a candidate for review, never a verdict");
     }
 
     [Fact]

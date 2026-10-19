@@ -3,7 +3,7 @@
 
 @* Source Analysis → compact Generated Documentation row for the selected snapshot. Details and drift review live in the diagnostic. *@
 <section class="gds" aria-labelledby="gds-heading" data-testid="sa-generated-docs">
-    <h3 id="gds-heading" class="gds-title">Generated documentation <span class="sd-pill sd-pill-@Tone" data-testid="sa-generated-docs-status">@Status</span></h3>
+    <h3 id="gds-heading" class="gds-title">Generated documentation <BirkNext.Web.Components.SourceDomains.SourceStatusBadge Dimension="BirkNext.Web.Services.SourceStatusDimension.Completeness" Label="@Status" TestId="sa-generated-docs-status" /></h3>
     @if (Snapshot.GeneratedDocumentation is not { } g)
     {
         <p class="gds-muted" data-testid="sa-generated-docs-missing">This snapshot predates generated-documentation evidence. Analyze the same source again to include it.</p>
@@ -34,9 +34,8 @@
         null => "Not available",
         { Documents.Count: 0 } => "None detected",
         var g when g.Documents.Any(d => d.StructurallyInvalid) => "Structural failure",
-        var g when g.Modules.Any(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) || g.Drift.Count > 0 => "Needs review",
+        // Wording only: staleness and drift are candidates for review, never a verdict (the underlying states are unchanged).
+        var g when g.Modules.Any(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) || g.Drift.Count > 0 => "Review recommended",
         _ => "Detected",
     };
-
-    private string Tone => Status switch { "Structural failure" => "attention", "Needs review" => "partial", "Detected" => "complete", _ => "muted" };
 }

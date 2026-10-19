@@ -2,7 +2,6 @@
 .observability-workspace code { overflow-wrap: anywhere; }
 .observability-workspace h2 { margin: 0 0 .4rem; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .obs-muted { color: #4b5563; font-size: .86rem; }
-.obs-limitation { margin: .4rem 0; padding: .5rem .75rem; border-left: 4px solid #b45309; background: #fffbeb; color: #78350f; font-size: .9rem; }
 .obs-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem; }
 .obs-pill { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid #94a3b8; background: #f8fafc; color: #1f2937; white-space: nowrap; }
 .obs-pill-complete { border-color: #15803d; background: #f0fdf4; color: #14532d; }
@@ -10,8 +9,6 @@
 .obs-pill-attention { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
 .obs-pill-muted { border-color: #94a3b8; background: #f8fafc; color: #374151; }
 .obs-count { display: inline-block; min-width: 1.6rem; padding: 0 .4rem; border-radius: 999px; background: #eef2f7; font-size: .8rem; text-align: center; }
-.obs-tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0; }
-.obs-tabs button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
 .obs-summary { margin: .6rem 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; }
 .obs-summary > div { border: 1px solid #a8b2bf; border-radius: .5rem; padding: .45rem .6rem; min-width: 0; }
 .obs-summary dt { font-size: .76rem; color: #4b5563; }

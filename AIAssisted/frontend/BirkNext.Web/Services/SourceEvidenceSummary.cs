@@ -8,8 +8,9 @@ public sealed record EvidenceGroup(string Label, int Count);
 /// <summary>Shared wording for the source-only boundary: short on screen, full text in the details.</summary>
 public static class SourceBoundary
 {
-    public const string Architecture = "Source-derived only — deployment/runtime not verified.";
-    public const string Database = "Source-derived only — deployed schema not verified.";
+    // Area-specific limitation only; the page states once, at the top, that every area is source only.
+    public const string Architecture = "Deployment state not verified — components and dependencies are as declared in source.";
+    public const string Database = "Physical database identity and deployed schema not verified.";
     public const string ChangesNotDrift = "Source comparison reflects source declarations only. It is not deployment drift and says nothing about runtime traffic.";
     public static string ShortFingerprint(string fingerprint) => SourceAnalysisOverview.ShortFingerprint(fingerprint);
 }

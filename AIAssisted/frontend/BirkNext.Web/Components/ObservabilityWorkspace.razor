@@ -1,13 +1,19 @@
 @using BirkNext.SourceObservability
 @using BirkNext.Web.Services
 @using System.Text.Json
+@using BirkNext.Web.Components.SourceDomains
 @inject IJSRuntime JS
 
 @* Source Analysis → Observability: correlation/tracing, logging quality and telemetry configuration read from the selected snapshot's stored
    analysis (never re-analyzed here). Summary first; tables and evidence are collapsed or filterable. Every state is source-derived. *@
 <section class="observability-workspace" aria-labelledby="obs-heading" data-testid="observability-workspace">
-    <h2 id="obs-heading">Observability <span class="obs-pill" data-testid="obs-status">@SourceObservabilityPresentation.StatusLabel(Snapshot.Status)</span></h2>
-    <p class="obs-limitation" role="note" data-testid="obs-limitation">@SourceObservabilityPresentation.Boundary</p>
+    <div class="sa-section-head">
+        <h2 id="obs-heading">Observability <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceObservabilityPresentation.StatusLabel(Snapshot.Status)" TestId="obs-status" /></h2>
+        <div class="sa-section-actions" role="group" aria-label="Export observability" data-testid="obs-actions">
+            <button type="button" class="sa-action-btn" data-testid="obs-export-json" @onclick="ExportJson">Export JSON</button>
+        </div>
+    </div>
+    <p class="sa-scope-note" role="note" data-testid="obs-limitation">@SourceObservabilityPresentation.Boundary</p>
     <div class="obs-meta" data-testid="obs-provenance">
         <span class="obs-muted">Source <code title="@Snapshot.SourceFingerprint" data-testid="obs-fingerprint">@SourceBoundary.ShortFingerprint(Snapshot.SourceFingerprint)</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</span>
         <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="obs-about" Class="disclosure-inline">
@@ -15,10 +21,7 @@
             <p class="obs-muted">Full source fingerprint <code>@Snapshot.SourceFingerprint</code> · source snapshot <code>@Snapshot.SourceSnapshotId</code></p>
         </ReviewDisclosure>
     </div>
-    <nav class="obs-tabs" aria-label="Observability views">
-        @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab ? "true" : "false")" data-testid="@($"obs-tab-{Slug(tab)}")" @onclick="() => _tab = tab">@tab</button> }
-        <button type="button" data-testid="obs-export-json" @onclick="ExportJson">Export JSON</button>
-    </nav>
+    <SourceViewNav Label="Observability views" Views="Tabs" @bind-Current="_tab" Prefix="obs-tab" Slug="Slug" TestId="obs-views" />
 
     @if (_tab == "Overview")
     {
@@ -30,19 +33,39 @@
             <div><dt>Log calls</dt><dd>@M(SourceObservabilityPresentation.LogCalls(Snapshot))</dd></div>
             <div><dt>Findings needing review</dt><dd data-testid="obs-needs-review">@M(SourceObservabilityPresentation.NeedsReview(Snapshot))</dd></div>
         </dl>
+        var dimensions = Snapshot.Logging.Dimensions;
         <section class="obs-panel" aria-labelledby="obs-dimensions-heading" data-testid="obs-dimensions">
             <h3 id="obs-dimensions-heading">What the source shows</h3>
-            <p class="obs-muted">Each dimension has its own source state. There is no overall score: a state describes evidence in source, not runtime quality.</p>
-            <ul class="obs-dimension-list">
-                @foreach (var d in Snapshot.Logging.Dimensions)
+            <p class="obs-muted">Each dimension has its own source state, grouped by concept. There is no overall score: a state describes evidence in source, not runtime quality.</p>
+            @if (dimensions.Count > 0)
+            {
+                <dl class="sa-state-summary" data-testid="obs-state-summary" aria-label="Dimension states">
+                    @foreach (var (state, count) in SourceObservabilityPresentation.StateCounts(dimensions))
+                    {
+                        <div data-state="@state"><dt><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(state)" /></dt><dd>@count</dd></div>
+                    }
+                </dl>
+            }
+            <div class="sa-groups">
+                @foreach (var group in SourceObservabilityPresentation.Groups(dimensions))
                 {
-                    <li class="obs-dimension" data-testid="obs-dimension" data-dimension="@d.Id" data-state="@d.State">
-                        <span class="obs-dimension-title">@d.Title</span>
-                        <span class="obs-pill obs-pill-@SourceObservabilityPresentation.Tone(d.State)">@ObservabilitySnapshot.Label(d.State)</span>
-                        <span class="obs-muted obs-dimension-detail">@d.Detail</span>
-                    </li>
+                    var groupHeading = $"obs-group-{group.Key}-heading";
+                    <section class="sa-group-card" aria-labelledby="@groupHeading" data-testid="obs-dimension-group" data-group="@group.Key">
+                        <h4 id="@groupHeading">@group.Title <span class="sa-group-summary" data-testid="obs-group-summary">@SourceObservabilityPresentation.StateSummary(group.Dimensions)</span></h4>
+                        <p class="obs-muted">@group.Description</p>
+                        <ul class="sa-group-items">
+                            @foreach (var d in group.Dimensions)
+                            {
+                                <li data-testid="obs-dimension" data-dimension="@d.Id" data-state="@d.State">
+                                    <span class="sa-group-item-title">@d.Title</span>
+                                    <SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(d.State)" />
+                                    <span class="sa-group-item-detail">@d.Detail</span>
+                                </li>
+                            }
+                        </ul>
+                    </section>
                 }
-            </ul>
+            </div>
         </section>
         @if (Layers is { Count: > 0 } layers)
         {
@@ -54,7 +77,7 @@
                     {
                         <li class="obs-dimension" data-testid="obs-layer" data-layer="@l.Layer" data-state="@l.State">
                             <span class="obs-dimension-title">@l.Layer</span>
-                            <span class="obs-pill obs-pill-@(l.State == "Detected" ? "complete" : "muted")">@l.State</span>
+                            <SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@l.State" />
                             <span class="obs-muted obs-dimension-detail">@l.Detail</span>
                         </li>
                     }
@@ -63,46 +86,43 @@
         }
         <section class="obs-panel" aria-labelledby="obs-components-heading" data-testid="obs-components">
             <h3 id="obs-components-heading">Components <span class="obs-count">@Snapshot.Components.Count</span></h3>
-            <div class="obs-scroll" tabindex="0" role="region" aria-label="Observability by component">
-                <table>
-                    <thead><tr><th scope="col">Component</th><th scope="col">Tracing</th><th scope="col">Logging</th><th scope="col">Exporters</th><th scope="col">Correlation</th><th scope="col">Logging state</th><th scope="col">Runtime</th></tr></thead>
-                    <tbody>
+            <p class="obs-muted">Correlation and logging state per component, with the tracing and logging technologies found for it.</p>
+            <p class="sa-scroll-hint" aria-hidden="true">Scroll sideways to see every column.</p>
+            <div class="obs-scroll sa-stack" tabindex="0" role="region" aria-label="Observability by component">
+                <table role="table">
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Component</th><th role="columnheader" scope="col">Correlation · tracing</th><th role="columnheader" scope="col">Logging</th><th role="columnheader" scope="col">Exporters</th><th role="columnheader" scope="col">Runtime</th></tr></thead>
+                    <tbody role="rowgroup">
                         @foreach (var c in Snapshot.Components)
                         {
-                            <tr data-testid="obs-component-row" data-component="@c.ComponentId">
-                                <th scope="row">@c.Name <span class="obs-context">@c.ComponentType</span></th>
-                                <td>@Join(c.TracingTechnologies)</td>
-                                <td>@Join(c.LoggingFrameworks)<span class="obs-context">@c.LogCalls log call(s)</span></td>
-                                <td>@Join(c.TelemetryExporters)</td>
-                                <td><span class="obs-pill obs-pill-@SourceObservabilityPresentation.Tone(c.Correlation)">@ObservabilitySnapshot.Label(c.Correlation)</span></td>
-                                <td><span class="obs-pill obs-pill-@SourceObservabilityPresentation.Tone(c.Logging)">@ObservabilitySnapshot.Label(c.Logging)</span></td>
-                                <td class="obs-muted">@c.Runtime</td>
+                            <tr role="row" data-testid="obs-component-row" data-component="@c.ComponentId">
+                                <th role="rowheader" scope="row">@c.Name <span class="obs-context">@c.ComponentType</span></th>
+                                <td role="cell" data-label="Correlation · tracing"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Correlation)" /><span class="obs-context">Tracing: @Join(c.TracingTechnologies)</span></td>
+                                <td role="cell" data-label="Logging"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Logging)" /><span class="obs-context">@Join(c.LoggingFrameworks) · @c.LogCalls log call(s)</span></td>
+                                <td role="cell" data-label="Exporters">@Join(c.TelemetryExporters)</td>
+                                <td role="cell" data-label="Runtime" class="obs-muted">@c.Runtime</td>
                             </tr>
                         }
                     </tbody>
                 </table>
             </div>
         </section>
-        <div class="obs-panels">
-            <section class="obs-panel" aria-labelledby="obs-capabilities-heading" data-testid="obs-capabilities">
-                <h3 id="obs-capabilities-heading">Analyzer coverage</h3>
-                <p class="obs-muted">What the analyzers can read. Unsupported languages are reported, never guessed.</p>
-                @if (Snapshot.UnsupportedEvidence.Count > 0) { <ul class="obs-list" data-testid="obs-unsupported">@foreach (var u in Snapshot.UnsupportedEvidence) { <li>@u</li> }</ul> }
-                <ReviewDisclosure Text="View analyzer coverage" CollapseText="Hide analyzer coverage" TestId="obs-capability-detail" Class="disclosure-inline">
+        <div class="sa-disclosures">
+            <ReviewDisclosure Text="@($"Analyzer coverage ({Snapshot.Capabilities.Count})")" CollapseText="Hide analyzer coverage" TestId="obs-capability-detail" Class="disclosure-inline"
+                              Hint="@(Snapshot.UnsupportedEvidence.Count > 0 ? $"{Snapshot.UnsupportedEvidence.Count} unsupported" : null)">
+                <div data-testid="obs-capabilities">
+                    <p class="obs-muted">What the analyzers can read. Unsupported languages are reported, never guessed.</p>
+                    @if (Snapshot.UnsupportedEvidence.Count > 0) { <ul class="obs-list" data-testid="obs-unsupported">@foreach (var u in Snapshot.UnsupportedEvidence) { <li>@u</li> }</ul> }
                     <div class="obs-scroll" tabindex="0" role="region" aria-label="Analyzer coverage">
                         <table data-testid="obs-capability-table">
                             <thead><tr><th scope="col">Technology</th><th scope="col">Correlation</th><th scope="col">Logging</th><th scope="col">Detail</th></tr></thead>
-                            <tbody>@foreach (var cap in Snapshot.Capabilities) { <tr data-testid="obs-capability-row"><th scope="row">@cap.Technology</th><td>@cap.Correlation</td><td>@cap.Logging</td><td>@cap.Detail</td></tr> }</tbody>
+                            <tbody>@foreach (var cap in Snapshot.Capabilities) { <tr data-testid="obs-capability-row"><th scope="row">@cap.Technology</th><td><SourceStatusBadge Dimension="SourceStatusDimension.ParserSupport" Label="@cap.Correlation.ToString()" /></td><td><SourceStatusBadge Dimension="SourceStatusDimension.ParserSupport" Label="@cap.Logging.ToString()" /></td><td>@cap.Detail</td></tr> }</tbody>
                         </table>
                     </div>
-                </ReviewDisclosure>
-            </section>
-            <section class="obs-panel" aria-labelledby="obs-limitations-heading" data-testid="obs-limitations">
-                <h3 id="obs-limitations-heading">Limitations <span class="obs-count">@Snapshot.Limitations.Count</span></h3>
-                <ReviewDisclosure Text="View limitations" CollapseText="Hide limitations" TestId="obs-limitations-detail" Class="disclosure-inline">
-                    <ul class="obs-list">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul>
-                </ReviewDisclosure>
-            </section>
+                </div>
+            </ReviewDisclosure>
+            <ReviewDisclosure Text="@($"Limitations ({Snapshot.Limitations.Count})")" CollapseText="Hide limitations" TestId="obs-limitations-detail" Class="disclosure-inline">
+                <ul class="obs-list" data-testid="obs-limitations">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul>
+            </ReviewDisclosure>
         </div>
     }
     else if (_tab == "Correlation & tracing")
@@ -140,10 +160,10 @@
                                 <td>@b.Mechanism</td>
                                 <td>@(b.Context.Count == 0 ? "None found" : string.Join(", ", b.Context.Select(ObservabilitySnapshot.Label)))</td>
                                 <td>
-                                    <span class="obs-pill">@ObservabilitySnapshot.Label(b.EvidenceState)</span>
+                                    <SourceStatusBadge Dimension="SourceStatusDimension.Confidence" Label="@ObservabilitySnapshot.Label(b.EvidenceState)" />
                                     <button type="button" class="obs-link" aria-expanded="@(open ? "true" : "false")" data-testid="obs-boundary-evidence-toggle" @onclick='() => Toggle("b:" + b.Id)'>@(open ? "Hide evidence" : $"View evidence ({b.Evidence.Count})")<span class="visually-hidden"> for @ObservabilitySnapshot.Label(b.Type) in @SourceObservabilityPresentation.ComponentName(Snapshot, b.Component)</span></button>
                                 </td>
-                                <td><span class="obs-pill obs-pill-@SourceObservabilityPresentation.Tone(b.Propagation)">@ObservabilitySnapshot.Label(b.Propagation)</span></td>
+                                <td><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(b.Propagation)" /></td>
                             </tr>
                             @if (open)
                             {

@@ -1,0 +1,25 @@
+@* The one second-level view switcher of Source Analysis (Architecture, Database, Observability, Infrastructure, Configuration). A labelled
+   <nav> of real buttons; the current view carries aria-current. Views only: actions such as Export never go in here. Each button keeps
+   its existing test id ({Prefix}-{slug}). *@
+<nav class="sa-subnav" aria-label="@Label" data-testid="@TestId">
+    <ul class="sa-subnav-list">
+        @foreach (var view in Views)
+        {
+            var current = view == Current;
+            <li><button type="button" class="sa-subnav-item @(current ? "is-current" : "")" aria-current="@(current ? "true" : null)"
+                        data-testid="@($"{Prefix}-{(Slug?.Invoke(view) ?? view.ToLowerInvariant())}")" @onclick="() => Select(view)">@view</button></li>
+        }
+    </ul>
+</nav>
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<string> Views { get; set; } = [];
+    [Parameter, EditorRequired] public string Current { get; set; } = "";
+    [Parameter] public EventCallback<string> CurrentChanged { get; set; }
+    /// <summary>Test-id prefix of each view button (e.g. "arch-tab" → arch-tab-overview).</summary>
+    [Parameter, EditorRequired] public string Prefix { get; set; } = "";
+    [Parameter] public Func<string, string>? Slug { get; set; }
+    [Parameter] public string? TestId { get; set; }
+
+    private Task Select(string view) => CurrentChanged.InvokeAsync(view);
+}

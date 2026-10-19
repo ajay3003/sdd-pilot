@@ -161,7 +161,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
         navigation.NavigateTo("source-analysis?area=Infrastructure");
         var deepLink = Render<SourceAnalysis>();
-        deepLink.Find("[data-testid=area-infrastructure]").GetAttribute("aria-pressed").Should().Be("true");
+        deepLink.Find("[data-testid=area-infrastructure]").GetAttribute("aria-current").Should().Be("page");
         _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -173,7 +173,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         _snapshots = [current];
         var cut = Render<SourceAnalysis>();
 
-        cut.Find("[data-testid=area-overview]").GetAttribute("aria-pressed").Should().Be("true", "the landing page opens on the overview");
+        cut.Find("[data-testid=area-overview]").GetAttribute("aria-current").Should().Be("page", "the landing page opens on the overview");
         cut.Find("[data-testid=sa-current]").GetAttribute("data-snapshot").Should().Be(current.Id.ToString());
         (cut.Find("[data-testid=sa-current-archive]").TextContent, cut.Find("[data-testid=sa-current-fingerprint]").TextContent, cut.Find("[data-testid=sa-current-analyzed]").TextContent, cut.Find("[data-testid=sa-current-files]").TextContent)
             .Should().Be(("shop-api.zip", "c850a1b2…", "2026-09-29 08:15 UTC", "120"));
@@ -184,13 +184,17 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         Status(cut, "Architecture").Should().Be("Partial");
         Status(cut, "Database").Should().Be("Partial", "Partial is never Failed");
         cut.Find("[data-testid=sa-overview-areas]").TextContent.Should().NotContain("Failed");
-        Metrics(cut, "Architecture").Should().Equal(new Dictionary<string, string> { ["Components"] = "3", ["Dependencies"] = "3", ["Messaging channels"] = "1", ["Data stores"] = "1", ["External systems"] = "0", ["Unresolved dependencies"] = "1" });
-        Metrics(cut, "Database").Should().Equal(new Dictionary<string, string> { ["Database candidates"] = "1", ["Tables / entities"] = "4", ["Relationships"] = "3", ["Indexes"] = "4", ["Unresolved evidence"] = "5" });
+        // Overview is a summary: three high-value counts per card, each equal to the area's own model of the same snapshot.
+        Metrics(cut, "Architecture").Should().Equal(new Dictionary<string, string> { ["Components"] = "3", ["Messaging channels"] = "1", ["Unresolved dependencies"] = "1" });
+        Metrics(cut, "Architecture")["Components"].Should().Be(current.Architecture!.Components.Count.ToString());
+        Metrics(cut, "Architecture")["Unresolved dependencies"].Should().Be(current.Architecture!.UnresolvedItems.Count().ToString());
+        Metrics(cut, "Database").Should().Equal(new Dictionary<string, string> { ["Database candidates"] = "1", ["Tables / entities"] = "4", ["Unresolved evidence"] = "5" });
+        Metrics(cut, "Database")["Unresolved evidence"].Should().Be(current.DatabaseArchitecture!.UnresolvedEvidence.Count.ToString());
         cut.FindAll("[data-testid=sa-area-card] [data-testid=sa-area-reason]").Should().BeEmpty("the unresolved counts are metrics; no sentence repeats them");
         cut.Find("[data-testid=sa-area-card][data-area=Architecture]").GetAttribute("data-analysis").Should().Be(current.Architecture!.SnapshotId.ToString());
         cut.Find("[data-testid=sa-area-card][data-area=Database]").GetAttribute("data-analysis").Should().Be(current.DatabaseArchitecture!.SnapshotId.ToString());
-        cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployment/runtime not verified");
-        cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployed schema not verified");
+        cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-limitation]").TextContent.Should().Be(SourceAnalysisOverview.ArchitectureCardLimitation);
+        cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-limitation]").TextContent.Should().Be(SourceAnalysisOverview.DatabaseCardLimitation);
         cut.Find("[data-testid=sa-current-evidence]").TextContent.Should().Be("Ready", "the source-evidence status sits next to the archive name");
         cut.FindAll("[data-testid=sa-current] dt").Select(d => d.TextContent).Should().Equal("Fingerprint", "Analyzed", "Files", "Commit", "Created by");
         (cut.Find("[data-testid=sa-open-architecture]").TextContent, cut.Find("[data-testid=sa-open-database]").TextContent).Should().Be(("Open Architecture", "Open Database Diagram"));
@@ -234,7 +238,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         Metrics(cut, "Database")["Tables / entities"].Should().Be("7", "both cards read the same selected snapshot");
 
         cut.Find("[data-testid=sa-open-architecture]").Click();
-        cut.Find("[data-testid=area-architecture]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=area-architecture]").GetAttribute("aria-current").Should().Be("page");
         cut.Find("[data-testid=architecture-workspace]").TextContent.Should().Contain(older.Architecture!.SourceFingerprint);
         cut.FindAll("[data-testid=sa-overview-areas]").Should().BeEmpty();
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "sa-area-Architecture");
@@ -242,12 +246,12 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=area-overview]").Click();
         cut.Find("[data-testid=sa-open-database]").Click();
         var database = cut.Find("[data-testid=database-workspace]");
-        database.QuerySelector("button[aria-pressed]")!.TextContent.Should().Be("Diagram", "Open Database Diagram lands on the diagram");
+        database.QuerySelector(".sa-subnav-item[aria-current]")!.TextContent.Should().Be("Diagram", "Open Database Diagram lands on the diagram");
         cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(older.Id.ToString());
 
         cut.Find("[data-testid=area-overview]").Click();
         cut.Find("[data-testid=area-database]").Click();
-        cut.Find("[data-testid=database-workspace] button[aria-pressed]").TextContent.Should().Be("Overview", "the Database tab itself opens on its overview");
+        cut.Find("[data-testid=database-workspace] .sa-subnav-item[aria-current]").TextContent.Should().Be("Overview", "the Database tab itself opens on its overview");
     }
 
     [Fact]
@@ -261,7 +265,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         _uploads.Should().Be(1);
         cut.WaitForAssertion(() => cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip"));
         _api.Verify(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2), "the successful new analysis invalidates and refreshes the prior cached response");
-        cut.Find("[data-testid=area-overview]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=area-overview]").GetAttribute("aria-current").Should().Be("page");
         Status(cut, "Architecture").Should().Be("Complete");
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "sa-current-heading");
     }
