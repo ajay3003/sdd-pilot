@@ -13,217 +13,146 @@
 
 <PageTitle>Skolenærvær Testing</PageTitle>
 
-@* A thin domain shell: one tab at a time (?tab=). Readiness, blockers and evidence are the shared engines' own (Integration Journey,
-   Active Event, Message Verification); this page only summarizes them and links to the owners. Nothing is run or assessed here. *@
+@* The Skolenærvær test pack's page: the first registered test pack, rendered from its generic descriptor (journeys, verification views, rules,
+   history). One navigation only (?tab=). Readiness, blockers and evidence are the shared engines' own (Integration Journey, Active Event,
+   Message Verification, Integration Topology, Test Data); this page summarizes them and hands off to their owners — it embeds no other
+   feature's navigation. Source evidence is the canonical Integration Quality Review binding; nothing is selected, run or assessed here. *@
 <div class="snt-page">
     <PageHeader Title="Skolenærvær Testing"
                 Description="Review and test Skolenærvær integrations using BirkNext's shared CDC, integration journey and source-evidence engines." />
 
-    <nav class="snt-tabs" aria-label="Skolenærvær Testing sections">
-        @foreach (var tab in Tabs)
+    <nav class="snt-nav" aria-label="Skolenærvær Testing sections" data-testid="snt-nav">
+        @foreach (var group in Navigation_)
         {
-            <a href="@TabHref(tab.Key)" class="snt-tab @(_tab == tab.Key ? "snt-tab-active" : "")" aria-current="@(_tab == tab.Key ? "page" : null)"
-               data-tab="@tab.Key" @onclick="() => SelectTabAsync(tab.Key)" @onclick:preventDefault>@tab.Label</a>
+            <div class="snt-nav-group" role="group" aria-label="@group.Label" data-testid="snt-nav-group">
+                <span class="snt-nav-caption" aria-hidden="true">@group.Label</span>
+                <ul class="snt-nav-list">
+                    @foreach (var view in group.Views)
+                    {
+                        <li><a href="@TabHref(view.ViewId)" class="snt-tab @(_tab == view.ViewId ? "snt-tab-active" : "")" aria-current="@(_tab == view.ViewId ? "page" : null)"
+                               data-tab="@view.ViewId" @onclick="() => SelectTabAsync(view.ViewId)" @onclick:preventDefault>@view.DisplayName</a></li>
+                    }
+                </ul>
+            </div>
         }
     </nav>
 
-    @if (_tab == OverviewTab)
+    @if (CurrentView is { Kind: TestPackViewKind.Overview })
     {
         <section id="snt-overview" class="snt-panel" aria-labelledby="snt-overview-heading">
             <h2 id="snt-overview-heading" tabindex="-1">Overview</h2>
-            <dl class="snt-context">
+            <dl class="snt-context" data-testid="snt-context">
                 <div><dt>Project</dt><dd>@(Workspace.ProjectName ?? "No project selected")</dd></div>
-                <div><dt>Target Environment</dt><dd>@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
-                <div><dt>Source snapshot</dt><dd>@_sourceSummary</dd></div>
+                <div><dt>Target Environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
+                <div><dt>Source evidence</dt><dd data-testid="snt-source">@_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
             </dl>
 
-            <h3 class="snt-subheading">Journey readiness</h3>
-            <ul class="snt-journeys" data-testid="snt-journeys">
-                @foreach (var row in JourneyRows)
-                {
-                    <li class="snt-journey" data-testid="snt-journey" data-journey="@row.Key">
-                        <div class="snt-journey-main">
-                            <h4>@row.Name</h4>
-                            <p class="snt-flow">@row.Flow</p>
-                        </div>
-                        <div class="snt-journey-status">
-                            <span class="snt-pill snt-pill-@row.Tone" data-testid="snt-journey-status">@row.Status</span>
-                            @if (row.Blockers > 0) { <span class="snt-muted" data-testid="snt-journey-blockers">@row.Blockers blocker@(row.Blockers == 1 ? "" : "s")</span> }
-                        </div>
-                        <a class="btn-secondary snt-open" href="@TabHref(row.Tab)" @onclick="() => SelectTabAsync(row.Tab)" @onclick:preventDefault
-                           aria-label="@($"Open {row.Name}")" data-testid="snt-journey-open">Open</a>
-                    </li>
-                }
-            </ul>
+            <h3 class="snt-subheading" id="snt-journeys-heading">Journeys</h3>
             @if (_initialized && _profile is null)
             {
                 <p role="status" data-testid="snt-journeys-not-ready">Journey readiness is not available until a Target Environment is selected. Nothing has been run or assessed.</p>
             }
-
-            @if (TopBlockers.Count > 0)
+            <div class="snt-scroll" role="region" aria-labelledby="snt-journeys-heading">
+                <table class="snt-table snt-stack" role="table" data-testid="snt-journeys">
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Journey</th><th role="columnheader" scope="col">Configuration</th><th role="columnheader" scope="col">Source evidence</th><th role="columnheader" scope="col">Execution readiness</th><th role="columnheader" scope="col">Blockers</th><th role="columnheader" scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+                    <tbody role="rowgroup">
+                        @foreach (var journey in Journeys)
+                        {
+                            var view = View(journey.JourneyId);
+                            <tr role="row" class="snt-journey-row" data-testid="snt-journey" data-journey="@journey.JourneyId">
+                                <th role="rowheader" scope="row"><span class="snt-journey-name">@journey.DisplayName</span><span class="snt-flow">@journey.Flow</span></th>
+                                <td role="cell" data-label="Configuration">@Dimension("Configuration", view is null ? Unknown : TestPackPresentation.Configuration(view))</td>
+                                <td role="cell" data-label="Source evidence">@Dimension("Source evidence", view is null ? Unknown : TestPackPresentation.SourceEvidence(view))</td>
+                                <td role="cell" data-label="Execution readiness" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
+                                <td role="cell" data-label="Blockers" data-testid="snt-journey-blockers">@(view is null ? "—" : BlockerCount(journey.JourneyId).ToString())</td>
+                                <td role="cell"><a class="btn-secondary snt-open" href="@TabHref(journey.JourneyId)" @onclick="() => SelectTabAsync(journey.JourneyId)" @onclick:preventDefault
+                                       aria-label="@($"Open {journey.DisplayName}")" data-testid="snt-journey-open">Open</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (Descriptor?.VerificationViews is { Count: > 0 } verifications)
             {
-                <h3 class="snt-subheading">Top blockers</h3>
-                <ul class="snt-blockers" data-testid="snt-top-blockers">
-                    @foreach (var (journey, item) in TopBlockers) { <li><strong>@journey:</strong> @item.Label <span class="snt-muted">· @IntegrationJourneyPresentation.Readiness(item.State)</span></li> }
+                <ul class="snt-verify-summary" data-testid="snt-verify-summary">
+                    @foreach (var verification in verifications)
+                    {
+                        <li data-testid="snt-verify-item" data-view="@verification.ViewId"><a href="@TabHref(verification.ViewId)" @onclick="() => SelectTabAsync(verification.ViewId)" @onclick:preventDefault>@verification.DisplayName</a>
+                            <span class="snt-muted">· @verification.Description</span> @Dimension("Availability", VerificationAvailability(verification))</li>
+                    }
                 </ul>
             }
 
             @if (_profile is not null)
             {
-                <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected flow (Integration Topology)" />
-            }
-
-            <h3 class="snt-subheading">Quick actions</h3>
-            <p class="snt-links">
-                <a href="/integration-topology">Open Integration Topology</a>
-                <a href="/integration-quality-review">Open Integration Quality Review</a>
-                <a href="/admin/system-settings?section=target-environments">Open Target Environments</a>
-                <a href="/source-analysis">Open Source Analysis</a>
-                <a href="/test-coverage-review">Open Test Coverage &amp; Overlap Review</a>
-            </p>
-        </section>
-    }
-    else if (_tab == EducationTab)
-    {
-        <section id="snt-education" class="snt-panel" aria-labelledby="snt-education-heading">
-            <h2 id="snt-education-heading" tabindex="-1">Utdanningsdata</h2>
-            <p class="snt-flow">BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning</p>
-            <p>Run by the shared Active Event tests; Event Hub configuration and safety checks are shared.</p>
-            @if (_profile is null)
-            {
-                <p role="status">Not ready: select a Target Environment to load shared Active Event readiness. Source Analysis remains available without a target.</p>
-            }
-            else
-            {
-                @JourneyStatus("utdanningsdata")
-                @* The shared Active Event panel is summary-first: scenarios, execution and blockers, with its runner behind "Open active tests". *@
-                <ActiveEventTestingPanel SummaryFirst="true" Profile="_profile" Integrations="_integrations" />
+                <section class="snt-topology" aria-label="Expected topology" data-testid="snt-topology">
+                    <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected topology" Compact="true" />
+                </section>
             }
         </section>
     }
-    else if (_tab == RapportTab)
+    else if (CurrentView is { Kind: TestPackViewKind.Journey, JourneyId: { } journeyId })
     {
-        <section id="snt-rapport" class="snt-panel" aria-labelledby="snt-rapport-heading">
-            <h2 id="snt-rapport-heading" tabindex="-1">Rapportmottak</h2>
-            <p class="snt-flow">Altinn → MU → MM → Skolenærværsrapport</p>
+        var journey = Journeys.FirstOrDefault(item => item.JourneyId == journeyId);
+        var view = View(journeyId);
+        <section id="@SectionId(journeyId)" class="snt-panel" aria-labelledby="@($"{SectionId(journeyId)}-heading")" data-testid="snt-journey-view" data-journey="@journeyId">
+            <h2 id="@($"{SectionId(journeyId)}-heading")" tabindex="-1">@(journey?.DisplayName ?? journeyId)</h2>
+            <p class="snt-flow" data-testid="snt-flow"><span class="snt-dimension-label">Flow</span> @(journey?.Flow ?? "")</p>
+            @if (journeyId == PeriodeavslutningId)
+            {
+                <p data-testid="snt-period-semantics">Service Bus accepted is not the same as Bufdata processed.</p>
+                <p data-testid="snt-period-operator">Period closure is an operator action: Skolenærværsrapport locks a period on its own schedule, its drift endpoint only postpones the lock, and BirkNext never locks a period or publishes the event.</p>
+            }
             @if (_profile is null)
             {
-                <p role="status" data-testid="snt-altinn-not-ready">Not ready: select a Target Environment to prepare an Altinn TT02 submission.</p>
+                <p role="status" data-testid="snt-not-ready">Not ready: select a Target Environment to load this journey's readiness. Nothing has been run or assessed.</p>
                 <p><a class="btn-secondary" href="/admin/system-settings?section=target-environments">Open Target Environment</a></p>
             }
+            else if (view is null)
+            {
+                <p class="snt-muted" role="status">@(!_initialized ? "Loading readiness…" : "Readiness is not available for this journey.")</p>
+            }
             else
             {
-                @JourneyStatus("rapportmottak")
-                <div class="snt-actions" data-testid="snt-rapport-actions">
-                    <button type="button" class="btn-primary" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">Open Rapportmottak run</button>
-                    <a class="btn-secondary" href="/integration-quality-review?view=test-configuration" data-testid="snt-configure-altinn">Configure Altinn</a>
-                    <a class="btn-secondary" href="/admin/system-settings?section=target-environments" data-testid="snt-open-target">Open Target Environment</a>
-                </div>
-                <p class="snt-muted">Opening the run page sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
-
-                <div id="snt-rapport-run" class="snt-focus-target" tabindex="-1">
-                    <ReviewDisclosure Text="Rapportmottak run" CollapseText="Hide Rapportmottak run" TestId="snt-rapport-run" @bind-Expanded="_runOpen">
-                        <IntegrationJourneyPanel @ref="_journeys" Profile="_profile" InitialJourneyId="rapportmottak" />
-                    </ReviewDisclosure>
-                </div>
-
-                @if (View("rapportmottak") is { } rapport)
+                @JourneyStatus(view)
+                @if (view.Journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent)
                 {
-                    var resolved = SkoleNaervaerReadinessPresentation.Resolved(rapport.Prerequisites);
-                    var attention = SkoleNaervaerReadinessPresentation.NeedsAttention(rapport.Prerequisites);
-                    var decision = SkoleNaervaerReadinessPresentation.Decision(attention);
-                    <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code">TT02 readiness: <strong>@decision.Code. @decision.Label</strong>
-                        @if (decision.Code == "A") { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
-                    <div class="snt-resolution">
-                        <section aria-labelledby="snt-resolved-heading" data-testid="snt-resolved">
-                            <h3 id="snt-resolved-heading" class="snt-subheading">Resolved automatically (@resolved.Count)</h3>
-                            @if (resolved.Count == 0) { <p class="snt-muted">Nothing could be resolved yet.</p> }
-                            else
-                            {
-                                <ul class="snt-resolved-list">
-                                    @foreach (var item in resolved)
-                                    {
-                                        <li data-testid="snt-resolved-item" data-key="@item.Key"><span class="snt-mark snt-mark-ok" aria-hidden="true">✓</span>
-                                            <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source">@(item.Source ?? "BirkNext")</span>
-                                                @* Compact: what was chosen is named (an alias, never an identifier); the full reason stays under Technical details. *@
-                                                @if (item.Detail.StartsWith("Resolved:", StringComparison.Ordinal)) { <span class="snt-muted snt-row-detail" data-testid="snt-resolved-choice">@item.Detail</span> }</span></li>
-                                    }
-                                </ul>
-                            }
-                        </section>
-                        <section aria-labelledby="snt-attention-heading" data-testid="snt-needs-attention">
-                            <h3 id="snt-attention-heading" class="snt-subheading">Needs attention (@attention.Count)</h3>
-                            @if (attention.Count == 0) { <p class="snt-muted" data-testid="snt-nothing-unresolved">Nothing is unresolved for a submission.</p> }
-                            else
-                            {
-                                @if (SkoleNaervaerReadinessPresentation.InteractiveFallbackOnly(rapport.Prerequisites))
-                                {
-                                    <p class="snt-muted" data-testid="snt-fallback-note">The unattended setup is incomplete. The interactive TestID sign-in fallback can still run it, but the first TT02 run is unattended.</p>
-                                }
-                                <ul class="snt-attention-list" data-testid="snt-rapport-blockers">
-                                    @foreach (var item in attention)
-                                    {
-                                        var action = SkoleNaervaerReadinessPresentation.ActionFor(item, _profile.Id);
-                                        <li data-key="@item.Key" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">✗</span>
-                                            <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source">@(item.Source ?? "BirkNext")</span>
-                                                <span class="snt-muted snt-row-detail">@item.Detail</span>
-                                                @if (action.Href is { } href) { <a class="snt-blocker-action" href="@href">@action.Label</a> }
-                                                else if (action.Group is { } group) { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(group)">@action.Label</button> }</span></li>
-                                    }
-                                </ul>
-                            }
-                        </section>
-                    </div>
+                    @* Hand-off: the shared Active Event tests own this journey's scenarios, safety checks, runs and history. *@
+                    <dl class="snt-handoff" data-testid="snt-handoff">
+                        <div><dt>Execution provider</dt><dd data-testid="snt-provider">Shared Active Event Tests <span class="snt-muted">(@view.Journey.DelegatedProviderId)</span></dd></div>
+                        <div><dt>Execution readiness</dt><dd data-testid="snt-handoff-readiness">@(TestPackPresentation.ExecutionReadiness(view) == "Ready" ? "Ready" : $"Blocked — {BlockerCount(journeyId)} prerequisite{(BlockerCount(journeyId) == 1 ? "" : "s")}")</dd></div>
+                    </dl>
+                    <p><a class="btn-primary" href="/integration-quality-review?view=active-tests" data-testid="snt-open-active-tests">Open Active Event Tests</a></p>
+                    <p class="snt-muted">Scenarios run from Active Event Tests in Integration Quality Review; Event Hub configuration and safety checks are shared. Nothing runs from this page.</p>
+                    @Prerequisites(view, collapsed: true)
                 }
-
-                <h3 class="snt-subheading">Technical details</h3>
-                <div class="snt-groups" data-testid="snt-rapport-details">
-                    @foreach (var group in DetailGroups("rapportmottak"))
-                    {
-                        <div id="@($"snt-group-{group.Key}")" class="snt-focus-target" tabindex="-1">
-                        <ReviewDisclosure Text="@group.Title" CollapseText="@group.Title" Hint="@group.Hint" TestId="@($"snt-group-{group.Key}")" Class="snt-group"
-                                          Expanded="@_openGroups.Contains(group.Key)" ExpandedChanged="@(open => ToggleGroup(group.Key, open))">
-                            @if (group.Key == "local")
-                            {
-                                <div class="snt-local-setup" data-testid="snt-local-setup">
-                                    <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
-                                    <ul>
-                                        <li><strong>Integration Quality Review → Altinn test configuration:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=test-configuration">Open Altinn test configuration</a></li>
-                                        <li><strong>Local execution config</strong> (this backend's process only, never a committed file): Enabled, the registered redirect URI, the client secret, the approved synthetic TestID reporters and their Altinn profile confirmation, approved synthetic children and the app-policy confirmation. Set them with <code>AIAssisted/scripts/configure-skolenaervaer-tt02-local.ps1</code> and restart the backend from that window.</li>
-                                        <li><strong>Target Environment:</strong> the trusted target and its enrolled integrations. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
-                                        <li><strong>Live Altinn metadata:</strong> task, data type and process contract, read anonymously with "Read public TT02 metadata" under App contract.</li>
-                                    </ul>
-                                    <p class="snt-muted">Resolving is not verifying: configured scopes are not a verified client registration, a configured reporter is not authenticated, and a declared child is not verified.</p>
-                                </div>
-                            }
-                            @if (group.Key == "contract")
-                            {
-                                <AltinnTestSetupPanel EnvironmentId="@_profile.Id" OnOpenJourney="OpenRapportmottakAsync" />
-                            }
-                            @if (group.Items.Count > 0)
-                            {
-                                <ul class="snt-prerequisites">
-                                    @foreach (var item in group.Items)
-                                    {
-                                        <li data-testid="snt-prerequisite" data-key="@item.Key" data-state="@item.State">
-                                            <span class="snt-pill snt-pill-@IntegrationJourneyPresentation.ReadinessTone(item.State)">@IntegrationJourneyPresentation.Readiness(item.State)</span>
-                                            <span><strong>@item.Label</strong>@(item.Mandatory ? "" : " (not a blocker)") — @item.Detail</span>
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </ReviewDisclosure>
-                        </div>
-                    }
-                </div>
+                else
+                {
+                    @if (journeyId == RapportmottakId) { @RapportmottakHeader(view) }
+                    @Prerequisites(view, collapsed: false)
+                    <div id="@($"{SectionId(journeyId)}-run")" class="snt-focus-target" tabindex="-1">
+                        @if (journeyId == RapportmottakId)
+                        {
+                            <ReviewDisclosure Text="Rapportmottak run and steps" CollapseText="Hide Rapportmottak run" TestId="snt-rapport-run" @bind-Expanded="_runOpen">
+                                <IntegrationJourneyPanel @ref="_journeys" Profile="_profile" PackId="@PackId" Embedded="true" ShowPrerequisites="false" InitialJourneyId="@journeyId" />
+                            </ReviewDisclosure>
+                        }
+                        else
+                        {
+                            <h3 class="snt-subheading">Steps and run</h3>
+                            <IntegrationJourneyPanel Profile="_profile" PackId="@PackId" Embedded="true" ShowPrerequisites="false" InitialJourneyId="@journeyId" />
+                        }
+                    </div>
+                    @if (journeyId == RapportmottakId) { @RapportmottakDetails(view) }
+                }
             }
         </section>
     }
-    else if (_tab == VerificationTab)
+    else if (CurrentView is { Kind: TestPackViewKind.Verification } verificationView)
     {
         <section id="snt-verification" class="snt-panel" aria-labelledby="snt-verification-heading">
-            <h2 id="snt-verification-heading" tabindex="-1">Message Verification</h2>
-            <p>What actually happened to one Skolenærvær message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only.</p>
+            <h2 id="snt-verification-heading" tabindex="-1">@verificationView.DisplayName</h2>
+            <p>What actually happened to one Skolenærvær message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only: nothing is sent.</p>
             @if (_profile is null)
             {
                 <div class="snt-empty" role="status" data-testid="snt-verification-not-ready">
@@ -237,48 +166,31 @@
             }
         </section>
     }
-    else if (_tab == PeriodTab)
-    {
-        <section id="snt-period" class="snt-panel" aria-labelledby="snt-period-heading">
-            <h2 id="snt-period-heading" tabindex="-1">Periodeavslutning</h2>
-            <p class="snt-flow">Skolenærværsrapport → Service Bus → Bufdata</p>
-            <p>Service Bus accepted is not the same as Bufdata processed.</p>
-            <p data-testid="snt-period-operator">Period closure is an operator action: Skolenærværsrapport locks a period on its own schedule, its drift endpoint only postpones the lock, and BirkNext never locks a period or publishes the event.</p>
-            @if (_profile is not null)
-            {
-                @JourneyStatus("periodeavslutning")
-                <ReviewDisclosure Text="Open journey details" CollapseText="Hide journey details" TestId="snt-open-period" @bind-Expanded="_periodOpen">
-                    @if (_periodOpen) { <IntegrationJourneyPanel Profile="_profile" InitialJourneyId="periodeavslutning" /> }
-                </ReviewDisclosure>
-            }
-        </section>
-    }
-    else if (_tab == RulesTab)
+    else if (CurrentView is { Kind: TestPackViewKind.Rules })
     {
         <section id="snt-rules" class="snt-panel" aria-labelledby="snt-rules-heading">
             <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>
-            <p>Rule outcomes are evaluated from Source Analysis evidence by the shared journey service. Without a source snapshot, rules are Not assessed.</p>
-            <ul class="snt-rules" data-testid="snt-person-lookup">
-                <li>MM performs transport and intake only; it does not perform the Person lookup.</li>
-                <li>Skolenærværsrapport performs the Person lookup for submitted reports.</li>
-                <li>Utdanning performs the Person lookup for BiRK education data.</li>
-            </ul>
+            <p>Each rule is assessed only on Source Analysis dependency evidence (the snapshot bound in Integration Quality Review). Evidence and assessment are separate: no evidence is Not assessed, never a pass.</p>
             @if (_profile is null)
             {
-                <p role="status">Not assessed: select a Target Environment and a source snapshot.</p>
+                <p role="status" data-testid="snt-rules-not-ready">Not assessed: select a Target Environment and bind source evidence.</p>
             }
             else if (_rules is { } report)
             {
+                <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}" : "no Source Analysis snapshot")</p>
+                @if (report.Limitations.Count > 0) { <ul class="snt-notes" data-testid="snt-rules-limitations">@foreach (var item in report.Limitations) { <li>@item</li> }</ul> }
                 <div class="snt-scroll" role="region" tabindex="0" aria-label="Architecture rule results">
-                    <table class="snt-table" data-testid="snt-rule-results">
-                        <thead><tr><th scope="col">Rule</th><th scope="col">Evidence source</th><th scope="col">Status</th></tr></thead>
-                        <tbody>
+                    <table class="snt-table snt-stack" role="table" data-testid="snt-rule-results">
+                        <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Rule</th><th role="columnheader" scope="col">Evidence source</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Assessment</th><th role="columnheader" scope="col">Reason</th></tr></thead>
+                        <tbody role="rowgroup">
                             @foreach (var finding in report.Findings)
                             {
-                                <tr data-testid="snt-rule" data-outcome="@finding.Outcome">
-                                    <td>@finding.Title</td>
-                                    <td>@(report.SourceArchive ?? "No source snapshot")</td>
-                                    <td><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
+                                <tr role="row" data-testid="snt-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
+                                    <th role="rowheader" scope="row">@finding.Title</th>
+                                    <td role="cell" data-label="Evidence source">@(report.SourceArchive ?? "No source snapshot")</td>
+                                    <td role="cell" data-label="Evidence" data-testid="snt-rule-evidence">@RuleEvidence(report, finding)</td>
+                                    <td role="cell" data-label="Assessment"><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)" data-testid="snt-rule-assessment">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
+                                    <td role="cell" data-label="Reason" data-testid="snt-rule-reason">@finding.Detail</td>
                                 </tr>
                             }
                         </tbody>
@@ -291,54 +203,270 @@
             }
         </section>
     }
-    else if (_tab == HistoryTab)
+    else if (CurrentView is { Kind: TestPackViewKind.History })
     {
         <section id="snt-history" class="snt-panel" aria-labelledby="snt-history-heading">
             <h2 id="snt-history-heading" tabindex="-1">History</h2>
-            <p>Rapportmottak, Message Verification and Periodeavslutning runs are kept by the shared journey history; Utdanningsdata runs by the Active Event tests.</p>
             @if (_profile is null)
             {
                 <p role="status">Not available until a Target Environment is selected. Nothing has been run.</p>
             }
             else
             {
-                <IntegrationJourneyPanel Profile="_profile" InitialJourneyId="history" />
+                <p class="snt-muted">Runs of this pack's journeys from the shared journey history. Utdanningsdata runs are kept by the Active Event tests.</p>
+                <IntegrationJourneyPanel Profile="_profile" PackId="@PackId" Embedded="true" InitialJourneyId="history" />
             }
         </section>
     }
 </div>
 
 @code {
-    private const string OverviewTab = "overview";
-    private const string EducationTab = "utdanningsdata";
-    private const string RapportTab = "rapportmottak";
-    private const string VerificationTab = "message-verification";
-    private const string PeriodTab = "periodeavslutning";
-    private const string RulesTab = "architecture-rules";
-    private const string HistoryTab = "history";
     private const string PackId = "skolenaervaer";
+    private const string RapportmottakId = "rapportmottak";
+    private const string PeriodeavslutningId = "periodeavslutning";
+    private const string NotLoaded = "Loading";
+    /// <summary>A dimension without a journey view: still loading, Not ready without a Target Environment, else Not available.</summary>
+    private string Unknown => !_initialized ? NotLoaded : _profile is null ? "Not ready" : "Not available";
 
-    private static readonly (string Key, string Label)[] Tabs =
-    [
-        (OverviewTab, "Overview"), (EducationTab, "Utdanningsdata"), (RapportTab, "Rapportmottak"), (VerificationTab, "Message Verification"),
-        (PeriodTab, "Periodeavslutning"), (RulesTab, "Architecture Rules"), (HistoryTab, "History"),
-    ];
-
-    /// <summary>The section to show (?tab=); anything else is the Overview.</summary>
+    /// <summary>The section to show (?tab=); anything the pack does not declare is the Overview.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
 
     private readonly CancellationTokenSource _disposed = new();
     private FrontendAnalysisProfile? _profile;
-    private IReadOnlyList<IntegrationDefinition> _integrations = [];
     private string _sourceSummary = "Not available";
     private IntegrationJourneyPackView? _pack;
+    private TestPackDescriptor? _descriptor;
     private ArchitectureRuleReport? _rules;
     private string? _rulesError;
     private IntegrationJourneyPanel? _journeys;
-    private string _tab = OverviewTab;
+    private string _tab = TestPackOverview;
     private string? _focusAfterRender;
-    private bool _runOpen, _periodOpen;
+    private bool _runOpen;
     private readonly HashSet<string> _openGroups = new(StringComparer.Ordinal);
+    /// <summary>False until the active Target Environment and readiness have been read: nothing is called Not ready before that is known.</summary>
+    private bool _initialized;
+    private const string TestPackOverview = "overview";
+
+    /// <summary>The pack's own descriptor; until it loads (or without the endpoint), the same registration as the backend declares.</summary>
+    private TestPackDescriptor? Descriptor => _descriptor;
+
+    /// <summary>Navigation from the descriptor; a fixed fallback with the same view ids keeps routes working before it loads.</summary>
+    private IReadOnlyList<TestPackNavigationGroup> Navigation_ => _descriptor?.Navigation is { Count: > 0 } navigation ? navigation : Fallback;
+
+    private static readonly IReadOnlyList<TestPackNavigationGroup> Fallback =
+    [
+        new("Overview", [new(TestPackOverview, "Overview", TestPackViewKind.Overview)]),
+        new("Journeys", [new("utdanningsdata", "Utdanningsdata", TestPackViewKind.Journey, "utdanningsdata"), new(RapportmottakId, "Rapportmottak", TestPackViewKind.Journey, RapportmottakId),
+            new(PeriodeavslutningId, "Periodeavslutning", TestPackViewKind.Journey, PeriodeavslutningId)]),
+        new("Verify", [new("message-verification", "Message Verification", TestPackViewKind.Verification, RapportmottakId, "message-verification", "Read-only verification of what happened to one message."),
+            new("architecture-rules", "Architecture Rules", TestPackViewKind.Rules)]),
+        new("History", [new("history", "History", TestPackViewKind.History)]),
+    ];
+
+    private static readonly IReadOnlyList<TestPackJourney> FallbackJourneys =
+    [
+        new("utdanningsdata", "Utdanningsdata", "BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning", JourneyExecutionMode.DelegatedToActiveEvent, "skolenaervaer.cdc"),
+        new(RapportmottakId, "Rapportmottak", "Altinn → MU → MM → Skolenærværsrapport", JourneyExecutionMode.JourneyRunner, null),
+        new(PeriodeavslutningId, "Periodeavslutning", "Skolenærværsrapport → Service Bus → Bufdata", JourneyExecutionMode.JourneyRunner, null),
+    ];
+
+    private IReadOnlyList<TestPackJourney> Journeys => _descriptor?.Journeys is { Count: > 0 } journeys ? journeys : FallbackJourneys;
+
+    private TestPackView? CurrentView => Navigation_.SelectMany(group => group.Views).FirstOrDefault(view => view.ViewId == _tab)
+        ?? Navigation_.SelectMany(group => group.Views).FirstOrDefault();
+
+    private string TabHref(string key) => key == TestPackOverview ? "extensions/skolenaervaer" : $"extensions/skolenaervaer?tab={key}";
+    private static string SectionId(string key) => key switch
+    {
+        "utdanningsdata" => "snt-education", RapportmottakId => "snt-rapport", PeriodeavslutningId => "snt-period", _ => $"snt-{key}",
+    };
+
+    private IntegrationJourneyView? View(string journeyId) => _pack?.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId);
+
+    /// <summary>Unresolved mandatory prerequisites: Rapportmottak counts the unresolved parts of a submission (the backend's own rows).</summary>
+    private IReadOnlyList<JourneyPrerequisite> Blockers(string journeyId) => View(journeyId) is not { } view ? []
+        : journeyId == RapportmottakId ? SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites) : TestPackPresentation.Blockers(view);
+
+    private int BlockerCount(string journeyId) => Blockers(journeyId).Count;
+
+    private string VerificationAvailability(TestPackView verification) =>
+        !_initialized ? NotLoaded : _profile is null ? "Not ready" : verification.JourneyId is { } journey && View(journey) is { } view && verification.ScenarioId is { } scenario
+            ? view.RunnableScenarios.Contains(scenario, StringComparer.Ordinal) ? "Available (read-only)" : "Not available" : "Not available";
+
+    /// <summary>A status always names its dimension, so "Not ready" never stands alone.</summary>
+    private static RenderFragment Dimension(string dimension, string value) => __builder =>
+    {
+        <span class="snt-status" data-dimension="@dimension"><span class="visually-hidden">@dimension: </span><span class="snt-pill snt-pill-@Tone(value)">@value</span></span>
+    };
+
+    private static string Tone(string value) => value switch
+    {
+        "Configured" or "Verified" or "Ready" or "Available (read-only)" => "ready",
+        "Partial" => "attention",
+        "Not configured" or "Missing" or "Blocked" or "Not available" or "Not ready" => "attention",
+        _ => "neutral",
+    };
+
+    private RenderFragment JourneyStatus(IntegrationJourneyView view) => __builder =>
+    {
+        <div class="snt-dimensions" data-testid="snt-status" data-journey="@view.Journey.JourneyId">
+            <span><span class="snt-dimension-label">Configuration</span> @Dimension("Configuration", TestPackPresentation.Configuration(view))</span>
+            <span><span class="snt-dimension-label">Source evidence</span> @Dimension("Source evidence", TestPackPresentation.SourceEvidence(view))</span>
+            <span><span class="snt-dimension-label">Execution readiness</span> @Dimension("Execution readiness", TestPackPresentation.ExecutionReadiness(view))</span>
+            <span><span class="snt-dimension-label">Assessment</span> @Dimension("Assessment", "Not assessed")</span>
+        </div>
+        <p class="snt-muted">@view.ReadinessSummary</p>
+    };
+
+    /// <summary>Blockers grouped by their category metadata, each with its source; resolved prerequisites stay compact (one line when none).</summary>
+    private RenderFragment Prerequisites(IntegrationJourneyView view, bool collapsed) => __builder =>
+    {
+        var journeyId = view.Journey.JourneyId;
+        var blockers = Blockers(journeyId);
+        var resolved = view.Prerequisites.Where(item => item.State == JourneyReadinessState.Ready).ToList();
+        <section class="snt-blockers-section" aria-labelledby="@($"{SectionId(journeyId)}-blockers")" data-testid="snt-needs-attention">
+            <h3 class="snt-subheading" id="@($"{SectionId(journeyId)}-blockers")">Blockers (@blockers.Count)</h3>
+            @if (blockers.Count == 0) { <p class="snt-muted" data-testid="snt-nothing-unresolved">Nothing is blocking execution. Ready to run is not passed.</p> }
+            else if (collapsed)
+            {
+                <ReviewDisclosure Text="@($"View {blockers.Count} blocker{(blockers.Count == 1 ? "" : "s")}")" CollapseText="Hide blockers" TestId="snt-blocker-details" Class="disclosure-inline">
+                    @BlockerGroups(blockers)
+                </ReviewDisclosure>
+            }
+            else
+            {
+                @if (journeyId == RapportmottakId && SkoleNaervaerReadinessPresentation.InteractiveFallbackOnly(view.Prerequisites))
+                {
+                    <p class="snt-muted" data-testid="snt-fallback-note">The unattended setup is incomplete. The interactive TestID sign-in fallback can still run it, but the first TT02 run is unattended.</p>
+                }
+                @BlockerGroups(blockers)
+            }
+        </section>
+        <section class="snt-resolved-section" aria-label="Resolved automatically" data-testid="snt-resolved" data-count="@resolved.Count">
+            @if (resolved.Count == 0) { <p class="snt-muted" data-testid="snt-resolved-none">Resolved automatically: 0</p> }
+            else
+            {
+                <ReviewDisclosure Text="@($"Resolved automatically: {resolved.Count}")" CollapseText="Hide resolved prerequisites" TestId="snt-resolved-details" Class="disclosure-inline">
+                    @foreach (var (group, items) in TestPackPresentation.Grouped(resolved))
+                    {
+                        <h4 class="snt-group-heading">@group</h4>
+                        <ul class="snt-resolved-list">
+                            @foreach (var item in items)
+                            {
+                                <li data-testid="snt-resolved-item" data-key="@item.Key"><span class="snt-mark snt-mark-ok" aria-hidden="true">✓</span>
+                                    <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source" data-testid="snt-source-badge">@TestPackPresentation.Source(item)</span>
+                                        @if (item.Detail.StartsWith("Resolved:", StringComparison.Ordinal)) { <span class="snt-muted snt-row-detail" data-testid="snt-resolved-choice">@item.Detail</span> }</span></li>
+                            }
+                        </ul>
+                    }
+                </ReviewDisclosure>
+            }
+        </section>
+    };
+
+    private RenderFragment BlockerGroups(IReadOnlyList<JourneyPrerequisite> blockers) => __builder =>
+    {
+        <div class="snt-blocker-groups" data-testid="snt-rapport-blockers">
+            @foreach (var (group, items) in TestPackPresentation.Grouped(blockers))
+            {
+                <section class="snt-blocker-group" aria-label="@($"{group} blockers")" data-testid="snt-blocker-group" data-group="@group">
+                    <h4 class="snt-group-heading">@group <span class="snt-count">@items.Count</span></h4>
+                    <ul class="snt-attention-list">
+                        @foreach (var item in items)
+                        {
+                            var action = SkoleNaervaerReadinessPresentation.ActionFor(item, _profile?.Id);
+                            <li data-key="@item.Key" data-category="@item.Category" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">✗</span>
+                                <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source" data-testid="snt-source-badge"><span class="visually-hidden">Source: </span>@TestPackPresentation.Source(item)</span>
+                                    <span class="snt-muted snt-row-detail">@item.Detail</span>
+                                    @if (action.Href is { } href) { <a class="snt-blocker-action" href="@href">@action.Label</a> }
+                                    else if (action.Group is { } detailGroup) { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(detailGroup)">@action.Label</button> }</span></li>
+                        }
+                    </ul>
+                </section>
+            }
+        </div>
+    };
+
+    /// <summary>Rapportmottak's provider-specific header: TT02 submission readiness and the hand-offs to its owners.</summary>
+    private RenderFragment RapportmottakHeader(IntegrationJourneyView view) => __builder =>
+    {
+        var decision = SkoleNaervaerReadinessPresentation.Decision(SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites));
+        @* The decision's internal code (A–F, a root-cause order) is not a formal classification, so only its label is shown. *@
+        <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code"><span class="snt-dimension-label">TT02 submission readiness</span> <strong>@decision.Label</strong>
+            @if (decision.Code == "A") { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
+        <div class="snt-actions" data-testid="snt-rapport-actions">
+            <button type="button" class="btn-primary" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">Open Rapportmottak run</button>
+            <a class="btn-secondary" href="/integration-quality-review?view=extensions" data-testid="snt-configure-altinn">Configure Altinn</a>
+            <a class="btn-secondary" href="/admin/system-settings?section=target-environments" data-testid="snt-open-target">Open Target Environment</a>
+        </div>
+        <p class="snt-muted">Opening the run sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
+    };
+
+    /// <summary>Rapportmottak's technical details (provider configuration and every prerequisite), collapsed by default.</summary>
+    private RenderFragment RapportmottakDetails(IntegrationJourneyView view) => __builder =>
+    {
+        <h3 class="snt-subheading">Technical details</h3>
+        <div class="snt-groups" data-testid="snt-rapport-details">
+            @foreach (var group in DetailGroups(view))
+            {
+                <div id="@($"snt-group-{group.Key}")" class="snt-focus-target" tabindex="-1">
+                    <ReviewDisclosure Text="@group.Title" CollapseText="@group.Title" Hint="@group.Hint" TestId="@($"snt-group-{group.Key}")" Class="snt-group"
+                                      Expanded="@_openGroups.Contains(group.Key)" ExpandedChanged="@(open => ToggleGroup(group.Key, open))">
+                        @if (group.Key == "local")
+                        {
+                            <div class="snt-local-setup" data-testid="snt-local-setup">
+                                <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
+                                <ul>
+                                    <li><strong>Integration Quality Review → Extensions → Altinn provider:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=extensions">Open Altinn test configuration</a></li>
+                                    <li><strong>Local execution config</strong> (this backend's process only, never a committed file): Enabled, the registered redirect URI, the client secret, the approved synthetic TestID reporters and their Altinn profile confirmation, approved synthetic children and the app-policy confirmation. Set them with <code>AIAssisted/scripts/configure-skolenaervaer-tt02-local.ps1</code> and restart the backend from that window.</li>
+                                    <li><strong>Target Environment:</strong> the trusted target and its enrolled integrations. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
+                                    <li><strong>Test Data:</strong> approved synthetic reporters and identities. <a href="/test-data">Open Test Data</a></li>
+                                    <li><strong>Live Altinn metadata:</strong> task, data type and process contract, read anonymously with "Read public TT02 metadata" under App contract.</li>
+                                </ul>
+                                <p class="snt-muted">Resolving is not verifying: configured scopes are not a verified client registration, a configured reporter is not authenticated, and a declared child is not verified.</p>
+                            </div>
+                        }
+                        @if (group.Key == "contract") { <AltinnTestSetupPanel EnvironmentId="@_profile!.Id" OnOpenJourney="OpenRapportmottakAsync" /> }
+                        @if (group.Items.Count > 0)
+                        {
+                            <ul class="snt-prerequisites">
+                                @foreach (var item in group.Items)
+                                {
+                                    <li data-testid="snt-prerequisite" data-key="@item.Key" data-state="@item.State">
+                                        <span class="snt-pill snt-pill-@IntegrationJourneyPresentation.ReadinessTone(item.State)">@IntegrationJourneyPresentation.Readiness(item.State)</span>
+                                        <span><strong>@item.Label</strong>@(item.Mandatory ? "" : " (not a blocker)") — @item.Detail</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </ReviewDisclosure>
+                </div>
+            }
+        </div>
+    };
+
+    private sealed record DetailGroup(string Key, string Title, string Hint, IReadOnlyList<JourneyPrerequisite> Items);
+
+    /// <summary>Rapportmottak's prerequisites for reading, grouped by category metadata (the Altinn app contract keeps its own group, which
+    /// hosts the provider's setup); collapsed by default. Grouping is presentation only.</summary>
+    private IEnumerable<DetailGroup> DetailGroups(IntegrationJourneyView view)
+    {
+        yield return new("local", "Local execution setup", "where each value comes from", []);
+        var contract = view.Prerequisites.Where(item => item.Category == JourneyPrerequisiteCategory.Contract).ToList();
+        var open = contract.Count(item => item.State != JourneyReadinessState.Ready);
+        yield return new("contract", "App contract", contract.Count == 0 ? "Altinn app setup" : open == 0 ? $"{contract.Count} ready" : $"{open} of {contract.Count} not ready", contract);
+        foreach (var (group, items) in TestPackPresentation.Grouped(view.Prerequisites.Where(item => item.Category != JourneyPrerequisiteCategory.Contract)))
+        {
+            var notReady = items.Count(item => item.State != JourneyReadinessState.Ready);
+            yield return new(group.ToLowerInvariant().Replace(' ', '-'), group, notReady == 0 ? $"{items.Count} ready" : $"{notReady} of {items.Count} not ready", items);
+        }
+    }
+
+    /// <summary>What a rule's evidence is, separately from its assessment.</summary>
+    private static string RuleEvidence(ArchitectureRuleReport report, ArchitectureRuleFinding finding) =>
+        report.SourceSnapshotId is null ? "Missing — no source snapshot"
+        : finding.Evidence.Count > 0 ? $"{finding.Evidence.Count} dependency reference{(finding.Evidence.Count == 1 ? "" : "s")} in source"
+        : finding.Outcome == ArchitectureRuleOutcome.NotAssessed ? "Inconclusive — component not found in source" : "No dependency found in source";
 
     private void ToggleGroup(string key, bool open) { if (open) _openGroups.Add(key); else _openGroups.Remove(key); }
 
@@ -349,117 +477,21 @@
         StateHasChanged();
         try { await JS.InvokeVoidAsync("birknextFocusElement", $"snt-group-{key}"); } catch (JSException) { }
     }
-    /// <summary>False until the active Target Environment and readiness have been read: nothing is called Not ready before that is known.</summary>
-    private bool _initialized;
-
-    private string TabHref(string key) => key == OverviewTab ? "extensions/skolenaervaer" : $"extensions/skolenaervaer?tab={key}";
-
-    private sealed record JourneyRow(string Key, string Name, string Flow, string Status, string Tone, int Blockers, string Tab);
-
-    private IntegrationJourneyView? View(string journeyId) => _pack?.Journeys.FirstOrDefault(item => item.Journey.JourneyId == journeyId);
-
-    /// <summary>Mandatory prerequisites that are not ready, in the journey's own order. Readiness is the backend's; nothing is recomputed.</summary>
-    private IReadOnlyList<JourneyPrerequisite> Blockers(string journeyId) => View(journeyId) is not { } view ? []
-        : journeyId == "rapportmottak" ? SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites)
-        : view.Prerequisites.Where(item => item.Mandatory && item.State != JourneyReadinessState.Ready).ToList();
-
-    private IEnumerable<JourneyRow> JourneyRows
-    {
-        get
-        {
-            JourneyRow Row(string key, string name, string flow, string tab)
-            {
-                if (!_initialized) return new(key, name, flow, "Loading", "neutral", 0, tab);
-                if (_profile is null) return new(key, name, flow, "Not ready", "neutral", 0, tab);
-                if (View(key) is not { } view) return new(key, name, flow, "Not available", "neutral", 0, tab);
-                return new(key, name, flow, IntegrationJourneyPresentation.Readiness(view.Readiness), IntegrationJourneyPresentation.ReadinessTone(view.Readiness), Blockers(key).Count, tab);
-            }
-            yield return Row("utdanningsdata", "Utdanningsdata", "BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning", EducationTab);
-            yield return Row("rapportmottak", "Rapportmottak", "Altinn → MU → MM → Skolenærværsrapport", RapportTab);
-            // Message Verification is the read-only Rapportmottak scenario: available exactly when the backend lists it as runnable.
-            var verification = View("rapportmottak") is { } rapport
-                ? rapport.RunnableScenarios.Contains("message-verification", StringComparer.Ordinal)
-                    ? new JourneyRow("message-verification", "Message Verification", "Read-only evidence verification", "Available (read-only)", "ready", 0, VerificationTab)
-                    : new JourneyRow("message-verification", "Message Verification", "Read-only evidence verification", "Not available", "attention", 0, VerificationTab)
-                : new JourneyRow("message-verification", "Message Verification", "Read-only evidence verification", !_initialized ? "Loading" : _profile is null ? "Not ready" : "Not available", "neutral", 0, VerificationTab);
-            yield return verification;
-            yield return Row("periodeavslutning", "Periodeavslutning", "Skolenærværsrapport → Service Bus → Bufdata", PeriodTab);
-        }
-    }
-
-    private IReadOnlyList<(string Journey, JourneyPrerequisite Item)> TopBlockers =>
-        new[] { ("utdanningsdata", "Utdanningsdata"), ("rapportmottak", "Rapportmottak"), ("periodeavslutning", "Periodeavslutning") }
-            .SelectMany(journey => Blockers(journey.Item1).Select(item => (journey.Item2, item))).Take(5).ToList();
-
-    private RenderFragment JourneyStatus(string journeyId) => __builder =>
-    {
-        if (View(journeyId) is { } view)
-        {
-            var blockers = Blockers(journeyId).Count;
-            <p class="snt-status" data-testid="snt-status" data-journey="@journeyId">
-                <span class="snt-pill snt-pill-@IntegrationJourneyPresentation.ReadinessTone(view.Readiness)">@IntegrationJourneyPresentation.Readiness(view.Readiness)</span>
-                @if (blockers > 0) { <span>@blockers blocker@(blockers == 1 ? "" : "s")</span> }
-                <span class="snt-muted">@view.ReadinessSummary</span>
-            </p>
-        }
-        else
-        {
-            <p class="snt-muted" role="status">@(!_initialized ? "Loading readiness…" : "Readiness is not available for this journey.")</p>
-        }
-    };
-
-    private sealed record DetailGroup(string Key, string Title, string Hint, IReadOnlyList<JourneyPrerequisite> Items);
-
-    /// <summary>The journey's prerequisites, every one of them, grouped for reading; collapsed by default. Grouping is presentation only.</summary>
-    private IEnumerable<DetailGroup> DetailGroups(string journeyId)
-    {
-        var all = View(journeyId)?.Prerequisites ?? [];
-        string GroupOf(JourneyPrerequisite item) => item.Key switch
-        {
-            "altinn-app" or "altinn-environment" or "submission-contract" or "public-metadata" or "app-policy" => "contract",
-            "reporter-auth" or "unattended-provider" or "idporten-client" or "redirect-uri" or "client-secret" or "altinn-auth" => "authentication",
-            "synthetic-reporter" or "reporter-role" or "reporter-profile" or "test-reporter" or "synthetic-data" => "reporter",
-            "process-contract" => "process",
-            "meldingshode" => "meldingshode",
-            "trusted-environment" or "report-xsd" or "executor" or "backend-build" => "configuration",
-            _ when item.Key.StartsWith("integration:", StringComparison.Ordinal) || item.Key.StartsWith("source:", StringComparison.Ordinal) => "configuration",
-            _ => "advanced",
-        };
-        // "local" holds no rows: it explains where values come from.
-        (string Key, string Title)[] groups =
-        [
-            ("local", "Local execution setup"), ("contract", "App contract"), ("authentication", "Authentication"), ("reporter", "Reporter & test data"), ("process", "Process contract"),
-            ("meldingshode", "Meldingshode"), ("configuration", "Configuration & sources"), ("advanced", "Advanced technical details"),
-        ];
-        foreach (var (key, title) in groups)
-        {
-            var items = all.Where(item => GroupOf(item) == key).ToList();
-            if (key == "local") { yield return new(key, title, "where each value comes from", []); continue; }
-            if (items.Count == 0 && key != "contract") continue;
-            var open = items.Count(item => item.State != JourneyReadinessState.Ready);
-            yield return new(key, title, items.Count == 0 ? "Altinn app setup" : open == 0 ? $"{items.Count} ready" : $"{open} of {items.Count} not ready", items);
-        }
-    }
 
     private async Task SelectTabAsync(string key)
     {
         _tab = key;
-        _focusAfterRender = $"{SectionId(key)}-heading";
+        _focusAfterRender = CurrentView is { Kind: TestPackViewKind.Journey, JourneyId: { } journey } ? $"{SectionId(journey)}-heading"
+            : CurrentView?.Kind switch { TestPackViewKind.Verification => "snt-verification-heading", TestPackViewKind.Rules => "snt-rules-heading", TestPackViewKind.History => "snt-history-heading", _ => "snt-overview-heading" };
         Navigation.NavigateTo(TabHref(key));
         await LoadForTabAsync();
     }
 
-    private static string SectionId(string key) => key switch
-    {
-        EducationTab => "snt-education", RapportTab => "snt-rapport", VerificationTab => "snt-verification", PeriodTab => "snt-period",
-        RulesTab => "snt-rules", HistoryTab => "snt-history", _ => "snt-overview",
-    };
-
-    /// <summary>Opens the run inside the Rapportmottak tab (the shared journey panel); nothing is started.</summary>
+    /// <summary>Opens the run inside Rapportmottak (the shared journey panel, embedded); nothing is started.</summary>
     private async Task OpenRapportmottakAsync(string? scenarioId)
     {
         _runOpen = true;
-        if (_journeys is not null) await _journeys.ShowJourneyAsync("rapportmottak", scenarioId);
+        if (_journeys is not null) await _journeys.ShowJourneyAsync(RapportmottakId, scenarioId);
         StateHasChanged();
         try { await JS.InvokeVoidAsync("birknextFocusElement", "snt-rapport-run"); } catch (JSException) { }
     }
@@ -472,6 +504,12 @@
 
     private async Task InitializeAsync()
     {
+        var journeysApi = Services.GetService<IIntegrationJourneysApiService>();
+        if (journeysApi is not null)
+        {
+            try { if (journeysApi.TestPacksAsync(_disposed.Token) is { } describe) _descriptor = (await describe)?.Value?.FirstOrDefault(pack => pack.PackId == PackId); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+        }
         var context = await ContextFactory.GetActiveContextAsync();
         _profile = context.ActiveProfileOrNull;
         if (_profile is null)
@@ -480,23 +518,22 @@
             return;
         }
 
+        if (journeysApi is not null)
+        {
+            try { _pack = (await journeysApi.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+        }
         try
         {
-            var catalog = await IntegrationApi.GetCatalogAsync(_profile);
-            _integrations = catalog.Integrations;
-            var snapshots = await IntegrationApi.ListSourceSnapshotsAsync(_profile.Id);
-            var latest = snapshots.OrderByDescending(snapshot => snapshot.AnalyzedAt).FirstOrDefault();
-            _sourceSummary = latest is null ? "No source snapshot · architecture rules Not assessed" : $"{latest.Archive.FileName} · {latest.Status}";
+            // The canonical evidence: Integration Quality Review's bindings of the integrations this pack uses. Nothing is chosen here.
+            var used = _pack?.Journeys.SelectMany(view => view.MatchedIntegrations).Select(item => item.IntegrationId).OfType<string>().ToHashSet(StringComparer.Ordinal) ?? [];
+            var bindings = ((await IntegrationApi.ListEvidenceBindingsAsync(_profile.Id)) ?? []).Where(binding => used.Contains(binding.IntegrationId)).ToList();
+            _sourceSummary = bindings.Count == 0 ? "No source evidence bound to this pack's integrations · architecture rules use the newest snapshot, or are Not assessed"
+                : string.Join(" · ", bindings.Select(binding => binding.ArchiveName).Distinct()) + $" (bound in Integration Quality Review for {bindings.Count} integration{(bindings.Count == 1 ? "" : "s")})";
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _sourceSummary = "Unavailable · open Source Analysis to inspect evidence";
-        }
-
-        if (Services.GetService<IIntegrationJourneysApiService>() is { } journeys)
-        {
-            try { _pack = (await journeys.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId); }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+            _sourceSummary = "Unavailable · open Integration Quality Review → Evidence";
         }
     }
 
@@ -504,14 +541,14 @@
     {
         // Back from ID-porten TEST: open the Rapportmottak run directly.
         var signIn = new Uri(Navigation.Uri).Query.Contains("altinn-sign-in=", StringComparison.Ordinal);
-        _tab = signIn ? RapportTab : Tabs.Any(tab => tab.Key == Tab) ? Tab! : OverviewTab;
+        _tab = signIn ? RapportmottakId : Tab is { Length: > 0 } requested ? requested : TestPackOverview;
         if (signIn) _runOpen = true;
         await LoadForTabAsync();
     }
 
     private async Task LoadForTabAsync()
     {
-        if (_tab != RulesTab || _profile is null || _rules is not null) return;
+        if (CurrentView?.Kind != TestPackViewKind.Rules || _profile is null || _rules is not null) return;
         if (Services.GetService<IIntegrationJourneysApiService>() is not { } journeys) { _rulesError = "Rule results are not available in this build."; return; }
         try
         {

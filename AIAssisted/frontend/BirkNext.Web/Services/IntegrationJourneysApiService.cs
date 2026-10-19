@@ -14,6 +14,9 @@ public interface IIntegrationJourneysApiService
 {
     Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>> PacksAsync(string environmentId, CancellationToken ct = default);
     Task<ActiveEventApiResult<ArchitectureRuleReport>> RulesAsync(string environmentId, string packId, CancellationToken ct = default);
+    /// <summary>Every registered test pack described from its own metadata (journeys, verification views, rules, capabilities, navigation).</summary>
+    Task<ActiveEventApiResult<IReadOnlyList<TestPackDescriptor>>> TestPacksAsync(CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<IReadOnlyList<TestPackDescriptor>>(null, "Test packs are not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
     /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
     Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
@@ -32,6 +35,9 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public async Task<ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>> PacksAsync(string environmentId, CancellationToken ct = default) =>
         List(await GetAsync<List<IntegrationJourneyPackView>>($"api/integration-journeys/packs?environmentId={E(environmentId)}", ct));
+
+    public async Task<ActiveEventApiResult<IReadOnlyList<TestPackDescriptor>>> TestPacksAsync(CancellationToken ct = default) =>
+        List(await GetAsync<List<TestPackDescriptor>>("api/integration-journeys/test-packs", ct));
 
     public Task<ActiveEventApiResult<ArchitectureRuleReport>> RulesAsync(string environmentId, string packId, CancellationToken ct = default) =>
         GetAsync<ArchitectureRuleReport>($"api/integration-journeys/packs/{E(packId)}/architecture-rules?environmentId={E(environmentId)}", ct);

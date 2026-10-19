@@ -107,7 +107,9 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         UseRichSource(5);
         _api.Catalog = new IntegrationCatalog { EnvironmentId = "dev" };
         var cut = Open();
-        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured.").And.Contain("Source suggestions: 5 available");
+        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured").And.Contain("5 integration candidates found from Source Analysis");
+        cut.Find("[data-testid=ip-empty-review]").ClassList.Should().Contain("btn-primary", "reviewing the candidates is the next action");
+        cut.Find("[data-testid=ip-empty-add]").ClassList.Should().Contain("btn-secondary");
         cut.Find("[data-testid=ip-empty-review]").Click();
         cut.FindAll("[data-testid=ip-suggestion]").Should().NotBeEmpty();
         cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");
@@ -215,7 +217,9 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         toggle.Click();
         cut.Find("[data-testid=ip-advanced-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         var body = cut.Find("[data-testid=ip-advanced-body]");
-        body.TextContent.Should().Contain("Platforms and runtime evidence setup").And.Contain("Messaging evidence scope and IQR links").And.Contain("Source diagnostics");
+        body.TextContent.Should().Contain("Platforms and runtime evidence setup");
+        cut.FindAll("#ip-advanced-body h4").Select(h => h.TextContent).Should().StartWith(["Runtime"]).And.Contain(["Messaging", "Diagnostics"]);
+        cut.Find("[data-testid=ip-messaging-semantics]").TextContent.Should().Contain("Configured (in this catalog) ≠ discovered (in source) ≠ linked (bound to a consumer here) ≠ observed (at runtime)");
         cut.Find("[data-testid=am]").GetAttribute("data-view").Should().Be("Configuration");
         cut.FindAll("[data-testid=ip-platform-origin]").Select(o => o.TextContent).Should().OnlyContain(o => o == "Seed" || o == "Seed · modified");
     }

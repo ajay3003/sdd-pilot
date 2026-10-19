@@ -37,9 +37,11 @@
                 <div><dt>Source suggestions</dt><dd data-testid="ip-summary-suggestions">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
                 <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime">@IntegrationsOverviewPresentation.Label(runtime)</span></dd></div>
             </dl>
+            @{ var suggestFirst = _catalog.Integrations.Count == 0 && suggestions.Available && suggestions.Total > 0; }
             <div class="ip-actions-row">
-                <button type="button" class="btn-primary" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
-                @if (suggestions.Available && suggestions.Total > 0)
+                @if (suggestFirst) { <button type="button" class="btn-primary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review suggestions</button> }
+                <button type="button" class="@(suggestFirst ? "btn-secondary" : "btn-primary")" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
+                @if (!suggestFirst && suggestions.Available && suggestions.Total > 0)
                 {
                     <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review source suggestions</button>
                 }
@@ -61,11 +63,13 @@
             @if (_catalog.Integrations.Count == 0)
             {
                 <div class="ip-empty" data-testid="ip-empty">
-                    <p><strong>No integrations configured.</strong></p>
-                    <p class="ip-muted" data-testid="ip-empty-suggestions">Source suggestions: @(suggestions.Available ? $"{suggestions.Total} available" : "unavailable — no source snapshot is linked")</p>
+                    <p><strong>No integrations configured</strong></p>
+                    <p class="ip-muted" data-testid="ip-empty-suggestions">@(suggestions.Available
+                        ? suggestions.Total == 0 ? "No integration candidates were found from Source Analysis." : $"{suggestions.Total} integration candidate{(suggestions.Total == 1 ? "" : "s")} found from Source Analysis ({suggestions.StronglySupported} strongly supported)."
+                        : "Source suggestions unavailable — no source snapshot is linked.")</p>
                     <div class="ip-actions-row">
-                        @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-secondary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review suggestions</button> }
-                        <button type="button" class="btn-secondary" data-testid="ip-empty-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
+                        @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review suggestions</button> }
+                        <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" data-testid="ip-empty-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
                     </div>
                 </div>
             }
@@ -279,7 +283,7 @@
             }
             else
             {
-                <p class="ip-muted">Detected in source and not configured here. A suggestion is never a confirmed mapping; adding one keeps it a suggestion until you confirm it.</p>
+                <p class="ip-muted" data-testid="ip-suggestions-note">Detected in source and not configured here. <strong>A suggestion is never automatically configured</strong> and never a confirmed mapping; adding one keeps it a suggestion until you confirm it.</p>
                 <dl class="ip-suggestion-summary" data-testid="ip-suggestions-summary">
                     <div><dt>Candidates</dt><dd data-testid="ip-suggestions-total">@suggestions.Total</dd></div>
                     <div><dt>Strongly supported</dt><dd data-testid="ip-suggestions-strong">@suggestions.StronglySupported</dd></div>
@@ -327,6 +331,10 @@
                     <span class="ip-muted">· Updated @discovery.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</span></p>
             }
             else { <p class="ip-muted" data-testid="ip-source-summary">No source snapshot is linked to this environment.</p> }
+            <p class="ip-actions-row">
+                <a class="btn-secondary ip-btn-link" href="/source-analysis" data-testid="ip-source-open">Open Source Analysis</a>
+            </p>
+            <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="ip-source-details" Class="disclosure-inline">
             @if (_terraform is { SourceAnalysisEnabled: true } terraform)
             {
                 var reviews = IntegrationsOverviewPresentation.Reviews(terraform);
@@ -355,15 +363,14 @@
                     }
                 </div>
             }
-            <p class="ip-actions-row">
-                <a class="btn-secondary ip-btn-link" href="/source-analysis" data-testid="ip-source-open">Open Source Analysis</a>
-                <a class="ip-link" href="/source-analysis/application-messaging" data-testid="ip-open-messaging-evidence">Application messaging evidence</a>
-            </p>
+            <p class="ip-muted"><a class="ip-link" href="/source-analysis/application-messaging" data-testid="ip-open-messaging-evidence">Application messaging evidence</a> · bound per integration in <a class="ip-link" href="/integration-quality-review?view=evidence">Integration Quality Review → Evidence</a></p>
+            </ReviewDisclosure>
         </section>
 
         @if (_catalog.Templates.FirstOrDefault() is { } offer)
         {
             <section class="ip-section ip-helper" aria-labelledby="ip-helper-heading" data-testid="ip-template">
+                <p class="ip-helper-kind" data-testid="ip-template-kind">Extension / provider helper — project-specific, not generic environment configuration</p>
                 <h3 id="ip-helper-heading">@offer.Name</h3>
                 <p class="ip-muted">@offer.Description @offer.SuggestionReason It is never applied automatically.</p>
                 <div class="ip-actions-row">
@@ -385,18 +392,19 @@
         }
         @if (_catalog.AppliedTemplateId is { } appliedTemplate)
         {
-            <p class="ip-muted" data-testid="ip-template-applied">@(appliedTemplate == M2lbTemplateId ? M2lbHelperName : appliedTemplate) applied. Its records are ordinary integrations (origin “Seed”) you can edit or delete; values from it are template values, not discovered evidence.</p>
+            <p class="ip-muted" data-testid="ip-template-applied">Extension helper @(_appliedTemplateNames.GetValueOrDefault(appliedTemplate) ?? _catalog.Templates.FirstOrDefault(t => t.Id == appliedTemplate)?.Name ?? $"template {appliedTemplate}") applied. Its records are ordinary integrations (origin “Seed”) you can edit or delete; values from it are template values, not discovered evidence.</p>
         }
 
         <section class="ip-section ip-advanced" aria-labelledby="ip-advanced-heading" data-testid="ip-advanced">
             <h3 id="ip-advanced-heading" class="ip-advanced-heading">
                 <button type="button" class="ip-disclosure" data-testid="ip-advanced-toggle" aria-expanded="@(_advancedOpen ? "true" : "false")" aria-controls="ip-advanced-body" @onclick="() => _advancedOpen = !_advancedOpen">Advanced</button>
             </h3>
-            @if (!_advancedOpen) { <p class="ip-muted">Platforms and runtime evidence setup, messaging evidence scope and IQR links, source diagnostics.</p> }
+            @if (!_advancedOpen) { <p class="ip-muted">Runtime (platforms and runtime evidence) · Messaging (evidence scope and links) · Diagnostics (source discovery).</p> }
             else
             {
                 <div id="ip-advanced-body" data-testid="ip-advanced-body">
-                    <h4>Platforms and runtime evidence setup</h4>
+                    <h4 data-testid="ip-advanced-runtime">Runtime</h4>
+                    <p class="ip-muted">Platforms and runtime evidence setup. Configured ≠ observed: runtime evidence is read only when a review runs.</p>
                     <p class="ip-muted" data-testid="ip-advanced-execution"><span class="ip-pill ip-pill-@EventHubRuntimeEvidencePresentation.ExecutionTone(_catalog.AzureRuntimeEnabled)" data-testid="ip-summary-azure">@EventHubRuntimeEvidencePresentation.ExecutionBadge(_catalog.AzureRuntimeEnabled)</span></p>
                     @if (_catalog.Platforms.Count == 0) { <p class="ip-muted" data-testid="ip-no-platforms">No platform is configured. Runtime evidence is set up per platform once an integration uses one.</p> }
                     @foreach (var platform in _catalog.Platforms)
@@ -449,9 +457,11 @@
                         </section>
                     }
 
+                    <h4 data-testid="ip-advanced-messaging">Messaging</h4>
+                    <p class="ip-muted" data-testid="ip-messaging-semantics">Configured (in this catalog) ≠ discovered (in source) ≠ linked (bound to a consumer here) ≠ observed (at runtime). Source and configuration evidence never imply runtime observation.</p>
                     <ApplicationMessagingPanel EnvironmentId="@Profile.Id" Catalog="_catalog" Evidence="_messaging" EvidenceChanged="set => _messaging = set" View="ApplicationMessagingView.Configuration" />
 
-                    <h4>Source diagnostics</h4>
+                    <h4 data-testid="ip-advanced-diagnostics">Diagnostics</h4>
                     <div class="ip-actions-row">
                         <button type="button" class="btn-secondary" data-testid="ip-discover" disabled="@_discovering" @onclick="DiscoverAsync">@(_discovering ? "Discovering…" : "Re-run source discovery")</button>
                     </div>
@@ -495,8 +505,6 @@
     private enum SaveState { Idle, Saving, Saved, Failed }
 
     private IntegrationCatalog? _catalog;
-    private const string M2lbTemplateId = "m2lb-dev-eventhub";
-    private const string M2lbHelperName = "M2LB DEV helper";
     private IReadOnlyList<IntegrationContractArtifact> _contracts = [];
     private ApplicationMessagingEvidenceSet? _messaging;
     private readonly Dictionary<(string, IntegrationContractRole), string> _contractErrors = [];
@@ -727,6 +735,9 @@
 
     /// <summary>Applying a template is an explicit, saved action; nothing is applied because the target host resembles a known project. The
     /// server decides whether the template fits this environment; a refusal is shown with the server's reason.</summary>
+    /// <summary>Names of helpers applied in this session (the catalog keeps only the applied template's id).</summary>
+    private readonly Dictionary<string, string> _appliedTemplateNames = new(StringComparer.Ordinal);
+
     private async Task ApplyTemplateAsync(IntegrationTemplateOffer offer)
     {
         string? refused = null;
@@ -741,7 +752,7 @@
             catch (IntegrationTemplateRefusedException ex) { refused = ex.Message; throw; }
         });
         if (!ok && refused is not null) _saveMessage = $"Not applied: {refused}";
-        if (ok) _templateReview = false;
+        if (ok) { _templateReview = false; _appliedTemplateNames[offer.Id] = offer.Name; }
     }
 
     private async Task LoadAsync(bool importLegacy)

@@ -49,6 +49,11 @@ public sealed record SourceUploadFailure(string Code, string Stage, string Messa
 public interface IIntegrationCatalogApiService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    /// <summary>The canonical Integration Quality Review source-evidence bindings of an environment (one snapshot per integration).</summary>
+    Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IntegrationEvidenceBinding>>([]);
+    /// <summary>Binds (or with a null snapshot, unbinds) one integration's source evidence. Returns the binding or the backend's reason.</summary>
+    Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default) =>
+        Task.FromResult<(IntegrationEvidenceBinding?, string?)>((null, "Evidence binding is not available."));
     /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
     Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
@@ -141,6 +146,17 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         catch (HttpRequestException) { return null; }
     }
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
+
+    public async Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<IntegrationEvidenceBinding>>($"api/integration-review/evidence-bindings?{Env(environmentId)}", Json, ct) ?? [];
+
+    public async Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default)
+    {
+        using var response = await http.PutAsJsonAsync($"api/integration-review/evidence-bindings?{Env(environmentId)}", new IntegrationEvidenceBindingRequest(integrationId, snapshotId), Json, ct);
+        if (response.IsSuccessStatusCode)
+            return (response.Content.Headers.ContentLength == 0 ? null : await response.Content.ReadFromJsonAsync<IntegrationEvidenceBinding?>(Json, ct), null);
+        return (null, response.StatusCode == System.Net.HttpStatusCode.Forbidden ? "Binding evidence requires the integration-configuration permission." : "The evidence binding could not be saved.");
+    }
     public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default)
     {
         var (snapshot, failure) = await AnalyzeSourceSnapshotDetailedAsync(environmentId, fileName, content, ct);

@@ -148,14 +148,47 @@ public sealed class AltinnSubmissionUiTests : BunitContext
         opened.Should().Equal("instance-evidence", null);
     }
 
-    [Fact]
-    public void Setup_UsesTheAppSourceFromASourceAnalysisSnapshot_WithoutAnyUploadOfItsOwn()
+    /// <summary>The canonical IQR binding of the report-intake integration (the integration the pack matched) — the only snapshot the setup uses.</summary>
+    private void WithReportIntakeBinding(Guid? snapshotId, string archive = "skolenaervaer-app.zip")
     {
+        _journeys.ReportIntake = "dev:altinn:report-intake";
+        var catalog = new Mock<IIntegrationCatalogApiService>();
+        catalog.Setup(a => a.ListEvidenceBindingsAsync("dev-env", It.IsAny<CancellationToken>())).ReturnsAsync(snapshotId is { } id
+            ? [new IntegrationEvidenceBinding { EnvironmentId = "dev-env", IntegrationId = "dev:altinn:report-intake", SnapshotId = id, ArchiveName = archive, Fingerprint = new string('f', 64) }]
+            : []);
+        Services.AddSingleton(catalog.Object);
+    }
+
+    [Fact]
+    public void Setup_UsesTheAppSourceBoundInIqr_WithoutASnapshotSelectorOrUploadOfItsOwn()
+    {
+        WithReportIntakeBinding(FakeAltinn.SnapshotId);
         var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
         cut.FindAll("input[type=file]").Should().BeEmpty("source is uploaded through Source Analysis, never here");
-        cut.Find("[data-testid=atp-snapshot]").TextContent.Should().Contain("skolenaervaer-app.zip");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=atp-source-using]").TextContent.Should().Contain("skolenaervaer-app.zip").And.Contain("bound in Integration Quality Review"));
+        cut.FindAll("[data-testid=atp-snapshot], [data-testid=atp-source] ~ select").Should().BeEmpty("no second snapshot selector: the canonical binding decides");
         cut.Find("[data-testid=atp-use-source]").Click();
         _altinn.SourceUses.Should().Equal(FakeAltinn.SnapshotId);
+    }
+
+    [Fact]
+    public void Setup_WithoutABinding_PointsToIqrEvidence_AndUsesNoSnapshot()
+    {
+        WithReportIntakeBinding(null);
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=atp-source-unbound]").TextContent.Should().Contain("1 stored snapshot contains the app's source").And.Contain("none is bound"));
+        cut.Find("[data-testid=atp-source-bind]").GetAttribute("href").Should().Be("integration-quality-review?view=evidence");
+        cut.FindAll("[data-testid=atp-use-source]").Should().BeEmpty("nothing is used until the evidence is bound");
+        _altinn.SourceUses.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Setup_BoundToASnapshotWithoutTheApp_SaysSo_InsteadOfSwitchingSnapshot()
+    {
+        WithReportIntakeBinding(Guid.NewGuid(), "mm-only.zip");
+        var cut = Render<AltinnTestSetupPanel>(p => p.Add(c => c.EnvironmentId, "dev-env"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=atp-source-bound-no-app]").TextContent.Should().Contain("mm-only.zip").And.Contain("does not contain the Altinn app's source"));
+        cut.FindAll("[data-testid=atp-use-source]").Should().BeEmpty();
     }
 
     [Fact]
@@ -452,7 +485,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("extensions/skolenaervaer?tab=rapportmottak");
         var without = Render<SkoleNaervaerTesting>();
-        without.Find("#snt-rapport [data-testid=snt-altinn-not-ready]").TextContent.Should().StartWith("Not ready");
+        without.Find("#snt-rapport [data-testid=snt-not-ready]").TextContent.Should().StartWith("Not ready");
         without.FindAll("[data-testid=atp-panel]").Should().BeEmpty();
 
         context = new FrontendAnalysisContext { ActiveProfile = Profile };
@@ -535,6 +568,8 @@ public sealed class AltinnSubmissionUiTests : BunitContext
 
     private sealed class FakeJourneys : IIntegrationJourneysApiService
     {
+        /// <summary>The configured integration the pack matches to its report-intake requirement (null: none configured).</summary>
+        public string? ReportIntake { get; set; }
         public List<IntegrationJourneyRunRequest> Started { get; } = [];
         public List<IntegrationJourneyRunRequest> Validated { get; } = [];
         public List<string> Runnable { get; } = [];
@@ -593,6 +628,7 @@ public sealed class AltinnSubmissionUiTests : BunitContext
                                 "No automatic retry and no automatic second process transition."])],
                     },
                     Readiness = JourneyReadinessState.Ready, CanRun = true, ReadinessSummary = "Ready to run after confirmation.", Prerequisites = Prerequisites,
+                    MatchedIntegrations = ReportIntake is { } intake ? [new("report-intake", intake, "Altinn report intake", IntegrationKind.HttpApi, true, "Configured.")] : [],
                     RunnableScenarios = Runnable,
                 },
             ],

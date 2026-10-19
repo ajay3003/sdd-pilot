@@ -74,12 +74,19 @@
                 <p class="atp-muted" data-testid="atp-no-source">No Source Analysis snapshot of this environment contains the source of @(contract.ConfiguredAppId ?? "the configured app").
                     <a href="/source-analysis">Upload the Altinn app repository in Source Analysis</a>, then come back here.</p>
             }
+            else if (_binding?.Binding is not { } bound)
+            {
+                @* No second snapshot selector: the app source is the canonical evidence bound to the report-intake integration in IQR. *@
+                <p class="atp-muted" data-testid="atp-source-unbound">@(contract.SourceCandidates.Count) stored snapshot@(contract.SourceCandidates.Count == 1 ? "" : "s") contain@(contract.SourceCandidates.Count == 1 ? "s" : "") the app's source, but none is bound to the report-intake integration@(_binding?.IntegrationName is { } name ? $" ({name})" : "").
+                    Bind the Altinn app's snapshot in Integration Quality Review → Evidence; it is not selected here. <a href="integration-quality-review?view=evidence" data-testid="atp-source-bind">Open Evidence</a></p>
+            }
+            else if (contract.SourceCandidates.All(candidate => candidate.SnapshotId != bound.SnapshotId))
+            {
+                <p class="atp-muted" data-testid="atp-source-bound-no-app">The snapshot bound to the report-intake integration (<span class="atp-mono">@bound.ArchiveName</span>) does not contain the Altinn app's source. Bind the app repository's snapshot in <a href="integration-quality-review?view=evidence">Integration Quality Review → Evidence</a>, or read the public TT02 metadata instead.</p>
+            }
             else
             {
-                <label for="@($"{_id}-snapshot")">Source Analysis snapshot</label>
-                <select id="@($"{_id}-snapshot")" data-testid="atp-snapshot" value="@_snapshotId" @onchange="e => _snapshotId = e.Value?.ToString() ?? string.Empty" disabled="@_busy">
-                    @foreach (var candidate in contract.SourceCandidates) { <option value="@candidate.SnapshotId">@candidate.ArchiveName · @($"{candidate.AnalyzedAt:yyyy-MM-dd HH:mm}") UTC</option> }
-                </select>
+                <p data-testid="atp-source-using">Source evidence: using <span class="atp-mono">@bound.ArchiveName</span> · analyzed @bound.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC <span class="atp-muted">(bound in Integration Quality Review → Evidence)</span> <a href="@($"source-analysis?snapshot={bound.SnapshotId}")">Open evidence</a></p>
                 <div class="atp-actions">
                     <button type="button" class="btn-secondary" data-testid="atp-use-source" disabled="@_busy" @onclick="UseSourceAsync">Use this app source</button>
                 </div>
@@ -311,6 +318,7 @@
     private bool RealExecutionReady => _realScenarioRunnable && CanExecute;
     private string _source = "source";
     private string _snapshotId = "";
+    private AltinnSourceBinding.Resolved? _binding;
     private string? _error;
     private string? _signInOutcome;
     private string? _loadedFor;
@@ -341,7 +349,14 @@
         {
             var contract = await Api.ContractAsync(EnvironmentId);
             _contract = contract.Value;
-            _snapshotId = _contract?.SourceCandidates.FirstOrDefault()?.SnapshotId.ToString() ?? "";
+            if (Services.GetService<IIntegrationCatalogApiService>() is { } catalogApi)
+            {
+                try { _binding = await AltinnSourceBinding.ResolveAsync(catalogApi, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId); }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _binding = null; }
+            }
+            // The app source is the canonical IQR binding of the report-intake integration, never a separately chosen snapshot.
+            _snapshotId = _binding?.Binding is { } boundSnapshot && _contract?.SourceCandidates.Any(candidate => candidate.SnapshotId == boundSnapshot.SnapshotId) == true
+                ? boundSnapshot.SnapshotId.ToString() : "";
             // Without an app source in Source Analysis, the public TT02 metadata is the only source: start there.
             if (_contract is { SourceCandidates.Count: 0 }) _source = "public";
             _error = contract.Error;

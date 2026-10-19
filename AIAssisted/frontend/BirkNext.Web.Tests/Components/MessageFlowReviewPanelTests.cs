@@ -44,7 +44,7 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
     }
 
     [Fact]
-    public void XsdEvidenceComesFromTheSelectedImmutableSourceSnapshot()
+    public void XsdEvidenceComesFromTheSnapshotBoundInIqr_NeverFromASecondSnapshotSelector()
     {
         var snapshotId = Guid.NewGuid();
         var contract = new BirkNext.SourceDomains.SourceContract
@@ -53,21 +53,59 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
             Version = "2.0.0", XmlSchema = new BirkNext.SourceDomains.XmlSchemaEvidence("urn:report", "2.0.0", "Explicit schema version",
                 [new("/Report", "{urn:report}Report", "ReportType", 1, "1", false, null, null, null, [])], [], [], []),
         };
-        _api.Setup(x => x.IqrSourceScopeAsync("pilot", null, It.IsAny<CancellationToken>())).ReturnsAsync(new BirkNext.SourceEvidence.ReviewSourceOptions
-        {
-            Snapshots = [new BirkNext.SourceEvidence.ReviewSourceSnapshot { SnapshotId = snapshotId, ArchiveName = "report-source.zip", Fingerprint = "a1b2c3d4" }],
-        });
+        WithReportIntakeBinding(snapshotId, "report-source.zip");
         _api.Setup(x => x.MessageFlowSourceContractsAsync("pilot", snapshotId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MessageFlowSourceContractOptions(snapshotId, "report-source.zip", "a1b2c3d4", [contract]));
 
         var cut = Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot"));
-        var snapshotSelector = cut.FindAll("select").Single(s => s.ParentElement!.TextContent.Contains("Source Analysis snapshot"));
-        snapshotSelector.Change(snapshotId.ToString());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-using]").TextContent.Should().Contain("report-source.zip").And.Contain("Integration Quality Review → Evidence"));
+        cut.FindAll("select").Should().NotContain(s => s.ParentElement!.TextContent.Contains("Source Analysis snapshot"), "the provider never selects a snapshot of its own");
+        cut.Find("[data-testid=mfr-source-open]").GetAttribute("href").Should().Be($"source-analysis?snapshot={snapshotId}");
         var contractSelector = cut.FindAll("select").Single(s => s.ParentElement!.TextContent.Contains("XML Schema contract"));
         contractSelector.Change("report-xsd");
 
         cut.Markup.Should().Contain("SourceConfirmed from this exact Source Analysis snapshot").And.Contain("a1b2c3d4").And.Contain("urn:report");
         _api.Verify(x => x.MessageFlowSourceContractsAsync("pilot", snapshotId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void ALegacySchemaChoiceInAnotherSnapshot_IsReviewRequired_NeverReassignedSilently()
+    {
+        var bound = Guid.NewGuid();
+        var legacy = Guid.NewGuid();
+        WithReportIntakeBinding(bound, "bound.zip");
+        _api.Setup(x => x.MessageFlowSourceContractsAsync("pilot", bound, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MessageFlowSourceContractOptions(bound, "bound.zip", "b0b0", []));
+        var cut = RenderWith(new() { SourceSnapshotId = legacy, SourceContractId = "old-xsd" });
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-legacy]").TextContent.Should().Contain("Review required").And.Contain("nothing was reassigned automatically"));
+        _api.Verify(x => x.MessageFlowSourceContractsAsync("pilot", legacy, It.IsAny<CancellationToken>()), Times.Never, "only the canonical binding's snapshot is read");
+    }
+
+    [Fact]
+    public void WithoutABinding_TheProviderPointsToIqrEvidence()
+    {
+        WithReportIntakeBinding(null);
+        var cut = RenderWith(new());
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-unbound]").TextContent.Should().Contain("No source evidence is bound to the report-intake integration"));
+        cut.Find("[data-testid=mfr-source-bind]").GetAttribute("href").Should().Be("integration-quality-review?view=evidence");
+    }
+
+    /// <summary>The journey pack matches a configured integration to its report-intake requirement; IQR binds that integration's evidence.</summary>
+    private void WithReportIntakeBinding(Guid? snapshotId, string archive = "report-source.zip")
+    {
+        var journeys = new Mock<IIntegrationJourneysApiService>();
+        journeys.Setup(x => x.PacksAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>(
+        [
+            new IntegrationJourneyPackView
+            {
+                PackId = "skolenaervaer",
+                Journeys = [new IntegrationJourneyView { MatchedIntegrations = [new("report-intake", "pilot:altinn:report-intake", "Altinn report intake", IntegrationKind.HttpApi, true, "Configured.")] }],
+            },
+        ], null, System.Net.HttpStatusCode.OK));
+        Services.AddSingleton(journeys.Object);
+        _api.Setup(x => x.ListEvidenceBindingsAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(snapshotId is { } id
+            ? [new IntegrationEvidenceBinding { EnvironmentId = "pilot", IntegrationId = "pilot:altinn:report-intake", SnapshotId = id, ArchiveName = archive, Fingerprint = new string('e', 64) }]
+            : []);
     }
 
     private IRenderedComponent<MessageFlowReviewPanel> RenderWith(AltinnTestConfiguration configuration, IntegrationTestReadiness? readiness = null)
@@ -106,7 +144,13 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
     {
         var cut = RenderWith(new());
 
-        cut.FindAll("[data-testid=mfr-config] legend").Select(l => l.TextContent).Should().Equal("Application", "Authentication", "Reporter & test data", "Message transport", "Contracts & correlation");
+        cut.FindAll("[data-testid=mfr-config] legend").Select(l => l.TextContent).Should().Equal("Application", "Authentication", "Reporter & test data",
+            "Tester attestations Attested by user · not independently verified", "Message transport", "Contracts & correlation");
+        // Progressive sections, each with its own configured state; nothing set means Not configured, never verified.
+        cut.FindAll("[data-testid^=mfr-section-][data-testid$=-toggle]").Select(t => t.GetAttribute("data-testid")).Should().Equal("mfr-section-application-toggle",
+            "mfr-section-authentication-toggle", "mfr-section-reporter-toggle", "mfr-section-transport-toggle", "mfr-section-contracts-toggle");
+        cut.FindAll("[data-testid^=mfr-section-][data-testid$=-toggle]").Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false" && t.TextContent.Contains("Not configured"));
+        cut.Find("[data-testid=mfr-attestations]").TextContent.Should().Contain("I attest that reporter access is approved for this test").And.Contain("I attest that the test data is approved synthetic data");
         cut.Find("[data-testid=mfr-safe-warning]").TextContent.Should().Be("Safe references only. Never enter secrets, tokens, private keys, connection strings, message payloads or real personal data.");
         System.Text.RegularExpressions.Regex.Matches(cut.Markup, "Safe references only").Count.Should().Be(1, "the warning is not repeated per group");
         cut.Find("[data-testid=mfr-advanced-toggle]").GetAttribute("aria-expanded").Should().Be("false");
@@ -115,7 +159,7 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
             "Certificate reference", "Key reference", "Queue reference", "Payload store reference" })
             advanced.Should().Contain(label, "with no certificate authentication and no broker transfer these are low-frequency");
         cut.Find("[data-testid=mfr-group-application]").TextContent.Should().Contain("App identifier").And.Contain("Submission mode");
-        cut.Find("[data-testid=mfr-group-contracts]").TextContent.Should().Contain("Source Analysis snapshot");
+        cut.Find("[data-testid=mfr-group-contracts]").TextContent.Should().Contain("Source evidence").And.NotContain("Source Analysis snapshot");
         cut.FindAll("[data-testid=mfr-checkpoints-toggle], [data-testid=mfr-test-plan-toggle], [data-testid=mfr-manual-toggle]").Should().HaveCount(3)
             .And.OnlyContain(t => t.GetAttribute("aria-expanded") == "false", "checkpoints, test plan and manual procedure are collapsed");
     }

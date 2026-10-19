@@ -37,7 +37,19 @@ public sealed class MessageVerificationPanelTests : BunitContext
         var cut = Render();
 
         cut.FindAll("[data-testid=mvp-provider]").Select(item => item.TextContent).Should().Contain(text => text.Contains("BirkNext run history"))
-            .And.Contain(text => text.Contains("MM outcome events") && text.Contains("Not configured"));
+            .And.Contain(text => text.Contains("MM outcome events"));
+        // A compact provider grid: availability (Available / Not ready / Not available) and the reason, never a verdict on the message.
+        cut.FindAll("[data-testid=mvp-providers] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Evidence provider", "Availability", "Reason / detail");
+        cut.FindAll("[data-testid=mvp-provider-state]").Select(state => state.TextContent).Should().OnlyContain(state => state == "Available" || state == "Not ready" || state == "Not available");
+        cut.Find("[data-testid=mvp-provider][data-state=NotConfigured] [data-testid=mvp-provider-state]").TextContent.Should().Be("Not ready", "configured-but-missing evidence is not a failure");
+        cut.Find("[data-testid=mvp-read-only]").TextContent.Should().Contain("never sends, submits or changes a message");
+        // The form is grouped: what to verify, which identifiers, which observation window.
+        cut.FindAll("[data-testid=mvp-form] legend").Select(l => l.TextContent).Should().Equal("Verification target", "Identifiers", "Observation");
+        cut.Find("[data-testid=mvp-group-identifiers] [data-testid=mvp-instance]").Should().NotBeNull();
+        cut.Find("[data-testid=mvp-group-identifiers] [data-testid=mvp-message]").Should().NotBeNull();
+        cut.Find("[data-testid=mvp-group-target] [data-testid=mvp-source-run]").Should().NotBeNull();
+        cut.Find("[data-testid=mvp-group-observation] [data-testid=mvp-window]").Should().NotBeNull();
+        cut.Find("[data-testid=mvp-verify]").GetAttribute("aria-describedby").Should().NotBeNullOrEmpty("the disabled state explains why");
         cut.FindAll("[data-testid=mvp-expected] option").Select(item => item.GetAttribute("value")).Should().Equal("valid-report", "person-not-found", "invalid-xsd");
         cut.Find("[data-testid=mvp-verify]").HasAttribute("disabled").Should().BeTrue("no run, instance or message id is given");
         cut.Find("[data-testid=mvp-note]").TextContent.Should().StartWith("Choose an existing run");

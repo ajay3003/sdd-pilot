@@ -22,8 +22,12 @@
                                     RelatedExplanation="Suggested when the primary references another source that hosts a Wolverine application of its own; each snapshot is analyzed on its own."
                                     OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusAsync" />
             <div class="am-actions">
-                <button type="button" class="btn-primary" data-testid="am-use-scope" disabled="@(_busy || !_scope.Resolved)" @onclick="UseScopeAsync">@(Evidence is null ? "Use messaging evidence from this snapshot" : "Rebuild messaging evidence from this scope")</button>
+                <button type="button" class="btn-primary" data-testid="am-use-scope" disabled="@(_busy || !_scope.Resolved)" aria-describedby="am-rebuild-explanation" @onclick="UseScopeAsync">@(Evidence is null ? "Use messaging evidence from this snapshot" : "Rebuild messaging evidence")</button>
             </div>
+            @* What the action does, exactly (ApplicationMessagingStore.UseSourceScopeAsync): it copies the messaging evidence the chosen snapshots
+               already hold into this environment's one stored evidence set. *@
+            <p class="am-muted" id="am-rebuild-explanation" data-testid="am-rebuild-explanation">Recalculated: this environment's stored messaging evidence (applications, handlers, routes and limitations), taken from the selected snapshots' existing Source Analysis — source is not re-analyzed.
+                Unchanged: the snapshots themselves, configured integrations and existing consumer bindings (kept for applications that remain). No live source, broker or runtime system is contacted or modified.</p>
         </SourceEvidencePrerequisite>
     </div>
     }

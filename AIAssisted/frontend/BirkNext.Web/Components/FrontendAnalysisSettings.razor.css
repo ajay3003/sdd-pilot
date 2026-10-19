@@ -1,5 +1,5 @@
 .fa-active-bar-none {
-    color: var(--clr-text-placeholder);
+    color: var(--clr-text-muted);
     font-style: italic;
 }
 
@@ -839,7 +839,7 @@
     font-weight: 500;
     text-transform: none;
     letter-spacing: 0;
-    color: var(--clr-text-placeholder);
+    color: var(--clr-text-muted);
 }
 
 
@@ -1087,6 +1087,8 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
     padding: 0.75rem 1rem;
     border-right: 1px solid var(--clr-border-subtle);
 }
@@ -1100,7 +1102,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--clr-text-placeholder);
+    color: var(--clr-text-muted);
 }
 
 .fa-active-stat-value {
@@ -1462,4 +1464,14 @@
     .fa-cwv-table tbody th, .fa-cwv-table tbody td { display: block; border: 0; padding: .15rem .7rem; }
     .fa-cwv-table tbody td[data-label]::before { content: attr(data-label) ": "; font-size: .72rem; font-weight: 600; color: var(--clr-text-muted); }
     .fa-cwv-band { white-space: normal; }
+}
+
+/* Grouped section tabs (General · Discovery · Quality settings · Integrations): captions are plain text, only tabs are interactive. */
+.fa-section-tab-groups { gap: .25rem 1.25rem; align-items: flex-end; padding-top: .25rem; }
+.fa-tab-group { display: grid; gap: .1rem; min-width: 0; }
+.fa-tab-group-caption { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #475467; padding: 0 .9rem; cursor: default; user-select: none; }
+.fa-tab-group-tabs { display: flex; flex-wrap: wrap; }
+@media (max-width: 760px) {
+    .fa-section-tab-groups { display: grid; gap: .4rem; }
+    .fa-tab-group-caption { padding: 0 .25rem; }
 }

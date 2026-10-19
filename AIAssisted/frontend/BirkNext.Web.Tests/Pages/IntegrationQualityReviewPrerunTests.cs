@@ -44,7 +44,7 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         cut.Find("[data-testid=iqr-summary-systems]").TextContent.Should().Be("1");
         cut.Find("[data-testid=iqr-summary-topics]").TextContent.Should().Be("16");
         cut.Find("[data-testid=iqr-summary-enabled]").TextContent.Should().Be("16 of 16");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-readiness-coverage]").TextContent.Should().StartWith("4 of 10 domains are currently assessable or partially assessable.");
     }
 
@@ -52,7 +52,8 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
     public void NeedsAttentionIsCompactAndEveryFixDeepLinksToIntegrations()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-readiness] h3").TextContent.Should().Be("Needs attention");
+        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Can run with limitations");
+        cut.Find("[data-testid=iqr-readiness] h3").TextContent.Should().Be("Review readiness Can run with limitations");
         var items = cut.FindAll("[data-testid=iqr-attention-item]");
         items.Select(i => i.GetAttribute("data-key")).Should().Equal("mappings", "runtime", "contracts", "groups");
         items[0].TextContent.Should().Contain("15 need confirmation");
@@ -152,10 +153,10 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=iqr-history] .disclosure-body").HasAttribute("hidden").Should().BeTrue();
         cut.Find("[data-testid=iqr-history]").TextContent.Should().Contain("do not change the current readiness");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-history] button").Click();
         cut.Find("[data-testid=iqr-history-list]").TextContent.Should().Contain("Completed");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
     }
 
     [Fact]

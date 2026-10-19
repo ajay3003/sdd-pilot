@@ -75,4 +75,13 @@ public static class MessageVerificationPresentation
         MessageCorrelationCertainty.TesterAsserted => "Stated by the tester (not verified)",
         _ => "Uncorrelated",
     };
+
+    /// <summary>An evidence provider's availability for a verification now: Available, Not ready (configuration or approval missing) or Not
+    /// available (no read surface). Availability says nothing about the message itself: missing evidence is not a failure.</summary>
+    public static string Availability(JourneyReadinessState state) => state switch
+    {
+        JourneyReadinessState.Ready => "Available",
+        JourneyReadinessState.NotAvailable => "Not available",
+        _ => "Not ready",
+    };
 }

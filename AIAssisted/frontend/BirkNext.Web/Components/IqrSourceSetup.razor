@@ -5,7 +5,8 @@
 @inject IServiceProvider Services
 
 @* Integration Quality Review's source evidence: one Source Analysis snapshot bound per integration (exact id, chosen here, never the latest
-   one automatically). Source upload belongs to Source Analysis; runtime integration evidence never needs a snapshot. *@
+   one automatically). The choice is saved as the canonical evidence binding that test packs and providers read. Source upload belongs to
+   Source Analysis; runtime integration evidence never needs a snapshot. *@
 <section class="iqr-source-setup" aria-labelledby="@(ShowHeading ? "iqr-source-heading" : null)" aria-label="@(ShowHeading ? null : "Source evidence setup")" data-testid="iqr-source-setup">
     @if (ShowHeading) { <h2 id="iqr-source-heading">Source evidence</h2> }
     <p>Source evidence comes from snapshots managed by Source Analysis: choose the snapshot that holds an integration's implementation. The review keeps the evidence it used, so history does not depend on the snapshot later. Runtime evidence is configured separately.</p>
@@ -66,6 +67,10 @@
 
     private async Task PrimaryChangedAsync(Guid? id)
     {
+        // The canonical binding is saved first; the page's selection follows what the backend accepted.
+        var (_, bindError) = await Api.SetEvidenceBindingAsync(EnvironmentId, _integrationId, id);
+        _error = bindError;
+        if (bindError is not null) return;
         Selections.RemoveAll(s => s.IntegrationId == _integrationId);
         if (id is { } chosen) Selections.Add(new(_integrationId, chosen));
         await LoadAsync(StateFor(_integrationId));

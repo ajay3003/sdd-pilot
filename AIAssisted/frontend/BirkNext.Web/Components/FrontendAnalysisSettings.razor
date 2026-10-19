@@ -69,8 +69,8 @@
     <div class="fa-profiles-list">
         @foreach (var p in FaSettings.Settings.Profiles)
         {
-            <button class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "")"
-                    aria-selected="@(p.Id == _selectedProfileId ? "true" : "false")"
+            <button type="button" class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "")"
+                    aria-pressed="@(p.Id == _selectedProfileId ? "true" : "false")"
                     @onclick="() => SelectProfile(p.Id)">
                 <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
                 @p.Name
@@ -323,19 +323,32 @@
             </div>
         }
 
-        @* ── Section tabs ── *@
-        <div class="fa-section-tabs" role="tablist" aria-label="Target Environment sections">
-            @foreach (var (key, label) in Tabs)
+        <TargetEnvironmentStateSummary Profile="profile" IsActive="@(FaSettings.Settings.ActiveProfileId == profile.Id)" ManualVerificationRequired="ManualVerificationRequired"
+                                       ManualVerificationPassed="@(ManualStatus == ManualAuthenticationVerificationStatus.Passed)" />
+
+        @* ── Section tabs ── One tablist (arrow keys move across all tabs), visually grouped: General · Discovery · Quality settings ·
+           Integrations. Group captions are plain, aria-hidden text: never a tab. *@
+        <div class="fa-section-tabs fa-section-tab-groups" role="tablist" aria-label="Target Environment sections">
+            @foreach (var (group, keys) in TabGroups)
             {
-                <button type="button" class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
-                        id="@($"target-tab-{key}")" aria-controls="target-section-panel"
-                        tabindex="@(_activeTab == key ? 0 : -1)" @ref="_tabElements[Array.FindIndex(Tabs, t => t.Key == key)]"
-                        @onkeydown="e => SectionTabKey(e, key)"
-                        role="tab"
-                        aria-selected="@(_activeTab == key ? "true" : "false")"
-                        @onclick="() => _activeTab = key">
-                    @label
-                </button>
+                <div class="fa-tab-group" data-testid="te-tab-group" data-group="@group">
+                    <span class="fa-tab-group-caption" aria-hidden="true">@group</span>
+                    <div class="fa-tab-group-tabs">
+                    @foreach (var key in keys)
+                    {
+                        var label = Tabs.First(t => t.Key == key).Label;
+                        <button type="button" class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
+                                id="@($"target-tab-{key}")" aria-controls="target-section-panel"
+                                tabindex="@(_activeTab == key ? 0 : -1)" @ref="_tabElements[Array.FindIndex(Tabs, t => t.Key == key)]"
+                                @onkeydown="e => SectionTabKey(e, key)"
+                                role="tab"
+                                aria-selected="@(_activeTab == key ? "true" : "false")"
+                                @onclick="() => _activeTab = key">
+                            @label
+                        </button>
+                    }
+                    </div>
+                </div>
             }
         </div>
 
@@ -1650,6 +1663,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private static readonly (string Key, string Label)[] Tabs = DocumentationCatalog.TargetEnvironmentTabDefinitions
         .Select(tab => (tab.Key, tab.Label)).ToArray();
+
+    /// <summary>Visual grouping of the section tabs (presentation only; keys and routes are unchanged). Every tab is in exactly one group.</summary>
+    public static readonly (string Group, string[] Keys)[] TabGroups =
+    [
+        ("General", ["general", "target", "auth"]),
+        ("Discovery", ["endpoint", "browser"]),
+        ("Quality settings", ["performance", "cwv", "features", "validation"]),
+        ("Integrations", ["integrations"]),
+    ];
 
     // ── Computed ─────────────────────────────────────────────────────────────
 

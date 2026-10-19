@@ -15,12 +15,20 @@ public static class IntegrationReviewPrerunPresentation
 
     public static string Href(string? profileId, string focus) => IntegrationReviewPresentation.IntegrationsHref(profileId) + "&focus=" + focus;
 
-    /// <summary>Headline wording shared with the Run button: "Can run with limitations" reads as the action it permits.</summary>
-    public static string ReadinessLabel(IntegrationReviewReadiness readiness) => readiness.Headline switch
-    {
-        "Can run with limitations" => "Run with limitations",
-        var headline => headline,
-    };
+    public const string CannotRun = "Cannot run";
+    public const string CanRunWithLimitations = "Can run with limitations";
+    public const string ReadyToRun = "Ready to run";
+
+    /// <summary>The one review run state, from the backend's Run gate and headline: Cannot run, Can run with limitations or Ready to run.
+    /// The heading, the summary and the Run button all use it, so "Cannot run" never sits next to an offered run.</summary>
+    public static string ReadinessLabel(IntegrationReviewReadiness readiness) =>
+        !readiness.CanRun ? CannotRun : readiness.Headline == "Ready" ? ReadyToRun : CanRunWithLimitations;
+
+    /// <summary>The Run button text, only offered when the review can run.</summary>
+    public static string RunLabel(IntegrationReviewReadiness readiness) => readiness.Headline == "Ready" ? "Run Integration Quality Review" : "Run with limitations";
+
+    /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integrations has one.</summary>
+    public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0;
 
     public static string ReadinessTone(IntegrationReviewReadiness readiness) =>
         !readiness.CanRun ? "blocked" : readiness.Headline == "Ready" ? "ready" : "limited";

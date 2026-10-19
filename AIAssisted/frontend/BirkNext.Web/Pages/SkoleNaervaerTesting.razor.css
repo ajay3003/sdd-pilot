@@ -210,6 +210,8 @@
 }
 
 .snt-scroll {
+    /* Positioned so visually-hidden captions inside the table stay clipped by the scroller, never widening the page. */
+    position: relative;
     max-width: 100%;
     overflow-x: auto;
     contain: inline-size;
@@ -348,4 +350,44 @@
     .snt-resolution {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+/* One grouped navigation (Overview · Journeys · Verify · History): captions are plain text, only the views are links. */
+.snt-nav { display: flex; flex-wrap: wrap; gap: .4rem 1.75rem; border-bottom: 1px solid var(--border-color, #d0d5dd); min-width: 0; }
+.snt-nav-group { display: grid; gap: .1rem; min-width: 0; }
+.snt-nav-caption { font-size: .7rem; font-weight: 700; color: #475467; text-transform: uppercase; letter-spacing: .06em; cursor: default; user-select: none; }
+.snt-nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem; }
+.snt-nav .snt-tab { display: inline-flex; align-items: center; min-height: 2.5rem; }
+@media (max-width: 760px) {
+    .snt-nav { display: grid; gap: .5rem; border-bottom: 0; }
+    .snt-nav .snt-tab { border: 1px solid var(--border-color, #d0d5dd); border-radius: 999px; margin: 0; padding: .2rem .8rem; flex: 0 1 auto; }
+    .snt-nav .snt-tab-active { border-color: var(--focus-color, #155eef); background: #eff6ff; }
+}
+
+/* Status always names its dimension. */
+.snt-dimensions { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; align-items: center; }
+.snt-dimensions > span { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.snt-dimension-label { font-size: .74rem; font-weight: 600; color: #475467; text-transform: uppercase; letter-spacing: .03em; margin-right: .25rem; }
+.snt-journey-name { display: block; font-weight: 700; }
+.snt-inline-link { margin-left: .4rem; }
+.snt-handoff { display: grid; gap: .3rem; margin: 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.snt-handoff > div { display: grid; gap: .1rem; }
+.snt-handoff dt { font-size: .76rem; color: #475467; font-weight: 600; }
+.snt-handoff dd { margin: 0; }
+.snt-verify-summary { margin: .25rem 0 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
+
+/* Blockers grouped by category metadata; resolved prerequisites compact. */
+.snt-blocker-groups { display: grid; gap: .55rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.snt-blocker-group { border: 1px solid var(--border-color, #d0d5dd); border-radius: .5rem; padding: .45rem .65rem; min-width: 0; }
+.snt-group-heading { margin: 0 0 .25rem; font-size: .9rem; display: flex; align-items: center; gap: .4rem; }
+.snt-count { display: inline-block; min-width: 1.4rem; padding: 0 .35rem; border-radius: 999px; background: #eef2f7; font-size: .76rem; text-align: center; }
+.snt-notes { margin: 0; padding-left: 1.1rem; font-size: .86rem; color: #475467; }
+
+/* Responsive tables: stacked rows (cards) below 640px, table semantics kept with explicit roles. */
+@media (max-width: 640px) {
+    .snt-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .snt-stack, .snt-stack tbody, .snt-stack tr, .snt-stack th, .snt-stack td { display: block; width: auto; }
+    .snt-stack tbody tr { border: 1px solid var(--border-color, #d0d5dd); border-radius: .5rem; padding: .4rem .6rem; margin-bottom: .5rem; }
+    .snt-stack tbody th, .snt-stack tbody td { border: 0 !important; padding: .15rem 0 !important; }
+    .snt-stack td[data-label]::before { content: attr(data-label) ": "; font-weight: 600; color: #475467; font-size: .76rem; }
 }

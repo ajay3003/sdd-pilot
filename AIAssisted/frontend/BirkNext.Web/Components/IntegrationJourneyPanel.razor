@@ -10,15 +10,17 @@
 @* IQR → Integration journeys: one shared view for every registered journey pack. Each journey shows its steps as separate evidence
    (configured ≠ observed ≠ verified), its prerequisites, scenarios and history. Delegated journeys (e.g. CDC) are executed by Active tests
    above and only summarized here. Architecture rules are evaluated by the backend on Source Analysis evidence. Nothing here is domain-specific:
-   pack, journey and step labels come from the backend. *@
+   pack, journey and step labels come from the backend.
+   Embedded: a host page (a test pack's own page) shows exactly one view of one pack — no heading, pack picker, trust line or tab bar — so the
+   host's navigation stays the only navigation. Execution, steps and history remain this shared component's. *@
 @if (Api is null) { return; }
-<section class="ijp" aria-labelledby="ijp-heading" data-testid="ijp-panel">
-    <h2 id="ijp-heading">Integration journeys</h2>
+<section class="ijp @(Embedded ? "ijp-is-embedded" : "")" aria-labelledby="@(Embedded ? null : "ijp-heading")" aria-label="@(Embedded ? "Journey details" : null)" data-testid="ijp-panel" data-embedded="@(Embedded ? "true" : "false")">
+    @if (!Embedded) { <h2 id="ijp-heading">Integration journeys</h2> }
     @if (_error is { } error) { <p class="ijp-error" role="alert" data-testid="ijp-error">@error</p> }
     @if (_loading) { <p class="ijp-muted" role="status">Loading journeys…</p> }
     @if (!_loading && _packs.Count == 0 && _error is null) { <p class="ijp-empty" data-testid="ijp-empty">No journey packs are registered.</p> }
 
-    @if (_packs.Count > 1)
+    @if (_packs.Count > 1 && !Embedded && PackId is null)
     {
         <fieldset class="ijp-packs" data-testid="ijp-packs">
             <legend>Journey pack</legend>
@@ -34,22 +36,25 @@
 
     @if (Pack is { } pack)
     {
-        <h3 class="ijp-pack-title" data-testid="ijp-pack-title">@pack.DisplayName</h3>
-        <p class="ijp-muted">@pack.Description</p>
-        <p class="ijp-trust" data-testid="ijp-trust" data-trusted="@(pack.EnvironmentTrusted ? "true" : "false")">
-            <span class="ijp-pill ijp-pill-@(pack.EnvironmentTrusted ? "ready" : "neutral")">@(pack.EnvironmentTrusted ? "Trusted environment" : "Environment not trusted for execution")</span>
-            <span class="ijp-muted">@pack.EnvironmentDetail</span>
-        </p>
+        @if (!Embedded)
+        {
+            <h3 class="ijp-pack-title" data-testid="ijp-pack-title">@pack.DisplayName</h3>
+            <p class="ijp-muted">@pack.Description</p>
+            <p class="ijp-trust" data-testid="ijp-trust" data-trusted="@(pack.EnvironmentTrusted ? "true" : "false")">
+                <span class="ijp-pill ijp-pill-@(pack.EnvironmentTrusted ? "ready" : "neutral")">@(pack.EnvironmentTrusted ? "Trusted environment" : "Environment not trusted for execution")</span>
+                <span class="ijp-muted">@pack.EnvironmentDetail</span>
+            </p>
 
-        <div class="ijp-tabs" role="tablist" aria-label="@($"{pack.DisplayName} views")" data-testid="ijp-tabs">
-            @foreach (var tab in Tabs)
-            {
-                <button type="button" role="tab" id="@TabId(tab.Key)" class="ijp-tab @(_tab == tab.Key ? "ijp-tab-active" : "")" aria-selected="@(_tab == tab.Key ? "true" : "false")"
-                        aria-controls="@($"{_id}-panel")" tabindex="@(_tab == tab.Key ? "0" : "-1")" data-testid="@($"ijp-tab-{tab.Key}")" @ref="_tabRefs[tab.Key]"
-                        @onclick="() => SelectTabAsync(tab.Key)" @onkeydown="e => OnTabKeyAsync(e, tab.Key)">@tab.Label</button>
-            }
-        </div>
-        <div id="@($"{_id}-panel")" role="tabpanel" aria-labelledby="@TabId(_tab)" class="ijp-tabpanel" data-testid="ijp-tabpanel" data-tab="@_tab" tabindex="0">
+            <div class="ijp-tabs" role="tablist" aria-label="@($"{pack.DisplayName} views")" data-testid="ijp-tabs">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button" role="tab" id="@TabId(tab.Key)" class="ijp-tab @(_tab == tab.Key ? "ijp-tab-active" : "")" aria-selected="@(_tab == tab.Key ? "true" : "false")"
+                            aria-controls="@($"{_id}-panel")" tabindex="@(_tab == tab.Key ? "0" : "-1")" data-testid="@($"ijp-tab-{tab.Key}")" @ref="_tabRefs[tab.Key]"
+                            @onclick="() => SelectTabAsync(tab.Key)" @onkeydown="e => OnTabKeyAsync(e, tab.Key)">@tab.Label</button>
+                }
+            </div>
+        }
+        <div id="@($"{_id}-panel")" role="@(Embedded ? null : "tabpanel")" aria-labelledby="@(Embedded ? null : TabId(_tab))" class="ijp-tabpanel" data-testid="ijp-tabpanel" data-tab="@_tab" tabindex="@(Embedded ? null : "0")">
             @if (_tab == "overview")
             {
                 <div class="ijp-table" tabindex="0" role="region" aria-label="Journey overview" data-testid="ijp-overview">
@@ -196,28 +201,33 @@
                         <p class="ijp-note" role="note" data-testid="ijp-delegated">This journey runs through Active tests (provider <span class="ijp-mono">@view.Journey.DelegatedProviderId</span>). Its scenarios, safety checks, run evidence and history live there; readiness below is taken from it.</p>
                     }
 
-                    <h4 class="ijp-subheading">Journey steps</h4>
-                    <ol class="ijp-steps" data-testid="ijp-steps">
-                        @foreach (var step in view.Journey.Steps)
-                        {
-                            var status = view.StepStatus.FirstOrDefault(item => item.StepId == step.StepId);
-                            <li class="ijp-step" data-testid="ijp-step" data-step="@step.StepId" data-state="@(status?.State ?? JourneyStepState.NotAssessed)">
-                                <span class="ijp-step-label">@step.Label</span>
-                                <span class="ijp-step-owner">@step.Owner · @IntegrationJourneyPresentation.Kind(step.Kind)</span>
-                                <span class="ijp-step-flags">
-                                    <span>Configured: @(status?.Configured == true ? "yes" : step.IntegrationKey is null ? "n/a" : "no")</span>
-                                    <span>Observed: @(status?.Observable == true ? "possible" : "no source")</span>
-                                    <span>Verified: @(status?.Verifiable == true ? "possible" : "no")</span>
-                                </span>
-                                <span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.StepTone(status?.State ?? JourneyStepState.NotAssessed)">@IntegrationJourneyPresentation.Step(status?.State ?? JourneyStepState.NotAssessed)</span>
-                                <span class="ijp-step-limit">@status?.Limitation</span>
-                            </li>
-                        }
-                    </ol>
+                    <h4 class="ijp-subheading" id="@($"{_id}-steps-{view.Journey.JourneyId}")">Journey steps</h4>
+                    @* Configured, Observed, Verified and the step's assessment are separate columns: one never implies the next. *@
+                    <div class="ijp-steps-wrap" role="region" aria-labelledby="@($"{_id}-steps-{view.Journey.JourneyId}")">
+                        <table class="ijp-steps-table" role="table" data-testid="ijp-steps">
+                            <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Step</th><th role="columnheader" scope="col">Configured</th><th role="columnheader" scope="col">Observed</th><th role="columnheader" scope="col">Verified</th><th role="columnheader" scope="col">Assessment</th></tr></thead>
+                            <tbody role="rowgroup">
+                                @foreach (var step in view.Journey.Steps)
+                                {
+                                    var status = view.StepStatus.FirstOrDefault(item => item.StepId == step.StepId);
+                                    var state = status?.State ?? JourneyStepState.NotAssessed;
+                                    <tr role="row" class="ijp-step" data-testid="ijp-step" data-step="@step.StepId" data-state="@state">
+                                        <th role="rowheader" scope="row"><span class="ijp-step-label">@step.Label</span><span class="ijp-step-owner">@step.Owner · @IntegrationJourneyPresentation.Kind(step.Kind)</span>@if (status?.Limitation is { Length: > 0 } limitation) { <span class="ijp-step-limit">@limitation</span> }</th>
+                                        <td role="cell" data-label="Configured" data-testid="ijp-step-configured">@(status?.Configured == true ? "Configured" : step.IntegrationKey is null ? "Not applicable" : "Not configured")</td>
+                                        <td role="cell" data-label="Observed" data-testid="ijp-step-observed">@(status?.Observable == true ? "Observer available" : "No observer")</td>
+                                        <td role="cell" data-label="Verified" data-testid="ijp-step-verified">@(status?.Verifiable == true ? "Verifier available" : "No verifier")</td>
+                                        <td role="cell" data-label="Assessment"><span class="ijp-pill ijp-pill-@IntegrationJourneyPresentation.StepTone(state)" data-testid="ijp-step-assessment">@IntegrationJourneyPresentation.Step(state)</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
 
                     <h4 class="ijp-subheading">Integrations (from Integration Quality Review)</h4>
                     <ul class="ijp-notes" data-testid="ijp-integrations">@foreach (var item in view.MatchedIntegrations) { <li data-configured="@(item.IntegrationId is not null)">@(item.DisplayName ?? item.RequirementKey) (@item.Kind): @item.Detail</li> }</ul>
 
+                    @if (ShowPrerequisites)
+                    {
                     <h4 class="ijp-subheading">Prerequisites</h4>
                     <ul class="ijp-checks" data-testid="ijp-prerequisites">
                         @foreach (var item in view.Prerequisites)
@@ -229,6 +239,7 @@
                             </li>
                         }
                     </ul>
+                    }
 
                     <h4 class="ijp-subheading">Scenarios</h4>
                     <ul class="ijp-checks" data-testid="ijp-scenarios">
@@ -377,9 +388,12 @@
                 </div>
             }
         </div>
-        <div class="ijp-actions">
-            <button type="button" class="btn-secondary" data-testid="ijp-export" @onclick="ExportAsync">Export HTML</button>
-        </div>
+        @if (!Embedded || _tab == "history")
+        {
+            <div class="ijp-actions">
+                <button type="button" class="btn-secondary" data-testid="ijp-export" @onclick="ExportAsync">Export HTML</button>
+            </div>
+        }
     }
 </section>
 
@@ -387,6 +401,12 @@
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
     /// <summary>A journey tab to open first (e.g. from a domain page section), or "history". Unknown ids leave the overview open.</summary>
     [Parameter] public string? InitialJourneyId { get; set; }
+    /// <summary>Shows only this pack (no pack picker). Null: every registered pack, the first selected.</summary>
+    [Parameter] public string? PackId { get; set; }
+    /// <summary>Hosted inside a test pack's page: exactly one view (<see cref="InitialJourneyId"/>) without heading, picker, trust line or tabs.</summary>
+    [Parameter] public bool Embedded { get; set; }
+    /// <summary>False when the host page already presents the journey's prerequisites (grouped by category).</summary>
+    [Parameter] public bool ShowPrerequisites { get; set; } = true;
 
     private readonly string _id = "ijp-" + Guid.NewGuid().ToString("N")[..8];
     private readonly CancellationTokenSource _disposed = new();
@@ -559,6 +579,7 @@
             var result = await Api.PacksAsync(Profile.Id, _disposed.Token);
             _packs = result.Value?.ToList() ?? [];
             _error = result.Error;
+            if (PackId is { } fixedPack) _packs = _packs.Where(item => item.PackId == fixedPack).ToList();
             if (_packs.All(item => item.PackId != _packId)) _packId = _packs.FirstOrDefault()?.PackId ?? "";
             if (InitialJourneyId is { } initial && Pack?.Journeys.Any(item => item.Journey.JourneyId == initial) == true) _tab = initial;
             else if (InitialJourneyId == "history") await SelectTabAsync("history");

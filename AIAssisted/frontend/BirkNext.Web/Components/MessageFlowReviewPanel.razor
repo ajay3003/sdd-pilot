@@ -1,10 +1,14 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
 @inject IIntegrationCatalogApiService Api
+@inject IServiceProvider Services
 
+@* Integration Quality Review → Extensions: the message flow review and the Altinn provider configuration the Skolenærvær test pack uses.
+   Provider-specific (Altinn, TT02 wording belongs here). Source evidence is never chosen here: the XML Schema comes from the snapshot bound to
+   the report-intake integration in Integration Quality Review → Evidence (the canonical binding); this panel only names which schema in it. *@
 <section class="mfr-panel" aria-labelledby="mfr-heading" data-testid="mfr-panel">
     <div class="mfr-heading-row">
-        <div><h2 id="mfr-heading">Message flow review</h2><p>Documented design, source evidence, configuration and runtime observations are shown as separate evidence stages.</p></div>
+        <div><h2 id="mfr-heading">Message flow review <span class="mfr-provider">Altinn provider</span></h2><p>Documented design, source evidence, configuration and runtime observations are shown as separate evidence stages. Used by the Skolenærvær test pack.</p></div>
         @if (_package is not null) { <span class="mfr-status">Active test: blocked</span> }
     </div>
     @if (string.IsNullOrWhiteSpace(EnvironmentId))
@@ -100,35 +104,67 @@
         </ReviewDisclosure>
         <section class="mfr-card" aria-labelledby="mfr-config-heading" data-testid="mfr-config"><h3 id="mfr-config-heading" tabindex="-1">Altinn Test Configuration</h3>
             <p class="mfr-safe" data-testid="mfr-safe-warning"><strong>Safe references only.</strong> Never enter secrets, tokens, private keys, connection strings, message payloads or real personal data.</p>
-            <div class="mfr-groups">
-            <fieldset class="mfr-group" data-testid="mfr-group-application"><legend>Application</legend><div class="mfr-form">
+            <div class="mfr-groups mfr-sections">
+            <ReviewDisclosure Text="Application" CollapseText="Application" Hint="@SectionHint(_environment != "Unknown", _product, _app, _submission != "Unknown", _baseUrl, _endpoint)" TestId="mfr-section-application" Class="mfr-section">
+            <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend><div class="mfr-form">
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
                 <label>Safe base URL reference<input @bind="_baseUrl" /></label><label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
             </div></fieldset>
-            <fieldset class="mfr-group" data-testid="mfr-group-authentication"><legend>Authentication</legend><div class="mfr-form">
+            </ReviewDisclosure>
+            <ReviewDisclosure Text="Authentication" CollapseText="Authentication" Hint="@SectionHint(_auth != "Unknown", _client, _tenant, _documentedScopes, _scopes)" TestId="mfr-section-authentication" Class="mfr-section">
+            <fieldset class="mfr-group" data-testid="mfr-group-authentication"><legend class="visually-hidden">Authentication</legend><div class="mfr-form">
                 <label>Authentication type<select @bind="_auth"><option value="Unknown">Needs verification</option>@foreach (var auth in Enum.GetValues<ExternalAuthenticationType>().Where(x => x != ExternalAuthenticationType.Unknown)) { <option value="@auth">@auth</option> }</select></label>
                 <label>Client / app reference<input @bind="_client" /></label><label>Tenant reference<input @bind="_tenant" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" /></label>
                 @if (UsesCertificate) { <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label> }
             </div>
-            <p class="mfr-note" data-testid="mfr-verified-scopes">Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p></fieldset>
-            <fieldset class="mfr-group" data-testid="mfr-group-reporter"><legend>Reporter &amp; test data</legend><div class="mfr-form">
+            <p class="mfr-note" data-testid="mfr-verified-scopes">Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred. Configured scopes are not verified scopes." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p></fieldset>
+            </ReviewDisclosure>
+            <ReviewDisclosure Text="Reporter &amp; Test Data" CollapseText="Reporter &amp; Test Data" Hint="@SectionHint(_reporterType, _reporter, _identitySet)" TestId="mfr-section-reporter" Class="mfr-section">
+            <fieldset class="mfr-group" data-testid="mfr-group-reporter"><legend class="visually-hidden">Reporter &amp; test data</legend><div class="mfr-form">
                 <label>Test reporter type<input @bind="_reporterType" /></label><label>Test reporter reference<input @bind="_reporter" /></label>
-                <label class="mfr-check"><input type="checkbox" @bind="_reporterApproved" /> Reporter access approved for this test</label>
                 <label>Approved synthetic identity-set reference<input @bind="_identitySet" /></label>
-                <label class="mfr-check"><input type="checkbox" @bind="_syntheticApproved" /> Test data is approved synthetic data</label>
-            </div></fieldset>
-            <fieldset class="mfr-group" data-testid="mfr-group-transport"><legend>Message transport</legend><div class="mfr-form">
+            </div>
+            @* Attestations: the tester's own statement, recorded as such. Nothing here verifies the reporter's access or that the data is synthetic. *@
+            <fieldset class="mfr-attestations" data-testid="mfr-attestations"><legend>Tester attestations <span class="mfr-attestation-state">Attested by user · not independently verified</span></legend>
+                <label class="mfr-check"><input type="checkbox" @bind="_reporterApproved" data-testid="mfr-attest-reporter" /> I attest that reporter access is approved for this test</label>
+                <label class="mfr-check"><input type="checkbox" @bind="_syntheticApproved" data-testid="mfr-attest-synthetic" /> I attest that the test data is approved synthetic data</label>
+            </fieldset>
+            <p class="mfr-note">Reusable test assets (synthetic reporters, identities and fixtures) come from <a href="/test-data">Test Data</a>, the one test-data catalog.</p></fieldset>
+            </ReviewDisclosure>
+            <ReviewDisclosure Text="Message transport" CollapseText="Message transport" Hint="@SectionHint(_channel, _messageType)" TestId="mfr-section-transport" Class="mfr-section">
+            <fieldset class="mfr-group" data-testid="mfr-group-transport"><legend class="visually-hidden">Message transport</legend><div class="mfr-form">
                 <label>MU channel reference<input @bind="_channel" /></label><label>Message type<input @bind="_messageType" /></label>
                 @if (UsesBroker) { <label>Queue reference<input @bind="_queue" /></label><label>Payload store reference<input @bind="_payload" /></label> }
             </div></fieldset>
-            <fieldset class="mfr-group mfr-group-wide" data-testid="mfr-group-contracts"><legend>Contracts &amp; correlation</legend><div class="mfr-form">
+            </ReviewDisclosure>
+            <ReviewDisclosure Text="Contracts &amp; correlation" CollapseText="Contracts &amp; correlation" Hint="@SectionHint(_contract, _version, _sourceContract)" TestId="mfr-section-contracts" Class="mfr-section">
+            <fieldset class="mfr-group mfr-group-wide" data-testid="mfr-group-contracts"><legend class="visually-hidden">Contracts &amp; correlation</legend>
+                <div class="mfr-source" data-testid="mfr-source-binding">
+                    <strong>Source evidence</strong>
+                    @if (_binding is { } binding)
+                    {
+                        <span data-testid="mfr-source-using">Using <span class="mfr-mono">@binding.ArchiveName</span> · analyzed @binding.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · bound to @(_bindingIntegration ?? binding.IntegrationId) in Integration Quality Review → Evidence</span>
+                        <a class="mfr-link" href="@($"source-analysis?snapshot={binding.SnapshotId}")" data-testid="mfr-source-open">Open evidence</a>
+                        @if (_legacySnapshot is { } legacy && legacy != binding.SnapshotId) { <span class="mfr-review" role="note" data-testid="mfr-source-legacy">Review required: the saved schema was chosen in another snapshot. Choose the XML Schema again; nothing was reassigned automatically.</span> }
+                    }
+                    else if (_legacySnapshot is { } legacyOnly)
+                    {
+                        <span data-testid="mfr-source-legacy-only">Using a snapshot saved with this configuration earlier (@legacyOnly.ToString()[..8]…). Bind the report-intake integration's source evidence in Integration Quality Review → Evidence to make it the canonical evidence.</span>
+                        <a class="mfr-link" href="integration-quality-review?view=evidence">Open Evidence</a>
+                    }
+                    else
+                    {
+                        <span data-testid="mfr-source-unbound">No source evidence is bound to the report-intake integration. Bind it in Integration Quality Review → Evidence; it is not selected here.</span>
+                        <a class="mfr-link" href="integration-quality-review?view=evidence" data-testid="mfr-source-bind">Open Evidence</a>
+                    }
+                </div>
+                <div class="mfr-form">
                 <label>Contract reference<input @bind="_contract" /></label><label>Contract version<input @bind="_version" /></label>
-                <label>Source Analysis snapshot<select value="@_sourceSnapshot" @onchange="SourceSnapshotChanged"><option value="">No source snapshot selected</option>@foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.SnapshotId">@snapshot.ArchiveName · @snapshot.Fingerprint · @snapshot.AnalyzedAt.ToString("yyyy-MM-dd HH:mm") UTC</option> }</select></label>
                 @if (_sourceOptions is { } sourceOptions)
                 {
-                    <label>XML Schema contract from selected immutable snapshot<select value="@_sourceContract" @onchange="SourceContractChanged"><option value="">Select an XSD contract</option>@foreach (var contract in sourceOptions.Contracts) { <option value="@contract.Id">@contract.Name · @(contract.XmlSchema?.ExplicitVersion ?? contract.Version ?? "version not declared")</option> }</select></label>
+                    <label>XML Schema contract from the bound snapshot<select value="@_sourceContract" @onchange="SourceContractChanged"><option value="">Select an XSD contract</option>@foreach (var contract in sourceOptions.Contracts) { <option value="@contract.Id">@contract.Name · @(contract.XmlSchema?.ExplicitVersion ?? contract.Version ?? "version not declared")</option> }</select></label>
                     @if (_sourceOptions.Contracts.FirstOrDefault(c => c.Id == _sourceContract) is { XmlSchema: { } schema } selectedContract)
                     {
                         <div class="mfr-schema" data-testid="mfr-xsd-evidence"><strong>@selectedContract.Name</strong><span>Snapshot @sourceOptions.SnapshotId · @sourceOptions.ArchiveName · @sourceOptions.Fingerprint</span><span>Evidence: SourceConfirmed from this exact Source Analysis snapshot · runtime: @selectedContract.RuntimeState</span><span>Namespace: @Display(schema.TargetNamespace)</span><span>Version: @(schema.ExplicitVersion ?? schema.VersionEvidence)</span><span>@schema.Elements.Count element(s), @schema.Attributes.Count attribute(s), @schema.Types.Count type(s), @schema.Dependencies.Count import/include(s)</span>
@@ -137,10 +173,10 @@
                         </div>
                     }
                 }
-            </div>
-            @if (_sourceSnapshots.Count == 0) { <p role="status">No Source Analysis snapshots are available to select. Source evidence remains optional; <a href="/source-analysis">open Source Analysis</a>. A manual contract reference remains documented only.</p> }
-            else if (_sourceOptions is { Contracts.Count: 0 }) { <p role="status">This exact snapshot has no parsed XML Schema contracts.</p> }
+                </div>
+                @if (_sourceOptions is { Contracts.Count: 0 }) { <p role="status">The bound snapshot has no parsed XML Schema contracts.</p> }
             </fieldset>
+            </ReviewDisclosure>
             </div>
             <ReviewDisclosure Text="Advanced configuration" CollapseText="Hide advanced configuration" Hint="low-frequency references" TestId="mfr-advanced" Class="mfr-disclosure">
                 <div class="mfr-form" data-testid="mfr-advanced-fields">
@@ -153,13 +189,13 @@
             </ReviewDisclosure>
             <p class="mfr-note">Configuration state and verification state are independent. Production is blocked by the backend for active execution; this release has no active submission provider.</p>
         </section>
-        <ReviewDisclosure Text="Checkpoints" CollapseText="Hide checkpoints" Hint="@($"{package.Flow.Checkpoints.Count(c => c.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)} of {package.Flow.Checkpoints.Count} observation sources configured · configured ≠ observed")" TestId="mfr-checkpoints" Class="mfr-disclosure">
+        <ReviewDisclosure Text="Checkpoints" CollapseText="Hide checkpoints" Hint="@(package.Flow.Checkpoints.Count == 0 ? "none configured" : $"{package.Flow.Checkpoints.Count(c => c.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)} of {package.Flow.Checkpoints.Count} observation sources configured · configured ≠ observed")" TestId="mfr-checkpoints" Class="mfr-disclosure">
             <section class="mfr-card" aria-labelledby="mfr-checkpoints-heading"><h3 id="mfr-checkpoints-heading">Checkpoints</h3><ol>@foreach (var checkpoint in package.Flow.Checkpoints) { <li class="mfr-checkpoint"><strong>@checkpoint.Name</strong><span>Configuration @checkpoint.ConfigurationStatus; runtime @checkpoint.RuntimeStatus.</span><label>Observation source<select value="@checkpoint.ProbeType" @onchange="e => SetCheckpointProbe(checkpoint.Id, e.Value?.ToString())"><option>Manual</option><option>Azure App Insights</option><option>Azure Monitor</option><option>Service API</option><option>Read-only DB</option><option>Queue metadata</option><option>Blob metadata</option><option>External platform status</option><option>Log query</option><option>Other</option></select></label><button type="button" class="btn-secondary" aria-pressed="@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)" @onclick="() => ToggleCheckpoint(checkpoint.Id)">@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured ? "Mark observation source unconfigured" : "Mark observation source configured")</button></li> }</ol><p>Configured probe is not an observed checkpoint. Runtime status remains NotAssessed until evidence is captured.</p></section>
         </ReviewDisclosure>
         <ReviewDisclosure Text="Test plan" CollapseText="Hide test plan" Hint="@($"{package.TestCases.Count} case(s)")" TestId="mfr-test-plan" Class="mfr-disclosure">
             <section class="mfr-card" aria-labelledby="mfr-cases-heading"><h3 id="mfr-cases-heading">Test plan</h3>@foreach (var test in package.TestCases) { <details><summary>@test.Name</summary><p>@test.Purpose</p><p>Evidence basis: @test.EvidenceBasis</p><p>Preconditions: @string.Join("; ", test.Preconditions)</p><p>Expected: @string.Join("; ", test.ExpectedFlow)</p><p>Evidence: @string.Join("; ", test.EvidenceRequired)</p><p>@test.AutomationReadiness. @test.Limitations</p></details> }</section>
         </ReviewDisclosure>
-        <ReviewDisclosure Text="Manual test procedure" CollapseText="Hide manual test procedure" Hint="used until automation is available" TestId="mfr-manual" Class="mfr-disclosure">
+        <ReviewDisclosure Text="Manual test procedure" CollapseText="Hide manual test procedure" Hint="@(package.ManualTestPlan.Count == 0 ? "not generated" : $"{package.ManualTestPlan.Count} step(s) · used until automation is available")" TestId="mfr-manual" Class="mfr-disclosure">
         <section class="mfr-card" aria-labelledby="mfr-manual-heading"><h3 id="mfr-manual-heading">Manual test procedure</h3><p>Generate a plan before automation is available. Unconfigured checkpoints remain not assessed, not failed.</p><ol>@foreach (var step in package.ManualTestPlan) { <li>@step</li> }</ol>@if (package.Flow.OpenQuestions.Count > 0) { <h4>Needs clarification</h4><ul>@foreach (var q in package.Flow.OpenQuestions) { <li>@q</li> }</ul> }</section>
         </ReviewDisclosure>
         <p class="mfr-disclaimer">Technical status is derived from the evidence maturity shown above. Runtime/deployed behavior has not been verified.</p>
@@ -180,9 +216,14 @@
         try { await JS.InvokeVoidAsync("birknextFocusElement", "mfr-config-heading"); } catch (JSException) { }
     }
     private IntegrationMessageFlowPackage? _package;
-    private IReadOnlyList<BirkNext.SourceEvidence.ReviewSourceSnapshot> _sourceSnapshots = [];
+    /// <summary>The canonical binding of the report-intake integration (Integration Quality Review → Evidence), or null.</summary>
+    private IntegrationEvidenceBinding? _binding;
+    private string? _bindingIntegration;
+    /// <summary>A snapshot id saved in this configuration before bindings existed; shown, never silently replaced.</summary>
+    private Guid? _legacySnapshot;
+
     private MessageFlowSourceContractOptions? _sourceOptions;
-    private string _sourceSnapshot = "", _sourceContract = "";
+    private string _sourceContract = "";
     private bool _busy, _saving, _saved, _syntheticApproved, _reporterApproved;
     private string? _error;
     private string _name = "Message flow review", _environment = "Unknown", _product = "", _app = "", _submission = "Unknown", _auth = "Unknown", _baseUrl = "", _tenant = "", _client = "", _documentedScopes = "", _scopes = "", _certificate = "", _key = "", _reporterType = "", _reporter = "", _identitySet = "", _channel = "", _queue = "", _payload = "", _messageType = "", _contract = "", _version = "", _checkpoint = "", _correlation = "", _endpoint = "", _receipt = "", _documentation = "", _documentationPlatform = "";
@@ -196,13 +237,37 @@
         _busy = true;
         try
         {
-            var scope = await Api.IqrSourceScopeAsync(EnvironmentId, null);
-            _sourceSnapshots = scope.Snapshots;
             _package = await Api.GetMessageFlowReviewAsync(EnvironmentId); Apply(_package.AltinnConfiguration); _name = _package.Flow.Name;
-            if (_package.AltinnConfiguration.SourceSnapshotId is { } snapshotId) { _sourceSnapshot = snapshotId.ToString(); _sourceContract = _package.AltinnConfiguration.SourceContractId ?? ""; await LoadSourceContractsAsync(snapshotId); }
+            _legacySnapshot = _package.AltinnConfiguration.SourceSnapshotId;
+            await LoadBindingAsync();
+            // A schema chosen in another snapshot than the binding must be chosen again (review required); the stored value is untouched until saved.
+            var mismatch = _binding is not null && _legacySnapshot is { } saved && saved != _binding.SnapshotId;
+            if (EffectiveSnapshot is { } snapshotId) { _sourceContract = mismatch ? "" : _package.AltinnConfiguration.SourceContractId ?? ""; await LoadSourceContractsAsync(snapshotId); }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Message flow configuration could not be loaded."; }
         finally { _busy = false; }
+    }
+
+    /// <summary>The integration the pack resolves for the report intake, and its canonical binding.</summary>
+    private async Task LoadBindingAsync()
+    {
+        try
+        {
+            var resolved = await AltinnSourceBinding.ResolveAsync(Api, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId!);
+            _bindingIntegration = resolved.IntegrationName;
+            _binding = resolved.Binding;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+    }
+
+    /// <summary>The snapshot the XML Schema is chosen in: the canonical binding, else a legacy saved value (shown as such).</summary>
+    private Guid? EffectiveSnapshot => _binding?.SnapshotId ?? _legacySnapshot;
+
+    /// <summary>"n of m set" for a configuration section (presentation only; set is not verified).</summary>
+    private static string SectionHint(params object[] values)
+    {
+        var set = values.Count(value => value switch { bool flag => flag, string text => !string.IsNullOrWhiteSpace(text), _ => value is not null });
+        return set == 0 ? "Not configured" : set == values.Length ? $"Configured ({set} of {values.Length})" : $"Partly configured ({set} of {values.Length})";
     }
 
     private void LoadGeneric() => Load(MessageFlowReviewExamples.GenericFixture, new AltinnTestConfiguration(), []);
@@ -237,7 +302,7 @@
         _queue = c.QueueReference ?? ""; _payload = c.PayloadStoreReference ?? ""; _contract = c.ContractReference ?? ""; _version = c.ContractVersion ?? "";
         _messageType = c.MessageType ?? ""; _receipt = c.ReceiptMode ?? "";
         _documentation = string.Join(", ", c.DocumentationReferences); _documentationPlatform = c.DocumentationPlatform ?? ""; _documentationRetrievedOn = c.DocumentationRetrievedOn;
-        _sourceSnapshot = c.SourceSnapshotId?.ToString() ?? ""; _sourceContract = c.SourceContractId ?? "";
+        _sourceContract = c.SourceContractId ?? "";
         _checkpoint = c.CheckpointConfigurationReference ?? ""; _correlation = c.CorrelationMappingReference ?? ""; _endpoint = c.EndpointReference ?? ""; _syntheticApproved = c.ApprovedSyntheticData;
     }
 
@@ -255,22 +320,16 @@
                 EndpointReference = Empty(_endpoint), ApprovedSyntheticData = _syntheticApproved, ProductionBlocked = true };
             cfg = cfg with { DocumentationReferences = _documentation.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
                 DocumentationPlatform = Empty(_documentationPlatform), DocumentationRetrievedOn = _documentationRetrievedOn };
-            cfg = cfg with { SourceSnapshotId = Guid.TryParse(_sourceSnapshot, out var snapshotId) ? snapshotId : null, SourceContractId = Empty(_sourceContract) };
+            // The schema's snapshot is the canonical binding; a saved legacy value is kept only while no binding exists (never reassigned silently).
+            cfg = cfg with { SourceSnapshotId = EffectiveSnapshot, SourceContractId = Empty(_sourceContract) };
             _package = await Api.SaveMessageFlowReviewAsync(EnvironmentId, _package with { Flow = _package.Flow with { Name = _name }, AltinnConfiguration = cfg });
-            Apply(_package.AltinnConfiguration); _saved = true;
+            Apply(_package.AltinnConfiguration); _legacySnapshot = _package.AltinnConfiguration.SourceSnapshotId; _saved = true;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Configuration could not be saved. Remove any credential-like value and enter references only."; }
         finally { _saving = false; }
     }
     private static string? Empty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "not configured" : value;
-
-    private async Task SourceSnapshotChanged(ChangeEventArgs e)
-    {
-        _sourceSnapshot = e.Value?.ToString() ?? ""; _sourceContract = ""; _sourceOptions = null;
-        if (Guid.TryParse(_sourceSnapshot, out var id)) await LoadSourceContractsAsync(id);
-        _saved = false;
-    }
 
     private async Task LoadSourceContractsAsync(Guid id)
     {

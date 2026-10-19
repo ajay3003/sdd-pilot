@@ -56,7 +56,7 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
     public void ReadinessIsCapabilitySpecificAndLimitationsDoNotBlock()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-headline").Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-run]").HasAttribute("disabled").Should().BeFalse();
         cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations");
@@ -71,9 +71,11 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
     {
         _api.Readiness = new IntegrationReviewReadiness { Headline = "Cannot run", Reasons = ["No enabled integration is configured."] };
         var cut = Open();
-        cut.Find("[data-testid=iqr-run]").HasAttribute("disabled").Should().BeTrue();
-        cut.Find("[data-testid=iqr-readiness-reasons]").TextContent.Should().Contain("No enabled integration");
-        cut.Find("[data-testid=iqr-open-integrations]").GetAttribute("href").Should().Contain("tab=integrations").And.Contain("profile=dev");
+        cut.FindAll("[data-testid=iqr-run]").Should().BeEmpty("Cannot run never shows a (disabled) run button");
+        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Cannot run");
+        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No integrations are enabled for this Target Environment.");
+        cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain("tab=integrations").And.Contain("profile=dev");
+        cut.Find("[data-testid=iqr-assess-scope-toggle]").GetAttribute("aria-expanded").Should().Be("false", "the review-area matrix waits behind a disclosure until something is configured");
     }
 
     [Fact]

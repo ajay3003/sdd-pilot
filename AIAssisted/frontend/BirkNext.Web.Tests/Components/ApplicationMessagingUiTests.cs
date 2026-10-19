@@ -98,7 +98,10 @@ public sealed class ApplicationMessagingUiTests : BunitContext
         Pane().Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only").And.Contain("Source Analysis snapshots");
 
         _api.Messaging = Set();
-        Config().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence from this scope");
+        Config().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence");
+        Config().Find("[data-testid=am-rebuild-explanation]").TextContent.Should().Contain("source is not re-analyzed").And.Contain("existing consumer bindings")
+            .And.Contain("No live source, broker or runtime system is contacted or modified");
+        Config().Find("[data-testid=am-use-scope]").GetAttribute("aria-describedby").Should().Be("am-rebuild-explanation");
         var evidence = Pane();
         evidence.FindAll("[data-testid=am-use-scope]").Should().BeEmpty("Source Analysis shows the evidence; the scope is configured in Integrations");
         evidence.FindAll("[data-testid=am-binding]").Should().BeEmpty("the IQR link is configured in Integrations");

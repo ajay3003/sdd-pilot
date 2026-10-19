@@ -100,7 +100,7 @@ public sealed class SkoleNaervaerReadinessPresentationTests
     }
 
     [Theory]
-    [InlineData("idporten-client", "Open Altinn test configuration", "/integration-quality-review?view=test-configuration", null)]
+    [InlineData("idporten-client", "Open Altinn test configuration", "/integration-quality-review?view=extensions", null)]
     [InlineData("redirect-uri", "Configure local execution", null, "local")]
     [InlineData("client-secret", "Configure local execution", null, "local")]
     [InlineData("unattended-provider", "Configure local execution", null, "local")]

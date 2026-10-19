@@ -47,3 +47,15 @@
 .mfr-configure { text-decoration: none; }
 /* A date input keeps focus on its inner date segments, so :focus-visible on the input does not match: outline it while focus is inside. */
 .mfr-panel input[type=date]:focus-within { outline: 3px solid #245fcc; outline-offset: 2px; }
+
+/* Provider label, canonical source-evidence binding, tester attestations and progressive sections. */
+.mfr-provider { display: inline-block; margin-left: .4rem; padding: .05rem .5rem; border: 1px solid #94a3b8; border-radius: 4px; font-size: .72rem; font-weight: 600; vertical-align: middle; color: #374151; }
+.mfr-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .6rem; padding: .5rem .6rem; margin-bottom: .5rem; border-left: 3px solid #93a3b8; background: #f8fafc; overflow-wrap: anywhere; }
+.mfr-mono { font-family: var(--font-mono, monospace); font-size: .82rem; }
+.mfr-link { color: #1d4ed8; text-decoration: underline; }
+.mfr-review { flex-basis: 100%; color: #7c2d12; font-weight: 600; }
+.mfr-attestations { margin: .5rem 0 0; padding: .45rem .6rem; border: 1px dashed #94a3b8; border-radius: .4rem; display: grid; gap: .3rem; }
+.mfr-attestations legend { font-weight: 600; font-size: .86rem; padding: 0 .25rem; }
+.mfr-attestation-state { font-weight: 400; color: #4b5563; font-size: .78rem; }
+::deep .mfr-section { border: 1px solid #e5e7eb; border-radius: .4rem; padding: .3rem .5rem; min-width: 0; }
+.mfr-sections { display: grid; gap: .4rem; }

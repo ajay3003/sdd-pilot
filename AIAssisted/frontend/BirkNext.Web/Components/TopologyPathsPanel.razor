@@ -20,6 +20,14 @@
     }
     else
     {
+        var connections = _paths.Sum(path => path.Steps.Count);
+        var unresolved = _paths.Sum(path => path.Steps.Count(step => step.State != TopologyPathState.Resolved));
+        @if (Compact)
+        {
+            @* Summary first; every expected connection stays one disclosure away. Expected-only connections count as unresolved, never observed. *@
+            <p class="tp-summary" data-testid="tp-summary"><span data-testid="tp-summary-connections">@connections expected connection@(connections == 1 ? "" : "s")</span> · <span data-testid="tp-summary-unresolved">@unresolved unresolved</span></p>
+        }
+        <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="tp-details" Class="disclosure-inline" Expanded="@(!Compact)">
         @foreach (var path in _paths)
         {
             <div class="tp-path" data-testid="tp-path" data-path="@path.PathId" data-resolved="@(path.Resolved ? "true" : "false")">
@@ -37,6 +45,7 @@
                 </ol>
             </div>
         }
+        </ReviewDisclosure>
         <p class="tp-note"><a href="/integration-topology" data-testid="tp-open">Open Integration Topology</a> to see every component, interface and source. Expected ≠ observed.</p>
     }
 </section>
@@ -45,6 +54,8 @@
     [Parameter] public string? EnvironmentId { get; set; }
     [Parameter, EditorRequired] public string ProfileId { get; set; } = "";
     [Parameter] public string Title { get; set; } = "Expected flow";
+    /// <summary>Counts only (expected connections, unresolved), the paths collapsed behind "View details".</summary>
+    [Parameter] public bool Compact { get; set; }
 
     private readonly string _id = "tp-" + Guid.NewGuid().ToString("N")[..8];
     private IReadOnlyList<TopologyPathResult> _paths = [];

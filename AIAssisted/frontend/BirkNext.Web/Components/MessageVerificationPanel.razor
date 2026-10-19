@@ -19,21 +19,30 @@
     }
     else
     {
-        <h3 class="mvp-heading">Evidence providers</h3>
-        <ul class="mvp-providers" data-testid="mvp-providers">
-            <li data-testid="mvp-provider" data-state="Ready"><strong>BirkNext run history</strong> <span class="mvp-pill mvp-pill-neutral">Available</span>
-                <span class="mvp-muted">Recorded Altinn steps of earlier runs in this environment. No network call.</span></li>
-            @foreach (var item in Providers)
-            {
-                <li data-testid="mvp-provider" data-state="@item.State"><strong>@item.Label</strong>
-                    <span class="mvp-pill mvp-pill-@(item.State == JourneyReadinessState.Ready ? "neutral" : "attention")">@(item.State == JourneyReadinessState.Ready ? "Configured" : IntegrationJourneyPresentation.Readiness(item.State))</span>
-                    <span class="mvp-muted">@item.Detail</span></li>
-            }
-        </ul>
+        <p class="mvp-readonly" role="note" data-testid="mvp-read-only"><strong>Read-only.</strong> Verification reads evidence that already exists; it never sends, submits or changes a message.</p>
+        <h3 class="mvp-heading" id="@($"{_id}-providers")">Evidence providers</h3>
+        @* One row per provider: its availability now (Available / Not ready / Not available) and why. Missing evidence is never a failed message. *@
+        <div class="mvp-provider-grid" role="region" aria-labelledby="@($"{_id}-providers")">
+            <table class="mvp-provider-table" role="table" data-testid="mvp-providers">
+                <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Evidence provider</th><th role="columnheader" scope="col">Availability</th><th role="columnheader" scope="col">Reason / detail</th></tr></thead>
+                <tbody role="rowgroup">
+                    <tr role="row" data-testid="mvp-provider" data-state="Ready"><th role="rowheader" scope="row">BirkNext run history</th>
+                        <td role="cell" data-label="Availability"><span class="mvp-pill mvp-pill-neutral" data-testid="mvp-provider-state">Available</span></td>
+                        <td role="cell" data-label="Detail" class="mvp-muted">Recorded Altinn steps of earlier runs in this environment. No network call.</td></tr>
+                    @foreach (var item in Providers)
+                    {
+                        <tr role="row" data-testid="mvp-provider" data-state="@item.State"><th role="rowheader" scope="row">@item.Label</th>
+                            <td role="cell" data-label="Availability"><span class="mvp-pill mvp-pill-@(item.State == JourneyReadinessState.Ready ? "neutral" : "attention")" data-testid="mvp-provider-state">@MessageVerificationPresentation.Availability(item.State)</span></td>
+                            <td role="cell" data-label="Detail" class="mvp-muted">@item.Detail</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
 
         <form class="mvp-form" data-testid="mvp-form" @onsubmit="VerifyAsync" @onsubmit:preventDefault>
-            <fieldset>
-                <legend>Message to verify</legend>
+            <div class="mvp-form-groups">
+            <fieldset class="mvp-group" data-testid="mvp-group-target">
+                <legend>Verification target</legend>
                 <div class="mvp-field">
                     <label for="@($"{_id}-expected")">Expected outcome</label>
                     <select id="@($"{_id}-expected")" data-testid="mvp-expected" @bind="_expected">
@@ -47,6 +56,9 @@
                         @foreach (var run in SourceRuns) { <option value="@run.RunId.ToString("D")">@($"{run.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {run.ScenarioId} · {run.State} · {run.RunId.ToString("N")[..8]}")</option> }
                     </select>
                 </div>
+            </fieldset>
+            <fieldset class="mvp-group" data-testid="mvp-group-identifiers">
+                <legend>Identifiers</legend>
                 <div class="mvp-field">
                     <label for="@($"{_id}-instance")">Altinn instance GUID</label>
                     <input id="@($"{_id}-instance")" data-testid="mvp-instance" @bind="_instance" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-instance-help")" />
@@ -57,6 +69,9 @@
                     <input id="@($"{_id}-message")" data-testid="mvp-message" @bind="_message" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-message-help")" />
                     <span id="@($"{_id}-message-help")" class="mvp-muted">Optional. Meldingshode/Id (a UUID); needed for MM and Skoletjenesten evidence.</span>
                 </div>
+            </fieldset>
+            <fieldset class="mvp-group" data-testid="mvp-group-observation">
+                <legend>Observation</legend>
                 <div class="mvp-field">
                     <label for="@($"{_id}-window")">Observation window</label>
                     <select id="@($"{_id}-window")" data-testid="mvp-window" @bind="_window">
@@ -64,6 +79,7 @@
                     </select>
                 </div>
             </fieldset>
+            </div>
             <p id="@($"{_id}-note")" class="mvp-muted" data-testid="mvp-note">@Note</p>
             <button type="submit" class="btn-primary" data-testid="mvp-verify" disabled="@(!CanVerify || _running)" aria-describedby="@($"{_id}-note")">
                 @(_running ? "Collecting evidence…" : "Collect evidence (read-only)")

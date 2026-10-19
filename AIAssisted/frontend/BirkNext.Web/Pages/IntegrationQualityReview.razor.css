@@ -136,3 +136,17 @@
 .iqr-facts dd { margin: 0; font-weight: 600; }
 @media (max-width: 900px) { .iqr-test-cards { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .iqr-view { flex: 1 1 45%; text-align: center; } }
+
+/* Review run state: the dimension name precedes the state so "Cannot run" never reads as an execution result. */
+.iqr-dimension { display: block; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.iqr-empty-state { display: grid; gap: .5rem; justify-items: start; padding: .7rem .8rem; border: 1px dashed #94a3b8; border-radius: .5rem; background: #f8fafc; }
+.iqr-empty-state p { margin: 0; }
+/* Evidence: one staged workflow (integration → source binding → source review → runtime → contracts). */
+.iqr-stages { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; counter-reset: none; }
+.iqr-stage { border: 1px solid var(--clr-border, #d1d5db); border-radius: .5rem; padding: .65rem .8rem; background: var(--clr-surface-white, #fff); display: grid; gap: .4rem; min-width: 0; }
+.iqr-stage p { margin: 0; }
+.iqr-stage-title { margin: 0; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; }
+.iqr-stage-number { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: #1d4ed8; color: #fff; font-size: .82rem; font-weight: 700; flex: none; }
+.iqr-bindings, .iqr-packs { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
+.iqr-bindings li, .iqr-packs li { overflow-wrap: anywhere; }
+.iqr-readiness-distinction { border-left: 3px solid #93a3b8; padding-left: .6rem; }
