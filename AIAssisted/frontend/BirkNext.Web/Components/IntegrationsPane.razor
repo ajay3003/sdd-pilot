@@ -111,7 +111,7 @@
                 {
                     <div class="ip-tablewrap" tabindex="0" role="region" aria-label="Configured integrations table">
                         <table class="ip-table" data-testid="ip-table">
-                            <thead><tr><th scope="col">Integration</th><th scope="col">Type</th><th scope="col">Producer / source</th><th scope="col">Consumer / destination</th><th scope="col">Configuration</th><th scope="col">Runtime evidence</th><th scope="col"><span class="ip-sr">Actions</span></th></tr></thead>
+                            <thead><tr><th scope="col">Integration</th><th scope="col">Type</th><th scope="col">Producer / source</th><th scope="col">Consumer / destination</th><th scope="col">Configuration</th><th scope="col">Source evidence</th><th scope="col">Runtime evidence</th><th scope="col"><span class="ip-sr">Actions</span></th></tr></thead>
                             <tbody>
                                 @foreach (var (row, src) in filtered)
                                 {
@@ -129,11 +129,17 @@
                                             @if (note is { } n) { <span class="ip-pill ip-pill-@n.Tone ip-source-note" data-testid="ip-row-source-note" title="@n.Detail">@n.Label</span> }
                                         </td>
                                         <td><span class="ip-pill ip-pill-@IntegrationsPanePresentation.StateTone(row.Configuration)" data-testid="ip-row-configuration" title="@row.ConfigurationDetail">@IntegrationConfigurationRules.Label(row.Configuration)</span></td>
+                                        @{ var binding = _bindings.FirstOrDefault(item => item.IntegrationId == row.Definition.Id); }
+                                        <td data-testid="ip-row-source-evidence" data-bound="@(binding is null ? "false" : "true")">
+                                            @* The canonical per-integration source evidence is owned by Integration Quality Review; shown here, never chosen here. *@
+                                            <span class="ip-pill ip-pill-@(binding is null ? "muted" : "ready")">@(binding is null ? "Not bound" : "Bound")</span>
+                                            @if (binding is not null) { <span class="ip-cell-sub ip-wrap" title="Bound in Integration Quality Review">@binding.ArchiveName</span> }
+                                            <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-row-source-evidence-open" aria-label="@($"Open IQR evidence for {src.Entity}")">@(binding is null ? "Bind in IQR Evidence" : "Open IQR Evidence")</a></td>
                                         <td data-testid="ip-row-runtime"><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(rowRuntime)">@IntegrationsOverviewPresentation.Label(rowRuntime)</span>
                                             @if (rowRuntime != RuntimeEvidenceStatus.Configured && IntegrationsPanePresentation.Platform(_catalog, row.Definition) is { } rowPlatform)
                                             { <button type="button" class="ip-link" data-testid="ip-row-runtime-configure" aria-label="@($"Configure runtime evidence for {src.Entity}")" @onclick="() => BeginRuntime(rowPlatform)">Configure</button> }</td>
                                         <td class="ip-actions">
-                                            <a class="ip-link" href="/integration-quality-review" data-testid="ip-row-iqr" aria-label="@($"Review {src.Entity} in Integration Quality Review")">Review in IQR</a>
+                                            <a class="ip-link" href="/integration-quality-review" data-testid="ip-row-iqr" aria-label="@($"Review {src.Entity} in Integration Quality Review")">Review</a>
                                             @if (row.Configuration == IntegrationConfigurationState.NeedsConfirmation)
                                             {
                                                 <button type="button" class="ip-link ip-test" data-testid="ip-test-mapping" aria-label="@(row.MappingState == ConsumerMappingState.Suggested ? $"Test suggested mapping for {src.Entity} and {row.Consumer}" : $"Test mapping for {src.Entity} (consumer not assigned)")" disabled="@_mappingBusy.Contains(row.Definition.Id)" @onclick="() => TestMappingAsync(row.Definition)">Test mapping</button>
@@ -146,7 +152,7 @@
                                             @if (mappingChecks.TryGetValue(row.Definition.Id, out var mappingResult))
                                             { <div class="ip-mapping-result"><span class="ip-pill ip-pill-@(mappingResult.OverallState == IntegrationMappingEvidenceState.Error ? "attention" : "muted")" data-testid="ip-mapping-result" data-state="@mappingResult.OverallState">@IntegrationMappingEvidenceCheck.Label(mappingResult.OverallState)</span><button type="button" class="ip-link" data-testid="ip-view-evidence" aria-expanded="@(_evidenceViewing == row.Definition.Id ? "true" : "false")" aria-controls="@($"ip-evidence-{Slug(row.Definition.Id)}")" @onclick="() => _evidenceViewing = _evidenceViewing == row.Definition.Id ? null : row.Definition.Id">View evidence</button></div> }
                                             <button type="button" class="ip-link" data-testid="ip-row-view" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"ip-detail-{Slug(row.Definition.Id)}")" aria-label="@($"View {src.Entity}")" @onclick="() => _viewing = open ? null : row.Definition.Id">View</button>
-                                            <details class="ip-menu" data-testid="ip-actions-menu"><summary aria-label="@($"Actions for {src.Entity}")" title="Actions">⋯</summary><div class="ip-menu-items">
+                                            <details class="ip-menu" data-testid="ip-actions-menu"><summary aria-label="@($"More actions for {src.Entity}")" title="More actions">More</summary><div class="ip-menu-items">
                                                 <button type="button" class="ip-link" data-testid="ip-row-edit" disabled="@(_editing is not null)" @onclick="() => BeginEdit(row.Definition)">Edit</button>
                                                 @if (row.MappingState == ConsumerMappingState.Suggested) { <button type="button" class="ip-link" @onclick="() => BeginConfirm(row.Definition, null)">Confirm mapping</button> }
                                                 <button type="button" class="ip-link" @onclick="() => ToggleEnabledAsync(row.Definition)">@(row.Definition.Enabled ? "Disable" : "Enable")</button>
@@ -370,9 +376,9 @@
         @if (_catalog.Templates.FirstOrDefault() is { } offer)
         {
             <section class="ip-section ip-helper" aria-labelledby="ip-helper-heading" data-testid="ip-template">
-                <p class="ip-helper-kind" data-testid="ip-template-kind">Extension / provider helper — project-specific, not generic environment configuration</p>
+                <p class="ip-helper-kind" data-testid="ip-template-kind">Environment helper — optional, project-specific, never applied automatically</p>
                 <h3 id="ip-helper-heading">@offer.Name</h3>
-                <p class="ip-muted">@offer.Description @offer.SuggestionReason It is never applied automatically.</p>
+                <p class="ip-muted">@offer.Description @offer.SuggestionReason It is never applied automatically and never overwrites an existing integration.</p>
                 <div class="ip-actions-row">
                     <button type="button" class="btn-secondary" data-testid="ip-template-review" aria-expanded="@(_templateReview ? "true" : "false")" aria-controls="ip-template-items" @onclick="() => _templateReview = !_templateReview">@(_templateReview ? "Hide template" : "Review template")</button>
                     <button type="button" class="btn-secondary" data-testid="ip-template-apply" @onclick="() => ApplyTemplateAsync(offer)" disabled="@(_editing is not null)">Apply</button>
@@ -522,6 +528,8 @@
     private bool _templateReview;
     /// <summary>Advanced (platforms and runtime setup, messaging scope and IQR links, source diagnostics) is collapsed by default.</summary>
     private bool _advancedOpen;
+    /// <summary>The canonical per-integration source evidence (Integration Quality Review bindings), shown per row; never selected here.</summary>
+    private IReadOnlyList<IntegrationEvidenceBinding> _bindings = [];
     private SourceIntegrationsReport? _sources;
     private IntegrationTerraformComparison? _terraform;
     private string? _sourcesError;
@@ -770,6 +778,8 @@
             _notices.AddRange(_catalog.Notices.Except(_notices).ToList());
             _contracts = await Api.ContractsAsync(Profile.Id);
             _messaging = await Api.ApplicationMessagingAsync(Profile.Id);
+            try { _bindings = await Api.ListEvidenceBindingsAsync(Profile.Id) ?? []; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _bindings = []; }
             try { _sources = await Api.SourceIntegrationsAsync(Profile.Id); _sourcesError = null; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or NotSupportedException)
             { _sources = null; _sourcesError = "Source integrations could not be loaded; the configured integrations are shown without source evidence."; }

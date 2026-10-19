@@ -8,6 +8,9 @@ namespace BirkNext.Web.Tests.Integration;
 public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
     public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
+    /// <summary>The canonical IQR source-evidence bindings the pane shows per integration (read-only here).</summary>
+    public IReadOnlyList<IntegrationEvidenceBinding> EvidenceBindings { get; set; } = [];
+    public Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(EvidenceBindings);
     public ApplicationMessagingEvidenceSet? Messaging { get; set; }
     public Func<string, ServiceBusEvidenceCheck>? ServiceBusCheck { get; set; }
     public Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default)

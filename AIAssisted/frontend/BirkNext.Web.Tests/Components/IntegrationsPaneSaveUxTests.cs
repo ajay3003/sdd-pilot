@@ -184,6 +184,48 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     }
 
     [Fact]
+    public void AddIntegration_StartsWithoutAType_AndShowsOnlyItsIdentityUntilOneIsChosen()
+    {
+        var cut = Open();
+        cut.Find("[data-testid=ip-add]").Click();
+        cut.Find("[data-testid=ip-edit-kind]").GetAttribute("value").Should().BeNullOrEmpty("never silently Event Hub");
+        cut.Find("[data-testid=ip-edit-kind] option").TextContent.Should().Be("Select type");
+        cut.FindAll("[data-testid=ip-edit-topic], [data-testid=ip-edit-consumer-group], [data-testid=ip-edit-producer-auth]").Should().BeEmpty();
+        cut.Find("[data-testid=ip-edit-kind-first]").TextContent.Should().Contain("Choose a type");
+
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.HttpApi));
+        cut.Find("[data-testid=ip-edit-topic]").Should().NotBeNull();
+        cut.Markup.Should().Contain(">Endpoint <");
+        foreach (var section in new[] { "authentication", "contract", "operations", "ownership" })
+        {
+            var toggle = cut.Find($"[data-testid=ip-edit-section-{section}] .disclosure-toggle");
+            toggle.GetAttribute("aria-expanded").Should().Be("false", $"{section} is collapsed by default");
+            cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Not configured");
+        }
+        cut.Find("[data-testid=ip-edit-advanced] .disclosure-toggle").GetAttribute("aria-expanded").Should().Be("false");
+
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.ServiceBus));
+        cut.Markup.Should().Contain("Queue / topic");
+    }
+
+    [Fact]
+    public void A_configured_integration_shows_its_canonical_IQR_source_binding_and_the_clear_actions()
+    {
+        var bound = _api.Catalog.Integrations.First();
+        _api.EvidenceBindings = [new IntegrationEvidenceBinding { EnvironmentId = "dev", IntegrationId = bound.Id, SnapshotId = Guid.NewGuid(), ArchiveName = "Tiltak 2 - Sikkert digitalt økosystem (1).zip", Fingerprint = new string('a', 64) }];
+        var cut = Open();
+        var row = cut.FindAll("[data-testid=ip-row]").Single(r => r.GetAttribute("data-integration-id") == bound.Id);
+        row.QuerySelector("[data-testid=ip-row-source-evidence]")!.GetAttribute("data-bound").Should().Be("true");
+        row.QuerySelector("[data-testid=ip-row-source-evidence]")!.TextContent.Should().Contain("Bound").And.Contain("Tiltak 2 - Sikkert digitalt økosystem (1).zip");
+        row.QuerySelector("[data-testid=ip-row-source-evidence-open]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+        cut.FindAll("[data-testid=ip-row]").Where(r => r.GetAttribute("data-integration-id") != bound.Id)
+            .Should().OnlyContain(r => r.QuerySelector("[data-testid=ip-row-source-evidence]")!.GetAttribute("data-bound") == "false");
+        row.QuerySelector("[data-testid=ip-row-iqr]")!.TextContent.Should().Be("Review");
+        row.QuerySelector("[data-testid=ip-actions-menu] summary")!.TextContent.Should().Be("More");
+        row.QuerySelector("[data-testid=ip-row-runtime]").Should().NotBeNull("runtime evidence stays its own column");
+    }
+
+    [Fact]
     public void AnHttpApiIntegration_ShowsNoEventStreamFields()
     {
         var cut = Open();
@@ -201,6 +243,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     {
         var cut = Open();
         cut.Find("[data-testid=ip-add]").Click();
+        cut.Find("[data-testid=ip-edit-kind]").Change("EventHub");
         var input = cut.Find("[data-testid=ip-edit-consumer-group]");
         input.GetAttribute("aria-describedby").Should().Be("ip-edit-consumer-group-help");
         input.GetAttribute("value").Should().BeNullOrEmpty();

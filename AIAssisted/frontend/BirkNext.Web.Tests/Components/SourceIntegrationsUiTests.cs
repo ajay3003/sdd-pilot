@@ -77,7 +77,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Suggestions from Source Analysis", "Source evidence"]);
         cut.FindAll("h3").Select(h => h.TextContent).Should().NotContain(h => h.Contains("Debezium") || h.Contains("BIRK CDC"));
         cut.FindAll("[data-testid=ip-group]").Should().BeEmpty("the configured group name is no longer a section title");
-        cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Integration", "Type", "Producer / source", "Consumer / destination", "Configuration", "Runtime evidence", "Actions");
+        cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Integration", "Type", "Producer / source", "Consumer / destination", "Configuration", "Source evidence", "Runtime evidence", "Actions");
     }
 
     [Fact]

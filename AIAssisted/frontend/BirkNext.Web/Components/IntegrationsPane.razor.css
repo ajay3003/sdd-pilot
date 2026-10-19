@@ -170,3 +170,11 @@
 .ip-disclosure::before { content: "▸ "; }
 .ip-disclosure[aria-expanded="true"]::before { content: "▾ "; }
 .ip-origin { font-weight: 500; }
+
+/* Editor: the section title spans the row (never a grid cell of its own), the required marker stays beside its label, the checkbox sits
+   on its own row, and short fields keep a readable width instead of stretching across the viewport. */
+::deep .ip-editor { max-width: 64rem; }
+::deep .ip-fieldset > legend { float: left; width: 100%; grid-column: 1 / -1; margin-bottom: .1rem; }
+::deep .ip-field { grid-template-columns: max-content 1fr; align-items: baseline; column-gap: .25rem; }
+::deep .ip-field > :is(input, select, textarea) { grid-column: 1 / -1; }
+::deep .ip-fieldset > .ip-check { grid-column: 1 / -1; }

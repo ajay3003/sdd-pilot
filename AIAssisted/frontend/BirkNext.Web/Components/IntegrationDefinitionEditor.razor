@@ -3,7 +3,9 @@
 
 @* Add / Edit one configured integration. Opened only on "+ Add integration" or "Edit". Nothing secret is entered here:
    authentication is a mechanism, never a key or connection string. Validation appears on blur and on save — an untouched
-   form never opens with "Configuration incomplete". *@
+   form never opens with "Configuration incomplete". A new integration starts without a type: only its identity is asked for until
+   a type is chosen, then that type's endpoint and flow fields; authentication, contract, operations, ownership and advanced stay
+   collapsed (with their state) until opened. *@
 <section class="ip-editor" data-testid="ip-editor" aria-labelledby="ip-editor-heading">
     <h3 id="ip-editor-heading">@(IsNew ? "Add integration" : $"Edit {_model.DisplayName}")</h3>
     <p class="ip-muted">Fields marked <span aria-hidden="true">*</span><span class="ip-sr">with an asterisk</span> are required.</p>
@@ -24,11 +26,17 @@
         @if (Show("name") && string.IsNullOrWhiteSpace(_model.DisplayName)) { <span class="ip-field-error" role="status">Display name is required.</span> }
         <label class="ip-check"><input type="checkbox" data-testid="ip-edit-enabled" @bind="_model.Enabled" /> Enabled</label>
         <label class="ip-field">Type <span aria-hidden="true">*</span>
-            <select class="form-control" data-testid="ip-edit-kind" @bind="_model.Kind">
+            <select class="form-control" data-testid="ip-edit-kind" @bind="KindText" aria-required="true" aria-invalid="@Invalid("kind", _model.Kind is null)">
+                @if (_model.Kind is null) { <option value="">Select type</option> }
                 @foreach (var kind in Enum.GetValues<IntegrationKind>()) { <option value="@kind">@IntegrationConfigurationRules.KindLabel(kind)</option> }
             </select>
         </label>
-        @if (_model.Kind != IntegrationKind.EventHub)
+        @if (Show("kind") && _model.Kind is null) { <span class="ip-field-error" role="status">Choose a type.</span> }
+        @if (_model.Kind is null)
+        {
+            <p class="ip-muted" data-testid="ip-edit-kind-first">Choose a type to see the fields that apply to it.</p>
+        }
+        else if (_model.Kind != IntegrationKind.EventHub)
         {
             <p class="ip-muted" data-testid="ip-edit-kind-note">Integration Quality Review assesses configuration for this type; its domain review is not implemented yet.</p>
         }
@@ -37,6 +45,8 @@
         </label>
     </fieldset>
 
+    @if (_model.Kind is not null)
+    {
     <fieldset class="ip-fieldset">
         <legend>@(_model.Kind == IntegrationKind.HttpApi ? "B. Endpoint" : "B. Messaging endpoint")</legend>
         <label class="ip-field">Platform
@@ -45,7 +55,7 @@
                 @foreach (var p in Platforms) { <option value="@p.Id">@p.Name</option> }
             </select>
         </label>
-        <label class="ip-field">@(_model.Kind == IntegrationKind.HttpApi ? "Endpoint" : "Event Hub / topic") <span aria-hidden="true">*</span>
+        <label class="ip-field">@EndpointLabel <span aria-hidden="true">*</span>
             <input class="form-control ip-mono" data-testid="ip-edit-topic" @bind="_model.EndpointOrTopic" @bind:event="oninput" @onblur='() => Touch("topic")' aria-required="true" aria-invalid="@Invalid("topic", string.IsNullOrWhiteSpace(_model.EndpointOrTopic))" />
         </label>
         @if (Show("topic") && string.IsNullOrWhiteSpace(_model.EndpointOrTopic)) { <span class="ip-field-error" role="status">This field is required.</span> }
@@ -85,8 +95,10 @@
         }
     </fieldset>
 
+    <ReviewDisclosure Text="D. Authentication" CollapseText="D. Authentication" Hint="@(_model.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured && _model.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured ? "Not configured" : "Configured")"
+                      TestId="ip-edit-section-authentication" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
-        <legend>D. Authentication</legend>
+        <legend class="ip-sr">D. Authentication</legend>
         <p class="ip-muted">The mechanism only — never a key, connection string or secret.</p>
         <label class="ip-field">Producer authentication
             <select class="form-control" data-testid="ip-edit-producer-auth" @bind="_model.ProducerAuthentication">
@@ -99,9 +111,12 @@
             </select>
         </label>
     </fieldset>
+    </ReviewDisclosure>
 
+    <ReviewDisclosure Text="E. Contract" CollapseText="E. Contract" Hint="@(_model.ContractRelationship == ContractRelationshipState.NotConfigured && string.IsNullOrWhiteSpace(_model.ProducerContractReference) && string.IsNullOrWhiteSpace(_model.ConsumerContractReference) ? "Not configured" : "Configured")"
+                      TestId="ip-edit-section-contract" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
-        <legend>E. Contract</legend>
+        <legend class="ip-sr">E. Contract</legend>
         <label class="ip-field">Contract relationship
             <select class="form-control" data-testid="ip-edit-contract" @bind="_model.ContractRelationship">
                 @foreach (var c in Enum.GetValues<ContractRelationshipState>()) { <option value="@c">@ContractLabel(c)</option> }
@@ -110,26 +125,38 @@
         <label class="ip-field">Producer contract reference <input class="form-control ip-mono" @bind="_model.ProducerContractReference" /></label>
         <label class="ip-field">Consumer contract reference <input class="form-control ip-mono" @bind="_model.ConsumerContractReference" /></label>
     </fieldset>
+    </ReviewDisclosure>
 
+    <ReviewDisclosure Text="F. Operations" CollapseText="F. Operations" Hint="@(new[] { _model.HealthUrl, _model.WorkerUrl, _model.MonitoringUrl, _model.RunbookUrl }.All(string.IsNullOrWhiteSpace) ? "Not configured" : "Configured")"
+                      TestId="ip-edit-section-operations" Class="disclosure-inline" Expanded="@(Show("urls") && UrlErrors().Any())">
     <fieldset class="ip-fieldset">
-        <legend>F. Operations</legend>
+        <legend class="ip-sr">F. Operations</legend>
         <label class="ip-field">Health URL <input class="form-control ip-mono" @bind="_model.HealthUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Worker URL <input class="form-control ip-mono" @bind="_model.WorkerUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Monitoring URL <input class="form-control ip-mono" @bind="_model.MonitoringUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Runbook URL <input class="form-control ip-mono" @bind="_model.RunbookUrl" @onblur='() => Touch("urls")' /></label>
         @if (Show("urls") && UrlErrors().ToList() is { Count: > 0 } urlErrors) { <span class="ip-field-error" role="status">@string.Join(" ", urlErrors)</span> }
     </fieldset>
+    </ReviewDisclosure>
 
+    <ReviewDisclosure Text="G. Ownership" CollapseText="G. Ownership" Hint="@(string.IsNullOrWhiteSpace(_model.TechnicalOwner) ? "Not configured" : "Configured")"
+                      TestId="ip-edit-section-ownership" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
-        <legend>G. Ownership</legend>
+        <legend class="ip-sr">G. Ownership</legend>
         <label class="ip-field">Technical owner <input class="form-control" @bind="_model.TechnicalOwner" /></label>
     </fieldset>
+    </ReviewDisclosure>
 
     <ReviewDisclosure Text="H. Advanced" CollapseText="Hide advanced" TestId="ip-edit-advanced" Class="disclosure-inline">
-        <label class="ip-field">Partition count <input type="number" min="1" class="form-control" @bind="_model.PartitionCount" /></label>
-        <label class="ip-field">Retention (days) <input type="number" min="1" class="form-control" @bind="_model.RetentionDays" /></label>
+        @if (!IsHttpApi)
+        {
+            <label class="ip-field">Partition count <input type="number" min="1" class="form-control" @bind="_model.PartitionCount" /></label>
+            <label class="ip-field">Retention (days) <input type="number" min="1" class="form-control" @bind="_model.RetentionDays" /></label>
+        }
+        else { <p class="ip-muted">No event-stream settings apply to an HTTP/API integration.</p> }
         @if (!IsNew) { <p class="ip-muted">Id: <code>@_model.Id</code> · Origin: @Original?.Origin</p> }
     </ReviewDisclosure>
+    }
 
     <div class="ip-editor-actions">
         <button type="button" class="btn-primary" data-testid="ip-edit-save" disabled="@_saving" @onclick="SaveAsync">@(IsNew ? "Add integration" : "Save changes")</button>
@@ -139,6 +166,19 @@
 
 @code {
     private bool IsHttpApi => _model.Kind == IntegrationKind.HttpApi;
+    private string EndpointLabel => _model.Kind switch
+    {
+        IntegrationKind.HttpApi => "Endpoint",
+        IntegrationKind.ServiceBus => "Queue / topic",
+        IntegrationKind.EventHub => "Event Hub / topic",
+        _ => "Endpoint / channel",
+    };
+    /// <summary>The type as the select shows it: empty until a new integration's type is chosen.</summary>
+    private string KindText
+    {
+        get => _model.Kind?.ToString() ?? "";
+        set => _model.Kind = Enum.TryParse<IntegrationKind>(value, out var kind) ? kind : null;
+    }
     [Parameter] public IntegrationDefinition? Original { get; set; }
     [Parameter] public IReadOnlyList<IntegrationPlatform> Platforms { get; set; } = [];
     [Parameter] public EventCallback<IntegrationDefinition> OnSave { get; set; }
@@ -160,11 +200,16 @@
     private void Touch(string field) => _touched.Add(field);
     private bool Show(string field) => _attempted || _touched.Contains(field);
     private string Invalid(string field, bool invalid) => Show(field) && invalid ? "true" : "false";
-    private IEnumerable<string> UrlErrors() => IntegrationsPanePresentation.Validate(_model.ToDefinition(Original)).Where(e => e.Contains("URL"));
+    private IEnumerable<string> UrlErrors() => _model.Kind is null ? [] : IntegrationsPanePresentation.Validate(_model.ToDefinition(Original)).Where(e => e.Contains("URL"));
 
     private async Task SaveAsync()
     {
         _attempted = true;
+        if (_model.Kind is null)
+        {
+            _errors = [.. string.IsNullOrWhiteSpace(_model.DisplayName) ? new[] { "Display name is required." } : [], "Type is required: choose what kind of integration this is."];
+            return;
+        }
         var definition = _model.ToDefinition(Original);
         _errors = IntegrationsPanePresentation.Validate(definition);
         if (_errors.Count > 0) return;
@@ -190,7 +235,8 @@
         public string Id { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public bool Enabled { get; set; } = true;
-        public IntegrationKind Kind { get; set; } = IntegrationKind.EventHub;
+        /// <summary>Null for a new integration until the person chooses a type (never silently Event Hub).</summary>
+        public IntegrationKind? Kind { get; set; }
         public string? SystemName { get; set; }
         public string? PlatformId { get; set; }
         public string? EndpointOrTopic { get; set; }
@@ -241,7 +287,7 @@
 
         public IntegrationDefinition ToDefinition(IntegrationDefinition? original) => (original ?? new IntegrationDefinition()) with
         {
-            DisplayName = DisplayName.Trim(), Enabled = Enabled, Kind = Kind, SystemName = Clean(SystemName), PlatformId = Clean(PlatformId),
+            DisplayName = DisplayName.Trim(), Enabled = Enabled, Kind = Kind ?? IntegrationKind.EventHub, SystemName = Clean(SystemName), PlatformId = Clean(PlatformId),
             EndpointOrTopic = Clean(EndpointOrTopic), ConsumerGroup = Clean(ConsumerGroup), Producer = Clean(Producer), SourceResource = Clean(SourceResource),
             Consumer = new IntegrationConsumer
             {

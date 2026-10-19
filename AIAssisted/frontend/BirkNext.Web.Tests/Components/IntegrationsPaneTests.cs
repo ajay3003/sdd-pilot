@@ -101,7 +101,10 @@ public sealed class IntegrationsPaneTests : BunitContext
         cut.Find("[data-testid=ip-editor]");
         cut.FindAll("[data-testid=ip-editor-errors]").Should().BeEmpty("no error is shown before the user has done anything");
         cut.Find("[data-testid=ip-edit-save]").Click();
-        cut.Find("[data-testid=ip-editor-errors]").TextContent.Should().Contain("Display name is required").And.Contain("topic is required");
+        cut.Find("[data-testid=ip-editor-errors]").TextContent.Should().Contain("Display name is required").And.Contain("Type is required");
+        cut.Find("[data-testid=ip-edit-kind]").Change("EventHub");
+        cut.Find("[data-testid=ip-edit-save]").Click();
+        cut.Find("[data-testid=ip-editor-errors]").TextContent.Should().Contain("topic is required", "the type's own required fields are checked once it is chosen");
         _api.Saved.Should().BeEmpty("an invalid integration is never saved");
     }
 
@@ -111,6 +114,7 @@ public sealed class IntegrationsPaneTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=ip-add]").Click();
         cut.Find("[data-testid=ip-edit-name]").Input("Leselogg events");
+        cut.Find("[data-testid=ip-edit-kind]").Change("EventHub");
         cut.Find("[data-testid=ip-edit-topic]").Input("m2lb-cdc-dev.BirkM2LB.dbo.Leselogg");
         cut.Find("[data-testid=ip-edit-save]").Click();
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle(d => d.DisplayName == "Leselogg events" && d.ConsumerGroup == null));
