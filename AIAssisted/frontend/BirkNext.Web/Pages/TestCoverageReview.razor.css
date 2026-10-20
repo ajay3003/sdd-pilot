@@ -59,3 +59,35 @@
     .tco-facts > div { grid-template-columns: minmax(0, 1fr); }
     .tco-tabs { flex-wrap: wrap; }
 }
+
+/* ── Result: summary → execution → attention → recommendation → views (progressive disclosure) ── */
+.tco-context { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; margin: .2rem 0 .6rem; font-size: .88rem; }
+.tco-context div { display: flex; gap: .4rem; min-width: 0; }
+.tco-context dt { color: var(--clr-text-muted); }
+.tco-context dd { margin: 0; overflow-wrap: anywhere; }
+.tco-execution { border-left: 4px solid var(--clr-info, #2563eb); background: var(--clr-surface, #f8fafc); padding: .45rem .7rem; margin: .6rem 0; display: grid; gap: .15rem; }
+.tco-attention { border: 1px solid var(--clr-border); border-left: 4px solid #b45309; border-radius: .5rem; padding: .5rem .8rem; margin: .6rem 0; }
+.tco-attention h3, .tco-recommendation h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.tco-recommendation { border: 1px solid var(--clr-border); border-radius: .5rem; padding: .5rem .8rem; margin: .6rem 0; }
+.tco-reco-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .6rem 1rem; }
+.tco-reco-grid .tco-list { margin: .2rem 0; }
+.tco-evidence-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .3rem .8rem; }
+.tco-journey-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.1rem; margin: .3rem 0; font-size: .86rem; }
+.tco-journey-facts div { display: flex; gap: .35rem; align-items: baseline; }
+.tco-journey-facts dt { color: var(--clr-text-muted); }
+.tco-journey-facts dd { margin: 0; font-weight: 600; }
+.tco-focus { margin: .3rem 0; font-size: .88rem; }
+.tco-filters { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: flex-end; margin: .3rem 0 .5rem; }
+.tco-inline { display: inline-grid; gap: .15rem; }
+.tco-matrix { min-width: 52rem; }
+.tco-matrix th, .tco-matrix td, .tco-matrix td * { overflow-wrap: break-word; word-break: normal; }
+.tco-matrix th[scope=row] { min-width: 12rem; }
+.tco-scope-group { border: 1px solid var(--clr-border); border-radius: .5rem; padding: .45rem .75rem; margin: .4rem 0; }
+.tco-scope-group > summary { cursor: pointer; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.tco-scope-title { font-weight: 600; }
+.tco-doc-rendered { border: 1px solid var(--clr-border); border-radius: .5rem; padding: .6rem 1rem; max-height: 40rem; overflow: auto; overflow-wrap: anywhere; }
+.tco-doc-rendered ::deep table { border-collapse: collapse; font-size: .85rem; }
+.tco-doc-rendered ::deep td, .tco-doc-rendered ::deep th { border: 1px solid var(--clr-border); padding: .2rem .4rem; overflow-wrap: break-word; }
+.tco-scroll { position: relative; }
+/* Rendered Markdown tables keep readable columns; the focusable preview scrolls instead of squeezing them on phones. */
+.tco-doc-rendered ::deep th, .tco-doc-rendered ::deep td { min-width: 7rem; }
