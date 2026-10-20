@@ -68,3 +68,11 @@
 .mfr-readiness-line { margin: .2rem 0; font-size: .88rem; }
 .mfr-link-button { background: none; border: none; padding: 0 0 0 .5rem; color: var(--clr-link, #2563eb); text-decoration: underline; cursor: pointer; font-size: .86rem; min-height: 24px; }
 @media (max-width: 520px) { .mfr-card { padding: .55rem; } .mfr-view .mfr-group { padding: 0; border: 0; } }
+/* Application values known once (stored here or resolved from their owner) vs still to configure here. */
+.mfr-known { grid-column: 1 / -1; margin: 0 0 .75rem; padding: .5rem .75rem; border: 1px solid #d0d5dd; border-radius: 6px; background: #f8fafc; font-size: .88rem; overflow-wrap: anywhere; }
+.mfr-known p { margin: 0; }
+.mfr-known-list { margin: .35rem 0; padding-left: 1.1rem; }
+.mfr-muted { color: #475467; }
+/* A fieldset sizes to its content's min width by default; long URLs in the known list must wrap inside it instead. */
+.mfr-group { min-inline-size: 0; }
+.mfr-known code { word-break: break-all; }

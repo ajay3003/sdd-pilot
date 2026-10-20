@@ -32,6 +32,15 @@
       "semanticKey": "Environment.Server.Production"
     },
     {
+      "label": "App base URL · TT02",
+      "value": "https://buf.apps.tt02.altinn.no/buf/skolenaervaer",
+      "semanticKey": "Application.BaseUrl",
+      "derivedFrom": [
+        "Environment.Server.Test",
+        "Application.Route"
+      ]
+    },
+    {
       "label": "Form data type",
       "value": "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn",
       "semanticKey": "Application.FormDataType"

@@ -283,7 +283,7 @@
 
     /// <summary>Values the bound source declares that are safe to store into empty fields (an explicit action; never over a stored value).</summary>
     private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> ApplicableSourceValues =>
-        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference && item.ConfiguredValue is null).ToList() ?? [];
+        _guidance?.Suggestions.Where(SourceGuidancePresentation.Applicable).ToList() ?? [];
 
     private async Task ApplySourceValuesAsync()
     {
@@ -297,7 +297,7 @@
             if (result.Value is { Applied.Count: > 0 })
             {
                 _pack = (await journeys.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId) ?? _pack;
-                _guidance = (await journeys.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token)).Value ?? _guidance;
+                _guidance = (await journeys.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token)).Value is { } fresh ? SourceGuidancePresentation.Resolved(fresh) : _guidance;
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _applyError = "The values could not be applied."; }
@@ -307,14 +307,14 @@
     /// <summary>"6 values: 4 suggested from bound source · 1 conflict …" — every state in words.</summary>
     private static string GuidanceSummary(TestPackSourceGuidance guidance)
     {
-        var referenced = guidance.Suggestions.Count(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference);
-        var open = guidance.Suggestions.Count(item => item.State is not BirkNext.SourceDomains.SourceSuggestionState.Suggested and not BirkNext.SourceDomains.SourceSuggestionState.Reference);
-        var suggested = guidance.Suggestions.Count - open - referenced;
+        // One resolution for every page: a value known from its owner, the bound source, the reference or a default is not "missing".
+        var known = guidance.Suggestions.Count(item => item.ResolvedValue is not null);
         var configured = guidance.Suggestions.Count(item => item.ConfiguredValue is not null);
-        var reference = referenced > 0 ? $" · {referenced} from the Test Pack reference" : "";
-        return open == 0
-            ? $"All {guidance.Suggestions.Count} source requirements are answered by bound sources or the Test Pack reference ({configured} configured){reference}."
-            : $"{open} of {guidance.Suggestions.Count} source requirements cannot yet be assessed from bound sources · {suggested} suggested{reference} · {configured} configured.";
+        var review = guidance.Suggestions.Count(item => item.ReviewRequired);
+        var origins = guidance.Suggestions.Where(item => item.ResolvedValue is not null && item.ResolvedFrom != BirkNext.SourceDomains.ConfigurationValueOrigin.Configured)
+            .GroupBy(item => item.ResolvedFrom).Select(group => $"{group.Count()} from {BirkNext.SourceDomains.SourceConfigurationPrecedence.Label(group.Key).ToLowerInvariant()}");
+        var parts = string.Join(" · ", new[] { $"{configured} stored" }.Concat(origins).Concat(review > 0 ? [$"{review} need review"] : []));
+        return $"{known} of {guidance.Suggestions.Count} configuration values known ({parts}); {guidance.Suggestions.Count - known} unresolved.";
     }
 
     /// <summary>A rule's required source and what is bound or available for it.</summary>
@@ -496,14 +496,19 @@
             <a class="btn-secondary" href="/integration-quality-review?view=extensions" data-testid="snt-configure-altinn">Configure Altinn</a>
             @if (ApplicableSourceValues.Count > 0)
             {
-                <button type="button" class="btn-secondary" data-testid="snt-apply-source" disabled="@_applying" @onclick="ApplySourceValuesAsync">Apply safe source-derived configuration (@ApplicableSourceValues.Count)</button>
+                <button type="button" class="btn-secondary" data-testid="snt-apply-source" disabled="@_applying" @onclick="ApplySourceValuesAsync"
+                        aria-describedby="snt-apply-preview">Apply safe configuration (@ApplicableSourceValues.Count)</button>
             }
             <a class="btn-secondary" href="/admin/system-settings?section=target-environments" data-testid="snt-open-target">Open Target Environment</a>
         </div>
+        @if (ApplicableSourceValues.Count > 0 && _applyResult is null)
+        {
+            <p class="snt-muted" id="snt-apply-preview" data-testid="snt-apply-preview">Stores into empty fields only: @string.Join(", ", ApplicableSourceValues.Select(item => $"{item.Requirement.Label} = {item.ResolvedValue} ({SourceGuidancePresentation.Origin(item)})")). Never secrets, reporters, identities or execution permission.</p>
+        }
         @if (_applyResult is { } applied)
         {
             <div class="snt-apply-result" role="status" data-testid="snt-apply-result">
-                <p><strong>@(applied.Applied.Count == 0 ? "Nothing was applied." : $"Applied {applied.Applied.Count} value{(applied.Applied.Count == 1 ? "" : "s")} from the bound source (stored as configuration; not runtime verified):")</strong></p>
+                <p><strong>@(applied.Applied.Count == 0 ? "Nothing was applied." : $"Applied {applied.Applied.Count} value{(applied.Applied.Count == 1 ? "" : "s")} (stored as configuration; not runtime verified):")</strong></p>
                 @if (applied.Applied.Count > 0) { <ul>@foreach (var item in applied.Applied) { <li data-testid="snt-applied-item" data-key="@item.Key">@item.Label: <code>@item.Value</code> <span class="snt-muted">· @item.Provenance</span></li> }</ul> }
                 @if (applied.NotApplied.Count > 0) { <ul class="snt-muted">@foreach (var item in applied.NotApplied) { <li data-testid="snt-not-applied-item" data-key="@item.Key">@item.Label — @item.Reason</li> }</ul> }
             </div>
@@ -632,7 +637,7 @@
         {
             try { _pack = (await journeysApi.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
-            try { if (journeysApi.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token) is { } guidance) _guidance = (await guidance)?.Value; }
+            try { if (journeysApi.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token) is { } guidance) _guidance = (await guidance)?.Value is { } loaded ? SourceGuidancePresentation.Resolved(loaded) : null; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
         }
         try

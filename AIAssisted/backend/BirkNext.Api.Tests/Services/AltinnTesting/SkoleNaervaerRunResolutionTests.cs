@@ -691,7 +691,8 @@ public sealed class SkoleNaervaerRunResolutionTests
         bed.Harness.Sources.Snapshots.Add(snapshot);
         var guidance = await GuidanceAsync(bed);
         // Values the Test Pack reference declares come from the reference; the unbound snapshot's own values are never used.
-        guidance.Values.Where(item => item.State is not BirkNext.SourceDomains.SourceSuggestionState.NotDeclared and not BirkNext.SourceDomains.SourceSuggestionState.Reference)
+        guidance.Values.Where(item => item.Requirement.SourceRoles.Contains(SkoleNaervaerJourneyPack.AltinnAppSourceRole)
+                && item.State is not BirkNext.SourceDomains.SourceSuggestionState.NotDeclared and not BirkNext.SourceDomains.SourceSuggestionState.Reference)
             .Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound && item.Value == null && item.Candidates.Count == 0);
         guidance.Values.Where(item => item.Value != null).Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference
                 && item.Candidates.SelectMany(candidate => candidate.Provenance).All(value => value.Artifact == "Test Pack reference"),
@@ -723,7 +724,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         var guidance = await GuidanceAsync(bed);
         // The Test Pack reference supplies what the Altinn app's API description declares; everything else names its missing logical source.
         guidance.Values.Where(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference).Select(item => item.Requirement.Key)
-            .Should().BeEquivalentTo(["altinn-app-route", "altinn-test-server", "altinn-form-data-type", "altinn-content-type", "altinn-process-task", "altinn-auth-scheme"]);
+            .Should().BeEquivalentTo(["altinn-app-route", "altinn-base-url", "altinn-test-server", "altinn-form-data-type", "altinn-content-type", "altinn-process-task", "altinn-auth-scheme"]);
         guidance.Values.Where(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.Reference).Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.SourceMissing
             && item.Detail.Contains(item.Requirement.EvidenceType, StringComparison.Ordinal) && item.SourceRoleLabel != null && item.Detail.Contains(item.SourceRoleLabel, StringComparison.Ordinal),
             "without any imported source the required logical source is named as missing");
@@ -790,6 +791,113 @@ public sealed class SkoleNaervaerRunResolutionTests
         guidance["altinn-form-data-type"].State.Should().Be(SourceSuggestionState.Reference, "only the reference declares the form data type");
         guidance["altinn-form-data-type"].Value.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
         guidance.Values.Should().OnlyContain(item => !item.RuntimeVerified);
+    }
+
+    // ── One shared resolution: configure once, reuse in IQR and Skolenærvær ────────────────────────────────────────────────────
+
+    private const string MuWebhook = "https://buf-meldings-utveksler.azurewebsites.net/api/altinn/webhook";
+
+    /// <summary>Gives the report-intake integration record an endpoint (the record owns it).</summary>
+    private static void IntakeEndpoint(Bed bed, string endpoint)
+    {
+        var extra = bed.Harness.Active.Catalog.Extra;
+        var index = extra.FindIndex(item => item.Id == ReportIntake);
+        extra[index] = extra[index] with { EndpointOrTopic = endpoint };
+    }
+
+    [Fact]
+    public async Task KnownValues_ResolveFromTheirOwners_WithProvenance_WithoutBeingStored()
+    {
+        var bed = await UnconfiguredAsync();
+        IntakeEndpoint(bed, MuWebhook);
+        var before = bed.Harness.MessageFlows.Configuration;
+        var guidance = await GuidanceAsync(bed);
+
+        guidance["altinn-event-webhook"].Should().Match<SourceConfigurationSuggestion>(item => item.ResolvedValue == MuWebhook
+            && item.ResolvedFrom == ConfigurationValueOrigin.ConfiguredIntegration && item.IntegrationName == "Skolenærvær – Altinn report intake");
+        (guidance["altinn-app-route"].ResolvedValue, guidance["altinn-app-route"].ResolvedFrom).Should().Be(("buf/skolenaervaer", ConfigurationValueOrigin.TestPackReference));
+        (guidance["altinn-base-url"].ResolvedValue, guidance["altinn-base-url"].ResolvedFrom).Should().Be(("https://buf.apps.tt02.altinn.no/buf/skolenaervaer", ConfigurationValueOrigin.TestPackReference));
+        (guidance["altinn-environment"].ResolvedValue, guidance["altinn-environment"].ResolvedFrom).Should().Be(("Test", ConfigurationValueOrigin.TestPackDefault));
+        (guidance["altinn-form-data-type"].ResolvedValue, guidance["altinn-process-task"].ResolvedValue, guidance["altinn-content-type"].ResolvedValue, guidance["altinn-auth-scheme"].ResolvedValue)
+            .Should().Be(("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn", "Task_1", "application/xml", "Bearer JWT"));
+        guidance.Values.Select(item => item.ResolvedValue).Should().NotContain("https://buf.apps.altinn.no", "production metadata is reference detail, never a resolved value");
+        guidance["cdc-event-hub"].ResolvedValue.Should().BeNull("no CDC record and no M2LB evidence: unresolved, never guessed");
+        guidance["cdc-event-hub"].Requirement.OwnerAction.Should().Contain("Target Environment → Integrations");
+        bed.Harness.MessageFlows.Configuration.Should().Be(before, "reading resolves; nothing is stored");
+    }
+
+    [Fact]
+    public async Task ApplyingSafeConfiguration_StoresEvidenceReferenceAndDefaults_ButNeverCopiesTheIntegrationsEndpoint()
+    {
+        var bed = await UnconfiguredAsync();
+        IntakeEndpoint(bed, MuWebhook);
+        var before = bed.Harness.MessageFlows.Configuration;
+        var result = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        var config = bed.Harness.MessageFlows.Configuration;
+        (config.Environment, config.AppIdentifier, config.BaseUrlReference).Should().Be((ExternalTestEnvironment.Test, "buf/skolenaervaer", "https://buf.apps.tt02.altinn.no/buf/skolenaervaer"));
+        config.EndpointReference.Should().BeNull("the integration record owns the webhook; a second copy would drift");
+        result.NotApplied.Should().ContainSingle(item => item.Key == "altinn-event-webhook").Which.Reason.Should().StartWith("Read from the configured integration");
+        result.Applied.Select(item => item.Provenance).Should().BeSubsetOf(["Test Pack reference", "Test Pack default"]);
+        (config.ClientReference, config.ReporterReference, config.SyntheticIdentitySetReference, config.ConfiguredScopes)
+            .Should().Be((before.ClientReference, before.ReporterReference, before.SyntheticIdentitySetReference, before.ConfiguredScopes),
+            "client, reporter, identities and scopes are never derived from configuration");
+    }
+
+    [Fact]
+    public async Task AnExplicitlyStoredValue_Wins_AndTheDifferentReferenceStaysVisible()
+    {
+        var bed = await UnconfiguredAsync();
+        bed.Harness.MessageFlows.Configuration = bed.Harness.MessageFlows.Configuration with { AppIdentifier = "buf/skolenaervaer-copy" };
+        var route = (await GuidanceAsync(bed))["altinn-app-route"];
+        (route.ResolvedValue, route.ResolvedFrom).Should().Be(("buf/skolenaervaer-copy", ConfigurationValueOrigin.Configured));
+        route.Disagreements.Should().ContainSingle().Which.Should().Be(new ConfigurationAlternative(ConfigurationValueOrigin.TestPackReference, "buf/skolenaervaer"));
+        await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().Be("buf/skolenaervaer-copy", "an explicit value is never overwritten");
+    }
+
+    [Fact]
+    public async Task TheIntegrationRecord_AndCanonicalSourceDisagreeing_IsReviewRequired_NotMerged()
+    {
+        var bed = await UnconfiguredAsync();
+        IntakeEndpoint(bed, MuWebhook);
+        var hub = HubSnapshot("hub.zip", HubSettings());
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        var webhook = (await GuidanceAsync(bed))["altinn-event-webhook"];
+        (webhook.ResolvedValue, webhook.ResolvedFrom).Should().Be((MuWebhook, ConfigurationValueOrigin.ConfiguredIntegration));
+        webhook.Disagreements.Should().ContainSingle(item => item.Origin == ConfigurationValueOrigin.CanonicalSource && item.Value == "https://hub.example.invalid/api/altinn/webhook");
+        webhook.ReviewRequired.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task KnownButNotStoredValues_AreNamedInReadiness_AndNeverMakeRapportmottakRunnableOrVerified()
+    {
+        var bed = await UnconfiguredAsync();
+        IntakeEndpoint(bed, MuWebhook);
+        var view = await RapportmottakAsync(bed);
+        Row(view, "altinn-app").State.Should().Be(JourneyReadinessState.NotConfigured, "runs use stored values only");
+        Row(view, "altinn-app").Detail.Should().Contain("Known: buf/skolenaervaer (Test Pack reference) — not stored for runs yet");
+        Row(view, "altinn-environment").Detail.Should().Contain("Known: Test (Test Pack default)");
+        view.RunnableScenarios.Should().BeEmpty();
+        Row(view, "observation").State.Should().NotBe(JourneyReadinessState.Ready);
+        Row(view, "synthetic-reporter").Detail.Should().NotContain("buf/skolenaervaer");
+        bed.Harness.MessageFlows.Configuration.VerifiedScopes.Should().BeEmpty();
+        bed.Harness.Bindings.Items.Should().BeEmpty("resolution never binds");
+    }
+
+    [Fact]
+    public async Task TheSafeValues_PassTheCredentialGuardInTheirFields_AndCredentialsAreStillRejected()
+    {
+        var safe = AltinnTestKit.ReadyConfiguration with
+        {
+            Environment = ExternalTestEnvironment.Test, AppIdentifier = "buf/skolenaervaer", BaseUrlReference = "https://buf.apps.tt02.altinn.no/buf/skolenaervaer", EndpointReference = MuWebhook,
+        };
+        var package = await new BirkNext.Api.Tests.Services.IntegrationJourneys.IntegrationJourneyHarness().MessageFlows.GetAsync(Env, default);
+        BirkNext.Api.Services.Integrations.MessageFlowCredentialGuard.Validate(package with { AltinnConfiguration = safe }).Should().BeEmpty("safe references must save");
+        var withSecret = safe with { ClientReference = "client_secret=abc123def456" };
+        var errors = BirkNext.Api.Services.Integrations.MessageFlowCredentialGuard.Validate(package with { AltinnConfiguration = withSecret });
+        errors.Should().ContainSingle().Which.Field.Should().Contain("Client");
+        System.Text.Json.JsonSerializer.Serialize(errors).Should().NotContain("abc123def456", "a rejected value is never echoed");
     }
 
     [Fact]
@@ -874,7 +982,8 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await UnconfiguredAsync();
         bed.Harness.Sources.Snapshots.Add(HubSnapshot("unbound.zip", HubSettings()));
         var unbound = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
-        unbound.Applied.Should().OnlyContain(item => item.Provenance == "Test Pack reference", "an unbound snapshot supplies nothing; only the Test Pack reference fills an empty field");
+        unbound.Applied.Should().OnlyContain(item => item.Provenance == "Test Pack reference" || item.Provenance == "Test Pack default",
+            "an unbound snapshot supplies nothing; only the Test Pack reference and the pack's safe default fill empty fields");
         unbound.NotApplied.Should().OnlyContain(item => item.Reason.StartsWith("Available but not bound", StringComparison.Ordinal));
         bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().Be("buf/skolenaervaer", "the reference's app identifier, never the unbound snapshot's");
         bed.Harness.MessageFlows.Configuration.EndpointReference.Should().BeNull("the reference does not declare the intake webhook");

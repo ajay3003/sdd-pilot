@@ -150,7 +150,25 @@ public sealed record SourceConfigurationRequirement(string Key, string Label, st
     /// <summary>The value is safe, non-secret and meant to be source-derived: "Apply safe source-derived configuration" may store it into an
     /// EMPTY consumer field (never over a stored value, never on a conflict, never from an unbound snapshot).</summary>
     public bool AutoApply { get; init; }
+    /// <summary>The pack integration requirement whose configured integration record owns this value (with <see cref="IntegrationField"/>), so
+    /// consumers read the record instead of keeping their own copy. Null: no integration record owns it.</summary>
+    public string? IntegrationRequirementKey { get; init; }
+    /// <summary>The integration record field that holds the value: DisplayName, Kind, SystemName, Producer, Consumer, EndpointOrTopic,
+    /// SourceResource or ConsumerGroup.</summary>
+    public string? IntegrationField { get; init; }
+    /// <summary>A safe, deterministic default the pack declares for every non-production environment (lowest precedence; never a secret).</summary>
+    public string? DefaultValue { get; init; }
+    /// <summary>Where a person resolves the value when nothing provides it ("Integration Quality Review → Extensions → Altinn").</summary>
+    public string? OwnerAction { get; init; }
 }
+
+/// <summary>Where a resolved configuration value comes from, in precedence order: a value stored by its consumer, the configured integration
+/// record that owns it, the canonical (IQR-bound) imported source, the test pack's built-in reference, the pack's safe default.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ConfigurationValueOrigin { None, Configured, ConfiguredIntegration, CanonicalSource, TestPackReference, TestPackDefault }
+
+/// <summary>A value another tier provides that differs from the resolved one (shown for review; never chosen silently).</summary>
+public sealed record ConfigurationAlternative(ConfigurationValueOrigin Origin, string Value);
 
 /// <summary>What one "apply safe source-derived configuration" stored, and what it left alone and why.</summary>
 public sealed record SourceConfigurationApplied(string Key, string Label, string Value, string Provenance);
@@ -184,6 +202,68 @@ public sealed record SourceConfigurationSuggestion(SourceConfigurationRequiremen
     public bool RuntimeVerified { get; init; }
     public string Detail { get; init; } = "";
     public bool ConfiguredDiffers => ConfiguredValue is not null && Value is not null && !string.Equals(ConfiguredValue, Value, StringComparison.OrdinalIgnoreCase);
+    /// <summary>What the configured integration record that owns the value holds (null: no record, or the record does not set it).</summary>
+    public string? IntegrationValue { get; init; }
+    /// <summary>The configured integration that holds <see cref="IntegrationValue"/> (provenance).</summary>
+    public string? IntegrationName { get; init; }
+    /// <summary>The pack's safe default for the value (lowest precedence).</summary>
+    public string? DefaultValue { get; init; }
+    /// <summary>The one value every consumer uses for display and configuration readiness, by <see cref="SourceConfigurationPrecedence"/>.</summary>
+    public string? ResolvedValue { get; init; }
+    public ConfigurationValueOrigin ResolvedFrom { get; init; }
+    /// <summary>Other tiers that disagree with the resolved value — visible, never resolved silently.</summary>
+    public IReadOnlyList<ConfigurationAlternative> Disagreements { get; init; } = [];
+    /// <summary>A value is known, but conflicting evidence or another tier disagrees: a person reviews it.</summary>
+    public bool ReviewRequired => State == SourceSuggestionState.Conflict || Disagreements.Count > 0;
+}
+
+/// <summary>
+/// The one precedence rule for safe configuration values, used by every consumer (Target Environment, Integration Quality Review, test packs):
+/// explicitly stored value → configured integration record → canonical bound imported source → test pack reference → pack default → unresolved.
+/// A lower tier never overrides a higher one; a lower tier that disagrees is kept as a visible disagreement. Nothing is stored here.
+/// </summary>
+public static class SourceConfigurationPrecedence
+{
+    public static SourceConfigurationSuggestion Resolve(SourceConfigurationSuggestion suggestion)
+    {
+        var multi = SourceConfigurationKeys.MultiValued.Contains(suggestion.Requirement.SemanticKey);
+        var canonical = suggestion.State is SourceSuggestionState.Suggested ? suggestion.Value : null;
+        var tiers = new (ConfigurationValueOrigin Origin, string? Value)[]
+        {
+            (ConfigurationValueOrigin.Configured, suggestion.ConfiguredValue),
+            (ConfigurationValueOrigin.ConfiguredIntegration, suggestion.IntegrationValue),
+            (ConfigurationValueOrigin.CanonicalSource, canonical),
+            (ConfigurationValueOrigin.TestPackReference, suggestion.ReferenceValue),
+            (ConfigurationValueOrigin.TestPackDefault, suggestion.DefaultValue),
+        }.Where(tier => !string.IsNullOrWhiteSpace(tier.Value)).Select(tier => (tier.Origin, Value: tier.Value!.Trim())).ToArray();
+        if (tiers.Length == 0) return suggestion with { ResolvedValue = null, ResolvedFrom = ConfigurationValueOrigin.None, Disagreements = [] };
+        var (origin, value) = tiers[0];
+        // A pack default only fills a gap: it never "disagrees" with a value someone or something declared.
+        var disagreements = tiers.Skip(1).Where(tier => tier.Origin != ConfigurationValueOrigin.TestPackDefault && !Agrees(value, tier.Value, multi))
+            .Select(tier => new ConfigurationAlternative(tier.Origin, tier.Value)).ToArray();
+        return suggestion with { ResolvedValue = value, ResolvedFrom = origin, Disagreements = disagreements };
+    }
+
+    /// <summary>Same value (case- and trailing-slash-insensitive); for a key that may list several values, one being among the other's list.</summary>
+    public static bool Agrees(string a, string b, bool multiValued)
+    {
+        static string Norm(string value) => value.Trim().TrimEnd('/');
+        if (string.Equals(Norm(a), Norm(b), StringComparison.OrdinalIgnoreCase)) return true;
+        if (!multiValued) return false;
+        static string[] List(string value) => [.. value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Norm)];
+        var (left, right) = (List(a), List(b));
+        return left.All(item => right.Contains(item, StringComparer.OrdinalIgnoreCase)) || right.All(item => left.Contains(item, StringComparer.OrdinalIgnoreCase));
+    }
+
+    public static string Label(ConfigurationValueOrigin origin) => origin switch
+    {
+        ConfigurationValueOrigin.Configured => "Configured",
+        ConfigurationValueOrigin.ConfiguredIntegration => "Configured integration",
+        ConfigurationValueOrigin.CanonicalSource => "Canonical source evidence",
+        ConfigurationValueOrigin.TestPackReference => "Test Pack reference",
+        ConfigurationValueOrigin.TestPackDefault => "Test Pack default",
+        _ => "Unresolved",
+    };
 }
 
 public static class SourceConfigurationResolver

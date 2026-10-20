@@ -130,7 +130,20 @@
             <div class="mfr-groups mfr-sections">
             <div hidden="@(_section != "configuration")" data-testid="mfr-configuration-sections">
             <ReviewDisclosure Text="Application" CollapseText="Application" Hint="@SectionHint(_environment != "Unknown", _product, _app, _submission != "Unknown", _baseUrl, _endpoint)" TestId="mfr-section-application" Class="mfr-section">
-            <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend><div class="mfr-form">
+            <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend>
+                @{ var applicationFields = ApplicationFields(); var knownFields = applicationFields.Where(item => item.Value is not null).ToList(); }
+                <div class="mfr-known" data-testid="mfr-known">
+                    <p><strong data-testid="mfr-known-count">@knownFields.Count of @applicationFields.Count known</strong> <span class="mfr-muted">· resolved once and reused by test packs; known values are not re-entered</span></p>
+                    @if (knownFields.Count > 0)
+                    {
+                        <ul class="mfr-known-list">@foreach (var item in knownFields) { <li data-testid="mfr-known-item" data-field="@item.Field">@item.Field: <code>@item.Value</code> <span class="mfr-muted">· @item.Origin</span></li> }</ul>
+                    }
+                    @if (applicationFields.Where(item => item.Value is null).Select(item => item.Field).ToList() is { Count: > 0 } open)
+                    {
+                        <p data-testid="mfr-unresolved">Still to configure here: @string.Join(", ", open)</p>
+                    }
+                </div>
+                <div class="mfr-form">
                 <SourceValueHint Resolution="@Hint("Environment")" Origin="@HintOrigin("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" />
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
@@ -139,7 +152,7 @@
                 <label>Safe base URL reference<input @bind="_baseUrl" /></label>
                 <SourceValueHint Resolution="@Hint("Safe base URL reference")" Origin="@HintOrigin("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" />
                 <label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
-                <SourceValueHint Resolution="@Hint("Endpoint reference")" Origin="@HintOrigin("Endpoint reference")" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
+                <SourceValueHint Resolution="@Hint("Endpoint reference")" Origin="@HintOrigin("Endpoint reference")" CanUse="@(!OwnedByIntegration("Endpoint reference"))" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
                 @if (SafeEmptySuggestions.Count > 0)
                 {
                     <p class="mfr-source-fill"><button type="button" class="btn-secondary" data-testid="mfr-use-source-values" @onclick="UseSourceValues">Use @SafeEmptySuggestions.Count safe source value@(SafeEmptySuggestions.Count == 1 ? "" : "s")</button>
@@ -269,29 +282,61 @@
     private TestPackSourceGuidance? _guidance;
 
     /// <summary>The bound source's value for a form field (by the requirement's consumer field), as a hint: a value, a conflict, or nothing.</summary>
-    private BirkNext.SourceDomains.SourceConfigurationResolution? Hint(string field) =>
-        Offered.FirstOrDefault(item => item.Requirement.ConsumerField == field
-            && (item.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict || (item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference
-                && (field != "Environment" || item.Value == "Test")))) is { } suggestion
-            ? new(suggestion.Requirement.SemanticKey, BirkNext.SourceDomains.SourceEnvironmentRole.Any,
-                suggestion.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict ? BirkNext.SourceDomains.SourceConfigurationResolutionState.Conflict : BirkNext.SourceDomains.SourceConfigurationResolutionState.Declared,
-                suggestion.Candidates)
-            : null;
+    private BirkNext.SourceDomains.SourceConfigurationResolution? Hint(string field)
+    {
+        if (Offered.FirstOrDefault(item => item.Requirement.ConsumerField == field) is not { } suggestion) return null;
+        if (suggestion.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict)
+            return new(suggestion.Requirement.SemanticKey, BirkNext.SourceDomains.SourceEnvironmentRole.Any, BirkNext.SourceDomains.SourceConfigurationResolutionState.Conflict, suggestion.Candidates);
+        if (suggestion.ResolvedValue is not { } value || suggestion.ResolvedFrom is BirkNext.SourceDomains.ConfigurationValueOrigin.Configured or BirkNext.SourceDomains.ConfigurationValueOrigin.None
+            || (field == "Environment" && value != "Test")) return null;
+        // The value every consumer uses, with where it comes from: source/reference artifacts as recorded, otherwise the owning tier itself.
+        var candidates = suggestion.ResolvedFrom is BirkNext.SourceDomains.ConfigurationValueOrigin.CanonicalSource or BirkNext.SourceDomains.ConfigurationValueOrigin.TestPackReference && suggestion.Candidates.Count > 0
+            ? suggestion.Candidates
+            : [new BirkNext.SourceDomains.SourceConfigurationCandidate(value, [new BirkNext.SourceDomains.SourceConfigurationValue
+              {
+                  SemanticKey = suggestion.Requirement.SemanticKey, Value = value, EvidenceKind = BirkNext.SourceDomains.SourceConfigurationEvidenceKind.Other,
+                  Artifact = SourceGuidancePresentation.Origin(suggestion), Location = suggestion.Requirement.Label,
+              }])];
+        return new(suggestion.Requirement.SemanticKey, BirkNext.SourceDomains.SourceEnvironmentRole.Any, BirkNext.SourceDomains.SourceConfigurationResolutionState.Declared, candidates);
+    }
+
+    /// <summary>The resolved suggestion for a form field, if any.</summary>
+    private BirkNext.SourceDomains.SourceConfigurationSuggestion? Resolved(string field) => _guidance?.Suggestions.FirstOrDefault(item => item.Requirement.ConsumerField == field);
+
+    /// <summary>A value an integration record owns is read from there: the form offers no copy.</summary>
+    private bool OwnedByIntegration(string field) => Resolved(field) is { ResolvedFrom: BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration };
+
+    /// <summary>The Application section's fields: known (stored here or resolved elsewhere, with origin) vs still to configure here.</summary>
+    private IReadOnlyList<(string Field, string? Value, string Origin)> ApplicationFields() =>
+    [
+        ("Environment", _environment != "Unknown" ? _environment : Resolved("Environment") is { ResolvedValue: "Test" } env ? "Test" : null, Origin("Environment", _environment != "Unknown")),
+        ("App identifier", !string.IsNullOrWhiteSpace(_app) ? _app : Resolved("App identifier")?.ResolvedValue, Origin("App identifier", !string.IsNullOrWhiteSpace(_app))),
+        ("Safe base URL reference", !string.IsNullOrWhiteSpace(_baseUrl) ? _baseUrl : Resolved("Safe base URL reference")?.ResolvedValue, Origin("Safe base URL reference", !string.IsNullOrWhiteSpace(_baseUrl))),
+        ("Endpoint reference", !string.IsNullOrWhiteSpace(_endpoint) ? _endpoint : Resolved("Endpoint reference")?.ResolvedValue, Origin("Endpoint reference", !string.IsNullOrWhiteSpace(_endpoint))),
+        ("Altinn product / service type", string.IsNullOrWhiteSpace(_product) ? null : _product, "Configured here"),
+        ("Submission mode", _submission == "Unknown" ? null : _submission, "Configured here"),
+    ];
+
+    private string Origin(string field, bool storedHere) => storedHere ? "Configured here" : Resolved(field) is { ResolvedValue: not null } item ? SourceGuidancePresentation.Origin(item) : "";
 
     /// <summary>The guidance this panel may offer: bound-source values only while a canonical binding exists (the newest snapshot never stands in
     /// for one); Test Pack reference values regardless, labelled as such.</summary>
     private IEnumerable<BirkNext.SourceDomains.SourceConfigurationSuggestion> Offered =>
-        (_guidance?.Suggestions ?? []).Where(item => _binding is not null || item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference);
+        (_guidance?.Suggestions ?? []).Where(item => _binding is not null || item.ResolvedFrom is not BirkNext.SourceDomains.ConfigurationValueOrigin.CanonicalSource);
 
-    /// <summary>Where a field's hint comes from: the bound imported source, or the test pack's built-in reference.</summary>
-    private string HintOrigin(string field) =>
-        _guidance?.Suggestions.FirstOrDefault(item => item.Requirement.ConsumerField == field)?.State == BirkNext.SourceDomains.SourceSuggestionState.Reference
-            ? "From Test Pack reference" : "Suggested from bound source";
+    /// <summary>Where a field's hint comes from, by the shared precedence.</summary>
+    private string HintOrigin(string field) => Resolved(field)?.ResolvedFrom switch
+    {
+        BirkNext.SourceDomains.ConfigurationValueOrigin.TestPackReference => "From Test Pack reference",
+        BirkNext.SourceDomains.ConfigurationValueOrigin.TestPackDefault => "Test Pack default",
+        BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration => "From the configured integration",
+        _ => "Suggested from bound source",
+    };
 
     /// <summary>Safe, unambiguous bound suggestions whose form field is still empty.</summary>
     private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> SafeEmptySuggestions =>
-        Offered.Where(item => item.Requirement.AutoApply && item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference && item.Value is not null
-            && item.Requirement.ConsumerField is { } field && FieldEmpty(field) && (field != "Environment" || item.Value == "Test")).ToList();
+        Offered.Where(item => SourceGuidancePresentation.Applicable(item) && item.Requirement.ConsumerField is { } field && FieldEmpty(field)
+            && (field != "Environment" || item.ResolvedValue == "Test")).ToList();
 
     private bool FieldEmpty(string field) => field switch
     {
@@ -309,9 +354,9 @@
             switch (item.Requirement.ConsumerField)
             {
                 case "Environment": _environment = "Test"; break;
-                case "App identifier": _app = item.Value!; break;
-                case "Safe base URL reference": _baseUrl = item.Value!; break;
-                case "Endpoint reference": _endpoint = item.Value!; break;
+                case "App identifier": _app = item.ResolvedValue!; break;
+                case "Safe base URL reference": _baseUrl = item.ResolvedValue!; break;
+                case "Endpoint reference": _endpoint = item.ResolvedValue!; break;
             }
     }
     private string? _bindingIntegration;
@@ -356,7 +401,7 @@
             // The pack's source guidance for this provider's fields: bound evidence, or the pack's Test Pack reference where no bound source
             // declares a value (shown as such). Never applied by loading.
             _guidance = resolved.PackId is { } packId && Services.GetService<IIntegrationJourneysApiService>() is { } journeys
-                && journeys.SourceGuidanceAsync(EnvironmentId!, packId) is { } read ? (await read)?.Value : null;
+                && journeys.SourceGuidanceAsync(EnvironmentId!, packId) is { } read && (await read)?.Value is { } loaded ? SourceGuidancePresentation.Resolved(loaded) : null;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
     }
@@ -390,7 +435,7 @@
         _name = flow.Name;
         var selectedFlow = flow with { EnvironmentId = EnvironmentId!, TargetEnvironmentReference = EnvironmentId };
         _package = _package with { Flow = selectedFlow, AltinnConfiguration = config, TestCases = cases.Count > 0 ? cases : MessageFlowTestCaseDesigner.Generate(selectedFlow),
-            Readiness = IntegrationMessageFlowReadiness.Evaluate(selectedFlow, config), ManualTestPlan = IntegrationMessageFlowReadiness.ManualPlan(selectedFlow, config) };
+            Readiness = IntegrationMessageFlowReadiness.Evaluate(selectedFlow, config, Resolved("Endpoint reference") is { ResolvedFrom: BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration, ResolvedValue: { } owned } ? owned : null), ManualTestPlan = IntegrationMessageFlowReadiness.ManualPlan(selectedFlow, config) };
         _fromNode = _package.Flow.Nodes.FirstOrDefault()?.Id ?? ""; _toNode = _package.Flow.Nodes.Skip(1).FirstOrDefault()?.Id ?? "";
         Apply(config); _saved = false;
     }

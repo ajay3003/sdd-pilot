@@ -172,16 +172,25 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     [
         new("altinn-environment", "Altinn environment", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationEnvironment, AltinnAppSource, AppReference,
             "Which Altinn platform the app is tested on (only Test is ever applied).", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-environment", ConsumerField = "Environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
+            {
+                PrerequisiteKey = "altinn-environment", ConsumerField = "Environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true,
+                // TT02 is Altinn's test platform and the only one Skolenærvær runs against; production is never a default.
+                DefaultValue = "Test", OwnerAction = AltinnOwnerAction,
+            },
         new("altinn-app-route", "Altinn app (org/app)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, AltinnAppSource, AppReference,
             "Which app Rapportmottak submits to.", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
+            { PrerequisiteKey = "altinn-app", ConsumerField = "App identifier", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true, OwnerAction = AltinnOwnerAction },
         new("altinn-base-url", "Altinn app base URL", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationBaseUrl, AltinnAppSource, AppReference,
             "The app's address on the test platform (a safe reference; BirkNext builds its calls from the backend endpoints).", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "altinn-app", ConsumerField = "Safe base URL reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
+            { PrerequisiteKey = "altinn-app", ConsumerField = "Safe base URL reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true, OwnerAction = AltinnOwnerAction },
         new("altinn-event-webhook", "Report intake webhook", BirkNext.SourceDomains.SourceConfigurationKeys.EndpointEventWebhook, "Report intake receiver (MU)",
             "Application configuration (Altinn event subscription)", "Where Altinn delivers the app's completed instances.", "Integration Quality Review → Extensions → Altinn")
-            { PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true },
+            {
+                PrerequisiteKey = "integration:report-intake", ConsumerField = "Endpoint reference", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole], AutoApply = true,
+                // The report-intake integration record owns the webhook: IQR and this pack read it there instead of keeping a second copy.
+                IntegrationRequirementKey = ReportIntake, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
+                OwnerAction = "Target Environment → Integrations → Skolenærvær – Altinn report intake",
+            },
         new("altinn-test-server", "Altinn test server", BirkNext.SourceDomains.SourceConfigurationKeys.Server(BirkNext.SourceDomains.SourceEnvironmentRole.Test), AltinnAppSource, AppReference,
             "The test (TT02) host the app is served on.", "Backend Altinn test endpoints") { PrerequisiteKey = "altinn-environment", ScopeHint = AppScope, SourceRoles = [MuSource, AltinnAppSourceRole] },
         new("altinn-form-data-type", "Form data type", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType, AltinnAppSource, ApiDocument,
@@ -193,7 +202,30 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new("altinn-auth-scheme", "Authentication scheme", BirkNext.SourceDomains.SourceConfigurationKeys.AuthenticationScheme, AltinnAppSource, ApiDocument,
             "How callers authenticate. The QA client's registration, redirect URI and scopes are not in the document and are not verified by it.", "Local execution config")
             { PrerequisiteKey = "idporten-client", ScopeHint = AppScope, SourceRoles = [AltinnAppSourceRole] },
+        // Messaging values the Skolenærvær integrations own (Utdanningsdata's CDC stream, Periodeavslutning's event). Their records are the owner;
+        // canonical M2LB evidence is compared, never substituted, and nothing is guessed for an environment that has no record.
+        new("cdc-event-hub", "Education CDC Event Hub", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingEventHubName, "M2LB (SkoleAdapter)", MessagingEvidence,
+            "The Event Hub the BiRK education changes are published on.", "Target Environment → Integrations")
+        {
+            PrerequisiteKey = "integration:education-cdc", SourceRoles = [M2lbSource], IntegrationRequirementKey = EducationCdc, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
+            OwnerAction = "Target Environment → Integrations → Skolenærvær – BiRK CDC → SkoleAdapter",
+        },
+        new("cdc-consumer-group", "Education CDC consumer group", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingEventHubConsumerGroup, "M2LB (SkoleAdapter)", MessagingEvidence,
+            "The consumer group SkoleAdapter reads with (never assumed to be $Default).", "Target Environment → Integrations")
+        {
+            PrerequisiteKey = "integration:education-cdc", SourceRoles = [M2lbSource], IntegrationRequirementKey = EducationCdc, IntegrationField = nameof(IntegrationDefinition.ConsumerGroup),
+            OwnerAction = "Target Environment → Integrations → Skolenærvær – BiRK CDC → SkoleAdapter",
+        },
+        new("period-closed-topic", "Period-closed Service Bus topic", BirkNext.SourceDomains.SourceConfigurationKeys.MessagingServiceBusTopic, "M2LB (Skolenærværsrapport)", MessagingEvidence,
+            "Where Skolenærværsrapport publishes the closed period for Bufdata.", "Target Environment → Integrations")
+        {
+            PrerequisiteKey = "integration:period-closed", SourceRoles = [M2lbSource], IntegrationRequirementKey = PeriodClosed, IntegrationField = nameof(IntegrationDefinition.EndpointOrTopic),
+            OwnerAction = "Target Environment → Integrations → Skolenærvær – Period closed → Bufdata",
+        },
     ];
+
+    private const string AltinnOwnerAction = "Integration Quality Review → Extensions → Altinn test configuration";
+    private const string MessagingEvidence = "Messaging configuration or Infrastructure as Code";
 
     /// <summary>What is stored for the requirements: the app identifier (IQR → Extensions → Altinn) and the backend's test host for that app.</summary>
     public async Task<IReadOnlyDictionary<string, string?>> ConfiguredValuesAsync(JourneyPackContext context, CancellationToken ct)
@@ -241,6 +273,13 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             available ? $"Reference available: app {SkoleNaervaerAltinnReference.AppScope}, form data type, content type, process task and authentication scheme from the Test Pack reference. Reference metadata only — not the deployed app, not runtime verified."
                 : $"Test Pack reference unavailable: {string.Join(" ", status.Reference?.Diagnostics ?? [])}", Mandatory: false) { Source = TestPackReferences.ProvenanceLabel };
     }
+
+    /// <summary>" Known: buf/skolenaervaer (Test Pack reference) — not stored yet …" when the shared resolution knows a value the run needs but its
+    /// consumer has not stored it; runs use stored values only, so the person applies it once (no re-entry). Empty otherwise.</summary>
+    private static string KnownNotStored(JourneyPackContext context, string requirementKey, bool missing) =>
+        missing && context.Resolved(requirementKey) is { ResolvedValue: { } value, ResolvedFrom: var origin, ReviewRequired: false } && origin != BirkNext.SourceDomains.ConfigurationValueOrigin.Configured
+            ? $" Known: {value} ({BirkNext.SourceDomains.SourceConfigurationPrecedence.Label(origin)}) — not stored for runs yet. Use \"Apply safe configuration\" on Skolenærvær Testing or save it in {AltinnOwnerAction}."
+            : "";
 
     /// <summary>The canonical source-evidence binding of the configured integration that fulfils this journey's report-intake requirement.</summary>
     private IntegrationEvidenceBinding? ReportIntakeBinding(IntegrationJourneyDefinition journey, JourneyPackContext context) =>
@@ -922,10 +961,11 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 [
                     new JourneyPrerequisite("altinn-environment", "Altinn TT02 environment", JourneyPrerequisiteCategory.TrustedEnvironment,
                         altinnEnvironment is null ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
-                        altinnEnvironment ?? "Altinn environment Test (TT02) with Production blocked (Integration Quality Review → Altinn test configuration).") { Source = IqrSource },
+                        altinnEnvironment is null ? "Altinn environment Test (TT02) with Production blocked (Integration Quality Review → Altinn test configuration)."
+                            : altinnEnvironment + KnownNotStored(context, "altinn-environment", config.Environment == ExternalTestEnvironment.Unknown)) { Source = IqrSource },
                     new JourneyPrerequisite("altinn-app", "Approved Altinn app", JourneyPrerequisiteCategory.Integration,
                         contract.AppApproved ? JourneyReadinessState.Ready : string.IsNullOrWhiteSpace(config.AppIdentifier) ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
-                        contract.AppDetail, Scenarios: AltinnCallingScenarios) { Source = IqrSource },
+                        contract.AppDetail + KnownNotStored(context, "altinn-app-route", string.IsNullOrWhiteSpace(config.AppIdentifier)), Scenarios: AltinnCallingScenarios) { Source = IqrSource },
                     // Metadata only: the built-in reference supplies the app's declared facts for configuration and planning. It never makes the
                     // app approved, deployed, reachable or runnable — those rows stay their own.
                     AppReferenceRow(context),

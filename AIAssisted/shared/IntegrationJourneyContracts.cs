@@ -365,6 +365,9 @@ public enum TestPackSourceProvider { ImportedSource, TestPackReference }
 public sealed record TestPackReferenceFact(string Label, string Value)
 {
     public string? SemanticKey { get; init; }
+    /// <summary>For a fact composed from other facts of the same document (e.g. a base URL = a server + the app route): their semantic keys, in
+    /// order. Empty: the document declares the fact itself.</summary>
+    public IReadOnlyList<string> DerivedFrom { get; init; } = [];
 }
 
 /// <summary>A Test Pack reference as loaded: what it is, the safe facts it declares, its provenance and what it does not prove. When it cannot

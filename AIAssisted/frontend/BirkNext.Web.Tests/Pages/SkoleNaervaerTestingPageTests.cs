@@ -249,7 +249,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         _journeys.Guidance = AltinnGuidance();
         var page = Open();
         page.WaitForAssertion(() => page.Find("[data-testid=snt-source-requirements-summary]").TextContent
-            .Should().Be("1 of 2 source requirements cannot yet be assessed from bound sources · 1 suggested · 0 configured. Runtime verification is separate."));
+            .Should().Be("1 of 2 configuration values known (0 stored · 1 from canonical source evidence); 1 unresolved. Runtime verification is separate."));
         page.Find("[data-testid=snt-source-values]").Should().NotBeNull("the values stay collapsed");
     }
 
@@ -293,7 +293,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         _journeys.ApplyResult = new([new("altinn-app-route", "Altinn app (org/app)", "buf/skolenaervaer", "Configuration hub/appsettings.Development.json → Altinn:StorageAppId (line 14)")],
             [new("altinn-event-webhook", "Report intake webhook", "A value is already configured; it is kept.")]);
         var page = Open("rapportmottak");
-        page.WaitForAssertion(() => page.Find("[data-testid=snt-apply-source]").TextContent.Should().Be("Apply safe source-derived configuration (1)",
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-apply-source]").TextContent.Should().Be("Apply safe configuration (1)",
             "only an auto-applicable, unconfigured suggestion counts"));
         _journeys.Calls.Should().NotContain("apply-source", "nothing is applied by opening the page");
         page.Find("[data-testid=snt-apply-source]").Click();

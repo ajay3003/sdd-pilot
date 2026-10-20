@@ -147,7 +147,8 @@ public static class SkoleNaervaerAltinnDefaults
 
 public static class IntegrationMessageFlowReadiness
 {
-    public static IntegrationTestReadiness Evaluate(MessageFlowDefinition flow, AltinnTestConfiguration config)
+    /// <param name="ownedEndpoint">The endpoint the configured integration record owns, when the consumer stores no copy of its own.</param>
+    public static IntegrationTestReadiness Evaluate(MessageFlowDefinition flow, AltinnTestConfiguration config, string? ownedEndpoint = null)
     {
         var items = new List<TestReadinessItem>
         {
@@ -155,7 +156,7 @@ public static class IntegrationMessageFlowReadiness
             Item("environment", "Non-production environment", config.Environment is ExternalTestEnvironment.Test or ExternalTestEnvironment.QualityAssurance or ExternalTestEnvironment.Staging, config.Environment.ToString()),
             Item("product", "Altinn product / app", !string.IsNullOrWhiteSpace(config.ProductOrServiceType) && !string.IsNullOrWhiteSpace(config.AppIdentifier), "Needs verification"),
             Item("submission", "Submission mechanism", config.SubmissionMode != ExternalSubmissionMode.Unknown, "Needs verification"),
-            Item("endpoint", "Approved test endpoint reference", !string.IsNullOrWhiteSpace(config.EndpointReference), "Needs verification"),
+            Item("endpoint", "Approved test endpoint reference", !string.IsNullOrWhiteSpace(config.EndpointReference) || !string.IsNullOrWhiteSpace(ownedEndpoint), "Needs verification"),
             Item("authentication", "Authentication and access", config.AuthenticationType != ExternalAuthenticationType.Unknown && !string.IsNullOrWhiteSpace(config.ClientReference), "Needs configuration / verification"),
             Item("certificate", "Certificate/key reference", config.AuthenticationType is not (ExternalAuthenticationType.Certificate or ExternalAuthenticationType.EnterpriseCertificate) ||
                 (!string.IsNullOrWhiteSpace(config.CertificateReference) && !string.IsNullOrWhiteSpace(config.KeyReference)), "Required for selected certificate authentication"),

@@ -15,7 +15,16 @@
                     <span class="sgl-pill sgl-@SourceGuidancePresentation.Tone(item.State)" data-testid="sgl-state">@SourceGuidancePresentation.StateLabel(item.State)</span>
                     @if (item.State == SourceSuggestionState.Conflict) { <span class="visually-hidden" role="status">Configuration conflict for @item.Requirement.Label</span> }
                 </div>
-                @if (item.Value is { } value) { <p class="sgl-value"><span class="sgl-term">Suggested</span> <code data-testid="sgl-value">@value</code></p> }
+                @if (item.ResolvedValue is { } resolved)
+                {
+                    <p class="sgl-value" data-testid="sgl-resolved" data-origin="@item.ResolvedFrom"><span class="sgl-term">Value used</span> <code data-testid="sgl-value">@resolved</code>
+                        <span class="sgl-origin" data-testid="sgl-origin">· @SourceGuidancePresentation.Origin(item)</span></p>
+                }
+                else if (item.Value is { } value) { <p class="sgl-value"><span class="sgl-term">Suggested</span> <code data-testid="sgl-value">@value</code></p> }
+                @if (item.Disagreements.Count > 0)
+                {
+                    <p class="sgl-review" data-testid="sgl-disagreement"><strong>Review required:</strong> @SourceGuidancePresentation.Disagreements(item) — the value used follows the precedence; nothing is changed.</p>
+                }
                 <dl class="sgl-facts">
                     <div><dt>Required source</dt><dd data-testid="sgl-source">@(item.SourceRoleLabel ?? item.Requirement.LogicalSource)</dd></div>
                     @if (!Compact) { <div><dt>Expected evidence</dt><dd data-testid="sgl-evidence">@item.Requirement.EvidenceType</dd></div> }

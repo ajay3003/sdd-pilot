@@ -16,6 +16,14 @@ public sealed record JourneyPackContext(
     /// <summary>The canonical Integration Quality Review source-evidence bindings of this environment (one per integration).</summary>
     public IReadOnlyList<IntegrationEvidenceBinding> Bindings => EvidenceBindings ?? [];
 
+    /// <summary>The pack's configuration values resolved by the one shared precedence (stored → configured integration → canonical source →
+    /// Test Pack reference → pack default), with provenance. Set by the journey service before a pack computes prerequisites; read-only.</summary>
+    public IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion>? ResolvedConfiguration { get; init; }
+
+    /// <summary>One resolved configuration value by requirement key (null when the pack declares none or nothing was resolved).</summary>
+    public BirkNext.SourceDomains.SourceConfigurationSuggestion? Resolved(string requirementKey) =>
+        ResolvedConfiguration?.FirstOrDefault(item => string.Equals(item.Requirement.Key, requirementKey, StringComparison.Ordinal));
+
     /// <summary>The snapshot an integration is bound to, if its binding still resolves to a stored snapshot.</summary>
     public IqrSourceSnapshot? BoundSnapshot(string integrationId) =>
         Bindings.FirstOrDefault(b => b.IntegrationId == integrationId) is { } binding ? SourceSnapshots.FirstOrDefault(s => s.Id == binding.SnapshotId) : null;

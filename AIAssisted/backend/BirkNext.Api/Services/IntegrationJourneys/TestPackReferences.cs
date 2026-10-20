@@ -61,6 +61,8 @@ public static class TestPackReferences
         {
             if (string.IsNullOrWhiteSpace(fact.Label) || string.IsNullOrWhiteSpace(fact.Value)) problems.Add("A reference fact has no label or value.");
             else if (Integrations.MessageFlowCredentialGuard.Reason(fact.Value) is { } reason) problems.Add($"{fact.Label} is not a safe reference value: {reason}");
+            if (fact.DerivedFrom.FirstOrDefault(key => document.Facts.All(other => other.SemanticKey != key)) is { } missingSource)
+                problems.Add($"{fact.Label} is derived from {missingSource}, which the reference does not declare.");
         }
         return problems.Count > 0
             ? (view with { Diagnostics = [.. problems.Distinct()] }, false)

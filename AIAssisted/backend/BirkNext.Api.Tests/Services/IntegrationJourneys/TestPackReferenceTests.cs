@@ -33,6 +33,7 @@ public sealed class TestPackReferenceTests
         view.Facts.Select(fact => (fact.Label, fact.Value)).Should().Equal(
             ("App identifier", "buf/skolenaervaer"), ("API title", "Altinn 3 App API for School attendance"),
             ("Server · Local", "http://local.altinn.cloud"), ("Server · TT02", "https://buf.apps.tt02.altinn.no"), ("Server · Production", "https://buf.apps.altinn.no"),
+            ("App base URL · TT02", "https://buf.apps.tt02.altinn.no/buf/skolenaervaer"),
             ("Form data type", "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn"), ("Content type", "application/xml"),
             ("Process task", "Task_1"), ("Task name", "Utfylling"), ("Authentication scheme", "Bearer JWT"), ("Security scheme name", "AltinnToken"),
             ("Token providers", "maskinporten, id-porten"));
@@ -53,7 +54,13 @@ public sealed class TestPackReferenceTests
         if (OpenApiConfigurationEvidenceTests.Fixture() is not { } text) return;
         var values = SourceEvidenceFixtures.Analyze(("skolenaervaer.json", text)).ConfigurationValues!.Values;
         var (view, _) = TestPackReferences.Load(SkoleNaervaerAltinnReference.Reference("altinn-app"));
-        foreach (var fact in view.Facts.Where(fact => fact.SemanticKey is not null))
+        foreach (var fact in view.Facts.Where(fact => fact.SemanticKey is not null && fact.DerivedFrom.Count > 0))
+        {
+            // A composed fact is exactly its parts as the document declares them (server + "/" + app route), never an invented address.
+            var parts = fact.DerivedFrom.Select(key => values.Single(value => value.SemanticKey == key).Value!.TrimEnd('/')).ToArray();
+            fact.Value.Should().Be(string.Join("/", parts), $"{fact.Label} is composed from {string.Join(" + ", fact.DerivedFrom)}");
+        }
+        foreach (var fact in view.Facts.Where(fact => fact.SemanticKey is not null && fact.DerivedFrom.Count == 0))
         {
             var declared = values.Where(value => value.SemanticKey == fact.SemanticKey).Select(value => value.Value).Distinct().ToArray();
             string.Join(", ", declared).Should().Be(fact.Value, $"{fact.Label} must be exactly what the document declares");

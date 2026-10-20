@@ -8,6 +8,8 @@
 .sgl-attention { border-color: #b45309; background: #fffbeb; color: #78350f; }
 .sgl-muted { border-color: #94a3b8; background: #f3f4f6; color: #374151; }
 .sgl-value { margin: .35rem 0 0; }
+.sgl-origin { color: #475467; font-size: .82rem; }
+.sgl-review { margin: .35rem 0 0; font-size: .84rem; padding: .3rem .5rem; border-left: 3px solid #b45309; background: #fffbeb; }
 .sgl-value code { overflow-wrap: anywhere; word-break: break-all; }
 .sgl-term, .sgl-facts dt { color: #475467; font-weight: 600; font-size: .8rem; }
 .sgl-facts { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: .35rem 0 0; font-size: .84rem; }

@@ -18,7 +18,11 @@
         {
             <p class="svh-text"><span class="svh-label">@Origin</span> <code data-testid="@($"{TestId}-value")">@value</code>
                 <span class="svh-muted">· @string.Join("; ", provenance) · not runtime verified</span></p>
-            @if (!string.Equals(value, Current?.Trim(), StringComparison.OrdinalIgnoreCase))
+            @if (!CanUse)
+            {
+                <p class="svh-muted" data-testid="@($"{TestId}-owned")">Read from its owner — nothing to copy here; change it where it is configured.</p>
+            }
+            else if (!string.Equals(value, Current?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 <p class="svh-text">
                     @if (!string.IsNullOrWhiteSpace(Current)) { <span class="svh-muted" data-testid="@($"{TestId}-differs")">Your value differs from the source. It is kept unless you choose otherwise. </span> }
@@ -40,4 +44,6 @@
     [Parameter] public string TestId { get; set; } = "source-value-hint";
     /// <summary>Where the suggestion comes from ("Suggested from bound source", "From Test Pack reference").</summary>
     [Parameter] public string Origin { get; set; } = "Suggested from bound source";
+    /// <summary>False when the value is owned elsewhere (e.g. by an integration record): it is shown, never copied into this form.</summary>
+    [Parameter] public bool CanUse { get; set; } = true;
 }

@@ -45,9 +45,13 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         Enum.GetValues<SourceSuggestionState>().Select(SourceGuidancePresentation.StateLabel).Should().OnlyHaveUniqueItems()
             .And.BeEquivalentTo(["Not in the bound source", "Available but not bound", "Suggested from bound source", "Configuration conflict", "Required source missing", "From Test Pack reference"]);
         Suggested().RuntimeVerified.Should().BeFalse();
-        SourceGuidancePresentation.Configured(Suggested()).Should().Be("Not configured");
+        SourceGuidancePresentation.Configured(Suggested()).Should().Be("Not stored — known from: Canonical source evidence");
+        SourceGuidancePresentation.Configured(new(Requirement(), SourceSuggestionState.SourceMissing)).Should().Be("Not configured");
         SourceGuidancePresentation.Configured(Suggested("https://other.invalid")).Should().Be("https://other.invalid (differs from source)");
-        SourceGuidancePresentation.Configured(Suggested() with { Requirement = Requirement(null) }).Should().Be("No field to configure here");
+        SourceGuidancePresentation.Configured(Suggested() with { Requirement = Requirement(null) }).Should().Be("No stored field — known from: Canonical source evidence",
+            "a known value is never shown as missing or as a generic 'no field'");
+        SourceGuidancePresentation.Configured(new(Requirement(null) with { OwnerAction = "Target Environment → Integrations" }, SourceSuggestionState.SourceMissing))
+            .Should().Be("Unresolved — Target Environment → Integrations", "an unresolved value names where it is configured");
         SourceGuidancePresentation.Provenance(Suggested()).Should().Equal("OpenAPI · api/parcels.json → servers[0]");
     }
 
@@ -275,6 +279,57 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-unbound]"));
         cut.FindAll("[data-testid=mfr-app-suggestion]").Should().BeEmpty();
         cut.FindAll("[data-testid=mfr-use-source-values]").Should().BeEmpty("the newest snapshot never stands in for a binding");
+    }
+
+    // ── One shared resolution in IQR: known values shown with their origin, owned values read (not copied) ──────────────────
+
+    private const string Webhook = "https://mu.example.test/api/altinn/webhook";
+
+    private static SourceConfigurationSuggestion Tier(string key, string field, string semanticKey, SourceSuggestionState state = SourceSuggestionState.SourceMissing,
+        string? reference = null, string? integration = null, string? fallback = null, string? configured = null) =>
+        SourceConfigurationPrecedence.Resolve(new SourceConfigurationSuggestion(new SourceConfigurationRequirement(key, field, semanticKey, "App", "Configuration", "p", "IQR") { ConsumerField = field, AutoApply = true }, state)
+        {
+            ReferenceValue = reference, IntegrationValue = integration, IntegrationName = integration is null ? null : "Demo – report intake", DefaultValue = fallback, ConfiguredValue = configured,
+        });
+
+    private static TestPackSourceGuidance ResolvedGuidance() => new("demo",
+    [
+        Tier("env", "Environment", SourceConfigurationKeys.ApplicationEnvironment, fallback: "Test"),
+        Tier("route", "App identifier", SourceConfigurationKeys.ApplicationRoute, SourceSuggestionState.Reference, reference: "demo/app"),
+        Tier("base", "Safe base URL reference", SourceConfigurationKeys.ApplicationBaseUrl, SourceSuggestionState.Reference, reference: "https://demo.apps.test.invalid/demo/app"),
+        Tier("hook", "Endpoint reference", SourceConfigurationKeys.EndpointEventWebhook, integration: Webhook),
+    ]);
+
+    [Fact]
+    public void Iqr_shows_the_known_values_with_their_origin_and_only_the_unresolved_ones_as_still_to_configure()
+    {
+        var (api, cut) = RenderPanel(new AltinnTestConfiguration(), ResolvedGuidance(), bound: false);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-known-count]").TextContent.Should().Be("4 of 6 known"));
+        var known = cut.FindAll("[data-testid=mfr-known-item]").ToDictionary(item => item.GetAttribute("data-field")!, item => item.TextContent);
+        known["Environment"].Should().Contain("Test").And.Contain("Test Pack default");
+        known["App identifier"].Should().Contain("demo/app").And.Contain("Test Pack reference");
+        known["Safe base URL reference"].Should().Contain("https://demo.apps.test.invalid/demo/app");
+        known["Endpoint reference"].Should().Contain(Webhook).And.Contain("Configured integration Demo – report intake");
+        cut.Find("[data-testid=mfr-unresolved]").TextContent.Should().Be("Still to configure here: Altinn product / service type, Submission mode");
+
+        // The integration-owned endpoint is read, never copied: no "use" button, and filling only touches the other empty fields.
+        cut.Find("[data-testid=mfr-endpoint-suggestion-owned]").TextContent.Should().Contain("Read from its owner");
+        cut.FindAll("[data-testid=mfr-endpoint-suggestion-use]").Should().BeEmpty();
+        cut.Find("[data-testid=mfr-use-source-values]").Click();
+        Input(cut, "App identifier").Should().Be("demo/app");
+        Input(cut, "Safe base URL reference").Should().Be("https://demo.apps.test.invalid/demo/app");
+        Input(cut, "Endpoint reference").Should().BeEmpty("the integration record owns it");
+        api.Verify(x => x.SaveMessageFlowReviewDetailedAsync(It.IsAny<string>(), It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()), Times.Never(), "nothing is saved by opening or filling");
+    }
+
+    [Fact]
+    public void A_stored_value_wins_and_a_different_known_value_is_shown_for_review()
+    {
+        var guidance = new TestPackSourceGuidance("demo", [Tier("route", "App identifier", SourceConfigurationKeys.ApplicationRoute, SourceSuggestionState.Reference, reference: "demo/app", configured: "demo/other")]);
+        var cut = Render<SourceGuidanceList>(p => p.Add(x => x.Suggestions, guidance.Suggestions));
+        cut.Find("[data-testid=sgl-resolved]").GetAttribute("data-origin").Should().Be(nameof(ConfigurationValueOrigin.Configured));
+        cut.Find("[data-testid=sgl-value]").TextContent.Should().Be("demo/other");
+        cut.Find("[data-testid=sgl-disagreement]").TextContent.Should().Contain("Test Pack reference: demo/app").And.Contain("nothing is changed");
     }
 
     [Fact]

@@ -73,8 +73,9 @@ public sealed class IntegrationJourneyService(
         foreach (var pack in packs.Packs)
         {
             var journeys = new List<IntegrationJourneyView>();
+            var packContext = context with { ResolvedConfiguration = await ResolveConfigurationAsync(pack, context, ct) };
             foreach (var journey in pack.Journeys.OrderBy(item => item.Order))
-                journeys.Add(await ViewAsync(pack, journey, context, ct));
+                journeys.Add(await ViewAsync(pack, journey, packContext, ct));
             views.Add(new IntegrationJourneyPackView
             {
                 PackId = pack.PackId, PackVersion = pack.PackVersion, DisplayName = pack.DisplayName, Description = pack.Description,
@@ -157,10 +158,25 @@ public sealed class IntegrationJourneyService(
         if (!sources.SourceAnalysisEnabled)
             return new TestPackSourceGuidance(pack.PackId, []) { Limitations = [ReviewSourceEvidenceProvider.Disabled] };
         var context = await ContextAsync(environmentId, ct);
+        return new TestPackSourceGuidance(pack.PackId, await ResolveConfigurationAsync(pack, context, ct))
+        {
+            Sources = TestPackSources.Statuses(pack, context),
+            Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
+                "Declared in source is not runtime verified."],
+        };
+    }
+
+    /// <summary>
+    /// The pack's configuration values, resolved once by the shared precedence for every consumer (Integration Quality Review, the test pack's
+    /// pages and prerequisites): the value its consumer stored, else the configured integration record that owns it, else the canonical bound
+    /// source, else the Test Pack reference, else the pack's safe default. Lower tiers that disagree stay visible. Reading stores nothing.
+    /// </summary>
+    internal async Task<IReadOnlyList<SourceConfigurationSuggestion>> ResolveConfigurationAsync(IIntegrationJourneyPack pack, JourneyPackContext context, CancellationToken ct)
+    {
+        if (pack.RequiredConfiguration.Count == 0) return [];
         var configured = await pack.ConfiguredValuesAsync(context, ct);
-        var statuses = TestPackSources.Statuses(pack, context);
         var packBound = BoundSnapshots(pack, context);
-        var suggestions = pack.RequiredConfiguration.Select(requirement =>
+        IReadOnlyList<SourceConfigurationSuggestion> suggestions = pack.RequiredConfiguration.Select(requirement =>
         {
             var roles = requirement.SourceRoles.Select(key => TestPackSources.Role(pack, key)).OfType<TestPackSourceRole>().ToArray();
             if (roles.Length == 0) return SourceAnalysis.SourceConfigurationGuidance.Suggest([requirement], packBound, context.SourceSnapshots, configured)[0];
@@ -194,14 +210,46 @@ public sealed class IntegrationJourneyService(
                     ? suggestion with { State = SourceSuggestionState.AvailableNotBound, UnboundSources = [.. available.Select(item => item.Archive.FileName).Distinct()],
                         Detail = $"Needs {labels} source evidence: {string.Join(", ", available.Select(item => item.Archive.FileName).Distinct())} is available but not bound." }
                     : suggestion with { State = SourceSuggestionState.SourceMissing, Detail = $"{labels} source is missing. Expected evidence: {requirement.EvidenceType}." };
-        }).ToArray();
-        return new TestPackSourceGuidance(pack.PackId, suggestions)
-        {
-            Sources = statuses,
-            Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
-                "Declared in source is not runtime verified."],
-        };
+        }).Select(suggestion => WithIntegrationAndDefault(pack, context, suggestion)).ToArray();
+        return suggestions;
     }
+
+    /// <summary>Adds the tiers that are not source evidence — the configured integration record that owns the value, and the pack's safe
+    /// default — and resolves the value by the shared precedence.</summary>
+    private static SourceConfigurationSuggestion WithIntegrationAndDefault(IIntegrationJourneyPack pack, JourneyPackContext context, SourceConfigurationSuggestion suggestion)
+    {
+        var requirement = suggestion.Requirement;
+        var owners = Array.Empty<(IntegrationDefinition Record, string Value)>();
+        if (requirement.IntegrationRequirementKey is { } key && requirement.IntegrationField is { } field
+            && pack.Journeys.SelectMany(journey => journey.Integrations).FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.Ordinal)) is { } journeyRequirement)
+            owners = [.. context.Catalog.Integrations.Where(integration => pack.Matches(journeyRequirement, integration))
+                .OrderByDescending(integration => integration.Enabled).ThenBy(integration => integration.Id, StringComparer.Ordinal)
+                .Select(integration => (Record: integration, Value: IntegrationFieldValue(integration, field)))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Value)).Select(item => (item.Record, item.Value!.Trim()))];
+        var resolved = SourceConfigurationPrecedence.Resolve(suggestion with
+        {
+            IntegrationValue = owners.Length > 0 ? owners[0].Value : null, IntegrationName = owners.Length > 0 ? owners[0].Record.DisplayName : null,
+            DefaultValue = requirement.DefaultValue,
+        });
+        // Two configured records of the same integration that disagree: the first (enabled) one is used, the other is shown, never merged.
+        var others = owners.Skip(1).Where(item => !SourceConfigurationPrecedence.Agrees(owners[0].Value, item.Value, false))
+            .Select(item => new ConfigurationAlternative(ConfigurationValueOrigin.ConfiguredIntegration, item.Value));
+        return resolved with { Disagreements = [.. resolved.Disagreements, .. others] };
+    }
+
+    /// <summary>The value of one integration record field, by its declared name (never anything sensitive: records hold references only).</summary>
+    internal static string? IntegrationFieldValue(IntegrationDefinition integration, string field) => field switch
+    {
+        nameof(IntegrationDefinition.DisplayName) => integration.DisplayName,
+        nameof(IntegrationDefinition.Kind) => integration.Kind.ToString(),
+        nameof(IntegrationDefinition.SystemName) => integration.SystemName,
+        nameof(IntegrationDefinition.Producer) => integration.Producer,
+        "Consumer" => integration.Consumer.DisplayName,
+        nameof(IntegrationDefinition.EndpointOrTopic) => integration.EndpointOrTopic,
+        nameof(IntegrationDefinition.SourceResource) => integration.SourceResource,
+        nameof(IntegrationDefinition.ConsumerGroup) => integration.ConsumerGroup,
+        _ => null,
+    };
 
     public async Task<SourceSetupView> SourceSetupAsync(string? environmentId, CancellationToken ct)
     {
@@ -256,26 +304,32 @@ public sealed class IntegrationJourneyService(
         var notApplied = new List<SourceConfigurationNotApplied>();
         foreach (var suggestion in guidance.Suggestions.Where(item => item.Requirement.AutoApply))
         {
-            var reason = suggestion.State switch
+            // Only values the shared precedence resolved from evidence, the reference or the pack default are stored, into EMPTY fields; a value
+            // a configured integration owns is read from that record and never copied (two copies would drift).
+            var reason = suggestion switch
             {
-                SourceSuggestionState.Conflict => "Review required: the bound source declares different values.",
-                SourceSuggestionState.AvailableNotBound => "Available but not bound: bind the snapshot in Integration Quality Review → Evidence first.",
-                SourceSuggestionState.NotDeclared => "Not declared in the bound source.",
-                _ when suggestion.ConfiguredValue is not null => "A value is already configured; it is kept.",
-                _ when suggestion.Value is null || Integrations.MessageFlowCredentialGuard.Reason(suggestion.Value) is not null => "The value is not a safe reference.",
+                { State: SourceSuggestionState.Conflict } => "Review required: the bound source declares different values.",
+                { ConfiguredValue: not null } => "A value is already configured; it is kept.",
+                { ReviewRequired: true } => "Review required: the sources of this value disagree.",
+                { ResolvedFrom: ConfigurationValueOrigin.ConfiguredIntegration } => $"Read from the configured integration {suggestion.IntegrationName}; it is not copied.",
+                { ResolvedFrom: ConfigurationValueOrigin.None, State: SourceSuggestionState.AvailableNotBound } => "Available but not bound: bind the snapshot in Integration Quality Review → Evidence first.",
+                { ResolvedFrom: ConfigurationValueOrigin.None, State: SourceSuggestionState.NotDeclared } => "Not declared in the bound source.",
+                { ResolvedValue: null } => "No safe value is known.",
+                _ when Integrations.MessageFlowCredentialGuard.Reason(suggestion.ResolvedValue!) is not null => "The value is not a safe reference.",
                 _ => null,
             };
             if (reason is null) eligible[suggestion.Requirement.Key] = suggestion;
             else notApplied.Add(new(suggestion.Requirement.Key, suggestion.Requirement.Label, reason));
         }
         if (eligible.Count == 0) return new SourceConfigurationApplyResult([], notApplied);
-        var stored = await pack.ApplyConfigurationAsync(await ContextAsync(environmentId, ct), eligible.ToDictionary(item => item.Key, item => item.Value.Value!), ct);
+        var stored = await pack.ApplyConfigurationAsync(await ContextAsync(environmentId, ct), eligible.ToDictionary(item => item.Key, item => item.Value.ResolvedValue!), ct);
         foreach (var key in eligible.Keys.Except(stored))
             notApplied.Add(new(key, eligible[key].Requirement.Label, "Not stored: the field is not empty or the consumer does not accept this value."));
         return new SourceConfigurationApplyResult(
-            [.. stored.Where(eligible.ContainsKey).Select(key => new SourceConfigurationApplied(key, eligible[key].Requirement.Label, eligible[key].Value!,
-                eligible[key].State == SourceSuggestionState.Reference ? TestPackReferences.ProvenanceLabel
-                    : string.Join("; ", eligible[key].Candidates.SelectMany(candidate => candidate.Provenance).Select(SourceAnalysis.SourceConfigurationGuidance.Provenance).Distinct())))],
+            [.. stored.Where(eligible.ContainsKey).Select(key => new SourceConfigurationApplied(key, eligible[key].Requirement.Label, eligible[key].ResolvedValue!,
+                eligible[key].ResolvedFrom == ConfigurationValueOrigin.CanonicalSource
+                    ? string.Join("; ", eligible[key].Candidates.SelectMany(candidate => candidate.Provenance).Select(SourceAnalysis.SourceConfigurationGuidance.Provenance).Distinct())
+                    : SourceConfigurationPrecedence.Label(eligible[key].ResolvedFrom)))],
             notApplied);
     }
 
@@ -514,6 +568,7 @@ public sealed class IntegrationJourneyService(
                 Mandatory: false) { Source = "BirkNext" });
         }
 
+        if (context.ResolvedConfiguration is null) context = context with { ResolvedConfiguration = await ResolveConfigurationAsync(pack, context, ct) };
         prerequisites.AddRange(await pack.PrerequisitesAsync(journey, context, ct));
         var readiness = Readiness(prerequisites);
         var lastRun = (await history.ListAsync(new IntegrationJourneyHistoryQuery(context.EnvironmentId, pack.PackId, journey.JourneyId), 1, ct)).FirstOrDefault();
