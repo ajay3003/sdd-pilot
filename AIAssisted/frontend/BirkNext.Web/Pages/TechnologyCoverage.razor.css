@@ -1,15 +1,58 @@
 .tc-page { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
 .tc-title { margin: 0; font-size: 1.5rem; }
-.tc-section { display: grid; gap: .4rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
-/* <details> does not lay its content out as a grid in every browser: bound it explicitly so the wide matrices scroll inside. */
-details.tc-section { display: block; max-width: 100%; overflow: hidden; }
-details.tc-section .sd-scroll { max-width: 100%; }
-.tc-section h2 { margin: 0; font-size: 1.1rem; }
-.tc-section h3 { margin: .6rem 0 .2rem; font-size: .95rem; }
-.tc-section > summary { cursor: pointer; font-weight: 600; }
+.tc-section { display: grid; gap: .6rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.tc-section > section { display: grid; gap: .4rem; min-width: 0; }
+.tc-section h2 { margin: 0; font-size: 1.2rem; }
+.tc-section h3 { margin: .4rem 0 0; font-size: 1.02rem; }
+.tc-project { border-bottom: 1px solid #d5dbe5; padding-bottom: 1rem; }
 .tc-small { font-size: .9rem !important; overflow-wrap: anywhere; }
-.tc-group th { background: #eef2f7; font-size: .8rem; text-transform: uppercase; letter-spacing: .02em; }
-.tc-limit { font-size: .8rem; color: #374151; min-width: 14rem; }
-.tc-na { color: #4b5563; }
-.tc-detected-cell { min-width: 14rem; }
-.tc-matrix { min-width: 72rem !important; }
+.tc-limit { font-size: .82rem; color: #374151; }
+.tc-provenance { font-size: .86rem; }
+.tc-provenance > summary, .tc-unanalyzed > summary, .tc-category > summary, .tc-reference details > summary { cursor: pointer; font-weight: 600; }
+.tc-facts { display: grid; gap: .2rem; margin: .4rem 0 0; }
+.tc-facts div { display: flex; gap: .5rem; flex-wrap: wrap; }
+.tc-facts dt { color: #4b5563; min-width: 7rem; }
+.tc-facts dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+
+/* What needs attention: compact list + one row of actions. Neutral lines are information, not warnings. */
+.tc-attention { border: 1px solid #d5dbe5; border-left: 4px solid #b45309; border-radius: .5rem; padding: .6rem .9rem; background: var(--surface, #fff); }
+.tc-attention-list { margin: .3rem 0; padding-left: 1.1rem; display: grid; gap: .2rem; }
+.tc-attention-list .tc-neutral { color: #4b5563; }
+.tc-actions { display: flex; flex-wrap: wrap; gap: .4rem .6rem; margin-top: .3rem; }
+.tc-action { display: inline-block; font-weight: 600; }
+.tc-link { background: none; border: 0; padding: 0; color: #174d86; text-decoration: underline; cursor: pointer; font: inherit; text-align: left; }
+.tc-link:focus-visible, .tc-action:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+
+/* Tables: words wrap at word boundaries only ("anywhere" collapses columns to single characters when they are measured). */
+.tc-page th, .tc-page td { overflow-wrap: break-word; word-break: normal; }
+.tc-stack { min-width: 44rem; }
+.tc-split { display: grid; gap: .1rem; margin: .3rem 0 0; font-size: .82rem; }
+.tc-split div { display: flex; gap: .4rem; flex-wrap: wrap; }
+.tc-split dt { font-weight: 600; }
+.tc-split dd { margin: 0; }
+.tc-filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: flex-end; margin: .2rem 0; }
+.tc-filters label { display: grid; gap: .15rem; font-size: .85rem; font-weight: 600; }
+.tc-filters input, .tc-filters select { min-height: 2.1rem; max-width: 100%; }
+.tc-details-row td { background: #f8fafc; }
+.tc-dimensions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .35rem .8rem; margin: .2rem 0 .4rem; }
+.tc-dimensions dt { font-size: .76rem; color: #4b5563; }
+.tc-dimensions dd { margin: 0; }
+.tc-detail-text { margin: .2rem 0; font-size: .84rem; overflow-wrap: anywhere; }
+.tc-files { margin: 0; padding-left: 1rem; }
+.tc-files code { overflow-wrap: anywhere; }
+.tc-unanalyzed { margin-top: .4rem; }
+.tc-category { margin: .3rem 0; border: 1px solid #e5e7eb; border-radius: .4rem; padding: .35rem .6rem; }
+/* <details> does not lay its content out as a grid in every browser: bound it explicitly so the wide matrices scroll inside their region. */
+.tc-reference details, .tc-unanalyzed { display: block; max-width: 100%; min-width: 0; overflow: hidden; }
+.tc-reference .sd-scroll, .tc-unanalyzed .sd-scroll { max-width: 100%; }
+.tc-matrix { min-width: 64rem !important; }
+
+/* Phones: the project tables become labelled stacks (one record per block) instead of tiny multi-column text. */
+@media (max-width: 640px) {
+    .tc-stack { min-width: 0 !important; }
+    .tc-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .tc-stack tr, .tc-stack th, .tc-stack td { display: block; width: 100%; }
+    .tc-stack tr { border-bottom: 1px solid #d5dbe5; padding: .4rem 0; }
+    .tc-stack td, .tc-stack th { border: 0 !important; padding: .15rem .2rem !important; }
+    .tc-stack td[data-label]::before { content: attr(data-label); display: block; font-size: .74rem; color: #4b5563; font-weight: 600; }
+}

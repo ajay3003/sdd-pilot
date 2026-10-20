@@ -91,8 +91,13 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         cut.Find("[data-testid=tc-unsupported-files]").TextContent.Should().Be("3");
         var kafka = cut.Find("[data-testid=tc-tech-integration\\.kafka]");
         kafka.GetAttribute("data-overall").Should().Be("Partial");
-        kafka.TextContent.Should().Contain("Inferred").And.Contain("No broker");
-        kafka.QuerySelectorAll(".sd-pill").Select(p => p.TextContent).Should().Contain(["Partial", "Not supported"]);
+        kafka.TextContent.Should().Contain("Inferred");
+        kafka.QuerySelector("[data-testid=tc-overall]")!.TextContent.Should().Be("Partial");
+        // Per-dimension support is one click away; a missing capability is worded as BirkNext's, not the project's.
+        kafka.QuerySelector("[data-testid=tc-details-toggle]")!.Click();
+        var details = cut.Find("[data-testid=tc-details-integration\\.kafka]");
+        details.TextContent.Should().Contain("No broker");
+        details.QuerySelectorAll(".sd-pill").Select(p => p.TextContent).Should().Contain(["Partial", "Not available in BirkNext"]);
         cut.Find("[data-testid=tc-tech-lang\\.java]").GetAttribute("data-overall").Should().Be("Unsupported");
         cut.FindAll(".sd-pill-attention").Should().BeEmpty("unsupported is a tool limitation, never the failure tone");
         cut.Find("[data-testid=tc-review-source-analysis]").GetAttribute("data-status").Should().Be("Unsupported");
