@@ -1,0 +1,85 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services.ProjectImport
+
+@* Source setup of every registered test pack that declares logical sources, rendered from the pack's own metadata (requirement level, expected
+   artifact, capabilities, journeys) and the backend's resolution (bound / available / missing / review required). Generic: it names no pack. *@
+@foreach (var pack in Setup.Packs)
+{
+    var headingId = $"pi-setup-{Slug(pack.PackId)}";
+    <section class="pi-card pi-setup" aria-labelledby="@headingId" data-testid="pi-source-setup" data-pack="@pack.PackId">
+        <h2 id="@headingId">@pack.DisplayName source setup</h2>
+        <p class="pi-muted">The logical sources this test pack reads. A source package (ZIP) is matched by its content, not by its file name. Bound means the canonical
+            Integration Quality Review binding@(Setup.BindingsRead ? " of the selected target environment" : "")@(Setup.BindingsRead ? "" : "; no target environment is selected, so nothing reads as bound").</p>
+        <ul class="pi-setup-list" aria-label="@($"{pack.DisplayName} logical sources")">
+            @foreach (var source in pack.Sources)
+            {
+                var action = SourceSetupPresentation.Action(source, ImportAnchor);
+                <li class="pi-setup-row" data-testid="pi-setup-source" data-role="@source.Role.Key" data-state="@source.State" data-requirement="@source.Role.Requirement">
+                    <div class="pi-setup-head">
+                        <strong class="pi-setup-name">@source.Role.Label</strong>
+                        <span class="pi-badge pi-badge-neutral" data-testid="pi-setup-requirement">@SourceSetupPresentation.RequirementLabel(source.Role.Requirement)</span>
+                        <span class="pi-badge pi-badge-@SourceSetupPresentation.StateTone(source.State)" data-testid="pi-setup-state">@SourceSetupPresentation.StateLabel(source.State)</span>
+                    </div>
+                    <p class="pi-muted" data-testid="pi-setup-requirement-text">@SourceSetupPresentation.RequirementText(source.Role)</p>
+                    <dl class="pi-setup-facts">
+                        <div><dt>Source package</dt><dd data-testid="pi-setup-packages">@SourceSetupPresentation.PackagesText(source)</dd></div>
+                        @if (BoundTo(source) is { Count: > 0 } boundTo)
+                        {
+                            <div><dt>Binding</dt><dd data-testid="pi-setup-binding">Bound to @string.Join(", ", boundTo)</dd></div>
+                        }
+                        else if (source.Integrations.Count > 0)
+                        {
+                            <div><dt>Integrations</dt><dd data-testid="pi-setup-integrations">@string.Join(", ", source.Integrations)</dd></div>
+                        }
+                        @if (source.Candidates.SelectMany(c => c.Technologies).Distinct().ToList() is { Count: > 0 } technologies)
+                        {
+                            <div><dt>Technology</dt><dd>@string.Join(", ", technologies)</dd></div>
+                        }
+                        @if (source.Role.Capabilities.Count > 0)
+                        {
+                            <div><dt>Used for</dt><dd>@string.Join(", ", source.Role.Capabilities)</dd></div>
+                        }
+                        @if (SourceSetupPresentation.JourneysText(source, pack.JourneyNames) is { Length: > 0 } journeys)
+                        {
+                            <div><dt>Used by</dt><dd data-testid="pi-setup-journeys">@journeys</dd></div>
+                        }
+                    </dl>
+                    @if (source.State != TestPackSourceState.Bound && source.State != TestPackSourceState.Available)
+                    {
+                        <p class="pi-setup-detail" data-testid="pi-setup-detail">@source.Detail</p>
+                    }
+                    @if (action is { } next)
+                    {
+                        <p class="pi-actions"><a href="@next.Href" data-testid="pi-setup-action">@next.Text</a></p>
+                    }
+                    @if (source.Candidates.Count > 1)
+                    {
+                        <details class="pi-details" data-testid="pi-setup-candidates">
+                            <summary>@source.Candidates.Count matching snapshots of @source.Role.Label</summary>
+                            <ul class="pi-list">
+                                @foreach (var candidate in source.Candidates)
+                                {
+                                    <li>@candidate.ArchiveFileName · <code title="@candidate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(candidate.Fingerprint)</code> ·
+                                        @candidate.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(candidate.Bound ? "Bound (canonical)" : "Available, not bound")</li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public SourceSetupView Setup { get; set; } = new();
+    /// <summary>Where a missing source is imported on the hosting page.</summary>
+    [Parameter] public string ImportAnchor { get; set; } = "#pi-choose-heading";
+
+    /// <summary>The IQR integrations whose canonical binding is this source's bound snapshot (role integrations only).</summary>
+    private IReadOnlyList<string> BoundTo(TestPackSourceStatus source) =>
+        source.Candidates.Where(c => c.Bound).SelectMany(c => Setup.Snapshots.FirstOrDefault(s => s.SnapshotId == c.SnapshotId)?.BoundIntegrations ?? [])
+            .Where(name => source.Integrations.Count == 0 || source.Integrations.Contains(name)).Distinct().ToList();
+
+    private static string Slug(string value) => new(value.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
+}

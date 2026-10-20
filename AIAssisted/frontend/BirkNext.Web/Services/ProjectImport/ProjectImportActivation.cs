@@ -53,6 +53,9 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
 {
     public const string Origin = "ProjectImport";
 
+    /// <summary>Every import recorded in this workspace (history), the current one included.</summary>
+    public IReadOnlyList<SddProjectImportRecord> Imports => repository.SddLifecycle.ProjectImports;
+
     public SddProjectImportRecord? Current =>
         repository.SddLifecycle.CurrentProjectImportId is { } id ? repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == id) : null;
 
@@ -100,6 +103,25 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         ApplySource(record, source, sourceDetected: true, stagingId ?? record.SourceStagingId, stagedUntil);
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
+    }
+
+    /// <summary>
+    /// Makes an earlier import the current project again, from what the repository already holds: its revisions (with their selections) in its
+    /// own scope and its recorded source snapshot id. Nothing is uploaded, re-imported or re-analyzed, no Source Analysis snapshot is created, and
+    /// IQR evidence bindings are not touched (they are per target environment, owned by Integration Quality Review). False for an unknown import.
+    /// </summary>
+    public bool UseAsCurrent(string importId)
+    {
+        var lifecycle = repository.SddLifecycle;
+        if (lifecycle.ProjectImports.All(i => i.ImportId != importId)) return false;
+        if (lifecycle.CurrentProjectImportId == importId) return true;
+        // A selected Sample Project is replaced by the imported project (one current project).
+        repository.ProjectName = null;
+        lifecycle.CurrentProjectImportId = importId;
+        repository.RefreshSessionArtifacts();
+        updates?.NotifyMutation();
+        repository.NotifyArtifactsChanged();
+        return true;
     }
 
     /// <summary>Leaves the imported project: the workspace returns to the manual workspace. The import's revisions stay as history.</summary>

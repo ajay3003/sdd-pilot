@@ -1,0 +1,336 @@
+using BirkNext.Integrations;
+using BirkNext.ProjectImport;
+using BirkNext.Web.Models;
+using BirkNext.Web.Services;
+using BirkNext.Web.Services.ProjectImport;
+using BirkNext.Web.Tests.Services;
+using Bunit;
+using FluentAssertions;
+using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using ProjectImportPage = BirkNext.Web.Pages.ProjectImport;
+
+namespace BirkNext.Web.Tests.Pages;
+
+/// <summary>
+/// Import Project shows what already exists before asking for another upload: previously imported projects (source-only ones included, the
+/// current one excluded), a test pack's source setup rendered from its generic source-role metadata, and an exact-duplicate notice that never
+/// chooses for the tester. Reusing an import uploads nothing, creates no snapshot and never touches IQR bindings.
+/// </summary>
+public sealed class ProjectImportSourceSetupTests : BunitContext
+{
+    private readonly Mock<IProjectImportApiService> _api = new();
+    private readonly Mock<IIntegrationJourneysApiService> _journeys = new();
+    private readonly WorkspaceArtifactRepository _repository = new();
+    private readonly ProjectImportActivation _activation;
+    private readonly Mock<IWorkspaceAutoSaveService> _autoSave = new();
+    private SourceSetupView? _setup = new();
+    private ProjectImportPreview? _preview;
+    private FrontendAnalysisProfile? _profile = new() { Id = "dev", Name = "Dev" };
+
+    public ProjectImportSourceSetupTests()
+    {
+        _activation = new ProjectImportActivation(_repository);
+        _api.Setup(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => (_preview, (SourceUploadFailure?)null));
+        _journeys.Setup(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new ActiveEventApiResult<SourceSetupView>(_setup, _setup is null ? "unavailable" : null));
+        _autoSave.Setup(a => a.SaveNowAsync()).ReturnsAsync(true);
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(() => _profile is null ? new FrontendAnalysisContext() : new FrontendAnalysisContext { ActiveProfile = _profile });
+        Services.AddSingleton(_api.Object);
+        Services.AddSingleton(_journeys.Object);
+        Services.AddSingleton(_repository);
+        Services.AddSingleton(_activation);
+        Services.AddSingleton(context.Object);
+        Services.AddSingleton(_autoSave.Object);
+        Services.AddSingleton(Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
+        Services.AddScoped<ProjectApplicabilityState>();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+    }
+
+    private static readonly Guid MuSnapshot = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid M2lbSnapshot = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid OldM2lbSnapshot = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private const string MuSha = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
+    private const string M2lbSha = "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
+    private const string OldM2lbSha = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3";
+    private const string DocsSha = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4";
+
+    /// <summary>Records an import the way the page does (documents into the repository, source outcome recorded), then closes it.</summary>
+    private SddProjectImportRecord Import(string archive, string sha, Guid? snapshot, bool documents, DateTimeOffset importedAt)
+    {
+        var docs = documents ? new[] { ("shop/specs/001-cart/spec.md", ProjectImportActivationTests.Spec) } : [];
+        var preview = ProjectImportActivationTests.Preview(sha, snapshot is not null, docs) with
+        {
+            Archive = new ProjectImportArchive(archive, sha, 4096, 12), ProjectName = Path.GetFileNameWithoutExtension(archive),
+        };
+        var commit = ProjectImportActivationTests.Commit(preview, snapshot is null ? ProjectImportSourceState.NotDetected : ProjectImportSourceState.Created, snapshot);
+        var record = _activation.Activate(preview, ProjectImportArtifactDiscovery.From(preview), commit with { Provenance = commit.Provenance with { ImportedAt = importedAt } });
+        return record;
+    }
+
+    private static TestPackSourceRole Role(string key, string label, TestPackSourceRequirement requirement = TestPackSourceRequirement.Required, string? condition = null,
+        params string[] journeys) => new(key, label, label)
+    {
+        Requirement = requirement, RequirementCondition = condition, Journeys = journeys, ExpectedArtifact = $"{label} source archive", Capabilities = [$"{label} capability"],
+    };
+
+    private static TestPackSourceCandidate Candidate(Guid id, string archive, string sha, bool bound = false, int daysAgo = 1) =>
+        new(id, archive, sha, DateTimeOffset.UtcNow.AddDays(-daysAgo)) { Bound = bound };
+
+    /// <summary>A two-repository pack with an API-described source and optional infrastructure — the shape of the Skolenærvær pack, generic names.</summary>
+    private static SourceSetupView Setup(bool bindingsRead = true, IReadOnlyList<TestPackSourceStatus>? sources = null, params SourceSetupSnapshot[] snapshots) => new()
+    {
+        EnvironmentId = bindingsRead ? "dev" : "", BindingsRead = bindingsRead, Snapshots = snapshots,
+        Packs = [new TestPackSourceSetup("demo.pack", "Demo Testing", sources ?? DefaultSources()) { JourneyNames = new Dictionary<string, string> { ["intake"] = "Report intake" } }],
+    };
+
+    private static IReadOnlyList<TestPackSourceStatus> DefaultSources() =>
+    [
+        new(Role("hub", "Message hub", journeys: "intake"), TestPackSourceState.Bound)
+        {
+            Candidates = [Candidate(MuSnapshot, "Tiltak 2 - hub (1).zip", MuSha, bound: true)], Integrations = ["Demo – report intake"], BoundArchives = ["Tiltak 2 - hub (1).zip"],
+            Detail = "Message hub source is bound.", NextAction = "Open IQR Evidence", NextActionTarget = "iqr-evidence",
+        },
+        new(Role("platform", "Platform", journeys: "intake"), TestPackSourceState.AvailableNotBound)
+        {
+            Candidates = [Candidate(M2lbSnapshot, "platform.zip", M2lbSha)], AvailableArchives = ["platform.zip"], Integrations = ["Demo – period closed"],
+            Detail = "Platform source is available (platform.zip) but not bound where it is needed.", NextAction = "Bind it in IQR Evidence", NextActionTarget = "iqr-evidence",
+        },
+        new(Role("app", "Demo application", condition: "Required for application metadata."), TestPackSourceState.Missing)
+        {
+            Detail = "Demo application source is missing.", NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis",
+        },
+        new(Role("infra", "Infrastructure as Code", TestPackSourceRequirement.Optional, "Useful only when infrastructure/runtime configuration must be source-verified."),
+            TestPackSourceState.NotProvided) { Detail = "Optional — not provided.", NextAction = "Optional", NextActionTarget = "source-analysis" },
+    ];
+
+    private static SourceSetupSnapshot Snap(Guid id, string archive, string sha, string? importId = null, int daysAgo = 1, params string[] bound) =>
+        new(id, archive, sha, DateTimeOffset.UtcNow.AddDays(-daysAgo), "Partial") { ImportId = importId, BoundIntegrations = bound };
+
+    private IRenderedComponent<ProjectImportPage> RenderPage()
+    {
+        var cut = Render<ProjectImportPage>();
+        cut.WaitForAssertion(() => _journeys.Verify(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce()));
+        return cut;
+    }
+
+    private void ImportHistory()
+    {
+        var mu = Import("Tiltak 2 - hub (1).zip", MuSha, MuSnapshot, documents: false, DateTimeOffset.UtcNow.AddDays(-3));
+        Import("docs-only.zip", DocsSha, null, documents: true, DateTimeOffset.UtcNow.AddDays(-2));
+        Import("platform.zip", M2lbSha, M2lbSnapshot, documents: true, DateTimeOffset.UtcNow.AddDays(-1));
+        _setup = Setup(true, null,
+            Snap(MuSnapshot, "Tiltak 2 - hub (1).zip", MuSha, mu.ImportId, 3, "Demo – report intake"),
+            Snap(M2lbSnapshot, "platform.zip", M2lbSha, "import-" + M2lbSha[..16], 1));
+    }
+
+    [Fact]
+    public void PreviousImports_AreListed_SourceOnlyIncluded_AndTheCurrentProjectIsNotRepeated()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+
+        cut.Find("[data-testid=pi-current-name]").TextContent.Should().Be("platform");
+        cut.Find("[data-testid=pi-current-logical]").TextContent.Should().Be("Platform");
+        cut.Find("[data-testid=pi-current-snapshot]").TextContent.Should().Contain("22222222").And.Contain("Partial");
+        cut.Find("[data-testid=pi-current-bindings]").TextContent.Should().Be("Not bound in IQR");
+        var rows = cut.FindAll("[data-testid=pi-previous-row]");
+        rows.Select(r => r.QuerySelector("[data-testid=pi-previous-archive]")!.TextContent).Should().Equal("docs-only.zip", "Tiltak 2 - hub (1).zip");
+        rows.Should().NotContain(r => r.TextContent.Contains("platform.zip"), "the current project is shown once, above");
+
+        var hub = rows.Single(r => r.TextContent.Contains("Tiltak 2"));
+        hub.QuerySelector("[data-testid=pi-previous-logical]")!.TextContent.Should().Be("Message hub");
+        hub.QuerySelector("[data-testid=pi-previous-documents]")!.TextContent.Should().Be("No project documents", "a source-only import is history too");
+        hub.QuerySelector("[data-testid=pi-previous-bindings]")!.TextContent.Should().Be("Used by 1 IQR integration: Demo – report intake");
+        hub.QuerySelector("[data-testid=pi-previous-open-source]")!.GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}");
+        hub.QuerySelector("[data-testid=pi-previous-open-source]")!.TextContent.Should().Be("Open Tiltak 2 - hub (1) in Source Analysis");
+        hub.QuerySelector("[data-testid=pi-previous-use]")!.TextContent.Should().Be("Use Tiltak 2 - hub (1) as current");
+
+        var docs = rows.Single(r => r.TextContent.Contains("docs-only.zip"));
+        docs.QuerySelector("[data-testid=pi-previous-logical]")!.TextContent.Should().Be("None", "a document-only import never satisfies a source requirement");
+        docs.QuerySelector("[data-testid=pi-previous-source]")!.TextContent.Should().Be("No source");
+        docs.QuerySelectorAll("[data-testid=pi-previous-open-source]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void UseAsCurrent_RestoresThePreviousImport_WithoutUploadSnapshotOrBindingChange()
+    {
+        ImportHistory();
+        var bindingsBefore = System.Text.Json.JsonSerializer.Serialize(_setup!.Snapshots.Select(s => s.BoundIntegrations));
+        var cut = RenderPage();
+
+        cut.FindAll("[data-testid=pi-previous-row]").Single(r => r.TextContent.Contains("Tiltak 2")).QuerySelector("[data-testid=pi-previous-use]")!.Click();
+
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("Tiltak 2 - hub (1).zip");
+        _activation.Current!.SourceSnapshotId.Should().Be(MuSnapshot, "the existing snapshot is reused, never re-created");
+        cut.Find("[data-testid=pi-current-open-source]").GetAttribute("href").Should().Be($"source-analysis?snapshot={MuSnapshot:D}");
+        cut.FindAll("[data-testid=pi-previous-row]").Select(r => r.QuerySelector("[data-testid=pi-previous-archive]")!.TextContent).Should().Contain("platform.zip").And.NotContain("Tiltak 2 - hub (1).zip");
+        _api.Verify(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never());
+        _api.Verify(a => a.CommitAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never());
+        _api.Verify(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Never());
+        _journeys.Verify(j => j.StartAsync(It.IsAny<IntegrationJourneyRunRequest>(), It.IsAny<CancellationToken>()), Times.Never());
+        System.Text.Json.JsonSerializer.Serialize(_setup.Snapshots.Select(s => s.BoundIntegrations)).Should().Be(bindingsBefore);
+        _autoSave.Verify(a => a.SaveNowAsync(), Times.AtLeastOnce(), "the selection is a workspace change and is saved");
+    }
+
+    [Fact]
+    public void UseAsCurrent_KeepsTheEarlierDocumentSelections()
+    {
+        var first = Import("platform.zip", M2lbSha, M2lbSnapshot, documents: true, DateTimeOffset.UtcNow.AddDays(-2));
+        var selected = _repository.SddLifecycle.Revisions.Where(r => r.ProjectImportId == first.ImportId && r.IsCurrentSelection).Select(r => r.RevisionId).ToList();
+        Import("other.zip", OldM2lbSha, null, documents: true, DateTimeOffset.UtcNow.AddDays(-1));
+
+        _activation.UseAsCurrent(first.ImportId).Should().BeTrue();
+
+        _activation.Current!.ImportId.Should().Be(first.ImportId);
+        _repository.SddLifecycle.Revisions.Where(r => r.ProjectImportId == first.ImportId && r.IsCurrentSelection).Select(r => r.RevisionId).Should().Equal(selected);
+        _repository.Get(WorkspaceArtifactType.Specification).Should().NotBeNull();
+        _activation.UseAsCurrent("import-unknown").Should().BeFalse();
+    }
+
+    [Fact]
+    public void AnExactDuplicate_IsNamed_AndNothingIsChosenUntilTheTesterDecides()
+    {
+        ImportHistory();
+        _preview = ProjectImportActivationTests.Preview(MuSha, source: true) with { Archive = new ProjectImportArchive("hub-renamed.zip", MuSha, 4096, 12) };
+        var cut = RenderPage();
+        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "hub-renamed.zip"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate]"));
+
+        cut.Find("[data-testid=pi-duplicate]").TextContent.Should().Contain("Matching imported source already exists").And.Contain("Tiltak 2 - hub (1).zip");
+        cut.Find("[data-testid=pi-import]").HasAttribute("disabled").Should().BeTrue("a duplicate is never imported or reused silently");
+        cut.Find("[data-testid=pi-duplicate-import-again]").Click();
+        cut.FindAll("[data-testid=pi-duplicate]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-import]").HasAttribute("disabled").Should().BeFalse("Import again stays possible");
+    }
+
+    [Fact]
+    public void UseExisting_ForADuplicate_ReusesTheEarlierImport_AndImportsNothing()
+    {
+        ImportHistory();
+        _preview = ProjectImportActivationTests.Preview(MuSha, source: true);
+        var cut = RenderPage();
+        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "again.zip"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate-use]"));
+        cut.Find("[data-testid=pi-duplicate-use]").Click();
+
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("Tiltak 2 - hub (1).zip");
+        _api.Verify(a => a.CommitWithProgressAsync(It.IsAny<Guid>(), It.IsAny<IProgress<ProjectImportCommitEvent>?>(), It.IsAny<CancellationToken>()), Times.Never());
+        _api.Verify(a => a.DiscardAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Once(), "the staged duplicate is released");
+    }
+
+    [Fact]
+    public void SourceSetup_RendersEachLogicalSource_WithRequirementStateAndOwnerAction()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+        var setup = cut.Find("[data-testid=pi-source-setup]");
+        setup.QuerySelector("h2")!.TextContent.Should().Be("Demo Testing source setup");
+        AngleSharp.Dom.IElement Row(string key) => cut.FindAll("[data-testid=pi-setup-source]").Single(r => r.GetAttribute("data-role") == key);
+
+        Row("hub").QuerySelector("[data-testid=pi-setup-requirement]")!.TextContent.Should().Be("Required");
+        Row("hub").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Bound");
+        Row("hub").QuerySelector("[data-testid=pi-setup-binding]")!.TextContent.Should().Be("Bound to Demo – report intake");
+        Row("hub").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Bound package: Tiltak 2 - hub (1).zip");
+        Row("hub").QuerySelector("[data-testid=pi-setup-journeys]")!.TextContent.Should().Be("Report intake");
+        Row("hub").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Open Message hub evidence in IQR");
+
+        Row("platform").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Available, not bound");
+        Row("platform").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Available package: platform.zip");
+        Row("platform").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Bind Platform in IQR Evidence");
+        Row("platform").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+
+        Row("app").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Missing");
+        Row("app").QuerySelector("[data-testid=pi-setup-requirement-text]")!.TextContent.Should().Be("Required for application metadata.");
+        Row("app").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("#pi-choose-heading");
+
+        var infra = Row("infra");
+        infra.GetAttribute("data-requirement").Should().Be("Optional");
+        infra.QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Not provided");
+        infra.TextContent.Should().NotContain("Missing").And.NotContain("Required");
+    }
+
+    [Fact]
+    public void SeveralMatchingSnapshots_AreListedForReview_AndTheBoundOneIsMarkedCanonical()
+    {
+        _setup = Setup(true,
+        [
+            new(Role("platform", "Platform"), TestPackSourceState.Bound)
+            {
+                Candidates = [Candidate(OldM2lbSnapshot, "platform (2).zip", OldM2lbSha, bound: true, daysAgo: 5), Candidate(M2lbSnapshot, "platform.zip", M2lbSha)],
+                Detail = "bound", NextActionTarget = "iqr-evidence",
+            },
+        ]);
+        var cut = RenderPage();
+        var row = cut.Find("[data-testid=pi-setup-source]");
+        row.QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Bound package: platform (2).zip · also available: platform.zip");
+        var candidates = row.QuerySelector("[data-testid=pi-setup-candidates]")!.TextContent;
+        candidates.Should().Contain("platform (2).zip").And.Contain("Bound (canonical)").And.Contain("platform.zip").And.Contain("Available, not bound");
+    }
+
+    [Fact]
+    public void ReviewRequired_ForUnboundMatches_SendsTheTesterToIqrEvidence()
+    {
+        _setup = Setup(true,
+        [
+            new(Role("platform", "Platform"), TestPackSourceState.ReviewRequired)
+            {
+                Candidates = [Candidate(M2lbSnapshot, "platform.zip", M2lbSha), Candidate(OldM2lbSnapshot, "platform (2).zip", OldM2lbSha, daysAgo: 5)],
+                Detail = "Several stored snapshots match the Platform source.", NextAction = "Review", NextActionTarget = "iqr-evidence",
+            },
+        ]);
+        var cut = RenderPage();
+        cut.Find("[data-testid=pi-setup-state]").TextContent.Should().Be("Review required");
+        cut.Find("[data-testid=pi-setup-action]").TextContent.Should().Be("Review Platform snapshots in IQR Evidence");
+    }
+
+    [Fact]
+    public void WithoutATargetEnvironment_BindingsAreExplained_NotShownAsUnbound()
+    {
+        _profile = null;
+        ImportHistory();
+        _setup = _setup! with { BindingsRead = false, EnvironmentId = "" };
+        var cut = RenderPage();
+        _journeys.Verify(j => j.SourceSetupAsync(null, It.IsAny<CancellationToken>()), Times.AtLeastOnce());
+        cut.Find("[data-testid=pi-current-bindings]").TextContent.Should().Be("Select a target environment to see IQR bindings");
+    }
+
+    [Fact]
+    public void ASourceAnalysisUpload_WithoutAnImportRecord_IsHistoryToo()
+    {
+        _setup = Setup(true, null, Snap(OldM2lbSnapshot, "infra-only.zip", OldM2lbSha) with { InfrastructureFormats = ["Terraform"] });
+        var cut = RenderPage();
+        var row = cut.Find("[data-testid=pi-previous-row]");
+        row.GetAttribute("data-origin").Should().Be("SourceAnalysis");
+        row.TextContent.Should().Contain("Source Analysis upload").And.Contain("Terraform");
+        row.QuerySelectorAll("[data-testid=pi-previous-use]").Should().BeEmpty("only a recorded Project Import has documents to make current");
+    }
+
+    [Fact]
+    public void AnotherPack_RendersItsOwnSources_AndTheLocalFixtureNeverAppears()
+    {
+        ImportHistory();
+        _setup = _setup! with
+        {
+            Packs = [.. _setup.Packs, new TestPackSourceSetup("demo.ledger", "Ledger", [new(Role("ledger", "Ledger"), TestPackSourceState.Missing) { NextActionTarget = "source-analysis" }])],
+        };
+        var cut = RenderPage();
+        cut.FindAll("[data-testid=pi-source-setup]").Select(s => s.GetAttribute("data-pack")).Should().Equal("demo.pack", "demo.ledger");
+        cut.Markup.Should().NotContain("skolenaervaer.json").And.NotContain("testdata");
+    }
+
+    [Fact]
+    public void WithoutSourceSetup_ThePageStillWorks()
+    {
+        _setup = null;
+        Import("platform.zip", M2lbSha, M2lbSnapshot, documents: true, DateTimeOffset.UtcNow);
+        var cut = RenderPage();
+        cut.FindAll("[data-testid=pi-source-setup]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("platform.zip");
+        cut.FindAll("[data-testid=pi-current-bindings]").Should().BeEmpty();
+    }
+}

@@ -1,4 +1,5 @@
 @page "/project-import"
+@using BirkNext.Integrations
 @using BirkNext.ProjectImport
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.ProjectImport
@@ -25,22 +26,33 @@
     {
         @if (Activation.Current is { } current)
         {
+            var currentSource = ProjectImportPresentation.CurrentSource(current, DateTimeOffset.UtcNow);
+            var currentSnapshot = CurrentSnapshot(current);
             <section class="pi-card pi-current" aria-labelledby="pi-current-heading" data-testid="pi-current">
-                <h2 id="pi-current-heading">Current imported project</h2>
+                <h2 id="pi-current-heading" tabindex="-1">Current imported project</h2>
                 <p class="pi-current-title"><strong data-testid="pi-current-name">@current.ProjectName</strong> <span class="pi-muted">Imported project archive</span></p>
                 <dl class="pi-facts">
                     <div><dt>Archive</dt><dd data-testid="pi-current-archive">@current.ArchiveFileName</dd></div>
-                    <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
+                    @if (ProjectImportHistory.LogicalSources(_setup, currentSnapshot?.SnapshotId ?? current.SourceSnapshotId) is { Count: > 0 } logical)
+                    {
+                        <div><dt>Logical source</dt><dd data-testid="pi-current-logical">@string.Join(", ", logical)</dd></div>
+                    }
                     <div><dt>Imported</dt><dd>@current.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                    <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
+                    <div><dt>Source analysis</dt><dd class="pi-inline-facts" data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")"><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@currentSource.Status</span>
+                        @if (currentSource.SnapshotId is { } shownSnapshot) { <span class="pi-muted" data-testid="pi-current-snapshot">Snapshot <code>@ProjectImportHistory.ShortId(shownSnapshot)</code>@(currentSnapshot is null ? "" : $" · {currentSnapshot.Status}")</span> }
+                        <span class="pi-muted" data-testid="pi-current-source-detail">@currentSource.Detail</span></dd></div>
+                    @if (currentSource.SnapshotId is not null && _setup is { } currentSetup)
+                    {
+                        <div><dt>IQR bindings</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(currentSnapshot?.BoundIntegrations ?? [], currentSetup.BindingsRead)</dd></div>
+                    }
                     <div><dt>Project documents</dt><dd data-testid="pi-current-documents">@DocumentsFact(current)</dd></div>
-                    @{ var currentSource = ProjectImportPresentation.CurrentSource(current, DateTimeOffset.UtcNow); }
-                    <div><dt>Source</dt><dd data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")"><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@currentSource.Status</span> <span class="pi-muted" data-testid="pi-current-source-detail">@currentSource.Detail</span></dd></div>
                 </dl>
                 @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }
                 <div class="pi-actions">
-                    @if (currentSource.SnapshotId is { } currentSnapshot)
+                    @if (currentSource.SnapshotId is { } openSnapshot)
                     {
-                        <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(currentSnapshot)" data-testid="pi-current-open-source">Open Source Analysis</a>
+                        <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openSnapshot)" data-testid="pi-current-open-source">Open Source Analysis</a>
                     }
                     else if (currentSource.CanRetry)
                     {
@@ -49,9 +61,54 @@
                     @if (FirstExplorer(current) is { } explorer) { <a class="btn-secondary" href="@explorer.Route" data-testid="pi-current-open-documents">Open @explorer.Label</a> }
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
                 </div>
-                <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history.</p>
-                <ProjectArtifactCandidateReview />
+                <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history. The current project is not an IQR binding: changing it never changes which source Integration Quality Review uses.</p>
             </section>
+        }
+
+        @if (_setup is { Packs.Count: > 0 } setup)
+        {
+            <TestPackSourceSetupPanel Setup="setup" />
+        }
+
+        @if (ProjectImportHistory.Previous(Activation.Imports, Activation.Current?.ImportId, _setup) is { Count: > 0 } previous)
+        {
+            <section class="pi-card pi-previous" aria-labelledby="pi-previous-heading" data-testid="pi-previous">
+                <h2 id="pi-previous-heading">Previously imported projects</h2>
+                <p class="pi-muted">Already imported here, so there is no need to upload them again. <strong>Use as current</strong> shows that project's documents again; it does not
+                    re-import, create a Source Analysis snapshot or change IQR evidence bindings.</p>
+                @if (_useMessage is { } useMessage) { <p class="pi-warning" role="status" data-testid="pi-use-message">@useMessage</p> }
+                <ul class="pi-previous-list" aria-label="Previously imported projects">
+                    @foreach (var row in previous)
+                    {
+                        <li class="pi-previous-row" data-testid="pi-previous-row" data-origin="@row.Origin" data-import="@row.ImportId" data-snapshot="@row.SnapshotId">
+                            <div class="pi-setup-head">
+                                <strong class="pi-previous-name" data-testid="pi-previous-name">@row.DisplayName</strong>
+                                <span class="pi-badge pi-badge-neutral">@(row.Origin == PreviousImportOrigin.ProjectImport ? "Project Import" : "Source Analysis upload")</span>
+                            </div>
+                            <dl class="pi-setup-facts">
+                                <div><dt>Archive</dt><dd data-testid="pi-previous-archive">@row.ArchiveFileName</dd></div>
+                                <div><dt>Logical source</dt><dd data-testid="pi-previous-logical">@(row.LogicalSources.Count > 0 ? string.Join(", ", row.LogicalSources) : row.HasSource ? "Not identified" : "None")</dd></div>
+                                <div><dt>Imported</dt><dd>@row.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                                <div><dt>Fingerprint</dt><dd><code title="@row.Fingerprint">@ProjectImportPresentation.ShortFingerprint(row.Fingerprint)</code></dd></div>
+                                <div><dt>Source</dt><dd data-testid="pi-previous-source">@(row.SnapshotId is { } rowSnapshot ? $"Snapshot {ProjectImportHistory.ShortId(rowSnapshot)} · {row.SourceStatus}" : row.SourceStatus)</dd></div>
+                                @if (row.InfrastructureFormats.Count > 0) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", row.InfrastructureFormats)</dd></div> }
+                                <div><dt>Documents</dt><dd data-testid="pi-previous-documents">@row.Documents</dd></div>
+                                @if (row.HasSource && _setup is { } rowSetup) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, rowSetup.BindingsRead)</dd></div> }
+                            </dl>
+                            <div class="pi-actions">
+                                @if (row.SnapshotId is { } openRowSnapshot) { <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openRowSnapshot)" data-testid="pi-previous-open-source">Open @row.DisplayName in Source Analysis</a> }
+                                @if (row.BoundIntegrations.Count > 0) { <a href="integration-quality-review?view=evidence" data-testid="pi-previous-bindings-link">View @row.DisplayName bindings in IQR</a> }
+                                @if (row.CanUseAsCurrent) { <button type="button" class="btn-secondary" data-testid="pi-previous-use" @onclick="() => UseAsCurrent(row.ImportId!)">Use @row.DisplayName as current</button> }
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
+        @if (Activation.Current is { ArtifactDocumentCount: > 0 })
+        {
+            <div class="pi-card" data-testid="pi-current-candidates"><ProjectArtifactCandidateReview /></div>
         }
 
         <section class="pi-card pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
@@ -124,6 +181,30 @@
             <p class="pi-muted">Archive accepted. Nothing is imported until you choose Import project.</p>
         </section>
 
+        @if (_duplicate is { } duplicate && !_importAgain)
+        {
+            <section class="pi-card pi-tone-neutral" aria-labelledby="pi-duplicate-heading" data-testid="pi-duplicate" data-current="@(duplicate.IsCurrent ? "true" : "false")">
+                <h2 id="pi-duplicate-heading">Matching imported source already exists</h2>
+                <dl class="pi-facts">
+                    <div><dt>Archive</dt><dd>@duplicate.ArchiveFileName</dd></div>
+                    <div><dt>Fingerprint</dt><dd><code title="@duplicate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(duplicate.Fingerprint)</code></dd></div>
+                    <div><dt>Imported</dt><dd>@duplicate.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                </dl>
+                <p class="pi-muted">This exact archive (same content) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                <div class="pi-actions">
+                    @if (duplicate.ImportId is { } existingImport && !duplicate.IsCurrent && Activation.Imports.Any(i => i.ImportId == existingImport))
+                    {
+                        <button type="button" class="btn-primary" data-testid="pi-duplicate-use" @onclick="() => UseExisting(existingImport)">Use existing import</button>
+                    }
+                    else if (duplicate.SnapshotId is { } existingSnapshot)
+                    {
+                        <a class="btn-primary" href="@ProjectImportPresentation.SourceAnalysisHref(existingSnapshot)" data-testid="pi-duplicate-open-source">Open existing snapshot in Source Analysis</a>
+                    }
+                    <button type="button" class="btn-secondary" data-testid="pi-duplicate-import-again" @onclick="() => _importAgain = true">Import again</button>
+                </div>
+            </section>
+        }
+
         <div class="pi-columns">
             <ProjectImportArtifacts Discovery="discovery" />
             <ProjectImportSource Detection="preview.Source" Row="ProjectImportPresentation.SourcePreview(preview.Source, SourceAnalysisAvailable)" />
@@ -146,7 +227,7 @@
             </section>
         }
         <div class="pi-actions">
-            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery))" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
+            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain))" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
             <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
         </div>
         @if (_failure is { } commitFailure)
@@ -236,16 +317,53 @@
     private System.Threading.Timer? _elapsedTimer;
     private string? _focusId;
 
-    protected override async Task OnInitializedAsync() => await LoadEnvironmentAsync();
+    /// <summary>The packs' source setup and the stored snapshots, read from the backend; null when unavailable (the page works without it).</summary>
+    private SourceSetupView? _setup;
+    private string? _environmentId;
+    private ProjectImportDuplicate? _duplicate;
+    private bool _importAgain;
+    private string? _useMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEnvironmentAsync();
+        await LoadSetupAsync();
+    }
 
     private async Task LoadEnvironmentAsync()
     {
         try
         {
             var context = await ContextFactory.GetActiveContextAsync();
-            _hasTarget = !string.IsNullOrWhiteSpace(context.ActiveProfileOrNull?.Id);
+            _environmentId = context.ActiveProfileOrNull?.Id;
+            _hasTarget = !string.IsNullOrWhiteSpace(_environmentId);
         }
-        catch (Exception) { _hasTarget = false; }
+        catch (Exception) { _hasTarget = false; _environmentId = null; }
+    }
+
+    private async Task LoadSetupAsync()
+    {
+        if (ServiceProvider.GetService<IIntegrationJourneysApiService>() is not { } journeys) return;
+        try { _setup = (await journeys.SourceSetupAsync(_environmentId)).Value; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { _setup = null; }
+    }
+
+    private SourceSetupSnapshot? CurrentSnapshot(SddProjectImportRecord record) =>
+        _setup is null ? null : ProjectImportHistory.SnapshotsOf(record, _setup.Snapshots).OrderByDescending(s => s.SnapshotId == record.SourceSnapshotId).FirstOrDefault();
+
+    /// <summary>Makes an earlier import current again from what the workspace holds: no upload, no new snapshot, no binding change.</summary>
+    private void UseAsCurrent(string importId)
+    {
+        _useMessage = Activation.UseAsCurrent(importId) ? null : "That import is no longer recorded in this workspace.";
+        if (_useMessage is null) { _ = AutoSave.SaveNowAsync(); _focusId = "pi-current-heading"; }
+    }
+
+    private void UseExisting(string importId)
+    {
+        var staging = _preview?.StagingId;
+        Reset();
+        if (staging is { } stagingId) _ = DiscardQuietlyAsync(stagingId);
+        UseAsCurrent(importId);
     }
 
     private async Task ChooseAsync(InputFileChangeEventArgs args)
@@ -265,6 +383,8 @@
             _classified = 0;
             _classifyTotal = preview.Documents.Count;
             StateHasChanged();
+            _duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, Activation.Imports, Activation.Current?.ImportId, _setup);
+            _importAgain = false;
             _discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
             {
                 _classified = p.Done;
@@ -323,7 +443,7 @@
             _progress = new ProjectImportCommitEvent { Stage = "Saving the workspace", Detail = "Saving the import selection and provenance." };
             StateHasChanged();
             _saveWarning = !await AutoSave.SaveNowAsync();
-            if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
+            if (commit.Source.SnapshotId is not null) { await Applicability.RefreshAsync(); await LoadSetupAsync(); }
             _failure = null;
             _phase = Phase.Result;
             _focusId = "pi-outcome-heading";
@@ -377,7 +497,7 @@
     private void Reset()
     {
         StopElapsedTimer();
-        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false; _retrying = false;
+        _preview = null; _discovery = null; _commit = null; _failure = null; _saveWarning = false; _retrying = false; _duplicate = null; _importAgain = false;
         _progress = null; _fileName = null; _classified = 0; _classifyTotal = 0;
         _inputGeneration++;
         _phase = Phase.Choose;
