@@ -99,7 +99,7 @@ public static class PipelineReviewDashboard
             [
                 new("provider", "Provider", providers.Count == 0 ? "—" : string.Join(", ", providers), runnable.Count == 0 ? null : $"{runnable.Count} pipeline{(runnable.Count == 1 ? "" : "s")}", "provider"),
                 new("structure", "Stages · jobs", $"{runnable.Sum(p => p.Stages)} · {runnable.Sum(p => p.Jobs)}", $"{r.Pipelines.Count(p => p.IsTemplate)} templates", "structure"),
-                new("gates", "Tests & checks", r.Tests.Count.ToString(), $"{gating} gate a deployment · defined, not executed", "gates"),
+                new("gates", "Tests & checks", r.Tests.Count.ToString(), $"{gating} on a deployment path · defined, not executed", "gates"),
                 new("artifacts", "Artifacts", r.Pipelines.SelectMany(p => p.Artifacts).Distinct(StringComparer.Ordinal).Count().ToString(), "named in definitions", "artifacts"),
                 new("environments", "Environments", r.Environments.Count.ToString(), $"{r.Deployments.Count} deployments", "environments"),
                 new("gaps", "Gaps", gaps.ToString(), gaps == 0 ? "none detected from source" : "need review", gaps == 0 ? "neutral" : "gaps"),

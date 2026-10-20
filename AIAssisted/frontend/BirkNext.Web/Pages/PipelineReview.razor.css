@@ -414,3 +414,46 @@
 .prv-chip-muted { border-color: var(--clr-border); background: var(--clr-surface); color: var(--clr-text-muted); }
 
 .prv-node-types { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+
+/* ── Summary-first, grouped views (attention, grouped gaps, per-pipeline flow, compact environments) ───────────────────────────── */
+/* Table cells wrap at word boundaries only: "anywhere" lets every character be a break point when columns are measured. */
+.prv th, .prv td, .prv td * { overflow-wrap: break-word; word-break: normal; }
+.prv code { overflow-wrap: anywhere; }
+.prv-attention { border: 1px solid var(--clr-border); border-left: 4px solid #b45309; border-radius: 0.5rem; padding: 0.6rem 0.9rem; margin: 0.6rem 0; }
+.prv-attention h3 { margin-top: 0; }
+.prv-severity-counts, .prv-counts { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0.3rem 0; padding: 0; list-style: none; }
+.prv-counts > div, .prv-counts > li { display: flex; gap: 0.4rem; align-items: baseline; }
+.prv-counts dt { color: var(--clr-text-muted); font-size: 0.85rem; }
+.prv-counts dd { margin: 0; font-weight: 700; }
+.prv-groups { margin: 0.4rem 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.prv-group-count { color: var(--clr-text-muted); font-size: 0.85rem; margin-left: 0.3rem; }
+.prv-more { margin: 0.35rem 0; }
+.prv-more > summary, .prv-pipeline > summary, .prv-gap-group > summary, .prv-deployment-details summary { cursor: pointer; }
+.prv-more > summary:focus-visible, .prv-pipeline > summary:focus-visible, .prv-gap-group > summary:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.prv-pipeline, .prv-gap-group { border: 1px solid var(--clr-border); border-radius: 0.5rem; padding: 0.5rem 0.75rem; margin: 0.4rem 0; background: var(--clr-surface-raised, #fff); }
+.prv-pipeline > summary { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; align-items: baseline; }
+.prv-pipeline-name { font-weight: 700; min-width: 10rem; }
+.prv-pipeline-facts { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; font-size: 0.86rem; }
+.prv-fact-label { color: var(--clr-text-muted); font-size: 0.76rem; margin-right: 0.2rem; }
+.prv-gap-group > summary { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: baseline; }
+.prv-gap-title { font-weight: 600; }
+.prv-gap-meta { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; }
+.prv-gap-body { margin-top: 0.4rem; }
+.prv-gap-body h4 { font-size: 0.9rem; margin: 0.5rem 0 0.2rem; }
+.prv-gap-body .pr-finding { border-left: 3px solid var(--clr-border); padding-left: 0.6rem; margin: 0.4rem 0; }
+.prv-gap-body .pr-finding h5 { margin: 0; font-size: 0.9rem; }
+.prv-key-point { border-left: 4px solid var(--clr-info); padding: 0.4rem 0.7rem; background: var(--clr-surface); }
+.prv-env-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 0.6rem; padding: 0; list-style: none; }
+.prv-env-card { border: 1px solid var(--clr-border); border-radius: 0.5rem; padding: 0.5rem 0.75rem; }
+.prv-env-card h3 { margin: 0 0 0.3rem; }
+.prv-env-card .prv-counts { display: grid; gap: 0.15rem; }
+.prv-env-card .prv-counts > div { justify-content: space-between; }
+.prv-deployments { min-width: 56rem; }
+.prv-deployment-details td { padding-top: 0 !important; border-bottom-width: 2px !important; }
+.prv-trigger-labels { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.prv-current { align-self: center; }
+/* Flex summaries lose the native disclosure triangle: draw one so a collapsed pipeline/gap group still reads as expandable. */
+.prv-pipeline > summary, .prv-gap-group > summary { list-style: none; }
+.prv-pipeline > summary::-webkit-details-marker, .prv-gap-group > summary::-webkit-details-marker { display: none; }
+.prv-pipeline > summary::before, .prv-gap-group > summary::before { content: "▸"; color: var(--clr-text-muted); margin-right: 0.1rem; }
+.prv-pipeline[open] > summary::before, .prv-gap-group[open] > summary::before { content: "▾"; }

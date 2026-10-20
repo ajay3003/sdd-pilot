@@ -84,7 +84,7 @@ public sealed class PipelineReviewPageTests : BunitContext
     }
 
     [Fact]
-    public void The_flow_is_text_first_with_confidence_and_evidence_drilldown()
+    public void The_flow_keeps_every_statement_with_confidence_and_evidence_drilldown()
     {
         var page = Page();
         page.Find("[data-testid=pr-tab-flow]").Click();
@@ -107,7 +107,9 @@ public sealed class PipelineReviewPageTests : BunitContext
         page.Find("[data-testid=pr-tab-gaps]").Click();
         page.Find("[data-testid=pr-gaps-High]").TextContent.Should().StartWith("High");
         var high = page.Find("[data-testid=pr-finding][data-severity=High]");
-        high.TextContent.Should().Contain("Severity: High").And.Contain("Evidence: Confirmed").And.Contain("Why it matters").And.Contain("Suggested review");
+        high.TextContent.Should().Contain("Severity: High").And.Contain("Evidence: Confirmed");
+        // Guidance is shown once per rule group, around its instances.
+        page.Find("[data-testid=pr-gap-group][data-severity=High]").TextContent.Should().Contain("Why it matters").And.Contain("Suggested review");
         var unresolved = page.FindAll("[data-testid=pr-finding]").First(f => f.TextContent.Contains("No detectable link from QA to Production"));
         unresolved.TextContent.Should().Contain("Severity: Medium").And.Contain("Evidence: Unresolved");
         page.Find("[data-testid=pr-gap-category]").Change("ContractValidationGap");
