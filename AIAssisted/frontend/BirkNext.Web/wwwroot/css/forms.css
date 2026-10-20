@@ -46,7 +46,7 @@
 
 .form-optional {
     font-weight: 400;
-    color: var(--clr-text-placeholder);
+    color: var(--clr-text-muted);
     font-size: 0.825rem;
 }
 

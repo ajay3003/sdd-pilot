@@ -46,6 +46,10 @@
                     {
                         <div><dt>IQR bindings</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(currentSnapshot?.BoundIntegrations ?? [], currentSetup.BindingsRead)</dd></div>
                     }
+                    @if (currentSnapshot is { ConfigurationEnvironments.Count: > 0 } withEnvironments)
+                    {
+                        <div><dt>Environment configuration found</dt><dd data-testid="pi-current-environments">@string.Join(", ", withEnvironments.ConfigurationEnvironments) <span class="pi-muted">(source labels, not deployed environments)</span></dd></div>
+                    }
                     <div><dt>Project documents</dt><dd data-testid="pi-current-documents">@DocumentsFact(current)</dd></div>
                 </dl>
                 @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }
@@ -92,6 +96,7 @@
                                 <div><dt>Fingerprint</dt><dd><code title="@row.Fingerprint">@ProjectImportPresentation.ShortFingerprint(row.Fingerprint)</code></dd></div>
                                 <div><dt>Source</dt><dd data-testid="pi-previous-source">@(row.SnapshotId is { } rowSnapshot ? $"Snapshot {ProjectImportHistory.ShortId(rowSnapshot)} · {row.SourceStatus}" : row.SourceStatus)</dd></div>
                                 @if (row.InfrastructureFormats.Count > 0) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", row.InfrastructureFormats)</dd></div> }
+                                @if (row.ConfigurationEnvironments.Count > 0) { <div><dt>Environment configuration found</dt><dd data-testid="pi-previous-environments">@string.Join(", ", row.ConfigurationEnvironments)</dd></div> }
                                 <div><dt>Documents</dt><dd data-testid="pi-previous-documents">@row.Documents</dd></div>
                                 @if (row.HasSource && _setup is { } rowSetup) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, rowSetup.BindingsRead)</dd></div> }
                             </dl>

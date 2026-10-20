@@ -17,6 +17,10 @@
         {
             @DeclaredValues
         }
+        else if (Tab == EnvironmentTab)
+        {
+            @EnvironmentValues
+        }
         else if (Tab == "Overview")
         {
             @* Four headline counts; every other count is a row of the category breakdown or a secondary signal below it. *@
@@ -118,9 +122,51 @@
     private const string DeclaredTab = "Declared values";
     private IReadOnlyList<SourceConfigurationValue> Declared => Evidence.ConfigurationValues?.Values ?? [];
     /// <summary>Configuration files give the usual views; values declared by other artifacts (API documents, IaC) add "Declared values".</summary>
+    private const string EnvironmentTab = "Environment values";
+    private IReadOnlyList<EnvironmentValueCandidate> EnvironmentCandidates =>
+        _environmentCandidates ??= SourceEnvironmentValueExtractor.Candidates(Evidence, Evidence.SourceSnapshotId, "").ToList();
+    private List<EnvironmentValueCandidate>? _environmentCandidates;
+    private SourceEvidenceDomainsSnapshot? _candidatesFor;
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_candidatesFor, Evidence)) { _candidatesFor = Evidence; _environmentCandidates = null; }
+    }
     private string[] Tabs => SourceEvidenceDomainsPresentation.Assessed(C)
-        ? Declared.Count > 0 ? ["Overview", DeclaredTab, "Entries", "Files", "Changes"] : ["Overview", "Entries", "Files", "Changes"]
+        ? [.. new[] { "Overview", Declared.Count > 0 ? DeclaredTab : null, EnvironmentCandidates.Count > 0 ? EnvironmentTab : null, "Entries", "Files", "Changes" }.OfType<string>()]
         : [DeclaredTab];
+
+    /// <summary>The safe values this snapshot declares per environment label, by component and semantic key — what a Target Environment of that
+    /// kind would be offered. Several different values for one environment + component + key need review; different components never conflict.</summary>
+    private RenderFragment EnvironmentValues => __builder =>
+    {
+        var groups = EnvironmentCandidates.GroupBy(c => (c.Environment.Kind, c.Component, c.SemanticKey))
+            .OrderBy(g => g.Key.Kind).ThenBy(g => g.Key.Component ?? "", StringComparer.Ordinal).ThenBy(g => g.Key.SemanticKey, StringComparer.Ordinal).ToList();
+        <section class="sd-panel" aria-labelledby="sd-config-envvalues-heading" data-testid="sd-config-envvalues">
+            <h3 id="sd-config-envvalues-heading">Environment values <span class="sd-count">@groups.Count</span></h3>
+            <p class="sd-muted">Safe values declared for one environment label (secrets, connection strings, placeholders and developer-machine URLs are never listed). A Target Environment
+                is offered only the values of its own environment — Local and Default never fill Development or QA. Declared in source · runtime not verified.</p>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Environment values">
+                <table data-testid="sd-config-envvalue-table">
+                    <thead><tr><th scope="col">Environment</th><th scope="col">Component</th><th scope="col">Value for</th><th scope="col">Value</th><th scope="col">Source</th><th scope="col">State</th></tr></thead>
+                    <tbody>
+                        @foreach (var g in groups)
+                        {
+                            var distinct = g.Select(c => EnvironmentValueResolver.Normalize(c.Value)).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+                            var multiValued = g.Key.SemanticKey == EnvironmentValueKeys.EventHubName;
+                            <tr data-testid="sd-config-envvalue" data-environment="@g.Key.Kind" data-key="@g.Key.SemanticKey">
+                                <th scope="row">@g.Key.Kind</th>
+                                <td>@(g.Key.Component ?? "—")</td>
+                                <td>@EnvironmentValueKeys.Label(g.Key.SemanticKey)</td>
+                                <td>@foreach (var value in g.Select(c => c.Value).Distinct(StringComparer.OrdinalIgnoreCase)) { <code class="sd-envvalue">@value</code> }</td>
+                                <td class="sd-path">@foreach (var c in g) { <span class="sd-context">@EnvironmentValuePresentation.FileName(c.File) (@c.ConfigurationKey) · @c.Basis</span> }</td>
+                                <td data-testid="sd-config-envvalue-state">@(distinct <= 1 ? "Declared" : multiValued ? $"{distinct} declared" : "Review required")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    };
     private string _tab = "Overview";
     private string Tab => Tabs.Contains(_tab) ? _tab : Tabs[0];
 

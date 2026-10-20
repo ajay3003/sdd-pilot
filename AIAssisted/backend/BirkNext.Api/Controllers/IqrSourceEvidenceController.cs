@@ -62,6 +62,22 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         !string.IsNullOrWhiteSpace(snapshot.Repository?.DisplayName) ? snapshot.Repository.DisplayName
         : snapshot.Projects.FirstOrDefault(project => !string.IsNullOrWhiteSpace(project.Name))?.Name;
 
+    /// <summary>Environment-specific values the workspace's snapshots declare (safe values only, with provenance) for setup forms to offer for the
+    /// target environment of the same kind. Declared in source; never configured, deployed or runtime verified by being listed.</summary>
+    [HttpGet("environment-values")]
+    public async Task<ActionResult<BirkNext.SourceDomains.SourceEnvironmentValuesView>> EnvironmentValues(CancellationToken ct)
+    {
+        if (!sources.SourceAnalysisEnabled)
+            return Ok(new BirkNext.SourceDomains.SourceEnvironmentValuesView { Limitations = [BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.Disabled] });
+        var snapshots = await sources.ListAsync("", ct);
+        return Ok(new BirkNext.SourceDomains.SourceEnvironmentValuesView
+        {
+            Candidates = BirkNext.SourceDomains.SourceEnvironmentValueExtractor.Candidates(snapshots),
+            Limitations = ["Declared in source: not configured, deployed, reachable or runtime verified.",
+                "Only safe values are listed; secrets, connection strings, placeholders and loopback (developer machine) URLs are never offered."],
+        });
+    }
+
     /// <summary>Integration Quality Review's view of Source Analysis: snapshots for binding one to an integration (read-only metadata).</summary>
     [HttpGet("scope")]
     public async Task<ActionResult<BirkNext.SourceEvidence.ReviewSourceOptions>> Scope([FromQuery] string? environmentId, [FromQuery] Guid? primary, CancellationToken ct)

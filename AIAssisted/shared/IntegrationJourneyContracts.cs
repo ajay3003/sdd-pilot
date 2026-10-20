@@ -404,6 +404,8 @@ public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName
     public string? Repository { get; init; }
     public IReadOnlyList<string> BoundIntegrations { get; init; } = [];
     public IReadOnlyList<string> InfrastructureFormats { get; init; } = [];
+    /// <summary>The configuration environments the snapshot declares (Development, QA, Local …). A source label, never a deployed environment.</summary>
+    public IReadOnlyList<string> ConfigurationEnvironments { get; init; } = [];
 }
 
 /// <summary>Source setup across every registered pack that declares logical sources, plus the stored snapshots they were matched against.

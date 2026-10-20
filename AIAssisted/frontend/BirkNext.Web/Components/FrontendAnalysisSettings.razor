@@ -1,4 +1,6 @@
 @using BirkNext.ManagedEdge
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Components.SourceDomains
 @using BirkNext.LocalHttpsProxy
 @implements IAsyncDisposable
 @inject IServiceProvider ServiceProvider
@@ -488,24 +490,29 @@
                     <div class="fa-form-grid">
                         <div class="fa-threshold-group-title fa-field-full">Frontend</div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Frontend Base URL</label>
-                            <input type="url" class="form-control" placeholder="https://myapp.example.com"
-                                   @bind="_editProfile.TargetUrl"
-                                   @bind:after="() => ClearDetectionState()" />
+                            @{ var urlValue = EnvironmentValue(EnvironmentValueKeys.FrontendOrigin, SelectedProfile?.TargetUrl, SelectedProfile); }
+                            <label class="fa-label" for="fa-edit-target-url">Frontend Base URL</label>
+                            <input id="fa-edit-target-url" type="url" class="form-control" placeholder="@(string.IsNullOrWhiteSpace(_editProfile.TargetUrl) ? "https://myapp.example.com" : null)"
+                                   @bind="_editProfile.TargetUrl" aria-describedby="fa-edit-target-url-source" data-testid="fa-edit-target-url"
+                                   @bind:after="() => { _prefilled.Remove(EnvironmentValueKeys.FrontendOrigin); ClearDetectionState(); }" />
+                            <EnvironmentValueHint Resolution="urlValue" Field="Frontend Base URL" Id="fa-edit-target-url-source" TestId="fa-target-url-source"
+                                                  Prefilled="IsPrefilled(EnvironmentValueKeys.FrontendOrigin, _editProfile.TargetUrl, urlValue)"
+                                                  AnySourceValue="AnySourceValue(EnvironmentValueKeys.FrontendOrigin)"
+                                                  OnUse="value => { _editProfile.TargetUrl = value; ClearDetectionState(); }" />
                         </div>
 
                         <div class="fa-threshold-group-title fa-field-full">Request Settings</div>
                         <div class="fa-form-row-compact">
                             <div class="form-field">
-                                <label class="fa-label">Request Timeout</label>
+                                <label class="fa-label" for="fa-edit-timeout">Request Timeout</label>
                                 <div style="display:flex;align-items:center;gap:.5rem">
-                                    <input type="number" class="form-control fa-threshold-input" min="1" max="300" @bind="_editProfile.RequestTimeoutSeconds" />
+                                    <input id="fa-edit-timeout" type="number" class="form-control fa-threshold-input" min="1" max="300" @bind="_editProfile.RequestTimeoutSeconds" />
                                     <span class="fa-threshold-unit">seconds</span>
                                 </div>
                             </div>
                             <div class="form-field">
-                                <label class="fa-label">Retry Count</label>
-                                <input type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
+                                <label class="fa-label" for="fa-edit-retry">Retry Count</label>
+                                <input id="fa-edit-retry" type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
                             </div>
                         </div>
                     </div>
@@ -514,7 +521,9 @@
                 {
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Frontend</dt></div>
-                        <div class="fa-dl-row"><dt>Frontend Base URL</dt><dd>@(profile.TargetUrl ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Frontend Base URL</dt><dd data-testid="fa-view-target-url">@(profile.TargetUrl ?? "—")
+                            <EnvironmentValueHint Resolution="EnvironmentValue(EnvironmentValueKeys.FrontendOrigin, profile.TargetUrl, profile)" Field="Frontend Base URL"
+                                                  AnySourceValue="AnySourceValue(EnvironmentValueKeys.FrontendOrigin)" TestId="fa-view-target-url-source" /></dd></div>
                         <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Request Settings</dt></div>
                         <div class="fa-dl-row"><dt>Request Timeout</dt><dd>@profile.RequestTimeoutSeconds s</dd></div>
                         <div class="fa-dl-row"><dt>Retry Count</dt><dd>@profile.RetryCount</dd></div>
@@ -653,11 +662,21 @@
                         </div>
                         <div class="form-field fa-field-full">
                             <label class="fa-label" for="configured-authority">Expected Authority <span class="form-optional">(optional, configured)</span></label>
-                            <input id="configured-authority" type="url" class="form-control" placeholder="https://login.microsoftonline.com/…" @bind="auth.ExpectedAuthority" />
+                            @{ var authorityValue = EnvironmentValue(EnvironmentValueKeys.AuthenticationAuthority, SelectedProfile?.Authentication?.ExpectedAuthority, SelectedProfile); }
+                            <input id="configured-authority" type="url" class="form-control" placeholder="@(string.IsNullOrWhiteSpace(auth.ExpectedAuthority) ? "https://login.microsoftonline.com/…" : null)"
+                                   @bind="auth.ExpectedAuthority" @bind:after="() => _prefilled.Remove(EnvironmentValueKeys.AuthenticationAuthority)" aria-describedby="configured-authority-source" />
+                            <EnvironmentValueHint Resolution="authorityValue" Field="Expected Authority" Id="configured-authority-source" TestId="fa-authority-source"
+                                                  Prefilled="IsPrefilled(EnvironmentValueKeys.AuthenticationAuthority, auth.ExpectedAuthority, authorityValue)"
+                                                  AnySourceValue="AnySourceValue(EnvironmentValueKeys.AuthenticationAuthority)" OnUse="value => auth.ExpectedAuthority = value" />
                         </div>
                         <div class="form-field">
                             <label class="fa-label" for="configured-tenant">Expected Tenant <span class="form-optional">(optional, configured)</span></label>
-                            <input id="configured-tenant" type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedTenant" />
+                            @{ var tenantValue = EnvironmentValue(EnvironmentValueKeys.AuthenticationTenant, SelectedProfile?.Authentication?.ExpectedTenant, SelectedProfile); }
+                            <input id="configured-tenant" type="text" class="form-control" placeholder="@(string.IsNullOrWhiteSpace(auth.ExpectedTenant) ? "00000000-0000-0000-0000-000000000000" : null)"
+                                   @bind="auth.ExpectedTenant" @bind:after="() => _prefilled.Remove(EnvironmentValueKeys.AuthenticationTenant)" aria-describedby="configured-tenant-source" />
+                            <EnvironmentValueHint Resolution="tenantValue" Field="Expected Tenant" Id="configured-tenant-source" TestId="fa-tenant-source"
+                                                  Prefilled="IsPrefilled(EnvironmentValueKeys.AuthenticationTenant, auth.ExpectedTenant, tenantValue)"
+                                                  AnySourceValue="AnySourceValue(EnvironmentValueKeys.AuthenticationTenant)" OnUse="value => auth.ExpectedTenant = value" />
                         </div>
                         <div class="form-field">
                             <label class="fa-label" for="configured-client-id">Expected Client ID <span class="form-optional">(optional, configured)</span></label>
@@ -1490,11 +1509,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             <div class="fa-form-grid">
                 <div class="form-field fa-field-full">
                     <label class="fa-label" for="fa-create-name">Environment Name <span class="wsr-required">*</span></label>
-                    <input id="fa-create-name" type="text" class="form-control" @bind="_newProfileName" placeholder="e.g. Staging" autofocus />
+                    <input id="fa-create-name" type="text" class="form-control" @bind="_newProfileName" @bind:after="PrefillNewProfileUrl" placeholder="e.g. Staging" autofocus />
                 </div>
                 <div class="form-field fa-field-full">
                     <label class="fa-label" for="fa-create-type">Environment Type</label>
-                    <select id="fa-create-type" class="form-control" @bind="_newProfileEnv">
+                    <select id="fa-create-type" class="form-control" @bind="_newProfileEnv" @bind:after="PrefillNewProfileUrl" data-testid="fa-create-type">
                         @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
                         {
                             <option value="@env">@env</option>
@@ -1503,9 +1522,12 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 </div>
                 <div class="form-field fa-field-full">
                     <label class="fa-label" for="fa-create-url">Frontend Base URL</label>
-                    <input id="fa-create-url" type="url" class="form-control" @bind="_newProfileUrl" @bind:event="oninput"
-                           placeholder="https://your-application.example.com/" aria-describedby="fa-create-url-help" />
+                    <input id="fa-create-url" type="url" class="form-control" @bind="_newProfileUrl" @bind:event="oninput" @bind:after="() => _newUrlFromSource = false"
+                           placeholder="@(string.IsNullOrWhiteSpace(_newProfileUrl) ? "https://your-application.example.com/" : null)" aria-describedby="fa-create-url-help fa-create-url-source" data-testid="fa-create-url" />
                     <small id="fa-create-url-help">Optional. Add the frontend URL to run Detect settings after creation.</small>
+                    <EnvironmentValueHint Resolution="NewProfileUrlValue" Field="Frontend Base URL" Id="fa-create-url-source" TestId="fa-create-url-source"
+                                          Prefilled="_newUrlFromSource" AnySourceValue="AnySourceValue(EnvironmentValueKeys.FrontendOrigin)"
+                                          OnUse="value => { _newProfileUrl = value; _newUrlFromSource = false; }" />
                     @if (!IsNewProfileUrlValid)
                     {
                         <div role="alert">Target URL is not a valid absolute URL.</div>
@@ -1937,6 +1959,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _companionRuntime = ServiceProvider.GetService<BrowserCompanionRuntime>();
         if (_companionRuntime is not null) _companionRuntime.Changed += EdgeRuntimeChanged;
         _discovery = ServiceProvider.GetService<IEndpointDiscoveryService>();
+        await LoadEnvironmentValuesAsync();
         await FaSettings.LoadAsync(JS);
         // Detection snapshots live in a separate evidence store (never in the saved profile), so load them before restoring.
         await FaSettings.LoadDetectionSnapshotsAsync(JS);
@@ -2037,10 +2060,66 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _originalAuthenticationJson = System.Text.Json.JsonSerializer.Serialize(SelectedProfile.Authentication);
         _isEditMode  = true;
         _saveError   = null;
+        ApplySourcePrefill();
     }
+
+    // ── Environment-specific source values ───────────────────────────────────
+    // Declared in source for THIS environment's kind only (never another environment, Local or Default). A saved value always wins; an empty
+    // field of the edit draft is filled with the single declared value and marked source-derived — the draft is persisted only by Save.
+
+    /// <summary>The workspace's environment-specific source values; null when Source Analysis has none or is unavailable (forms work without it).</summary>
+    private SourceEnvironmentValuesView? _environmentValues;
+    /// <summary>Semantic keys whose draft field this form filled from source (cleared on save, cancel and when the person changes the value).</summary>
+    private readonly HashSet<string> _prefilled = new(StringComparer.Ordinal);
+    private bool _newUrlFromSource;
+
+    private async Task LoadEnvironmentValuesAsync()
+    {
+        if (ServiceProvider.GetService<IIntegrationCatalogApiService>() is not { } api) return;
+        try { _environmentValues = await api.EnvironmentValuesAsync(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { _environmentValues = null; }
+    }
+
+    private IReadOnlyList<EnvironmentValueCandidate> EnvironmentCandidates => _environmentValues?.Candidates ?? [];
+
+    private bool AnySourceValue(string key) => EnvironmentCandidates.Any(c => c.SemanticKey == key);
+
+    /// <summary>What a field of <paramref name="profile"/> shows: its SAVED value against the values declared for the profile's environment.</summary>
+    private EnvironmentValueResolution EnvironmentValue(string key, string? saved, FrontendAnalysisProfile? profile) =>
+        EnvironmentValueResolver.Resolve(key, saved, EnvironmentValuePresentation.TargetKind(profile), EnvironmentCandidates);
+
+    private bool IsPrefilled(string key, string? draft, EnvironmentValueResolution resolution) =>
+        _prefilled.Contains(key) && resolution.State == EnvironmentValueState.SourceSuggested && string.Equals(draft, resolution.Value, StringComparison.Ordinal);
+
+    /// <summary>Fills EMPTY draft fields with the single value source declares for this environment (never over a saved or typed value).</summary>
+    private void ApplySourcePrefill()
+    {
+        _prefilled.Clear();
+        if (_editProfile is null || SelectedProfile is not { } saved) return;
+        string? Suggested(string key, string? current) =>
+            string.IsNullOrWhiteSpace(current) && EnvironmentValue(key, null, saved) is { State: EnvironmentValueState.SourceSuggested, Value: { } value } ? value : null;
+        if (Suggested(EnvironmentValueKeys.FrontendOrigin, _editProfile.TargetUrl) is { } url) { _editProfile.TargetUrl = url; _prefilled.Add(EnvironmentValueKeys.FrontendOrigin); }
+        var auth = _editProfile.Authentication;
+        if (auth is null) return;
+        if (Suggested(EnvironmentValueKeys.AuthenticationAuthority, auth.ExpectedAuthority) is { } authority) { auth.ExpectedAuthority = authority; _prefilled.Add(EnvironmentValueKeys.AuthenticationAuthority); }
+        if (Suggested(EnvironmentValueKeys.AuthenticationTenant, auth.ExpectedTenant) is { } tenant) { auth.ExpectedTenant = tenant; _prefilled.Add(EnvironmentValueKeys.AuthenticationTenant); }
+    }
+
+    /// <summary>Add Environment: the URL follows the chosen environment while it is empty or still the source value (never over a typed URL).</summary>
+    private void PrefillNewProfileUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(_newProfileUrl) && !_newUrlFromSource) return;
+        var resolution = NewProfileUrlValue;
+        _newProfileUrl = resolution is { State: EnvironmentValueState.SourceSuggested, Value: { } value } ? value : "";
+        _newUrlFromSource = _newProfileUrl.Length > 0;
+    }
+
+    private EnvironmentValueResolution NewProfileUrlValue =>
+        EnvironmentValueResolver.Resolve(EnvironmentValueKeys.FrontendOrigin, null, EnvironmentValuePresentation.TargetKind(_newProfileEnv, _newProfileName), EnvironmentCandidates);
 
     private void CancelEdit()
     {
+        _prefilled.Clear();
         _editProfile = null;
         _originalProfileJson = null;
         _originalAuthenticationJson = null;
@@ -2152,6 +2231,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _newProfileName = "";
         _newProfileUrl = "";
         _newProfileEnv  = FrontendEnvironmentType.Local;
+        _newUrlFromSource = false;
+        PrefillNewProfileUrl();
         _showCreateDialog = true;
     }
 

@@ -1,0 +1,43 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* The provenance line under one environment-specific field: configured vs declared in source for THIS target environment, never runtime
+   verified. "Use" only fills the form; the form's Save persists it. Renders nothing when the source says nothing about the field. *@
+@if (EnvironmentValuePresentation.StateLine(Resolution, Prefilled, AnySourceValue) is { } line)
+{
+    <div class="evh evh-@EnvironmentValuePresentation.Tone(Resolution.State)" id="@Id" data-testid="@TestId" data-state="@Resolution.State" data-prefilled="@(Prefilled ? "true" : "false")">
+        <p class="evh-line" data-testid="@($"{TestId}-line")">@line</p>
+        @if (Resolution.Candidates.Count > 0)
+        {
+            <details class="evh-details" data-testid="@($"{TestId}-source")">
+                <summary>View source<span class="visually-hidden"> for @Field</span></summary>
+                <ul class="evh-list">
+                    @foreach (var candidate in Resolution.Candidates)
+                    {
+                        <li data-testid="@($"{TestId}-candidate")">
+                            <code>@candidate.Value</code>
+                            <span class="evh-muted">@EnvironmentValuePresentation.Provenance(candidate) · @candidate.ArchiveFileName · @candidate.Environment.Raw (@candidate.EnvironmentBasis) · @candidate.Basis</span>
+                            @if (OnUse.HasDelegate && Resolution.State is EnvironmentValueState.ReviewRequired or EnvironmentValueState.ConfiguredDiffersFromSource)
+                            {
+                                <button type="button" class="evh-use" data-testid="@($"{TestId}-use")" @onclick="() => OnUse.InvokeAsync(candidate.Value)">Use this value<span class="visually-hidden"> for @Field</span></button>
+                            }
+                        </li>
+                    }
+                </ul>
+                <p class="evh-muted">Declared in source; not deployed, reachable or runtime verified because of it.</p>
+            </details>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public EnvironmentValueResolution Resolution { get; set; } = default!;
+    [Parameter, EditorRequired] public string Field { get; set; } = "";
+    /// <summary>True when the field currently holds the source value because this form filled it in (not yet saved).</summary>
+    [Parameter] public bool Prefilled { get; set; }
+    /// <summary>Whether source declares this key for any environment (enables "No QA value found" guidance).</summary>
+    [Parameter] public bool AnySourceValue { get; set; }
+    [Parameter] public EventCallback<string> OnUse { get; set; }
+    [Parameter] public string Id { get; set; } = "";
+    [Parameter] public string TestId { get; set; } = "evh";
+}

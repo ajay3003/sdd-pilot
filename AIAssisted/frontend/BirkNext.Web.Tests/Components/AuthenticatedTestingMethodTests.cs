@@ -568,7 +568,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
         Click(cut, "Edit Environment");
         OpenTab(cut, "Target Application");
-        cut.Find("input[type=url][placeholder='https://myapp.example.com']").Change("https://other.bufetat.no/");
+        cut.Find("[data-testid=fa-edit-target-url]").Change("https://other.bufetat.no/");
         OpenTab(cut, "Authentication");
         cut.WaitForAssertion(() => Assert.Contains("Proxy running for dev", cut.Markup));
         Assert.Equal("Ready", Row(cut, "proxy-state"));

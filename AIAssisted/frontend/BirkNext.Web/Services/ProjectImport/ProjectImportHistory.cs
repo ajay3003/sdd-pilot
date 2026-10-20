@@ -26,6 +26,9 @@ public sealed record PreviousImportRow(
     IReadOnlyList<string> BoundIntegrations,
     IReadOnlyList<string> InfrastructureFormats)
 {
+    /// <summary>Environment labels the source's configuration declares (Development, QA, Local …). Informational: not deployed environments.</summary>
+    public IReadOnlyList<string> ConfigurationEnvironments { get; init; } = [];
+
     /// <summary>Only a Project Import recorded in this workspace can become the current project again (its documents are in the repository).</summary>
     public bool CanUseAsCurrent => Origin == PreviousImportOrigin.ProjectImport && ImportId is not null;
 }
@@ -54,7 +57,8 @@ public static class ProjectImportHistory
             rows.Add(new PreviousImportRow($"import:{record.ImportId}", PreviousImportOrigin.ProjectImport, record.ImportId, record.ProjectName, record.ArchiveFileName,
                 record.ArchiveSha256, record.ImportedAt, record.SourceSnapshotId ?? snapshot?.SnapshotId, snapshot?.Status ?? SourceStateText(record),
                 DocumentsText(record), record.SourceSnapshotId is not null || snapshot is not null,
-                LogicalSources(setup, snapshot?.SnapshotId ?? record.SourceSnapshotId), snapshot?.BoundIntegrations ?? [], snapshot?.InfrastructureFormats ?? []));
+                LogicalSources(setup, snapshot?.SnapshotId ?? record.SourceSnapshotId), snapshot?.BoundIntegrations ?? [], snapshot?.InfrastructureFormats ?? [])
+            { ConfigurationEnvironments = snapshot?.ConfigurationEnvironments ?? [] });
         }
         // Stored snapshots no recorded import accounts for (a Source Analysis upload, or an import made in another workspace). The same archive
         // analyzed twice is one row: its newest snapshot. The current project's archive never reappears here.
@@ -64,7 +68,8 @@ public static class ProjectImportHistory
             var snapshot = group.OrderByDescending(s => s.AnalyzedAt).ThenBy(s => s.SnapshotId).First();
             rows.Add(new PreviousImportRow($"snapshot:{snapshot.SnapshotId:D}", PreviousImportOrigin.SourceAnalysis, snapshot.ImportId, snapshot.Repository ?? StripZip(snapshot.ArchiveFileName),
                 snapshot.ArchiveFileName, snapshot.Fingerprint, snapshot.AnalyzedAt, snapshot.SnapshotId, snapshot.Status, "No project documents imported", true,
-                LogicalSources(setup, snapshot.SnapshotId), snapshot.BoundIntegrations, snapshot.InfrastructureFormats));
+                LogicalSources(setup, snapshot.SnapshotId), snapshot.BoundIntegrations, snapshot.InfrastructureFormats)
+            { ConfigurationEnvironments = snapshot.ConfigurationEnvironments });
         }
         return rows.OrderByDescending(r => r.ImportedAt).ThenBy(r => r.Key, StringComparer.Ordinal).ToList();
     }

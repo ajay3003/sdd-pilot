@@ -212,3 +212,15 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 .sa-page .sd-link, .sa-page .obs-link, .sa-page .db-link, .sa-page .db-name, .sa-page .arch-link:not(.arch-ellipsis) { min-height: 24px; display: inline-flex; align-items: center; }
 .sa-page select { min-height: 2rem; }
 .sa-page .arch-ellipsis { min-height: 24px; line-height: 24px; }
+
+/* Environment-specific value provenance under a setup field (EnvironmentValueHint). State is always text; colour only supports it. */
+.evh { margin-top: .3rem; font-size: .8rem; display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; border-left: 3px solid var(--clr-border, #cbd5e1); padding-left: .5rem; }
+.evh-info { border-left-color: #0f766e; }
+.evh-attention { border-left-color: #b45309; }
+.evh-line { margin: 0; color: var(--clr-text, #1f2937); }
+.evh-muted { color: var(--clr-text-muted, #475569); }
+.evh-details summary { cursor: pointer; width: fit-content; color: var(--clr-link, #1d4ed8); }
+.evh-list { margin: .25rem 0; padding-left: 1rem; display: grid; gap: .25rem; }
+.evh-list code { overflow-wrap: anywhere; white-space: normal; }
+.evh-use { background: none; border: 0; padding: 0 0 0 .4rem; color: var(--clr-link, #1d4ed8); text-decoration: underline; cursor: pointer; font-size: .8rem; }
+.sd-envvalue { display: block; overflow-wrap: anywhere; white-space: normal; }

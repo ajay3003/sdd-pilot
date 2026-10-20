@@ -59,6 +59,8 @@ public interface IIntegrationCatalogApiService
         Task.FromResult<IntegrationSourceConfiguration?>(null);
     /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
     Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
+    /// <summary>Environment-specific safe values the workspace's Source Analysis snapshots declare (with provenance). Declared in source only.</summary>
+    Task<BirkNext.SourceDomains.SourceEnvironmentValuesView?> EnvironmentValuesAsync(CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceEnvironmentValuesView?>(null);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
         Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source Analysis is unavailable."));
     async Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> AnalyzeSourceSnapshotDetailedAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default)
@@ -144,6 +146,9 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
         // 100-second default. Keep the longer timeout scoped to this typed integration client.
         this.http.Timeout = SourceUploadTimeout;
     }
+
+    public async Task<BirkNext.SourceDomains.SourceEnvironmentValuesView?> EnvironmentValuesAsync(CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<BirkNext.SourceDomains.SourceEnvironmentValuesView>("api/source-analysis/environment-values", Json, ct);
 
     public async Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default)
     {
