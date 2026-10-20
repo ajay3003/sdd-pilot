@@ -121,7 +121,8 @@ public static class EnvironmentValueResolver
     public static EnvironmentValueResolution Resolve(string semanticKey, string? configured, SourceEnvironmentKind? target, IEnumerable<EnvironmentValueCandidate> all,
         string? component = null)
     {
-        var candidates = target is not { } kind || kind is SourceEnvironmentKind.Default or SourceEnvironmentKind.Custom ? [] :
+        // Parenthesized: the .NET 8 compiler (CI) parses "Custom ? []" as the nullable array type "Custom?[]" inside the pattern (CS1002).
+        var candidates = target is not { } kind || (kind is SourceEnvironmentKind.Default or SourceEnvironmentKind.Custom) ? [] :
             all.Where(c => c.SemanticKey == semanticKey && c.Environment.Kind == kind
                     && (component is null || string.Equals(c.Component, component, StringComparison.OrdinalIgnoreCase)))
                .OrderBy(c => c.Value, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.ArchiveFileName, StringComparer.Ordinal).ThenBy(c => c.File, StringComparer.Ordinal)
