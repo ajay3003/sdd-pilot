@@ -35,6 +35,24 @@ public sealed class ManualAuthenticationVerificationTests
         strategy.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData("https://app.example.org:8443/portal?code=secret#state", "https://app.example.org:8443/portal")]
+    [InlineData("https://app.example.org:443/", "https://app.example.org")]
+    [InlineData("https://app.example.org/", "https://app.example.org")]
+    public async Task OriginalUrl_KeepsANonDefaultPort_AndStillStripsQueryAndFragment(string target, string expected)
+    {
+        var dns = new FakeDnsResolver();
+        dns.Add("app.example.org", "203.0.113.2");
+        var service = new TargetEnvironmentDetectionService(new BrowserTargetValidator(),
+            new HttpClient(DetectionFixtures.BlazorWasmTarget()), dns, new ClientFrameworkDetector(),
+            NullLogger<TargetEnvironmentDetectionService>.Instance,
+            Options.Create(new TargetDetectionOptions { ManualManagedEdgeHosts = ["app.example.org"] }));
+        var result = await service.DetectWithStrategyAsync(target, "session", "profile", new Mock<ITargetDetectionAuthenticationStrategy>(MockBehavior.Strict).Object);
+        // A port is part of the target identity: dropping it made every detection of a port-bearing target read as a different target.
+        Assert.Equal(expected, result.DetectionResponse.OriginalUrl);
+        Assert.NotEqual(TargetDetectionState.Stale, result.State);
+    }
+
     [Fact]
     public async Task ExplicitManualContinuation_NeverResolvesBrowserManager()
     {

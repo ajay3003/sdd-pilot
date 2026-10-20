@@ -788,9 +788,11 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
     {
         // Return the normalized application target (user-provided URI).
         // Never return authentication redirect URLs with query parameters.
-        // Format: scheme://host/path (excludes query and fragment)
+        // Format: scheme://host[:port]/path (excludes query and fragment). A non-default port is part of the target's identity: dropping it
+        // made every detection of a port-bearing target look like a different target (always "Needs re-check").
         var pathWithoutQuery = applicationUri.AbsolutePath == "/" ? "" : applicationUri.AbsolutePath;
-        return $"{applicationUri.Scheme}://{applicationUri.Host}{pathWithoutQuery}";
+        var authority = applicationUri.IsDefaultPort ? applicationUri.Host : $"{applicationUri.Host}:{applicationUri.Port}";
+        return $"{applicationUri.Scheme}://{authority}{pathWithoutQuery}";
     }
 
     private string GetSanitizedUrlForResponse(string urlString)
