@@ -1,73 +1,82 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services.ProjectImport
+@using S = BirkNext.Web.Services.ProjectImport.SourceSetupPresentation
 
-@* Source setup of every registered test pack that declares logical sources, rendered from the pack's own metadata (requirement level, expected
-   artifact, capabilities, journeys) and the backend's resolution (bound / available / missing / review required). Generic: it names no pack. *@
+@* Source setup of every registered test pack that declares logical sources, as status-first cards rendered from the pack's own metadata and the
+   backend's resolution. Availability (a compatible stored snapshot, any import) and binding (canonical IQR evidence) are separate lines; the
+   technical requirement, matching evidence and provenance stay behind Details. Generic: it names no pack, product or file. *@
 @foreach (var pack in Setup.Packs)
 {
     var headingId = $"pi-setup-{Slug(pack.PackId)}";
     <section class="pi-card pi-setup" aria-labelledby="@headingId" data-testid="pi-source-setup" data-pack="@pack.PackId">
         <h2 id="@headingId">@pack.DisplayName source setup</h2>
-        <p class="pi-muted">The logical sources this test pack reads. A source package (ZIP) is matched by its content, not by its file name. Bound means the canonical
-            Integration Quality Review binding@(Setup.BindingsRead ? " of the selected target environment" : "")@(Setup.BindingsRead ? "" : "; no target environment is selected, so nothing reads as bound").</p>
-        <ul class="pi-setup-list" aria-label="@($"{pack.DisplayName} logical sources")">
-            @foreach (var source in pack.Sources)
+        <p class="pi-setup-progress" data-testid="pi-setup-progress">@S.Progress(pack)</p>
+        <p class="pi-muted pi-setup-note">Sources are matched by their content in any stored import, not by file name or by which project is current.@(Setup.BindingsRead ? "" : " No target environment is selected, so bindings are not shown.")</p>
+        <div class="pi-source-grid" role="list" aria-label="@($"{pack.DisplayName} sources")">
+            @foreach (var source in pack.Sources.OrderBy(s => s.Role.Requirement == TestPackSourceRequirement.Required ? 0 : 1))
             {
-                var action = SourceSetupPresentation.Action(source, ImportAnchor);
-                <li class="pi-setup-row" data-testid="pi-setup-source" data-role="@source.Role.Key" data-state="@source.State" data-requirement="@source.Role.Requirement">
-                    <div class="pi-setup-head">
-                        <strong class="pi-setup-name">@source.Role.Label</strong>
-                        <span class="pi-badge pi-badge-neutral" data-testid="pi-setup-requirement">@SourceSetupPresentation.RequirementLabel(source.Role.Requirement)</span>
-                        <span class="pi-badge pi-badge-@SourceSetupPresentation.StateTone(source.State)" data-testid="pi-setup-state">@SourceSetupPresentation.StateLabel(source.State)</span>
+                var optional = source.Role.Requirement != TestPackSourceRequirement.Required;
+                var primary = S.Primary(source, ImportAnchor);
+                var secondary = S.Secondary(source);
+                var boundTo = BoundTo(source);
+                var titleId = $"{headingId}-{Slug(source.Role.Key)}";
+                <article class="pi-source-card pi-source-@S.CardTone(source) @(optional ? "is-optional" : "")" role="listitem" aria-labelledby="@titleId"
+                         data-testid="pi-setup-source" data-role="@source.Role.Key" data-state="@source.State" data-requirement="@source.Role.Requirement">
+                    <header class="pi-source-head">
+                        <h3 id="@titleId">@source.Role.Label</h3>
+                        <div class="pi-source-badges">
+                            <span class="pi-badge pi-badge-neutral" data-testid="pi-setup-requirement">@S.RequirementLabel(source.Role.Requirement)</span>
+                            <span class="pi-badge pi-state-@S.CardTone(source)" data-testid="pi-setup-state">@S.CardState(source)</span>
+                        </div>
+                    </header>
+                    @if (S.SourceName(source) is { } name) { <p class="pi-source-name" data-testid="pi-setup-packages">@name</p> }
+                    @if (S.BindingLine(source, Setup.BindingsRead, boundTo) is { } binding) { <p class="pi-source-binding" data-testid="pi-setup-binding">@binding</p> }
+                    @if (S.JourneysText(source, pack.JourneyNames) is { Length: > 0 } journeys)
+                    {
+                        <p class="pi-source-usedby"><span class="pi-source-label">Used by</span> <span data-testid="pi-setup-journeys">@journeys</span></p>
+                    }
+                    else if (source.Role.Capabilities.Count > 0)
+                    {
+                        <p class="pi-source-usedby"><span class="pi-source-label">Used for</span> @source.Role.Capabilities[0]@(source.Role.Capabilities.Count > 1 ? $" and {source.Role.Capabilities.Count - 1} more" : "")</p>
+                    }
+                    <p class="pi-source-sentence" data-testid="pi-setup-detail">@S.Sentence(source)</p>
+                    <div class="pi-source-actions">
+                        <a class="@(optional ? "btn-secondary" : "btn-primary")" href="@primary.Href" aria-label="@primary.AccessibleName" data-testid="pi-setup-action">@primary.Text</a>
+                        @if (secondary is { } second) { <a class="pi-source-secondary" href="@second.Href" aria-label="@second.AccessibleName" data-testid="pi-setup-secondary">@second.Text</a> }
                     </div>
-                    <p class="pi-muted" data-testid="pi-setup-requirement-text">@SourceSetupPresentation.RequirementText(source.Role)</p>
-                    <dl class="pi-setup-facts">
-                        <div><dt>Source package</dt><dd data-testid="pi-setup-packages">@SourceSetupPresentation.PackagesText(source)</dd></div>
-                        @if (BoundTo(source) is { Count: > 0 } boundTo)
+                    <details class="pi-source-details" data-testid="pi-setup-details">
+                        <summary><span aria-hidden="true">Details</span><span class="visually-hidden">View @source.Role.Label source details</span></summary>
+                        <dl class="pi-source-facts">
+                            <div><dt>Expected source</dt><dd>@source.Role.ExpectedArtifact</dd></div>
+                            <div><dt>Requirement</dt><dd data-testid="pi-setup-requirement-text">@S.RequirementText(source.Role)</dd></div>
+                            @if (source.Role.Capabilities.Count > 0) { <div><dt>Used for</dt><dd><ul class="pi-list">@foreach (var capability in source.Role.Capabilities) { <li>@capability</li> }</ul></dd></div> }
+                            @if (S.JourneysText(source, pack.JourneyNames) is { Length: > 0 } usedBy) { <div><dt>Used by</dt><dd>@usedBy</dd></div> }
+                            @if (source.Integrations.Count > 0) { <div><dt>Integrations</dt><dd data-testid="pi-setup-integrations">@string.Join(", ", source.Integrations)</dd></div> }
+                            <div><dt>Matching</dt><dd>@(source.Candidates.Count == 0 ? "No compatible stored snapshot found." : $"{source.Candidates.Count} compatible stored snapshot{(source.Candidates.Count == 1 ? "" : "s")}")</dd></div>
+                        </dl>
+                        @if (source.Candidates.Count > 0)
                         {
-                            <div><dt>Binding</dt><dd data-testid="pi-setup-binding">Bound to @string.Join(", ", boundTo)</dd></div>
-                        }
-                        else if (source.Integrations.Count > 0)
-                        {
-                            <div><dt>Integrations</dt><dd data-testid="pi-setup-integrations">@string.Join(", ", source.Integrations)</dd></div>
-                        }
-                        @if (source.Candidates.SelectMany(c => c.Technologies).Distinct().ToList() is { Count: > 0 } technologies)
-                        {
-                            <div><dt>Technology</dt><dd>@string.Join(", ", technologies)</dd></div>
-                        }
-                        @if (source.Role.Capabilities.Count > 0)
-                        {
-                            <div><dt>Used for</dt><dd>@string.Join(", ", source.Role.Capabilities)</dd></div>
-                        }
-                        @if (SourceSetupPresentation.JourneysText(source, pack.JourneyNames) is { Length: > 0 } journeys)
-                        {
-                            <div><dt>Used by</dt><dd data-testid="pi-setup-journeys">@journeys</dd></div>
-                        }
-                    </dl>
-                    @if (source.State != TestPackSourceState.Bound && source.State != TestPackSourceState.Available)
-                    {
-                        <p class="pi-setup-detail" data-testid="pi-setup-detail">@source.Detail</p>
-                    }
-                    @if (action is { } next)
-                    {
-                        <p class="pi-actions"><a href="@next.Href" data-testid="pi-setup-action">@next.Text</a></p>
-                    }
-                    @if (source.Candidates.Count > 1)
-                    {
-                        <details class="pi-details" data-testid="pi-setup-candidates">
-                            <summary>@source.Candidates.Count matching snapshots of @source.Role.Label</summary>
-                            <ul class="pi-list">
+                            <ul class="pi-list" data-testid="pi-setup-candidates">
                                 @foreach (var candidate in source.Candidates)
                                 {
-                                    <li>@candidate.ArchiveFileName · <code title="@candidate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(candidate.Fingerprint)</code> ·
-                                        @candidate.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(candidate.Bound ? "Bound (canonical)" : "Available, not bound")</li>
+                                    <li data-testid="pi-setup-candidate">@candidate.ArchiveFileName · imported @candidate.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · <code title="@candidate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(candidate.Fingerprint)</code> ·
+                                        @(candidate.Bound ? "Bound (canonical)" : "Not bound")
+                                        @if (candidate.MatchedOn.Count > 0) { <span class="pi-muted" data-testid="pi-setup-matched"> — why it matches: @string.Join(", ", candidate.MatchedOn)</span> }
+                                    </li>
                                 }
                             </ul>
-                        </details>
-                    }
-                </li>
+                        }
+                        @if (source.NearMisses.Count > 0)
+                        {
+                            <ul class="pi-list" data-testid="pi-setup-nearmisses">
+                                @foreach (var miss in source.NearMisses) { <li><strong>@miss.ArchiveFileName</strong> was checked: @miss.Reason</li> }
+                            </ul>
+                        }
+                        <p class="pi-muted">@source.Detail</p>
+                    </details>
+                </article>
             }
-        </ul>
+        </div>
     </section>
 }
 

@@ -8,8 +8,8 @@
    (one module) shows one list and no module wording. *@
 @if (Explorer is not null)
 {
-<section class="pac" aria-labelledby="pac-heading" data-testid="pac" data-has-modules="@(_overview?.HasModules == true ? "true" : "false")">
-    <h2 id="pac-heading">Artifact candidates</h2>
+<section class="pac" aria-labelledby="@(LabelledBy ?? "pac-heading")" data-testid="pac" data-has-modules="@(_overview?.HasModules == true ? "true" : "false")">
+    @if (LabelledBy is null) { <h2 id="pac-heading">Artifact candidates</h2> }
     @if (_overview is null)
     {
         <p class="pac-muted" role="status">Loading artifact candidates…</p>
@@ -91,6 +91,9 @@
 }
 
 @code {
+    /// <summary>The id of a heading the host already shows (e.g. "Project artifacts · from archive"); the component then omits its own heading.</summary>
+    [Parameter] public string? LabelledBy { get; set; }
+
     private const string NoFocus = "__none__";
     private readonly string _id = "pac-" + Guid.NewGuid().ToString("N")[..8];
     private ArtifactModuleOverview? _overview;

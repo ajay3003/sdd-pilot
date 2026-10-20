@@ -193,4 +193,117 @@ public static class SourceSetupPresentation
 
     public static string JourneysText(TestPackSourceStatus status, IReadOnlyDictionary<string, string> names) =>
         string.Join(", ", status.Role.Journeys.Select(id => names.TryGetValue(id, out var name) ? name : id));
+
+    // ── Compact source cards ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Several matching snapshots of different content and none bound: the tester chooses (never the newest).</summary>
+    public static bool IsAmbiguous(TestPackSourceStatus status) =>
+        status.State == TestPackSourceState.ReviewRequired && !status.Candidates.Any(c => c.Bound)
+        && status.Candidates.Select(c => c.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1;
+
+    /// <summary>The card's main status: Available is availability only (binding is shown separately), never "Ready".</summary>
+    public static string CardState(TestPackSourceStatus status) => status.State switch
+    {
+        TestPackSourceState.Bound => "Bound",
+        TestPackSourceState.AvailableNotBound or TestPackSourceState.Available => "Available",
+        TestPackSourceState.ReviewRequired when IsAmbiguous(status) => "Ambiguous",
+        TestPackSourceState.ReviewRequired => "Review binding",
+        TestPackSourceState.NotProvided => "Not provided",
+        _ => "Missing",
+    };
+
+    public static string CardTone(TestPackSourceStatus status) => status.State switch
+    {
+        TestPackSourceState.Bound => "bound",
+        TestPackSourceState.AvailableNotBound or TestPackSourceState.Available => "available",
+        TestPackSourceState.ReviewRequired => "review",
+        TestPackSourceState.Missing => "missing",
+        _ => "optional",
+    };
+
+    /// <summary>The matching source's archive name (provenance), or how many match; null when nothing matches.</summary>
+    public static string? SourceName(TestPackSourceStatus status)
+    {
+        if (status.Candidates.Count == 0) return null;
+        if (IsAmbiguous(status)) return $"{status.Candidates.Select(c => c.Fingerprint).Distinct().Count()} matching imported sources";
+        var main = status.Candidates.FirstOrDefault(c => c.Bound) ?? status.Candidates[0];
+        var others = status.Candidates.Select(c => c.ArchiveFileName).Distinct().Count() - 1;
+        return main.ArchiveFileName + (others > 0 ? $" · +{others} more" : "");
+    }
+
+    /// <summary>The binding line, only where binding matters: "Binding not configured", "Bound to …", or why it cannot be shown.</summary>
+    public static string? BindingLine(TestPackSourceStatus status, bool bindingsRead, IReadOnlyList<string> boundTo) => status.State switch
+    {
+        TestPackSourceState.Bound => boundTo.Count > 0 ? $"Bound to {string.Join(", ", boundTo)}" : "Bound in Integration Quality Review",
+        TestPackSourceState.AvailableNotBound => bindingsRead ? "Binding not configured" : "Binding: select a target environment",
+        TestPackSourceState.ReviewRequired when !IsAmbiguous(status) => "The bound snapshot is not this source",
+        _ => null,
+    };
+
+    /// <summary>One short sentence; the technical explanation stays in Details.</summary>
+    public static string Sentence(TestPackSourceStatus status) => status.State switch
+    {
+        TestPackSourceState.Bound => "Canonical source evidence is bound.",
+        TestPackSourceState.AvailableNotBound or TestPackSourceState.Available => "Matching imported source found.",
+        TestPackSourceState.ReviewRequired when IsAmbiguous(status) => "Multiple matching sources found. Choose one.",
+        TestPackSourceState.ReviewRequired => "The bound source does not match this requirement.",
+        TestPackSourceState.NotProvided => status.Role.Requirement == TestPackSourceRequirement.Conditional
+            ? "Not provided. Needed only under a condition." : "Optional, not provided. It never blocks the pack.",
+        _ => status.NearMisses.Count > 0
+            ? $"No matching imported source found. {status.NearMisses[0].ArchiveFileName} was checked but does not match."
+            : "No matching imported source found.",
+    };
+
+    /// <summary>A card action: short visible text, a specific accessible name, the target.</summary>
+    public sealed record CardAction(string Text, string AccessibleName, string Href);
+
+    public static CardAction Primary(TestPackSourceStatus status, string importAnchor)
+    {
+        var label = status.Role.Label;
+        var open = status.Candidates.FirstOrDefault(c => c.Bound) ?? status.Candidates.FirstOrDefault();
+        return status.State switch
+        {
+            TestPackSourceState.Missing => new("Import source", $"Import {label} source", importAnchor),
+            TestPackSourceState.NotProvided => new("Import optional source", $"Import optional {label} source", importAnchor),
+            TestPackSourceState.ReviewRequired when IsAmbiguous(status) => new("Choose source", $"Choose the {label} source in IQR Evidence", Href("iqr-evidence")!),
+            TestPackSourceState.ReviewRequired => new("Review binding", $"Review the {label} binding in IQR Evidence", Href("iqr-evidence")!),
+            _ when open is not null => new("Open source", $"Open {label} source in Source Analysis", ProjectImportPresentation.SourceAnalysisHref(open.SnapshotId)),
+            _ => new("Import source", $"Import {label} source", importAnchor),
+        };
+    }
+
+    /// <summary>The quieter second action where one is useful (bind, view binding, configure); null otherwise.</summary>
+    public static CardAction? Secondary(TestPackSourceStatus status)
+    {
+        var label = status.Role.Label;
+        return (status.State, status.NextActionTarget) switch
+        {
+            (TestPackSourceState.Bound, _) => new("View binding", $"View the {label} binding in IQR Evidence", Href("iqr-evidence")!),
+            (TestPackSourceState.AvailableNotBound, "target-environment") => new("Select target environment", $"Select a target environment to bind {label}", Href("target-environment")!),
+            (TestPackSourceState.AvailableNotBound, "target-environment-integrations") => new("Configure integration", $"Configure the integration that uses {label}", Href("target-environment-integrations")!),
+            (TestPackSourceState.AvailableNotBound, _) => new("Bind evidence", $"Bind {label} evidence in IQR Evidence", Href("iqr-evidence")!),
+            _ => null,
+        };
+    }
+
+    /// <summary>Overall progress from the actual states: required availability, bindings still needed, ambiguity, missing, optional sources.</summary>
+    public static string Progress(TestPackSourceSetup pack)
+    {
+        var required = pack.Sources.Where(s => s.Role.Requirement == TestPackSourceRequirement.Required).ToList();
+        var parts = new List<string>();
+        var available = required.Count(s => s.State is TestPackSourceState.Bound or TestPackSourceState.AvailableNotBound or TestPackSourceState.Available);
+        var missing = required.Count(s => s.State == TestPackSourceState.Missing);
+        if (required.Count > 0)
+            parts.Add(missing == required.Count ? $"{missing} required source{(missing == 1 ? "" : "s")} missing" : $"{available} of {required.Count} required sources available");
+        var unbound = required.Count(s => s.State == TestPackSourceState.AvailableNotBound);
+        if (unbound > 0) parts.Add($"{unbound} need{(unbound == 1 ? "s" : "")} binding");
+        var ambiguous = required.Count(IsAmbiguous);
+        if (ambiguous > 0) parts.Add($"{ambiguous} ambiguous");
+        var review = required.Count(s => s.State == TestPackSourceState.ReviewRequired && !IsAmbiguous(s));
+        if (review > 0) parts.Add($"{review} binding to review");
+        if (missing > 0 && missing < required.Count) parts.Add($"{missing} missing");
+        foreach (var optional in pack.Sources.Where(s => s.Role.Requirement != TestPackSourceRequirement.Required))
+            parts.Add($"optional {optional.Role.Label} {(optional.State == TestPackSourceState.NotProvided ? "not provided" : "available")}");
+        return string.Join(" · ", parts);
+    }
 }

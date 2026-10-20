@@ -404,4 +404,60 @@ public sealed class TestPackSourceRoleTests
         infra.State.Should().Be(TestPackSourceState.NotProvided);
         infra.Detail.Should().Be("Not provided. Needed only when: infrastructure resource configuration must be source-verified.");
     }
+
+    // ── Import Project screenshot case: current import terraform, earlier M2LB.Common and M2LB imports, nothing bound ──────────────────────
+
+    private static IqrSourceSnapshot Imported(IqrSourceSnapshot snapshot, string importId) =>
+        snapshot with { ProjectImport = new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = importId, ArchiveFileName = snapshot.Archive.FileName, ArchiveSha256 = snapshot.Archive.Sha256, ImportedAt = snapshot.AnalyzedAt } };
+
+    [Fact]
+    public async Task StoredEarlierImports_AreSearched_SoAnUnboundCompatibleM2lbIsAvailableWhileAnotherProjectIsCurrent()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var m2lb = Imported(WithFingerprint(M2lb("backend-source-2026.zip"), 'b'), "import-m2lb");
+        var common = Imported(WithFingerprint(Repo("M2LB.Common.zip", ("M2LB.Common", null)), 'c'), "import-common");
+        var terraform = Imported(Terraform("terraform.zip"), "import-terraform");
+        harness.Sources.Snapshots.AddRange([m2lb, common, terraform]);
+
+        var setup = await harness.Service(Pack(harness)).SourceSetupAsync(ActiveEventTestHarness.Env, default);
+        var sources = setup.Packs.Single().Sources;
+        var m2lbSource = sources.Single(item => item.Role.Key == "m2lb");
+        m2lbSource.State.Should().Be(TestPackSourceState.AvailableNotBound, "a compatible earlier import counts even though it is not the current project and nothing binds it");
+        var candidate = m2lbSource.Candidates.Single();
+        candidate.ArchiveFileName.Should().Be("backend-source-2026.zip", "the archive name is provenance; the components made it M2LB");
+        candidate.ImportId.Should().Be("import-m2lb");
+        candidate.MatchedOn.Should().Contain(["Component: M2LB.Meldingsutvekslermottak.Host", "Component: M2LB.SkoleAdapter.Worker"]);
+        candidate.Bound.Should().BeFalse();
+        sources.Single(item => item.Role.Key == "infrastructure").State.Should().Be(TestPackSourceState.Available);
+        sources.Single(item => item.Role.Key == "mu").State.Should().Be(TestPackSourceState.Missing);
+        harness.Sources.Snapshots.Should().HaveCount(3, "reading source setup never creates or changes snapshots");
+    }
+
+    [Fact]
+    public async Task AnArchiveNamedLikeTheSource_WithoutItsComponents_StaysMissing_AndSaysWhy()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Sources.Snapshots.Add(Imported(WithFingerprint(Repo("M2LB.zip", ("M2LB.Autorisasjon.Api", null), ("M2LB.Hendelse.Api", null)), 'f'), "import-m2lb"));
+        harness.Sources.Snapshots.Add(Imported(Terraform("terraform.zip"), "import-terraform"));
+
+        var setup = await harness.Service(Pack(harness)).SourceSetupAsync(ActiveEventTestHarness.Env, default);
+        var m2lb = setup.Packs.Single().Sources.Single(item => item.Role.Key == "m2lb");
+        m2lb.State.Should().Be(TestPackSourceState.Missing, "the file name is a hint, never the identity");
+        m2lb.Candidates.Should().BeEmpty();
+        var miss = m2lb.NearMisses.Should().ContainSingle().Subject;
+        miss.ArchiveFileName.Should().Be("M2LB.zip");
+        miss.Reason.Should().Contain("none of the expected components").And.Contain("Meldingsutvekslermottak").And.Contain("SkoleAdapter");
+        setup.Packs.Single().Sources.Single(item => item.Role.Key == "infrastructure").NearMisses.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task MatchedOnNamesTheEvidence_ForComponentsAndInfrastructure()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Sources.Snapshots.AddRange([M2lb(), Terraform("platform-infra.zip")]);
+        var (guidance, _) = await ReadAsync(harness);
+
+        Source(guidance, "m2lb").Candidates.Single().MatchedOn.Should().HaveCountLessThanOrEqualTo(8).And.Contain("Component: M2LB.Utdanning.Api").And.NotContain(item => item.Contains("Person"));
+        Source(guidance, "infrastructure").Candidates.Single().MatchedOn.Should().Equal("Infrastructure as Code: Terraform");
+    }
 }

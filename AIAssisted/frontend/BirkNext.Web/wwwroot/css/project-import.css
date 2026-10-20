@@ -87,3 +87,49 @@ p.pi-tone-neutral { border-left: 0; }
 
 /* "Import another project": the same accessible file chooser, in secondary style (opens the chooser directly). */
 .pi-file-button-secondary { background: var(--clr-surface-white, #fff); color: var(--clr-link, #1d4ed8); font-weight: 600; }
+
+/* ── Test pack source setup: status-first cards ─────────────────────────────────────────────────────────────────────────────── */
+.pi-setup-progress { margin: .1rem 0 .2rem; font-weight: 600; font-size: .95rem; }
+.pi-setup-note { margin: 0 0 .5rem; font-size: .82rem; }
+.pi-source-grid { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); min-width: 0; }
+.pi-source-card { display: flex; flex-direction: column; gap: .35rem; padding: .75rem .9rem; border: 1px solid var(--clr-border, #d5dbe5); border-left-width: 4px;
+    border-radius: var(--radius-md, .5rem); background: var(--clr-surface-raised, #fff); min-width: 0; overflow-wrap: anywhere; }
+.pi-source-missing { border-left-color: #b91c1c; }
+.pi-source-available { border-left-color: #2563eb; }
+.pi-source-bound { border-left-color: #0f766e; }
+.pi-source-review { border-left-color: #b45309; }
+.pi-source-optional, .pi-source-card.is-optional { border-left-color: #94a3b8; background: var(--clr-surface, #f8fafc); }
+.pi-source-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .3rem .6rem; }
+.pi-source-head h3 { margin: 0; font-size: 1rem; }
+.pi-source-badges { display: flex; flex-wrap: wrap; gap: .3rem; }
+.pi-state-missing { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.pi-state-available { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.pi-state-bound { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
+.pi-state-review { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.pi-state-optional { background: var(--clr-surface, #f8fafc); border-color: var(--clr-border); color: #475569; }
+.pi-source-name { margin: 0; font-weight: 600; font-size: .88rem; }
+.pi-source-binding { margin: 0; font-size: .82rem; color: #92400e; }
+.pi-source-bound .pi-source-binding { color: #115e59; }
+.pi-source-usedby { margin: 0; font-size: .85rem; }
+.pi-source-label { display: block; font-size: .72rem; color: var(--clr-text-muted); }
+.pi-source-sentence { margin: 0; font-size: .85rem; color: #334155; }
+.pi-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; margin-top: auto; padding-top: .3rem; }
+.pi-source-secondary { font-size: .85rem; }
+.pi-source-details > summary { cursor: pointer; font-size: .82rem; color: var(--clr-link, #174d86); }
+.pi-source-details > summary:focus-visible, .pi-source-actions a:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.pi-source-facts { margin: .4rem 0; display: grid; gap: .3rem; font-size: .82rem; }
+.pi-source-facts dt { font-size: .72rem; color: var(--clr-text-muted); }
+.pi-source-facts dd { margin: 0; }
+.pi-source-details .pi-list { font-size: .8rem; }
+
+/* ── Current project and previous imports: compact ────────────────────────────────────────────────────────────────────────── */
+.pi-current-primary { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; margin: .3rem 0; font-size: .9rem; }
+.pi-current-primary > div { display: grid; gap: .05rem; min-width: 0; }
+.pi-current-primary dt { font-size: .72rem; color: var(--clr-text-muted); }
+.pi-current-primary dd { margin: 0; overflow-wrap: anywhere; }
+.pi-project-artifacts { margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--clr-border-subtle, #eef0f3); }
+.pi-project-artifacts > h3 { margin: 0 0 .3rem; font-size: 1rem; }
+.pi-previous-row { gap: .25rem; }
+.pi-previous-line { margin: 0; font-size: .86rem; color: #334155; overflow-wrap: anywhere; }
+.pi-previous-row .pi-actions { margin-top: .2rem; }
+.pi-match-badge { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }

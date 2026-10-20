@@ -373,7 +373,13 @@ public sealed record TestPackSourceCandidate(Guid SnapshotId, string ArchiveFile
     public string? ImportId { get; init; }
     /// <summary>What recognized it, e.g. "Infrastructure as Code: Terraform" (technologies only, never source text).</summary>
     public IReadOnlyList<string> Technologies { get; init; } = [];
+    /// <summary>Why it was recognized: the component, project, configuration or API names that matched the role (names only, bounded).</summary>
+    public IReadOnlyList<string> MatchedOn { get; init; } = [];
 }
+
+/// <summary>A stored snapshot whose name or repository suggests the role (a hint only) but whose content is not recognized as it — shown so
+/// "Missing" can say the package was seen and why it does not count. Never counted as the source.</summary>
+public sealed record TestPackSourceNearMiss(Guid SnapshotId, string ArchiveFileName, string Reason);
 
 public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourceState State)
 {
@@ -387,6 +393,8 @@ public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourc
     public string? NextActionTarget { get; init; }
     /// <summary>Every stored snapshot recognized as this source (bound first, then newest first). Never chosen from: only a binding is authoritative.</summary>
     public IReadOnlyList<TestPackSourceCandidate> Candidates { get; init; } = [];
+    /// <summary>Snapshots named like the source that are not recognized as it, with the reason (explanation only; never affects the state).</summary>
+    public IReadOnlyList<TestPackSourceNearMiss> NearMisses { get; init; } = [];
 }
 
 /// <summary>A test pack's logical sources and their state in one environment — what Import Project shows before asking for another upload.</summary>

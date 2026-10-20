@@ -30,28 +30,31 @@
             var currentSnapshot = CurrentSnapshot(current);
             <section class="pi-card pi-current" aria-labelledby="pi-current-heading" data-testid="pi-current">
                 <h2 id="pi-current-heading" tabindex="-1">Current imported project</h2>
-                <p class="pi-current-title"><strong data-testid="pi-current-name">@current.ProjectName</strong> <span class="pi-muted">Imported project archive</span></p>
-                <dl class="pi-facts">
+                <p class="pi-current-title"><strong data-testid="pi-current-name">@current.ProjectName</strong> <span class="pi-muted">Current project · documents and source below belong to this archive</span></p>
+                <dl class="pi-current-primary">
                     <div><dt>Archive</dt><dd data-testid="pi-current-archive">@current.ArchiveFileName</dd></div>
-                    @if (ProjectImportHistory.LogicalSources(_setup, currentSnapshot?.SnapshotId ?? current.SourceSnapshotId) is { Count: > 0 } logical)
-                    {
-                        <div><dt>Logical source</dt><dd data-testid="pi-current-logical">@string.Join(", ", logical)</dd></div>
-                    }
+                    <div><dt>Logical source</dt><dd data-testid="pi-current-logical">@(ProjectImportHistory.LogicalSources(_setup, currentSnapshot?.SnapshotId ?? current.SourceSnapshotId) is { Count: > 0 } logical ? string.Join(", ", logical) : currentSource.SnapshotId is null ? "None" : "Not identified")</dd></div>
                     <div><dt>Imported</dt><dd>@current.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
-                    <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
-                    <div><dt>Source analysis</dt><dd class="pi-inline-facts" data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")"><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@currentSource.Status</span>
-                        @if (currentSource.SnapshotId is { } shownSnapshot) { <span class="pi-muted" data-testid="pi-current-snapshot">Snapshot <code>@ProjectImportHistory.ShortId(shownSnapshot)</code>@(currentSnapshot is null ? "" : $" · {currentSnapshot.Status}")</span> }
-                        <span class="pi-muted" data-testid="pi-current-source-detail">@currentSource.Detail</span></dd></div>
+                    <div><dt>Source Analysis</dt><dd data-testid="pi-current-source" data-has-snapshot="@(currentSource.SnapshotId is null ? "false" : "true")"><span class="pi-badge pi-badge-@ProjectImportPresentation.ToneClass(currentSource.Tone)">@currentSource.Status</span>@(currentSnapshot is null ? "" : $" · {currentSnapshot.Status}")</dd></div>
                     @if (currentSource.SnapshotId is not null && _setup is { } currentSetup)
                     {
-                        <div><dt>IQR bindings</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(currentSnapshot?.BoundIntegrations ?? [], currentSetup.BindingsRead)</dd></div>
-                    }
-                    @if (currentSnapshot is { ConfigurationEnvironments.Count: > 0 } withEnvironments)
-                    {
-                        <div><dt>Environment configuration found</dt><dd data-testid="pi-current-environments">@string.Join(", ", withEnvironments.ConfigurationEnvironments) <span class="pi-muted">(source labels, not deployed environments)</span></dd></div>
+                        <div><dt>IQR</dt><dd data-testid="pi-current-bindings">@ProjectImportHistory.BindingsText(currentSnapshot?.BoundIntegrations ?? [], currentSetup.BindingsRead)</dd></div>
                     }
                     <div><dt>Project documents</dt><dd data-testid="pi-current-documents">@DocumentsFact(current)</dd></div>
                 </dl>
+                <details class="pi-details" data-testid="pi-current-technical">
+                    <summary>Technical details<span class="visually-hidden"> of @current.ProjectName</span></summary>
+                    <dl class="pi-facts">
+                        <div><dt>Fingerprint</dt><dd><code title="@current.ArchiveSha256" data-testid="pi-current-fingerprint">@ProjectImportPresentation.ShortFingerprint(current.ArchiveSha256)</code></dd></div>
+                        @if (currentSource.SnapshotId is { } shownSnapshot) { <div><dt>Source snapshot</dt><dd data-testid="pi-current-snapshot">Snapshot <code>@ProjectImportHistory.ShortId(shownSnapshot)</code>@(currentSnapshot is null ? "" : $" · {currentSnapshot.Status}")</dd></div> }
+                        <div><dt>Source detail</dt><dd data-testid="pi-current-source-detail">@currentSource.Detail</dd></div>
+                        @if (currentSnapshot is { ConfigurationEnvironments.Count: > 0 } withEnvironments)
+                        {
+                            <div><dt>Environment configuration found</dt><dd data-testid="pi-current-environments">@string.Join(", ", withEnvironments.ConfigurationEnvironments) <span class="pi-muted">(source labels, not deployed environments)</span></dd></div>
+                        }
+                        @if (currentSnapshot is { InfrastructureFormats.Count: > 0 } withIac) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", withIac.InfrastructureFormats)</dd></div> }
+                    </dl>
+                </details>
                 @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }
                 <div class="pi-actions">
                     @if (currentSource.SnapshotId is { } openSnapshot)
@@ -67,6 +70,11 @@
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
                 </div>
                 <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history. The current project is not an IQR binding: changing it never changes which source Integration Quality Review uses.</p>
+                <section class="pi-project-artifacts" aria-labelledby="pi-artifacts-heading" data-testid="pi-current-candidates" data-import="@current.ImportId">
+                    <h3 id="pi-artifacts-heading">Project artifacts <span class="pi-muted">· from @current.ArchiveFileName</span></h3>
+                    @if (current.ArtifactDocumentCount > 0) { <ProjectArtifactCandidateReview @key="current.ImportId" LabelledBy="pi-artifacts-heading" /> }
+                    else { <p class="pi-muted" data-testid="pi-current-no-artifacts">No artifact selections needed for this project.</p> }
+                </section>
             </section>
         }
 
@@ -89,32 +97,30 @@
                             <div class="pi-setup-head">
                                 <strong class="pi-previous-name" data-testid="pi-previous-name">@row.DisplayName</strong>
                                 <span class="pi-badge pi-badge-neutral">@(row.Origin == PreviousImportOrigin.ProjectImport ? "Project Import" : "Source Analysis upload")</span>
+                                @foreach (var match in row.LogicalSources) { <span class="pi-badge pi-match-badge" data-testid="pi-previous-match">Matches @match source requirement</span> }
                             </div>
-                            <dl class="pi-setup-facts">
-                                <div><dt>Archive</dt><dd data-testid="pi-previous-archive">@row.ArchiveFileName</dd></div>
-                                <div><dt>Logical source</dt><dd data-testid="pi-previous-logical">@(row.LogicalSources.Count > 0 ? string.Join(", ", row.LogicalSources) : row.HasSource ? "Not identified" : "None")</dd></div>
-                                <div><dt>Imported</dt><dd>@row.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
-                                <div><dt>Fingerprint</dt><dd><code title="@row.Fingerprint">@ProjectImportPresentation.ShortFingerprint(row.Fingerprint)</code></dd></div>
-                                <div><dt>Source</dt><dd data-testid="pi-previous-source">@(row.SnapshotId is { } rowSnapshot ? $"Snapshot {ProjectImportHistory.ShortId(rowSnapshot)} · {row.SourceStatus}" : row.SourceStatus)</dd></div>
-                                @if (row.InfrastructureFormats.Count > 0) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", row.InfrastructureFormats)</dd></div> }
-                                @if (row.ConfigurationEnvironments.Count > 0) { <div><dt>Environment configuration found</dt><dd data-testid="pi-previous-environments">@string.Join(", ", row.ConfigurationEnvironments)</dd></div> }
-                                <div><dt>Documents</dt><dd data-testid="pi-previous-documents">@row.Documents</dd></div>
-                                @if (row.HasSource && _setup is { } rowSetup) { <div><dt>IQR bindings</dt><dd data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, rowSetup.BindingsRead)</dd></div> }
-                            </dl>
+                            <p class="pi-previous-line"><span data-testid="pi-previous-archive">@row.ArchiveFileName</span> · imported @row.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+                            <p class="pi-previous-line">Source Analysis: <span data-testid="pi-previous-source">@(row.SnapshotId is { } rowSnapshot ? $"Snapshot {ProjectImportHistory.ShortId(rowSnapshot)} · {row.SourceStatus}" : row.SourceStatus)</span>
+                                · Documents: <span data-testid="pi-previous-documents">@row.Documents</span>
+                                @if (row.HasSource && _setup is { } rowSetup) { <text> · IQR: </text><span data-testid="pi-previous-bindings">@ProjectImportHistory.BindingsText(row.BoundIntegrations, rowSetup.BindingsRead)</span> }</p>
                             <div class="pi-actions">
+                                @if (row.CanUseAsCurrent) { <button type="button" class="btn-secondary" data-testid="pi-previous-use" @onclick="() => UseAsCurrent(row.ImportId!)">Use @row.DisplayName as current</button> }
                                 @if (row.SnapshotId is { } openRowSnapshot) { <a class="btn-secondary" href="@ProjectImportPresentation.SourceAnalysisHref(openRowSnapshot)" data-testid="pi-previous-open-source">Open @row.DisplayName in Source Analysis</a> }
                                 @if (row.BoundIntegrations.Count > 0) { <a href="integration-quality-review?view=evidence" data-testid="pi-previous-bindings-link">View @row.DisplayName bindings in IQR</a> }
-                                @if (row.CanUseAsCurrent) { <button type="button" class="btn-secondary" data-testid="pi-previous-use" @onclick="() => UseAsCurrent(row.ImportId!)">Use @row.DisplayName as current</button> }
                             </div>
+                            <details class="pi-details">
+                                <summary>Details<span class="visually-hidden"> of @row.DisplayName</span></summary>
+                                <dl class="pi-facts">
+                                    <div><dt>Logical source</dt><dd data-testid="pi-previous-logical">@(row.LogicalSources.Count > 0 ? string.Join(", ", row.LogicalSources) : row.HasSource ? "Not identified" : "None")</dd></div>
+                                    <div><dt>Fingerprint</dt><dd><code title="@row.Fingerprint">@ProjectImportPresentation.ShortFingerprint(row.Fingerprint)</code></dd></div>
+                                    @if (row.InfrastructureFormats.Count > 0) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", row.InfrastructureFormats)</dd></div> }
+                                    @if (row.ConfigurationEnvironments.Count > 0) { <div><dt>Environment configuration found</dt><dd data-testid="pi-previous-environments">@string.Join(", ", row.ConfigurationEnvironments)</dd></div> }
+                                </dl>
+                            </details>
                         </li>
                     }
                 </ul>
             </section>
-        }
-
-        @if (Activation.Current is { ArtifactDocumentCount: > 0 })
-        {
-            <div class="pi-card" data-testid="pi-current-candidates"><ProjectArtifactCandidateReview /></div>
         }
 
         <section class="pi-card pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
@@ -358,10 +364,13 @@
         _setup is null ? null : ProjectImportHistory.SnapshotsOf(record, _setup.Snapshots).OrderByDescending(s => s.SnapshotId == record.SourceSnapshotId).FirstOrDefault();
 
     /// <summary>Makes an earlier import current again from what the workspace holds: no upload, no new snapshot, no binding change.</summary>
-    private void UseAsCurrent(string importId)
+    private async Task UseAsCurrent(string importId)
     {
         _useMessage = Activation.UseAsCurrent(importId) ? null : "That import is no longer recorded in this workspace.";
-        if (_useMessage is null) { _ = AutoSave.SaveNowAsync(); _focusId = "pi-current-heading"; }
+        if (_useMessage is not null) return;
+        _ = AutoSave.SaveNowAsync(); _focusId = "pi-current-heading";
+        // Source setup reads stored snapshots and bindings only (never re-imports or binds); refresh it so the cards follow the change.
+        await LoadSetupAsync();
     }
 
     private void UseExisting(string importId)

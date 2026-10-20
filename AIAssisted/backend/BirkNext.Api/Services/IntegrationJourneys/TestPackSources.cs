@@ -63,9 +63,46 @@ public static class TestPackSources
         || snapshot.Projects.Any(project => ArchitectureRuleEvaluator.MatchesAny(tokens, project.Name))
         || (snapshot.EvidenceDomains?.Configuration.Files ?? []).Any(file => ArchitectureRuleEvaluator.MatchesAny(tokens, file.Component));
 
+    /// <summary>The names that made a snapshot this source (components, projects, configuration files, API scopes or IaC formats), bounded —
+    /// shown as "why this source matches". Names only, never source text.</summary>
+    public static IReadOnlyList<string> MatchedOn(TestPackSourceRole role, IqrSourceSnapshot snapshot)
+    {
+        if (role.RequiresInfrastructureAsCode) return [.. InfrastructureFormats(snapshot).Select(format => $"Infrastructure as Code: {format}")];
+        if (role.RequiresApiDocument)
+            return [.. SourceAnalysis.Evidence.SourceConfigurationValueCollector.Values(snapshot.EvidenceDomains)
+                .Where(value => value.EvidenceKind == SourceConfigurationEvidenceKind.OpenApi && ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, value.Scope, value.LogicalSource))
+                .Select(value => $"API document: {value.Scope ?? value.LogicalSource}").Distinct().Take(6)];
+        return [.. (snapshot.Architecture?.Components ?? []).Where(component => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, component.Name, component.LogicalName, component.SourceProject))
+                .Select(component => $"Component: {component.Name}")
+            .Concat(snapshot.Projects.Where(project => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, project.Name)).Select(project => $"Project: {project.Name}"))
+            .Concat((snapshot.EvidenceDomains?.Configuration.Files ?? []).Where(file => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, file.Component)).Select(file => $"Configuration: {file.Component}"))
+            .Distinct().Take(8)];
+    }
+
+    /// <summary>Snapshots whose archive name or repository key names the role (a hint only) but which are not recognized as it, with the
+    /// reason. The name never makes a snapshot the source; this only explains a Missing state.</summary>
+    public static IReadOnlyList<TestPackSourceNearMiss> NearMisses(TestPackSourceRole role, JourneyPackContext context)
+    {
+        string[] hints = [role.Key, role.Label.Split(' ', '(')[0]];
+        return [.. context.SourceSnapshots
+            .Where(snapshot => !Recognizes(role, snapshot)
+                && ArchitectureRuleEvaluator.MatchesAny(hints, System.IO.Path.GetFileNameWithoutExtension(snapshot.Archive.FileName), snapshot.Repository?.Key ?? "", snapshot.Repository?.DisplayName ?? ""))
+            .OrderByDescending(snapshot => snapshot.AnalyzedAt)
+            .Select(snapshot => new TestPackSourceNearMiss(snapshot.Id, snapshot.Archive.FileName, NearMissReason(role, snapshot)))];
+    }
+
+    private static string NearMissReason(TestPackSourceRole role, IqrSourceSnapshot snapshot)
+    {
+        if (role.RequiresInfrastructureAsCode) return "It declares no Infrastructure as Code (Terraform, Bicep, ARM, Kubernetes or Helm).";
+        if (role.ExcludedComponentTokens.Count > 0 && MatchesComponents(role.ExcludedComponentTokens, snapshot))
+            return $"It contains {string.Join(", ", role.ExcludedComponentTokens.Where(token => MatchesComponents([token], snapshot)))}, which identifies another source.";
+        if (role.RequiresApiDocument) return "It contains no API document (OpenAPI / application metadata) that declares this application.";
+        return $"It contains none of the expected components or projects: {string.Join(", ", role.ComponentTokens.Distinct(StringComparer.OrdinalIgnoreCase))}.";
+    }
+
     /// <summary>The state of every source role of a pack, with the next action at the owner that resolves it.</summary>
     public static IReadOnlyList<TestPackSourceStatus> Statuses(IIntegrationJourneyPack pack, JourneyPackContext context) =>
-        pack.SourceRoles.Select(role => Status(pack, context, role)).ToArray();
+        pack.SourceRoles.Select(role => Status(pack, context, role) with { NearMisses = NearMisses(role, context) }).ToArray();
 
     /// <summary>The Infrastructure as Code formats a snapshot declares ("Terraform", "Bicep" …), in a stable order.</summary>
     public static IReadOnlyList<string> InfrastructureFormats(IqrSourceSnapshot snapshot) =>
@@ -83,6 +120,7 @@ public static class TestPackSources
             {
                 Bound = authoritative.Contains(snapshot.Id), ImportId = snapshot.ProjectImport?.ImportId,
                 Technologies = role.RequiresInfrastructureAsCode ? InfrastructureFormats(snapshot) : [],
+                MatchedOn = MatchedOn(role, snapshot),
             }).ToArray();
     }
 

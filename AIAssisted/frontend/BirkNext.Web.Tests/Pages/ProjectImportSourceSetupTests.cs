@@ -235,17 +235,24 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         Row("hub").QuerySelector("[data-testid=pi-setup-requirement]")!.TextContent.Should().Be("Required");
         Row("hub").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Bound");
         Row("hub").QuerySelector("[data-testid=pi-setup-binding]")!.TextContent.Should().Be("Bound to Demo – report intake");
-        Row("hub").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Bound package: Tiltak 2 - hub (1).zip");
+        Row("hub").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Tiltak 2 - hub (1).zip", "the archive name is shown compactly, as provenance");
         Row("hub").QuerySelector("[data-testid=pi-setup-journeys]")!.TextContent.Should().Be("Report intake");
-        Row("hub").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Open Message hub evidence in IQR");
+        Row("hub").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Open source");
+        Row("hub").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("aria-label").Should().Be("Open Message hub source in Source Analysis");
+        Row("hub").QuerySelector("[data-testid=pi-setup-secondary]")!.TextContent.Should().Be("View binding");
 
-        Row("platform").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Available, not bound");
-        Row("platform").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Available package: platform.zip");
-        Row("platform").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Bind Platform in IQR Evidence");
-        Row("platform").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+        Row("platform").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Available", "available is not bound; the binding is its own line");
+        Row("platform").QuerySelector("[data-testid=pi-setup-binding]")!.TextContent.Should().Be("Binding not configured");
+        Row("platform").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("platform.zip");
+        Row("platform").QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("Matching imported source found.");
+        Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.TextContent.Should().Be("Bind evidence");
+        Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+        Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.GetAttribute("aria-label").Should().Be("Bind Platform evidence in IQR Evidence");
 
         Row("app").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Missing");
+        Row("app").QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("No matching imported source found.");
         Row("app").QuerySelector("[data-testid=pi-setup-requirement-text]")!.TextContent.Should().Be("Required for application metadata.");
+        Row("app").QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Import source");
         Row("app").QuerySelector("[data-testid=pi-setup-action]")!.GetAttribute("href").Should().Be("#pi-choose-heading");
 
         var infra = Row("infra");
@@ -267,9 +274,9 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         ]);
         var cut = RenderPage();
         var row = cut.Find("[data-testid=pi-setup-source]");
-        row.QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("Bound package: platform (2).zip · also available: platform.zip");
+        row.QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("platform (2).zip · +1 more", "the bound package leads; the others are counted");
         var candidates = row.QuerySelector("[data-testid=pi-setup-candidates]")!.TextContent;
-        candidates.Should().Contain("platform (2).zip").And.Contain("Bound (canonical)").And.Contain("platform.zip").And.Contain("Available, not bound");
+        candidates.Should().Contain("platform (2).zip").And.Contain("Bound (canonical)").And.Contain("platform.zip").And.Contain("Not bound");
     }
 
     [Fact]
@@ -284,8 +291,10 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
             },
         ]);
         var cut = RenderPage();
-        cut.Find("[data-testid=pi-setup-state]").TextContent.Should().Be("Review required");
-        cut.Find("[data-testid=pi-setup-action]").TextContent.Should().Be("Review Platform snapshots in IQR Evidence");
+        cut.Find("[data-testid=pi-setup-state]").TextContent.Should().Be("Ambiguous", "several matching snapshots and none bound: the tester chooses, never the newest");
+        cut.Find("[data-testid=pi-setup-packages]").TextContent.Should().Be("2 matching imported sources");
+        cut.Find("[data-testid=pi-setup-action]").TextContent.Should().Be("Choose source");
+        cut.Find("[data-testid=pi-setup-action]").GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
     }
 
     [Fact]
@@ -332,5 +341,114 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         cut.FindAll("[data-testid=pi-source-setup]").Should().BeEmpty();
         cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("platform.zip");
         cut.FindAll("[data-testid=pi-current-bindings]").Should().BeEmpty();
+    }
+
+    // ── Compact cards, progress, explanations, project-scoped artifacts ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ProgressLine_IsComputedFromTheActualStates()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+        cut.Find("[data-testid=pi-setup-progress]").TextContent.Should()
+            .Be("2 of 3 required sources available · 1 needs binding · 1 missing · optional Infrastructure as Code not provided");
+
+        _setup = Setup(true, [new(Role("app", "Demo application"), TestPackSourceState.Missing), new(Role("hub", "Message hub"), TestPackSourceState.Missing)]);
+        RenderPage().FindAll("[data-testid=pi-setup-progress]").Last().TextContent.Should().Be("2 required sources missing");
+    }
+
+    [Fact]
+    public void Cards_AreCompact_WithTechnicalMetadataBehindNamedDetails()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+        var platform = cut.FindAll("[data-testid=pi-setup-source]").Single(r => r.GetAttribute("data-role") == "platform");
+
+        var details = platform.QuerySelector("[data-testid=pi-setup-details]")!;
+        details.HasAttribute("open").Should().BeFalse();
+        details.QuerySelector("summary .visually-hidden")!.TextContent.Should().Be("View Platform source details");
+        details.TextContent.Should().Contain("Platform source archive").And.Contain("Platform capability", "expected source and Used for live in Details");
+        var primary = platform.TextContent.Replace(details.TextContent, "");
+        primary.Should().NotContain("Platform source archive").And.NotContain("Expected").And.NotContain(M2lbSha[..8], "the default card shows no expected text or fingerprint");
+        cut.FindAll("[data-testid=pi-setup-details] summary .visually-hidden").Select(e => e.TextContent).Should().OnlyHaveUniqueItems("each Details control is named after its source");
+    }
+
+    [Fact]
+    public void OptionalSource_IsVisuallySecondary_AndNeverMissing()
+    {
+        ImportHistory();
+        var infra = RenderPage().FindAll("[data-testid=pi-setup-source]").Single(r => r.GetAttribute("data-role") == "infra");
+
+        infra.ClassList.Should().Contain("is-optional");
+        infra.QuerySelector("[data-testid=pi-setup-state]")!.ClassList.Should().Contain("pi-state-optional");
+        infra.QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Import optional source");
+        infra.QuerySelector("[data-testid=pi-setup-action]")!.ClassList.Should().Contain("btn-secondary");
+    }
+
+    [Fact]
+    public void AnAvailableOptionalIaCSource_ShowsItsArchive_AndWhyItMatches()
+    {
+        _setup = Setup(true,
+        [
+            new(Role("infra", "Infrastructure as Code", TestPackSourceRequirement.Optional), TestPackSourceState.Available)
+            {
+                Candidates = [Candidate(OldM2lbSnapshot, "terraform.zip", OldM2lbSha) with { Technologies = ["Terraform"], MatchedOn = ["Infrastructure as Code: Terraform"] }],
+                Detail = "Infrastructure as Code is available in terraform.zip (Terraform). No binding is needed.", NextActionTarget = "source-analysis",
+            },
+        ]);
+        var card = RenderPage().Find("[data-testid=pi-setup-source]");
+        card.QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Available");
+        card.QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("terraform.zip");
+        card.QuerySelectorAll("[data-testid=pi-setup-binding]").Should().BeEmpty("no binding is needed for it");
+        card.QuerySelector("[data-testid=pi-setup-action]")!.TextContent.Should().Be("Open source");
+        card.QuerySelector("[data-testid=pi-setup-matched]")!.TextContent.Should().Contain("Infrastructure as Code: Terraform");
+    }
+
+    [Fact]
+    public void MissingSource_SaysWhichNamedPackageWasCheckedAndWhy()
+    {
+        _setup = Setup(true,
+        [
+            new(Role("platform", "Platform"), TestPackSourceState.Missing)
+            {
+                NearMisses = [new TestPackSourceNearMiss(OldM2lbSnapshot, "platform.zip", "It contains none of the expected components or projects: Ledger, Billing.")],
+                Detail = "Platform source is missing.",
+            },
+        ]);
+        var card = RenderPage().Find("[data-testid=pi-setup-source]");
+        card.QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Missing");
+        card.QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("No matching imported source found. platform.zip was checked but does not match.");
+        card.QuerySelector("[data-testid=pi-setup-nearmisses]")!.TextContent.Should().Contain("none of the expected components").And.Contain("Ledger");
+        card.QuerySelectorAll("[data-testid=pi-setup-packages]").Should().BeEmpty("a non-matching package is never shown as the source");
+    }
+
+    [Fact]
+    public void ProjectArtifacts_BelongToTheCurrentProject_AndSwitchWithIt()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+
+        var artifacts = cut.Find("[data-testid=pi-current] [data-testid=pi-current-candidates]");
+        artifacts.QuerySelector("h3")!.TextContent.Should().Contain("Project artifacts").And.Contain("from platform.zip");
+        artifacts.GetAttribute("data-import").Should().Be(_activation.Current!.ImportId);
+        cut.FindAll("[data-testid=pi-current-candidates]").Should().ContainSingle("there is no detached global artifact section");
+
+        cut.FindAll("[data-testid=pi-previous-row]").Single(r => r.TextContent.Contains("Tiltak 2")).QuerySelector("[data-testid=pi-previous-use]")!.Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-current-candidates] h3").TextContent.Should().Contain("from Tiltak 2 - hub (1).zip"));
+        cut.Find("[data-testid=pi-current-no-artifacts]").TextContent.Should().Be("No artifact selections needed for this project.", "the hub import has no documents; platform's candidates do not leak");
+        _journeys.Verify(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2), "source setup refreshes when the current project changes");
+    }
+
+    [Fact]
+    public void CurrentProjectCard_ShowsPrimaryFacts_AndKeepsTechnicalDetailsCollapsed()
+    {
+        ImportHistory();
+        var cut = RenderPage();
+        var current = cut.Find("[data-testid=pi-current]");
+
+        current.QuerySelector("[data-testid=pi-current-technical]")!.HasAttribute("open").Should().BeFalse();
+        current.QuerySelector("[data-testid=pi-current-technical] [data-testid=pi-current-fingerprint]").Should().NotBeNull("the fingerprint is technical metadata");
+        current.QuerySelector("[data-testid=pi-current-logical]")!.TextContent.Should().Be("Platform");
+        cut.FindAll("[data-testid=pi-previous-match]").Select(b => b.TextContent).Should().Contain("Matches Message hub source requirement");
     }
 }
