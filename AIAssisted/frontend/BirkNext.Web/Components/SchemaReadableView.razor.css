@@ -52,3 +52,7 @@
 .sr-tool:focus-visible, .sr-node > summary:focus-visible, .sr-source-details summary:focus-visible { outline: 3px solid #2864b4; outline-offset: 2px; }
 .sr-node > summary { cursor: pointer; }
 .sr-node[open] > summary { margin-bottom: .2rem; }
+/* A library XSD without a global root element: an explained, neutral state — never a blank area and never an error. */
+.sr-no-root { border: 1px dashed #aeb8c7; border-radius: .5rem; padding: .75rem 1rem; background: #f8fafc; display: grid; gap: .45rem; }
+.sr-no-root p { margin: 0; }
+.sr-no-root-actions { display: flex; flex-wrap: wrap; gap: .5rem; }

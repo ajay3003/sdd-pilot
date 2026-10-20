@@ -14,103 +14,101 @@
 <PageTitle>Schema Studio</PageTitle>
 <main class="ss-page @(Current is not null && SchemaStudioNavigation.IsWide(_tab) ? "ss-page-wide" : "")">
     <PageHeader Title="Schema Studio" Description="A generic workspace for exploring, comparing and testing XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
-    @if (Current is null) { <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p> }
-    <section class="ss-import" aria-labelledby="ss-source-title">
-        <h2 id="ss-source-title">Reuse Source Analysis XSDs</h2>
-        <p>Choose one immutable Source Analysis snapshot. Schema files are loaded only from that snapshot; newer uploads are never substituted.</p>
-        @if (_sourceSnapshots.Count == 0) { <p class="ss-empty">No Source Analysis snapshots are available in this workspace.</p> }
-        else
+    @* No active package: setup is the page. With an active package, the package and its review come first; source, import, saved analyses
+       and provenance are secondary (opened on request). *@
+    @if (Current is null)
+    {
+        <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p>
+        <section class="ss-start" aria-labelledby="ss-start-title" data-testid="ss-start">
+            <h2 id="ss-start-title">Start with schema evidence</h2>
+            <p>Use the XSDs of an immutable Source Analysis snapshot, import XSD files or a ZIP package, create a new XSD, or reopen a saved analysis.</p>
+        </section>
+        @SourceSetup(false)
+        @SavedAnalyses(false)
+        @ImportSetup(false)
+        @if (Studio.Packages.Count > 0)
         {
-            @if (_sourceSnapshotIndexTruncated) { <p class="ss-warning" role="status">Showing the newest 500 Source Analysis snapshots. Older snapshots are omitted from this selector.</p> }
-            <label class="ss-field">Source snapshot
-                <select @bind="_sourceSnapshotId" aria-label="Source Analysis snapshot">
-                    <option value="">Choose snapshot</option>
-                    @foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.Id">@SnapshotLabel(snapshot)</option> }
-                </select>
-            </label>
-            <button class="ss-action" disabled="@(_sourceSnapshotId.Length == 0 || _sourceBusy)" @onclick="LoadSourceContracts">Load XSDs from snapshot</button>
-            @if (_sourcePackage is { } sourcePackage)
-            {
-                <p class="ss-note">@sourcePackage.Files.Count XSD file(s) bound to @sourcePackage.SourceArchiveName, snapshot @sourcePackage.SnapshotId. Fingerprint <code>@sourcePackage.SnapshotFingerprint</code>.</p>
-                @if (!sourcePackage.IsComplete) { <p class="ss-warning" role="status">This snapshot's schema capture is partial: @sourcePackage.OmittedFiles XSD file(s) were omitted by storage limits. The resulting package will remain Partial.</p> }
-                <label class="ss-field">Contract XSD
-                    <select @bind="_sourceContractPath" aria-label="Discovered XSD contract">
-                        @foreach (var file in sourcePackage.Files) { <option value="@file.Path">@file.Path · @file.Text.Length.ToString("N0") characters</option> }
-                    </select>
-                </label>
-                <button class="ss-action" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
-            }
+            <section aria-labelledby="ss-packages-title" data-testid="ss-session-packages">
+                <div class="ss-heading"><h2 id="ss-packages-title">Packages in this session</h2><span>@Studio.Packages.Count in this session</span></div>
+                <div class="ss-package-list">
+                    @foreach (var item in Studio.Packages)
+                    {
+                        <article class="ss-package">
+                            <button class="ss-package-open" @onclick="() => Select(item.Id)"><strong>@SchemaText.Breakable(item.Name)</strong><span>@item.Files.Count file(s) · @item.Validation · @item.ImportedAt.ToLocalTime().ToString("g")</span></button>
+                            <button class="ss-text-button" @onclick="() => Remove(item.Id)" aria-label="Remove @item.Name">Remove</button>
+                        </article>
+                    }
+                </div>
+            </section>
         }
-        @if (_sourceBusy) { <p role="status">Loading XSD artifacts from the selected snapshot…</p> }
-        @if (!string.IsNullOrWhiteSpace(_sourceError)) { <p class="ss-error" role="alert">@_sourceError</p> }
-    </section>
-    <section class="ss-import" aria-labelledby="ss-saved-title">
-        <h2 id="ss-saved-title">Saved schema analyses</h2>
-        <p>Save a package to this BirkNext workspace to reopen it later. Source Analysis packages keep an exact snapshot reference instead of copying the XSD files.</p>
-        @{ var savedPackages = SavedPackages?.Packages.Where(p => p.ProjectScope == ProjectScope()).ToArray() ?? []; }
-        @if (savedPackages.Length == 0)
-        { <p class="ss-empty">No saved schema analyses in this workspace.</p> }
-        else
-        {
-            <div class="ss-package-list">
-                @foreach (var saved in savedPackages)
-                {
-                    <article class="ss-package">
-                        <div><strong>@saved.Name</strong><span>@(saved.Files is null ? "Source Analysis snapshot reference" : "Saved local XSD package") · @saved.SavedAt.ToLocalTime().ToString("g")</span><code>@saved.Fingerprint[..Math.Min(12, saved.Fingerprint.Length)]</code></div>
-                        @if (saved.Provenance?.SourceSnapshotId is { } snapshotId) { <small>Snapshot @snapshotId · @saved.Provenance.SourceArchiveName</small> }
-                        <button class="ss-action" @onclick="() => OpenSavedSchema(saved.Id)">Reopen analysis</button>
-                        <button class="ss-text-button" @onclick="() => RemoveSavedSchema(saved.Id)">Remove saved analysis</button>
-                    </article>
-                }
-            </div>
-        }
-        @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-result" role="status">@_artifactStatus</p> }
-        @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
-    </section>
-    <section class="ss-import" aria-labelledby="ss-import-title">
-        <h2 id="ss-import-title" tabindex="-1">Import XSD files or a package</h2>
-        <label class="ss-upload">Choose one or more .xsd files <InputFile accept=".xsd" multiple OnChange="ImportFiles" aria-label="Choose XSD files" /></label>
-        <label class="ss-upload">Choose an XSD ZIP package <InputFile accept=".zip" OnChange="ImportZip" aria-label="Choose XSD ZIP package" /></label>
-        <button class="ss-action" @onclick="() => _creating = !_creating">Create new XSD</button>
-        <p>Maximum 100 schema files, 2 MB each and 20 MB total. Package contents stay in memory for this browser session.</p>
-        @if (_creating)
-        {
-            <div class="ss-create" aria-label="Create new XSD wizard">
-                <label>Schema name <input @bind="_newSchemaName" /></label><label>Target namespace <input @bind="_newNamespace" /></label><label>Root element <input @bind="_newRoot" /></label>
-                <button class="ss-action" @onclick="CreateSchema">Create schema and open Designer</button>
-            </div>
-        }
-        @if (_error is not null) { <p class="ss-error" role="alert">@_error</p> }
-    </section>
-
-    <section aria-labelledby="ss-packages-title">
-        <div class="ss-heading"><h2 id="ss-packages-title">Schema packages and versions</h2><span>@Studio.Packages.Count in this session</span></div>
-        @if (Studio.Packages.Count == 0)
-        {
-            <p class="ss-empty">No schemas imported. Choose an XSD or ZIP package to begin.</p>
-        }
-        else
-        {
-            <div class="ss-package-list">
-                @foreach (var item in Studio.Packages)
-                {
-                    <article class="ss-package @(item.Id == _selectedId ? "selected" : "")">
-                        <button class="ss-package-open" @onclick="() => Select(item.Id)"><strong>@SchemaText.Breakable(item.Name)</strong><span>@item.Files.Count file(s) · @item.Validation · @item.ImportedAt.ToLocalTime().ToString("g")</span><code>@item.Fingerprint[..12]</code></button>
-                        <button class="ss-text-button" @onclick="() => Remove(item.Id)" aria-label="Remove @item.Name">Remove</button>
-                    </article>
-                }
-            </div>
-        }
-    </section>
+    }
 
     @if (Current is { } package)
     {
         <section class="ss-workspace" aria-labelledby="ss-current-title">
-        <div class="ss-heading"><div><h2 id="ss-current-title">@SchemaText.Breakable(package.Name)</h2><p>@package.Files.Count XSD file(s) · <strong data-testid="ss-validity">@package.Validation</strong> · Fingerprint <code title="@package.Fingerprint" data-testid="ss-fingerprint">@ShortFingerprint(package.Fingerprint)</code></p></div>
-                @if (CurrentFile is { } active) { <a class="ss-action" download="@active.Name" href="@Download(active.Text, "application/xml")">Export current XSD</a> }
-                <a class="ss-action" download="@(package.Name + ".zip")" href="@Download(Convert.ToBase64String(SchemaStudioService.ExportZip(package)), "application/zip", true)">Export package ZIP</a>
-                <button class="ss-action" @onclick="SaveCurrentSchema">Save analysis to workspace</button>
+            <div class="ss-package-header" data-testid="ss-package-header">
+                <div class="ss-package-identity">
+                    <span class="ss-kicker">Current schema package</span>
+                    <h2 id="ss-current-title">@SchemaText.Breakable(package.Name)</h2>
+                    <p class="ss-package-facts">
+                        <span class="ss-validity ss-validity-@(package.Validation == "Valid" ? "ok" : "attention")" data-testid="ss-validity">@package.Validation</span>
+                        <span class="ss-muted" data-testid="ss-validity-scope">XSD validation only</span>
+                        <span aria-hidden="true">·</span> <span data-testid="ss-file-count">@package.Files.Count XSD</span>
+                        <span aria-hidden="true">·</span> <span data-testid="ss-source-kind">@SourceSummary(package)</span>
+                    </p>
+                    @if (Studio.Packages.Count > 1)
+                    {
+                        <div class="ss-switcher" data-testid="ss-package-switcher">
+                            <label>Current package
+                                <select value="@_selectedId" @onchange="args => Select(args.Value?.ToString() ?? package.Id)" data-testid="ss-package-select">
+                                    @foreach (var item in Studio.Packages) { <option value="@item.Id">@item.Name · @item.Files.Count XSD · @item.ImportedAt.ToLocalTime().ToString("g")</option> }
+                                </select>
+                            </label>
+                            <span class="ss-muted">@Studio.Packages.Count packages in session</span>
+                        </div>
+                    }
+                </div>
+                <div class="ss-package-actions" data-testid="ss-package-actions">
+                    <button class="ss-action" data-testid="ss-save" @onclick="SaveCurrentSchema">Save analysis</button>
+                    <button type="button" class="ss-tool" data-testid="ss-change-source" aria-expanded="@(_changeSourceOpen ? "true" : "false")" @onclick="() => { _changeSourceOpen = !_changeSourceOpen; _importOpen = false; }">Change source</button>
+                    <button type="button" class="ss-tool" data-testid="ss-import-another" aria-expanded="@(_importOpen ? "true" : "false")" @onclick="() => { _importOpen = !_importOpen; _changeSourceOpen = false; }">Import another package</button>
+                    <details class="ss-menu" data-testid="ss-export">
+                        <summary class="ss-tool">Export</summary>
+                        <div class="ss-menu-items">
+                            @if (CurrentFile is { } active) { <a download="@active.Name" href="@Download(active.Text, "application/xml")" data-testid="ss-export-xsd">Current XSD (@active.Name)</a> }
+                            <a download="@(package.Name + ".zip")" href="@Download(Convert.ToBase64String(SchemaStudioService.ExportZip(package)), "application/zip", true)" data-testid="ss-export-zip">Package ZIP</a>
+                        </div>
+                    </details>
+                    <button type="button" class="ss-text-button" data-testid="ss-package-remove" aria-label="@($"Remove {package.Name} from this session")" @onclick="() => Remove(package.Id)">Remove from session</button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-saved-status" role="status" data-testid="ss-saved-status">@_artifactStatus</p> }
+                @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
             </div>
+            @if (_changeSourceOpen) { @SourceSetup(true) }
+            @if (_importOpen) { @ImportSetup(true) }
+            @SavedAnalyses(true)
+            <details class="ss-provenance" data-testid="ss-provenance">
+                <summary>Source provenance · @SourceSummary(package)["Source: ".Length..]</summary>
+                <dl class="ss-provenance-facts" data-testid="ss-provenance-facts">
+                    @if (package.Provenance is { } provenance)
+                    {
+                        <div><dt>Source</dt><dd>Source Analysis snapshot (immutable)@(provenance.SourceProjectName is { } project ? $" · {project}" : "")</dd></div>
+                        <div><dt>Snapshot ID</dt><dd><code data-testid="ss-provenance-snapshot">@provenance.SourceSnapshotId</code></dd></div>
+                        <div><dt>Imported archive</dt><dd>@provenance.SourceArchiveName</dd></div>
+                        @if (!string.IsNullOrWhiteSpace(provenance.ProjectImportId)) { <div><dt>Project Import</dt><dd>@provenance.ProjectImportId</dd></div> }
+                        <div><dt>Contract file</dt><dd>@SchemaText.Breakable(provenance.SelectedContractPath ?? "—")</dd></div>
+                        <div><dt>Contract fingerprint</dt><dd><code>@provenance.ContractFingerprint</code></dd></div>
+                    }
+                    else
+                    {
+                        <div><dt>Source</dt><dd>XSD files imported into this session (not a Source Analysis snapshot)</dd></div>
+                    }
+                    <div><dt>Package fingerprint</dt><dd><code title="@package.Fingerprint" data-testid="ss-fingerprint">@ShortFingerprint(package.Fingerprint)</code> <small class="ss-muted">full: <code data-testid="ss-full-fingerprint">@package.Fingerprint</code></small></dd></div>
+                    <div><dt>Imported</dt><dd>@package.ImportedAt.ToLocalTime().ToString("g")</dd></div>
+                    @if (SavedReference(package) is { } savedReference) { <div><dt>Saved analysis</dt><dd data-testid="ss-provenance-saved">@savedReference.Name · @savedReference.SavedAt.ToLocalTime().ToString("g")</dd></div> }
+                </dl>
+                <p class="ss-note">This analysis stays bound to the selected source. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
+            </details>
             <div class="ss-capability" data-testid="ss-capability">
                 <p><strong>Schema Studio analyzes XSD structure and schema-derived validation rules.</strong> It does not verify business logic or runtime integration behavior.</p>
                 <details><summary>What Schema Studio can and cannot prove</summary>
@@ -118,17 +116,11 @@
                     <p>Cannot show: business rules outside the XSD, authorization, routing, message delivery, downstream processing, behavior in QA or production, or service availability. XSD valid is not business valid, and not proof that an integration works.</p>
                 </details>
             </div>
-            @if (package.Provenance is { } provenance)
-            {
-                <details class="ss-provenance" data-testid="ss-provenance"><summary>Source evidence: @(provenance.SourceProjectName ?? provenance.SourceArchiveName)@(provenance.SourceSnapshotId is { } snapshotId ? $" · snapshot {snapshotId.ToString("D")[..8]}" : "")</summary>
-                    <p class="ss-note">Archive @provenance.SourceArchiveName@(string.IsNullOrWhiteSpace(provenance.ProjectImportId) ? "" : $" · Project Import {provenance.ProjectImportId}") · snapshot @provenance.SourceSnapshotId · contract @provenance.SelectedContractPath · fingerprint @provenance.ContractFingerprint. This analysis remains bound to the selected snapshot.</p>
-                </details>
-            }
 
             <label class="ss-search">Search this package <input type="search" @bind="_search" @bind:event="oninput" placeholder="Element, type, namespace, filename, facet" /></label>
             @if (!string.IsNullOrWhiteSpace(_search))
             {
-                <ul class="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small>@result.Match · @result.File · opens @SchemaStudioNavigation.GroupOf(result.Tab).Name → @result.Tab</small></li> }</ul>
+                <ul class="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small>@result.Match · @result.File · opens @SchemaStudioNavigation.GroupOf(result.Tab).Name → @SchemaStudioNavigation.Label(result.Tab)</small></li> }</ul>
             }
             @* Two levels: five areas, then only the selected area's views. Every view keeps its identifier (search, links, ?view=). *@
             <nav class="ss-groups" aria-label="Schema Studio areas" data-testid="ss-groups">
@@ -139,7 +131,7 @@
                 }
             </nav>
             <nav class="ss-tabs" aria-label="@($"{CurrentGroup.Name} views")" data-testid="ss-views">
-                @foreach (var view in CurrentGroup.Views) { <button type="button" class="@(view == _tab ? "active" : "")" aria-current="@(view == _tab ? "page" : null)" data-testid="ss-view" data-view="@view" @onclick="() => _tab = view">@view</button> }
+                @foreach (var view in CurrentGroup.Views) { <button type="button" class="@(view == _tab ? "active" : "")" aria-current="@(view == _tab ? "page" : null)" data-testid="ss-view" data-view="@view" @onclick="() => _tab = view">@SchemaStudioNavigation.Label(view)</button> }
             </nav>
             <p class="ss-view-purpose" data-testid="ss-view-purpose">@SchemaStudioNavigation.Purpose(_tab)</p>
 
@@ -149,36 +141,48 @@
                 case "Overview":
                     var rootFile = package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"));
                     <dl class="ss-stats" data-testid="ss-overview-stats">
-                        <div><dt>Root XSD</dt><dd data-testid="ss-root-xsd">@(rootFile?.Name ?? "Not identified")</dd></div>
+                        <div><dt>Package validity</dt><dd><strong>@package.Validation</strong> <small class="ss-muted">(XSD only)</small></dd></div>
+                        <div><dt>Files</dt><dd>@package.Files.Count XSD</dd></div>
+                        <div><dt>Entry XSD</dt><dd data-testid="ss-root-xsd">@(rootFile?.Name ?? (package.Files.Count == 1 ? "Not applicable · no root element declared" : "Not identified"))</dd></div>
                         <div><dt>Root element</dt><dd data-testid="ss-root-element">@(package.EffectiveSchema.Count switch { 0 => "None declared", 1 => package.EffectiveSchema[0].Name, var roots => $"{roots} global root elements" })</dd></div>
                         <div><dt>Namespace</dt><dd>@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div>
                         <div><dt>Dependencies</dt><dd>@package.Files.Sum(f => f.Links.Count) links · @package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null)) unresolved</dd></div>
                         <div><dt>Global declarations</dt><dd>@package.Files.Sum(f => f.Declarations.Count)</dd></div>
-                        <div><dt>Package validity</dt><dd>@package.Validation <small class="ss-muted">(XSD only)</small></dd></div>
                     </dl>
                     <h3>Start here</h3>
                     <div class="ss-shortcuts" data-testid="ss-shortcuts">
-                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-business" @onclick='() => _tab = "Forretning"'><strong>Review business structure</strong><span>The message in order, mandatory or optional, with the schema's own documentation.</span></button>
-                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-fields" @onclick='() => _tab = "Felt og regler"'><strong>Review fields and rules</strong><span>Occurrence, allowed values, patterns and lengths for every field.</span></button>
-                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-tests" @onclick='() => _tab = "Generated Tests"'><strong>Run generated schema tests</strong><span>Valid and invalid cases derived from the XSD, run locally.</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-business" @onclick='() => _tab = "Forretning"'><strong>Understand structure</strong><span>Elements, groups and nesting</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-fields" @onclick='() => _tab = "Felt og regler"'><strong>Review fields and rules</strong><span>Occurrence, values, patterns and lengths</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-tests" @onclick='() => _tab = "Generated Tests"'><strong>Run generated tests</strong><span>Validate schema-derived cases</span></button>
                     </div>
                     <p class="ss-expert">Expert views:
                         <button type="button" class="ss-text-button" @onclick='() => _tab = "Raw XSD"'>Raw XSD</button> ·
                         <button type="button" class="ss-text-button" @onclick='() => _tab = "Designer"'>Designer</button> ·
                         <button type="button" class="ss-text-button" @onclick='() => _tab = "Compare"'>Compare</button></p>
-                    <details class="ss-provenance"><summary>Package identity</summary>
-                        <p>Full fingerprint <code data-testid="ss-full-fingerprint">@package.Fingerprint</code> · imported @package.ImportedAt.ToLocalTime().ToString("g")</p>
-                        <p>Current imported artifact is the version you selected for this session. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
-                    </details>
                     break;
                 case "Forretning":
-                case "Felt og regler":
                 case "Struktur":
-                    <SchemaReadableView Package="package" View="@_tab" OnFileSelected="OpenGraphFile" />
+                    @if (package.EffectiveSchema.Count > 0)
+                    {
+                        <div class="ss-mode" role="group" aria-label="Structure detail" data-testid="ss-structure-mode">
+                            <button type="button" class="ss-tool" aria-pressed="@(_technicalStructure ? "false" : "true")" data-testid="ss-structure-readable" @onclick="() => _technicalStructure = false">Readable</button>
+                            <button type="button" class="ss-tool" aria-pressed="@(_technicalStructure ? "true" : "false")" data-testid="ss-structure-technical" @onclick="() => _technicalStructure = true">With types and origin</button>
+                        </div>
+                    }
+                    <SchemaReadableView Package="package" View="@(_technicalStructure ? SchemaStudioNavigation.TechnicalStructureAlias : "Forretning")" OnFileSelected="OpenGraphFile" OnNavigate="view => _tab = view" />
+                    break;
+                case "Felt og regler":
+                    <SchemaReadableView Package="package" View="Felt og regler" OnFileSelected="OpenGraphFile" OnNavigate="view => _tab = view" />
                     break;
                 case "Schema dependencies":
                     var dependencyEdges = DependencyEdges(package, _graphMode).Take(1001).ToArray();
                     <SchemaReadableView Package="package" View="Schema dependencies" OnFileSelected="OpenGraphFile" />
+                    @if (package.Files.Count == 1 && package.Files[0].Links.Count == 0)
+                    {
+                        @* One XSD without imports or includes: a relationship graph would be one lonely node. *@
+                        <p class="ss-muted" data-testid="ss-dependencies-single">No cross-file dependency graph is needed for this package: it contains one XSD with no imports or includes.</p>
+                        break;
+                    }
                     <SchemaRelationshipGraph Package="package" OnFileSelected="OpenGraphFile" />
                     <details class="ss-section-details" data-testid="ss-linked-xsds"><summary>Linked XSD files · @package.Files.Count file(s), @package.Files.Sum(f => f.Links.Count) link(s)</summary>
                         <p>Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
@@ -237,7 +241,13 @@
                         </article>
                     }
                     </div>
-                    @if (package.EffectiveSchema.Count == 0) { <p>No global root elements were found.</p> }
+                    @if (package.EffectiveSchema.Count == 0)
+                    {
+                        <div class="ss-no-root" data-testid="ss-effective-no-root">
+                            <p><strong>No global root element is declared in this XSD,</strong> so there is no resolved message structure. The package defines reusable declarations and types (@package.Files.Sum(f => f.Declarations.Count) global declarations).</p>
+                            <div class="ss-actions"><button type="button" class="ss-tool" @onclick='() => _tab = "Schema Tree"'>View declarations</button><button type="button" class="ss-tool" @onclick='() => _tab = "Types"'>View types</button></div>
+                        </div>
+                    }
                     break;
                 case "Types":
                     <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Types"><table class="ss-table" data-testid="ss-types">
@@ -504,7 +514,7 @@
     {
         if (_viewParameterApplied) return;
         _viewParameterApplied = true;
-        if (SchemaStudioNavigation.FromQuery(ViewParameter) is { } view) { _tab = view; _pendingView = Current is null ? view : null; }
+        if (SchemaStudioNavigation.FromQuery(ViewParameter) is { } view) { _tab = view; _pendingView = Current is null ? view : null; _technicalStructure = SchemaStudioNavigation.IsTechnicalStructure(ViewParameter); }
     }
 
     /// <summary>Tree disclosure for Schema Tree and Effective Schema: null = default depth, true/false = Expand/Collapse all (re-keyed).</summary>
@@ -577,10 +587,106 @@
         try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _rawStatus = "XSD copied to the clipboard."; }
         catch (JSException) { _rawStatus = "The browser did not allow copying. Select the text and copy it manually."; }
     }
-    private async Task FocusImport()
+    /// <summary>Opens the import panel (secondary while a package is active) and moves focus to it once rendered.</summary>
+    private void FocusImport() { _importOpen = true; _changeSourceOpen = false; _focusImport = true; }
+    private bool _focusImport, _changeSourceOpen, _importOpen, _technicalStructure;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!_focusImport) return;
+        _focusImport = false;
         try { await JS.InvokeVoidAsync("birknextFocusElement", "ss-import-title"); } catch (JSException) { }
     }
+
+    /// <summary>Source Analysis reuse: the setup itself when no package is active; "Change source" while one is.</summary>
+    private RenderFragment SourceSetup(bool active) =>
+        @<section class="ss-import @(active ? "ss-panel" : "")" aria-labelledby="ss-source-title" data-testid="ss-source-setup">
+            <h2 id="ss-source-title">@(active ? "Change source" : "Use Source Analysis XSDs")</h2>
+            <p>Choose one immutable Source Analysis snapshot. Schema files are loaded only from that snapshot; newer uploads are never substituted.</p>
+            @if (_sourceSnapshots.Count == 0) { <p class="ss-empty">No Source Analysis snapshots are available in this workspace.</p> }
+            else
+            {
+                @if (_sourceSnapshotIndexTruncated) { <p class="ss-warning" role="status">Showing the newest 500 Source Analysis snapshots. Older snapshots are omitted from this selector.</p> }
+                <label class="ss-field">Source snapshot
+                    <select @bind="_sourceSnapshotId" aria-label="Source Analysis snapshot">
+                        <option value="">Choose snapshot</option>
+                        @foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.Id">@SnapshotLabel(snapshot)</option> }
+                    </select>
+                </label>
+                <button class="ss-action" disabled="@(_sourceSnapshotId.Length == 0 || _sourceBusy)" @onclick="LoadSourceContracts">Load XSDs from snapshot</button>
+                @if (_sourcePackage is { } sourcePackage)
+                {
+                    <p class="ss-note">@sourcePackage.Files.Count XSD file(s) bound to @sourcePackage.SourceArchiveName, snapshot @sourcePackage.SnapshotId. Fingerprint <code>@sourcePackage.SnapshotFingerprint</code>.</p>
+                    @if (!sourcePackage.IsComplete) { <p class="ss-warning" role="status">This snapshot's schema capture is partial: @sourcePackage.OmittedFiles XSD file(s) were omitted by storage limits. The resulting package will remain Partial.</p> }
+                    <label class="ss-field">Contract XSD
+                        <select @bind="_sourceContractPath" aria-label="Discovered XSD contract">
+                            @foreach (var file in sourcePackage.Files) { <option value="@file.Path">@file.Path · @file.Text.Length.ToString("N0") characters</option> }
+                        </select>
+                    </label>
+                    <button class="ss-action" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
+                }
+            }
+            @if (_sourceBusy) { <p role="status">Loading XSD artifacts from the selected snapshot…</p> }
+            @if (!string.IsNullOrWhiteSpace(_sourceError)) { <p class="ss-error" role="alert">@_sourceError</p> }
+        </section>;
+
+    /// <summary>Saved analyses: a section when no package is active; a collapsed disclosure (with its count) while one is.</summary>
+    private RenderFragment SavedAnalyses(bool active)
+    {
+        var saved = SavedPackages?.Packages.Where(p => p.ProjectScope == ProjectScope()).ToArray() ?? [];
+        RenderFragment list = @<div>
+            <p>Save a package to this BirkNext workspace to reopen it later. Source Analysis packages keep an exact snapshot reference instead of copying the XSD files.</p>
+            @if (saved.Length == 0) { <p class="ss-empty">No saved schema analyses in this workspace.</p> }
+            else
+            {
+                <div class="ss-package-list">
+                    @foreach (var item in saved)
+                    {
+                        <article class="ss-package">
+                            <div><strong>@item.Name</strong><span>@(item.Files is null ? "Source Analysis snapshot reference" : "Saved local XSD package") · @item.SavedAt.ToLocalTime().ToString("g")</span><code>@item.Fingerprint[..Math.Min(12, item.Fingerprint.Length)]</code></div>
+                            @if (item.Provenance?.SourceSnapshotId is { } snapshotId) { <small>Snapshot @snapshotId · @item.Provenance.SourceArchiveName</small> }
+                            <button class="ss-action" @onclick="() => OpenSavedSchema(item.Id)">Reopen analysis</button>
+                            <button class="ss-text-button" @onclick="() => RemoveSavedSchema(item.Id)">Remove saved analysis</button>
+                        </article>
+                    }
+                </div>
+            }
+        </div>;
+        return active
+            ? @<details class="ss-secondary" data-testid="ss-saved-analyses"><summary>Saved analyses · @saved.Length saved</summary>@list</details>
+            : @<section class="ss-import" aria-labelledby="ss-saved-title" data-testid="ss-saved-analyses">
+                <h2 id="ss-saved-title">Saved schema analyses</h2>
+                @list
+                @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-result" role="status">@_artifactStatus</p> }
+                @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
+            </section>;
+    }
+
+    /// <summary>Import or create: part of the setup when no package is active; "Import another package" while one is.</summary>
+    private RenderFragment ImportSetup(bool active) =>
+        @<section class="ss-import @(active ? "ss-panel" : "")" aria-labelledby="ss-import-title" data-testid="ss-import-setup">
+            <h2 id="ss-import-title" tabindex="-1">@(active ? "Import another schema package" : "Import XSD files or a package")</h2>
+            <label class="ss-upload">Choose one or more .xsd files <InputFile accept=".xsd" multiple OnChange="ImportFiles" aria-label="Choose XSD files" /></label>
+            <label class="ss-upload">Choose an XSD ZIP package <InputFile accept=".zip" OnChange="ImportZip" aria-label="Choose XSD ZIP package" /></label>
+            <button class="@(active ? "ss-tool" : "ss-action")" @onclick="() => _creating = !_creating">Create new XSD</button>
+            <p>Maximum 100 schema files, 2 MB each and 20 MB total. Package contents stay in memory for this browser session.</p>
+            @if (_creating)
+            {
+                <div class="ss-create" aria-label="Create new XSD wizard">
+                    <label>Schema name <input @bind="_newSchemaName" /></label><label>Target namespace <input @bind="_newNamespace" /></label><label>Root element <input @bind="_newRoot" /></label>
+                    <button class="ss-action" @onclick="CreateSchema">Create schema and open Designer</button>
+                </div>
+            }
+            @if (_error is not null) { <p class="ss-error" role="alert">@_error</p> }
+        </section>;
+
+    /// <summary>"Source Analysis · Meldingsutvekslermottak.zip" or "Imported XSD files" — the one-line source of the current package.</summary>
+    private static string SourceSummary(SchemaPackage package) =>
+        package.Provenance is { } provenance ? $"Source: Source Analysis · {provenance.SourceArchiveName}" : "Source: imported XSD files";
+
+    /// <summary>The saved analysis of this exact package (same fingerprint and project), if it was saved.</summary>
+    private SavedSchemaPackage? SavedReference(SchemaPackage package) =>
+        SavedPackages?.Packages.Where(saved => saved.ProjectScope == ProjectScope() && saved.Fingerprint == package.Fingerprint).OrderByDescending(saved => saved.SavedAt).FirstOrDefault();
     private void CancelProfileEditing() { _editingProfileId = null; _newProfileName = "My synthetic profile"; _profileSeed = 1001; _profileStatus = ""; }
 
     /// <summary>Fields of the effective schema whose name matches, for package search (opens Felt og regler). Bounded.</summary>
@@ -824,6 +930,8 @@
     }
     private void Select(string id)
     {
+        // A selected (or newly imported) package is the page again: the source/import panels that led to it close.
+        _changeSourceOpen = false; _importOpen = false;
         _selectedId = id; _fileName = Current?.Files.FirstOrDefault()?.Name;
         _draft = Current is { } package && CurrentFile is { } file
             ? SavedDrafts?.Find(package, file.Name, ProjectScope())?.Text ?? file.Text : null;

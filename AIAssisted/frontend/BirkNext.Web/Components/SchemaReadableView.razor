@@ -3,10 +3,10 @@
 @using P = BirkNext.Web.Services.SchemaStudio.SchemaReadablePresentation
 
 @* Deterministic readable views of the shared effective schema. Facts only; documentation verbatim; no inferred business rules. *@
-<section class="sr-view" aria-labelledby="sr-title-@View">
+<section class="sr-view" aria-labelledby="@TitleId">
     @if (View == "Schema dependencies")
     {
-        <h3 id="sr-title-@View">Schema dependencies</h3>
+        <h3 id="@TitleId">Schema dependencies</h3>
         <p class="sr-note">Avhengigheter løses bare innenfor denne pakken. Eksterne plasseringer hentes aldri, og ingenting gjettes.</p>
         <div class="sr-table-wrap" tabindex="0" aria-label="Schema dependencies (scrollable)">
             <table class="sr-table">
@@ -53,13 +53,26 @@
     }
     else if (Package.EffectiveSchema.Count == 0)
     {
-        <h3 id="sr-title-@View">@View</h3>
-        <p class="sr-note">Pakken deklarerer ingen globale rotelementer, så det finnes ingen meldingsstruktur å vise.</p>
+        @* A library/shared-type XSD has no global root element: there is no message to draw, so say so and point to what it does declare. *@
+        <h3 id="@TitleId">@Title</h3>
+        <div class="sr-no-root" data-testid="sr-no-root">
+            <p><strong>No global root element is declared in this XSD.</strong></p>
+            <p>This package defines reusable schema declarations and types (@Declarations global declaration@(Declarations == 1 ? "" : "s") available). Start from its declarations, types or references.</p>
+            @if (OnNavigate.HasDelegate)
+            {
+                <div class="sr-no-root-actions">
+                    <button type="button" class="sr-tool" data-testid="sr-no-root-declarations" @onclick='() => OnNavigate.InvokeAsync("Schema Tree")'>View declarations</button>
+                    <button type="button" class="sr-tool" data-testid="sr-no-root-types" @onclick='() => OnNavigate.InvokeAsync("Types")'>View types</button>
+                    <button type="button" class="sr-tool" data-testid="sr-no-root-references" @onclick='() => OnNavigate.InvokeAsync("References")'>View references</button>
+                </div>
+            }
+            <p class="sr-note">No root element does not make the XSD invalid; it is a library of reusable declarations.</p>
+        </div>
     }
     else
     {
         <div class="sr-heading">
-            <h3 id="sr-title-@View">@View</h3>
+            <h3 id="@TitleId">@Title</h3>
             @if (Package.EffectiveSchema.Count > 1)
             {
                 <label class="sr-root">Rotelement
@@ -139,6 +152,13 @@
     /// <summary>"Forretning", "Felt og regler", "Struktur" or "Schema dependencies".</summary>
     [Parameter, EditorRequired] public string View { get; set; } = "Forretning";
     [Parameter] public EventCallback<string> OnFileSelected { get; set; }
+    /// <summary>Opens another Schema Studio view by its identifier (used by the no-root explanation).</summary>
+    [Parameter] public EventCallback<string> OnNavigate { get; set; }
+
+    /// <summary>The heading a person reads: "Struktur" is Business structure with types and origin.</summary>
+    private string Title => View == SchemaStudioNavigation.TechnicalStructureAlias ? "Business structure" : SchemaStudioNavigation.Label(View);
+    private string TitleId => "sr-title-" + new string(View.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+    private int Declarations => Package.Files.Sum(file => file.Declarations.Count);
 
     private string _rootName = "";
     private string? _packageId;

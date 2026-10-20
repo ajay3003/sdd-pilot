@@ -134,3 +134,37 @@
 /* Generated values can be long unbroken strings (length boundaries). The value column has a minimum width, so wrapping anywhere inside
    this capped block cannot collapse the column to single characters. */
 .ss-page td code.ss-value { display: block; max-width: 28rem; overflow-wrap: anywhere; }
+
+/* Active package first: identity, validity and actions in one header; setup, saved analyses and provenance are secondary. */
+.ss-start { margin: 1rem 0 .5rem; }
+.ss-start h2 { margin: 0 0 .25rem; }
+.ss-package-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .75rem 1.25rem; }
+.ss-package-identity { min-width: 0; flex: 1 1 22rem; display: grid; gap: .3rem; }
+.ss-package-identity h2 { margin: 0; overflow-wrap: break-word; }
+.ss-kicker { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #536174; font-weight: 700; }
+.ss-package-facts { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; color: #536174; }
+.ss-validity { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-weight: 700; border: 1px solid; }
+.ss-validity-ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ss-validity-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ss-switcher { display: flex; flex-wrap: wrap; align-items: end; gap: .4rem .75rem; }
+.ss-switcher label { display: grid; gap: .2rem; font-size: .85rem; font-weight: 600; min-width: 0; max-width: 100%; flex: 1 1 16rem; }
+.ss-switcher select { width: 100%; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.ss-package-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.ss-menu { position: relative; }
+.ss-menu > summary { list-style: none; display: inline-block; }
+.ss-menu > summary::-webkit-details-marker { display: none; }
+.ss-menu-items { position: absolute; right: 0; z-index: 5; margin-top: .3rem; min-width: 12rem; display: grid; gap: .35rem; padding: .5rem .7rem; border: 1px solid #d5dbe5; border-radius: .45rem; background: #fff; box-shadow: 0 6px 18px rgba(15, 23, 42, .12); }
+.ss-menu-items a { color: #1558a6; overflow-wrap: anywhere; }
+.ss-saved-status { flex-basis: 100%; margin: 0; font-size: .85rem; color: #065f46; }
+.ss-panel { margin: .75rem 0; background: #f8fafc; }
+.ss-secondary { margin: .6rem 0; }
+.ss-secondary > summary { cursor: pointer; color: #1558a6; font-weight: 600; }
+.ss-provenance-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .4rem 1rem; margin: .5rem 0; }
+.ss-provenance-facts > div { min-width: 0; }
+.ss-provenance-facts dt { font-size: .8rem; color: #536174; }
+.ss-provenance-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ss-mode { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .6rem; }
+.ss-mode [aria-pressed="true"] { border-color: #174d86; background: #e8f0fb; font-weight: 600; }
+.ss-no-root { border: 1px dashed #aeb8c7; border-radius: .5rem; padding: .75rem 1rem; background: #f8fafc; }
+.ss-no-root p { margin: 0 0 .5rem; }
+@media (max-width: 600px) { .ss-package-actions { width: 100%; } .ss-package-actions > .ss-action, .ss-package-actions > .ss-tool { flex: 1 1 100%; } .ss-menu-items { left: 0; right: auto; } }

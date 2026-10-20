@@ -41,7 +41,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     private static void OpenView(IRenderedComponent<SchemaStudio> page, string view)
     {
         page.FindAll("[data-testid=ss-group]").Single(b => b.TextContent == SchemaStudioNavigation.GroupOf(view).Name).Click();
-        page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == view).Click();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == view).Click();
     }
 
     // ---- Navigation model ----
@@ -50,13 +50,19 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     public void NavigationGroupsEveryViewExactlyOnceInTheTesterWorkflowOrder()
     {
         Assert.Equal(["Understand", "Schema", "Inspect", "Design & Compare", "Validate & Test"], SchemaStudioNavigation.Groups.Select(g => g.Name));
-        Assert.Equal(16, SchemaStudioNavigation.AllViews.Count);
+        Assert.Equal(15, SchemaStudioNavigation.AllViews.Count);
         Assert.Equal(SchemaStudioNavigation.AllViews.Count, SchemaStudioNavigation.AllViews.Distinct().Count());
+        // Structure is reachable from Understand; the former flat views keep their place under named groups.
+        Assert.Equal(["Overview", "Business structure", "Schema tree", "Effective structure"], SchemaStudioNavigation.Groups[0].Views.Select(SchemaStudioNavigation.Label));
+        Assert.Equal(["Fields and rules", "Types", "Constraints", "Namespaces"], SchemaStudioNavigation.Groups[1].Views.Select(SchemaStudioNavigation.Label));
+        Assert.Equal(["References", "Dependencies", "Raw XSD"], SchemaStudioNavigation.Groups[2].Views.Select(SchemaStudioNavigation.Label));
+        Assert.Equal(["Designer", "Compare"], SchemaStudioNavigation.Groups[3].Views.Select(SchemaStudioNavigation.Label));
+        Assert.Equal(["Generated tests", "Generation profile"], SchemaStudioNavigation.Groups[4].Views.Select(SchemaStudioNavigation.Label));
         Assert.Equal("Validate & Test", SchemaStudioNavigation.GroupOf("Generated Tests").Name);
-        Assert.Equal("Schema", SchemaStudioNavigation.GroupOf("References").Name);
+        Assert.Equal("Inspect", SchemaStudioNavigation.GroupOf("References").Name);
         Assert.Equal("Understand", SchemaStudioNavigation.GroupOf("unknown").Name);
         Assert.All(SchemaStudioNavigation.AllViews, view => Assert.False(string.IsNullOrWhiteSpace(SchemaStudioNavigation.Purpose(view))));
-        Assert.NotEqual(SchemaStudioNavigation.Purpose("Struktur"), SchemaStudioNavigation.Purpose("Schema Tree"));
+        Assert.NotEqual(SchemaStudioNavigation.Purpose("Forretning"), SchemaStudioNavigation.Purpose("Schema Tree"));
     }
 
     [Theory]
@@ -64,6 +70,13 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     [InlineData("felt-og-regler", "Felt og regler")]
     [InlineData("Schema dependencies", "Schema dependencies")]
     [InlineData("raw-xsd", "Raw XSD")]
+    [InlineData("business-structure", "Forretning")]
+    [InlineData("schema-tree", "Schema Tree")]
+    [InlineData("effective-structure", "Effective Schema")]
+    [InlineData("effective-schema", "Effective Schema")]
+    [InlineData("fields-and-rules", "Felt og regler")]
+    [InlineData("struktur", "Forretning")]
+    [InlineData("forretning", "Forretning")]
     [InlineData("nonsense", null)]
     [InlineData("", null)]
     public void QueryValuesMapOnlyToKnownViews(string value, string? expected) =>
@@ -82,7 +95,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
 
         Assert.Equal("true", page.FindAll("[data-testid=ss-group]").Single(b => b.TextContent == "Validate & Test").GetAttribute("aria-current"));
-        Assert.Equal(["Generated Tests", "Generation Profile"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent));
+        Assert.Equal(["Generated tests", "Generation profile"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent));
         Assert.NotNull(page.Find("[data-testid=ss-generated-tests]"));
     }
 
@@ -95,10 +108,12 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
 
         page.FindComponent<Microsoft.AspNetCore.Components.Forms.InputFile>().UploadFiles(InputFileContent.CreateFromText(Order, "order.xsd"));
-        page.WaitForAssertion(() => Assert.Equal("Felt og regler", page.Find("[data-testid=ss-view][aria-current=page]").TextContent));
+        page.WaitForAssertion(() => Assert.Equal("Felt og regler", page.Find("[data-testid=ss-view][aria-current=page]").GetAttribute("data-view")));
 
+        // With a package active, importing is a secondary action: open it first.
+        page.Find("[data-testid=ss-import-another]").Click();
         page.FindComponent<Microsoft.AspNetCore.Components.Forms.InputFile>().UploadFiles(InputFileContent.CreateFromText(Order, "order-copy.xsd"));
-        page.WaitForAssertion(() => Assert.Equal("Overview", page.Find("[data-testid=ss-view][aria-current=page]").TextContent));
+        page.WaitForAssertion(() => Assert.Equal("Overview", page.Find("[data-testid=ss-view][aria-current=page]").GetAttribute("data-view")));
     }
 
     [Fact]
@@ -112,7 +127,8 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         foreach (var view in SchemaStudioNavigation.AllViews)
         {
             OpenView(page, view);
-            Assert.Equal(SchemaStudioNavigation.GroupOf(view).Views, page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent));
+            Assert.Equal(SchemaStudioNavigation.GroupOf(view).Views, page.FindAll("[data-testid=ss-view]").Select(b => b.GetAttribute("data-view")));
+            Assert.Equal(SchemaStudioNavigation.GroupOf(view).Views.Select(SchemaStudioNavigation.Label), page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent));
             Assert.Equal(SchemaStudioNavigation.Purpose(view), page.Find("[data-testid=ss-view-purpose]").TextContent.Trim());
         }
     }
@@ -142,7 +158,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         Assert.Contains("business", page.Find("[data-testid=ss-capability]").TextContent, StringComparison.OrdinalIgnoreCase);
 
         page.Find("[data-testid=ss-shortcut-tests]").Click();
-        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == "Generated Tests").GetAttribute("aria-current"));
+        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Generated Tests").GetAttribute("aria-current"));
     }
 
     [Fact]
@@ -153,7 +169,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
 
         page.Find("input[type=search]").Input("CustomerName");
 
-        Assert.Contains("Understand → Felt og regler", page.Markup);
+        Assert.Contains("Schema → Fields and rules", page.Markup);
     }
 
     // ---- Readable tables ----

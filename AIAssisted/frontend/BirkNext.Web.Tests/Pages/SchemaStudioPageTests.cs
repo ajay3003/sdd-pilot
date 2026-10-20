@@ -17,7 +17,7 @@ public sealed class SchemaStudioPageTests : BunitContext
     {
         var area = BirkNext.Web.Services.SchemaStudio.SchemaStudioNavigation.GroupOf(view).Name;
         page.FindAll("[data-testid=ss-group]").Single(b => b.TextContent == area).Click();
-        page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == view).Click();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == view).Click();
     }
 
     [Fact]
@@ -29,7 +29,8 @@ public sealed class SchemaStudioPageTests : BunitContext
         Assert.Contains("Schema Studio", page.Markup);
         Assert.Contains("Choose one or more .xsd files", page.Markup);
         Assert.Contains("Choose an XSD ZIP package", page.Markup);
-        Assert.Contains("No schemas imported", page.Markup);
+        Assert.Contains("Start with schema evidence", page.Markup);
+        Assert.Contains("Create new XSD", page.Markup);
         Assert.DoesNotContain("Skolenærvær", page.Markup);
     }
 
@@ -45,13 +46,13 @@ public sealed class SchemaStudioPageTests : BunitContext
         Assert.Contains("generic", page.Markup);
         // Five areas at the first level; only the selected area's views at the second (default: Understand → Overview).
         Assert.Equal(["Understand", "Schema", "Inspect", "Design & Compare", "Validate & Test"], page.FindAll("[data-testid=ss-group]").Select(b => b.TextContent).ToArray());
-        Assert.Equal(["Overview", "Forretning", "Felt og regler"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent).ToArray());
-        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == "Overview").GetAttribute("aria-current"));
+        Assert.Equal(["Overview", "Business structure", "Schema tree", "Effective structure"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent).ToArray());
+        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").GetAttribute("aria-current"));
         // Every former view stays reachable through its area.
-        foreach (var view in new[] { "Struktur", "Schema dependencies", "Effective Schema", "Generated Tests" })
+        foreach (var view in new[] { "Forretning", "Schema dependencies", "Effective Schema", "Generated Tests" })
         {
             OpenView(page, view);
-            Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == view).GetAttribute("aria-current"));
+            Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == view).GetAttribute("aria-current"));
         }
     }
 
