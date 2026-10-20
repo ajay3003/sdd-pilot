@@ -65,6 +65,7 @@
     gap: 0.375rem;
     flex-wrap: wrap;
     flex: 1;
+    min-width: 0;
 }
 
 .fa-profile-chip {
@@ -1475,3 +1476,11 @@
     .fa-section-tab-groups { display: grid; gap: .4rem; }
     .fa-tab-group-caption { padding: 0 .25rem; }
 }
+
+/* A long environment name wraps inside its chip instead of widening the page. */
+.fa-profile-chip { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+
+/* Authentication-specific limitation inside the detection result, with a link-styled action to the Authentication tab. */
+.fa-result-limitation { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.fa-inline-link { background: none; border: 0; padding: 0; margin-left: 0.25rem; color: var(--clr-link, #1d4ed8); text-decoration: underline; cursor: pointer; font: inherit; text-align: left; }
+.fa-inline-link:focus-visible { outline: 3px solid var(--clr-primary); outline-offset: 2px; }

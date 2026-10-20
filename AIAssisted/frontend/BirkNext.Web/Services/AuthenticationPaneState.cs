@@ -176,19 +176,20 @@ public static class AuthenticationPaneStates
             _ => AuthVerificationState.Required,
         };
 
+    /// <summary>The optional manual sign-in check: a person's recorded observation, never runtime verification or a gate.</summary>
     public static string VerificationLabel(AuthVerificationState state) => state switch
     {
-        AuthVerificationState.Verified => "Verified",
-        AuthVerificationState.Failed => "Verification failed",
-        AuthVerificationState.Required => "Manual verification required",
-        _ => "Not required",
+        AuthVerificationState.Verified => "Sign-in check completed (manual)",
+        AuthVerificationState.Failed => "Sign-in check failed (manual)",
+        AuthVerificationState.Required => "Sign-in check not recorded",
+        _ => "Not needed",
     };
 
+    /// <summary>A missing optional check is neutral; a recorded failure needs attention; neither blocks anything.</summary>
     public static string VerificationTone(AuthVerificationState state) => state switch
     {
         AuthVerificationState.Verified => "ready",
-        AuthVerificationState.Failed => "error",
-        AuthVerificationState.Required => "needs-action",
+        AuthVerificationState.Failed => "needs-action",
         _ => "muted",
     };
 
@@ -197,7 +198,7 @@ public static class AuthenticationPaneStates
     /// once, which is why a card could report "Manual verification required" with the method "Automated detection".
     /// </summary>
     public static string VerificationMethod(AuthVerificationState state) =>
-        state == AuthVerificationState.NotApplicable ? "Not applicable" : "Manual verification in a signed-in browser";
+        state == AuthVerificationState.NotApplicable ? "Not applicable" : "Manual sign-in check in a managed browser";
 
     // ── Testing context ──────────────────────────────────────────────────────
 

@@ -141,7 +141,7 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
         var cut = Render(verification: AuthVerificationState.Required, context: AuthenticatedTestingState.Ready);
 
         Text(cut, "auth-summary-configuration").Should().Be("Configured");
-        Text(cut, "auth-summary-verification").Should().Be("Manual verification required");
+        Text(cut, "auth-summary-verification").Should().Be("Sign-in check not recorded");
         Text(cut, "auth-summary-context").Should().Be("Ready");
 
         // Verification still being required does not make the pane, or the configuration, unconfigured.

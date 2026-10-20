@@ -75,7 +75,7 @@ public sealed partial class AuthenticationApplyDraftTests
         // card that owns saved-versus-draft — carries the unsaved state. It is no longer echoed on a second card.
         Card(cut, "authentication-configuration", "draft", "Unsaved changes");
         cut.FindAll("[data-testid='authenticated-testing-method']").Should().BeEmpty();
-        Card(cut, "manual-only-panel", "needs-action", "Required");
+        Card(cut, "manual-only-panel", "muted", "Not recorded"); // an unrecorded optional sign-in check is neutral, never a required step
         SaveCalls().Should().Be(0);
         Click(cut, "Cancel");
         Card(cut, "authentication-configuration", "saved", "Saved configuration");

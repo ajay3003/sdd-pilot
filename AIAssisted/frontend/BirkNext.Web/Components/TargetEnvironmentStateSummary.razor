@@ -3,25 +3,28 @@
 @inject IServiceProvider Services
 
 @* The Target Environment's separate state dimensions, never one badge: environment state (active or not), configuration (a target is set),
-   verification (manual sign-in verification) and execution trust (the backend's trusted-environment configuration — never a browser
-   setting). Evidence and runtime state are per integration and live under Integrations. *@
+   detection (reachability as Detect settings established it), execution trust (the backend's trusted-environment configuration — never a
+   browser setting, never a detection or sign-in result) and runtime evidence (an authenticated context observed now). There is no global
+   "verified" state: a manual sign-in check is an authentication fact on the Authentication tab. *@
 <dl class="tes" aria-label="Target Environment state" data-testid="te-state">
     <div data-dimension="environment"><dt>Environment state</dt><dd><span class="tes-pill tes-@(IsActive ? "ok" : "muted")" data-testid="te-state-environment">@(IsActive ? "Active" : "Not active")</span></dd></div>
     <div data-dimension="configuration"><dt>Configuration</dt><dd><span class="tes-pill tes-@(Configured ? "ok" : "attention")" data-testid="te-state-configuration">@(Configured ? "Configured" : "Not configured")</span></dd></div>
-    <div data-dimension="verification"><dt>Verification</dt><dd><span class="tes-pill tes-@VerificationTone" data-testid="te-state-verification">@Verification</span></dd></div>
+    <div data-dimension="detection"><dt>Detection</dt><dd><span class="tes-pill tes-@DetectionTone" data-testid="te-state-detection">@Detection</span></dd></div>
     <div data-dimension="trust"><dt>Execution trust</dt><dd><span class="tes-pill tes-@(_trusted == true ? "ok" : _trusted == false ? "attention" : "muted")" data-testid="te-state-trust" title="@_trustDetail">@(_trusted switch { true => "Trusted", false => "Not trusted", _ => "Not known" })</span></dd></div>
+    <div data-dimension="runtime"><dt>Runtime evidence</dt><dd><span class="tes-pill tes-@(RuntimeObserved ? "ok" : "muted")" data-testid="te-state-runtime">@(RuntimeObserved ? "Observed" : "Not verified")</span></dd></div>
 </dl>
 
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
     [Parameter] public bool IsActive { get; set; }
-    /// <summary>Whether this environment requires manual sign-in verification at all.</summary>
-    [Parameter] public bool ManualVerificationRequired { get; set; }
-    [Parameter] public bool ManualVerificationPassed { get; set; }
+    /// <summary>Reachability as detection established it ("Reachable", "Unreachable", "Unknown", "Not checked" …).</summary>
+    [Parameter] public string Detection { get; set; } = "Not checked";
+    /// <summary>Whether an authenticated runtime context (API or browser) is available now. Detection never sets it.</summary>
+    [Parameter] public bool RuntimeObserved { get; set; }
 
     private bool Configured => !string.IsNullOrWhiteSpace(Profile.TargetUrl);
-    private string Verification => ManualVerificationPassed ? "Verified" : ManualVerificationRequired ? "Manual verification required" : "Not verified";
-    private string VerificationTone => ManualVerificationPassed ? "ok" : ManualVerificationRequired ? "attention" : "muted";
+    private string DetectionTone => Detection.StartsWith("Reachable", StringComparison.Ordinal) ? "ok"
+        : Detection.StartsWith("Unreachable", StringComparison.Ordinal) || Detection == "Needs re-check" ? "attention" : "muted";
 
     private bool? _trusted;
     private string? _trustDetail, _loadedFor;

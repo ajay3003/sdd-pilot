@@ -184,7 +184,7 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
 
         Row(cut, "authentication-configuration-state").Should().Be("Configured");
         Row(cut, "authentication-detection-state").Should().Be("Detected");
-        Row(cut, "auth-summary-verification").Should().Be("Manual verification required");
+        Row(cut, "auth-summary-verification").Should().Be("Sign-in check not recorded");
         // A live session with nothing through it yet is not the same as no context at all.
         Row(cut, "auth-summary-context").Should().Be("Waiting for authenticated traffic");
         Row(cut, "testing-access-api").Should().Be("Not available");
@@ -203,7 +203,9 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
     {
         AuthenticationPaneStates.Verification(required: true, ManualAuthenticationVerificationStatus.Passed)
             .Should().Be(AuthVerificationState.Verified);
-        AuthenticationPaneStates.VerificationLabel(AuthVerificationState.Verified).Should().Be("Verified");
+        // A recorded check is a person's observation, never "Verified": runtime verification comes only from runtime evidence.
+        AuthenticationPaneStates.VerificationLabel(AuthVerificationState.Verified).Should().Be("Sign-in check completed (manual)");
+        AuthenticationPaneStates.VerificationTone(AuthVerificationState.Required).Should().Be("muted", "an unrecorded optional check is not a required step");
         AuthenticationPaneStates.Verification(required: true, ManualAuthenticationVerificationStatus.Failed)
             .Should().Be(AuthVerificationState.Failed);
         // A verification nobody asked for is Not required, which is not the same as Not done.
@@ -260,7 +262,7 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         cut.WaitForAssertion(() => Row(cut, "testing-access-api").Should().Be("Available"));
         Row(cut, "auth-summary-context").Should().Be(Row(cut, "authenticated-testing-state"));
         // Runtime evidence is not a human confirmation, and never becomes one.
-        Row(cut, "auth-summary-verification").Should().Be("Manual verification required");
+        Row(cut, "auth-summary-verification").Should().Be("Sign-in check not recorded");
         Row(cut, "authentication-verification-last").Should().Be("Never");
     }
 
@@ -358,8 +360,8 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         var cut = Open(Configured, detect: true);
 
         var verification = El(cut, "authentication-verification");
-        Row(cut, "authentication-verification-state").Should().Be("Manual verification required");
-        Row(cut, "authentication-verification-method").Should().Be("Manual verification in a signed-in browser");
+        Row(cut, "authentication-runtime-state").Should().Be("Not verified");
+        Row(cut, "authentication-verification-status").Should().Be("Not recorded");
         Row(cut, "authentication-verification-last").Should().Be("Never");
         verification.TextContent.Should().NotContain("Automated detection");
         verification.QuerySelector("[data-testid='authentication-verification-open']").Should().NotBeNull();
@@ -376,10 +378,11 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         El(cut, "auth-verify").HasAttribute("disabled").Should().BeFalse();
         El(cut, "auth-verify").Click();
 
-        cut.FindAll("[role=tab][aria-selected=true]").Single().TextContent.Trim().Should().Be("Target Application");
+        // The check lives on the Authentication tab itself, never as a Target Application step.
+        cut.FindAll("[role=tab][aria-selected=true]").Single().TextContent.Trim().Should().Be("Authentication");
         // The instructions are open, not merely reachable: the action used to set a flag nothing read.
-        cut.Markup.Should().Contain("Sign in using your work account.");
-        cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Mark verification passed");
+        cut.Markup.Should().Contain("Sign in using your work account");
+        cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Record sign-in check completed");
     }
 
     // ── §43. Capabilities ────────────────────────────────────────────────────────────────────

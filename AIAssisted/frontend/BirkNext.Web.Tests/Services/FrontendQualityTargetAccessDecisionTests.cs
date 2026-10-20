@@ -191,7 +191,7 @@ public sealed class FrontendQualityTargetAccessDecisionTests
         access.AuthenticatedBrowserDomAvailable.Should().BeFalse();
         access.AuthenticatedApiAvailable.Should().BeFalse();
         FrontendQualityTargetAccess.AutomatedAccessLabel(access).Should().StartWith("Unavailable");
-        FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus).Should().Be("Passed");
+        FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus).Should().Be("Completed (recorded manually)");
         FrontendQualityTargetAccess.DecideAll(access)[FrontendQualityEngineId.BrowserRuntime].IsReady.Should().BeFalse();
     }
 

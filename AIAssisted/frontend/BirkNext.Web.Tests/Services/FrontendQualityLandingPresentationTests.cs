@@ -514,9 +514,9 @@ public sealed class FrontendQualityLandingPresentationTests
         var context = Context(requiresAuth: true, method: AuthenticatedTestingMethod.ManualOnly);
         context.ManualVerificationStatus = ManualAuthenticationVerificationStatus.Passed;
         var model = FrontendQualityLandingPresentation.AuthenticatedReview(context, FrontendQualityTargetAccess.FromContext(context), null, null)!;
-        model.StatusLabel.Should().Be("Manual verification: Passed");
+        model.StatusLabel.Should().Be("Manual sign-in check: Completed (recorded manually)");
         model.Connected.Should().BeFalse("a passed manual verification never grants automated access");
-        model.Evidence.Single(e => e.Label == "Manual verification").Available.Should().BeTrue();
+        model.Evidence.Single(e => e.Label == "Manual sign-in check").Available.Should().BeTrue();
         model.Evidence.Single(e => e.Label == "Authenticated DOM").Available.Should().BeFalse();
         model.Note.Should().Contain("does not give automated engines access");
     }

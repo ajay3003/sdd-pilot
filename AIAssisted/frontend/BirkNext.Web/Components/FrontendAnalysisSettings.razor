@@ -209,8 +209,6 @@
                     <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
                     <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
                     <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
-                    @* The card heading above already states the verification requirement; repeating it as a value row
-                       said the same sentence twice in one card. The Verification card below owns the next action. *@
                     <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
                     @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
                     {
@@ -224,6 +222,14 @@
                 @if (!string.IsNullOrWhiteSpace(_detectionResult.FrameworkEvidence))
                 {
                     <p class="fa-framework-evidence">Framework evidence: @_detectionResult.FrameworkEvidence · @_detectionResult.FrameworkConfidence</p>
+                }
+                @if (_detectionResult.ManualAuthenticationVerificationRequired)
+                {
+                    @* Authentication-specific, never a target-wide gate: detection proved reachability and configuration, not sign-in. *@
+                    <p class="fa-result-limitation" data-testid="detection-auth-limitation">
+                        Authentication runtime verification: <strong>Not verified</strong>. Sign-in requires a managed Microsoft Edge work profile, which BirkNext cannot verify automatically.
+                        <button type="button" class="fa-inline-link" data-testid="detection-auth-open" @onclick='() => _activeTab = "auth"'>Optional manual sign-in check on the Authentication tab</button>
+                    </p>
                 }
 
                 <div class="fa-result-actions">
@@ -239,71 +245,6 @@
                         <SecondaryButton OnClick="ApplyDetectedEnvironmentType">Apply detected type</SecondaryButton>
                     }
                 </div>
-            </section>
-        }
-
-        @if (ManualVerificationRequired && _activeTab != "auth")
-        {
-            @* Focused on the next action: the state is stated once above, so this card leads with Status + button. *@
-            <section class="fa-result fa-verification" aria-labelledby="manual-verification-heading">
-                @* The Detection result card above states the requirement; here it is a compact badge beside the
-                   heading so the card can lead with the action instead of repeating the sentence. *@
-                <div class="fa-verification-head">
-                    <h3 id="manual-verification-heading" class="fa-verification-heading">Verification</h3>
-                    <span class="fa-verification-badge" role="status" data-testid="manual-verification-status">@ManualVerificationStatusLabel</span>
-                </div>
-                <div>
-                    <details><summary>Verification details</summary>
-                    <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
-                    @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
-                    {
-                        <p class="fa-configured-auth-draft">Configured authentication (draft): <strong>@_editProfile.Authentication.AuthenticationType</strong> — ⚠ Unsaved. Saved authentication: @profile.Authentication.AuthenticationType.</p>
-                    }
-                    else if (profile.Authentication.AuthenticationType == FrontendAuthenticationType.None)
-                    {
-                        <p>Configured authentication None means no authentication settings are preconfigured.</p>
-                    }
-                    else
-                    {
-                        <p>Configured authentication: @profile.Authentication.AuthenticationType.</p>
-                    }
-                    </details>
-                </div>
-                @if (!_manualInstructionsOpen)
-                {
-                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
-                }
-                else
-                {
-                    <ol>
-                        <li>Open @CurrentTargetUrl in your normal enterprise-managed Microsoft Edge work profile.</li>
-                        <li>Sign in using your work account.</li>
-                        <li>Complete PIN, passkey or MFA manually.</li>
-                        <li>If MCAS / Defender for Cloud Apps appears, continue manually.</li>
-                        <li>Confirm that the authenticated target application is reached.</li>
-                        <li>Return to BirkNext and mark verification as passed or failed.</li>
-                    </ol>
-                    <p>Only your verification result is recorded. No browser authentication state is transferred.</p>
-                    <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
-                    <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
-                }
-                @if (ManualStatus == ManualAuthenticationVerificationStatus.Failed)
-                {
-                    <SecondaryButton OnClick="OpenManualVerification">Retry manual verification</SecondaryButton>
-                }
-                @if (CurrentProfile?.ManualVerification is { } evidence)
-                {
-                    <p><small>Last recorded verification: @evidence.Result ? @evidence.VerifiedAt ? @evidence.Origin</small></p>
-                }
-                @if (_detectionResult is not null && !ManualVerificationContextCurrent)
-                {
-                    <p class="fa-activation-reason fa-manual-context-changed" role="status">
-                        Authentication or environment settings changed since detection.
-                        @(IsDirty ? "Save changes, then run Detect settings again before recording manual verification." : "Run Detect settings again before recording manual verification.")
-                        Target discovery is unaffected.
-                    </p>
-                }
-                <p>If you changed environment settings, save them before recording verification. Activation requires current target detection and manual verification Passed.</p>
             </section>
         }
 
@@ -325,8 +266,8 @@
             </div>
         }
 
-        <TargetEnvironmentStateSummary Profile="profile" IsActive="@(FaSettings.Settings.ActiveProfileId == profile.Id)" ManualVerificationRequired="ManualVerificationRequired"
-                                       ManualVerificationPassed="@(ManualStatus == ManualAuthenticationVerificationStatus.Passed)" />
+        <TargetEnvironmentStateSummary Profile="profile" IsActive="@(FaSettings.Settings.ActiveProfileId == profile.Id)" Detection="@DetectionSummary"
+                                       RuntimeObserved="@(AuthenticatedApiAvailable || AuthenticatedDomAvailable)" />
 
         @* ── Section tabs ── One tablist (arrow keys move across all tabs), visually grouped: General · Discovery · Quality settings ·
            Integrations. Group captions are plain, aria-hidden text: never a tab. *@
@@ -746,30 +687,54 @@
                 </section>
 
                 @*
-                    2. Verification — whether a PERSON has confirmed the sign-in workflow. Passing this does NOT create
-                    an authenticated testing context, and authenticated traffic appearing does NOT mark it passed. The
-                    "Method" row says how verification is performed; how authentication was DETECTED is a fact about
-                    detection and lives in the configuration section, which is where it stopped contradicting this card.
+                    2. Authentication runtime verification, and the optional manual sign-in check. Runtime verification comes only from
+                    runtime evidence (an authenticated API context or browser session). The manual check records what a PERSON observed
+                    in a managed browser: it is not runtime evidence, never a target-wide gate, never execution trust and never an
+                    authenticated testing context.
                 *@
-                <section class="fa-detection-summary fa-state-@AuthenticationPaneStates.VerificationTone(AuthPane.Verification)" data-testid="authentication-verification" aria-labelledby="authentication-verification-heading">
+                <section class="fa-detection-summary fa-state-@(AuthenticatedApiAvailable || AuthenticatedDomAvailable ? "ready" : "muted")" data-testid="authentication-verification" aria-labelledby="authentication-verification-heading">
                     <div class="fa-card-heading">
-                        <h3 id="authentication-verification-heading">Authentication verification</h3>
-                        <span class="fa-card-status" role="status" data-testid="authentication-verification-state">@AuthenticationPaneStates.VerificationLabel(AuthPane.Verification)</span>
+                        <h3 id="authentication-verification-heading">Authentication runtime verification</h3>
+                        <span class="fa-card-status" role="status" data-testid="authentication-runtime-state">@(AuthenticatedApiAvailable || AuthenticatedDomAvailable ? "Observed" : "Not verified")</span>
                     </div>
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Status</dt><dd data-testid="authentication-verification-status">@(ManualVerificationRequired ? ManualVerificationLabel : "Not required for this method")</dd></div>
-                        <div class="fa-dl-row"><dt>Last verification</dt><dd data-testid="authentication-verification-last">@LastVerificationLabel</dd></div>
-                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authentication-verification-method">@AuthenticationPaneStates.VerificationMethod(AuthPane.Verification)</dd></div>
+                        <div class="fa-dl-row"><dt>Runtime evidence</dt><dd data-testid="authentication-runtime-evidence">@(AuthenticatedApiAvailable || AuthenticatedDomAvailable ? "An authenticated context is available now" : "No authenticated runtime evidence")</dd></div>
+                        <div class="fa-dl-row"><dt>Manual sign-in check</dt><dd data-testid="authentication-verification-status">@(ManualVerificationRequired ? ManualCheckLabel : "Not needed for this method")</dd></div>
+                        <div class="fa-dl-row"><dt>Last recorded check</dt><dd data-testid="authentication-verification-last">@LastVerificationLabel</dd></div>
                     </dl>
-                    @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
+                    @if (ManualVerificationRequired)
                     {
-                        <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick='() => _activeTab = "target"'>Open verification instructions</button>
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !AuthReadiness.CanVerify)
+                        @if (!_manualInstructionsOpen)
                         {
-                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above. @AuthenticationReadinessPresentation.VerificationBlockedReason(AuthReadiness)</p>
+                            <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick="OpenManualVerification">Open manual sign-in check</button>
+                        }
+                        else
+                        {
+                            <ol data-testid="manual-check-steps">
+                                <li>Open @CurrentTargetUrl in your normal enterprise-managed Microsoft Edge work profile.</li>
+                                <li>Sign in using your work account and complete PIN, passkey or MFA manually.</li>
+                                <li>If MCAS / Defender for Cloud Apps appears, continue manually.</li>
+                                <li>Confirm whether the signed-in application is reached, then record what you observed.</li>
+                            </ol>
+                            <div class="fa-auth-actions">
+                                <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Record sign-in check completed</PrimaryButton>
+                                <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Record sign-in check failed</SecondaryButton>
+                            </div>
+                        }
+                        @if (_detectionResult is not null && !ManualVerificationContextCurrent)
+                        {
+                            <p class="fa-activation-reason fa-manual-context-changed" role="status">
+                                Authentication or environment settings changed since detection.
+                                @(IsDirty ? "Save changes, then run Detect settings again before recording a sign-in check." : "Run Detect settings again before recording a sign-in check.")
+                                Target discovery is unaffected.
+                            </p>
+                        }
+                        else if (_detectionResult is null || !CanRecordManualVerification)
+                        {
+                            <p class="fa-auth-help" data-testid="manual-check-precondition">Run Detect settings (with saved changes) to record a sign-in check for the current configuration.</p>
                         }
                     }
-                    <p class="fa-auth-help" data-testid="authentication-verification-scope">Verification confirms the target's authentication configuration and sign-in workflow. It does not create an authenticated testing context.</p>
+                    <p class="fa-auth-help" data-testid="authentication-verification-scope">A manual sign-in check records what a person observed. It is not runtime verification, does not grant execution trust and does not create an authenticated testing context.</p>
                 </section>
 
                 @*
@@ -868,20 +833,13 @@
                     </ReviewDisclosure>
                 </section>
 
-                @* Manual verification only has no runtime panel of its own, so it keeps its own surface. *@
+                @* Manual-only testing has no runtime panel of its own; the sign-in check itself lives in the card above. *@
                 @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly)
                 {
-                <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
-                    <h3>Manual verification</h3>
-                    <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
-                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
-                    @if (_manualInstructionsOpen)
-                    {
-                        <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
-                        <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
-                        <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
-                    }
-                    <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
+                <section class="fa-detection-summary fa-state-muted" data-testid="manual-only-panel" aria-label="Manual testing only">
+                    <h3>Manual testing only</h3>
+                    <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Manual sign-in check</dt><dd>@ManualCheckLabel</dd></div></dl>
+                    <p>A person signs in and checks the application. It does not enable authenticated REST, GraphQL or browser automation.</p>
                 </section>
                 }
 
@@ -1718,8 +1676,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private void VerifyAuthentication()
     {
-        if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly) { OpenManualVerification(); return; }
-        _activeTab = "target";
+        // The manual sign-in check lives on the Authentication tab itself; it is never a Target Application step.
         OpenManualVerification();
     }
 
@@ -1787,7 +1744,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             return
             [
                 ("Saved verification mode", auth?.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ? "Manual (managed Edge)" : "Automatic"),
-                ("Manual verification status", ManualStatus.ToString()),
+                ("Manual sign-in check", ManualStatus.ToString()),
                 ("Detection", AuthenticationPaneStates.DetectionLabel(AuthenticationDetection)),
                 ("Detection source", ConfigurationSourceLabel),
                 ("Expected identifiers", "Authentication configuration → Detection → View details"),
@@ -2667,10 +2624,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// Compact wording for the summary badge beside the Frontend URL. Every other detection state is already short;
     /// only manual verification had a full sentence there, which the Detection result card states once on its own.
     /// </summary>
-    private string DetectionStateBadge =>
-        CurrentDetectionState == DetectionState.ManualAuthenticationVerificationRequired && !DetectionReady
-            ? "Needs verification"
-            : DetectionStateLabel;
+    private string DetectionStateBadge => DetectionStateLabel;
 
     private string DetectionStateLabel =>
         CurrentDetectionState switch
@@ -2678,7 +2632,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             DetectionState.Checking => "Detecting...",
             DetectionState.Complete => "Detection complete",
             DetectionState.ManualAuthenticationVerificationRequired when DetectionReady => "Target detection complete",
-            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification required",
+            DetectionState.ManualAuthenticationVerificationRequired => "Detection needs current settings",
             DetectionState.AuthenticationRequired => "Authentication required",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Needs browser inspection",
             DetectionState.Partial => "Detection incomplete",
@@ -2713,10 +2667,25 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool CanSetActiveTarget => !_isEditMode && SelectedProfile is { } profile &&
         FrontendAnalysisSettingsService.IsValidUrl(profile.TargetUrl ?? "") && FaSettings.ValidateProfile(profile).IsValid;
 
+    /// <summary>Detection readiness from detection evidence only. Where sign-in needs a managed browser, detection is complete once the target
+    /// was reached and configuration detected for the saved settings; the optional manual sign-in check never gates it.</summary>
     private bool DetectionReady => ManualVerificationRequired
-        ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true &&
-          _detectionResult.Warnings.Count == 0 && (ManualStatus == ManualAuthenticationVerificationStatus.Passed || EdgeStatus.AuthenticatedBrowserAvailable || ProxyApiContextAvailable)
+        ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true && _detectionResult.Warnings.Count == 0
         : _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
+
+    /// <summary>The Detection chip: reachability as detection established it (or the last saved outcome); never a sign-in result.</summary>
+    private string DetectionSummary =>
+        _detectionResult is { } d && CurrentDetectionState != DetectionState.Stale
+            ? d.Reachability switch
+            {
+                TargetReachability.Reachable or TargetReachability.AuthenticationRequired => "Reachable",
+                TargetReachability.Unknown => "Unknown",
+                _ => "Unreachable",
+            }
+            : CurrentDetectionState == DetectionState.Stale ? "Needs re-check"
+            : SelectedProfile?.LastDetectionSucceeded == true ? "Reachable (last check)"
+            : SelectedProfile?.LastDetectionFailure is not null ? "Unreachable (last check)"
+            : "Not checked";
 
     private string? _manualDetectionContext;
     private bool _manualInstructionsOpen;
@@ -2726,36 +2695,18 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         (_detectionResult is null && CurrentProfile?.ManualVerification is not null);
     private ManualAuthenticationVerificationStatus ManualStatus => CurrentProfile?.ManualVerification?.StatusFor(CurrentProfile)
         ?? (_manualInstructionsOpen ? ManualAuthenticationVerificationStatus.Pending : ManualAuthenticationVerificationStatus.Required);
-    /// <summary>
-    /// Short status for surfaces that sit beside the Detection result card, which already states the long phrase once.
-    /// The stale variants keep their full wording because the sentence carries the instruction, not just the state.
-    /// </summary>
-    private string ManualVerificationStatusLabel =>
-        !_manualResultRecordedThisSession && CurrentProfile?.ManualVerification is { } previous && ManualStatus != ManualAuthenticationVerificationStatus.Stale
-            ? $"Previous manual verification: {previous.Result}"
-            : ManualStatus switch
-            {
-                ManualAuthenticationVerificationStatus.Passed => "Manual verification passed",
-                ManualAuthenticationVerificationStatus.Failed => "Manual verification failed",
-                ManualAuthenticationVerificationStatus.Pending => "Manual verification pending",
-                ManualAuthenticationVerificationStatus.Stale => ManualVerificationLabel,
-                _ => "Manual verification required",
-            };
-
-    private string ManualVerificationLabel => !_manualResultRecordedThisSession && CurrentProfile?.ManualVerification is { } previous && ManualStatus != ManualAuthenticationVerificationStatus.Stale
-        ? $"Previous manual authentication verification: {previous.Result}"
-        : ManualStatus switch
-        {
-            ManualAuthenticationVerificationStatus.Passed => "Manual authentication verification passed",
-            ManualAuthenticationVerificationStatus.Failed => "Manual authentication verification failed",
-            // The recorded result no longer matches the configured expectations. Detection only needs
-            // repeating when the profile has diverged from the detection evidence.
-            ManualAuthenticationVerificationStatus.Stale when !ManualVerificationContextCurrent => "Manual authentication verification stale. Repeat detection and verification",
-            ManualAuthenticationVerificationStatus.Stale when IsDirty => "Manual authentication verification stale. Save changes, then repeat verification",
-            ManualAuthenticationVerificationStatus.Stale => "Manual authentication verification stale. Repeat verification",
-            ManualAuthenticationVerificationStatus.Pending => "Manual authentication verification pending",
-            _ => "Manual authentication verification required"
-        };
+    /// <summary>The optional manual sign-in check, in words that never claim more than a person's recorded observation.</summary>
+    private string ManualCheckLabel => ManualStatus switch
+    {
+        ManualAuthenticationVerificationStatus.Passed => "Completed (recorded manually)",
+        ManualAuthenticationVerificationStatus.Failed => "Failed (recorded manually)",
+        // The recorded check no longer matches the configured expectations. Detection only needs repeating when the profile
+        // has diverged from the detection evidence.
+        ManualAuthenticationVerificationStatus.Stale when !ManualVerificationContextCurrent => "Out of date: settings changed. Run Detect settings, then check again",
+        ManualAuthenticationVerificationStatus.Stale when IsDirty => "Out of date: save changes, then check again",
+        ManualAuthenticationVerificationStatus.Stale => "Out of date: settings changed. Check again",
+        _ => "Not recorded",
+    };
     /// <summary>
     /// Fingerprint of the current profile for comparison with the detection-time verification context.
     /// Fields that equal the detector's own proposal are treated as unchanged (see
@@ -2890,7 +2841,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Server preflight succeeded. Browser inspection is required to finish detection.",
         DetectionState.AuthenticationRequired => "Authentication is required to finish detection in the browser.",
         DetectionState.Complete => "Review the detected/proposed settings below.",
-        DetectionState.ManualAuthenticationVerificationRequired => "Target preflight complete. Managed Microsoft Edge work profile required for manual authentication verification.",
+        DetectionState.ManualAuthenticationVerificationRequired => "Target reached and configuration detected. Sign-in requires a managed Microsoft Edge work profile, so authentication was not runtime-verified.",
         DetectionState.Failed => _detectionResult?.Message ?? "Detection could not be completed safely.",
         DetectionState.Stale => DiscoveryStaleMessage,
         // NotChecked: show historical message if available
@@ -2910,9 +2861,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Run Detect settings to verify this environment.",
-            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes and pass manual authentication verification to verify authenticated access.",
-            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again and pass manual authentication verification to verify authenticated access.",
-            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass to verify authenticated access.",
+            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes, then run Detect settings again.",
+            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again.",
+            DetectionState.ManualAuthenticationVerificationRequired => "Detection did not establish the framework, or reported warnings. Review the detection result.",
             DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
             DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",

@@ -102,7 +102,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     private static void AssertDiscoveryCurrent(IRenderedComponent<Component> cut, bool editing = true)
     {
         OpenTab(cut, "Target Application");
-        DetectionLabel(cut).Should().Be("Needs verification", "the summary badge is compact; the Detection result card states the full requirement");
+        DetectionLabel(cut).Should().BeOneOf(["Target detection complete", "Detection needs current settings"], "discovery is current; only unsaved edits keep detection from matching the saved settings");
         cut.Markup.Should().Contain("Detection result");
         cut.Find(".fa-result-message").TextContent.Should().NotContain("changed");
         cut.Markup.Should().Contain("Reachable");
@@ -215,8 +215,8 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Persisted().ManualVerification.Should().BeNull();
         SaveCalls().Should().Be(savesBeforeApply);
         _settings.Settings.ActiveProfileId.Should().Be("local");
-        cut.Markup.Should().Contain("Manual authentication verification required");
-        cut.Markup.Should().NotContain("Manual verification passed");
+        cut.Markup.Should().NotContain("Mark verification", "there is no global verification workflow");
+        cut.Markup.Should().NotContain("Completed (recorded manually)");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
         cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Unsaved changes");
 
@@ -271,12 +271,12 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
 
-        // Manual verification and activation remain independent of Save
+        // The manual sign-in check and activation remain independent of Save; detection is complete for the saved settings
         Persisted().ManualVerification.Should().BeNull();
-        cut.Markup.Should().Contain("Manual authentication verification required");
+        cut.Markup.Should().NotContain("Mark verification");
         _settings.Settings.ActiveProfileId.Should().Be("local");
         ButtonDisabled(cut, "Set as Active").Should().BeFalse();
-        cut.Find("#detection-readiness-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass to verify authenticated access.");
+        cut.FindAll("#detection-readiness-reason").Should().BeEmpty("an unrecorded optional sign-in check never gates detection readiness");
 
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -348,25 +348,25 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         AssertDiscoveryCurrent(cut);
     }
 
-    // ── 26. Manual verification stale independence ─────────────────────────────
+    // ── 26. Manual sign-in check stale independence ─────────────────────────────
 
     [Fact]
-    public void AuthChange_StalesPassedManualVerification_ButTargetDiscoveryRemainsCurrent()
+    public void AuthChange_MakesARecordedSignInCheckOutOfDate_ButTargetDiscoveryRemainsCurrent()
     {
         var cut = Open();
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        Click(cut, "Open verification instructions");
-        Click(cut, "Mark verification passed");
+        OpenTab(cut, "Authentication");
+        Click(cut, "Open manual sign-in check");
+        Click(cut, "Record sign-in check completed");
         cut.WaitForAssertion(() => Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Markup.Should().Contain("Manual verification passed");
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Completed (recorded manually)");
         ButtonDisabled(cut, "Set as Active").Should().BeFalse();
 
-        OpenTab(cut, "Authentication");
         Click(cut, "Apply authentication");
 
-        // The recorded pass no longer matches the configured expectations → stale, activation blocked…
-        cut.Markup.Should().Contain("Manual authentication verification stale. Save changes, then repeat verification");
+        // The recorded check no longer matches the configured expectations → out of date (unsaved edits block activation as before)…
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Out of date: save changes, then check again");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
         Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed, "persisted evidence is untouched; staleness is computed");
 
@@ -378,9 +378,9 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
     // ── Defect 1: applying the detector's own proposal must not demand re-detection ──
 
-    /// <summary>Expected flow: Detect → Apply authentication → Save → manual verification → Passed. No second Detect.</summary>
+    /// <summary>Expected flow: Detect → Apply authentication → Save → (optional) manual sign-in check. No second Detect.</summary>
     [Fact]
-    public void AfterSave_AppliedProposal_ManualVerificationAvailableWithoutRedetect()
+    public void AfterSave_AppliedProposal_DetectionIsCompleteAndTheSignInCheckIsAvailableWithoutRedetect()
     {
         var cut = DetectAndApply(Open());
         Click(cut, "Save changes");
@@ -388,15 +388,16 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
         cut.Markup.Should().NotContain("changed since detection");
         cut.Markup.Should().NotContain("Run Detect settings again");
-        cut.Find("#detection-readiness-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass to verify authenticated access.");
+        cut.FindAll("#detection-readiness-reason").Should().BeEmpty();
         AssertDiscoveryCurrent(cut, editing: false);
 
-        Click(cut, "Open verification instructions");
-        ButtonDisabled(cut, "Mark verification passed").Should().BeFalse("applied proposal is consistent with the detection evidence");
-        Click(cut, "Mark verification passed");
+        OpenTab(cut, "Authentication");
+        Click(cut, "Open manual sign-in check");
+        ButtonDisabled(cut, "Record sign-in check completed").Should().BeFalse("applied proposal is consistent with the detection evidence");
+        Click(cut, "Record sign-in check completed");
         cut.WaitForAssertion(() => Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Markup.Should().Contain("Manual verification passed");
-        ButtonDisabled(cut, "Set as Active").Should().BeFalse("detection current + saved + manual verification passed");
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Completed (recorded manually)");
+        ButtonDisabled(cut, "Set as Active").Should().BeFalse();
         _settings.Settings.ActiveProfileId.Should().Be("local", "activation is still an explicit action");
         _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once, "no re-detect was required");
         _api.VerifyNoOtherCalls();
@@ -411,14 +412,15 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.ExpectedClientId.Should().Be("99999999-9999-9999-9999-999999999999"));
 
-        Click(cut, "Open verification instructions");
+        OpenTab(cut, "Authentication");
+        Click(cut, "Open manual sign-in check");
 
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
-        cut.Markup.Should().Contain("Run Detect settings again before recording manual verification.");
+        cut.Markup.Should().Contain("Run Detect settings again before recording a sign-in check.");
+        ButtonDisabled(cut, "Record sign-in check completed").Should().BeTrue();
+        OpenTab(cut, "Target Application");
         cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings again");
-        Click(cut, "Open verification instructions");
-        ButtonDisabled(cut, "Mark verification passed").Should().BeTrue();
-        // Discovery itself is still not stale: only the verification context diverged
+        // Discovery itself is still not stale: only the authentication context diverged
         cut.Markup.Should().NotContain("target URL changed");
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -442,38 +444,33 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.WaitForAssertion(() => Persisted().EnvironmentType.Should().Be(FrontendEnvironmentType.Production));
 
         cut.Markup.Should().NotContain("changed since detection");
-        Click(cut, "Open verification instructions");
-        ButtonDisabled(cut, "Mark verification passed").Should().BeFalse();
+        OpenTab(cut, "Authentication");
+        Click(cut, "Open manual sign-in check");
+        ButtonDisabled(cut, "Record sign-in check completed").Should().BeFalse();
     }
 
     // ── Defect 2: draft vs persisted authentication must be labelled, never contradictory ──
 
     [Fact]
-    public void ManualPanelAndResultGrid_LabelDraftVersusSavedAuthentication()
+    public void ResultGrid_LabelsDraftVersusSavedAuthentication()
     {
         var cut = Open();
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        var manualPanel = () => cut.Find("section.fa-verification").TextContent;
         var resultGrid = () => cut.Find(".fa-result-grid").TextContent;
 
-        // Before Apply: persisted None, honest explanation
-        manualPanel().Should().Contain("Configured authentication None means no authentication settings are preconfigured.");
+        // Before Apply: persisted None
         resultGrid().Should().Contain("Configured authentication").And.NotContain("(draft)");
 
         // After Apply, before Save: draft labelled as draft + unsaved, saved value named explicitly
         OpenTab(cut, "Authentication");
         Click(cut, "Apply authentication");
         OpenTab(cut, "Target Application");
-        manualPanel().Should().Contain("Configured authentication (draft):").And.Contain("MicrosoftEntraId")
-            .And.Contain("Unsaved").And.Contain("Saved authentication: None")
-            .And.NotContain("Configured authentication None means");
         resultGrid().Should().Contain("Configured authentication (draft)").And.Contain("Unsaved").And.Contain("saved: None");
 
         // After Save: single persisted value, no draft wording
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.AuthenticationType.Should().Be(FrontendAuthenticationType.MicrosoftEntraId));
-        manualPanel().Should().Contain("Configured authentication: MicrosoftEntraId.").And.NotContain("(draft)").And.NotContain("None means");
         resultGrid().Should().NotContain("(draft)");
         cut.Find(".fa-result-grid").TextContent.Should().Contain("MicrosoftEntraId");
     }

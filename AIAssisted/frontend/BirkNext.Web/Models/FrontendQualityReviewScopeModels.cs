@@ -59,7 +59,6 @@ public sealed record FrontendQualityReviewScope(
     IReadOnlyList<FrontendQualityEngineScopeEntry> Engines)
 {
     public bool ExplicitSelection { get; init; }
-    public bool ManualVerificationRequired { get; init; }
     /// <summary>The configured scope is only partly reachable: the authenticated part is out of reach for this run.</summary>
     public bool Narrowed => Effective is { } effective && effective != Configured;
 

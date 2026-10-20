@@ -33,7 +33,7 @@
                 </dd>
             </div>
             <div>
-                <dt>Verification</dt>
+                <dt>Manual sign-in check</dt>
                 <dd class="ar-tone-@AuthenticationPaneStates.VerificationTone(State.Verification)" data-testid="auth-summary-verification">
                     @AuthenticationPaneStates.VerificationLabel(State.Verification)
                 </dd>
@@ -49,7 +49,7 @@
 
         <div class="ar-hero-actions">
             <button type="button" class="btn-primary" data-testid="auth-verify"
-                    disabled="@(!Summary.CanVerify)" @onclick="OnVerify">Verify authentication</button>
+                    disabled="@(!Summary.CanVerify)" @onclick="OnVerify">Check sign-in manually</button>
             @* A disabled action always says what is missing; a greyed-out button on its own makes the user guess. *@
             @if (AuthenticationReadinessPresentation.VerificationBlockedReason(Summary) is { Length: > 0 } blocked)
             {

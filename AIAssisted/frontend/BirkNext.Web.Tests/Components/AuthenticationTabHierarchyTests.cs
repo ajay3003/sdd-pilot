@@ -131,7 +131,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
                             "authentication-verification", "authenticated-testing", "auth-discovery-cta");
 
         cut.Find("#authentication-configuration-heading").TextContent.Should().Be("Authentication configuration");
-        cut.Find("#authentication-verification-heading").TextContent.Should().Be("Authentication verification");
+        cut.Find("#authentication-verification-heading").TextContent.Should().Be("Authentication runtime verification");
         cut.Find("#authenticated-testing-heading").TextContent.Should().Be("Authenticated testing context");
         // Detection is a block inside the configuration section, not a second full-width configuration card.
         Testid(cut, "authentication-discovery").Closest("[data-testid='authentication-configuration']").Should().NotBeNull();
@@ -343,18 +343,16 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         var cut = Detect(MatchingAuthentication);
 
         var verification = Testid(cut, "authentication-verification");
-        verification.QuerySelector("[data-testid='authentication-verification-status']")!.TextContent
-            .Should().Contain("Manual authentication verification required");
+        // Runtime verification comes only from runtime evidence; the manual sign-in check is a separate, optional, recorded observation.
+        verification.QuerySelector("[data-testid='authentication-runtime-state']")!.TextContent.Trim().Should().Be("Not verified");
+        verification.QuerySelector("[data-testid='authentication-verification-status']")!.TextContent.Trim().Should().Be("Not recorded");
         verification.QuerySelector("[data-testid='authentication-verification-open']")!.TextContent.Trim()
-            .Should().Be("Open verification instructions");
-        // The Method row describes how VERIFICATION is performed. It used to report how authentication was DETECTED,
-        // which made the card say "Manual verification required" with the method "Automated detection".
-        verification.QuerySelector("[data-testid='authentication-verification-method']")!.TextContent.Trim()
-            .Should().Be("Manual verification in a signed-in browser");
+            .Should().Be("Open manual sign-in check");
         verification.TextContent.Should().NotContain("Automated detection");
-        Row(cut, "authentication-verification-scope").Should().Contain("does not create an authenticated testing context");
+        Row(cut, "authentication-verification-scope").Should().Contain("does not create an authenticated testing context")
+            .And.Contain("does not grant execution trust").And.Contain("not runtime verification");
 
-        // 32. The two states are independent: verification is still required while testing is not connected.
+        // 32. The two states are independent: no sign-in check is recorded while testing is not connected.
         Row(cut, "authenticated-testing-state").Should().Be("Not connected");
         verification.QuerySelector("[data-testid='authenticated-testing-state']").Should().BeNull();
     }
@@ -404,7 +402,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         // 38. Verification and testing access disagree, correctly: one is a human confirmation, the
         // other a runtime context.
         var detected = Detect(MatchingAuthentication);
-        Row(detected, "authentication-verification-status").Should().Contain("required");
+        Row(detected, "authentication-verification-status").Should().Be("Not recorded");
         Row(detected, "authenticated-testing-state").Should().Be("Not connected");
 
         // 39. API context and browser DOM are separate rows with separate answers.

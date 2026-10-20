@@ -40,7 +40,6 @@ public static class FrontendQualityReviewScopes
         };
 
     public static string VerificationLabel(FrontendQualityTargetAccessContext? access) => access is null ? "Checking…"
-        : access.ManualVerificationStatus == ManualAuthenticationVerificationStatus.Required ? "Manual verification required"
         : FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus);
 
     public static FrontendReviewAccessScope ConfiguredScope(FrontendQualityTargetAccessContext access) =>
@@ -125,7 +124,6 @@ public static class FrontendQualityReviewScopes
             engines)
         {
             ExplicitSelection = access.ReviewScope is not null,
-            ManualVerificationRequired = access.RequiresAuthentication && access.ManualVerificationStatus == ManualAuthenticationVerificationStatus.Required
         };
     }
 
@@ -178,10 +176,9 @@ public static class FrontendQualityReviewScopes
         : ("Ready", true);
 
     /// <summary>The sentence the readiness banner adds when the configured scope is only partly reachable.</summary>
+    /// A missing optional manual sign-in check never limits a run: access comes from the authenticated context, not a recorded click.
     public static string? LimitationSentence(FrontendQualityReviewScope scope) =>
-        scope.ManualVerificationRequired && scope.AuthenticatedAccess == FrontendQualityAccessPathState.Available
-            ? "Authenticated testing context is ready, but authentication still requires manual verification."
-        : !scope.Narrowed ? null
+        !scope.Narrowed ? null
         : scope.Effective == FrontendReviewAccessScope.PublicOnly
             ? $"Public scope is available. Authenticated coverage is unavailable: {scope.AuthenticatedDetail}"
             : "Authenticated scope is available. No engine can review the public frontend in this run.";

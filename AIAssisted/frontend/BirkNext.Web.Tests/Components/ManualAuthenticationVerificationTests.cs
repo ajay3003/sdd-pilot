@@ -49,17 +49,33 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
     private static bool ActivationDisabled(IRenderedComponent<Component> cut) =>
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled");
 
+    private static void AuthenticationTab(IRenderedComponent<Component> cut) =>
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();
+
+    private static string CheckStatus(IRenderedComponent<Component> cut) =>
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim();
+
+    /// <summary>Detection reaches a target whose sign-in needs a managed browser: detection is complete, authentication is not runtime-verified,
+    /// and there is no global verification section or gate — only an optional sign-in check on the Authentication tab.</summary>
     [Fact]
-    public void Required_IsNoticeAndInstructionsDoNotPassOrLaunchBrowser()
+    public void Required_IsAnAuthenticationLimitation_NotAGlobalGate()
     {
         var cut = Open();
         Click(cut, "Detect settings");
-        cut.WaitForAssertion(() => Assert.Contains("Manual authentication verification required", cut.Markup));
+        cut.WaitForAssertion(() => Assert.Contains("Target detection complete", cut.Markup));
+        Assert.Contains("Authentication runtime verification: Not verified", cut.Find("[data-testid=detection-auth-limitation]").TextContent);
+        Assert.Empty(cut.FindAll("section.fa-verification"));
+        Assert.DoesNotContain("Mark verification", cut.Markup);
+        Assert.DoesNotContain("Activation requires", cut.Markup);
         Assert.DoesNotContain("Detection failed", cut.Markup);
         Assert.DoesNotContain("Continue detection in browser", cut.Markup);
+        Assert.Equal("Reachable", cut.Find("[data-testid=te-state-detection]").TextContent);
+        Assert.Equal("Not verified", cut.Find("[data-testid=te-state-runtime]").TextContent);
+        Assert.Empty(cut.FindAll("[data-testid=te-state-verification]"));
         Assert.False(ActivationDisabled(cut));
-        Click(cut, "Open verification instructions");
-        Assert.Contains("Manual verification pending", cut.Markup);
+        AuthenticationTab(cut);
+        Assert.Equal("Not recorded", CheckStatus(cut));
+        Click(cut, "Open manual sign-in check");
         Assert.Contains("MCAS / Defender for Cloud Apps", cut.Markup);
         Assert.Null(_settings.Settings.Profiles.Single(x => x.Id == "dev").ManualVerification);
         Assert.False(ActivationDisabled(cut));
@@ -70,29 +86,28 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void ExplicitResult_PersistsAndRecomputesWithoutActivation(bool passed)
+    public void ARecordedCheck_IsPersistedAsAnAuthenticationFact_AndChangesNoReadinessOrTrust(bool passed)
     {
         var cut = Open();
         Click(cut, "Detect settings");
-        Click(cut, "Open verification instructions");
-        Click(cut, passed ? "Mark verification passed" : "Mark verification failed");
+        var readinessBefore = cut.Find("[data-testid=te-state]").TextContent;
+        AuthenticationTab(cut);
+        Click(cut, "Open manual sign-in check");
+        Click(cut, passed ? "Record sign-in check completed" : "Record sign-in check failed");
         var profile = _settings.Settings.Profiles.Single(x => x.Id == "dev");
         cut.WaitForAssertion(() => Assert.NotNull(profile.ManualVerification));
         Assert.Equal(passed ? ManualAuthenticationVerificationStatus.Passed : ManualAuthenticationVerificationStatus.Failed, profile.ManualVerification!.Result);
         Assert.NotNull(profile.ManualVerification.VerifiedAt);
+        Assert.Equal(passed ? "Completed (recorded manually)" : "Failed (recorded manually)", CheckStatus(cut));
+        Assert.Equal("Not verified", cut.Find("[data-testid=authentication-runtime-state]").TextContent.Trim());
+        Assert.Equal(readinessBefore, cut.Find("[data-testid=te-state]").TextContent);
         Assert.False(ActivationDisabled(cut));
         Assert.Equal("local", _settings.Settings.ActiveProfileId);
         Assert.DoesNotContain("BrowserResourceFailure", cut.Markup);
-        if (!passed)
-        {
-            Assert.Contains("Manual verification failed", cut.Markup);
-            Click(cut, "Retry manual verification");
-            Assert.Contains("Mark verification passed", cut.Markup);
-        }
         cut.Dispose();
         var reloaded = Open();
-        Assert.Contains("Previous manual verification", reloaded.Markup);
-        Assert.DoesNotContain("Manual verification failed", reloaded.Markup);
+        AuthenticationTab(reloaded);
+        Assert.Equal(passed ? "Completed (recorded manually)" : "Failed (recorded manually)", CheckStatus(reloaded));
         Assert.False(ActivationDisabled(reloaded));
     }
 
@@ -123,23 +138,25 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
     }
 
     [Fact]
-    public void PassedThenUrlEdit_ShowsStaleAndBlocksActivation()
+    public void CompletedThenUrlEdit_MarksTheCheckOutOfDate()
     {
         var cut = Open();
         Click(cut, "Detect settings");
-        Click(cut, "Open verification instructions");
-        Click(cut, "Mark verification passed");
+        AuthenticationTab(cut);
+        Click(cut, "Open manual sign-in check");
+        Click(cut, "Record sign-in check completed");
         Click(cut, "Edit Environment");
-        var input = cut.FindAll("input").Single(x => x.GetAttribute("value") == Url);
-        input.Change("https://other.example.com/");
-        Assert.Contains("verification stale", cut.Markup);
-        Assert.True(ActivationDisabled(cut));
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Target Application").Click();
+        cut.Find("[data-testid=fa-edit-target-url]").Change("https://other.example.com/");
+        AuthenticationTab(cut);
+        Assert.StartsWith("Out of date", CheckStatus(cut));
+        Assert.True(ActivationDisabled(cut), "unsaved edits block activation, as before");
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void OtherDetectionGates_DoNotChangeExplicitTargetSelection(bool warning)
+    public void DetectionWarningsOrMissingFramework_AreDetectionFacts_AndTheCheckDoesNotOverrideThem(bool warning)
     {
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(new TargetEnvironmentDetectionResult
         {
@@ -151,9 +168,12 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         });
         var cut = Open();
         Click(cut, "Detect settings");
-        Click(cut, "Open verification instructions");
-        Click(cut, "Mark verification passed");
-        Assert.Contains("Manual verification passed", cut.Markup);
+        cut.WaitForAssertion(() => Assert.Contains("Detection needs current settings", cut.Markup));
+        AuthenticationTab(cut);
+        Click(cut, "Open manual sign-in check");
+        Click(cut, "Record sign-in check completed");
+        Assert.Equal("Completed (recorded manually)", CheckStatus(cut));
+        Assert.Contains("Detection needs current settings", cut.Markup);
         Assert.False(ActivationDisabled(cut));
     }
 
@@ -171,7 +191,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Click(cut, "Detect settings");
         _api.Verify(x => x.DetectManualManagedEdgeAsync(Url, default), Times.Once);
         _api.Verify(x => x.DetectFromUrlAsync(It.IsAny<string>(), default), Times.Never);
-        Assert.Contains("Manual authentication verification required", cut.Markup);
+        Assert.Contains("Authentication runtime verification: Not verified", cut.Find("[data-testid=detection-auth-limitation]").TextContent);
         Assert.DoesNotContain("Continue detection in browser", cut.Markup);
     }
 }

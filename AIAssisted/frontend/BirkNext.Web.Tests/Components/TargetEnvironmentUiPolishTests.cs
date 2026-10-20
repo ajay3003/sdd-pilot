@@ -74,20 +74,19 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         return count;
     }
 
-    // ── 1. The long phrase is stated once ────────────────────────────────────
+    // ── 1. No global verification: the limitation is stated once, as an authentication fact ──
 
     [Fact]
-    public void TheLongVerificationPhraseAppearsOnlyOnceOnScreen()
+    public void TheAuthenticationLimitationIsStatedOnce_AndNoGlobalVerificationRemains()
     {
         var cut = Detect();
 
-        Occurrences(cut.Markup, LongPhrase).Should().Be(1,
-            "the Detection result card owns the full statement; other surfaces use compact wording");
-
-        // The compact badge beside the Frontend URL no longer repeats the sentence.
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs verification");
-        // The Verification card leads with a short status.
-        cut.Find("[data-testid=manual-verification-status]").TextContent.Trim().Should().Be("Manual verification required");
+        Occurrences(cut.Markup, LongPhrase).Should().Be(0, "a manual sign-in requirement is not a target-wide verification state");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Target detection complete");
+        cut.FindAll("[data-testid=detection-auth-limitation]").Should().ContainSingle()
+            .Which.TextContent.Should().Contain("Authentication runtime verification: Not verified");
+        cut.FindAll("section.fa-verification").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Mark verification").And.NotContain("Activation requires");
     }
 
     // ── 2. Detection result remains the primary status surface ──────────────
@@ -98,7 +97,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         var cut = Detect();
 
         var result = cut.Find("section.fa-result");
-        result.QuerySelector("#detection-result-heading")!.TextContent.Trim().Should().Be(LongPhrase);
+        result.QuerySelector("#detection-result-heading")!.TextContent.Trim().Should().Be("Target detection complete");
 
         var grid = cut.Find(".fa-result-grid").TextContent;
         grid.Should().Contain("Reachability").And.Contain("Reachable");
@@ -109,40 +108,25 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
 
         // Confidence stays readable text on the card.
         result.TextContent.Should().Contain("Very High");
-
-        // The duplicated value row is gone; the heading already says it.
         grid.Should().NotContain("Manual authentication verification");
     }
 
-    // ── 3–5. The Verification card keeps its workflow ───────────────────────
+    // ── 3. The optional manual sign-in check still records a result, on the Authentication tab ──
 
     [Fact]
-    public void VerificationCardKeepsItsActionAndHelperText()
+    public void TheManualSignInCheckStillRecordsAResult_OnTheAuthenticationTab()
     {
         var cut = Detect();
+        cut.Find("[data-testid=detection-auth-open]").Click();
+        cut.FindAll("[role=tab][aria-selected=true]").Single().TextContent.Trim().Should().Be("Authentication");
 
-        var card = cut.Find("section.fa-verification");
-        card.QuerySelector("#manual-verification-heading")!.TextContent.Trim().Should().Be("Verification");
-        card.QuerySelector("[data-testid=manual-verification-status]")!.TextContent.Trim().Should().Be("Manual verification required");
-
-        cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open verification instructions");
-        card.TextContent.Should().Contain("If you changed environment settings, save them before recording verification.");
-        card.TextContent.Should().Contain("Activation requires current target detection and manual verification Passed.");
-    }
-
-    // ── 8. The workflow itself is unchanged ─────────────────────────────────
-
-    [Fact]
-    public void VerificationWorkflowStillRecordsAPassedResult()
-    {
-        var cut = Detect();
-
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open verification instructions").Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Mark verification passed").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open manual sign-in check").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Record sign-in check completed").Click();
 
         cut.WaitForAssertion(() => _settings.Settings.Profiles.Single(p => p.Id == "dev")
             .ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Find("[data-testid=manual-verification-status]").TextContent.Trim().Should().Be("Manual verification passed");
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Completed (recorded manually)");
+        cut.Find("[data-testid=authentication-runtime-state]").TextContent.Trim().Should().Be("Not verified", "a recorded check is not runtime evidence");
     }
 
     // ── Integrations ────────────────────────────────────────────────────────

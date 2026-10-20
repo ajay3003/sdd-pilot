@@ -248,44 +248,36 @@ public sealed class DetectionVerificationCopyTests : BunitContext
         return cut;
     }
 
-    // ── 1–2. One canonical statement, two compact echoes ───────────────────
+    // ── 1–2. No global requirement sentence; one authentication-specific limitation ──
 
     [Fact]
-    public void TheRequirementIsSpelledOutOnceAndEchoedOnlyAsCompactLabels()
+    public void TheLimitationIsAnAuthenticationFact_StatedOnce_WithoutAGlobalVerificationState()
     {
         var cut = Detect();
 
-        // The full sentence exists exactly once: the Detection result heading.
-        var full = 0;
-        for (var i = cut.Markup.IndexOf(LongPhrase, StringComparison.Ordinal); i >= 0;
-             i = cut.Markup.IndexOf(LongPhrase, i + LongPhrase.Length, StringComparison.Ordinal)) full++;
-        full.Should().Be(1);
-        cut.Find("#detection-result-heading").TextContent.Trim().Should().Be(LongPhrase);
-
-        // The other two surfaces are compact labels, not repeated sentences.
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs verification");
-        var badge = cut.Find("[data-testid=manual-verification-status]");
-        badge.TextContent.Trim().Should().Be("Manual verification required");
-        badge.ClassList.Should().Contain("fa-verification-badge", "it is demoted to a badge, not a second prominent line");
+        cut.Markup.Should().NotContain(LongPhrase);
+        cut.Find("#detection-result-heading").TextContent.Trim().Should().Be("Target detection complete");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Target detection complete");
+        cut.FindAll("[data-testid=detection-auth-limitation]").Should().ContainSingle();
+        cut.FindAll("[data-testid=manual-verification-status]").Should().BeEmpty();
+        cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty();
     }
 
     // ── 3–5. Action, workflow and confidence survive ───────────────────────
 
     [Fact]
-    public void VerificationLeadsWithItsActionAndKeepsTheWorkflow()
+    public void TheSignInCheckLeadsWithItsActionAndKeepsTheWorkflow()
     {
         var cut = Detect();
+        cut.Find("[data-testid=detection-auth-open]").Click();
 
-        var card = cut.Find("section.fa-verification");
-        card.QuerySelector("#manual-verification-heading")!.TextContent.Trim().Should().Be("Verification");
-        cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open verification instructions");
-
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open verification instructions").Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Mark verification passed").Click();
+        cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open manual sign-in check");
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open manual sign-in check").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Record sign-in check completed").Click();
 
         cut.WaitForAssertion(() => _settings.Settings.Profiles.Single(p => p.Id == "dev")
             .ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Find("[data-testid=manual-verification-status]").TextContent.Trim().Should().Be("Manual verification passed");
+        cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Completed (recorded manually)");
     }
 
     [Fact]
@@ -299,11 +291,12 @@ public sealed class DetectionVerificationCopyTests : BunitContext
     // ── Status is announced, never colour-only ─────────────────────────────
 
     [Fact]
-    public void VerificationStatusIsExposedToAssistiveTechnology()
+    public void AuthenticationStatusIsExposedToAssistiveTechnology()
     {
         var cut = Detect();
+        cut.Find("[data-testid=detection-auth-open]").Click();
 
-        cut.Find("[data-testid=manual-verification-status]").GetAttribute("role").Should().Be("status");
-        cut.Find("#manual-verification-heading").TagName.Should().Be("H3");
+        cut.Find("[data-testid=authentication-runtime-state]").GetAttribute("role").Should().Be("status");
+        cut.Find("#authentication-verification-heading").TagName.Should().Be("H3");
     }
 }

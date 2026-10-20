@@ -1,6 +1,8 @@
-# Managed Edge manual authentication verification
+# Managed Edge sign-in (manual sign-in check)
 
-Enterprise sign-in requiring a managed Edge work profile is a supported manual verification gate. It does not require BirkNext to own an authenticated browser session.
+Enterprise sign-in requiring a managed Edge work profile is a detection limitation: BirkNext cannot verify that sign-in automatically. It is
+reported as "Authentication runtime verification: Not verified" and offers an optional manual sign-in check on the Authentication tab. It is
+not a target-wide verification state and never a gate (2026-10-20: the global Verification section and its Passed/Failed gate were removed).
 
 ## Configuration
 
@@ -24,17 +26,22 @@ After this change, configured host policy is applied during preflight in `ApplyT
 
 The existing browser host, single navigation, observer, authentication state machine, and isolated Edge behavior remain available for supported automated environments and local fixtures.
 
-## User verification and readiness
+## Manual sign-in check and readiness
 
-Open verification instructions does not authenticate anything or record Passed. The user opens the target in normal managed Edge, signs in with a work account, completes PIN/passkey/MFA manually, and continues MCAS/Defender manually if shown. After reaching the authenticated application, they return and explicitly mark Passed or Failed. Retry repeats these manual steps.
+The Target Environment state is Environment state, Configuration, Detection (reachability), Execution trust (backend `TargetEnvironments:Trusted`
+only) and Runtime evidence (an authenticated API context or browser session). There is no global "Verification: Passed".
 
-Recording requires a current successful manual preflight and saved, valid configuration. Authentication attestation is separate from target completeness: a pass can be recorded while other detection gates still block activation. Activation additionally requires detected framework metadata, no unresolved detection warnings, matching context and Passed. It never activates automatically. Existing review-engine readiness requirements are not waived and the evidence cannot supply a browser session to a review engine.
+On the Authentication tab, "Open manual sign-in check" shows the steps: open the target in normal managed Edge, sign in with a work account,
+complete PIN/passkey/MFA and MCAS/Defender manually, then record "sign-in check completed" or "failed". The record is a person's observation:
+it is not runtime verification, does not grant execution trust, does not create an authenticated testing context and does not change detection
+readiness, activation or Frontend Quality Review readiness. Recording requires a current successful manual preflight and saved, valid
+configuration. Detection readiness needs only current detection (framework detected, no unresolved warnings, matching context).
 
 ## Persistence and invalidation
 
 The profile stores only method, result, UTC verification timestamp, profile ID, target origin and a SHA-256 context fingerprint. There is no raw login identity, note, credential, token, cookie, storage state, Edge profile, or browser-session transfer. No CDP, profile attachment, profile-switch automation, MFA automation, or MCAS automation is added.
 
-The context fingerprint covers profile ID, exact frontend URL, environment type, authentication settings, timeout/retry settings, security expectations and target allowlists. A changed context evaluates as Stale on edit and reload; the historical result remains available as secondary evidence. Duplicating a profile clears evidence. Reload starts with neutral current detection and historical verification; a fresh preflight is required before activation. No arbitrary time-based expiry is imposed.
+The context fingerprint covers profile ID, exact frontend URL, environment type, authentication settings, timeout/retry settings, security expectations and target allowlists. A changed context shows the recorded check as "Out of date" on edit and reload; the historical result remains readable. Duplicating a profile clears evidence. Reload starts with neutral current detection and historical verification; a fresh preflight is required before activation. No arbitrary time-based expiry is imposed.
 
 ## Acceptance evidence
 

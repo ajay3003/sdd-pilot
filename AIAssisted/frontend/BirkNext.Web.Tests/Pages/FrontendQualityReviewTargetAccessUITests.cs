@@ -130,7 +130,7 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         var page = Render<FrontendQualityReview>();
 
         page.WaitForAssertion(() => page.Find("[data-testid='fqr-target-access']"));
-        page.Find("[data-testid='fqr-access-manual']").TextContent.Should().Be("Passed");
+        page.Find("[data-testid='fqr-access-manual']").TextContent.Should().Be("Completed (recorded manually)");
         page.Find("[data-testid='fqr-access-automated']").TextContent.Should().Be("Unavailable — manual verification only");
         page.FindAll("[data-testid='fqr-access-manual-note']").Should().ContainSingle();
         page.FindAll("[data-testid='fqr-manual-only-note']").Should().ContainSingle();

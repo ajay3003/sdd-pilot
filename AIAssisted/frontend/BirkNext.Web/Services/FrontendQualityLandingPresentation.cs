@@ -707,14 +707,14 @@ public static class FrontendQualityLandingPresentation
             case AuthenticatedTestingMethod.ManualOnly:
             {
                 var manual = access?.ManualVerificationStatus ?? context.ManualVerificationStatus ?? ManualAuthenticationVerificationStatus.Required;
-                return new(method, $"Manual verification: {FrontendQualityTargetAccess.ManualVerificationLabel(manual)}", false,
+                return new(method, $"Manual sign-in check: {FrontendQualityTargetAccess.ManualVerificationLabel(manual)}", false,
                     "This environment supports manual verification only. Automated engines that need authenticated access are not available here.",
                     [
                         "Verify access to the target application manually from the Target Environment page.",
                         "Run the review: Static Security and Passive Performance still review the public frontend.",
                     ],
                     [
-                        new("Manual verification", FrontendQualityTargetAccess.ManualVerificationLabel(manual), manual == ManualAuthenticationVerificationStatus.Passed),
+                        new("Manual sign-in check", FrontendQualityTargetAccess.ManualVerificationLabel(manual), manual == ManualAuthenticationVerificationStatus.Passed),
                         new("Authenticated DOM", "Not available", false),
                         new("Authenticated API traffic", "Not available", false),
                     ],

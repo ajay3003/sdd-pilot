@@ -517,7 +517,7 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
             sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");
             sb.Append($"<dt><strong>Browser DOM:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.BrowserDomLabel(access))}</dd>\n");
-            sb.Append($"<dt><strong>Manual verification:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus))}</dd>\n");
+            sb.Append($"<dt><strong>Manual sign-in check:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus))}</dd>\n");
             sb.Append($"<dt><strong>Automated engine access:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.AutomatedAccessLabel(access))}</dd>\n");
             sb.Append("</dl>\n</section>\n");
         }

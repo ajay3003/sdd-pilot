@@ -28,9 +28,9 @@ public sealed class FrontendQualityExplicitScopeTests
             [new(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]);
         FrontendQualityReviewScopes.AuthenticatedAccessLabel(scope).Should().Be(label);
         FrontendQualityReviewScopes.ScopeSummary(scope).Should().Be(FrontendQualityReviewScopes.Label(selected));
-        FrontendQualityReviewScopes.VerificationLabel(access).Should().Be("Manual verification required");
-        if (selected == FrontendReviewAccessScope.PublicOnly) FrontendQualityReviewScopes.LimitationSentence(scope).Should().BeNull();
-        else if (ready) FrontendQualityReviewScopes.LimitationSentence(scope).Should().Contain("manual verification");
+        FrontendQualityReviewScopes.VerificationLabel(access).Should().Be("Not recorded");
+        if (selected == FrontendReviewAccessScope.PublicOnly || ready)
+            FrontendQualityReviewScopes.LimitationSentence(scope).Should().BeNull("an unrecorded optional manual sign-in check never limits or downgrades a run");
     }
 
     [Fact]

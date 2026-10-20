@@ -63,7 +63,7 @@
                     <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@(ShowActions && !Access.RequiresAuthentication ? "Not used in a public-only review" : AuthenticatedTestingMethodLabels.ProxyState(proxy))</dd></div>
                 }
                 @* Kept next to, never merged with, automated access: a person can sign in where an engine cannot. *@
-                <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
+                <div><dt>Manual sign-in check</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
                 <div><dt>Automated engines</dt><dd data-testid="fqr-access-automated">@FrontendQualityTargetAccess.AutomatedAccessLabel(Access)</dd></div>
             </dl>
         </div>
@@ -73,7 +73,7 @@
         <p class="fqr-target-access-reason" role="status" data-testid="fqr-access-reason">@Access.Reason</p>
         @if (Access.ManualVerificationStatus == ManualAuthenticationVerificationStatus.Passed && !Access.AuthenticatedBrowserDomAvailable && !Access.AuthenticatedApiAvailable)
         {
-            <p class="fqr-target-access-note" data-testid="fqr-access-manual-note">Manual verification passed confirms user access only; it does not give automated engines access to the target.</p>
+            <p class="fqr-target-access-note" data-testid="fqr-access-manual-note">A completed manual sign-in check confirms user access only; it does not give automated engines access to the target.</p>
         }
     }
     @if (ShowActions)

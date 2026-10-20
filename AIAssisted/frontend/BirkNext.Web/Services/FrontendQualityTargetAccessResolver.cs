@@ -282,12 +282,11 @@ public static class FrontendQualityTargetAccess
 
     public static string ManualVerificationLabel(ManualAuthenticationVerificationStatus status) => status switch
     {
-        ManualAuthenticationVerificationStatus.Passed => "Passed",
-        ManualAuthenticationVerificationStatus.Failed => "Failed",
-        ManualAuthenticationVerificationStatus.Pending => "Pending",
-        ManualAuthenticationVerificationStatus.Required => "Required",
-        ManualAuthenticationVerificationStatus.Stale => "Stale — re-verify after settings change",
-        _ => "Not required",
+        ManualAuthenticationVerificationStatus.Passed => "Completed (recorded manually)",
+        ManualAuthenticationVerificationStatus.Failed => "Failed (recorded manually)",
+        ManualAuthenticationVerificationStatus.Pending or ManualAuthenticationVerificationStatus.Required => "Not recorded",
+        ManualAuthenticationVerificationStatus.Stale => "Out of date — settings changed",
+        _ => "Not needed",
     };
 
     /// <summary>Automated engine access, kept separate from manual verification: a passed manual verification never grants automation access.</summary>
