@@ -329,20 +329,51 @@ public sealed record TestPackSourceRole(string Key, string Label, string Descrip
 {
     public IReadOnlyList<string> IntegrationRequirementKeys { get; init; } = [];
     public IReadOnlyList<string> ComponentTokens { get; init; } = [];
+    /// <summary>Component/project words that prove a snapshot is ANOTHER source (e.g. a receiving service whose adapter project carries the
+    /// sender's name): a snapshot containing one is never recognized as this source.</summary>
+    public IReadOnlyList<string> ExcludedComponentTokens { get; init; } = [];
     /// <summary>True when the source is recognized by an API document (OpenAPI / application metadata) rather than by components.</summary>
     public bool RequiresApiDocument { get; init; }
+    /// <summary>For an API-described source: semantic keys of which the named document must declare at least one (what makes it THAT kind of
+    /// application, e.g. an app route or process task) — a document that only mentions a token in its title is not the source. Empty: any.</summary>
+    public IReadOnlyList<string> ApiDocumentKeys { get; init; } = [];
     /// <summary>What a tester would import ("Repository source archive", "OpenAPI / Swagger document").</summary>
     public string ExpectedArtifact { get; init; } = "Source archive";
     /// <summary>Plain-language capabilities ("Meldingsutvekslermottak", "Altinn webhook") shown as "Used for".</summary>
     public IReadOnlyList<string> Capabilities { get; init; } = [];
     public IReadOnlyList<string> Journeys { get; init; } = [];
+    /// <summary>Whether the pack cannot be tested without this source (Required), can be (Optional), or needs it only under a stated condition.</summary>
+    public TestPackSourceRequirement Requirement { get; init; } = TestPackSourceRequirement.Required;
+    /// <summary>For Conditional: when the source is needed. For Required/Optional: an optional plain-language scope ("for application metadata").</summary>
+    public string? RequirementCondition { get; init; }
+    /// <summary>True when the source is recognized by Infrastructure as Code evidence (any format — Terraform, Bicep, ARM, Kubernetes, Helm),
+    /// optionally narrowed by <see cref="ComponentTokens"/>. The logical capability is "Infrastructure as Code", never one technology.</summary>
+    public bool RequiresInfrastructureAsCode { get; init; }
+    /// <summary>False when the source is read as workspace evidence directly: no IQR binding is needed for it to count.</summary>
+    public bool BindingRequired { get; init; } = true;
 }
 
-/// <summary>Bound = a canonical binding provides the source; AvailableNotBound = a stored snapshot is recognized as the source but no binding
-/// uses it (never authoritative); Missing = no snapshot is recognized as the source; ReviewRequired = the bound snapshot is not recognized as
-/// this source (wrong source context) or several snapshots match ambiguously.</summary>
+/// <summary>Required: the pack's journeys need it. Optional: adds evidence, never blocks. Conditional: needed only when <see cref="TestPackSourceRole.RequirementCondition"/> applies.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TestPackSourceState { Bound, AvailableNotBound, Missing, ReviewRequired }
+public enum TestPackSourceRequirement { Required, Optional, Conditional }
+
+/// <summary>Bound = a canonical binding provides the source; AvailableNotBound = a stored snapshot is recognized as the source but no binding
+/// uses it (never authoritative); Missing = no snapshot is recognized as a required source; ReviewRequired = the bound snapshot is not recognized
+/// as this source (wrong source context) or several snapshots of different content match and none is bound; Available = recognized, and the
+/// source needs no binding; NotProvided = an optional or conditional source that no snapshot provides (never a failure).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestPackSourceState { Bound, AvailableNotBound, Missing, ReviewRequired, Available, NotProvided }
+
+/// <summary>One stored snapshot recognized as a logical source. Archive name and fingerprint are provenance; the snapshot id is the identity.</summary>
+public sealed record TestPackSourceCandidate(Guid SnapshotId, string ArchiveFileName, string Fingerprint, DateTimeOffset AnalyzedAt)
+{
+    /// <summary>True when this snapshot is the canonical IQR binding that makes the source authoritative.</summary>
+    public bool Bound { get; init; }
+    /// <summary>The Project Import that created the snapshot, if any.</summary>
+    public string? ImportId { get; init; }
+    /// <summary>What recognized it, e.g. "Infrastructure as Code: Terraform" (technologies only, never source text).</summary>
+    public IReadOnlyList<string> Technologies { get; init; } = [];
+}
 
 public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourceState State)
 {
@@ -352,8 +383,38 @@ public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourc
     public IReadOnlyList<string> Integrations { get; init; } = [];
     public string Detail { get; init; } = "";
     public string NextAction { get; init; } = "";
-    /// <summary>Where the next action is done: "source-analysis", "iqr-evidence" or "target-environment-integrations".</summary>
+    /// <summary>Where the next action is done: "source-analysis", "iqr-evidence", "target-environment-integrations", "target-environment" or "import-project".</summary>
     public string? NextActionTarget { get; init; }
+    /// <summary>Every stored snapshot recognized as this source (bound first, then newest first). Never chosen from: only a binding is authoritative.</summary>
+    public IReadOnlyList<TestPackSourceCandidate> Candidates { get; init; } = [];
+}
+
+/// <summary>A test pack's logical sources and their state in one environment — what Import Project shows before asking for another upload.</summary>
+public sealed record TestPackSourceSetup(string PackId, string DisplayName, IReadOnlyList<TestPackSourceStatus> Sources)
+{
+    /// <summary>Journey id → display name, so a source can say which journeys use it ("Used by: Rapportmottak").</summary>
+    public IReadOnlyDictionary<string, string> JourneyNames { get; init; } = new Dictionary<string, string>();
+}
+
+/// <summary>One stored Source Analysis snapshot as the source setup sees it: provenance, extraction status and the IQR integrations bound to it
+/// in the requested environment. Read-only metadata; never source content.</summary>
+public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName, string Fingerprint, DateTimeOffset AnalyzedAt, string Status)
+{
+    public string? ImportId { get; init; }
+    public string? Repository { get; init; }
+    public IReadOnlyList<string> BoundIntegrations { get; init; } = [];
+    public IReadOnlyList<string> InfrastructureFormats { get; init; } = [];
+}
+
+/// <summary>Source setup across every registered pack that declares logical sources, plus the stored snapshots they were matched against.
+/// Bindings are per target environment: without one, nothing reads as bound.</summary>
+public sealed record SourceSetupView
+{
+    public string EnvironmentId { get; init; } = "";
+    public bool BindingsRead { get; init; }
+    public IReadOnlyList<TestPackSourceSetup> Packs { get; init; } = [];
+    public IReadOnlyList<SourceSetupSnapshot> Snapshots { get; init; } = [];
+    public IReadOnlyList<string> Limitations { get; init; } = [];
 }
 
 // ── Execution access ────────────────────────────────────────────────────────────────────────────────────────────────

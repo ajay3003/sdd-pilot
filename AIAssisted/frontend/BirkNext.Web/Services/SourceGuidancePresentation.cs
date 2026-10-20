@@ -25,13 +25,15 @@ public static class SourceGuidancePresentation
         TestPackSourceState.Bound => "Bound",
         TestPackSourceState.AvailableNotBound => "Available, not bound",
         TestPackSourceState.ReviewRequired => "Review required",
+        TestPackSourceState.Available => "Available",
+        TestPackSourceState.NotProvided => "Not provided (optional)",
         _ => "Missing",
     };
 
     public static string SourceStateTone(TestPackSourceState state) => state switch
     {
-        TestPackSourceState.Bound => "ready",
-        TestPackSourceState.Missing => "muted",
+        TestPackSourceState.Bound or TestPackSourceState.Available => "ready",
+        TestPackSourceState.Missing or TestPackSourceState.NotProvided => "muted",
         _ => "attention",
     };
 

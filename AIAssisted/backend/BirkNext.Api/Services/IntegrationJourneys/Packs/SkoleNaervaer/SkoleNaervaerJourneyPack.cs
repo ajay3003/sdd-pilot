@@ -90,6 +90,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public const string MuSource = "mu";
     public const string M2lbSource = "m2lb";
     public const string AltinnAppSourceRole = "altinn-app";
+    public const string InfrastructureSourceRole = "infrastructure";
 
     /// <summary>The logical sources Skolenærvær needs. Each is resolved through the IQR binding of its own integrations and recognized by its
     /// components (or, for the Altinn app, by its API document) — archive names are only provenance. No single source contains everything.</summary>
@@ -98,20 +99,35 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new(MuSource, "MU (Meldingsutveksleren)", "The message hub that receives Altinn's webhook and forwards reports.")
         {
             IntegrationRequirementKeys = [ReportIntake], ComponentTokens = ["Meldingsutveksler", "Meldingsutveksleren"], ExpectedArtifact = "MU repository source archive",
+            // M2LB's receiver (MM) has an adapter project named after MU; that archive is the M2LB source, not MU.
+            ExcludedComponentTokens = ["Meldingsutvekslermottak"],
             Capabilities = ["Meldingsutveksleren", "Altinn webhook", "Altinn source filter", "Report-intake configuration"], Journeys = [RapportmottakId],
         },
         new(M2lbSource, "M2LB", "The downstream Skolenærvær implementation (MM, Skoletjenesten, SkoleAdapter, Utdanning, Skolenærværsrapport).")
         {
             IntegrationRequirementKeys = [EducationCdc, PeriodClosed],
-            ComponentTokens = ["Meldingsutvekslermottak", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],
+            ComponentTokens = ["Meldingsutvekslermottak", "Skoletjenesten", "Skole", "SkoleAdapter", "Utdanning", "Skolenaervaersrapport", "Skolenærværsrapport"],
             ExpectedArtifact = "M2LB repository source archive",
             Capabilities = ["Meldingsutvekslermottak (MM)", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenærværsrapport", "Period closure", "Service Bus", "Event Hub", "Contracts and XSDs"],
             Journeys = [UtdanningsdataId, RapportmottakId, PeriodeavslutningId],
         },
         new(AltinnAppSourceRole, "Altinn Skolenærvær application", "The Altinn app's own API description (identity, servers, form data type, process task, authentication).")
         {
-            ComponentTokens = ["skolenaervaer"], RequiresApiDocument = true, ExpectedArtifact = "OpenAPI / Swagger document or application metadata of the Altinn app",
+            ComponentTokens = ["skolenaervaer"], RequiresApiDocument = true,
+            // An Altinn app document declares the app route, form data type or process task; another API that only says "skolenærvær" is not it.
+            ApiDocumentKeys = [BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType,
+                BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationTaskId], ExpectedArtifact = "OpenAPI / Swagger document or application metadata of the Altinn app",
             Capabilities = ["App identity (org/app)", "Server / environment", "Form data type", "Process task", "Authentication scheme"], Journeys = [RapportmottakId],
+            RequirementCondition = "Required for the Altinn application metadata Rapportmottak submits with.",
+        },
+        // No Skolenærvær prerequisite needs declared infrastructure: it adds resource/runtime evidence and never blocks the pack. Any IaC format
+        // counts — the capability is Infrastructure as Code, not one technology.
+        new(InfrastructureSourceRole, "Infrastructure as Code", "Declared Azure infrastructure: resource names, namespaces, resource groups, managed identities, Event Hub and Service Bus.")
+        {
+            RequiresInfrastructureAsCode = true, BindingRequired = false, Requirement = TestPackSourceRequirement.Optional,
+            RequirementCondition = "Useful only when infrastructure/runtime configuration must be source-verified.",
+            ExpectedArtifact = "Infrastructure as Code source (Terraform, Bicep, ARM, Kubernetes or Helm)",
+            Capabilities = ["Azure resource names", "Namespaces and resource groups", "Managed identities", "Event Hub / Service Bus platform references", "Deployment bindings"],
         },
     ];
     private const string ApiDocument = "OpenAPI / Swagger document";

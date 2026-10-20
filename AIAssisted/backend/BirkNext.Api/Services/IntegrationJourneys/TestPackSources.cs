@@ -39,25 +39,57 @@ public static class TestPackSources
         key is null ? null : pack.SourceRoles.FirstOrDefault(role => string.Equals(role.Key, key, StringComparison.Ordinal));
 
     /// <summary>Whether a snapshot is this logical source: a component/project named by a role token, or (API-described source) an API document
-    /// whose scope or title names a token.</summary>
+    /// whose scope or title names a token, or (Infrastructure as Code source) declared infrastructure of any supported format — never its archive name.</summary>
     public static bool Recognizes(TestPackSourceRole role, IqrSourceSnapshot snapshot)
     {
+        if (role.RequiresInfrastructureAsCode)
+        {
+            if (snapshot.EvidenceDomains?.Infrastructure is not { } infrastructure || (infrastructure.Formats.Count == 0 && infrastructure.Resources.Count == 0)) return false;
+            return role.ComponentTokens.Count == 0 || infrastructure.Resources.Any(resource =>
+                ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, resource.LogicalName, resource.DeclaredName ?? "", resource.ModulePath ?? ""));
+        }
         if (role.ComponentTokens.Count == 0) return false;
+        if (role.ExcludedComponentTokens.Count > 0 && MatchesComponents(role.ExcludedComponentTokens, snapshot)) return false;
         if (role.RequiresApiDocument)
             return SourceAnalysis.Evidence.SourceConfigurationValueCollector.Values(snapshot.EvidenceDomains)
                 .Where(value => value.EvidenceKind == SourceConfigurationEvidenceKind.OpenApi)
-                .Any(value => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, value.Scope, value.LogicalSource));
-        return (snapshot.Architecture?.Components ?? []).Any(component => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, component.Name, component.LogicalName, component.SourceProject))
-            || snapshot.Projects.Any(project => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, project.Name))
-            || (snapshot.EvidenceDomains?.Configuration.Files ?? []).Any(file => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, file.Component));
+                .Any(value => ArchitectureRuleEvaluator.MatchesAny(role.ComponentTokens, value.Scope, value.LogicalSource)
+                    && (role.ApiDocumentKeys.Count == 0 || role.ApiDocumentKeys.Contains(value.SemanticKey, StringComparer.Ordinal)));
+        return MatchesComponents(role.ComponentTokens, snapshot);
     }
+
+    private static bool MatchesComponents(IReadOnlyList<string> tokens, IqrSourceSnapshot snapshot) =>
+        (snapshot.Architecture?.Components ?? []).Any(component => ArchitectureRuleEvaluator.MatchesAny(tokens, component.Name, component.LogicalName, component.SourceProject))
+        || snapshot.Projects.Any(project => ArchitectureRuleEvaluator.MatchesAny(tokens, project.Name))
+        || (snapshot.EvidenceDomains?.Configuration.Files ?? []).Any(file => ArchitectureRuleEvaluator.MatchesAny(tokens, file.Component));
 
     /// <summary>The state of every source role of a pack, with the next action at the owner that resolves it.</summary>
     public static IReadOnlyList<TestPackSourceStatus> Statuses(IIntegrationJourneyPack pack, JourneyPackContext context) =>
         pack.SourceRoles.Select(role => Status(pack, context, role)).ToArray();
 
+    /// <summary>The Infrastructure as Code formats a snapshot declares ("Terraform", "Bicep" …), in a stable order.</summary>
+    public static IReadOnlyList<string> InfrastructureFormats(IqrSourceSnapshot snapshot) =>
+        snapshot.EvidenceDomains?.Infrastructure is { } infrastructure
+            ? [.. infrastructure.Formats.Concat(infrastructure.Resources.Select(resource => resource.Format)).Distinct().Order().Select(format => format.ToString())]
+            : [];
+
+    /// <summary>Every stored snapshot recognized as the role's source: the authoritative (bound) ones first, then newest first.</summary>
+    public static IReadOnlyList<TestPackSourceCandidate> Candidates(IIntegrationJourneyPack pack, JourneyPackContext context, TestPackSourceRole role)
+    {
+        var authoritative = role.BindingRequired ? Authoritative(pack, context, role).Select(snapshot => snapshot.Id).ToHashSet() : [];
+        return context.SourceSnapshots.Where(snapshot => Recognizes(role, snapshot))
+            .OrderByDescending(snapshot => authoritative.Contains(snapshot.Id)).ThenByDescending(snapshot => snapshot.AnalyzedAt).ThenBy(snapshot => snapshot.Id)
+            .Select(snapshot => new TestPackSourceCandidate(snapshot.Id, snapshot.Archive.FileName, snapshot.Archive.Sha256, snapshot.AnalyzedAt)
+            {
+                Bound = authoritative.Contains(snapshot.Id), ImportId = snapshot.ProjectImport?.ImportId,
+                Technologies = role.RequiresInfrastructureAsCode ? InfrastructureFormats(snapshot) : [],
+            }).ToArray();
+    }
+
     public static TestPackSourceStatus Status(IIntegrationJourneyPack pack, JourneyPackContext context, TestPackSourceRole role)
     {
+        var candidates = Candidates(pack, context, role);
+        if (!role.BindingRequired) return Unbound(role, candidates);
         var integrations = Integrations(pack, context, role);
         var names = integrations.Select(item => item.DisplayName).ToArray();
         var bound = BoundToRole(pack, context, role);
@@ -66,7 +98,7 @@ public static class TestPackSources
         if (authoritative.Length > 0)
             return new(role, TestPackSourceState.Bound)
             {
-                BoundArchives = [.. authoritative.Select(snapshot => snapshot.Archive.FileName).Distinct()], AvailableArchives = available, Integrations = names,
+                BoundArchives = [.. authoritative.Select(snapshot => snapshot.Archive.FileName).Distinct()], AvailableArchives = available, Integrations = names, Candidates = candidates,
                 Detail = $"{role.Label} source is bound in Integration Quality Review{(names.Length > 0 ? $" ({string.Join(", ", names)})" : "")}.",
                 NextAction = "Open IQR Evidence", NextActionTarget = "iqr-evidence",
             };
@@ -74,27 +106,67 @@ public static class TestPackSources
         if (role.IntegrationRequirementKeys.Count > 0 && bound.Count > 0)
             return new(role, TestPackSourceState.ReviewRequired)
             {
-                BoundArchives = [.. bound.Select(snapshot => snapshot.Archive.FileName).Distinct()], AvailableArchives = available, Integrations = names,
+                BoundArchives = [.. bound.Select(snapshot => snapshot.Archive.FileName).Distinct()], AvailableArchives = available, Integrations = names, Candidates = candidates,
                 Detail = $"The snapshot bound to {string.Join(", ", names)} is not recognized as the {role.Label} source.",
                 NextAction = "Check the binding in IQR Evidence", NextActionTarget = "iqr-evidence",
+            };
+        var noTarget = string.IsNullOrWhiteSpace(context.EnvironmentId);
+        // Several snapshots of different content match and none is bound: which one is the source is the tester's choice, never the newest.
+        if (candidates.Select(candidate => candidate.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1)
+            return new(role, TestPackSourceState.ReviewRequired)
+            {
+                AvailableArchives = available, Integrations = names, Candidates = candidates,
+                Detail = $"Several stored snapshots match the {role.Label} source ({string.Join(", ", available)}) and none is bound. The newest is not chosen automatically.",
+                NextAction = noTarget ? "Select a target environment, then bind one snapshot in IQR Evidence" : "Review the matching snapshots and bind one in IQR Evidence",
+                NextActionTarget = noTarget ? "target-environment" : "iqr-evidence",
             };
         if (available.Length > 0)
             return new(role, TestPackSourceState.AvailableNotBound)
             {
-                AvailableArchives = available, Integrations = names,
-                Detail = names.Length > 0 || role.IntegrationRequirementKeys.Count == 0
-                    ? $"{role.Label} source is available ({string.Join(", ", available)}) but not bound where it is needed."
-                    : $"{role.Label} source is available ({string.Join(", ", available)}), but no configured integration uses it yet.",
-                NextAction = names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "Bind it in IQR Evidence" : "Configure the integration in Target Environment → Integrations, then bind it in IQR Evidence",
-                NextActionTarget = names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "iqr-evidence" : "target-environment-integrations",
+                AvailableArchives = available, Integrations = names, Candidates = candidates,
+                Detail = noTarget
+                    ? $"{role.Label} source is available ({string.Join(", ", available)}). Bindings belong to a target environment: select one to see or set the binding."
+                    : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0
+                        ? $"{role.Label} source is available ({string.Join(", ", available)}) but not bound where it is needed."
+                        : $"{role.Label} source is available ({string.Join(", ", available)}), but no configured integration uses it yet.",
+                NextAction = noTarget ? "Select a target environment"
+                    : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "Bind it in IQR Evidence" : "Configure the integration in Target Environment → Integrations, then bind it in IQR Evidence",
+                NextActionTarget = noTarget ? "target-environment"
+                    : names.Length > 0 || role.IntegrationRequirementKeys.Count == 0 ? "iqr-evidence" : "target-environment-integrations",
             };
-        return new(role, TestPackSourceState.Missing)
+        return NotFound(role, names);
+    }
+
+    /// <summary>A source read as workspace evidence directly (no binding): available when any snapshot provides it.</summary>
+    private static TestPackSourceStatus Unbound(TestPackSourceRole role, IReadOnlyList<TestPackSourceCandidate> candidates)
+    {
+        if (candidates.Count == 0) return NotFound(role, []);
+        var archives = candidates.Select(candidate => candidate.ArchiveFileName).Distinct().ToArray();
+        var technologies = candidates.SelectMany(candidate => candidate.Technologies).Distinct().ToArray();
+        return new(role, TestPackSourceState.Available)
         {
-            Integrations = names,
-            Detail = $"{role.Label} source is missing: no stored snapshot is recognized as it. Expected: {role.ExpectedArtifact}.",
-            NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis",
+            AvailableArchives = archives, Candidates = candidates,
+            Detail = $"{role.Label} is available in {string.Join(", ", archives)}{(technologies.Length > 0 ? $" ({string.Join(", ", technologies)})" : "")}. No binding is needed.",
+            NextAction = "Open Source Analysis", NextActionTarget = "source-analysis",
         };
     }
+
+    /// <summary>No snapshot provides the role: Missing only for a required source; an optional or conditional one is "not provided", never a failure.</summary>
+    private static TestPackSourceStatus NotFound(TestPackSourceRole role, IReadOnlyList<string> integrations) => role.Requirement == TestPackSourceRequirement.Required
+        ? new(role, TestPackSourceState.Missing)
+        {
+            Integrations = integrations,
+            Detail = $"{role.Label} source is missing: no stored snapshot is recognized as it. Expected: {role.ExpectedArtifact}.",
+            NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis",
+        }
+        : new(role, TestPackSourceState.NotProvided)
+        {
+            Integrations = integrations,
+            Detail = role.Requirement == TestPackSourceRequirement.Conditional
+                ? $"Not provided. Needed only when: {role.RequirementCondition ?? "the stated condition applies"}"
+                : $"Optional — not provided. It adds evidence and never blocks the pack.{(role.RequirementCondition is { Length: > 0 } scope ? " " + scope : "")}",
+            NextAction = $"Optional: import {role.ExpectedArtifact}", NextActionTarget = "source-analysis",
+        };
 
     /// <summary>A short "needs X" sentence for a rule or prerequisite that could not use the role's source.</summary>
     public static string NeedsSentence(TestPackSourceStatus status, IReadOnlyList<TestPackSourceStatus> all)

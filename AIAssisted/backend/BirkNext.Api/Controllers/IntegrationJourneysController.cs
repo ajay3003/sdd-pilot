@@ -44,6 +44,16 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
         catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    /// <summary>Source setup for Import Project: each pack's logical sources (required / optional / conditional) with their state, and the stored
+    /// snapshots they were matched against. Read-only; works without a target environment (then nothing reads as bound).</summary>
+    [AllowAnonymous]
+    [HttpGet("source-setup")]
+    public async Task<ActionResult<SourceSetupView>> SourceSetup([FromQuery] string? environmentId, CancellationToken ct)
+    {
+        try { return Ok(await journeys.SourceSetupAsync(environmentId, ct)); }
+        catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [AllowAnonymous]
     [HttpGet("test-packs")]
     public ActionResult<IReadOnlyList<TestPackDescriptor>> TestPacks([FromServices] IIntegrationJourneyPackRegistry registry) =>

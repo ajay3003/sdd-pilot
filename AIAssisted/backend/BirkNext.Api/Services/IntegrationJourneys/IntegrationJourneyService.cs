@@ -20,6 +20,9 @@ public interface IIntegrationJourneyService
     Task<SourceConfigurationApplyResult> ApplySourceConfigurationAsync(string environmentId, string packId, CancellationToken ct) =>
         Task.FromResult(new SourceConfigurationApplyResult([], []));
     IReadOnlyList<IntegrationJourneyCatalogEntry> Catalog();
+    /// <summary>Every pack's logical sources and the stored snapshots they were matched against (read-only). A blank environment is allowed:
+    /// bindings belong to a target environment, so without one nothing reads as bound.</summary>
+    Task<SourceSetupView> SourceSetupAsync(string? environmentId, CancellationToken ct) => Task.FromResult(new SourceSetupView());
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
     /// <summary>Validates a run without executing it: no external call, no gate, no runner, no history. Every gate StartAsync applies is reported.</summary>
@@ -178,6 +181,38 @@ public sealed class IntegrationJourneyService(
             Sources = statuses,
             Limitations = ["Only the Source Analysis snapshot bound in Integration Quality Review → Evidence can suggest a value; a suggestion is never applied automatically.",
                 "Declared in source is not runtime verified."],
+        };
+    }
+
+    public async Task<SourceSetupView> SourceSetupAsync(string? environmentId, CancellationToken ct)
+    {
+        var environment = environmentId?.Trim() ?? "";
+        if (!sources.SourceAnalysisEnabled)
+            return new SourceSetupView { EnvironmentId = environment, Limitations = [ReviewSourceEvidenceProvider.Disabled] };
+        JourneyPackContext context;
+        if (environment.Length == 0)
+            context = new JourneyPackContext("", null, "No target environment is selected.", new IntegrationCatalog(), await sources.ListAsync("", ct));
+        else
+            context = await ContextAsync(environment, ct);
+        var names = context.Catalog.Integrations.ToDictionary(item => item.Id, item => item.DisplayName, StringComparer.Ordinal);
+        var snapshots = context.SourceSnapshots.Select(snapshot => new SourceSetupSnapshot(snapshot.Id, snapshot.Archive.FileName, snapshot.Archive.Sha256, snapshot.AnalyzedAt,
+            snapshot.Status.ToString())
+        {
+            ImportId = snapshot.ProjectImport?.ImportId,
+            Repository = snapshot.Repository?.DisplayName,
+            BoundIntegrations = [.. context.Bindings.Where(binding => binding.SnapshotId == snapshot.Id)
+                .Select(binding => names.TryGetValue(binding.IntegrationId, out var name) ? name : binding.IntegrationId).Order(StringComparer.Ordinal)],
+            InfrastructureFormats = TestPackSources.InfrastructureFormats(snapshot),
+        }).ToArray();
+        return new SourceSetupView
+        {
+            EnvironmentId = environment, BindingsRead = environment.Length > 0, Snapshots = snapshots,
+            Packs = [.. packs.Packs.Where(pack => pack.SourceRoles.Count > 0).Select(pack => new TestPackSourceSetup(pack.PackId, pack.DisplayName, TestPackSources.Statuses(pack, context))
+            {
+                JourneyNames = pack.Journeys.GroupBy(journey => journey.JourneyId, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First().DisplayName, StringComparer.Ordinal),
+            })],
+            Limitations = environment.Length > 0 ? ["Bound means the canonical Integration Quality Review evidence binding of this target environment; a newer snapshot never replaces it."]
+                : ["No target environment is selected: IQR evidence bindings belong to a target environment, so no source reads as bound."],
         };
     }
 

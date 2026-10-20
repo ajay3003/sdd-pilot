@@ -144,7 +144,8 @@ public sealed class TestPackSourceRoleTests
     {
         await using var harness = new IntegrationJourneyHarness();
         var (guidance, rules) = await ReadAsync(harness);
-        guidance.Sources.Should().OnlyContain(item => item.State == TestPackSourceState.Missing);
+        guidance.Sources.Where(item => item.Role.Requirement == TestPackSourceRequirement.Required).Should().OnlyContain(item => item.State == TestPackSourceState.Missing);
+        Source(guidance, "infrastructure").State.Should().Be(TestPackSourceState.NotProvided, "Infrastructure as Code is optional for Skolenærvær, never a missing requirement");
         rules.Findings.Should().OnlyContain(finding => finding.Detail.Contains("No M2LB source is imported", StringComparison.Ordinal));
         var text = System.Text.Json.JsonSerializer.Serialize(new { guidance, rules, roles = Pack(harness).SourceRoles });
         text.Should().NotContain("skolenaervaer.json", "the BirkNext OpenAPI fixture is automated test evidence, never a package a tester imports");
@@ -201,5 +202,206 @@ public sealed class TestPackSourceRoleTests
         rules.Findings.Single(item => item.RuleId == "warehouse-no-person").Detail.Should().Be(
             "Not assessed — this rule requires Warehouse source evidence. The currently bound source is Shop. warehouse.zip is available but not bound.");
         TestPackDescriber.Describe(new TwoSourcePack()).SourceRoles.Select(role => role.Key).Should().Equal("shop", "warehouse");
+    }
+
+    // ── Requirement levels, several matching snapshots, Infrastructure as Code and the Import Project source setup ──────
+
+    private static IqrSourceSnapshot WithFingerprint(IqrSourceSnapshot snapshot, char fill) => snapshot with { Archive = snapshot.Archive with { Sha256 = new string(fill, 64) } };
+
+    private static IqrSourceSnapshot Terraform(string archive) => new()
+    {
+        Id = Guid.NewGuid(), Archive = new(archive, new string('t', 64), 1), AnalyzedAt = DateTimeOffset.UtcNow,
+        EvidenceDomains = new BirkNext.SourceDomains.SourceEvidenceDomainsSnapshot
+        {
+            Infrastructure = new BirkNext.SourceDomains.InfrastructureEvidence
+            {
+                Domain = BirkNext.SourceDomains.SourceEvidenceDomain.Infrastructure, Formats = [BirkNext.SourceDomains.InfrastructureFormat.Terraform],
+                Resources = [new BirkNext.SourceDomains.InfrastructureResource { Id = "main/azurerm_servicebus_namespace.bus", Format = BirkNext.SourceDomains.InfrastructureFormat.Terraform, LogicalName = "bus" }],
+            },
+        },
+    };
+
+    [Fact]
+    public async Task TheSkolenaervaerSources_DeclareTheirRequirementLevels_AndTerraformIsNeverARequiredSource()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var roles = Pack(harness).SourceRoles.ToDictionary(role => role.Key);
+        roles["mu"].Requirement.Should().Be(TestPackSourceRequirement.Required);
+        roles["m2lb"].Requirement.Should().Be(TestPackSourceRequirement.Required);
+        roles["altinn-app"].Requirement.Should().Be(TestPackSourceRequirement.Required);
+        roles["altinn-app"].RequirementCondition.Should().Contain("application metadata");
+        var iac = roles["infrastructure"];
+        iac.Requirement.Should().Be(TestPackSourceRequirement.Optional);
+        iac.Label.Should().Be("Infrastructure as Code", "the logical capability, not one technology");
+        iac.RequiresInfrastructureAsCode.Should().BeTrue();
+        iac.BindingRequired.Should().BeFalse();
+        roles.Values.Where(role => role.Requirement == TestPackSourceRequirement.Required).Should().NotContain(role => role.Label.Contains("Terraform", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SeveralMatchingM2lbSnapshots_AreReviewRequired_UntilOneIsBound_AndTheNewestIsNeverChosen()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.AddRange([Intake, PeriodClosed]);
+        var older = WithFingerprint(M2lb("M2LB (2).zip"), 'b') with { AnalyzedAt = DateTimeOffset.UtcNow.AddDays(-3) };
+        var newer = WithFingerprint(M2lb("M2LB.zip"), 'c');
+        harness.Sources.Snapshots.AddRange([newer, older]);
+        var (guidance, _) = await ReadAsync(harness);
+        var m2lb = Source(guidance, "m2lb");
+        m2lb.State.Should().Be(TestPackSourceState.ReviewRequired);
+        m2lb.Detail.Should().Contain("Several stored snapshots match the M2LB source").And.Contain("not chosen automatically");
+        m2lb.Candidates.Select(item => item.ArchiveFileName).Should().Equal("M2LB.zip", "M2LB (2).zip");
+        m2lb.Candidates.Should().OnlyContain(item => !item.Bound);
+        m2lb.NextActionTarget.Should().Be("iqr-evidence");
+
+        harness.Bindings.Bind(PeriodClosed.Id, older);
+        (guidance, _) = await ReadAsync(harness);
+        m2lb = Source(guidance, "m2lb");
+        m2lb.State.Should().Be(TestPackSourceState.Bound, "the canonical binding wins over the newer import");
+        m2lb.BoundArchives.Should().Equal("M2LB (2).zip");
+        m2lb.Candidates.First().Should().Match<TestPackSourceCandidate>(item => item.Bound && item.ArchiveFileName == "M2LB (2).zip");
+        m2lb.Candidates.Single(item => item.ArchiveFileName == "M2LB.zip").Bound.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TheSameArchiveAnalyzedTwice_IsOneSource_NotAnAmbiguity()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.AddRange([Intake, PeriodClosed]);
+        harness.Sources.Snapshots.AddRange([M2lb("M2LB.zip"), M2lb("M2LB (2).zip")]);
+        var (guidance, _) = await ReadAsync(harness);
+        Source(guidance, "m2lb").State.Should().Be(TestPackSourceState.AvailableNotBound, "same fingerprint = same content, whatever the file is called");
+    }
+
+    [Fact]
+    public async Task EachM2lbPartArchive_IsRecognizedByItsProjects_NotByItsFileName()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var skole = WithFingerprint(Repo("Skole.zip", ("M2LB.Skole.Api", null)), 'd');
+        var mm = WithFingerprint(Repo("Meldingsutvekslermottak.zip", ("M2LB.Meldingsutvekslermottak.Host", null), ("M2LB.Meldingsutvekslermottak.Meldingsutveksler", null)), 'e');
+        var older = WithFingerprint(Repo("M2LB.zip", ("M2LB.Autorisasjon.Api", null), ("M2LB.Hendelse.Api", null)), 'f');
+        harness.Sources.Snapshots.AddRange([skole, mm, older]);
+        var (guidance, _) = await ReadAsync(harness);
+        Source(guidance, "m2lb").Candidates.Select(item => item.ArchiveFileName).Should().BeEquivalentTo(["Skole.zip", "Meldingsutvekslermottak.zip"],
+            "an M2LB export without the Skolenærvær parts is not that source, whatever the archive is called");
+        Source(guidance, "m2lb").State.Should().Be(TestPackSourceState.ReviewRequired);
+        Source(guidance, "mu").Candidates.Should().BeEmpty("MM's adapter project named after MU does not make the M2LB receiver the MU source");
+    }
+
+    private static IqrSourceSnapshot ApiDocuments(string archive, char fill, params (string Title, string Key, string Value)[] values) => new()
+    {
+        Id = Guid.NewGuid(), Archive = new(archive, new string(fill, 64), 1), AnalyzedAt = DateTimeOffset.UtcNow,
+        EvidenceDomains = new BirkNext.SourceDomains.SourceEvidenceDomainsSnapshot
+        {
+            ConfigurationValues = new BirkNext.SourceDomains.SourceConfigurationValuesEvidence
+            {
+                Values = [.. values.Select(item => new BirkNext.SourceDomains.SourceConfigurationValue
+                {
+                    SemanticKey = item.Key, Value = item.Value, EvidenceKind = BirkNext.SourceDomains.SourceConfigurationEvidenceKind.OpenApi,
+                    Artifact = "contracts/api.yaml", Scope = item.Title, LogicalSource = item.Title,
+                })],
+            },
+        },
+    };
+
+    [Fact]
+    public async Task AnApiThatOnlyMentionsTheAppInItsTitle_IsNotTheAltinnApplication()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var intake = ApiDocuments("Skole.zip", 'g', ("Skoletjenesten _ rapportinntak (skolenærvær)", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationDisplayName, "Skoletjenesten _ rapportinntak (skolenærvær)"),
+            ("Skoletjenesten _ rapportinntak (skolenærvær)", BirkNext.SourceDomains.SourceConfigurationKeys.AuthenticationScheme, "bearer JWT"));
+        var app = ApiDocuments("altinn-app-contract.zip", 'h', ("buf/skolenaervaer", BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, "buf/skolenaervaer"));
+        harness.Sources.Snapshots.AddRange([intake, app]);
+        var (guidance, _) = await ReadAsync(harness);
+        Source(guidance, "altinn-app").Candidates.Select(item => item.ArchiveFileName).Should().Equal(["altinn-app-contract.zip"],
+            "only a document declaring the app route / form data type / process task is the Altinn application");
+    }
+
+    [Fact]
+    public async Task InfrastructureAsCode_IsAvailableFromAnyIacSnapshot_WithItsTechnology_AndNeedsNoBinding()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Sources.Snapshots.Add(Terraform("platform-infra.zip"));
+        var (guidance, _) = await ReadAsync(harness);
+        var iac = Source(guidance, "infrastructure");
+        iac.State.Should().Be(TestPackSourceState.Available);
+        iac.Candidates.Single().Technologies.Should().Equal("Terraform");
+        iac.Detail.Should().Contain("platform-infra.zip").And.Contain("Terraform").And.Contain("No binding is needed");
+    }
+
+    [Fact]
+    public async Task SourceSetup_WithoutATargetEnvironment_ListsSnapshotsAndSources_ButNothingReadsAsBound()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(Intake);
+        var mu = Mu();
+        harness.Sources.Snapshots.AddRange([mu, M2lb()]);
+        harness.Bindings.Bind(Intake.Id, mu);
+        var setup = await harness.Service(Pack(harness)).SourceSetupAsync("", default);
+        setup.BindingsRead.Should().BeFalse();
+        setup.Snapshots.Should().HaveCount(2).And.OnlyContain(item => item.BoundIntegrations.Count == 0);
+        var pack = setup.Packs.Single();
+        pack.Sources.Single(item => item.Role.Key == "mu").State.Should().Be(TestPackSourceState.AvailableNotBound);
+        pack.Sources.Single(item => item.Role.Key == "mu").NextActionTarget.Should().Be("target-environment");
+        setup.Limitations.Should().ContainSingle(item => item.Contains("No target environment is selected"));
+    }
+
+    [Fact]
+    public async Task SourceSetup_ForATarget_ReadsTheCanonicalBinding_PerSnapshot()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(Intake);
+        var (mu, m2lb) = (Mu(), M2lb());
+        harness.Sources.Snapshots.AddRange([mu, m2lb]);
+        harness.Bindings.Bind(Intake.Id, mu);
+        var setup = await harness.Service(Pack(harness)).SourceSetupAsync(ActiveEventTestHarness.Env, default);
+        setup.BindingsRead.Should().BeTrue();
+        setup.Snapshots.Single(item => item.SnapshotId == mu.Id).BoundIntegrations.Should().Equal("Skolenærvær – Altinn report intake");
+        setup.Snapshots.Single(item => item.SnapshotId == m2lb.Id).BoundIntegrations.Should().BeEmpty();
+        var sources = setup.Packs.Single().Sources.ToDictionary(item => item.Role.Key);
+        sources["mu"].State.Should().Be(TestPackSourceState.Bound);
+        sources["mu"].Candidates.Single().Should().Match<TestPackSourceCandidate>(item => item.Bound && item.SnapshotId == mu.Id);
+        sources["m2lb"].State.Should().Be(TestPackSourceState.AvailableNotBound);
+        sources["altinn-app"].State.Should().Be(TestPackSourceState.Missing);
+        sources["infrastructure"].State.Should().Be(TestPackSourceState.NotProvided);
+        var text = System.Text.Json.JsonSerializer.Serialize(setup);
+        text.Should().NotContain("skolenaervaer.json").And.NotContain("testdata");
+    }
+
+    private sealed class ConditionalSourcePack : IIntegrationJourneyPack
+    {
+        public string PackId => "demo.ledger";
+        public string PackVersion => "1";
+        public string DisplayName => "Ledger";
+        public string Description => "One required repository and one conditional infrastructure source.";
+        public IReadOnlyList<string> Limitations => [];
+        public IReadOnlyList<IntegrationJourneyDefinition> Journeys { get; } = [];
+        public IReadOnlyList<TestPackSourceRole> SourceRoles { get; } =
+        [
+            new("ledger", "Ledger", "The ledger service") { ComponentTokens = ["Ledger"] },
+            new("ledger-infra", "Ledger infrastructure", "Declared infrastructure")
+            {
+                RequiresInfrastructureAsCode = true, BindingRequired = false, Requirement = TestPackSourceRequirement.Conditional,
+                RequirementCondition = "infrastructure resource configuration must be source-verified.",
+            },
+        ];
+        public IReadOnlyList<ArchitectureResponsibilityRule> Rules => [];
+        public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => false;
+        public Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<JourneyPrerequisite>>([]);
+    }
+
+    [Fact]
+    public async Task AnotherPack_RendersItsOwnSourceSetup_WithAConditionalSource()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Sources.Snapshots.Add(Repo("ledger-main.zip", ("Acme.Ledger.Api", null)));
+        var setup = await harness.Service(new ConditionalSourcePack()).SourceSetupAsync("", default);
+        var pack = setup.Packs.Single();
+        pack.DisplayName.Should().Be("Ledger");
+        pack.Sources.Single(item => item.Role.Key == "ledger").State.Should().Be(TestPackSourceState.AvailableNotBound);
+        var infra = pack.Sources.Single(item => item.Role.Key == "ledger-infra");
+        infra.State.Should().Be(TestPackSourceState.NotProvided);
+        infra.Detail.Should().Be("Not provided. Needed only when: infrastructure resource configuration must be source-verified.");
     }
 }
