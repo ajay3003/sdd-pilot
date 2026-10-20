@@ -6,7 +6,7 @@
     <div class="ss-graph-heading">
         <div>
             <h3 id="ss-graph-title">Relationship graph</h3>
-            <p>Files, namespaces and referenced declarations from this package. Select a node to inspect its relationships and open its source file.</p>
+            <p>Starts at files and namespaces. Show declarations for all files, or select a file and show only its declarations. Select a node to inspect its relationships and open its source file.</p>
         </div>
         <label>Search graph <input type="search" @bind="_search" @bind:event="oninput" aria-label="Search relationship graph" /></label>
         <label>Relationship type
@@ -15,15 +15,26 @@
                 <option value="Type">Type references</option><option value="Extends">Inheritance</option><option value="Element">Element references</option>
             </select>
         </label>
-        <label>Zoom <input type="range" min="0.6" max="1.6" step="0.1" @bind="_zoom" aria-label="Graph zoom" /> <span>@_zoom.ToString("P0")</span></label>
+        <label>Level
+            <select @bind="_level" @bind:after="() => _declarationsFor = null" aria-label="Graph level" data-testid="ss-graph-level">
+                <option value="@FilesLevel">Files + namespaces</option><option value="@DeclarationsLevel">Files + declarations</option>
+            </select>
+        </label>
+        <label>Zoom <input type="range" min="0.6" max="1.6" step="0.1" @bind="_zoom" @bind:after="() => _fit = false" aria-label="Graph zoom" /> <span>@(_fit ? "Fit" : _zoom.ToString("P0"))</span></label>
+        <div class="ss-graph-buttons">
+            <button type="button" class="ss-text-button" data-testid="ss-graph-fit" @onclick="() => _fit = true">Fit to screen</button>
+            <button type="button" class="ss-text-button" data-testid="ss-graph-reset" @onclick="Reset">Reset view</button>
+        </div>
     </div>
+    @if (_declarationsFor is { } focused) { <p class="ss-graph-focus" role="status">Showing declarations of <strong>@focused</strong> only. <button type="button" class="ss-text-button" @onclick="() => _declarationsFor = null">Back to files and namespaces</button></p> }
     @{ var graph = BuildGraph(); }
     @if (graph.OmittedNodes > 0 || graph.OmittedEdges > 0 || Package.ReferencesTruncated)
     {
         <p class="ss-warning" role="status">The graph is bounded to @MaxNodes nodes and @MaxEdges relationships. This view omits @graph.OmittedNodes node(s) and @graph.OmittedEdges relationship(s)@(Package.ReferencesTruncated ? "; the source reference set was also capped at 1,000" : ""). Use References and Linked XSDs for the bounded relationship lists.</p>
     }
     <div class="ss-graph-frame" tabindex="0" aria-label="Scrollable schema relationship graph. Use the search and filter controls, then select a node with Enter or Space.">
-        <svg class="ss-graph-svg" viewBox="0 0 @graph.Width @graph.Height" role="group" aria-labelledby="ss-graph-svg-title ss-graph-svg-desc" style="width:@(graph.Width * _zoom)px;height:@(graph.Height * _zoom)px">
+        <svg class="ss-graph-svg" viewBox="0 0 @graph.Width @graph.Height" role="group" aria-labelledby="ss-graph-svg-title ss-graph-svg-desc" data-testid="ss-graph-svg"
+             style="@(_fit ? "width:100%;height:auto" : $"width:{graph.Width * _zoom}px;height:{graph.Height * _zoom}px")">
             <title id="ss-graph-svg-title">Schema relationship graph</title>
             <desc id="ss-graph-svg-desc">@graph.Nodes.Count nodes and @graph.Edges.Count relationships are displayed.</desc>
             <defs><marker id="ss-graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" /></marker></defs>
@@ -61,6 +72,7 @@
                 <ul class="ss-graph-related">@foreach (var edge in related.Take(40)) { <li>@edge.Kind: @edge.From.Label → @edge.To.Label@(edge.SourcePath is null ? "" : $" · {edge.SourcePath}")</li> }</ul>
             }
             @if (!selected.IsUnresolved && selected.FileName is { } file) { <button class="ss-text-button" @onclick="() => OnFileSelected.InvokeAsync(file)">Open source evidence</button> }
+            @if (selected.Kind == "XSD file" && selected.FileName is { } drill && _declarationsFor != drill) { <button class="ss-text-button" data-testid="ss-graph-drilldown" @onclick="() => _declarationsFor = drill">Show declarations of @drill</button> }
         </article>
     }
 </section>
@@ -77,6 +89,16 @@
     private string _search = "";
     private string? _selectedNodeId;
     private double _zoom = 1;
+    private const string FilesLevel = "files", DeclarationsLevel = "declarations";
+    /// <summary>Default aggregate level: files and namespaces only. Declarations are drill-down, never the default spaghetti.</summary>
+    private string _level = FilesLevel;
+    /// <summary>A file whose declarations are shown on their own (drill-down from a selected file node).</summary>
+    private string? _declarationsFor;
+    private bool _fit;
+
+    private bool ShowsDeclarations(string file) => _level == DeclarationsLevel || string.Equals(_declarationsFor, file, StringComparison.OrdinalIgnoreCase);
+
+    private void Reset() { _filter = "All"; _search = ""; _selectedNodeId = null; _zoom = 1; _fit = false; _level = FilesLevel; _declarationsFor = null; }
 
     private GraphData BuildGraph()
     {
@@ -105,7 +127,7 @@
             if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
             edges.Add(new(nodes[FileId(file.Name)], namespaceNode, "Namespace", file.Name, file.TargetNamespace));
         }
-        foreach (var file in Package.Files)
+        foreach (var file in Package.Files.Where(file => ShowsDeclarations(file.Name)))
         foreach (var declaration in file.Declarations)
         {
             var declarationId = DeclarationId(file.Name, declaration);
@@ -148,7 +170,7 @@
         }
         foreach (var reference in Package.References)
         {
-            if (!KindMatches(reference.Kind) || !nodes.TryGetValue(FileId(reference.SourceFile), out var source) || !files.ContainsKey(reference.TargetFile)) continue;
+            if (!KindMatches(reference.Kind) || !ShowsDeclarations(reference.TargetFile) || !nodes.TryGetValue(FileId(reference.SourceFile), out var source) || !files.ContainsKey(reference.TargetFile)) continue;
             if (edges.Count >= MaxEdges) { omittedEdgesDuringBuild++; continue; }
             var targetDeclaration = files[reference.TargetFile].Declarations.FirstOrDefault(declaration => declaration.Name == reference.Name
                 && (reference.Kind is "extends" or "uses type"

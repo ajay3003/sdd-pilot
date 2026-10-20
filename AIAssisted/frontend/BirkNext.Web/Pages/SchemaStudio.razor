@@ -9,11 +9,12 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject SchemaStudioService Studio
 @inject IServiceProvider ServiceProvider
+@using Microsoft.JSInterop
 
 <PageTitle>Schema Studio</PageTitle>
-<main class="ss-page">
+<main class="ss-page @(Current is not null && SchemaStudioNavigation.IsWide(_tab) ? "ss-page-wide" : "")">
     <PageHeader Title="Schema Studio" Description="A generic workspace for exploring, comparing and testing XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
-    <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p>
+    @if (Current is null) { <p class="ss-note">Schema validity describes structure only. It does not establish business validity or integration behavior.</p> }
     <section class="ss-import" aria-labelledby="ss-source-title">
         <h2 id="ss-source-title">Reuse Source Analysis XSDs</h2>
         <p>Choose one immutable Source Analysis snapshot. Schema files are loaded only from that snapshot; newer uploads are never substituted.</p>
@@ -67,7 +68,7 @@
         @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
     </section>
     <section class="ss-import" aria-labelledby="ss-import-title">
-        <h2 id="ss-import-title">Import XSD files or a package</h2>
+        <h2 id="ss-import-title" tabindex="-1">Import XSD files or a package</h2>
         <label class="ss-upload">Choose one or more .xsd files <InputFile accept=".xsd" multiple OnChange="ImportFiles" aria-label="Choose XSD files" /></label>
         <label class="ss-upload">Choose an XSD ZIP package <InputFile accept=".zip" OnChange="ImportZip" aria-label="Choose XSD ZIP package" /></label>
         <button class="ss-action" @onclick="() => _creating = !_creating">Create new XSD</button>
@@ -94,7 +95,7 @@
                 @foreach (var item in Studio.Packages)
                 {
                     <article class="ss-package @(item.Id == _selectedId ? "selected" : "")">
-                        <button class="ss-package-open" @onclick="() => Select(item.Id)"><strong>@item.Name</strong><span>@item.Files.Count file(s) · @item.Validation · @item.ImportedAt.ToLocalTime().ToString("g")</span><code>@item.Fingerprint[..12]</code></button>
+                        <button class="ss-package-open" @onclick="() => Select(item.Id)"><strong>@SchemaText.Breakable(item.Name)</strong><span>@item.Files.Count file(s) · @item.Validation · @item.ImportedAt.ToLocalTime().ToString("g")</span><code>@item.Fingerprint[..12]</code></button>
                         <button class="ss-text-button" @onclick="() => Remove(item.Id)" aria-label="Remove @item.Name">Remove</button>
                     </article>
                 }
@@ -105,29 +106,70 @@
     @if (Current is { } package)
     {
         <section class="ss-workspace" aria-labelledby="ss-current-title">
-        <div class="ss-heading"><div><h2 id="ss-current-title">@package.Name</h2><p>@package.Files.Count XSD file(s) · @package.Validation · Fingerprint <code>@package.Fingerprint</code></p></div>
+        <div class="ss-heading"><div><h2 id="ss-current-title">@SchemaText.Breakable(package.Name)</h2><p>@package.Files.Count XSD file(s) · <strong data-testid="ss-validity">@package.Validation</strong> · Fingerprint <code title="@package.Fingerprint" data-testid="ss-fingerprint">@ShortFingerprint(package.Fingerprint)</code></p></div>
                 @if (CurrentFile is { } active) { <a class="ss-action" download="@active.Name" href="@Download(active.Text, "application/xml")">Export current XSD</a> }
                 <a class="ss-action" download="@(package.Name + ".zip")" href="@Download(Convert.ToBase64String(SchemaStudioService.ExportZip(package)), "application/zip", true)">Export package ZIP</a>
                 <button class="ss-action" @onclick="SaveCurrentSchema">Save analysis to workspace</button>
             </div>
+            <div class="ss-capability" data-testid="ss-capability">
+                <p><strong>Schema Studio analyzes XSD structure and schema-derived validation rules.</strong> It does not verify business logic or runtime integration behavior.</p>
+                <details><summary>What Schema Studio can and cannot prove</summary>
+                    <p>Can show: XSD structure and validity, required and optional fields, simple and complex types, allowed values, patterns, lengths, occurrence, namespaces, imports and references, and schema-derived valid and invalid cases.</p>
+                    <p>Cannot show: business rules outside the XSD, authorization, routing, message delivery, downstream processing, behavior in QA or production, or service availability. XSD valid is not business valid, and not proof that an integration works.</p>
+                </details>
+            </div>
             @if (package.Provenance is { } provenance)
             {
-                <p class="ss-note">Source evidence: @(provenance.SourceProjectName ?? provenance.SourceArchiveName) · archive @provenance.SourceArchiveName@(string.IsNullOrWhiteSpace(provenance.ProjectImportId) ? "" : $" · Project Import {provenance.ProjectImportId}") · snapshot @provenance.SourceSnapshotId · contract @provenance.SelectedContractPath · fingerprint @provenance.ContractFingerprint. This analysis remains bound to the selected snapshot.</p>
+                <details class="ss-provenance" data-testid="ss-provenance"><summary>Source evidence: @(provenance.SourceProjectName ?? provenance.SourceArchiveName)@(provenance.SourceSnapshotId is { } snapshotId ? $" · snapshot {snapshotId.ToString("D")[..8]}" : "")</summary>
+                    <p class="ss-note">Archive @provenance.SourceArchiveName@(string.IsNullOrWhiteSpace(provenance.ProjectImportId) ? "" : $" · Project Import {provenance.ProjectImportId}") · snapshot @provenance.SourceSnapshotId · contract @provenance.SelectedContractPath · fingerprint @provenance.ContractFingerprint. This analysis remains bound to the selected snapshot.</p>
+                </details>
             }
+
             <label class="ss-search">Search this package <input type="search" @bind="_search" @bind:event="oninput" placeholder="Element, type, namespace, filename, facet" /></label>
             @if (!string.IsNullOrWhiteSpace(_search))
             {
-                <ul class="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small>@result.File · @result.Tab · @result.Match</small></li> }</ul>
+                <ul class="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small>@result.Match · @result.File · opens @SchemaStudioNavigation.GroupOf(result.Tab).Name → @result.Tab</small></li> }</ul>
             }
-            <nav class="ss-tabs" aria-label="Schema package views">
-                @foreach (var tab in Tabs) { <button class="@(tab == _tab ? "active" : "")" aria-current="@(tab == _tab ? "page" : null)" @onclick="() => _tab = tab">@tab</button> }
+            @* Two levels: five areas, then only the selected area's views. Every view keeps its identifier (search, links, ?view=). *@
+            <nav class="ss-groups" aria-label="Schema Studio areas" data-testid="ss-groups">
+                @foreach (var group in SchemaStudioNavigation.Groups)
+                {
+                    var selectedGroup = group.Name == CurrentGroup.Name;
+                    <button type="button" class="@(selectedGroup ? "active" : "")" aria-current="@(selectedGroup ? "true" : null)" data-testid="ss-group" data-group="@group.Name" @onclick="() => SelectGroup(group)">@group.Name</button>
+                }
             </nav>
+            <nav class="ss-tabs" aria-label="@($"{CurrentGroup.Name} views")" data-testid="ss-views">
+                @foreach (var view in CurrentGroup.Views) { <button type="button" class="@(view == _tab ? "active" : "")" aria-current="@(view == _tab ? "page" : null)" data-testid="ss-view" data-view="@view" @onclick="() => _tab = view">@view</button> }
+            </nav>
+            <p class="ss-view-purpose" data-testid="ss-view-purpose">@SchemaStudioNavigation.Purpose(_tab)</p>
+
             @if (package.Diagnostics.Count > 0) { <div class="ss-warning" role="status"><strong>Partial dependency resolution</strong><ul>@foreach (var d in package.Diagnostics) { <li>@d</li> }</ul></div> }
             @switch (_tab)
             {
                 case "Overview":
-                    <dl class="ss-stats"><div><dt>Root XSD</dt><dd>@(package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"))?.Name ?? "Not identified")</dd></div><div><dt>Namespaces</dt><dd>@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div><div><dt>Dependencies</dt><dd>@package.Files.Sum(f => f.Links.Count) links · @package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null)) unresolved</dd></div><div><dt>Global declarations</dt><dd>@package.Files.Sum(f => f.Declarations.Count)</dd></div></dl>
-                    <p>Current imported artifact is the version you selected for this session. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
+                    var rootFile = package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"));
+                    <dl class="ss-stats" data-testid="ss-overview-stats">
+                        <div><dt>Root XSD</dt><dd data-testid="ss-root-xsd">@(rootFile?.Name ?? "Not identified")</dd></div>
+                        <div><dt>Root element</dt><dd data-testid="ss-root-element">@(package.EffectiveSchema.Count switch { 0 => "None declared", 1 => package.EffectiveSchema[0].Name, var roots => $"{roots} global root elements" })</dd></div>
+                        <div><dt>Namespace</dt><dd>@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div>
+                        <div><dt>Dependencies</dt><dd>@package.Files.Sum(f => f.Links.Count) links · @package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null)) unresolved</dd></div>
+                        <div><dt>Global declarations</dt><dd>@package.Files.Sum(f => f.Declarations.Count)</dd></div>
+                        <div><dt>Package validity</dt><dd>@package.Validation <small class="ss-muted">(XSD only)</small></dd></div>
+                    </dl>
+                    <h3>Start here</h3>
+                    <div class="ss-shortcuts" data-testid="ss-shortcuts">
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-business" @onclick='() => _tab = "Forretning"'><strong>Review business structure</strong><span>The message in order, mandatory or optional, with the schema's own documentation.</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-fields" @onclick='() => _tab = "Felt og regler"'><strong>Review fields and rules</strong><span>Occurrence, allowed values, patterns and lengths for every field.</span></button>
+                        <button type="button" class="ss-shortcut" data-testid="ss-shortcut-tests" @onclick='() => _tab = "Generated Tests"'><strong>Run generated schema tests</strong><span>Valid and invalid cases derived from the XSD, run locally.</span></button>
+                    </div>
+                    <p class="ss-expert">Expert views:
+                        <button type="button" class="ss-text-button" @onclick='() => _tab = "Raw XSD"'>Raw XSD</button> ·
+                        <button type="button" class="ss-text-button" @onclick='() => _tab = "Designer"'>Designer</button> ·
+                        <button type="button" class="ss-text-button" @onclick='() => _tab = "Compare"'>Compare</button></p>
+                    <details class="ss-provenance"><summary>Package identity</summary>
+                        <p>Full fingerprint <code data-testid="ss-full-fingerprint">@package.Fingerprint</code> · imported @package.ImportedAt.ToLocalTime().ToString("g")</p>
+                        <p>Current imported artifact is the version you selected for this session. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
+                    </details>
                     break;
                 case "Forretning":
                 case "Felt og regler":
@@ -137,78 +179,229 @@
                 case "Schema dependencies":
                     var dependencyEdges = DependencyEdges(package, _graphMode).Take(1001).ToArray();
                     <SchemaReadableView Package="package" View="Schema dependencies" OnFileSelected="OpenGraphFile" />
-                    <h3>Linked XSDs</h3>
-                    <p>Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
-                    <label class="ss-field">Dependency view <select @bind="_graphMode"><option>Files only</option><option>Files + namespaces</option><option>Files + types</option><option>All relationships</option></select></label>
-                    <div class="ss-table-wrap"><table><thead><tr><th>File</th><th>Namespace</th><th>Relationship</th><th>Schema location</th><th>Resolution</th></tr></thead><tbody>
-                    @foreach (var f in package.Files) { <tr><td><button class="ss-link" @onclick="() => _fileName = f.Name">@f.Name</button></td><td>@(f.TargetNamespace ?? "—")</td><td>Root file</td><td>—</td><td>Available</td></tr>@foreach (var link in f.Links) { <tr><td>@f.Name</td><td>@(link.Namespace ?? "—")</td><td>@link.Kind</td><td>@(link.Location ?? "—")</td><td>@(link.ResolvedFile is null ? "Unresolved" : "Resolved: " + link.ResolvedFile)</td></tr> } }
-                    </tbody></table></div>
                     <SchemaRelationshipGraph Package="package" OnFileSelected="OpenGraphFile" />
-                    <h3>Dependency relationships</h3>
-                    @if (dependencyEdges.Length > SchemaStudioService.MaxRelationships || (package.ReferencesTruncated && _graphMode is "Files + types" or "All relationships"))
-                    {
-                        <p class="ss-warning" role="status">Relationship view limited to 1,000 entries. Showing the first 1,000 relationships; additional relationships are omitted.</p>
-                    }
-                    <ul class="ss-dependencies">@foreach (var edge in dependencyEdges.Take(1000)) { <li>@edge</li> }</ul>
+                    <details class="ss-section-details" data-testid="ss-linked-xsds"><summary>Linked XSD files · @package.Files.Count file(s), @package.Files.Sum(f => f.Links.Count) link(s)</summary>
+                        <p>Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
+                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Linked XSD files"><table class="ss-table"><thead><tr><th class="ss-col-file">File</th><th class="ss-col-flex">Namespace</th><th class="ss-col-compact">Relationship</th><th class="ss-col-file">Schema location</th><th class="ss-col-compact">Resolution</th></tr></thead><tbody>
+                        @foreach (var f in package.Files) { <tr><td><button class="ss-link" @onclick="() => _fileName = f.Name">@f.Name</button></td><td>@(f.TargetNamespace ?? "—")</td><td>Root file</td><td>—</td><td>Available</td></tr>@foreach (var link in f.Links) { <tr><td>@f.Name</td><td>@(link.Namespace ?? "—")</td><td>@link.Kind</td><td>@(link.Location ?? "—")</td><td>@(link.ResolvedFile is null ? "Unresolved" : "Resolved: " + link.ResolvedFile)</td></tr> } }
+                        </tbody></table></div>
+                    </details>
+                    <details class="ss-section-details"><summary>Dependency relationship list</summary>
+                        <label class="ss-field">Dependency view <select @bind="_graphMode"><option>Files only</option><option>Files + namespaces</option><option>Files + types</option><option>All relationships</option></select></label>
+                        @if (dependencyEdges.Length > SchemaStudioService.MaxRelationships || (package.ReferencesTruncated && _graphMode is "Files + types" or "All relationships"))
+                        {
+                            <p class="ss-warning" role="status">Relationship view limited to 1,000 entries. Showing the first 1,000 relationships; additional relationships are omitted.</p>
+                        }
+                        <ul class="ss-dependencies">@foreach (var edge in dependencyEdges.Take(1000)) { <li>@edge</li> }</ul>
+                    </details>
                     break;
                 case "Schema Tree":
-                    <p>Declared schema structures, grouped by file. Linked source files remain separate artifacts.</p>
-                    @foreach (var f in package.Files) { <h3>@f.Name · @(f.TargetNamespace ?? "no target namespace")</h3><ul class="ss-tree">@foreach (var d in f.Declarations) { <li><strong>@d.Name</strong> <small>@d.Kind · @(d.Type ?? d.BaseType ?? "inline") · declared in @f.Name</small>@if (d.Compositor is not null) { <small>Compositor: @d.Compositor</small> }@if (d.Documentation is not null) { <p>@d.Documentation</p> }@if (d.Children.Count > 0) { <ul>@foreach (var child in d.Children) { <li>@child.Name <small>@(child.Type ?? "inline") · @(child.MinOccurs)..@(child.MaxOccurs) · @child.SourceFile @(child.Compositor is null ? "" : "· " + child.Compositor)</small>@if (child.Documentation is not null) { <p>@child.Documentation</p> }</li> }</ul> }</li> }</ul> }
+                    <div class="ss-tree-toolbar"><button type="button" class="ss-tool" data-testid="ss-tree-expand" @onclick="() => SetTreeExpanded(true)">Expand all</button><button type="button" class="ss-tool" data-testid="ss-tree-collapse" @onclick="() => SetTreeExpanded(false)">Collapse all</button></div>
+                    <div @key="_treeGeneration" data-testid="ss-schema-tree">
+                    @foreach (var (f, index) in package.Files.Select((f, i) => (f, i)))
+                    {
+                        <details class="ss-file-tree" open="@(_treeExpanded ?? index == 0)">
+                            <summary><strong>@f.Name</strong> <small>@(f.TargetNamespace ?? "no target namespace") · @f.Declarations.Count declaration(s)</small></summary>
+                            <ul class="ss-tree">
+                            @foreach (var d in f.Declarations)
+                            {
+                                <li>
+                                    <details class="ss-node" open="@(_treeExpanded ?? false)">
+                                        <summary><strong>@d.Name</strong> <span class="ss-kind">@KindLabel(d.Kind)</span> <small class="ss-inline">@(d.Type ?? d.BaseType ?? "inline")</small></summary>
+                                        <small>declared in @f.Name@(d.Compositor is null ? "" : " · compositor " + d.Compositor)</small>
+                                        @if (d.Documentation is not null) { <p>@d.Documentation</p> }
+                                        @if (d.Children.Count > 0) { <ul>@foreach (var child in d.Children) { <li>@child.Name <small>@(child.Type ?? "inline") · @(child.MinOccurs)..@(child.MaxOccurs) · @child.SourceFile @(child.Compositor is null ? "" : "· " + child.Compositor)</small>@if (child.Documentation is not null) { <p>@child.Documentation</p> }</li> }</ul> }
+                                    </details>
+                                </li>
+                            }
+                            </ul>
+                        </details>
+                    }
+                    </div>
                     break;
                 case "Effective Schema":
-                    <p>Effective logical view resolves linked type use and inheritance while preserving provenance. Physical XSD files remain separate.</p>
-                    @foreach (var root in package.EffectiveSchema) { <article class="ss-card"><h3>@root.Name <small>root · declared in @root.DeclaredIn</small></h3>@if (root.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in root.Attributes) { @RenderAttribute(attribute) }</ul> }<ul class="ss-tree">@foreach (var member in root.Children) { @RenderMember(member) }</ul></article> }
+                    <div class="ss-tree-toolbar" data-testid="ss-effective-toolbar">
+                        <button type="button" class="ss-tool" data-testid="ss-tree-expand" @onclick="() => SetTreeExpanded(true)">Expand all</button>
+                        <button type="button" class="ss-tool" data-testid="ss-tree-collapse" @onclick="() => SetTreeExpanded(false)">Collapse all</button>
+                        <label>Show <select @bind="_effectiveFilter" @bind:after="() => SetTreeExpanded(null)" data-testid="ss-effective-filter">
+                            <option value="@SchemaTreeFilterKind.All">All fields</option><option value="@SchemaTreeFilterKind.Mandatory">Required fields only</option><option value="@SchemaTreeFilterKind.WithConstraints">Constrained fields only</option>
+                        </select></label>
+                        <label>Search <input type="search" @bind="_effectiveSearch" @bind:event="oninput" @bind:after="() => SetTreeExpanded(null)" data-testid="ss-effective-search" /></label>
+                    </div>
+                    <div @key="_treeGeneration" data-testid="ss-effective-tree">
+                    @foreach (var root in package.EffectiveSchema)
+                    {
+                        <article class="ss-card"><h3>@root.Name <small>root · declared in @SchemaText.Breakable(root.DeclaredIn)</small></h3>
+                            @if (root.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in root.Attributes) { @RenderAttribute(attribute) }</ul> }
+                            <ul class="ss-tree">@foreach (var member in root.Children.Where(c => SchemaTreeFilter.Keep(c, _effectiveFilter, _effectiveSearch))) { @EffectiveMemberNode((member, 0)) }</ul>
+                        </article>
+                    }
+                    </div>
                     @if (package.EffectiveSchema.Count == 0) { <p>No global root elements were found.</p> }
                     break;
                 case "Types":
-                    <div class="ss-table-wrap"><table><thead><tr><th>Declaration</th><th>Kind</th><th>Type/base</th><th>Source</th><th>Facets / members</th><th>Usage</th></tr></thead><tbody>@foreach (var f in package.Files) { @foreach (var d in f.Declarations.Where(d => _tab == "References" || d.Kind is "simpleType" or "complexType")) { <tr><td>@d.Name @if (d.Documentation is not null) { <details><summary>Documentation</summary><p>@d.Documentation</p></details> }</td><td>@d.Kind</td><td>@(d.Type ?? d.BaseType ?? "—")</td><td>@f.Name</td><td>@string.Join(", ", d.Facets.Select(x => x.Kind + "=" + x.Value)) · @d.Children.Count child elements @if (d.BaseType is not null) { <span>· extends @d.BaseType</span> }</td><td>@UsageCount(package, d.Name) reference(s)</td></tr> } }</tbody></table></div>
+                    <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Types"><table class="ss-table" data-testid="ss-types">
+                        <thead><tr><th class="ss-col-name">Declaration</th><th class="ss-col-compact">Kind</th><th class="ss-col-compact">Base/type</th><th class="ss-col-file">Source</th><th class="ss-col-flex">Facets / members</th><th class="ss-col-compact">Usage</th></tr></thead>
+                        <tbody>@foreach (var f in package.Files) { @foreach (var d in f.Declarations.Where(d => d.Kind is "simpleType" or "complexType")) {
+                            <tr><td><strong>@d.Name</strong>@if (d.Documentation is not null) { <details><summary>Documentation<span class="visually-hidden"> for @d.Name</span></summary><p>@d.Documentation</p></details> }</td>
+                                <td class="ss-nowrap">@KindLabel(d.Kind)</td><td><code>@(d.Type ?? d.BaseType ?? "—")</code></td><td><span class="ss-file" title="@f.Name">@f.Name</span></td>
+                                <td>@(d.Facets.Count > 0 ? string.Join(", ", d.Facets.Select(x => x.Kind + "=" + x.Value)) : "")@(d.Children.Count > 0 ? $"{(d.Facets.Count > 0 ? " · " : "")}{d.Children.Count} child element(s)" : "")@if (d.BaseType is not null) { <span> · extends @d.BaseType</span> }</td>
+                                <td class="ss-nowrap">@UsageCount(package, d.Name) reference(s)</td></tr> } }</tbody></table></div>
                     break;
                 case "References":
-                    <p>Cross-file type use, inheritance and element references, with both source and declaration files.</p>
                     @if (package.ReferencesTruncated)
                     {
                         <p class="ss-warning" role="status">Reference view limited to 1,000 entries. Showing the first 1,000 references; additional references are omitted.</p>
                     }
-                    <div class="ss-table-wrap"><table><thead><tr><th>Relationship</th><th>Declaration</th><th>Referenced from</th><th>Declared in</th><th>Path</th></tr></thead><tbody>@foreach (var reference in package.References) { <tr><td>@reference.Kind</td><td>@reference.Name</td><td>@reference.SourceFile</td><td>@reference.TargetFile</td><td>@(reference.Path ?? "—")</td></tr> }</tbody></table></div>
-                    @if (package.References.Count == 0) { <p>No cross-file references were resolved.</p> }
+                    @if (package.References.Count == 0)
+                    {
+                        <p data-testid="ss-references-empty">@(package.Files.Count == 1 ? "No cross-file references. This package contains one XSD file." : "No cross-file references were resolved between imported files.")</p>
+                    }
+                    else
+                    {
+                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="References"><table class="ss-table"><thead><tr><th class="ss-col-compact">Relationship</th><th class="ss-col-name">Declaration</th><th class="ss-col-file">Referenced from</th><th class="ss-col-file">Declared in</th><th class="ss-col-path">Path</th></tr></thead><tbody>@foreach (var reference in package.References) { <tr><td class="ss-nowrap">@reference.Kind</td><td>@reference.Name</td><td><span class="ss-file">@reference.SourceFile</span></td><td><span class="ss-file">@reference.TargetFile</span></td><td><code>@(reference.Path ?? "—")</code></td></tr> }</tbody></table></div>
+                    }
                     break;
                 case "Constraints":
-                    <div class="ss-table-wrap"><table><thead><tr><th>Type/path</th><th>Constraint</th><th>Value</th><th>Source XSD</th></tr></thead><tbody>@foreach (var f in package.Files) { @foreach (var d in f.Declarations) { @foreach (var facet in d.Facets) { <tr><td>@d.Path</td><td>@facet.Kind</td><td>@facet.Value</td><td>@f.Name</td></tr> } @foreach (var e in d.Children) { <tr><td>@(d.Path + "/" + e.Name)</td><td>Occurrence</td><td>@e.MinOccurs..@e.MaxOccurs @(e.Compositor is null ? "" : "· " + e.Compositor)</td><td>@e.SourceFile</td></tr> @foreach (var facet in e.Facets) { <tr><td>@(d.Path + "/" + e.Name)</td><td>@facet.Kind</td><td>@facet.Value</td><td>@e.SourceFile</td></tr> } } } }</tbody></table></div>
+                    var constraintRows = ConstraintRows(package).ToList();
+                    var shownConstraints = constraintRows.Where(r => _constraintFilter.Length == 0 || r.Category == _constraintFilter).ToList();
+                    <label class="ss-field">Constraint type <select @bind="_constraintFilter" data-testid="ss-constraint-filter"><option value="">All constraints</option>@foreach (var category in constraintRows.Select(r => r.Category).Distinct().Order()) { <option value="@category">@category</option> }</select></label>
+                    <p class="ss-muted" role="status" data-testid="ss-constraint-count">@shownConstraints.Count of @constraintRows.Count constraint(s)</p>
+                    <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Constraints"><table class="ss-table" data-testid="ss-constraints"><thead><tr><th class="ss-col-path">Type/path</th><th class="ss-col-compact">Constraint</th><th class="ss-col-value">Value</th><th class="ss-col-file">Source XSD</th></tr></thead>
+                        <tbody>@foreach (var row in shownConstraints) { <tr data-category="@row.Category"><td><code>@row.Path</code></td><td class="ss-nowrap">@row.Constraint</td><td><code>@row.Value</code></td><td><span class="ss-file" title="@row.Source">@row.Source</span></td></tr> }</tbody></table></div>
                     break;
                 case "Namespaces":
-                    @foreach (var group in package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)")) { <article class="ss-card"><h3>@group.Key</h3><p>@string.Join(", ", group.Select(f => f.Name))</p><p>Global elements and types: @group.Sum(f => f.Declarations.Count)</p><p>Imported by: @string.Join(", ", package.Files.Where(f => f.Links.Any(l => l.ResolvedFile is not null && group.Any(g => g.Name == l.ResolvedFile))).Select(f => f.Name).DefaultIfEmpty("None"))</p></article> }
+                    @foreach (var group in package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)"))
+                    {
+                        var importers = package.Files.Where(f => f.Links.Any(l => l.ResolvedFile is not null && group.Any(g => g.Name == l.ResolvedFile))).Select(f => f.Name).ToList();
+                        <article class="ss-card" data-testid="ss-namespace"><h3>@SchemaText.Breakable(group.Key)</h3>
+                            <dl class="ss-facts">
+                                <div><dt>Source file(s)</dt><dd>@string.Join(", ", group.Select(f => f.Name))</dd></div>
+                                <div><dt>Global declarations</dt><dd>@group.Sum(f => f.Declarations.Count)</dd></div>
+                                <div><dt>Imports/includes</dt><dd>@(group.Sum(f => f.Links.Count) is var links && links > 0 ? $"{links} link(s)" : "None")</dd></div>
+                                <div><dt>Imported by</dt><dd data-testid="ss-imported-by">@(importers.Count > 0 ? string.Join(", ", importers) : "No schemas in this package import it.")</dd></div>
+                            </dl>
+                        </article>
+                    }
                     break;
                 case "Raw XSD":
-                    <label class="ss-field">XSD file <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
-                    <pre class="ss-raw"><code>@(CurrentFile?.Text)</code></pre>
+                    var rawText = CurrentFile?.Text ?? "";
+                    var rawLines = rawText.Split('\n');
+                    <div class="ss-raw-toolbar">
+                        <label class="ss-field">XSD file <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
+                        <label class="ss-field">Find in this file <input type="search" @bind="_rawSearch" @bind:event="oninput" data-testid="ss-raw-search" /></label>
+                        <button type="button" class="ss-tool" data-testid="ss-raw-copy" @onclick="() => CopyRaw(rawText)">Copy XSD</button>
+                        <button type="button" class="ss-tool" data-testid="ss-raw-expand" aria-pressed="@(_rawExpanded ? "true" : "false")" @onclick="() => _rawExpanded = !_rawExpanded">@(_rawExpanded ? "Show compact" : "Show full height")</button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_rawStatus)) { <p role="status" class="ss-muted">@_rawStatus</p> }
+                    @if (!string.IsNullOrWhiteSpace(_rawSearch))
+                    {
+                        var rawHits = rawLines.Select((line, index) => (line, index)).Where(x => x.line.Contains(_rawSearch, StringComparison.OrdinalIgnoreCase)).Take(50).ToList();
+                        <p class="ss-muted" role="status" data-testid="ss-raw-hits">@rawHits.Count matching line(s)@(rawHits.Count == 50 ? " (first 50)" : "")</p>
+                        <ul class="ss-raw-hits">@foreach (var hit in rawHits) { <li>Line @(hit.index + 1): <code>@hit.line.Trim()</code></li> }</ul>
+                    }
+                    @if (rawLines.Length <= 20000)
+                    {
+                        <ol class="ss-raw ss-raw-lines @(_rawExpanded ? "ss-raw-expanded" : "")" tabindex="0" aria-label="@($"{CurrentFile?.Name} source, {rawLines.Length} lines (read-only)")" data-testid="ss-raw">@foreach (var line in rawLines) { <li><code>@line.TrimEnd('\r')</code></li> }</ol>
+                    }
+                    else { <pre class="ss-raw @(_rawExpanded ? "ss-raw-expanded" : "")" tabindex="0"><code>@rawText</code></pre> }
                     break;
                 case "Designer":
-                    <p>Schema Designer drafts are separate from imported source evidence. The structured helper adds an element to the root sequence and can set occurrence bounds, enumerations, or inclusive numeric bounds. Other edits use the XSD draft and are accepted only when the full linked package compiles.</p>
-                    <label class="ss-field">File <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
-                    <div class="ss-create"><label>Child element <input aria-label="Child element name" @bind="_newChildName" /></label><label>Type <select aria-label="Child element type" @bind="_newChildType"><option value="xs:string">String</option><option value="xs:decimal">Decimal</option><option value="xs:integer">Integer</option><option value="xs:boolean">Boolean</option><option value="xs:date">Date</option></select></label><label>Minimum occurrences <select aria-label="Minimum occurrences" @bind="_newChildMin"><option value="1">1 (required)</option><option value="0">0 (optional)</option><option value="2">2</option></select></label><label>Maximum occurrences <select aria-label="Maximum occurrences" @bind="_newChildMax"><option value="1">1</option><option value="2">2</option><option value="unbounded">Unbounded</option></select></label><label>Enumeration values, comma separated <input aria-label="Enumeration values" @bind="_newChildEnumeration" /></label><label>Inclusive minimum number <input aria-label="Minimum numeric value" inputmode="decimal" @bind="_newChildNumericMinimum" /></label><label>Inclusive maximum number <input aria-label="Maximum numeric value" inputmode="decimal" @bind="_newChildNumericMaximum" /></label><button class="ss-action" @onclick="AddDraftElement">Add child element</button></div>
-                    <textarea class="ss-editor" @bind="_draft" aria-label="Edit XSD source"></textarea>
-                    <div class="ss-actions"><button class="ss-text-button" @onclick="SaveWorkingDraft">Save working draft</button><button class="ss-text-button" @onclick="PreviewDraft">Preview and validate draft</button><button class="ss-text-button" @onclick="RevertDraft">Revert draft</button><button class="ss-action" @onclick="SaveDraft">Validate and save new version</button></div>
+                    <p>Schema Designer drafts are separate from imported source evidence. The structured helper adds an element to the root sequence; other edits use the draft and are accepted only when the full linked package compiles.</p>
+                    <ul class="ss-source-safety" data-testid="ss-source-safety">
+                        <li><strong>Imported XSD</strong> — read-only source evidence, never changed.</li>
+                        <li><strong>Working draft</strong> — editable copy below.</li>
+                        <li><strong>Saved new version</strong> — "Validate and save new version" creates a new immutable package version, only when the full linked package compiles.</li>
+                    </ul>
+                    <div class="ss-form-grid" data-testid="ss-designer-form">
+                        <fieldset class="ss-fieldset"><legend>File</legend>
+                            <label class="ss-field">XSD file <select value="@_fileName" @onchange="FileChanged">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
+                        </fieldset>
+                        <fieldset class="ss-fieldset"><legend>Element</legend>
+                            <label>Child element name <input aria-label="Child element name" @bind="_newChildName" /></label>
+                            <label>Type <select aria-label="Child element type" @bind="_newChildType"><option value="xs:string">String</option><option value="xs:decimal">Decimal</option><option value="xs:integer">Integer</option><option value="xs:boolean">Boolean</option><option value="xs:date">Date</option></select></label>
+                        </fieldset>
+                        <fieldset class="ss-fieldset"><legend>Occurrence</legend>
+                            <label>Minimum occurrences <select aria-label="Minimum occurrences" @bind="_newChildMin"><option value="1">1 (required)</option><option value="0">0 (optional)</option><option value="2">2</option></select></label>
+                            <label>Maximum occurrences <select aria-label="Maximum occurrences" @bind="_newChildMax"><option value="1">1</option><option value="2">2</option><option value="unbounded">Unbounded</option></select></label>
+                        </fieldset>
+                        <fieldset class="ss-fieldset"><legend>Constraints</legend>
+                            <label>Enumeration values, comma separated <input aria-label="Enumeration values" @bind="_newChildEnumeration" /></label>
+                            <label>Inclusive minimum number <input aria-label="Minimum numeric value" inputmode="decimal" @bind="_newChildNumericMinimum" /></label>
+                            <label>Inclusive maximum number <input aria-label="Maximum numeric value" inputmode="decimal" @bind="_newChildNumericMaximum" /></label>
+                        </fieldset>
+                    </div>
+                    <div class="ss-actions"><button class="ss-action" @onclick="AddDraftElement">Add child element</button></div>
+                    <fieldset class="ss-fieldset ss-draft"><legend>Draft</legend>
+                        <label class="ss-draft-label" for="ss-draft-editor">XSD working draft</label>
+                        <textarea id="ss-draft-editor" class="ss-editor" @bind="_draft" aria-label="Edit XSD source"></textarea>
+                        <div class="ss-actions"><button class="ss-text-button" @onclick="SaveWorkingDraft">Save working draft</button><button class="ss-text-button" @onclick="PreviewDraft">Preview and validate draft</button><button class="ss-text-button" @onclick="RevertDraft">Revert draft</button><button class="ss-action" @onclick="SaveDraft">Validate and save new version</button></div>
+                    </fieldset>
                     @if (!string.IsNullOrWhiteSpace(_draftStatus)) { <p role="status">@_draftStatus</p> }
                     @if (_draftPreview is { } draftPreview) { <p role="status">Draft compilation: @draftPreview.Validation · @draftPreview.Files.Count file(s) · @draftPreview.References.Count relationship(s).</p>@if (draftPreview.Validation != "Valid") { <ul class="ss-warning">@foreach (var diagnostic in draftPreview.Diagnostics) { <li>@diagnostic</li> }</ul> } else { <h3>Preview changes</h3><ul>@foreach (var change in Compare(package, draftPreview)) { <li>@change</li> }</ul><p>Linked references affected by the selected file edit are re-resolved before saving.</p> } }
                     break;
                 case "Compare":
-                    <p>Compare immutable package fingerprints and declaration summaries. Import a second version to compare it with the current package.</p>
-                    @if (Studio.Packages.Count > 1) { var prior = Studio.Packages.Where(p => p.Id != package.Id && p.Name == package.Name).OrderByDescending(p => p.ImportedAt).FirstOrDefault() ?? Studio.Packages.First(p => p.Id != package.Id); <p>Comparing with <strong>@prior.Name</strong> (@prior.Fingerprint[..12])</p><ul>@foreach (var change in Compare(prior, package)) { <li>@change</li> }</ul> } else { <p>Import a second package/version to see contract changes.</p> }
+                    var otherVersions = Studio.Packages.Where(p => p.Id != package.Id).ToList();
+                    <p>Compare immutable package fingerprints and declaration summaries. Already imported versions are reused; nothing is uploaded again.</p>
+                    @if (otherVersions.Count == 0)
+                    {
+                        <div class="ss-empty-state" data-testid="ss-compare-empty"><p><strong>No comparison version available.</strong> Import a second version of this schema to compare it.</p>
+                            <button type="button" class="ss-action" @onclick="FocusImport">Import second version</button></div>
+                    }
+                    else
+                    {
+                        <label class="ss-field">Compare with <select value="@CompareTarget(package)?.Id" @onchange="args => _compareId = args.Value?.ToString()" data-testid="ss-compare-select">
+                            <option value="">Select an imported version</option>
+                            @foreach (var other in otherVersions) { <option value="@other.Id">@other.Name · @ShortFingerprint(other.Fingerprint) · @other.ImportedAt.ToLocalTime().ToString("g")</option> }
+                        </select></label>
+                        @if (CompareTarget(package) is { } prior)
+                        {
+                            var changes = Compare(prior, package).ToList();
+                            <dl class="ss-stats" data-testid="ss-compare-summary">
+                                <div><dt>Current fingerprint</dt><dd><code title="@package.Fingerprint">@ShortFingerprint(package.Fingerprint)</code></dd></div>
+                                <div><dt>Comparison fingerprint</dt><dd><code title="@prior.Fingerprint">@ShortFingerprint(prior.Fingerprint)</code></dd></div>
+                                <div><dt>Added</dt><dd>@changes.Count(c => c.Contains("declaration added"))</dd></div>
+                                <div><dt>Removed</dt><dd>@changes.Count(c => c.Contains("declaration removed"))</dd></div>
+                                <div><dt>Changed</dt><dd>@changes.Count(c => c.Contains("changed"))</dd></div>
+                            </dl>
+                            @if (changes.Count == 0) { <p>No declaration-level differences.</p> } else { <ul>@foreach (var change in changes) { <li>@change</li> }</ul> }
+                        }
+                        else { <p data-testid="ss-compare-none">No comparison version selected. Select an imported version above, or <button type="button" class="ss-text-button" @onclick="FocusImport">import another version</button>.</p> }
+                    }
                     break;
                 case "Generated Tests":
                     <p>Cases derive from XSD declarations and constraints. They test schema behavior only, not business or integration behavior.</p>
-                    <p>Cases run locally against the imported package. Expected validity and actual validator output are shown separately.</p>
+                    <p class="ss-muted" data-testid="ss-test-semantics"><strong>Expected</strong> is what the XSD should do with the case. <strong>Validator</strong> is what the local XSD validator did. <strong>Result</strong> is Pass when they agree — an invalid case that the validator rejects is a passing negative test.</p>
                     @if (package.GeneratedTestsTruncated) { <p class="ss-warning" role="status">Only the first 5,000 derived test candidates are available here; some candidate tests were omitted. Effective Schema and Constraints still show the analyzed XSD evidence.</p> }
-                    <div class="ss-actions"><button class="ss-action" @onclick="RunGeneratedTests">Run generated tests (first 100)</button></div>
-                    <div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Derived case</th><th>Value or mutation</th><th>Expected</th><th>Source XSD</th><th>Action</th></tr></thead><tbody>@foreach (var test in package.GeneratedTests) { <tr><td>@test.Path</td><td>@test.Rule</td><td><code>@test.Value</code></td><td>@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.SourceFile</td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML</button></td></tr> }</tbody></table></div>
-                    @if (_testResults.Count > 0) { <h3>Test results</h3><div class="ss-table-wrap"><table><thead><tr><th>Path</th><th>Case</th><th>Expected</th><th>Actual</th><th>Outcome</th><th>Evidence</th></tr></thead><tbody>@foreach (var result in _testResults) { <tr><td>@result.Path</td><td>@result.Rule</td><td>@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Actual</td><td>@result.Outcome</td><td><details><summary>Diagnostic, valid baseline and mutated XML</summary><p>@result.Diagnostic</p>@if (!string.IsNullOrWhiteSpace(result.BaselineId)) { <p>Baseline: @result.BaselineId</p> }@if (result.BaselineXml.Length > 0) { <h4>Valid baseline XML</h4><pre class="ss-raw"><code>@result.BaselineXml</code></pre> }@if (result.Xml.Length > 0) { <h4>Mutated XML</h4><pre class="ss-raw"><code>@result.Xml</code></pre> }</details></td></tr> }</tbody></table></div> }
-                    @if (TestRuns?.Runs.Where(r => r.PackageFingerprint == package.Fingerprint && r.ProjectScope == ProjectScope()).Take(10).ToArray() is { Length: > 0 } savedRuns)
+                    <div class="ss-actions"><button class="ss-action" @onclick="RunGeneratedTests">Run generated tests (first 100)</button><span class="ss-muted" role="status" data-testid="ss-test-count">@package.GeneratedTests.Count candidate case(s)@(package.GeneratedTests.Count > 100 ? " · a run covers the first 100" : "")</span></div>
+                    @if (_testResults.Count > 0)
                     {
-                        <h3>Saved validation history</h3><p>History stores schema, snapshot and profile identity with sanitized outcomes. Generated XML is not retained in run history.</p>
-                        <div class="ss-table-wrap"><table><thead><tr><th>Run</th><th>Profile</th><th>Results</th><th>Pass</th><th>Fail</th><th>Not evaluated</th></tr></thead><tbody>
-                        @foreach (var run in savedRuns) { <tr><td>@run.CreatedAt.ToLocalTime().ToString("g")<br /><small>@run.PackageFingerprint[..Math.Min(12, run.PackageFingerprint.Length)] · @run.Provenance?.SourceSnapshotId</small></td><td>@run.ProfileName · seed @(run.Seed?.ToString() ?? "not set")</td><td>@run.Results.Count</td><td>@run.Results.Count(r => r.Outcome == "Pass")</td><td>@run.Results.Count(r => r.Outcome == "Fail")</td><td>@run.Results.Count(r => r.Outcome == "Not evaluated")</td></tr> }
+                        <h3>Test results</h3>
+                        <p class="ss-muted">Showing @_testResults.Count result(s) of @package.GeneratedTests.Count candidate case(s).</p>
+                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Test results"><table class="ss-table" data-testid="ss-test-results"><thead><tr><th class="ss-col-path">Path</th><th class="ss-col-compact">Expected</th><th class="ss-col-flex">Derived case</th><th class="ss-col-compact">Validator</th><th class="ss-col-compact">Result</th><th class="ss-col-flex">Details</th></tr></thead><tbody>
+                        @foreach (var result in _testResults)
+                        {
+                            <tr data-outcome="@result.Outcome"><td><code>@SchemaText.Breakable(result.Path)</code></td><td class="ss-nowrap">@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Rule</td><td class="ss-nowrap">@ValidatorLabel(result.Actual)</td><td class="ss-nowrap"><span class="ss-outcome ss-outcome-@result.Outcome.Replace(" ", "-").ToLowerInvariant()">@result.Outcome</span></td>
+                                <td><details><summary>Diagnostic and XML<span class="visually-hidden"> for @result.Path</span></summary><p>@result.Diagnostic</p>@if (!string.IsNullOrWhiteSpace(result.BaselineId)) { <p>Baseline: @result.BaselineId</p> }@if (result.BaselineXml.Length > 0) { <h4>Valid baseline XML</h4><pre class="ss-raw"><code>@result.BaselineXml</code></pre> }@if (result.Xml.Length > 0) { <h4>Mutated XML</h4><pre class="ss-raw"><code>@result.Xml</code></pre> }</details></td></tr>
+                        }
                         </tbody></table></div>
                     }
+                    <h3>Candidate cases</h3>
+                    <p class="ss-muted" data-testid="ss-candidates-shown">Showing first @Math.Min(_testsShown, package.GeneratedTests.Count) of @package.GeneratedTests.Count</p>
+                    <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Generated test cases"><table class="ss-table" data-testid="ss-generated-tests"><thead><tr><th class="ss-col-path">Path</th><th class="ss-col-compact">Expected</th><th class="ss-col-flex">Derived case</th><th class="ss-col-value">Value / mutation</th><th class="ss-col-file">Source XSD</th><th class="ss-col-compact">Action</th></tr></thead><tbody>
+                    @foreach (var test in package.GeneratedTests.Take(_testsShown)) { <tr><td><code>@SchemaText.Breakable(test.Path)</code></td><td class="ss-nowrap">@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.Rule</td><td><code class="ss-value">@test.Value</code></td><td><span class="ss-file" title="@test.SourceFile">@SchemaText.Breakable(test.SourceFile)</span></td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML<span class="visually-hidden"> for @test.Path</span></button></td></tr> }
+                    </tbody></table></div>
+                    @if (package.GeneratedTests.Count > _testsShown) { <button type="button" class="ss-tool" data-testid="ss-candidates-more" @onclick="() => _testsShown += 100">Show 100 more</button> }
+                    @if (TestRuns?.Runs.Where(r => r.PackageFingerprint == package.Fingerprint && r.ProjectScope == ProjectScope()).Take(10).ToArray() is { Length: > 0 } savedRuns)
+                    {
+                        <details class="ss-section-details"><summary>Saved validation history · @savedRuns.Length run(s)</summary>
+                        <p>History stores schema, snapshot and profile identity with sanitized outcomes. Generated XML is not retained in run history.</p>
+                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Saved validation history"><table class="ss-table"><thead><tr><th>Run</th><th>Profile</th><th>Results</th><th>Pass</th><th>Fail</th><th>Not evaluated</th></tr></thead><tbody>
+                        @foreach (var run in savedRuns) { <tr><td>@run.CreatedAt.ToLocalTime().ToString("g")<br /><small>@run.PackageFingerprint[..Math.Min(12, run.PackageFingerprint.Length)] · @run.Provenance?.SourceSnapshotId</small></td><td>@run.ProfileName · seed @(run.Seed?.ToString() ?? "not set")</td><td>@run.Results.Count</td><td>@run.Results.Count(r => r.Outcome == "Pass")</td><td>@run.Results.Count(r => r.Outcome == "Fail")</td><td>@run.Results.Count(r => r.Outcome == "Not evaluated")</td></tr> }
+                        </tbody></table></div>
+                        </details>
+                    }
+                    <h3>Validate XML</h3>
                     <label class="ss-field">Validate XML against <select @bind="_fileName">@foreach (var f in package.Files) { <option value="@f.Name">@f.Name</option> }</select></label>
                     <textarea class="ss-editor ss-xml" @bind="_xml" aria-label="XML instance to validate"></textarea>
                     <p class="ss-note">Saving XML stores its content in this BirkNext workspace. Review user-entered values before saving.</p>
@@ -248,39 +441,47 @@
                     break;
                 case "Generation Profile":
                     <p>Profiles store deterministic generation rules, not real identifiers, secrets or fixed personal values. Generated values are synthetic and only XSD validity is evaluated.</p>
-                    <div class="ss-profile">
-                        <label>Profile
-                            <select @bind="_activeProfileId" aria-label="Generation Profile">
+                    @if (SelectedProfile() is { } activeProfile) { <p class="ss-selected-profile" data-testid="ss-selected-profile">Selected profile: <strong>@activeProfile.Name</strong> · @activeProfile.Kind · seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)] · @activeProfile.Rules.Count rule(s)@(activeProfile.IsBuiltIn ? " · built-in, read-only" : "")</p> }
+                    <fieldset class="ss-fieldset" data-testid="ss-profile-section"><legend>Profile</legend>
+                        <label class="ss-field">Selected profile
+                            <select @bind="_activeProfileId" @bind:after="() => _editingProfileId = null" aria-label="Generation Profile">
                                 @foreach (var builtIn in SchemaGenerationProfilesService.BuiltIns(package.Fingerprint)) { <option value="@builtIn.Id">@builtIn.Name (built-in)</option> }
                                 @foreach (var profile in AvailableProfiles(package)) { <option value="@profile.Id">@profile.Name</option> }
                             </select>
                         </label>
-                        <label>New profile name <input @bind="_newProfileName" maxlength="120" /></label>
-                        <label>Profile kind <select @bind="_newProfileKind"><option value="@SchemaGenerationProfileKind.GenericValid">Generic valid</option><option value="@SchemaGenerationProfileKind.Boundary">Boundary values</option><option value="@SchemaGenerationProfileKind.ControlledInvalid">Controlled invalid</option><option value="@SchemaGenerationProfileKind.Minimal">Minimal XML</option><option value="@SchemaGenerationProfileKind.MaximumComplexity">Maximum complexity</option></select></label>
-                        <label>Random seed <input type="number" @bind="_profileSeed" /></label>
-                        <button class="ss-action" @onclick="CreateProfile">Create profile</button>
-                        <button class="ss-text-button" @onclick="LoadProfileForEditing">Load selected profile for editing</button>
-                        <button class="ss-text-button" @onclick="EditSelectedProfile">Update selected profile</button>
-                        <button class="ss-text-button" @onclick="CloneProfile">Clone selected</button>
-                        <button class="ss-text-button" @onclick="DeleteProfile">Delete selected</button>
-                        <button class="ss-text-button" @onclick="SaveProfiles">Save profiles to current workspace</button>
-                    </div>
-                    <div class="ss-profile">
-                        <label>Element path <select @bind="_rulePath" aria-label="Profile rule element path"><option value="">Choose element</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @member.Member.Type</option> }</select></label>
-                        <label>Generation rule <select @bind="_ruleMode"><option value="@SchemaGenerationValueMode.Synthetic">Synthetic</option><option value="@SchemaGenerationValueMode.SchemaDefault">Use schema default</option><option value="@SchemaGenerationValueMode.Boundary">Boundary</option><option value="@SchemaGenerationValueMode.Invalid">Controlled invalid</option><option value="@SchemaGenerationValueMode.FixedEnum">Enumeration</option><option value="@SchemaGenerationValueMode.Nil">Nil (nillable element)</option></select></label>
-                        <label>Minimum <input type="number" step="any" @bind="_ruleMinimum" /></label><label>Maximum <input type="number" step="any" @bind="_ruleMaximum" /></label>
-                        <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" /></label>
-                        <label>Date from <input type="date" @bind="_ruleDateFrom" /></label><label>Date to <input type="date" @bind="_ruleDateTo" /></label>
-                        <label>Occurrence count (optional, 0–100) <input type="number" min="0" max="100" @bind="_ruleOccurrences" /></label>
-                        <button class="ss-action" @onclick="SaveProfileRule">Save generation rule</button>
-                    </div>
-                    <div class="ss-actions">
-                        <label>XML root <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@root.DeclaredIn)</option> }</select></label>
-                        <button class="ss-action" @onclick="GenerateProfileXml">Generate XML from profile</button>
-                        <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import generation profile JSON" />
-                        @if (SelectedProfile() is { } exportProfile) { <a class="ss-action" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
-                    </div>
-                    @if (SelectedProfile() is { } activeProfile) { <p>Selected: <strong>@activeProfile.Name</strong> · @activeProfile.Kind · seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)] · @activeProfile.Rules.Count rule(s)</p> }
+                        <div class="ss-actions">
+                            <button class="ss-text-button" @onclick="LoadProfileForEditing">Load selected profile for editing</button>
+                            <button class="ss-text-button" @onclick="CloneProfile">Clone selected</button>
+                            <button class="ss-text-button" @onclick="DeleteProfile">Delete selected</button>
+                            @if (SelectedProfile() is { } exportProfile) { <a class="ss-text-button" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
+                            <label class="ss-inline-file">Import profile JSON <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import generation profile JSON" /></label>
+                            <button class="ss-action" @onclick="SaveProfiles">Save profiles to current workspace</button>
+                        </div>
+                        <fieldset class="ss-fieldset ss-subfieldset" data-testid="ss-profile-form"><legend>@(_editingProfileId is null ? "New profile" : "Edit selected profile")</legend>
+                            <label>@(_editingProfileId is null ? "New profile name" : "Profile name") <input @bind="_newProfileName" maxlength="120" /></label>
+                            <label>Profile kind <select @bind="_newProfileKind"><option value="@SchemaGenerationProfileKind.GenericValid">Generic valid</option><option value="@SchemaGenerationProfileKind.Boundary">Boundary values</option><option value="@SchemaGenerationProfileKind.ControlledInvalid">Controlled invalid</option><option value="@SchemaGenerationProfileKind.Minimal">Minimal XML</option><option value="@SchemaGenerationProfileKind.MaximumComplexity">Maximum complexity</option></select></label>
+                            <label data-testid="ss-seed-label">@(_editingProfileId is null ? "New profile random seed" : "Random seed of the selected profile") <input type="number" @bind="_profileSeed" data-testid="ss-profile-seed" /></label>
+                            <div class="ss-actions">
+                                @if (_editingProfileId is null) { <button class="ss-action" @onclick="CreateProfile">Create profile</button> }
+                                else { <button class="ss-action" @onclick="EditSelectedProfile">Update selected profile</button><button class="ss-text-button" @onclick="CancelProfileEditing">Cancel editing</button> }
+                            </div>
+                        </fieldset>
+                    </fieldset>
+                    <fieldset class="ss-fieldset" data-testid="ss-rule-section"><legend>Rule editor</legend>
+                        <div class="ss-form-grid">
+                            <label>Element path <select @bind="_rulePath" aria-label="Profile rule element path"><option value="">Choose element</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @member.Member.Type</option> }</select></label>
+                            <label>Generation rule <select @bind="_ruleMode"><option value="@SchemaGenerationValueMode.Synthetic">Synthetic</option><option value="@SchemaGenerationValueMode.SchemaDefault">Use schema default</option><option value="@SchemaGenerationValueMode.Boundary">Boundary</option><option value="@SchemaGenerationValueMode.Invalid">Controlled invalid</option><option value="@SchemaGenerationValueMode.FixedEnum">Enumeration</option><option value="@SchemaGenerationValueMode.Nil">Nil (nillable element)</option></select></label>
+                            <label>Minimum <input type="number" step="any" @bind="_ruleMinimum" /></label><label>Maximum <input type="number" step="any" @bind="_ruleMaximum" /></label>
+                            <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" /></label>
+                            <label>Date from <input type="date" @bind="_ruleDateFrom" /></label><label>Date to <input type="date" @bind="_ruleDateTo" /></label>
+                            <label>Occurrence count (optional, 0–100) <input type="number" min="0" max="100" @bind="_ruleOccurrences" /></label>
+                        </div>
+                        <div class="ss-actions"><button class="ss-action" @onclick="SaveProfileRule">Save generation rule</button></div>
+                    </fieldset>
+                    <fieldset class="ss-fieldset" data-testid="ss-generate-section"><legend>Generate XML</legend>
+                        <label class="ss-field">XML root <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@root.DeclaredIn)</option> }</select></label>
+                        <div class="ss-actions"><button class="ss-action" @onclick="GenerateProfileXml">Generate XML from profile</button></div>
+                    </fieldset>
                     @if (!string.IsNullOrWhiteSpace(_profileError)) { <p class="ss-error" role="alert">@_profileError</p> }
                     @if (!string.IsNullOrWhiteSpace(_profileStatus)) { <p class="ss-result" role="status">@_profileStatus</p> }
                     break;
@@ -290,7 +491,111 @@
 </main>
 
 @code {
-    private static readonly string[] Tabs = ["Overview", "Forretning", "Felt og regler", "Struktur", "Schema dependencies", "Schema Tree", "Types", "Constraints", "Namespaces", "References", "Effective Schema", "Raw XSD", "Designer", "Compare", "Generated Tests", "Generation Profile"];
+    private static IReadOnlyList<string> Tabs => SchemaStudioNavigation.AllViews;
+    /// <summary><c>?view=generated-tests</c> (or a view name) opens that view in its area.</summary>
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewParameter { get; set; }
+    private bool _viewParameterApplied;
+    /// <summary>A deep-linked view requested before any package was open; the first package selection opens it instead of Overview.</summary>
+    private string? _pendingView;
+    private SchemaStudioGroup CurrentGroup => SchemaStudioNavigation.GroupOf(_tab);
+    private void SelectGroup(SchemaStudioGroup group) { if (group.Name != CurrentGroup.Name) _tab = group.Views[0]; }
+
+    protected override void OnParametersSet()
+    {
+        if (_viewParameterApplied) return;
+        _viewParameterApplied = true;
+        if (SchemaStudioNavigation.FromQuery(ViewParameter) is { } view) { _tab = view; _pendingView = Current is null ? view : null; }
+    }
+
+    /// <summary>Tree disclosure for Schema Tree and Effective Schema: null = default depth, true/false = Expand/Collapse all (re-keyed).</summary>
+    private bool? _treeExpanded;
+    private int _treeGeneration;
+    private void SetTreeExpanded(bool? expanded) { _treeExpanded = expanded; _treeGeneration++; }
+    private SchemaTreeFilterKind _effectiveFilter = SchemaTreeFilterKind.All;
+    private string _effectiveSearch = "", _constraintFilter = "", _rawSearch = "", _rawStatus = "";
+    private bool _rawExpanded;
+    private string? _compareId;
+    private int _testsShown = 100;
+    /// <summary>The saved profile currently loaded into the profile form; null = the form holds values for a NEW profile.</summary>
+    private string? _editingProfileId;
+
+    private static string ShortFingerprint(string value) => value.Length > 12 ? value[..12] : value;
+    private static string KindLabel(string kind) => kind switch
+    {
+        "simpleType" => "Simple type", "complexType" => "Complex type", "element" => "Element", "attribute" => "Attribute", _ => kind,
+    };
+    /// <summary>What the local XSD validator did with a case — kept apart from what the case expected and from the test result.</summary>
+    private static string ValidatorLabel(string actual) => actual switch { "Valid" => "Accepted", "Invalid" => "Rejected", _ => "Not evaluated" };
+
+    private sealed record ConstraintRow(string Path, string Constraint, string Value, string Source, string Category);
+    private static IEnumerable<ConstraintRow> ConstraintRows(SchemaPackage package)
+    {
+        foreach (var f in package.Files)
+        foreach (var d in f.Declarations)
+        {
+            foreach (var facet in d.Facets) yield return new(d.Path, facet.Kind, facet.Value, f.Name, SchemaTreeFilter.ConstraintCategory(facet.Kind));
+            foreach (var e in d.Children)
+            {
+                yield return new(d.Path + "/" + e.Name, "Occurrence", $"{e.MinOccurs}..{e.MaxOccurs}{(e.Compositor is null ? "" : " · " + e.Compositor)}", e.SourceFile, "Occurrence");
+                foreach (var facet in e.Facets) yield return new(d.Path + "/" + e.Name, facet.Kind, facet.Value, e.SourceFile, SchemaTreeFilter.ConstraintCategory(facet.Kind));
+            }
+        }
+    }
+
+    /// <summary>The version Compare uses: the one the person selected, else the newest earlier import of the same schema name (reuse, no upload).</summary>
+    private SchemaPackage? CompareTarget(SchemaPackage package)
+    {
+        var others = Studio.Packages.Where(p => p.Id != package.Id).ToList();
+        if (_compareId is not null) return others.FirstOrDefault(p => p.Id == _compareId);
+        return others.Where(p => p.Name == package.Name).OrderByDescending(p => p.ImportedAt).FirstOrDefault();
+    }
+
+    private RenderFragment<(EffectiveMember Member, int Depth)> EffectiveMemberNode => context =>
+        @<li>
+            @if (context.Member.Children.Count > 0 || context.Member.Attributes is { Count: > 0 })
+            {
+                <details class="ss-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _treeExpanded, SchemaTreeFilter.IsFiltering(_effectiveFilter, _effectiveSearch))">
+                    <summary>@MemberHeadline(context.Member)</summary>
+                    @MemberProvenance(context.Member)
+                    @if (context.Member.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in context.Member.Attributes) { @RenderAttribute(attribute) }</ul> }
+                    <ul class="ss-tree">@foreach (var child in context.Member.Children.Where(c => SchemaTreeFilter.Keep(c, _effectiveFilter, _effectiveSearch))) { @EffectiveMemberNode((child, context.Depth + 1)) }</ul>
+                </details>
+            }
+            else { @MemberHeadline(context.Member) @MemberProvenance(context.Member) }
+        </li>;
+
+    private static RenderFragment MemberHeadline(EffectiveMember member) =>
+        @<span><strong>@member.Name</strong> <small class="ss-inline">@(member.Type ?? "inline") · @member.MinOccurs..@member.MaxOccurs@(member.Facets.Count > 0 ? " · " + string.Join(", ", member.Facets.Select(f => f.Kind + "=" + f.Value)) : "")</small></span>;
+
+    /// <summary>Where a member comes from — kept, but visually subordinate to the field itself.</summary>
+    private static RenderFragment MemberProvenance(EffectiveMember member) =>
+        @<small class="ss-provenance-line">declared in @member.DeclaredIn@(member.InheritedFrom is null ? "" : $" · inherited from {member.InheritedFrom}")@(member.TypeDeclaredIn is null ? "" : $" · type declared in {member.TypeDeclaredIn}")@(member.BaseType is not null && member.BaseType != member.Type ? $" · base type {member.BaseType}" : "")@(member.Compositor is null ? "" : $" · {member.Compositor}")</small>;
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private async Task CopyRaw(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _rawStatus = "XSD copied to the clipboard."; }
+        catch (JSException) { _rawStatus = "The browser did not allow copying. Select the text and copy it manually."; }
+    }
+    private async Task FocusImport()
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", "ss-import-title"); } catch (JSException) { }
+    }
+    private void CancelProfileEditing() { _editingProfileId = null; _newProfileName = "My synthetic profile"; _profileSeed = 1001; _profileStatus = ""; }
+
+    /// <summary>Fields of the effective schema whose name matches, for package search (opens Felt og regler). Bounded.</summary>
+    private static IEnumerable<SearchHit> FieldHits(SchemaPackage package, string term)
+    {
+        var stack = new Stack<(EffectiveMember Member, int Depth)>(package.EffectiveSchema.Select(root => (root, 0)));
+        var count = 0;
+        while (stack.Count > 0 && count < 200)
+        {
+            var (member, depth) = stack.Pop();
+            if (member.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) { count++; yield return new(member.Name, member.DeclaredIn, "Felt og regler", "field"); }
+            if (depth < 30) foreach (var child in member.Children) stack.Push((child, depth + 1));
+        }
+    }
+
     private string? _selectedId, _fileName, _error, _tab = "Overview", _draft, _xml, _validationMessage, _search;
     private string _xmlArtifactStatus = "", _xmlArtifactError = "";
     private string _graphMode = "Files + namespaces";
@@ -522,7 +827,7 @@
         _selectedId = id; _fileName = Current?.Files.FirstOrDefault()?.Name;
         _draft = Current is { } package && CurrentFile is { } file
             ? SavedDrafts?.Find(package, file.Name, ProjectScope())?.Text ?? file.Text : null;
-        _draftPreview = null; _tab = "Overview"; _validationMessage = null;
+        _draftPreview = null; _tab = _pendingView ?? SchemaStudioNavigation.DefaultView; _pendingView = null; _validationMessage = null;
         _profileRootName = Current?.EffectiveSchema.FirstOrDefault()?.Name ?? "";
         _activeProfileId = Current is { } current ? SchemaGenerationProfilesService.BuiltIns(current.Fingerprint)[0].Id.ToString("D") : "";
     }
@@ -824,18 +1129,23 @@
         if (Current is not { } package || ProfileCatalog is not { } catalog) return;
         try { var profile = catalog.Create(_newProfileName, package.Fingerprint, ProjectScope(), _newProfileKind, _profileSeed); _activeProfileId = profile.Id.ToString("D"); _profileError = ""; _profileStatus = "Profile created. Save it to the current workspace to reopen it after restart."; }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException) { _profileError = e.Message; }
+        _editingProfileId = null;
     }
     private void LoadProfileForEditing()
     {
         if (SelectedProfile() is not { IsBuiltIn: false } selected)
         { _profileError = "Choose a saved profile. Built-in profiles are read-only."; return; }
         _newProfileName = selected.Name; _newProfileKind = selected.Kind; _profileSeed = selected.Seed;
+        _editingProfileId = selected.Id.ToString("D");
         _profileError = ""; _profileStatus = "Edit the name, profile kind or seed, then update the selected profile.";
     }
     private void EditSelectedProfile()
     {
         if (SelectedProfile() is not { IsBuiltIn: false } selected || ProfileCatalog is not { } catalog)
         { _profileError = "Choose a saved profile. Built-in profiles are read-only."; return; }
+        // The form also creates new profiles; it may only overwrite the selected profile after that profile was loaded into it.
+        if (_editingProfileId != selected.Id.ToString("D"))
+        { _profileError = "Load the selected profile for editing first; the form currently holds new-profile values."; return; }
         try
         {
             catalog.Edit(selected.Id, _newProfileName, _newProfileKind, _profileSeed, selected.Rules);
@@ -960,7 +1270,7 @@
         builder.CloseElement(); builder.CloseElement();
     };
     private static string Download(string text, string mime, bool isBase64 = false) => $"data:{mime};base64,{(isBase64 ? text : Convert.ToBase64String(Encoding.UTF8.GetBytes(text)))}";
-    private void Jump(string file, string tab) { _fileName = file; _tab = tab; _draft = CurrentFile?.Text; }
+    private void Jump(string file, string tab) { _fileName = file; _tab = tab; _draft = CurrentFile?.Text; _search = ""; }
     private static IEnumerable<SearchHit> Search(SchemaPackage package, string term)
     {
         foreach (var file in package.Files)
@@ -973,6 +1283,7 @@
                 foreach (var facet in declaration.Facets.Where(f => (f.Value + " " + f.Kind).Contains(term, StringComparison.OrdinalIgnoreCase))) yield return new(declaration.Name, file.Name, "Constraints", facet.Kind + "=" + facet.Value);
             }
         }
+        foreach (var field in FieldHits(package, term)) yield return field;
     }
     private sealed record SearchHit(string Name, string File, string Tab, string Match);
     private static IEnumerable<string> Compare(SchemaPackage old, SchemaPackage current)

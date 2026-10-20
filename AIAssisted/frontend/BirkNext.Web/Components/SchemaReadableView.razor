@@ -82,7 +82,8 @@
             {
                 case "Forretning":
                     <p class="sr-note">Meldingsstrukturen slik schemaet definerer den, uten XSD-syntaks. Beskrivelser er schemaets egen dokumentasjon.</p>
-                    <article class="sr-business" data-testid="sr-business">
+                    @TreeToolbar
+                    <article class="sr-business" data-testid="sr-business" @key="_treeGeneration">
                         <h4>@root.Name</h4>
                         @if (P.Documentation(root) is { } rootDoc) { <p class="sr-doc">@rootDoc.Text</p> }
                         @BusinessTree((root, root.Name, 0))
@@ -92,28 +93,28 @@
                     <p class="sr-note">Bare regler som står i XSD-en vises. Forretningsregler som rekkefølge mellom datoer, summer eller at ett felt utelukker et annet er ikke XSD-regler og vises ikke.</p>
                     <div class="sr-table-wrap" tabindex="0" aria-label="Felt og regler (scrollable)">
                         <table class="sr-table" data-testid="sr-fields">
-                            <thead><tr><th scope="col">Felt</th><th scope="col">Forekomst</th><th scope="col">Type</th><th scope="col">Regler</th><th scope="col">Dokumentasjon</th><th scope="col">Kilde</th></tr></thead>
+                            <thead><tr><th scope="col" class="sr-col-field">Felt</th><th scope="col" class="sr-col-compact">Forekomst</th><th scope="col" class="sr-col-compact">Type</th><th scope="col" class="sr-col-rules">Regler</th><th scope="col" class="sr-col-doc">Dokumentasjon</th><th scope="col" class="sr-col-source">Kilde</th></tr></thead>
                             <tbody>
                                 @foreach (var field in fields)
                                 {
                                     var member = field.Member;
                                     <tr data-path="@field.Path">
-                                        <th scope="row"><span class="sr-name">@member.Name</span><small class="sr-sub sr-mono">@field.Path</small></th>
+                                        <th scope="row"><span class="sr-name">@member.Name</span><small class="sr-sub sr-mono">@SchemaText.Breakable(field.Path)</small></th>
                                         <td>@P.CardinalityLabel(member)<small class="sr-sub sr-mono">@P.ExactCardinality(member)</small></td>
                                         <td>@P.TypeLabel(member)<small class="sr-sub sr-mono">@P.RawType(member)</small></td>
                                         <td>@RulesCell(member)</td>
                                         <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">Fra typen:</small> }<span class="sr-doc">@doc.Text</span> } else { <span class="sr-muted">—</span> }</td>
-                                        <td><small>@member.DeclaredIn@(member.NamespaceUri.Length > 0 ? " · " + member.NamespaceUri : "")@(member.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(member.TypeDeclaredIn is { } typeFile && typeFile != member.DeclaredIn ? $" · type fra {typeFile}" : "")</small></td>
+                                        <td class="sr-col-source">@SourceCell(member.DeclaredIn, member.NamespaceUri, member.InheritedFrom, member.TypeDeclaredIn)</td>
                                     </tr>
                                     @foreach (var attr in member.Attributes ?? [])
                                     {
                                         <tr data-path="@(field.Path + "/@" + attr.Name)">
-                                            <th scope="row"><span class="sr-name">@("@" + attr.Name)</span><small class="sr-sub sr-mono">@field.Path/@("@" + attr.Name)</small></th>
+                                            <th scope="row"><span class="sr-name">@("@" + attr.Name)</span><small class="sr-sub sr-mono">@SchemaText.Breakable(field.Path + "/@" + attr.Name)</small></th>
                                             <td>@P.AttributeUseLabel(attr)</td>
                                             <td>@P.TypeLabel(attr)<small class="sr-sub sr-mono">@(attr.Type ?? "inline")</small></td>
                                             <td>@FacetCell(attr.Facets)</td>
                                             <td>@if (attr.Documentation is { } attributeDoc) { <span class="sr-doc">@P.Normalize(attributeDoc)</span> } else { <span class="sr-muted">—</span> }</td>
-                                            <td><small>@attr.DeclaredIn@(attr.InheritedFrom is { } inheritedAttribute ? $" · arvet fra {inheritedAttribute}" : "")</small></td>
+                                            <td class="sr-col-source">@SourceCell(attr.DeclaredIn, "", attr.InheritedFrom, null)</td>
                                         </tr>
                                     }
                                 }
@@ -123,8 +124,9 @@
                     break;
                 default:
                     <p class="sr-note">Effektiv struktur med typer, forekomst og opprinnelse. Arvede felt vises der de faktisk forekommer.</p>
-                    <ul class="sr-tree" data-testid="sr-structure">
-                        <li><span class="sr-name">@root.Name</span> <small>rotelement · @(root.Type ?? "inline") · definert i @root.DeclaredIn</small>@StructureTree(root)</li>
+                    @TreeToolbar
+                    <ul class="sr-tree" data-testid="sr-structure" @key="_treeGeneration">
+                        <li><span class="sr-name">@root.Name</span> <small>rotelement · @(root.Type ?? "inline") · definert i @root.DeclaredIn</small>@StructureTree((root, 0))</li>
                     </ul>
                     break;
             }
@@ -140,6 +142,49 @@
 
     private string _rootName = "";
     private string? _packageId;
+    /// <summary>Tree disclosure: null = default depth; true/false = Expand all / Collapse all. Re-keying the tree re-applies it to every node.</summary>
+    private bool? _expandAll;
+    private int _treeGeneration;
+    private SchemaTreeFilterKind _filter = SchemaTreeFilterKind.All;
+    private string _treeSearch = "";
+    private bool Filtering => SchemaTreeFilter.IsFiltering(_filter, _treeSearch);
+
+    private void SetExpanded(bool? expanded) { _expandAll = expanded; _treeGeneration++; }
+
+    private static string FilterLabel(SchemaTreeFilterKind filter) => filter switch
+    {
+        SchemaTreeFilterKind.Mandatory => "Bare obligatoriske",
+        SchemaTreeFilterKind.Optional => "Bare valgfrie",
+        SchemaTreeFilterKind.WithDocumentation => "Med dokumentasjon",
+        SchemaTreeFilterKind.WithConstraints => "Med regler",
+        _ => "Alle felt",
+    };
+
+    private RenderFragment TreeToolbar => __builder =>
+    {
+        <div class="sr-toolbar" data-testid="sr-tree-toolbar">
+            <button type="button" class="sr-tool" data-testid="sr-expand-all" @onclick="() => SetExpanded(true)">Utvid alle</button>
+            <button type="button" class="sr-tool" data-testid="sr-collapse-all" @onclick="() => SetExpanded(false)">Skjul alle</button>
+            <label>Vis <select @bind="_filter" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-filter">
+                @foreach (var option in Enum.GetValues<SchemaTreeFilterKind>()) { <option value="@option">@FilterLabel(option)</option> }
+            </select></label>
+            <label>Søk i felt <input type="search" @bind="_treeSearch" @bind:event="oninput" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-search" /></label>
+        </div>
+    };
+
+    /// <summary>The file a value is declared in, compact; namespace and inheritance in a disclosure so long provenance never crowds the table.</summary>
+    private static RenderFragment SourceCell(string declaredIn, string? namespaceUri, string? inheritedFrom, string? typeDeclaredIn) => __builder =>
+    {
+        <span class="sr-file" title="@declaredIn">@SchemaText.Breakable(declaredIn)</span>
+        @if (!string.IsNullOrEmpty(namespaceUri) || inheritedFrom is not null || (typeDeclaredIn is not null && typeDeclaredIn != declaredIn))
+        {
+            <details class="sr-source-details"><summary>Detaljer<span class="visually-hidden"> om kilde</span></summary>
+                @if (!string.IsNullOrEmpty(namespaceUri)) { <small class="sr-sub">Namespace: @namespaceUri</small> }
+                @if (inheritedFrom is not null) { <small class="sr-sub">arvet fra @inheritedFrom</small> }
+                @if (typeDeclaredIn is not null && typeDeclaredIn != declaredIn) { <small class="sr-sub">type fra @typeDeclaredIn</small> }
+            </details>
+        }
+    };
 
     protected override void OnParametersSet()
     {
@@ -155,25 +200,45 @@
 
     private RenderFragment<(EffectiveMember Member, string Path, int Depth)> BusinessTree => context =>
         @<ul class="sr-business-list">
-            @foreach (var child in context.Member.Children.Take(context.Depth > 30 ? 0 : 500))
+            @foreach (var child in context.Member.Children.Take(context.Depth > 30 ? 0 : 500).Where(c => SchemaTreeFilter.Keep(c, _filter, _treeSearch)))
             {
-                <li>
-                    <span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child)</small>
-                    @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
-                    @if (child.Children.Count > 0) { @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1)) }
+                <li data-depth="@context.Depth">
+                    @if (child.Children.Count > 0)
+                    {
+                        <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
+                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child) · @child.Children.Count felt</small></summary>
+                            @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
+                            @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1))
+                        </details>
+                    }
+                    else
+                    {
+                        <span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child)</small>
+                        @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
+                    }
                 </li>
             }
         </ul>;
 
-    private RenderFragment StructureTree(EffectiveMember member) =>
+    private RenderFragment StructureTree((EffectiveMember Member, int Depth) context) =>
         @<ul>
-            @foreach (var child in member.Children.Take(500))
+            @foreach (var child in context.Member.Children.Take(500).Where(c => SchemaTreeFilter.Keep(c, _filter, _treeSearch)))
             {
                 <li>
-                    <span class="sr-name">@child.Name</span>
-                    <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
-                    <small class="sr-sub">definert i @child.DeclaredIn@(child.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type i {typeFile}" : "")</small>
-                    @if (child.Children.Count > 0) { @StructureTree(child) }
+                    @if (child.Children.Count > 0)
+                    {
+                        <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
+                            <summary><span class="sr-name">@child.Name</span> <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)</small></summary>
+                            <small class="sr-sub">definert i @child.DeclaredIn@(child.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type i {typeFile}" : "")@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
+                            @StructureTree((child, context.Depth + 1))
+                        </details>
+                    }
+                    else
+                    {
+                        <span class="sr-name">@child.Name</span>
+                        <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
+                        <small class="sr-sub">definert i @child.DeclaredIn@(child.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type i {typeFile}" : "")</small>
+                    }
                 </li>
             }
         </ul>;

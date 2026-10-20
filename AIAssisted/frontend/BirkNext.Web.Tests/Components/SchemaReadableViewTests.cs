@@ -89,7 +89,7 @@ public sealed class SchemaReadableViewTests : BunitContext
         var view = Render<SchemaReadableView>(p => p.Add(x => x.Package, Import((Skolenaervaer, RealSchema(Skolenaervaer)))).Add(x => x.View, "Forretning"));
         var business = view.Find("[data-testid=sr-business]");
         business.QuerySelector("h4")!.TextContent.Should().Be("Skolenaervaer");
-        var topLevel = business.QuerySelectorAll(":scope > ul > li > .sr-name").Select(e => e.TextContent).ToList();
+        var topLevel = business.QuerySelectorAll(":scope > ul > li").Select(li => li.QuerySelector(".sr-name")!.TextContent).ToList();
         topLevel.Should().Equal("Meldingshode", "Klient", "Periode", "SkolenaervaerRegistrering");
         view.Markup.Should().Contain("Benyttes kun for kommuner med bydeler").And.NotContain("xs:element");
     }

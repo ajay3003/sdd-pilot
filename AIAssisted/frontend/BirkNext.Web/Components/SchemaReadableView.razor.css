@@ -5,7 +5,7 @@
 .sr-root select { min-height: 2.25rem; max-width: 100%; }
 .sr-note { margin: 0; color: #536174; }
 .sr-warning { margin: 0; padding: .5rem .75rem; border-left: 4px solid #f0a800; background: #fff8e6; color: #18212f; }
-.sr-table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid #d5dbe5; border-radius: 6px; }
+.sr-table-wrap { overflow-x: auto; max-width: 100%; position: relative; border: 1px solid #d5dbe5; border-radius: 6px; }
 .sr-table-wrap:focus-visible { outline: 3px solid #2864b4; outline-offset: 2px; }
 .sr-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .sr-table th, .sr-table td { padding: .45rem .6rem; text-align: left; vertical-align: top; border-bottom: 1px solid #d5dbe5; }
@@ -13,7 +13,7 @@
 .sr-table tbody th { font-weight: 600; }
 .sr-problem td { background: #fff8e6; }
 .sr-sub { display: block; color: #536174; font-weight: 400; }
-.sr-mono, .sr-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; overflow-wrap: anywhere; }
+.sr-mono, .sr-table code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem; overflow-wrap: break-word; }
 .sr-doc { white-space: pre-line; margin: .15rem 0 0; }
 .sr-muted { color: #536174; }
 .sr-name { font-weight: 600; overflow-wrap: anywhere; }
@@ -33,5 +33,22 @@
     .sr-table { font-size: .82rem; }
     .sr-table th, .sr-table td { padding: .35rem .4rem; }
 }
-/* Long namespaces, fingerprints and schema locations wrap instead of widening the page (scoped CSS does not inherit the page's rule). */
-.sr-view p, .sr-view li, .sr-view td, .sr-view th, .sr-view small, .sr-view code { overflow-wrap: anywhere; }
+/* Long namespaces, fingerprints and schema locations wrap instead of widening the page. Table cells use break-word, never "anywhere":
+   "anywhere" lets every character be a break point when the table measures columns, which collapsed columns to one character. */
+.sr-view p, .sr-view li, .sr-view small { overflow-wrap: anywhere; }
+.sr-view td, .sr-view th, .sr-view td *, .sr-view th *, .sr-view code { overflow-wrap: break-word; word-break: normal; }
+.sr-table { min-width: 52rem; }
+.sr-col-field { min-width: 13rem; }
+.sr-col-compact { min-width: 7rem; }
+.sr-col-rules { min-width: 14rem; }
+.sr-col-doc { min-width: 14rem; }
+.sr-col-source { min-width: 9rem; max-width: 16rem; }
+.sr-file { display: block; overflow-wrap: anywhere; }
+.sr-source-details summary { cursor: pointer; color: #174d86; font-size: .8rem; }
+.sr-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem .75rem; }
+.sr-toolbar label { display: grid; gap: .2rem; font-size: .85rem; font-weight: 600; }
+.sr-toolbar input, .sr-toolbar select { min-height: 2.25rem; max-width: 100%; }
+.sr-tool { border: 1px solid #aeb8c7; background: #fff; border-radius: .35rem; padding: .4rem .7rem; cursor: pointer; font: inherit; }
+.sr-tool:focus-visible, .sr-node > summary:focus-visible, .sr-source-details summary:focus-visible { outline: 3px solid #2864b4; outline-offset: 2px; }
+.sr-node > summary { cursor: pointer; }
+.sr-node[open] > summary { margin-bottom: .2rem; }

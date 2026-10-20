@@ -12,6 +12,14 @@ namespace BirkNext.Web.Tests.Pages;
 
 public sealed class SchemaStudioPageTests : BunitContext
 {
+    /// <summary>Opens a view through the two-level navigation: its area first, then the view.</summary>
+    private static void OpenView(IRenderedComponent<SchemaStudio> page, string view)
+    {
+        var area = BirkNext.Web.Services.SchemaStudio.SchemaStudioNavigation.GroupOf(view).Name;
+        page.FindAll("[data-testid=ss-group]").Single(b => b.TextContent == area).Click();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == view).Click();
+    }
+
     [Fact]
     public void EmptyStateOffersGenericXsdAndPackageImport()
     {
@@ -35,13 +43,16 @@ public sealed class SchemaStudioPageTests : BunitContext
         var page = Render<SchemaStudio>();
 
         Assert.Contains("generic", page.Markup);
-        Assert.Contains("Overview", page.Markup);
-        Assert.Contains("Schema dependencies", page.Markup);
-        Assert.Contains("Forretning", page.Markup);
-        Assert.Contains("Felt og regler", page.Markup);
-        Assert.Contains("Struktur", page.Markup);
-        Assert.Contains("Effective Schema", page.Markup);
-        Assert.Contains("Generated Tests", page.Markup);
+        // Five areas at the first level; only the selected area's views at the second (default: Understand → Overview).
+        Assert.Equal(["Understand", "Schema", "Inspect", "Design & Compare", "Validate & Test"], page.FindAll("[data-testid=ss-group]").Select(b => b.TextContent).ToArray());
+        Assert.Equal(["Overview", "Forretning", "Felt og regler"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent).ToArray());
+        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == "Overview").GetAttribute("aria-current"));
+        // Every former view stays reachable through its area.
+        foreach (var view in new[] { "Struktur", "Schema dependencies", "Effective Schema", "Generated Tests" })
+        {
+            OpenView(page, view);
+            Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.TextContent == view).GetAttribute("aria-current"));
+        }
     }
 
     [Fact]
@@ -53,11 +64,11 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(new SchemaGenerationProfilesService());
         var page = Render<SchemaStudio>();
 
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
+        OpenView(page, "Generation Profile");
 
         Assert.Contains("Generic valid (built-in)", page.Markup);
         Assert.Contains("Export selected profile", page.Markup);
-        Assert.Contains("Random seed", page.Markup);
+        Assert.Contains("New profile random seed", page.Markup);
     }
 
     [Fact]
@@ -75,7 +86,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(profiles);
 
         var page = Render<SchemaStudio>();
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
+        OpenView(page, "Generation Profile");
 
         Assert.Contains("Same project profile", page.Markup);
         Assert.DoesNotContain("Other project profile", page.Markup);
@@ -97,10 +108,10 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(profiles);
 
         var page = Render<SchemaStudio>();
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generation Profile").Click();
+        OpenView(page, "Generation Profile");
         page.Find("select[aria-label='Generation Profile']").Change(profile.Id.ToString("D"));
         page.FindAll("button").Single(button => button.TextContent.Contains("Load selected profile for editing", StringComparison.Ordinal)).Click();
-        page.FindAll("label").Single(label => label.TextContent.Contains("New profile name", StringComparison.Ordinal)).QuerySelector("input")!.Change("Edited profile");
+        page.FindAll("label").Single(label => label.TextContent.Contains("Profile name", StringComparison.Ordinal)).QuerySelector("input")!.Change("Edited profile");
         page.FindAll("label").Single(label => label.TextContent.Contains("Random seed", StringComparison.Ordinal)).QuerySelector("input")!.Change("29");
         page.FindAll("button").Single(button => button.TextContent.Contains("Update selected profile", StringComparison.Ordinal)).Click();
 
@@ -200,7 +211,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         page.Find("button.ss-action").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Create schema and open Designer", StringComparison.Ordinal)).Click();
         Assert.Contains("Schema Designer", page.Markup);
-        page.Find(".ss-create input").Change("RecordId");
+        page.Find("input[aria-label='Child element name']").Change("RecordId");
         page.FindAll("button").Single(b => b.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
 
@@ -222,7 +233,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(service);
         var page = Render<SchemaStudio>();
 
-        page.FindAll(".ss-tabs button").Single(b => b.TextContent == "Effective Schema").Click();
+        OpenView(page, "Effective Schema");
 
         Assert.Contains("Id", page.Markup);
         Assert.Contains("inherited from MessageType", page.Markup);
@@ -243,7 +254,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(service);
         var page = Render<SchemaStudio>();
 
-        page.FindAll(".ss-tabs button").Single(b => b.TextContent == "Designer").Click();
+        OpenView(page, "Designer");
         page.FindAll("button").Single(b => b.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
 
@@ -264,7 +275,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(service);
         var page = Render<SchemaStudio>();
 
-        page.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+        OpenView(page, "Designer");
         page.Find("input[aria-label='Child element name']").Change("Status");
         page.Find("select[aria-label='Minimum occurrences']").Change("1");
         page.Find("select[aria-label='Maximum occurrences']").Change("2");
@@ -300,7 +311,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(drafts);
 
         var firstPage = Render<SchemaStudio>();
-        firstPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+        OpenView(firstPage, "Designer");
         var input = (AngleSharp.Html.Dom.IHtmlTextAreaElement)firstPage.Find("textarea[aria-label='Edit XSD source']");
         const string edited = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"ChangedRoot\" type=\"xs:string\"/></xs:schema>";
         input.Change(edited);
@@ -310,7 +321,7 @@ public sealed class SchemaStudioPageTests : BunitContext
 
         drafts.RestoreJson(null);
         var reopenedPage = Render<SchemaStudio>();
-        reopenedPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Designer").Click();
+        OpenView(reopenedPage, "Designer");
 
         Assert.Equal(edited, drafts.Find(package, "draft.xsd")?.Text);
         Assert.Contains("draft", repository.Get(WorkspaceArtifactType.SchemaStudioDrafts)!.Text);
@@ -334,7 +345,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(autoSave);
 
         var firstPage = Render<SchemaStudio>();
-        firstPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generated Tests").Click();
+        OpenView(firstPage, "Generated Tests");
         var xmlInput = firstPage.Find("textarea[aria-label='XML instance to validate']");
         xmlInput.Change("<Root>synthetic value</Root>");
         await firstPage.FindAll("button").Single(button => button.TextContent == "Save XML artifact").ClickAsync();
@@ -346,7 +357,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         store.RestoreJson(null);
         var reopenedPage = Render<SchemaStudio>();
         Assert.Equal("<Root>synthetic value</Root>", Assert.Single(store.Documents).Xml);
-        reopenedPage.FindAll(".ss-tabs button").Single(button => button.TextContent == "Generated Tests").Click();
+        OpenView(reopenedPage, "Generated Tests");
         await reopenedPage.FindAll("button").Single(button => button.TextContent == "Reopen XML").ClickAsync();
 
         Assert.Contains("Reopened XML artifact", reopenedPage.Markup);

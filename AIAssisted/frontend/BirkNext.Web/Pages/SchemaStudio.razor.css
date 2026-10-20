@@ -1,4 +1,6 @@
 .ss-page { box-sizing: border-box; width: 100%; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 1.25rem; color: var(--text-primary, #18212f); }
+/* View-aware width: tables, editors and graphs use the full content width; text views keep a readable measure. */
+.ss-page.ss-page-wide { max-width: none; }
 .ss-page *, .ss-page *::before, .ss-page *::after { box-sizing: border-box; }
 .ss-page h2 { margin: 0 0 .55rem; font-size: 1.25rem; }
 .ss-page h3 { margin: 1.2rem 0 .45rem; font-size: 1.05rem; }
@@ -6,7 +8,10 @@
 /* Fingerprints, snapshot ids and schema paths are long unbreakable tokens: let them wrap instead of widening the page. */
 .ss-package { flex-wrap: wrap; }
 .ss-package > * { min-width: 0; }
-.ss-page p, .ss-page li, .ss-page small, .ss-page td, .ss-page dd, .ss-page summary { overflow-wrap: anywhere; }
+.ss-page p, .ss-page li, .ss-page small, .ss-page dd, .ss-page summary { overflow-wrap: anywhere; }
+/* Tables never use overflow-wrap:anywhere: it makes every character a break point when columns are measured, which collapsed columns to
+   single characters. Cells wrap at word/code boundaries; a table wider than its region scrolls inside its own wrapper. */
+.ss-page td, .ss-page th, .ss-page td *, .ss-page th * { overflow-wrap: break-word; word-break: normal; }
 .ss-note,.ss-warning { padding: .8rem 1rem; border-left: 4px solid #3b82f6; background: #eff6ff; border-radius: .35rem; }
 .ss-import,.ss-workspace,.ss-card { margin: 1.2rem 0; padding: 1rem; border: 1px solid #d5dbe5; border-radius: .65rem; background: var(--surface, #fff); }
 .ss-import p,.ss-heading p,.ss-empty { color: #536174; }
@@ -15,14 +20,16 @@
 .ss-error { color: #9b1c1c; }
 .ss-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .ss-heading code { overflow-wrap: anywhere; }
+.ss-heading > div { min-width: 0; max-width: 100%; }
+.ss-heading h2, .ss-card h3 { overflow-wrap: break-word; }
 .ss-package-list { display: grid; gap: .5rem; }
 .ss-package { display: flex; align-items: center; gap: 1rem; border: 1px solid #d5dbe5; border-radius: .5rem; padding: .5rem .8rem; }
 .ss-package.selected { border-color: #2864b4; box-shadow: 0 0 0 1px #2864b4; }
-.ss-package-open { display: grid; text-align: left; flex: 1; gap: .2rem; border: 0; background: transparent; color: inherit; padding: .25rem; cursor: pointer; }
+.ss-package-open { display: grid; grid-template-columns: minmax(0, 1fr); text-align: left; flex: 1; gap: .2rem; border: 0; background: transparent; color: inherit; padding: .25rem; cursor: pointer; }
 .ss-package-open span { color: #536174; }
 .ss-text-button,.ss-link { color: #1558a6; border: 0; background: transparent; text-decoration: underline; cursor: pointer; }
 .ss-action { display: inline-block; border: 1px solid #174d86; background: #174d86; color: white; padding: .55rem .85rem; border-radius: .4rem; cursor: pointer; text-decoration: none; font: inherit; }
-.ss-action:focus-visible,.ss-tabs button:focus-visible,.ss-package button:focus-visible,.ss-page a:focus-visible,.ss-page select:focus-visible,.ss-page input:focus-visible,.ss-page textarea:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.ss-action:focus-visible,.ss-tabs button:focus-visible,.ss-groups button:focus-visible,.ss-shortcut:focus-visible,.ss-tool:focus-visible,.ss-page summary:focus-visible,.ss-page h2:focus-visible,.ss-package button:focus-visible,.ss-page a:focus-visible,.ss-page select:focus-visible,.ss-page input:focus-visible,.ss-page textarea:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
 .ss-tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin: 1rem 0; border-bottom: 1px solid #ccd4df; }
 .ss-tabs button { padding: .55rem .75rem; border: 0; background: transparent; border-bottom: 3px solid transparent; color: inherit; cursor: pointer; font: inherit; }
 .ss-tabs button.active { border-bottom-color: #174d86; font-weight: 700; }
@@ -30,9 +37,10 @@
 .ss-stats div { border: 1px solid #d5dbe5; padding: .8rem; border-radius: .45rem; overflow-wrap: anywhere; }
 .ss-stats dt { color: #536174; font-size: .9rem; }
 .ss-stats dd { margin: .25rem 0 0; font-weight: 600; }
-.ss-table-wrap { width: 100%; overflow-x: auto; }
+/* position: relative keeps absolutely positioned descendants (visually-hidden labels) inside the scroll region instead of widening the page. */
+.ss-table-wrap { width: 100%; overflow-x: auto; position: relative; }
 .ss-page table { border-collapse: collapse; width: 100%; margin: .7rem 0; }
-.ss-page th,.ss-page td { text-align: left; vertical-align: top; border-bottom: 1px solid #d5dbe5; padding: .55rem; overflow-wrap: anywhere; }
+.ss-page th,.ss-page td { text-align: left; vertical-align: top; border-bottom: 1px solid #d5dbe5; padding: .55rem; }
 .ss-dependencies,.ss-tree { padding-left: 1.35rem; }
 .ss-tree li,.ss-dependencies li { margin: .4rem 0; }
 .ss-tree small { display: block; color: #536174; }
@@ -59,3 +67,70 @@
 .ss-testdata-form label { display: grid; gap: .2rem; max-width: 24rem; }
 .ss-testdata-form .ss-check { display: flex; align-items: center; gap: .4rem; }
 .ss-help { font-size: .82rem; color: #4b5563; }
+
+/* ── Two-level navigation: areas, then the selected area's views ── */
+.ss-groups { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0 .25rem; }
+.ss-groups button { padding: .5rem .9rem; border: 1px solid #aeb8c7; border-radius: 999px; background: #fff; color: inherit; cursor: pointer; font: inherit; font-weight: 600; }
+.ss-groups button.active { background: #174d86; border-color: #174d86; color: #fff; }
+.ss-tabs { margin: .5rem 0 .25rem; }
+.ss-view-purpose { margin: .25rem 0 .75rem; color: #3f4b5c; font-size: .92rem; }
+.ss-capability { margin: .75rem 0; padding: .6rem .9rem; border-left: 4px solid #3b82f6; background: #eff6ff; border-radius: .35rem; }
+.ss-capability p { margin: .2rem 0; }
+.ss-capability summary, .ss-provenance summary, .ss-section-details > summary { cursor: pointer; color: #1558a6; font-weight: 600; }
+.ss-provenance, .ss-section-details { margin: .6rem 0; }
+.ss-section-details > summary { padding: .35rem 0; }
+.ss-muted { color: #536174; }
+.ss-shortcuts { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.ss-shortcut { display: grid; gap: .25rem; text-align: left; padding: .8rem 1rem; border: 1px solid #aeb8c7; border-radius: .5rem; background: #fff; color: inherit; font: inherit; cursor: pointer; }
+.ss-shortcut strong { color: #174d86; }
+.ss-shortcut span { color: #536174; font-size: .9rem; }
+.ss-expert { color: #536174; }
+/* ── Shared table policy ── */
+.ss-table { min-width: 48rem; }
+.ss-col-name { min-width: 12rem; }
+.ss-col-path { min-width: 14rem; }
+.ss-col-value { min-width: 12rem; }
+.ss-col-flex { min-width: 12rem; }
+.ss-col-file { min-width: 9rem; max-width: 16rem; }
+.ss-col-compact { min-width: 6.5rem; }
+.ss-nowrap { white-space: nowrap; }
+.ss-file { display: block; overflow-wrap: break-word; }
+.ss-page td code { overflow-wrap: break-word; word-break: normal; white-space: pre-wrap; }
+.ss-table-wrap:focus-visible { outline: 3px solid #f0a800; outline-offset: 2px; }
+.ss-outcome { font-weight: 600; }
+.ss-outcome-fail { color: #9b1c1c; }
+/* ── Trees ── */
+.ss-tool { border: 1px solid #aeb8c7; background: #fff; border-radius: .35rem; padding: .4rem .7rem; cursor: pointer; font: inherit; }
+.ss-tree-toolbar, .ss-raw-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem .75rem; margin: .5rem 0; }
+.ss-tree-toolbar label { display: grid; gap: .2rem; font-weight: 600; }
+.ss-file-tree { margin: .5rem 0; padding: .4rem .7rem; border: 1px solid #d5dbe5; border-radius: .45rem; }
+.ss-file-tree > summary, .ss-node > summary { cursor: pointer; }
+.ss-kind { display: inline-block; font-size: .78rem; padding: 0 .4rem; border: 1px solid #aeb8c7; border-radius: 999px; color: #3f4b5c; }
+.ss-inline { display: inline; }
+.ss-provenance-line { display: block; color: #6b7686; font-size: .8rem; }
+.ss-facts { display: grid; gap: .35rem 1.2rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); margin: 0; }
+.ss-facts dt { color: #536174; font-size: .85rem; }
+.ss-facts dd { margin: 0; }
+/* ── Raw XSD ── */
+.ss-raw-lines { list-style: decimal; padding-left: 3.5rem; white-space: normal; font: 13px/1.5 Consolas, monospace; }
+.ss-raw-lines li { white-space: pre; }
+.ss-raw-lines li::marker { color: #8a95a5; }
+.ss-raw-expanded { max-height: none; }
+.ss-raw-hits { max-height: 12rem; overflow: auto; font-size: .85rem; }
+/* ── Forms ── */
+.ss-source-safety { margin: .5rem 0; padding-left: 1.2rem; }
+.ss-form-grid { display: grid; gap: .75rem 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); align-items: start; }
+.ss-fieldset { min-width: 0; margin: .6rem 0; padding: .6rem .8rem; border: 1px solid #d5dbe5; border-radius: .5rem; display: grid; gap: .5rem; }
+.ss-fieldset legend { padding: 0 .3rem; font-weight: 700; }
+.ss-fieldset label, .ss-form-grid label { display: grid; gap: .25rem; min-width: 0; }
+.ss-fieldset input, .ss-fieldset select { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: .45rem; }
+.ss-subfieldset { background: #f8fafc; }
+.ss-draft-label { font-weight: 600; }
+.ss-inline-file { display: grid; gap: .2rem; font-size: .9rem; }
+.ss-selected-profile { padding: .5rem .8rem; border: 1px solid #aeb8c7; border-radius: .4rem; background: #f8fafc; }
+.ss-empty-state { padding: .8rem 1rem; border: 1px dashed #aeb8c7; border-radius: .5rem; }
+@media (max-width: 600px) { .ss-groups { flex-wrap: nowrap; overflow-x: auto; } .ss-groups button { flex: 0 0 auto; } }
+
+/* Generated values can be long unbroken strings (length boundaries). The value column has a minimum width, so wrapping anywhere inside
+   this capped block cannot collapse the column to single characters. */
+.ss-page td code.ss-value { display: block; max-width: 28rem; overflow-wrap: anywhere; }

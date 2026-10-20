@@ -36,6 +36,8 @@ public sealed class SchemaRelationshipGraphTests : BunitContext
 
         Assert.Contains("Relationship graph", cut.Markup);
         Assert.Contains("Imported", cut.Markup);
+        Assert.DoesNotContain("CommonId", cut.Markup); // default level: files + namespaces, no declaration nodes
+        cut.Find("[data-testid=ss-graph-level]").Change("declarations");
         Assert.Contains("CommonId", cut.Markup);
         Assert.Contains("Namespace: main.xsd to urn:main", cut.Markup);
         Assert.NotEmpty(package.References);
