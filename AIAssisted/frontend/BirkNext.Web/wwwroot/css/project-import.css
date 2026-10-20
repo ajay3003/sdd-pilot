@@ -84,3 +84,6 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-setup-detail { font-size: .84rem; }
 .pi-badge { white-space: normal; }
 .pi-inline-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .45rem; }
+
+/* "Import another project": the same accessible file chooser, in secondary style (opens the chooser directly). */
+.pi-file-button-secondary { background: var(--clr-surface-white, #fff); color: var(--clr-link, #1d4ed8); font-weight: 600; }

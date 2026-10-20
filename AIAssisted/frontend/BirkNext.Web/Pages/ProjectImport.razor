@@ -63,6 +63,7 @@
                         <button type="button" class="btn-primary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source snapshot")</button>
                     }
                     @if (FirstExplorer(current) is { } explorer) { <a class="btn-secondary" href="@explorer.Route" data-testid="pi-current-open-documents">Open @explorer.Label</a> }
+                    @ImportAnotherButton("pi-current-import-another", "pi-current-import-another-file")
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Close imported project</button>
                 </div>
                 <p class="pi-muted">Closing returns to the manual workspace. The imported documents and the source snapshot stay as history. The current project is not an IQR binding: changing it never changes which source Integration Quality Review uses.</p>
@@ -294,7 +295,7 @@
                 <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="@ProjectImportPresentation.SourceAnalysisHref(resultSnapshot)" data-testid="pi-open-source">Open Source Analysis</a>
             }
             <a class="btn-secondary" href="getting-started" data-testid="pi-open-workflow">Recommended Workflow</a>
-            <button type="button" class="btn-secondary" data-testid="pi-import-another" @onclick="Reset">Import another project</button>
+            @ImportAnotherButton("pi-import-another", "pi-import-another-file")
         </div>
     }
 </div>
@@ -371,8 +372,26 @@
         UseAsCurrent(importId);
     }
 
+    /// <summary>
+    /// "Import another project": opens the file chooser directly (a real file input behind a button-styled label, keyboard-operable like
+    /// Choose project ZIP). It used to only reset the page and scroll to the upload section at its very end, so a second click was needed
+    /// and the action looked like it did nothing. Cancelling the chooser changes nothing; the current project stays current until a new
+    /// import succeeds.
+    /// </summary>
+    private RenderFragment ImportAnotherButton(string testId, string inputId) => __builder =>
+    {
+        <label class="pi-file-button pi-file-button-secondary" data-testid="@testId">
+            <InputFile @key="_inputGeneration" id="@inputId" class="pi-file-input" accept=".zip" OnChange="ChooseAsync"
+                       aria-label="Import another project: choose project ZIP (maximum 50 MB)" data-testid="@inputId" data-generation="@_inputGeneration" />
+            <span aria-hidden="true">Import another project</span>
+        </label>
+    };
+
     private async Task ChooseAsync(InputFileChangeEventArgs args)
     {
+        // A new archive starts a new import session: nothing of the previous result (commit, warnings, duplicate choice) carries over.
+        // Persisted history, the current project, snapshots and IQR bindings are untouched.
+        _commit = null; _saveWarning = false; _retrying = false; _duplicate = null; _importAgain = false; _currentRetryMessage = null; _useMessage = null;
         _failure = null;
         _fileName = args.File.Name;
         _phase = Phase.Validating;
