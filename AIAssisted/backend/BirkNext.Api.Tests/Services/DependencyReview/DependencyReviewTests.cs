@@ -136,6 +136,24 @@ public sealed class DependencyReviewTests
     }
 
     [Fact]
+    public void ProjectUsageIsRecordedPerPackage_AndProjectReferencesAreNotPackages()
+    {
+        // Generic CPM repository: central versions, a directly versioned reference, an unreferenced central entry and a ProjectReference.
+        var props = F("Directory.Packages.props", "<Project><ItemGroup><PackageVersion Include=\"Polly\" Version=\"8.2.0\" /><PackageVersion Include=\"xunit\" Version=\"2.9.0\" /><PackageVersion Include=\"Unreferenced.Package\" Version=\"1.0.0\" /></ItemGroup></Project>");
+        var lib = F("src/Orders.Core/Orders.Core.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"Polly\" /></ItemGroup></Project>");
+        var tests = F("tests/Orders.Core.Tests/Orders.Core.Tests.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"xunit\" /><PackageReference Include=\"Serilog\" Version=\"3.1.1\" /><ProjectReference Include=\"../../src/Orders.Core/Orders.Core.csproj\" /></ItemGroup></Project>");
+        var review = Review("{}", props, lib, tests);
+
+        review.Dependencies.Single(d => d.PackageName == "Polly").ReferencedBy.Should().Equal("src/Orders.Core/Orders.Core.csproj");
+        review.Dependencies.Single(d => d.PackageName == "xunit").ReferencedBy.Should().Equal("tests/Orders.Core.Tests/Orders.Core.Tests.csproj");
+        review.Dependencies.Single(d => d.PackageName == "Unreferenced.Package").ReferencedBy.Should().BeEmpty("declared centrally, referenced by no project in this source");
+        var serilog = review.Dependencies.Single(d => d.PackageName == "Serilog");
+        (serilog.OwnerFile, serilog.CurrentValue).Should().Be(("tests/Orders.Core.Tests/Orders.Core.Tests.csproj", "3.1.1"));
+        serilog.ReferencedBy.Should().Equal("tests/Orders.Core.Tests/Orders.Core.Tests.csproj");
+        review.Dependencies.Should().NotContain(d => d.PackageName.Contains("Orders.Core"), "ProjectReference is a project link, never a package dependency");
+    }
+
+    [Fact]
     public void VersionOverrideIsOwnedByTheProject()
     {
         var props = F("Directory.Packages.props", "<Project><ItemGroup><PackageVersion Include=\"Serilog\" Version=\"3.1.1\" /></ItemGroup></Project>");

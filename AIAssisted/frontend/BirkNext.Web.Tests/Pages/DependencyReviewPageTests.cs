@@ -116,6 +116,16 @@ public sealed class DependencyReviewPageTests : BunitContext
 
     private readonly FakeApi _api = new() { Result = Fixture() };
 
+    /// <summary>The fixture as a Source Analysis scoped run: M2LB primary, M2LB.Common explicitly related.</summary>
+    private static DependencyReviewResult Scoped() => Fixture() with
+    {
+        SourceScope = new BirkNext.SourceEvidence.ReviewSourceScope
+        {
+            Primary = new BirkNext.SourceEvidence.SourceScopeEntry { SnapshotId = SourceScopeFixture.App.SnapshotId, Repository = "M2LB", ArchiveName = "M2LB.zip" },
+            Related = [new BirkNext.SourceEvidence.SourceScopeEntry { SnapshotId = SourceScopeFixture.Common.SnapshotId, Repository = "M2LB.Common", ArchiveName = "M2LB.Common.zip" }],
+        },
+    };
+
     public DependencyReviewPageTests()
     {
         Services.AddSingleton<IDependencyReviewApiService>(_api);
@@ -145,6 +155,44 @@ public sealed class DependencyReviewPageTests : BunitContext
         cut.Find("[data-testid='dr-run']").Click();
         cut.WaitForElement("[data-testid='dr-summary']");
         return cut;
+    }
+
+    [Fact]
+    public void ResultIsSummaryFirst_WithAttentionManagersAndUsageBeforePolicy()
+    {
+        var cut = RunReview();
+        var markup = cut.Markup;
+        int At(string id) => markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal);
+
+        new[] { At("dr-summary"), At("dr-attention"), At("dr-result-scope"), At("dr-managers"), At("dr-usage"), At("dr-policy"), At("dr-inventory"), At("dr-technical"), At("dr-previous") }
+            .Where(i => i >= 0).Should().BeInAscendingOrder("summary, attention, scope, managers, usage, policy, inventory, technical, history");
+        At("dr-attention").Should().BeLessThan(At("dr-config"), "attention comes before technical configuration");
+        At("dr-managers").Should().BeLessThan(At("dr-matrix"), "managers come before policy simulation");
+    }
+
+    [Fact]
+    public void TechnicalSectionsStartCollapsed_AndTheUsageSectionIsVisible()
+    {
+        _api.Result = Scoped();
+        var cut = RunReview();
+
+        foreach (var id in new[] { "dr-scenarios", "dr-deps", "dr-rules", "dr-technical", "dr-config", "dr-single-disclosure", "dr-scope-details" })
+            cut.Find($"[data-testid='{id}-body']").HasAttribute("hidden").Should().BeTrue($"{id} is collapsed by default");
+        cut.Find("[data-testid='dr-usage']").Closest("[hidden]").Should().BeNull("dependency usage is a primary section");
+        cut.Find("[data-testid='dr-ready-details']").HasAttribute("open").Should().BeFalse("readiness folds away once a result exists");
+    }
+
+    [Fact]
+    public void SourceScopeSaysUsageOutsideItIsUnknown_AndNothingIsCalledUnused()
+    {
+        _api.Result = Scoped();
+        var cut = RunReview();
+
+        cut.Find("[data-testid='dr-outside-scope']").TextContent.Should().Be("Unknown");
+        cut.Find("[data-testid='dr-usage']").TextContent.Should().Contain(DependencyUsagePresentation.OutsideScope).And.Contain("Transitive package usage: not assessed");
+        cut.Markup.Should().NotContain("Unused");
+        cut.Find("[data-testid='dr-policy']").TextContent.Should().Contain("not evidence that these updates exist")
+            .And.Contain("does not mean known vulnerabilities exist").And.Contain("does not prove Renovate ran successfully");
     }
 
     [Fact]
@@ -190,7 +238,9 @@ public sealed class DependencyReviewPageTests : BunitContext
 
         var findings = cut.FindAll("[data-testid='dr-finding']");
         findings[0].GetAttribute("data-rule").Should().Be("rule-scope-inconsistent");
-        findings[0].TextContent.Should().Contain("Needs review").And.Contain("CdcReplay").And.Contain("Aspire");
+        findings[0].TextContent.Should().Contain("Needs review");
+        // The detail is shown once per rule group (every instance says the same), with the instances behind "View evidence".
+        cut.FindAll("[data-testid='dr-finding-group']")[0].TextContent.Should().Contain("CdcReplay").And.Contain("Aspire");
         cut.Find("[data-testid='dr-drift']").TextContent.Should().Contain("added CdcReplay");
     }
 

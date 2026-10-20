@@ -78,6 +78,9 @@
             </div>
         </div>
 
+        @* After a review the readiness tables stay one click away instead of above every result. *@
+        <details class="dr-ready-details" data-testid="dr-ready-details" open="@(_result is null)">
+        <summary>Readiness details</summary>
         @foreach (var group in new[] { ReadinessGroup.Inputs, ReadinessGroup.Analysis, ReadinessGroup.Comparison })
         {
             var groupRows = readiness.Rows.Where(r => r.Group == group).ToList();
@@ -99,6 +102,7 @@
                 </table>
             </div>
         }
+        </details>
     </section>
 
     <section class="dr-sources" aria-labelledby="dr-run-heading" data-testid="dr-sources">
@@ -297,36 +301,6 @@
         @if (_healthError is { } healthError) { <p class="dr-error" role="alert" data-testid="dh-error">@healthError</p> }
     </div>
 
-    @if (_history.Count > 0 || _healthHistory.Count > 0)
-    {
-        <section class="dr-card dr-history-card" aria-labelledby="dr-previous-heading" data-testid="dr-previous">
-            <h2 id="dr-previous-heading">Previous reviews</h2>
-            <p class="dr-muted" data-testid="dr-previous-summary">@_history.Count source review@(_history.Count == 1 ? "" : "s") · @_healthHistory.Count dependency health review@(_healthHistory.Count == 1 ? "" : "s") — opened exactly as recorded, no registry or advisory source is queried.</p>
-            <ReviewDisclosure Text="Open history" CollapseText="Hide history" TestId="dr-history-disclosure" Class="disclosure-inline">
-                <div class="dr-option-grid">
-                    @if (_history.Count > 0)
-                    {
-                        <label class="dr-field dr-history">Source reviews (Renovate policy)
-                            <select class="form-control" data-testid="dr-history" value="@(_result?.RunId.ToString() ?? "")" @onchange="OpenRunAsync" disabled="@_busy">
-                                <option value="">Choose a stored review</option>
-                                @foreach (var run in _history) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Findings findings)</option> }
-                            </select>
-                        </label>
-                    }
-                    @if (_healthHistory.Count > 0)
-                    {
-                        <label class="dr-field dr-history">Dependency health reviews
-                            <select class="form-control" data-testid="dh-history" value="@(_health?.RunId.ToString() ?? "")" @onchange="OpenHealthAsync" disabled="@_busy">
-                                <option value="">Choose a stored review</option>
-                                @foreach (var run in _healthHistory) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Dependencies deps, @run.Findings findings)@(run.RefreshOf is not null ? " · refresh" : "")</option> }
-                            </select>
-                        </label>
-                    }
-                </div>
-            </ReviewDisclosure>
-        </section>
-    }
-
     @if (_result is not null && _health is not null)
     {
         <div class="dr-view-switch" role="group" aria-label="Result shown">
@@ -342,6 +316,7 @@
 
     @if (_view == ResultView.Source && _result is { } result)
     {
+        var usage = DependencyUsagePresentation.Build(result);
         <section class="dr-card" aria-labelledby="dr-summary-heading" data-testid="dr-summary">
             <h2 id="dr-summary-heading">Summary</h2>
             <p data-testid="dr-headline">@DependencyReviewPresentation.Headline(result)</p>
@@ -355,34 +330,160 @@
                     </li>
                 }
             </ul>
-            <ReviewDisclosure Text="How this is evaluated" CollapseText="Hide evaluation details" TestId="dr-mechanism" Class="disclosure-inline">
-                <p>@result.EvaluationMechanism</p>
-                <ul class="dr-list" data-testid="dr-unsupported">@foreach (var item in result.UnsupportedSemantics) { <li>@item</li> }</ul>
-                <p class="dr-muted">Simulated versions are synthetic candidates that test policy — not observed, available or published versions. The source review uses no vulnerability source, so nothing here is a vulnerability status; advisories are checked in the dependency health review.</p>
-            </ReviewDisclosure>
+        </section>
+
+        var groups = DependencyReviewPresentation.FindingGroups(result);
+        <section class="dr-card dr-attention" aria-labelledby="dr-attention-heading" data-testid="dr-attention">
+            <h2 id="dr-attention-heading">What needs attention <span class="dr-badge dr-badge-@(groups.Count == 0 ? "muted" : "attention")">@result.Repositories.Sum(r => r.Findings.Count) finding@(result.Repositories.Sum(r => r.Findings.Count) == 1 ? "" : "s")</span></h2>
+            @if (groups.Count == 0) { <p class="dr-muted" data-testid="dr-no-findings">No findings.</p> }
+            <ul class="dr-findings" data-testid="dr-findings">
+                @foreach (var group in groups)
+                {
+                    var first = group.Findings[0].Finding;
+                    <li class="dr-finding-group" data-testid="dr-finding-group" data-rule="@first.RuleId" data-count="@group.Findings.Count">
+                        <div><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(first.Severity)">@DependencyLabels.Severity(first.Severity)</span> <strong>@first.Title</strong>
+                            @if (group.Findings.Count > 1) { <span class="dr-muted"> · Affected: @group.Findings.Count</span> }</div>
+                        @if (group.SharedDetail is { } detail) { <p>@detail</p> }
+                        <ReviewDisclosure Text="@(group.Findings.Count > 1 ? $"View affected items ({group.Findings.Count})" : "View evidence")" CollapseText="Hide" Class="disclosure-inline">
+                            <ul class="dr-list">
+                                @foreach (var (repository, finding) in group.Findings)
+                                {
+                                    <li class="dr-finding" data-testid="dr-finding" data-rule="@finding.RuleId" data-repository="@repository">
+                                        <span class="visually-hidden">@DependencyLabels.Severity(finding.Severity): @finding.Title — </span><strong>@repository</strong>@if (group.SharedDetail is null) { <span> — @finding.Detail</span> }
+                                        @if (finding.Evidence.Count > 0) { <ul class="dr-list dr-mono">@foreach (var evidence in finding.Evidence) { <li>@evidence</li> }</ul> }
+                                    </li>
+                                }
+                            </ul>
+                        </ReviewDisclosure>
+                    </li>
+                }
+            </ul>
         </section>
 
         <section class="dr-card" aria-labelledby="dr-result-scope-heading" data-testid="dr-result-scope">
             <h2 id="dr-result-scope-heading">Source scope</h2>
             @if (result.SourceScope is { } scope)
             {
-                <p class="dr-muted">The exact Source Analysis snapshots this run reviewed. Newer snapshots never change this result.</p>
-                <ul class="dr-scope-list">
-                    @foreach (var (entry, role) in new[] { (scope.Primary, "Primary") }.Concat(scope.Related.Select(r => (r, "Related"))))
-                    {
-                        var repoReview = result.Repositories.FirstOrDefault(r => r.Repository == entry.Repository);
-                        <li data-testid="dr-result-scope-entry" data-role="@role" data-snapshot="@entry.SnapshotId">
-                            <span class="dr-badge dr-badge-@(role == "Primary" ? "info" : "muted")">@role</span> <strong>@entry.Repository</strong> · @entry.ArchiveName · <code title="@entry.Fingerprint">@Short(entry.Fingerprint)</code> · Source Analysis: @entry.SourceStatus
-                            @if (repoReview is not null) { <span> · Renovate policy: <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(repoReview.Coverage)" data-testid="dr-result-scope-renovate">@DependencyReviewPresentation.Coverage(repoReview.Coverage)</span></span> }
-                        </li>
-                    }
-                </ul>
-                @if (scope.Limitations.Count > 0) { <ul class="dr-list" data-testid="dr-result-scope-limitations">@foreach (var l in scope.Limitations) { <li>@l</li> }</ul> }
+                <dl class="dr-facts dr-scope-facts">
+                    <div><dt>Primary source</dt><dd>@scope.Primary.Repository <span class="dr-muted">@scope.Primary.ArchiveName</span></dd></div>
+                    <div><dt>Related sources</dt><dd data-testid="dr-result-related">@(scope.Related.Count == 0 ? "None selected" : string.Join(", ", scope.Related.Select(r => r.Repository)))</dd></div>
+                    <div><dt>Projects with package references</dt><dd data-testid="dr-projects-found">@usage.CurrentProjects current@(usage.HasRelated ? $" + {usage.RelatedProjects} related" : "")</dd></div>
+                    <div><dt>Usage outside this source scope</dt><dd data-testid="dr-outside-scope">Unknown</dd></div>
+                </dl>
+                <p class="dr-muted">The exact Source Analysis snapshots this run reviewed. Newer snapshots never change this result. To include another existing snapshot, add it as a related source above and run the review again — nothing is re-imported.</p>
+                <p class="dr-actions"><a class="btn-secondary" href="dependency-review#dr-setup-heading" data-testid="dr-add-related-link" @onclick="FocusSetupAsync" @onclick:preventDefault>Add related source</a> <a class="btn-secondary" href="source-analysis">Open Source Analysis</a></p>
+                <ReviewDisclosure Text="Snapshot details" CollapseText="Hide snapshot details" TestId="dr-scope-details" Class="disclosure-inline">
+                    <ul class="dr-scope-list">
+                        @foreach (var (entry, role) in new[] { (scope.Primary, "Primary") }.Concat(scope.Related.Select(r => (r, "Related"))))
+                        {
+                            var repoReview = result.Repositories.FirstOrDefault(r => r.Repository == entry.Repository);
+                            <li data-testid="dr-result-scope-entry" data-role="@role" data-snapshot="@entry.SnapshotId">
+                                <span class="dr-badge dr-badge-@(role == "Primary" ? "info" : "muted")">@role</span> <strong>@entry.Repository</strong> · @entry.ArchiveName · <code title="@entry.Fingerprint">@Short(entry.Fingerprint)</code> · Source Analysis: @entry.SourceStatus
+                                @if (repoReview is not null) { <span> · Renovate policy: <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(repoReview.Coverage)" data-testid="dr-result-scope-renovate">@DependencyReviewPresentation.Coverage(repoReview.Coverage)</span></span> }
+                            </li>
+                        }
+                    </ul>
+                    @if (scope.Limitations.Count > 0) { <ul class="dr-list" data-testid="dr-result-scope-limitations">@foreach (var l in scope.Limitations) { <li>@l</li> }</ul> }
+                </ReviewDisclosure>
             }
             else
             {
                 <p class="dr-muted" data-testid="dr-result-legacy">Legacy source input: repository archives uploaded directly to Dependency Review before Source Analysis owned source snapshots. No Source Analysis snapshot is linked to this run.</p>
             }
+        </section>
+
+        <nav class="dr-tabs" aria-label="Repositories">
+            @foreach (var tab in result.Repositories)
+            {
+                <button type="button" class="dr-tab @(tab.Repository == Selected?.Repository ? "active" : "")" aria-pressed="@(tab.Repository == Selected?.Repository ? "true" : "false")"
+                        data-testid="dr-repo-tab" data-repository="@tab.Repository" @onclick="() => SelectRepository(tab.Repository)">
+                    @tab.Repository <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(tab.Coverage)">@DependencyReviewPresentation.Coverage(tab.Coverage)</span>
+                </button>
+            }
+        </nav>
+
+        @if (Selected is { } head)
+        {
+            <section class="dr-card" aria-labelledby="dr-repo-heading" data-testid="dr-repo" data-repository="@head.Repository">
+                <h2 id="dr-repo-heading">Repository: @head.Repository</h2>
+                <dl class="dr-facts">
+                    <div><dt>Renovate coverage</dt><dd><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(head.Coverage)" data-testid="dr-coverage">@DependencyReviewPresentation.Coverage(head.Coverage)</span> @head.CoverageDetail</dd></div>
+                    <div><dt>Declared dependencies</dt><dd data-testid="dr-dep-count">@head.Dependencies.Count (declared only; transitive dependencies are not inventoried)</dd></div>
+                    @if (head.DriftSincePrevious is { } drift) { <div><dt>Drift</dt><dd data-testid="dr-drift">@drift</dd></div> }
+                </dl>
+
+                <h3>Managers</h3>
+                <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Managers">
+                    <table class="dr-table" data-testid="dr-managers">
+                        <thead><tr><th scope="col">Manager</th><th scope="col">State</th><th scope="col">Declared</th><th scope="col">Files</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var manager in head.Managers)
+                            {
+                                <tr data-manager="@manager.Manager"><th scope="row">@manager.Manager</th>
+                                    <td><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(manager.State)">@DependencyLabels.Manager(manager.State)</span></td><td>@manager.Dependencies</td><td>@manager.Files</td><td>@manager.Detail</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        <section class="dr-card" aria-labelledby="dr-usage-heading" data-testid="dr-usage">
+            <h2 id="dr-usage-heading">Dependency usage</h2>
+            <p class="dr-muted"><strong>@DependencyUsagePresentation.OutsideScope</strong> Usage is read from PackageReference / Directory.Packages.props declarations in the selected snapshots only. @DependencyUsagePresentation.TransitiveNotAssessed ProjectReference links between projects are not packages and are not listed.</p>
+            <ul class="dr-usage-counts" data-testid="dr-usage-counts">
+                <li><span>Package dependencies</span> <strong>@usage.Rows.Count</strong></li>
+                @foreach (var state in Enum.GetValues<DependencyUsageState>())
+                {
+                    var count = usage.Rows.Count(r => r.State == state);
+                    if (count > 0) { <li data-state="@state"><span>@DependencyUsagePresentation.Label(state)</span> <strong>@count</strong></li> }
+                }
+            </ul>
+            <div class="dr-usage-filters" data-testid="dr-usage-filters">
+                <label class="dr-field">Search dependency or project<input class="form-control" type="search" @bind="_usageSearch" @bind:event="oninput" data-testid="dr-usage-search" /></label>
+                <label class="dr-field">Usage
+                    <select class="form-control" @bind="_usageState" data-testid="dr-usage-state">
+                        <option value="">All</option><option value="Current">Used in current source</option>@if (usage.HasRelated) { <option value="Related">Used in related source</option> }
+                        <option value="@nameof(DependencyUsageState.NoUsageFound)">No usage found in selected scope</option><option value="@nameof(DependencyUsageState.Unresolved)">Usage unresolved</option>
+                    </select>
+                </label>
+                <label class="dr-field">Renovate
+                    <select class="form-control" @bind="_usageRenovate" data-testid="dr-usage-renovate"><option value="">All</option><option value="Processed">Processed</option><option value="Not processed">Not processed</option></select>
+                </label>
+            </div>
+            @{ var usageRows = usage.Rows.Where(r => DependencyUsagePresentation.Matches(r, _usageSearch, _usageState, _usageRenovate)).ToList(); }
+            <p class="dr-muted" role="status" data-testid="dr-usage-shown">Showing @usageRows.Count of @usage.Rows.Count package dependencies.</p>
+            <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Dependency usage">
+                <table class="dr-table dr-usage-table" data-testid="dr-usage-table">
+                    <thead><tr><th scope="col">Dependency</th><th scope="col">Version</th><th scope="col">Used by projects</th><th scope="col">Declared in</th><th scope="col">Manager</th><th scope="col">Renovate</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in usageRows)
+                        {
+                            <tr data-testid="dr-usage-row" data-package="@row.PackageName" data-state="@row.State">
+                                <th scope="row">@row.PackageName</th>
+                                <td class="dr-mono" data-label="Version">@(row.Versions.Count == 0 ? "—" : string.Join(", ", row.Versions))</td>
+                                <td data-label="Used by projects">
+                                    @if (row.Projects.Count == 0) { <span class="dr-muted">@DependencyUsagePresentation.UsedBy(row)</span>@if (row.UnresolvedVia.Count > 0) { <span class="dr-muted dr-mono"> (@string.Join(", ", row.UnresolvedVia))</span> } }
+                                    else
+                                    {
+                                        <details class="dr-used-by" data-testid="dr-used-by">
+                                            <summary>@DependencyUsagePresentation.UsedBy(row)<span class="visually-hidden"> — @row.PackageName</span></summary>
+                                            @foreach (var source in row.Projects.GroupBy(p => (p.Repository, p.Related)))
+                                            {
+                                                <p class="dr-used-by-source">@(source.Key.Related ? "Related" : "Current") source — @source.Key.Repository</p>
+                                                <ul class="dr-list">@foreach (var p in source) { <li data-testid="dr-used-by-project" data-related="@(p.Related ? "true" : "false")"><strong>@p.Project</strong> <span class="dr-muted dr-mono">@p.Path</span>@if (p.Related) { <span class="dr-muted"> · version: @DependencyUsagePresentation.Version(p)</span> }</li> }</ul>
+                                            }
+                                        </details>
+                                    }
+                                </td>
+                                <td class="dr-mono" data-label="Declared in">@string.Join(", ", row.DeclaredIn)</td>
+                                <td data-label="Manager">@row.Manager</td>
+                                <td data-label="Renovate">@row.Renovate</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
         </section>
 
         @if (result.Repositories.Count > 1)
@@ -413,97 +514,129 @@
             </section>
         }
 
-        <nav class="dr-tabs" aria-label="Repositories">
-            @foreach (var tab in result.Repositories)
-            {
-                <button type="button" class="dr-tab @(tab.Repository == Selected?.Repository ? "active" : "")" aria-pressed="@(tab.Repository == Selected?.Repository ? "true" : "false")"
-                        data-testid="dr-repo-tab" data-repository="@tab.Repository" @onclick="() => SelectRepository(tab.Repository)">
-                    @tab.Repository <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(tab.Coverage)">@DependencyReviewPresentation.Coverage(tab.Coverage)</span>
-                </button>
-            }
-        </nav>
-
         @if (Selected is { } repo)
         {
-            <section class="dr-card" aria-labelledby="dr-repo-heading" data-testid="dr-repo" data-repository="@repo.Repository">
-                <h2 id="dr-repo-heading">@repo.Repository</h2>
-                <dl class="dr-facts">
-                    <div><dt>Renovate coverage</dt><dd><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(repo.Coverage)" data-testid="dr-coverage">@DependencyReviewPresentation.Coverage(repo.Coverage)</span> @repo.CoverageDetail</dd></div>
-                    <div><dt>Declared dependencies</dt><dd data-testid="dr-dep-count">@repo.Dependencies.Count (declared only; transitive dependencies are not inventoried)</dd></div>
-                    <div><dt>Archive / config hash</dt><dd class="dr-mono">@DependencyReviewPresentation.Short(repo.ArchiveSha256) / @DependencyReviewPresentation.Short(repo.ConfigHash)</dd></div>
-                    @if (repo.DriftSincePrevious is { } drift) { <div><dt>Drift</dt><dd data-testid="dr-drift">@drift</dd></div> }
-                </dl>
-
-                <h3>Findings</h3>
-                @if (repo.Findings.Count == 0) { <p class="dr-muted" data-testid="dr-no-findings">No findings.</p> }
-                <ul class="dr-findings" data-testid="dr-findings">
-                    @foreach (var finding in DependencyReviewPresentation.OrderedFindings(repo))
-                    {
-                        <li class="dr-finding" data-testid="dr-finding" data-rule="@finding.RuleId">
-                            <div><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(finding.Severity)">@DependencyLabels.Severity(finding.Severity)</span> <strong>@finding.Title</strong></div>
-                            <p>@finding.Detail</p>
-                            @if (finding.Evidence.Count > 0)
-                            {
-                                <ReviewDisclosure Text="Evidence" CollapseText="Hide evidence" Class="disclosure-inline">
-                                    <ul class="dr-list dr-mono">@foreach (var evidence in finding.Evidence) { <li>@evidence</li> }</ul>
-                                </ReviewDisclosure>
-                            }
-                        </li>
-                    }
+            <section class="dr-card" aria-labelledby="dr-policy-heading" data-testid="dr-policy">
+                <h2 id="dr-policy-heading">Policy &amp; updates <span class="dr-muted">· @repo.Repository</span></h2>
+                <ul class="dr-policy-cards">
+                    <li class="dr-policy-card" data-testid="dr-policy-simulation"><h3>Policy simulation</h3>
+                        <p>@(repo.Simulations.Count == 0 ? "No scenarios" : string.Join(" · ", DependencyReviewPresentation.ResultCounts(repo).Select(c => $"{c.Count} {DependencyLabels.Result(c.Result).ToLowerInvariant()}")))</p>
+                        <p class="dr-muted">Synthetic candidates that test the Renovate policy — not evidence that these updates exist.</p></li>
+                    <li class="dr-policy-card"><h3>Security-update policy</h3>
+                        <p data-testid="dr-security"><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(repo.SecurityUpdatePolicy.State)">@DependencyLabels.Category(repo.SecurityUpdatePolicy.State)</span> @repo.SecurityUpdatePolicy.Detail</p>
+                        <p class="dr-muted">A missing security-update policy does not mean known vulnerabilities exist.</p></li>
+                    <li class="dr-policy-card"><h3>Runtime automation</h3>
+                        <p data-testid="dr-runtime"><span class="dr-badge dr-badge-muted">@DependencyLabels.Category(repo.RuntimeAutomation.State)</span> @repo.RuntimeAutomation.Detail</p>
+                        <p class="dr-muted">Source-declared automation does not prove Renovate ran successfully: runtime execution is not verified.</p></li>
                 </ul>
 
-                <h3>Configuration</h3>
-                @if (repo.ConfigFiles.Count == 0) { <p class="dr-muted" data-testid="dr-no-config">No Renovate configuration file in this repository.</p> }
-                else
+                @if (repo.Simulations.Count > 0)
                 {
-                    <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Renovate configuration files">
-                        <table class="dr-table" data-testid="dr-config-files">
-                            <thead><tr><th scope="col">File</th><th scope="col">Read by Renovate</th><th scope="col">Syntax</th><th scope="col">Note</th></tr></thead>
-                            <tbody>
-                                @foreach (var file in repo.ConfigFiles)
-                                {
-                                    <tr><td class="dr-mono">@file.Path</td><td>@(file.Used ? "Yes" : "No")</td><td>@(file.SyntaxValid ? "Valid JSON" : file.SyntaxError ?? "Invalid")</td><td>@file.Note</td></tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                    <ReviewDisclosure Text="@($"View simulation scenarios ({repo.Simulations.Count})")" CollapseText="Hide simulation scenarios" TestId="dr-scenarios" Class="disclosure-inline">
+                        <p class="dr-muted">Each scenario tests a <strong>@DependencyLabels.SyntheticCandidate.ToLowerInvariant()</strong> against the configuration — a test value, not a version that exists.</p>
+                        <div class="dr-filter" role="group" aria-label="Filter by result">
+                            <button type="button" class="dr-chip @(_filter is null ? "active" : "")" aria-pressed="@(_filter is null ? "true" : "false")" data-testid="dr-filter-all" @onclick="() => _filter = null">All (@repo.Simulations.Count)</button>
+                            @foreach (var (value, count) in DependencyReviewPresentation.ResultCounts(repo))
+                            {
+                                <button type="button" class="dr-chip @(_filter == value ? "active" : "")" aria-pressed="@(_filter == value ? "true" : "false")" data-testid="dr-filter" data-result="@value" @onclick="() => _filter = value">@DependencyLabels.Result(value) (@count)</button>
+                            }
+                        </div>
+                        <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Policy simulation matrix">
+                            <table class="dr-table dr-matrix" data-testid="dr-matrix">
+                                <thead><tr><th scope="col">Package</th><th scope="col">Current</th><th scope="col">Scenario</th><th scope="col">@DependencyLabels.SyntheticCandidate</th><th scope="col">Update type</th><th scope="col">Result</th><th scope="col">Why</th></tr></thead>
+                                <tbody>
+                                    @foreach (var sim in DependencyReviewPresentation.Matrix(repo, _filter))
+                                    {
+                                        <tr data-testid="dr-sim" data-result="@sim.Result">
+                                            <td class="dr-cell-package"><span class="dr-pkg">@sim.PackageName</span><span class="dr-muted dr-mono">@sim.OwnerFile</span></td>
+                                            <td class="dr-mono" data-label="Current">@sim.CurrentValue</td><td data-label="Scenario">@sim.Scenario</td>
+                                            <td class="dr-mono" data-label="@DependencyLabels.SyntheticCandidate">@(sim.CandidateVersion ?? "—")</td>
+                                            <td data-label="Update type">@DependencyReviewPresentation.UpdateType(sim.UpdateType)</td>
+                                            <td data-label="Result"><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(sim.Result)">@DependencyReviewPresentation.Outcome(sim)</span></td>
+                                            <td class="dr-cell-why"><ReviewDisclosure Text="Why this policy" CollapseText="Hide" Class="disclosure-inline"><SimulationExplanation Simulation="sim" /></ReviewDisclosure></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </ReviewDisclosure>
                 }
-                @if (repo.ValidationIssues.Count + repo.UnrecognizedKeys.Count > 0)
+
+                @if (repo.NormalizedConfig is not null)
                 {
-                    <ul class="dr-list" data-testid="dr-validation">
-                        @foreach (var issue in repo.ValidationIssues) { <li>@issue</li> }
-                        @if (repo.UnrecognizedKeys.Count > 0) { <li>Not evaluated by BirkNext (not invalid): <span class="dr-mono">@string.Join(", ", repo.UnrecognizedKeys)</span></li> }
-                    </ul>
+                    <ReviewDisclosure Text="Simulate policy for one package" CollapseText="Hide single-package simulation" TestId="dr-single-disclosure" Class="disclosure-inline" Hint="a policy tool, not an update lookup">
+                        <section class="dr-sim" aria-labelledby="dr-single-heading" data-testid="dr-single">
+                            <h3 id="dr-single-heading">Simulate one package</h3>
+                            <p class="dr-muted">Evaluated against this review's stored configuration snapshot. Enter any synthetic candidate to test the policy.</p>
+                            <div class="dr-sim-form">
+                                <label class="dr-field">Declared package
+                                    <select class="form-control" data-testid="dr-single-package" @onchange="e => PickPackage(repo, e.Value?.ToString())">
+                                        <option value="">Custom package…</option>
+                                        @foreach (var (dep, index) in DependencyReviewPresentation.Packages(repo).Select((d, i) => (d, i))) { <option value="@index">@dep.PackageName · @dep.OwnerFile</option> }
+                                    </select>
+                                </label>
+                                <label class="dr-field">Package name<input class="form-control" data-testid="dr-single-name" @bind="_single.PackageName" /></label>
+                                <label class="dr-field">Manager
+                                    <select class="form-control" data-testid="dr-single-manager" @bind="_single.Manager">
+                                        @foreach (var manager in new[] { "nuget", "dockerfile", "docker-compose", "azure-pipelines" }) { <option value="@manager">@manager</option> }
+                                    </select>
+                                </label>
+                                <label class="dr-field">File<input class="form-control" data-testid="dr-single-file" @bind="_single.File" placeholder="e.g. Aspire/Aspire.csproj" /></label>
+                                <label class="dr-field">Current version<input class="form-control" data-testid="dr-single-current" @bind="_single.Current" /></label>
+                                <label class="dr-field">@DependencyLabels.SyntheticCandidate<input class="form-control" data-testid="dr-single-candidate" @bind="_single.Candidate" /></label>
+                                <button type="button" class="btn-secondary" data-testid="dr-single-run" disabled="@_busy" @onclick="() => SimulateAsync(repo)">Simulate</button>
+                            </div>
+                            @if (_singleError is { } singleError) { <p class="dr-error" role="alert" data-testid="dr-single-error">@singleError</p> }
+                            @if (_singleResult is { } single && single.Repository == repo.Repository)
+                            {
+                                <div class="dr-single-result" data-testid="dr-single-result" aria-live="polite">
+                                    <p><strong>@single.PackageName</strong> @single.CurrentValue → <span class="dr-mono">@single.CandidateVersion</span> <span class="dr-muted">(@DependencyLabels.SyntheticCandidate)</span> ·
+                                        @DependencyReviewPresentation.UpdateType(single.UpdateType) · <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(single.Result)" data-testid="dr-single-outcome">@DependencyReviewPresentation.Outcome(single)</span></p>
+                                    <SimulationExplanation Simulation="single" />
+                                </div>
+                            }
+                        </section>
+                    </ReviewDisclosure>
                 }
-                @if (repo.RepositorySettings.Count > 0)
-                {
-                    <ReviewDisclosure Text="Repository-level settings" CollapseText="Hide repository-level settings" TestId="dr-settings" Class="disclosure-inline">
-                        <dl class="dr-kv">
+
+                <ReviewDisclosure Text="@($"Repository configuration ({repo.ConfigFiles.Count} file{(repo.ConfigFiles.Count == 1 ? "" : "s")})")" CollapseText="Hide repository configuration" TestId="dr-config" Class="disclosure-inline">
+                    @if (repo.ConfigFiles.Count == 0) { <p class="dr-muted" data-testid="dr-no-config">No Renovate configuration file in this repository.</p> }
+                    else
+                    {
+                        <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Renovate configuration files">
+                            <table class="dr-table" data-testid="dr-config-files">
+                                <thead><tr><th scope="col">File</th><th scope="col">Read by Renovate</th><th scope="col">Syntax</th><th scope="col">Note</th></tr></thead>
+                                <tbody>
+                                    @foreach (var file in repo.ConfigFiles)
+                                    {
+                                        <tr><td class="dr-mono">@file.Path</td><td>@(file.Used ? "Yes" : "No")</td><td>@(file.SyntaxValid ? "Valid JSON" : file.SyntaxError ?? "Invalid")</td><td>@file.Note</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    @if (repo.ValidationIssues.Count + repo.UnrecognizedKeys.Count > 0)
+                    {
+                        <ul class="dr-list" data-testid="dr-validation">
+                            @foreach (var issue in repo.ValidationIssues) { <li>@issue</li> }
+                            @if (repo.UnrecognizedKeys.Count > 0) { <li>Not evaluated by BirkNext (not invalid): <span class="dr-mono">@string.Join(", ", repo.UnrecognizedKeys)</span></li> }
+                        </ul>
+                    }
+                    @if (repo.RepositorySettings.Count > 0)
+                    {
+                        <h4>Repository-level settings</h4>
+                        <dl class="dr-kv" data-testid="dr-settings">
                             @foreach (var setting in repo.RepositorySettings) { <div><dt class="dr-mono">@setting.Key</dt><dd class="dr-mono">@setting.Value</dd></div> }
                             @if (repo.Extends.Count > 0) { <div><dt class="dr-mono">extends</dt><dd class="dr-mono">@string.Join(", ", repo.Extends) (not expanded)</dd></div> }
                             @if (repo.IgnorePaths.Count > 0) { <div><dt class="dr-mono">ignorePaths</dt><dd class="dr-mono">@string.Join(", ", repo.IgnorePaths)</dd></div> }
                             @if (repo.IgnoreDeps.Count > 0) { <div><dt class="dr-mono">ignoreDeps</dt><dd class="dr-mono">@string.Join(", ", repo.IgnoreDeps)</dd></div> }
                         </dl>
-                    </ReviewDisclosure>
-                }
-
-                <h3>Managers</h3>
-                <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Managers">
-                    <table class="dr-table" data-testid="dr-managers">
-                        <thead><tr><th scope="col">Manager</th><th scope="col">Files</th><th scope="col">Declared</th><th scope="col">State</th><th scope="col">Detail</th></tr></thead>
-                        <tbody>
-                            @foreach (var manager in repo.Managers)
-                            {
-                                <tr data-manager="@manager.Manager"><td>@manager.Manager</td><td>@manager.Files</td><td>@manager.Dependencies</td>
-                                    <td><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(manager.State)">@DependencyLabels.Manager(manager.State)</span></td><td>@manager.Detail</td></tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                    }
+                </ReviewDisclosure>
 
                 @if (repo.Rules.Count > 0)
                 {
-                    <ReviewDisclosure Text="@($"packageRules ({repo.Rules.Count})")" CollapseText="Hide packageRules" TestId="dr-rules" Class="disclosure-inline">
+                    <ReviewDisclosure Text="@($"View package rules ({repo.Rules.Count})")" CollapseText="Hide packageRules" TestId="dr-rules" Class="disclosure-inline">
                         <p class="dr-muted">Rules apply in order; each matching rule is merged over the earlier ones, so a later rule overrides the settings it sets.</p>
                         <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Package rules">
                             <table class="dr-table" data-testid="dr-rules-table">
@@ -521,79 +654,12 @@
                         </div>
                     </ReviewDisclosure>
                 }
+            </section>
 
-                @if (repo.Simulations.Count > 0)
-                {
-                    <h3>Policy simulation</h3>
-                    <p class="dr-muted">Each scenario tests a <strong>@DependencyLabels.SyntheticCandidate.ToLowerInvariant()</strong> against the configuration — a test value, not a version that exists.</p>
-                    <div class="dr-filter" role="group" aria-label="Filter by result">
-                        <button type="button" class="dr-chip @(_filter is null ? "active" : "")" aria-pressed="@(_filter is null ? "true" : "false")" data-testid="dr-filter-all" @onclick="() => _filter = null">All (@repo.Simulations.Count)</button>
-                        @foreach (var (value, count) in DependencyReviewPresentation.ResultCounts(repo))
-                        {
-                            <button type="button" class="dr-chip @(_filter == value ? "active" : "")" aria-pressed="@(_filter == value ? "true" : "false")" data-testid="dr-filter" data-result="@value" @onclick="() => _filter = value">@DependencyLabels.Result(value) (@count)</button>
-                        }
-                    </div>
-                    <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Policy simulation matrix">
-                        <table class="dr-table dr-matrix" data-testid="dr-matrix">
-                            <thead><tr><th scope="col">Package</th><th scope="col">Current</th><th scope="col">Scenario</th><th scope="col">@DependencyLabels.SyntheticCandidate</th><th scope="col">Update type</th><th scope="col">Result</th><th scope="col">Why</th></tr></thead>
-                            <tbody>
-                                @foreach (var sim in DependencyReviewPresentation.Matrix(repo, _filter))
-                                {
-                                    <tr data-testid="dr-sim" data-result="@sim.Result">
-                                        <td class="dr-cell-package"><span class="dr-pkg">@sim.PackageName</span><span class="dr-muted dr-mono">@sim.OwnerFile</span></td>
-                                        <td class="dr-mono" data-label="Current">@sim.CurrentValue</td><td data-label="Scenario">@sim.Scenario</td>
-                                        <td class="dr-mono" data-label="@DependencyLabels.SyntheticCandidate">@(sim.CandidateVersion ?? "—")</td>
-                                        <td data-label="Update type">@DependencyReviewPresentation.UpdateType(sim.UpdateType)</td>
-                                        <td data-label="Result"><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(sim.Result)">@DependencyReviewPresentation.Outcome(sim)</span></td>
-                                        <td class="dr-cell-why"><ReviewDisclosure Text="Why this policy" CollapseText="Hide" Class="disclosure-inline"><SimulationExplanation Simulation="sim" /></ReviewDisclosure></td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-
-                @if (repo.NormalizedConfig is not null)
-                {
-                    <section class="dr-sim" aria-labelledby="dr-single-heading" data-testid="dr-single">
-                        <h3 id="dr-single-heading">Simulate one package</h3>
-                        <p class="dr-muted">Evaluated against this review's stored configuration snapshot. Enter any synthetic candidate to test the policy.</p>
-                        <div class="dr-sim-form">
-                            <label class="dr-field">Declared package
-                                <select class="form-control" data-testid="dr-single-package" @onchange="e => PickPackage(repo, e.Value?.ToString())">
-                                    <option value="">Custom package…</option>
-                                    @foreach (var (dep, index) in DependencyReviewPresentation.Packages(repo).Select((d, i) => (d, i))) { <option value="@index">@dep.PackageName · @dep.OwnerFile</option> }
-                                </select>
-                            </label>
-                            <label class="dr-field">Package name<input class="form-control" data-testid="dr-single-name" @bind="_single.PackageName" /></label>
-                            <label class="dr-field">Manager
-                                <select class="form-control" data-testid="dr-single-manager" @bind="_single.Manager">
-                                    @foreach (var manager in new[] { "nuget", "dockerfile", "docker-compose", "azure-pipelines" }) { <option value="@manager">@manager</option> }
-                                </select>
-                            </label>
-                            <label class="dr-field">File<input class="form-control" data-testid="dr-single-file" @bind="_single.File" placeholder="e.g. Aspire/Aspire.csproj" /></label>
-                            <label class="dr-field">Current version<input class="form-control" data-testid="dr-single-current" @bind="_single.Current" /></label>
-                            <label class="dr-field">@DependencyLabels.SyntheticCandidate<input class="form-control" data-testid="dr-single-candidate" @bind="_single.Candidate" /></label>
-                            <button type="button" class="btn-secondary" data-testid="dr-single-run" disabled="@_busy" @onclick="() => SimulateAsync(repo)">Simulate</button>
-                        </div>
-                        @if (_singleError is { } singleError) { <p class="dr-error" role="alert" data-testid="dr-single-error">@singleError</p> }
-                        @if (_singleResult is { } single && single.Repository == repo.Repository)
-                        {
-                            <div class="dr-single-result" data-testid="dr-single-result" aria-live="polite">
-                                <p><strong>@single.PackageName</strong> @single.CurrentValue → <span class="dr-mono">@single.CandidateVersion</span> <span class="dr-muted">(@DependencyLabels.SyntheticCandidate)</span> ·
-                                    @DependencyReviewPresentation.UpdateType(single.UpdateType) · <span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(single.Result)" data-testid="dr-single-outcome">@DependencyReviewPresentation.Outcome(single)</span></p>
-                                <SimulationExplanation Simulation="single" />
-                            </div>
-                        }
-                    </section>
-                }
-
-                <h3>Security-update policy</h3>
-                <p data-testid="dr-security"><span class="dr-badge dr-badge-@DependencyReviewPresentation.Tone(repo.SecurityUpdatePolicy.State)">@DependencyLabels.Category(repo.SecurityUpdatePolicy.State)</span> @repo.SecurityUpdatePolicy.Detail</p>
-                <h3>Runtime automation</h3>
-                <p data-testid="dr-runtime"><span class="dr-badge dr-badge-muted">@DependencyLabels.Category(repo.RuntimeAutomation.State)</span> @repo.RuntimeAutomation.Detail</p>
-
-                <ReviewDisclosure Text="@($"Declared dependencies ({repo.Dependencies.Count})")" CollapseText="Hide declared dependencies" TestId="dr-deps" Class="disclosure-inline">
+            <section class="dr-card" aria-labelledby="dr-inventory-heading" data-testid="dr-inventory">
+                <h2 id="dr-inventory-heading">Declared dependency inventory</h2>
+                <p>@repo.Dependencies.Count declared · @repo.Dependencies.Count(d => d.IgnoredBy is null) processed by Renovate@(repo.Dependencies.Count(d => d.IgnoredBy is not null) is var notProcessed && notProcessed > 0 ? $" · {notProcessed} not processed" : "")</p>
+                <ReviewDisclosure Text="@($"Show dependency inventory ({repo.Dependencies.Count})")" CollapseText="Hide dependency inventory" TestId="dr-deps" Class="disclosure-inline">
                     <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Declared dependencies">
                         <table class="dr-table" data-testid="dr-deps-table">
                             <thead><tr><th scope="col">Package</th><th scope="col">Manager</th><th scope="col">Declared value</th><th scope="col">Owner file</th><th scope="col">Renovate</th></tr></thead>
@@ -608,8 +674,50 @@
                     </div>
                 </ReviewDisclosure>
             </section>
+
+            <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="dr-technical" Class="disclosure-inline">
+                <dl class="dr-facts">
+                    <div><dt>Run</dt><dd class="dr-mono">@result.RunId · @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
+                    <div><dt>Archive / config hash</dt><dd class="dr-mono">@DependencyReviewPresentation.Short(repo.ArchiveSha256) / @DependencyReviewPresentation.Short(repo.ConfigHash)</dd></div>
+                </dl>
+                <h3>How this is evaluated</h3>
+                <p data-testid="dr-mechanism">@result.EvaluationMechanism</p>
+                <ul class="dr-list" data-testid="dr-unsupported">@foreach (var item in result.UnsupportedSemantics) { <li>@item</li> }</ul>
+                <p class="dr-muted">Simulated versions are synthetic candidates that test policy — not observed, available or published versions. The source review uses no vulnerability source, so nothing here is a vulnerability status; advisories are checked in the dependency health review.</p>
+            </ReviewDisclosure>
         }
     }
+
+    @if (_history.Count > 0 || _healthHistory.Count > 0)
+    {
+        <section class="dr-card dr-history-card" aria-labelledby="dr-previous-heading" data-testid="dr-previous">
+            <h2 id="dr-previous-heading">Previous reviews</h2>
+            <p class="dr-muted" data-testid="dr-previous-summary">@_history.Count source review@(_history.Count == 1 ? "" : "s") · @_healthHistory.Count dependency health review@(_healthHistory.Count == 1 ? "" : "s") — opened exactly as recorded, no registry or advisory source is queried.</p>
+            <ReviewDisclosure Text="Open history" CollapseText="Hide history" TestId="dr-history-disclosure" Class="disclosure-inline">
+                <div class="dr-option-grid">
+                    @if (_history.Count > 0)
+                    {
+                        <label class="dr-field dr-history">Source reviews (Renovate policy)
+                            <select class="form-control" data-testid="dr-history" value="@(_result?.RunId.ToString() ?? "")" @onchange="OpenRunAsync" disabled="@_busy">
+                                <option value="">Choose a stored review</option>
+                                @foreach (var run in _history) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Findings findings)</option> }
+                            </select>
+                        </label>
+                    }
+                    @if (_healthHistory.Count > 0)
+                    {
+                        <label class="dr-field dr-history">Dependency health reviews
+                            <select class="form-control" data-testid="dh-history" value="@(_health?.RunId.ToString() ?? "")" @onchange="OpenHealthAsync" disabled="@_busy">
+                                <option value="">Choose a stored review</option>
+                                @foreach (var run in _healthHistory) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Dependencies deps, @run.Findings findings)@(run.RefreshOf is not null ? " · refresh" : "")</option> }
+                            </select>
+                        </label>
+                    }
+                </div>
+            </ReviewDisclosure>
+        </section>
+    }
+
 </div>
 
 @code {
@@ -777,6 +885,8 @@
     }
 
     private async Task FocusPrimaryAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+    private async Task FocusSetupAsync() { try { await _sourceHeading.FocusAsync(); } catch (InvalidOperationException) { } }
+    private string _usageSearch = "", _usageState = "", _usageRenovate = "";
 
     private async Task PickConfig(InputFileChangeEventArgs args)
     {

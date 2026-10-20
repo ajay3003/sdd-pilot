@@ -49,6 +49,21 @@ public static class DependencyReviewPresentation
     public static IReadOnlyList<DependencyFinding> OrderedFindings(RepositoryDependencyReview repo) =>
         repo.Findings.OrderBy(f => f.Severity).ThenBy(f => f.RuleIndex ?? int.MaxValue).ToList();
 
+    /// <summary>Findings of one rule with one title, across the reviewed repositories; the shared detail is shown once when every instance says the same.</summary>
+    public sealed record FindingGroup(IReadOnlyList<(string Repository, DependencyFinding Finding)> Findings, string? SharedDetail);
+
+    /// <summary>"What needs attention": findings from every repository grouped by rule, in each repository's review order, needs-review first.</summary>
+    public static IReadOnlyList<FindingGroup> FindingGroups(DependencyReviewResult result) =>
+        [.. result.Repositories.SelectMany(repo => OrderedFindings(repo).Select(f => (repo.Repository, f)))
+            .GroupBy(x => (x.f.RuleId, x.f.Severity, x.f.Title))
+            .OrderBy(g => g.Key.Severity)
+            .Select(g =>
+            {
+                var items = g.Select(x => (x.Repository, x.f)).ToList();
+                var details = items.Select(x => x.f.Detail).Distinct(StringComparer.Ordinal).ToList();
+                return new FindingGroup(items, details.Count == 1 ? details[0] : null);
+            })];
+
     public static int Count(RepositoryDependencyReview repo, DependencyFindingSeverity severity) => repo.Findings.Count(f => f.Severity == severity);
 
     /// <summary>Synthetic scenarios matching an optional result filter.</summary>
