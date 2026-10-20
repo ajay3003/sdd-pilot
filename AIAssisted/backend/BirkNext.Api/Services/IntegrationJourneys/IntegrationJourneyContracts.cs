@@ -43,6 +43,8 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities => [];
     /// <summary>The logical sources the pack needs (repositories/applications), each resolved through IQR bindings. Default: none declared.</summary>
     IReadOnlyList<TestPackSourceRole> SourceRoles => [];
+    /// <summary>Setup templates for the pack's integrations (safe, deterministic prefill for Add integration). Default: none.</summary>
+    IReadOnlyList<IntegrationTemplateDefinition> IntegrationTemplates => [];
     /// <summary>Configuration values the pack needs, by semantic key and logical source (never by file name). Default: none.</summary>
     IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationRequirement> RequiredConfiguration => [];
     /// <summary>What the pack's consumers have stored for its configuration requirements (requirement key → value), so guidance can show

@@ -81,7 +81,7 @@ public enum IntegrationConfigurationState { Ready, NeedsConfirmation, NeedsConfi
 
 /// <summary>Where a catalog record came from.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile, SourceSuggestion }
+public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile, SourceSuggestion, Template }
 
 /// <summary>What the consumer of a CDC topic expects for deletes. Tombstones are only judged against an explicit expectation.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -335,6 +335,9 @@ public sealed record IntegrationDefinition
     /// <summary>CDC: what the consumer expects for deletes. NotSpecified = tombstone handling is not judged.</summary>
     public CdcDeleteExpectation DeleteExpectation { get; init; }
     public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
+    /// <summary>The integration template this record was created from (setup guidance only: the record is its own configuration and a later
+    /// template version never rewrites it). Null for custom records.</summary>
+    public string? TemplateKey { get; init; }
     public bool UserModified { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }

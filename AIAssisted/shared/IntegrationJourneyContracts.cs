@@ -507,3 +507,48 @@ public sealed record TestPackDescriptor
     public bool SupportsHistory { get; init; }
     public IReadOnlyList<TestPackNavigationGroup> Navigation { get; init; } = [];
 }
+
+// ── Integration templates (Add integration guidance) ──────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Safe, deterministic setup metadata a test pack offers for one of its integrations, so "Add integration" can prefill what the pack already
+/// knows (type, system, producer, consumer, known endpoint) instead of asking the tester. Never secrets, credentials, connection strings or
+/// personal data, and never trust, runtime or test state. An endpoint is only offered where the pack knows it; environment-specific values
+/// come from <see cref="EndpointByEnvironment"/> (an unknown environment stays empty — never guessed) and a template value is never offered
+/// for a production environment.
+/// </summary>
+public sealed record IntegrationTemplateDefinition(string Key, string DisplayName, string Description, BirkNext.Integrations.IntegrationKind Kind)
+{
+    /// <summary>The pack integration requirement the template fulfils (also how an existing record is recognized as already configured).</summary>
+    public string? RequirementKey { get; init; }
+    public string? SystemName { get; init; }
+    public string? Producer { get; init; }
+    public string? Consumer { get; init; }
+    public string? SourceSystem { get; init; }
+    public string? DestinationSystem { get; init; }
+    /// <summary>A known, non-secret endpoint/channel valid for every non-production environment (e.g. a fixed topic name).</summary>
+    public string? EndpointOrTopic { get; init; }
+    /// <summary>Environment-specific non-secret endpoints by environment kind name ("Development", "QA"); wins over <see cref="EndpointOrTopic"/>.</summary>
+    public IReadOnlyDictionary<string, string> EndpointByEnvironment { get; init; } = new Dictionary<string, string>();
+    public string? SourceResource { get; init; }
+    /// <summary>The pack source role whose snapshot is this integration's canonical evidence (e.g. the repository that implements it).</summary>
+    public string? EvidenceSourceRoleKey { get; init; }
+}
+
+/// <summary>A template value and where it came from ("Template", "Template · Development").</summary>
+public sealed record IntegrationTemplateValue(string Value, string Provenance);
+
+/// <summary>A template resolved for one environment: the prefill values with provenance, the fields left for the tester, the evidence source
+/// state, and whether the pack integration is already configured. Read-only guidance.</summary>
+public sealed record IntegrationTemplateView(string Key, string DisplayName, string Description, BirkNext.Integrations.IntegrationKind Kind, string PackId, string PackName)
+{
+    /// <summary>Field name (IntegrationDefinition property) → value + provenance. Only fields the template knows.</summary>
+    public IReadOnlyDictionary<string, IntegrationTemplateValue> Values { get; init; } = new Dictionary<string, IntegrationTemplateValue>();
+    /// <summary>Fields the template cannot fill for this environment (e.g. an endpoint not known for it): "Needs configuration".</summary>
+    public IReadOnlyList<string> NeedsConfiguration { get; init; } = [];
+    public IReadOnlyList<string> Journeys { get; init; } = [];
+    /// <summary>The evidence source requirement and its current state (null: the template needs no source evidence).</summary>
+    public TestPackSourceStatus? EvidenceSource { get; init; }
+    /// <summary>Configured integrations that already fulfil the template's requirement (adding another is usually a duplicate).</summary>
+    public IReadOnlyList<string> AlreadyConfigured { get; init; } = [];
+}

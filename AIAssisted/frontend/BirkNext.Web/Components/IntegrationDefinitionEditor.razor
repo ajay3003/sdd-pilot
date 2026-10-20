@@ -1,14 +1,68 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
+@using BirkNext.Web.Services.ProjectImport
 
 @* Add / Edit one configured integration. Opened only on "+ Add integration" or "Edit". Nothing secret is entered here:
    authentication is a mechanism, never a key or connection string. Validation appears on blur and on save — an untouched
    form never opens with "Configuration incomplete". A new integration starts without a type: only its identity is asked for until
    a type is chosen, then that type's endpoint and flow fields; authentication, contract, operations, ownership and advanced stay
-   collapsed (with their state) until opened. *@
+   collapsed (with their state) until opened. A pack's integration template can fill the safe, known values (never secrets); values a
+   person entered are only replaced after confirmation. The evidence source is shown beside the configuration, never merged with it: a
+   matching snapshot is bound only when a person chooses it, and an existing binding is never replaced here. *@
 <section class="ip-editor" data-testid="ip-editor" aria-labelledby="ip-editor-heading">
     <h3 id="ip-editor-heading">@(IsNew ? "Add integration" : $"Edit {_model.DisplayName}")</h3>
     <p class="ip-muted">Fields marked <span aria-hidden="true">*</span><span class="ip-sr">with an asterisk</span> are required.</p>
+
+    @if (Templates.Count > 0)
+    {
+        <section class="ip-template" data-testid="ip-edit-template" aria-labelledby="ip-template-heading">
+            <h4 id="ip-template-heading">Integration template</h4>
+            @if (!IsNew) { <p class="ip-muted" data-testid="ip-edit-template-origin">@OriginText</p> }
+            <label class="ip-field">Start from
+                <select class="form-control" data-testid="ip-edit-template-select" @ref="_templateSelect" value="@_selectedKey" @onchange="OnTemplateChanged" aria-describedby="ip-template-help">
+                    <option value="">Manual / custom integration</option>
+                    @foreach (var group in Templates.GroupBy(t => t.PackName))
+                    {
+                        <optgroup label="@($"Recommended for {group.Key}")">
+                            @foreach (var t in group) { <option value="@t.Key">@t.DisplayName@(t.AlreadyConfigured.Count > 0 ? " (already configured)" : "")</option> }
+                        </optgroup>
+                    }
+                </select>
+            </label>
+            <p class="ip-muted" id="ip-template-help">A template fills safe, known values — never secrets, trust or test results. Every value stays editable before saving.</p>
+            @if (_pending is { } pending)
+            {
+                <div class="ip-template-confirm" role="group" aria-labelledby="ip-template-confirm-heading" data-testid="ip-edit-template-confirm" tabindex="-1" @ref="_confirmFocus">
+                    <p id="ip-template-confirm-heading"><strong>Apply template values?</strong> @pending.Conflicts.Count @(pending.Conflicts.Count == 1 ? "field already contains a value" : "fields already contain values") you entered: @string.Join(", ", pending.Conflicts.Select(IntegrationTemplatePresentation.FieldLabel)).</p>
+                    <div class="ip-editor-actions">
+                        <button type="button" class="btn-secondary" data-testid="ip-edit-template-keep" @onclick="() => ResolvePending(TemplateApplyMode.KeepMine)">Keep my values</button>
+                        <button type="button" class="btn-primary" data-testid="ip-edit-template-where-empty" @onclick="() => ResolvePending(TemplateApplyMode.WhereEmpty)">Apply template where empty</button>
+                        <button type="button" class="btn-secondary" data-testid="ip-edit-template-replace" @onclick="() => ResolvePending(TemplateApplyMode.Replace)">Replace with template values</button>
+                    </div>
+                </div>
+            }
+            @if (_applied is { } applied)
+            {
+                <div class="ip-template-preview" data-testid="ip-edit-template-preview">
+                    <p class="ip-muted">@applied.Description</p>
+                    <dl class="ip-template-facts">
+                        <div><dt>Type</dt><dd>@IntegrationConfigurationRules.KindLabel(applied.Kind)</dd></div>
+                        @if (applied.Values.TryGetValue("Producer", out var from) && applied.Values.TryGetValue("Consumer", out var to)) { <div><dt>Flow</dt><dd>@from.Value → @to.Value</dd></div> }
+                        @if (applied.EvidenceSource is { } evidence) { <div><dt>Evidence</dt><dd>@evidence.Role.Label</dd></div> }
+                        @if (applied.Journeys.Count > 0) { <div><dt>Used by</dt><dd data-testid="ip-edit-template-journeys">@string.Join(", ", applied.Journeys)</dd></div> }
+                    </dl>
+                    @if (applied.AlreadyConfigured.Count > 0 && IsNew)
+                    {
+                        <p class="ip-template-note" data-testid="ip-edit-template-duplicate">Already configured: @string.Join(", ", applied.AlreadyConfigured). Adding another usually duplicates it.</p>
+                    }
+                    @if (applied.NeedsConfiguration.Count > 0)
+                    {
+                        <p class="ip-template-note" data-testid="ip-edit-template-needs">Needs configuration: @string.Join(", ", applied.NeedsConfiguration.Select(IntegrationTemplatePresentation.FieldLabel)) — not known for this environment, so left empty.</p>
+                    }
+                </div>
+            }
+        </section>
+    }
 
     @if (_attempted && _errors.Count > 0)
     {
@@ -21,7 +75,8 @@
     <fieldset class="ip-fieldset">
         <legend>A. Integration</legend>
         <label class="ip-field">Display name <span aria-hidden="true">*</span>
-            <input class="form-control" data-testid="ip-edit-name" @bind="_model.DisplayName" @bind:event="oninput" @onblur='() => Touch("name")' aria-required="true" aria-invalid="@Invalid("name", string.IsNullOrWhiteSpace(_model.DisplayName))" />
+            <input class="form-control" data-testid="ip-edit-name" @ref="_nameInput" @bind="_model.DisplayName" @bind:event="oninput" @onblur='() => Touch("name")' aria-required="true" aria-invalid="@Invalid("name", string.IsNullOrWhiteSpace(_model.DisplayName))" />
+            @Provenance("DisplayName")
         </label>
         @if (Show("name") && string.IsNullOrWhiteSpace(_model.DisplayName)) { <span class="ip-field-error" role="status">Display name is required.</span> }
         <label class="ip-check"><input type="checkbox" data-testid="ip-edit-enabled" @bind="_model.Enabled" /> Enabled</label>
@@ -30,6 +85,7 @@
                 @if (_model.Kind is null) { <option value="">Select type</option> }
                 @foreach (var kind in Enum.GetValues<IntegrationKind>()) { <option value="@kind">@IntegrationConfigurationRules.KindLabel(kind)</option> }
             </select>
+            @Provenance("Kind")
         </label>
         @if (Show("kind") && _model.Kind is null) { <span class="ip-field-error" role="status">Choose a type.</span> }
         @if (_model.Kind is null)
@@ -41,7 +97,8 @@
             <p class="ip-muted" data-testid="ip-edit-kind-note">Integration Quality Review assesses configuration for this type; its domain review is not implemented yet.</p>
         }
         <label class="ip-field">Integration system
-            <input class="form-control" @bind="_model.SystemName" placeholder="e.g. BIRK CDC / Debezium" />
+            <input class="form-control" data-testid="ip-edit-system" @bind="_model.SystemName" placeholder="e.g. BIRK CDC / Debezium" />
+            @Provenance("SystemName")
         </label>
     </fieldset>
 
@@ -57,6 +114,7 @@
         </label>
         <label class="ip-field">@EndpointLabel <span aria-hidden="true">*</span>
             <input class="form-control ip-mono" data-testid="ip-edit-topic" @bind="_model.EndpointOrTopic" @bind:event="oninput" @onblur='() => Touch("topic")' aria-required="true" aria-invalid="@Invalid("topic", string.IsNullOrWhiteSpace(_model.EndpointOrTopic))" />
+            @Provenance("EndpointOrTopic")
         </label>
         @if (Show("topic") && string.IsNullOrWhiteSpace(_model.EndpointOrTopic)) { <span class="ip-field-error" role="status">This field is required.</span> }
         @* Consumer groups, source tables and delete/tombstone semantics belong to event streams (CDC); an HTTP/API integration has none. *@
@@ -71,9 +129,9 @@
 
     <fieldset class="ip-fieldset">
         <legend>C. Flow</legend>
-        <label class="ip-field">Producer <input class="form-control" data-testid="ip-edit-producer" @bind="_model.Producer" /></label>
-        @if (!IsHttpApi) { <label class="ip-field">Source <input class="form-control ip-mono" @bind="_model.SourceResource" placeholder="e.g. BirkM2LB.dbo.Person" /></label> }
-        <label class="ip-field">Consumer <input class="form-control" data-testid="ip-edit-consumer" @bind="_model.ConsumerName" /></label>
+        <label class="ip-field">Producer <input class="form-control" data-testid="ip-edit-producer" @bind="_model.Producer" />@Provenance("Producer")</label>
+        @if (!IsHttpApi) { <label class="ip-field">Source <input class="form-control ip-mono" data-testid="ip-edit-source" @bind="_model.SourceResource" placeholder="e.g. BirkM2LB.dbo.Person" />@Provenance("SourceResource")</label> }
+        <label class="ip-field">Consumer <input class="form-control" data-testid="ip-edit-consumer" @bind="_model.ConsumerName" />@Provenance("Consumer")</label>
         <label class="ip-field">Consumer mapping
             <select class="form-control" data-testid="ip-edit-mapping" @bind="_model.MappingState">
                 @foreach (var m in Enum.GetValues<ConsumerMappingState>()) { <option value="@m">@IntegrationConfigurationRules.MappingLabel(m)</option> }
@@ -94,6 +152,59 @@
             </label>
         }
     </fieldset>
+
+    <section class="ip-evidence" data-testid="ip-edit-evidence" data-state="@EvidenceState" aria-labelledby="ip-evidence-heading">
+        <h4 id="ip-evidence-heading">Evidence source <span class="ip-pill ip-pill-@IntegrationTemplatePresentation.Tone(EvidenceState)" data-testid="ip-edit-evidence-state">@(Binding is null && _applied is null && OriginalTemplate is null ? "Not bound" : IntegrationTemplatePresentation.Label(EvidenceState))</span></h4>
+        <p class="ip-muted">What source snapshot supports review of this integration — separate from its configuration and from runtime evidence.</p>
+        @if (Binding is { } binding)
+        {
+            <p data-testid="ip-edit-evidence-bound">Canonical evidence: <span class="ip-wrap">@binding.ArchiveName</span></p>
+            <p class="ip-muted">@IntegrationTemplatePresentation.Meaning(EvidenceState) <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-edit-evidence-iqr">Open IQR Evidence</a></p>
+        }
+        else if (EvidenceStatus is not { } status)
+        {
+            <p class="ip-muted" data-testid="ip-edit-evidence-none">@(_applied is null && OriginalTemplate is null ? "No template evidence requirement. Source evidence can be bound in IQR Evidence after saving." : IntegrationTemplatePresentation.Meaning(EvidenceState))</p>
+        }
+        else
+        {
+            var choices = IntegrationTemplatePresentation.Choices(status);
+            <dl class="ip-template-facts">
+                <div><dt>@SourceSetupPresentation.RequirementLabel(status.Role.Requirement) source</dt><dd data-testid="ip-edit-evidence-role">@status.Role.Label</dd></div>
+                <div><dt>Expected evidence</dt><dd>@status.Role.ExpectedArtifact</dd></div>
+            </dl>
+            <p class="ip-muted" data-testid="ip-edit-evidence-meaning">@IntegrationTemplatePresentation.Meaning(EvidenceState)</p>
+            @if (choices.Count == 0)
+            {
+                <p class="ip-editor-actions"><a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import source</a></p>
+            }
+            else if (choices.Count == 1)
+            {
+                var only = choices[0];
+                <p data-testid="ip-edit-evidence-candidate"><span class="ip-wrap">@only.ArchiveFileName</span>@if (only.MatchedOn.Count > 0) { <span class="ip-muted"> · matched on @string.Join(", ", only.MatchedOn.Take(3))</span> }</p>
+                <div class="ip-editor-actions">
+                    <button type="button" class="@(_evidenceChoice == only.SnapshotId ? "btn-primary" : "btn-secondary")" data-testid="ip-edit-evidence-use" aria-pressed="@(_evidenceChoice == only.SnapshotId ? "true" : "false")" @onclick="() => ToggleEvidence(only.SnapshotId)">@(_evidenceChoice == only.SnapshotId ? "Using this source" : "Use this source")</button>
+                    <a class="ip-link" href="@ProjectImportPresentation.SourceAnalysisHref(only.SnapshotId)" data-testid="ip-edit-evidence-open">Open source</a>
+                    <a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import another source</a>
+                </div>
+            }
+            else
+            {
+                <fieldset class="ip-evidence-choices" data-testid="ip-edit-evidence-choices">
+                    <legend>Choose source</legend>
+                    <label class="ip-check"><input type="radio" name="ip-evidence-choice" data-testid="ip-edit-evidence-none-choice" checked="@(_evidenceChoice is null)" @onchange="() => _evidenceChoice = null" /> Do not bind now</label>
+                    @foreach (var choice in choices)
+                    {
+                        <label class="ip-check" data-testid="ip-edit-evidence-option"><input type="radio" name="ip-evidence-choice" value="@choice.SnapshotId" checked="@(_evidenceChoice == choice.SnapshotId)" @onchange="() => _evidenceChoice = choice.SnapshotId" />
+                            <span class="ip-wrap">@choice.ArchiveFileName <span class="ip-muted">· analyzed @choice.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC@(choice.Bound ? " · bound to another integration" : "")</span></span></label>
+                    }
+                </fieldset>
+            }
+            @if (_evidenceChoice is { } chosen && choices.FirstOrDefault(c => c.SnapshotId == chosen) is { } picked)
+            {
+                <p class="ip-template-note" role="status" data-testid="ip-edit-evidence-effect"><strong>@picked.ArchiveFileName</strong> will become the canonical source evidence for this integration when it is saved. It is bound right after the integration is stored; IQR Evidence is where it is changed later.</p>
+            }
+        }
+    </section>
 
     <ReviewDisclosure Text="D. Authentication" CollapseText="D. Authentication" Hint="@(_model.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured && _model.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured ? "Not configured" : "Configured")"
                       TestId="ip-edit-section-authentication" Class="disclosure-inline">
@@ -154,12 +265,12 @@
             <label class="ip-field">Retention (days) <input type="number" min="1" class="form-control" @bind="_model.RetentionDays" /></label>
         }
         else { <p class="ip-muted">No event-stream settings apply to an HTTP/API integration.</p> }
-        @if (!IsNew) { <p class="ip-muted">Id: <code>@_model.Id</code> · Origin: @Original?.Origin</p> }
+        @if (!IsNew) { <p class="ip-muted">Id: <code>@_model.Id</code> · Origin: @Original?.Origin@(Original?.TemplateKey is { } templateKey ? $" · template {templateKey}" : "")</p> }
     </ReviewDisclosure>
     }
 
     <div class="ip-editor-actions">
-        <button type="button" class="btn-primary" data-testid="ip-edit-save" disabled="@_saving" @onclick="SaveAsync">@(IsNew ? "Add integration" : "Save changes")</button>
+        <button type="button" class="btn-primary" data-testid="ip-edit-save" disabled="@_saving" @onclick="SaveAsync">@(IsNew ? "Save integration" : "Save changes")</button>
         <button type="button" class="btn-secondary" data-testid="ip-edit-cancel" @onclick="OnCancel">Cancel</button>
     </div>
 </section>
@@ -181,8 +292,19 @@
     }
     [Parameter] public IntegrationDefinition? Original { get; set; }
     [Parameter] public IReadOnlyList<IntegrationPlatform> Platforms { get; set; } = [];
-    [Parameter] public EventCallback<IntegrationDefinition> OnSave { get; set; }
+    [Parameter] public EventCallback<IntegrationEditorSave> OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>The environment's resolved integration templates (empty: the manual form only).</summary>
+    [Parameter] public IReadOnlyList<IntegrationTemplateView> Templates { get; set; } = [];
+    /// <summary>The edited integration's canonical evidence binding, if any (shown; never replaced here).</summary>
+    [Parameter] public IntegrationEvidenceBinding? Binding { get; set; }
+
+    private IntegrationTemplateView? OriginalTemplate => Original?.TemplateKey is { } key ? Templates.FirstOrDefault(t => t.Key == key) : null;
+    private string OriginText => Original?.TemplateKey is { } key
+        ? $"Created from template: {OriginalTemplate?.DisplayName ?? key}. Choosing a template here never overwrites saved values without asking."
+        : "Custom integration. Choosing a template here never overwrites saved values without asking.";
+    private TestPackSourceStatus? EvidenceStatus => (_applied ?? OriginalTemplate)?.EvidenceSource;
+    private TemplateEvidenceState EvidenceState => IntegrationTemplatePresentation.Evidence(EvidenceStatus, Binding);
 
     private bool IsNew => Original is null;
     private Model _model = new();
@@ -190,31 +312,140 @@
     private bool _attempted;
     private bool _saving;
     private IReadOnlyList<string> _errors = [];
+    private ElementReference _templateSelect;
+    private ElementReference _nameInput;
+    private ElementReference _confirmFocus;
+    private bool _focusConfirm;
+    /// <summary>The template whose values are in the form (null: manual), what the form itself wrote (template values, platform defaults —
+    /// never a person's input) and where each written value came from.</summary>
+    private IntegrationTemplateView? _applied;
+    private string _selectedKey = "";
+    private string _previousKey = "";
+    private readonly Dictionary<string, string> _prefilled = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _provenance = new(StringComparer.Ordinal);
+    private sealed record PendingTemplate(IntegrationTemplateView Template, IReadOnlyList<string> Conflicts);
+    private PendingTemplate? _pending;
+    /// <summary>The snapshot a person explicitly chose to bind on save (never preselected, never the newest by default).</summary>
+    private Guid? _evidenceChoice;
 
     protected override void OnParametersSet()
     {
         if (_model.SourceOriginal == Original && _model.Initialized) return;
         _model = Model.From(Original, Platforms.FirstOrDefault());
+        _prefilled.Clear();
+        _provenance.Clear();
+        if (IsNew && _model.Producer is { Length: > 0 } platformProducer) _prefilled["Producer"] = platformProducer;
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (firstRender) await (Templates.Count > 0 ? _templateSelect : _nameInput).FocusAsync();
+            if (_focusConfirm) { _focusConfirm = false; await _confirmFocus.FocusAsync(); }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+    }
+
+    private Dictionary<string, string?> Current() => IntegrationTemplatePresentation.Fields.ToDictionary(field => field, _model.Get, StringComparer.Ordinal);
+
+    private void OnTemplateChanged(ChangeEventArgs e)
+    {
+        _previousKey = _selectedKey;
+        _selectedKey = e.Value?.ToString() ?? "";
+        _pending = null;
+        if (Templates.FirstOrDefault(t => t.Key == _selectedKey) is not { } template) { ClearTemplate(); return; }
+        var conflicts = IntegrationTemplatePresentation.Conflicts(Current(), _prefilled, template);
+        if (conflicts.Count == 0) Apply(template, TemplateApplyMode.WhereEmpty);
+        else { _pending = new(template, conflicts); _focusConfirm = true; }
+    }
+
+    private void ResolvePending(TemplateApplyMode mode)
+    {
+        if (_pending is not { } pending) return;
+        _pending = null;
+        if (mode == TemplateApplyMode.KeepMine) { _selectedKey = _previousKey; return; }
+        Apply(pending.Template, mode);
+    }
+
+    private void Apply(IntegrationTemplateView template, TemplateApplyMode mode)
+    {
+        // Values the previous template wrote (and nobody changed since) belong to that template, not to the person.
+        if (_applied is not null && _applied.Key != template.Key) RemoveTemplateValues();
+        foreach (var (field, value) in IntegrationTemplatePresentation.Apply(Current(), _prefilled, template, mode))
+        {
+            _model.Set(field, value);
+            _prefilled[field] = value;
+            _provenance[field] = IntegrationTemplatePresentation.Value(template, field)?.Provenance ?? "Template";
+        }
+        _applied = template;
+        if (_evidenceChoice is { } chosen && template.EvidenceSource?.Candidates.Any(c => c.SnapshotId == chosen) != true) _evidenceChoice = null;
+        if (_attempted) Revalidate();
+    }
+
+    /// <summary>Manual / custom: the template's untouched values leave with it; anything a person typed stays.</summary>
+    private void ClearTemplate()
+    {
+        RemoveTemplateValues();
+        _applied = null;
+        _evidenceChoice = null;
+        if (_attempted) Revalidate();
+    }
+
+    private void RemoveTemplateValues()
+    {
+        foreach (var field in _provenance.Keys.ToList())
+        {
+            if (_prefilled.TryGetValue(field, out var written) && _model.Get(field) == written) _model.Set(field, null);
+            _prefilled.Remove(field);
+            _provenance.Remove(field);
+        }
+    }
+
+    private void ToggleEvidence(Guid snapshotId) => _evidenceChoice = _evidenceChoice == snapshotId ? null : snapshotId;
+
+    /// <summary>A subtle "where this value came from" note while the value is still the one the template wrote.</summary>
+    private RenderFragment Provenance(string field) => builder =>
+    {
+        if (_provenance.TryGetValue(field, out var origin) && _prefilled.TryGetValue(field, out var written) && _model.Get(field) == written)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "ip-prov");
+            builder.AddAttribute(2, "data-testid", "ip-prov");
+            builder.AddAttribute(3, "data-field", field);
+            builder.AddContent(4, $"Source: {origin}");
+            builder.CloseElement();
+        }
+        else if (_applied?.NeedsConfiguration.Contains(field) == true && string.IsNullOrWhiteSpace(_model.Get(field)))
+        {
+            builder.OpenElement(5, "span");
+            builder.AddAttribute(6, "class", "ip-prov ip-prov-needs");
+            builder.AddAttribute(7, "data-testid", "ip-needs-config");
+            builder.AddAttribute(8, "data-field", field);
+            builder.AddContent(9, "Needs configuration — not known for this environment");
+            builder.CloseElement();
+        }
+    };
+
+    private void Revalidate() =>
+        _errors = _model.Kind is null
+            ? [.. string.IsNullOrWhiteSpace(_model.DisplayName) ? new[] { "Display name is required." } : [], "Type is required: choose what kind of integration this is."]
+            : IntegrationsPanePresentation.Validate(_model.ToDefinition(Original, _applied, IsNew));
 
     private void Touch(string field) => _touched.Add(field);
     private bool Show(string field) => _attempted || _touched.Contains(field);
     private string Invalid(string field, bool invalid) => Show(field) && invalid ? "true" : "false";
-    private IEnumerable<string> UrlErrors() => _model.Kind is null ? [] : IntegrationsPanePresentation.Validate(_model.ToDefinition(Original)).Where(e => e.Contains("URL"));
+    private IEnumerable<string> UrlErrors() => _model.Kind is null ? [] : IntegrationsPanePresentation.Validate(_model.ToDefinition(Original, _applied, IsNew)).Where(e => e.Contains("URL"));
 
     private async Task SaveAsync()
     {
         _attempted = true;
-        if (_model.Kind is null)
-        {
-            _errors = [.. string.IsNullOrWhiteSpace(_model.DisplayName) ? new[] { "Display name is required." } : [], "Type is required: choose what kind of integration this is."];
-            return;
-        }
-        var definition = _model.ToDefinition(Original);
-        _errors = IntegrationsPanePresentation.Validate(definition);
-        if (_errors.Count > 0) return;
+        Revalidate();
+        if (_model.Kind is null || _errors.Count > 0) return;
+        var definition = _model.ToDefinition(Original, _applied, IsNew);
+        var archive = _evidenceChoice is { } chosen ? EvidenceStatus?.Candidates.FirstOrDefault(c => c.SnapshotId == chosen)?.ArchiveFileName : null;
         _saving = true;
-        try { await OnSave.InvokeAsync(definition); }
+        try { await OnSave.InvokeAsync(new IntegrationEditorSave(definition, Binding is null && archive is not null ? _evidenceChoice : null, archive)); }
         finally { _saving = false; }
     }
 
@@ -243,6 +474,8 @@
         public string? ConsumerGroup { get; set; }
         public string? Producer { get; set; }
         public string? SourceResource { get; set; }
+        public string? SourceSystem { get; set; }
+        public string? DestinationSystem { get; set; }
         public string? ConsumerName { get; set; }
         public ConsumerMappingState MappingState { get; set; } = ConsumerMappingState.NeedsConfirmation;
         public string? ConsumerLogicalName { get; set; }
@@ -275,6 +508,7 @@
             {
                 Initialized = true, SourceOriginal = d, Id = d.Id, DisplayName = d.DisplayName, Enabled = d.Enabled, Kind = d.Kind, SystemName = d.SystemName, PlatformId = d.PlatformId,
                 EndpointOrTopic = d.EndpointOrTopic, ConsumerGroup = d.ConsumerGroup, Producer = d.Producer, SourceResource = d.SourceResource,
+                SourceSystem = d.SourceSystem, DestinationSystem = d.DestinationSystem,
                 ConsumerName = d.Consumer.DisplayName, MappingState = d.Consumer.MappingState, ConsumerLogicalName = d.Consumer.LogicalName,
                 ConsumerContainerApp = d.Consumer.ContainerApp, ConsumerManagedIdentity = d.Consumer.ManagedIdentity,
                 ProducerAuthentication = d.ProducerAuthentication, ConsumerAuthentication = d.ConsumerAuthentication, ContractRelationship = d.ContractRelationship,
@@ -285,10 +519,37 @@
 
         private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-        public IntegrationDefinition ToDefinition(IntegrationDefinition? original) => (original ?? new IntegrationDefinition()) with
+        /// <summary>A template-fillable field by name (see <see cref="IntegrationTemplatePresentation.Fields"/>).</summary>
+        public string? Get(string field) => field switch
+        {
+            "DisplayName" => DisplayName, "Kind" => Kind?.ToString(), "SystemName" => SystemName, "EndpointOrTopic" => EndpointOrTopic, "Producer" => Producer,
+            "SourceResource" => SourceResource, "Consumer" => ConsumerName, "SourceSystem" => SourceSystem, "DestinationSystem" => DestinationSystem, _ => null,
+        };
+
+        public void Set(string field, string? value)
+        {
+            switch (field)
+            {
+                case "DisplayName": DisplayName = value ?? ""; break;
+                case "Kind": Kind = Enum.TryParse<IntegrationKind>(value, out var kind) ? kind : null; break;
+                case "SystemName": SystemName = value; break;
+                case "EndpointOrTopic": EndpointOrTopic = value; break;
+                case "Producer": Producer = value; break;
+                case "SourceResource": SourceResource = value; break;
+                case "Consumer": ConsumerName = value; break;
+                case "SourceSystem": SourceSystem = value; break;
+                case "DestinationSystem": DestinationSystem = value; break;
+            }
+        }
+
+        /// <summary>A new record created with a template keeps it as its origin (setup guidance only; a later template version never rewrites it).</summary>
+        public IntegrationDefinition ToDefinition(IntegrationDefinition? original, IntegrationTemplateView? template, bool isNew) => (original ?? new IntegrationDefinition()) with
         {
             DisplayName = DisplayName.Trim(), Enabled = Enabled, Kind = Kind ?? IntegrationKind.EventHub, SystemName = Clean(SystemName), PlatformId = Clean(PlatformId),
             EndpointOrTopic = Clean(EndpointOrTopic), ConsumerGroup = Clean(ConsumerGroup), Producer = Clean(Producer), SourceResource = Clean(SourceResource),
+            SourceSystem = Clean(SourceSystem), DestinationSystem = Clean(DestinationSystem),
+            Origin = isNew && template is not null ? IntegrationRecordOrigin.Template : original?.Origin ?? IntegrationRecordOrigin.Manual,
+            TemplateKey = isNew ? template?.Key : original?.TemplateKey,
             Consumer = new IntegrationConsumer
             {
                 DisplayName = Clean(ConsumerName), LogicalName = Clean(ConsumerLogicalName), ContainerApp = Clean(ConsumerContainerApp), ManagedIdentity = Clean(ConsumerManagedIdentity),

@@ -23,6 +23,8 @@ public interface IIntegrationJourneyService
     /// <summary>Every pack's logical sources and the stored snapshots they were matched against (read-only). A blank environment is allowed:
     /// bindings belong to a target environment, so without one nothing reads as bound.</summary>
     Task<SourceSetupView> SourceSetupAsync(string? environmentId, CancellationToken ct) => Task.FromResult(new SourceSetupView());
+    Task<IReadOnlyList<IntegrationTemplateView>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<IntegrationTemplateView>>([]);
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
     /// <summary>Validates a run without executing it: no external call, no gate, no runner, no history. Every gate StartAsync applies is reported.</summary>
@@ -215,6 +217,18 @@ public sealed class IntegrationJourneyService(
             Limitations = environment.Length > 0 ? ["Bound means the canonical Integration Quality Review evidence binding of this target environment; a newer snapshot never replaces it."]
                 : ["No target environment is selected: IQR evidence bindings belong to a target environment, so no source reads as bound."],
         };
+    }
+
+    /// <summary>Add-integration templates of every pack, resolved for the environment. The environment type comes from the trusted environment
+    /// record when there is one, else from the caller's profile; production never receives a template endpoint.</summary>
+    public async Task<IReadOnlyList<IntegrationTemplateView>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct)
+    {
+        var environment = environmentId?.Trim() ?? "";
+        var context = environment.Length == 0
+            ? new JourneyPackContext("", null, "No target environment is selected.", new IntegrationCatalog(), sources.SourceAnalysisEnabled ? await sources.ListAsync("", ct) : [])
+            : await ContextAsync(environment, ct);
+        var type = context.TrustedEnvironment?.EnvironmentType ?? environmentType;
+        return [.. packs.Packs.SelectMany(pack => pack.IntegrationTemplates.Select(template => IntegrationTemplates.Resolve(pack, context, template, type)))];
     }
 
     public async Task<SourceConfigurationApplyResult> ApplySourceConfigurationAsync(string environmentId, string packId, CancellationToken ct)

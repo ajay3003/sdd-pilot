@@ -152,6 +152,7 @@ public static class IntegrationsOverviewPresentation
         IntegrationRecordOrigin.Seed => definition.UserModified ? "Seed · modified" : "Seed",
         IntegrationRecordOrigin.ImportedFromBrowserProfile => "Imported",
         IntegrationRecordOrigin.SourceSuggestion => "Source suggestion",
+        IntegrationRecordOrigin.Template => "Template",
         _ => "Manual",
     };
 

@@ -110,6 +110,7 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured").And.Contain("5 integration candidates found from Source Analysis");
         cut.Find("[data-testid=ip-empty-review]").ClassList.Should().Contain("btn-primary", "reviewing the candidates is the next action");
         cut.Find("[data-testid=ip-empty-add]").ClassList.Should().Contain("btn-secondary");
+        cut.FindAll("[data-testid=ip-add], [data-testid=ip-review-suggestions]").Should().BeEmpty("the empty state owns the actions; nothing is duplicated above it");
         cut.Find("[data-testid=ip-empty-review]").Click();
         cut.FindAll("[data-testid=ip-suggestion]").Should().NotBeEmpty();
         cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");

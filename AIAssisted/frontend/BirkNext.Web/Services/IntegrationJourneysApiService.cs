@@ -26,6 +26,9 @@ public interface IIntegrationJourneysApiService
     /// <summary>Every pack's logical sources and the stored snapshots they were matched against (read-only; a blank environment reads no bindings).</summary>
     Task<ActiveEventApiResult<SourceSetupView>> SourceSetupAsync(string? environmentId, CancellationToken ct = default) =>
         Task.FromResult(new ActiveEventApiResult<SourceSetupView>(null, "Source setup is not available.", null));
+    /// <summary>Every pack's Add-integration templates resolved for one environment (read-only guidance; nothing is created or bound).</summary>
+    Task<ActiveEventApiResult<IReadOnlyList<IntegrationTemplateView>>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<IReadOnlyList<IntegrationTemplateView>>(null, "Integration templates are not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
     /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
     Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
@@ -56,6 +59,9 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
 
     public Task<ActiveEventApiResult<SourceSetupView>> SourceSetupAsync(string? environmentId, CancellationToken ct = default) =>
         GetAsync<SourceSetupView>($"api/integration-journeys/source-setup?environmentId={E(environmentId ?? "")}", ct);
+
+    public async Task<ActiveEventApiResult<IReadOnlyList<IntegrationTemplateView>>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct = default) =>
+        List(await GetAsync<List<IntegrationTemplateView>>($"api/integration-journeys/integration-templates?environmentId={E(environmentId ?? "")}&environmentType={E(environmentType ?? "")}", ct));
 
     public async Task<ActiveEventApiResult<BirkNext.SourceDomains.SourceConfigurationApplyResult>> ApplySourceGuidanceAsync(string environmentId, string packId, CancellationToken ct = default)
     {

@@ -94,6 +94,32 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     /// <summary>The logical sources Skolenærvær needs. Each is resolved through the IQR binding of its own integrations and recognized by its
     /// components (or, for the Altinn app, by its API document) — archive names are only provenance. No single source contains everything.</summary>
+    /// <summary>
+    /// Add-integration templates, one per pack integration requirement whose shape the pack knows (it also recognizes the result through
+    /// <see cref="Matches"/>). Only deterministic, non-secret values: the report intake webhook is MU's known endpoint (never offered for a
+    /// production environment), the period-closed topic is the pack's event name; the CDC Event Hub name and source table vary per environment
+    /// and are left for the tester. No MU → MM or MM → Skoletjenesten template: the pack has no integration requirement for them.
+    /// </summary>
+    public IReadOnlyList<IntegrationTemplateDefinition> IntegrationTemplates { get; } =
+    [
+        new("skolenaervaer-report-intake", "Skolenærvær – Altinn report intake", "Altinn delivers submitted school-attendance reports to Meldingsutveksleren (MU) through its webhook.", IntegrationKind.HttpApi)
+        {
+            RequirementKey = ReportIntake, SystemName = "Altinn → Meldingsutveksleren (MU)", Producer = "Altinn", Consumer = "Meldingsutveksleren (MU)",
+            SourceSystem = "Altinn", DestinationSystem = "Meldingsutveksleren (MU)",
+            EndpointOrTopic = "https://buf-meldings-utveksler.azurewebsites.net/api/altinn/webhook", EvidenceSourceRoleKey = MuSource,
+        },
+        new("skolenaervaer-education-cdc", "Skolenærvær – BiRK CDC → SkoleAdapter", "Debezium captures BiRK education changes and publishes them on Event Hub; SkoleAdapter consumes them.", IntegrationKind.EventHub)
+        {
+            RequirementKey = EducationCdc, SystemName = "BiRK CDC → SkoleAdapter", Producer = "Debezium", Consumer = "SkoleAdapter",
+            SourceSystem = "BiRK", DestinationSystem = "SkoleAdapter", EvidenceSourceRoleKey = M2lbSource,
+        },
+        new("skolenaervaer-period-closed", "Skolenærvær – Period closed → Bufdata", $"Skolenærværsrapport publishes {PeriodClosedEvent} on Service Bus when a reporting period closes; Bufdata consumes it.", IntegrationKind.ServiceBus)
+        {
+            RequirementKey = PeriodClosed, SystemName = "Skolenærværsrapport → Bufdata", Producer = "Skolenærværsrapport", Consumer = "Bufdata",
+            SourceSystem = "Skolenærværsrapport", DestinationSystem = "Bufdata", EndpointOrTopic = PeriodClosedEvent, EvidenceSourceRoleKey = M2lbSource,
+        },
+    ];
+
     public IReadOnlyList<TestPackSourceRole> SourceRoles { get; } =
     [
         new(MuSource, "MU (Meldingsutveksleren)", "The message hub that receives Altinn's webhook and forwards reports.")

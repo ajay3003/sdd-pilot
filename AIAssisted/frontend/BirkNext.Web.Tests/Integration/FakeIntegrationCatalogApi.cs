@@ -11,6 +11,17 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     /// <summary>The canonical IQR source-evidence bindings the pane shows per integration (read-only here).</summary>
     public IReadOnlyList<IntegrationEvidenceBinding> EvidenceBindings { get; set; } = [];
     public Task<IReadOnlyList<IntegrationEvidenceBinding>> ListEvidenceBindingsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(EvidenceBindings);
+    /// <summary>Explicit evidence-binding requests (integration id, snapshot id), and the backend reason to refuse them with (null: accepted).</summary>
+    public List<(string IntegrationId, Guid? SnapshotId)> BindCalls { get; } = [];
+    public string? BindError { get; set; }
+    public Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetEvidenceBindingAsync(string environmentId, string integrationId, Guid? snapshotId, CancellationToken ct = default)
+    {
+        BindCalls.Add((integrationId, snapshotId));
+        if (BindError is { } error) return Task.FromResult<(IntegrationEvidenceBinding?, string?)>((null, error));
+        var binding = new IntegrationEvidenceBinding { EnvironmentId = environmentId, IntegrationId = integrationId, SnapshotId = snapshotId ?? Guid.Empty, ArchiveName = "bound.zip", Fingerprint = new string('f', 64) };
+        EvidenceBindings = [.. EvidenceBindings.Where(b => b.IntegrationId != integrationId), binding];
+        return Task.FromResult<(IntegrationEvidenceBinding?, string?)>((binding, null));
+    }
     public ApplicationMessagingEvidenceSet? Messaging { get; set; }
     public Func<string, ServiceBusEvidenceCheck>? ServiceBusCheck { get; set; }
     public Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default)
@@ -140,9 +151,11 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("create");
         Mutating();
         Created.Add(definition);
-        // Like the backend: a record added from a source suggestion keeps that origin; anything else is Manual.
+        // Like the backend: a source-suggestion or (keyed) template record keeps that origin; anything else is Manual.
+        var origin = definition.Origin == IntegrationRecordOrigin.SourceSuggestion ? IntegrationRecordOrigin.SourceSuggestion
+            : definition.Origin == IntegrationRecordOrigin.Template && !string.IsNullOrWhiteSpace(definition.TemplateKey) ? IntegrationRecordOrigin.Template : IntegrationRecordOrigin.Manual;
         var created = definition with { Id = $"{environmentId}:manual:{Catalog.Integrations.Count + 1}", EnvironmentId = environmentId,
-            Origin = definition.Origin == IntegrationRecordOrigin.SourceSuggestion ? IntegrationRecordOrigin.SourceSuggestion : IntegrationRecordOrigin.Manual };
+            Origin = origin, TemplateKey = origin == IntegrationRecordOrigin.Template ? definition.TemplateKey : null };
         Catalog = Catalog with { Integrations = [.. Catalog.Integrations, created] };
         Saved.Add(created);
         return Task.FromResult(created);

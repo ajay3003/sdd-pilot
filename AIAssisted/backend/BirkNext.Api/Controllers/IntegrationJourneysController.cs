@@ -54,6 +54,16 @@ public sealed class IntegrationJourneysController(IIntegrationJourneyService jou
         catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
+    /// <summary>Add-integration templates resolved for an environment: safe prefill values with provenance, fields left to configure, and the
+    /// evidence source state. Read-only; never creates, binds or trusts anything.</summary>
+    [AllowAnonymous]
+    [HttpGet("integration-templates")]
+    public async Task<ActionResult<IReadOnlyList<IntegrationTemplateView>>> IntegrationTemplates([FromQuery] string? environmentId, [FromQuery] string? environmentType, CancellationToken ct)
+    {
+        try { return Ok(await journeys.IntegrationTemplatesAsync(environmentId, environmentType, ct)); }
+        catch (IntegrationJourneyRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     [AllowAnonymous]
     [HttpGet("test-packs")]
     public ActionResult<IReadOnlyList<TestPackDescriptor>> TestPacks([FromServices] IIntegrationJourneyPackRegistry registry) =>

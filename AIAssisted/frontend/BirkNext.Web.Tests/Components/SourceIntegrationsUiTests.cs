@@ -363,7 +363,10 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         UseSuggestions();
         var cut = Open();
         cut.Find("[data-testid=ip-review-suggestions]").Click();
-        cut.FindAll("[data-testid=ip-suggestion]").Single(r => r.GetAttribute("data-strength") == "StronglySupported").QuerySelector("[data-testid=ip-suggestion-add]")!.Click();
+        var add = cut.FindAll("[data-testid=ip-suggestion]").Single(r => r.GetAttribute("data-strength") == "StronglySupported").QuerySelector("[data-testid=ip-suggestion-add]")!;
+        add.TextContent.Should().Be("Add this integration", "a suggestion's action is about that suggestion, not the generic trigger");
+        add.GetAttribute("aria-label").Should().StartWith("Add integration ");
+        add.Click();
         cut.WaitForAssertion(() => _api.Created.Should().ContainSingle());
         var created = _api.Created.Single();
         created.Origin.Should().Be(IntegrationRecordOrigin.SourceSuggestion);

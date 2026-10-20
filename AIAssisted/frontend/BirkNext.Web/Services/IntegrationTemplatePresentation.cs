@@ -1,0 +1,117 @@
+using BirkNext.Integrations;
+using BirkNext.Web.Models;
+using BirkNext.Web.Services.ProjectImport;
+
+namespace BirkNext.Web.Services;
+
+/// <summary>The evidence source of an integration being added or edited, as the Add integration form shows it. Availability is never a binding.</summary>
+public enum TemplateEvidenceState { NotRequired, Missing, Available, NeedsBinding, Ambiguous, Bound }
+
+/// <summary>What the Add/Edit integration form saves: the record, and the evidence snapshot a person explicitly chose to bind (null: none).</summary>
+public sealed record IntegrationEditorSave(IntegrationDefinition Definition, Guid? EvidenceSnapshotId, string? EvidenceArchive);
+
+/// <summary>How template values meet values already in the form. <see cref="WhereEmpty"/> is the safe default; nothing is replaced silently.</summary>
+public enum TemplateApplyMode { KeepMine, WhereEmpty, Replace }
+
+/// <summary>
+/// Add-integration templates in the form: which fields a template fills, which form values it would replace (a person decides), and the
+/// evidence source state. Generic over every pack's template metadata — no pack is named here. Nothing here creates, binds or trusts.
+/// </summary>
+public static class IntegrationTemplatePresentation
+{
+    /// <summary>The form fields a template may fill, in form order (IntegrationDefinition property names; "Consumer" is the consumer display name).</summary>
+    public static readonly IReadOnlyList<string> Fields =
+        ["DisplayName", "Kind", "SystemName", "EndpointOrTopic", "Producer", "SourceResource", "Consumer", "SourceSystem", "DestinationSystem"];
+
+    public static string FieldLabel(string field) => field switch
+    {
+        "DisplayName" => "Display name",
+        "Kind" => "Type",
+        "SystemName" => "Integration system",
+        "EndpointOrTopic" => "Endpoint / channel",
+        "SourceResource" => "Source",
+        "SourceSystem" => "Source system",
+        "DestinationSystem" => "Destination system",
+        _ => field,
+    };
+
+    /// <summary>A template's value for one form field (the type comes from the template itself, never from a field value).</summary>
+    public static IntegrationTemplateValue? Value(IntegrationTemplateView template, string field) =>
+        field == "Kind" ? new(template.Kind.ToString(), "Template") : template.Values.TryGetValue(field, out var value) ? value : null;
+
+    /// <summary>
+    /// Fields whose current value was entered by a person (non-empty, not what a template filled) and differs from the template value.
+    /// <paramref name="templateFilled"/> holds what a previously applied template wrote, so switching templates does not ask about them.
+    /// </summary>
+    public static IReadOnlyList<string> Conflicts(IReadOnlyDictionary<string, string?> current, IReadOnlyDictionary<string, string> templateFilled, IntegrationTemplateView template) =>
+        Fields.Where(field => Value(template, field) is { } value
+                && current.TryGetValue(field, out var mine) && !string.IsNullOrWhiteSpace(mine)
+                && !(templateFilled.TryGetValue(field, out var filled) && filled == mine)
+                && !string.Equals(mine.Trim(), value.Value, StringComparison.Ordinal))
+            .ToList();
+
+    /// <summary>The field values to write: template values where the field is empty or template-filled; person-entered values only on Replace.</summary>
+    public static IReadOnlyDictionary<string, string> Apply(IReadOnlyDictionary<string, string?> current, IReadOnlyDictionary<string, string> templateFilled, IntegrationTemplateView template, TemplateApplyMode mode)
+    {
+        var conflicts = Conflicts(current, templateFilled, template).ToHashSet(StringComparer.Ordinal);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var field in Fields)
+        {
+            if (Value(template, field) is not { } value) continue;
+            if (conflicts.Contains(field) && mode != TemplateApplyMode.Replace) continue;
+            result[field] = value.Value;
+        }
+        return result;
+    }
+
+    /// <summary>The environment kind templates resolve endpoints for ("Development", "QA"); Custom or an unset profile has none.</summary>
+    public static string? EnvironmentType(FrontendAnalysisProfile? profile) =>
+        profile is null || profile.EnvironmentType == FrontendEnvironmentType.Custom ? null : profile.EnvironmentType.ToString();
+
+    /// <summary>
+    /// The form's evidence state: the integration's own canonical binding first (Bound — never replaced here), then what the pack's source
+    /// requirement finds among stored snapshots. A source bound to another integration still needs this integration's own binding.
+    /// </summary>
+    public static TemplateEvidenceState Evidence(TestPackSourceStatus? status, IntegrationEvidenceBinding? ownBinding)
+    {
+        if (ownBinding is not null) return TemplateEvidenceState.Bound;
+        if (status is null) return TemplateEvidenceState.NotRequired;
+        var choices = Choices(status);
+        if (choices.Count == 0) return TemplateEvidenceState.Missing;
+        if (SourceSetupPresentation.IsAmbiguous(status) || choices.Select(c => c.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1) return TemplateEvidenceState.Ambiguous;
+        return status.State is TestPackSourceState.Bound or TestPackSourceState.ReviewRequired ? TemplateEvidenceState.NeedsBinding : TemplateEvidenceState.Available;
+    }
+
+    /// <summary>The snapshots a person may choose from (one per snapshot, in the backend's order). Never chosen automatically.</summary>
+    public static IReadOnlyList<TestPackSourceCandidate> Choices(TestPackSourceStatus status) =>
+        status.Candidates.GroupBy(c => c.SnapshotId).Select(g => g.First()).ToList();
+
+    public static string Label(TemplateEvidenceState state) => state switch
+    {
+        TemplateEvidenceState.NotRequired => "Not required",
+        TemplateEvidenceState.Available => "Available",
+        TemplateEvidenceState.NeedsBinding => "Needs binding",
+        TemplateEvidenceState.Ambiguous => "Ambiguous",
+        TemplateEvidenceState.Bound => "Bound",
+        _ => "Missing",
+    };
+
+    public static string Meaning(TemplateEvidenceState state) => state switch
+    {
+        TemplateEvidenceState.NotRequired => "This integration does not require source evidence.",
+        TemplateEvidenceState.Available => "One matching imported snapshot exists. It is not bound to this integration.",
+        TemplateEvidenceState.NeedsBinding => "Matching source exists, but this integration still needs its own explicit binding.",
+        TemplateEvidenceState.Ambiguous => "Multiple matching sources found. Choose one — the newest is never picked for you.",
+        TemplateEvidenceState.Bound => "This integration already has canonical source evidence. It is changed only in IQR Evidence.",
+        _ => "No matching imported source found.",
+    };
+
+    /// <summary>Pill tone (the label always carries the meaning; colour is never the only signal).</summary>
+    public static string Tone(TemplateEvidenceState state) => state switch
+    {
+        TemplateEvidenceState.Bound => "ready",
+        TemplateEvidenceState.Available or TemplateEvidenceState.NeedsBinding or TemplateEvidenceState.Ambiguous => "attention",
+        TemplateEvidenceState.Missing => "warning",
+        _ => "muted",
+    };
+}

@@ -331,6 +331,27 @@ public sealed class IntegrationCatalogTests
     }
 
     [Fact]
+    public async Task AnIntegrationCreatedFromATemplate_KeepsTemplateOriginAndKey_ButAKeylessTemplateOriginIsManual()
+    {
+        var service = Service(Db());
+        var fromTemplate = await service.CreateAsync("env", new IntegrationDefinition
+        {
+            DisplayName = "Report intake", Kind = IntegrationKind.HttpApi, EndpointOrTopic = "https://intake.example.test/hook", Origin = IntegrationRecordOrigin.Template, TemplateKey = "demo-intake",
+        });
+        (fromTemplate.Origin, fromTemplate.TemplateKey).Should().Be((IntegrationRecordOrigin.Template, "demo-intake"));
+        var reread = (await service.GetAsync("env", null, null)).Integrations.Single(i => i.Id == fromTemplate.Id);
+        (reread.Origin, reread.TemplateKey).Should().Be((IntegrationRecordOrigin.Template, "demo-intake"), "the template origin survives persistence");
+
+        var keyless = await service.CreateAsync("env", new IntegrationDefinition { DisplayName = "Other", Kind = IntegrationKind.HttpApi, EndpointOrTopic = "https://other.example.test/", Origin = IntegrationRecordOrigin.Template });
+        (keyless.Origin, keyless.TemplateKey).Should().Be((IntegrationRecordOrigin.Manual, (string?)null));
+        var manual = await service.CreateAsync("env", new IntegrationDefinition { DisplayName = "Manual", Kind = IntegrationKind.HttpApi, EndpointOrTopic = "https://manual.example.test/", TemplateKey = "ignored" });
+        manual.TemplateKey.Should().BeNull("only a template origin records a template key");
+
+        var edited = await service.UpdateAsync("env", fromTemplate.Id, fromTemplate with { DisplayName = "Report intake (edited)", TemplateKey = "other", Origin = IntegrationRecordOrigin.Manual });
+        (edited!.Origin, edited.TemplateKey).Should().Be((IntegrationRecordOrigin.Template, "demo-intake"), "an edit never rewrites where the record came from");
+    }
+
+    [Fact]
     public async Task AnIntegrationAddedFromASourceSuggestion_KeepsThatOrigin_AndIsNeverConfirmedByBeingAdded()
     {
         var created = await Service(Db()).CreateAsync("env", new IntegrationDefinition

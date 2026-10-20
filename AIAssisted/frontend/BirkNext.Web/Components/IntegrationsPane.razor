@@ -37,29 +37,39 @@
                 <div><dt>Source suggestions</dt><dd data-testid="ip-summary-suggestions">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
                 <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime">@IntegrationsOverviewPresentation.Label(runtime)</span></dd></div>
             </dl>
-            @{ var suggestFirst = _catalog.Integrations.Count == 0 && suggestions.Available && suggestions.Total > 0; }
-            <div class="ip-actions-row">
-                @if (suggestFirst) { <button type="button" class="btn-primary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review suggestions</button> }
-                <button type="button" class="@(suggestFirst ? "btn-secondary" : "btn-primary")" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
-                @if (!suggestFirst && suggestions.Available && suggestions.Total > 0)
-                {
+            @* The create action belongs to Configured integrations (its empty state, or its header); the summary stays informational. *@
+            @if (_catalog.Integrations.Count > 0 && suggestions.Available && suggestions.Total > 0)
+            {
+                <div class="ip-actions-row">
                     <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review source suggestions</button>
-                }
-            </div>
+                </div>
+            }
             <p class="ip-save-note" data-testid="ip-save-note">Changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
             <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
         </section>
 
         @if (_editing is { } editing)
         {
-            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" OnSave="SaveAsync" OnCancel="CancelEdit" />
+            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" Templates="_templates" OnSave="SaveAsync" OnCancel="CancelEdit"
+                                         Binding="@(editing.Original is { } edited ? _bindings.FirstOrDefault(b => b.IntegrationId == edited.Id) : null)" />
             @if (_saveError is { } saveError) { <p class="ip-banner ip-banner-error" role="alert" data-testid="ip-save-error">@saveError</p> }
+        }
+        @if (_bindingOutcome is { } outcome)
+        {
+            <p class="@(outcome.Failed ? "ip-banner ip-banner-error" : "ip-notice")" role="@(outcome.Failed ? "alert" : "status")" data-testid="ip-binding-outcome" data-failed="@(outcome.Failed ? "true" : "false")">@outcome.Text
+                <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-binding-outcome-iqr">@(outcome.Failed ? "Bind in IQR Evidence" : "Open IQR Evidence")</a></p>
         }
 
         var filtered = SourceRows(Filter());
         var mappingChecks = MappingEvidence.For(Profile.Id);
         <section class="ip-section" aria-labelledby="ip-configured-heading" data-testid="ip-configured">
-            <h3 id="ip-configured-heading">Configured integrations</h3>
+            <div class="ip-section-head">
+                <h3 id="ip-configured-heading">Configured integrations</h3>
+                @if (_catalog.Integrations.Count > 0 && _editing is null)
+                {
+                    <button type="button" class="btn-primary" id="ip-add-trigger" data-testid="ip-add" @ref="_addTrigger" @onclick="BeginAdd">Add integration</button>
+                }
+            </div>
             @if (_catalog.Integrations.Count == 0)
             {
                 <div class="ip-empty" data-testid="ip-empty">
@@ -67,10 +77,13 @@
                     <p class="ip-muted" data-testid="ip-empty-suggestions">@(suggestions.Available
                         ? suggestions.Total == 0 ? "No integration candidates were found from Source Analysis." : $"{suggestions.Total} integration candidate{(suggestions.Total == 1 ? "" : "s")} found from Source Analysis ({suggestions.StronglySupported} strongly supported)."
                         : "Source suggestions unavailable — no source snapshot is linked.")</p>
-                    <div class="ip-actions-row">
-                        @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review suggestions</button> }
-                        <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" data-testid="ip-empty-add" @onclick="BeginAdd" disabled="@(_editing is not null)">Add integration</button>
-                    </div>
+                    @if (_editing is null)
+                    {
+                        <div class="ip-actions-row">
+                            @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review suggestions</button> }
+                            <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" id="ip-add-trigger" data-testid="ip-empty-add" @ref="_addTrigger" @onclick="BeginAdd">Add integration</button>
+                        </div>
+                    }
                 </div>
             }
             else
@@ -320,7 +333,7 @@
                                     </div>
                                     <span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(strength)" data-testid="ip-suggestion-strength">@IntegrationsOverviewPresentation.Label(strength)</span>
                                     @if (configured) { <span class="ip-muted" data-testid="ip-suggestion-configured">Already configured</span> }
-                                    else { <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-suggestion-add" aria-label="@($"Add {c.SourceEntity ?? c.ChannelName} as an integration")" disabled="@(_saveState == SaveState.Saving)" @onclick="() => AddSuggestionAsync(c)">Add integration</button> }
+                                    else { <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-suggestion-add" aria-label="@($"Add integration {c.SourceEntity ?? c.ChannelName}")" disabled="@(_saveState == SaveState.Saving)" @onclick="() => AddSuggestionAsync(c)">Add this integration</button> }
                                 </li>
                             }
                         </ul>
@@ -551,6 +564,13 @@
     /// <summary>Platform whose Event Hub runtime sources were just saved (post-save summary).</summary>
     private string? _runtimeSaved;
     private EditState? _editing;
+    private ElementReference _addTrigger;
+    private bool _focusAddTrigger;
+    /// <summary>The environment's Add-integration templates (read-only guidance; empty when unavailable — the manual form still works).</summary>
+    private IReadOnlyList<IntegrationTemplateView> _templates = [];
+    /// <summary>The result of an explicitly chosen evidence binding after save (bound, or failed with the integration kept).</summary>
+    private sealed record BindingOutcome(bool Failed, string Text);
+    private BindingOutcome? _bindingOutcome;
     private SaveState _saveState = SaveState.Idle;
     private string _saveMessage = "";
     private string? _runtimeExpanded;
@@ -569,6 +589,7 @@
         if (_focusContracts) { _focusContracts = false; await _contractsFocus.FocusAsync(); }
         if (_focusConfirm) { _focusConfirm = false; try { await _confirmFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusSuggestions) { _focusSuggestions = false; try { await _suggestionsFocus.FocusAsync(); } catch (InvalidOperationException) { } }
+        if (_focusAddTrigger) { _focusAddTrigger = false; try { await _addTrigger.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
     }
 
     private void ReviewMappings() { ClearFilters(); _stateFilter = nameof(IntegrationConfigurationState.NeedsConfirmation); }
@@ -784,11 +805,20 @@
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or NotSupportedException)
             { _sources = null; _sourcesError = "Source integrations could not be loaded; the configured integrations are shown without source evidence."; }
             await LoadTerraformAsync();
+            await LoadTemplatesAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             _loadError = $"{BackendRequestClassifier.FromException("Integrations", ex).Detail} Integrations are stored by the backend.";
         }
+    }
+
+    /// <summary>Templates resolve against this environment's kind (endpoints are never offered for production) and its stored snapshots.</summary>
+    private async Task LoadTemplatesAsync()
+    {
+        if (ServiceProvider.GetService<IIntegrationJourneysApiService>() is not { } journeys) { _templates = []; return; }
+        try { _templates = (await journeys.IntegrationTemplatesAsync(Profile.Id, IntegrationTemplatePresentation.EnvironmentType(Profile))).Value ?? []; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or NotSupportedException) { _templates = []; }
     }
 
     /// <summary>Terraform comparison is supporting context: when it cannot be read, the page works without it (nothing is claimed).</summary>
@@ -822,20 +852,38 @@
         }
     }
 
-    private void BeginAdd() { _saveError = null; _editing = new EditState(null); }
-    private void BeginEdit(IntegrationDefinition definition) { _saveError = null; _editing = new EditState(definition); }
-    private void CancelEdit() { _editing = null; _saveError = null; }
+    private void BeginAdd() { _saveError = null; _bindingOutcome = null; _editing = new EditState(null); }
+    private void BeginEdit(IntegrationDefinition definition) { _saveError = null; _bindingOutcome = null; _editing = new EditState(definition); }
+    private void CancelEdit() { _focusAddTrigger = _editing?.Original is null; _editing = null; _saveError = null; }
 
-    private async Task SaveAsync(IntegrationDefinition definition)
+    /// <summary>
+    /// Saves the record; then, only when a person chose an evidence snapshot in the form, binds it. Creating an integration and binding its
+    /// evidence are separate backend operations (a binding needs the stored integration), so a failed binding keeps the integration and says
+    /// so, with the way to IQR Evidence — it is never silent.
+    /// </summary>
+    private async Task SaveAsync(IntegrationEditorSave save)
     {
+        var definition = save.Definition;
         var isNew = _editing?.Original is null;
+        IntegrationDefinition? stored = null;
         var ok = await TrackAsync(isNew ? $"{definition.DisplayName} added." : $"{definition.DisplayName} updated.", async () =>
         {
-            if (isNew) await Api.CreateAsync(Profile.Id, definition);
-            else await Api.UpdateAsync(Profile.Id, definition);
+            stored = isNew ? await Api.CreateAsync(Profile.Id, definition) : await Api.UpdateAsync(Profile.Id, definition);
         });
-        if (ok) { _editing = null; _saveError = null; }
-        else _saveError = "The integration could not be saved. Your edits are still in the form.";
+        if (!ok) { _saveError = "The integration could not be saved. Your edits are still in the form."; return; }
+        _editing = null;
+        _saveError = null;
+        _focusAddTrigger = isNew;
+        if (save.EvidenceSnapshotId is not { } snapshotId) return;
+        var integrationId = stored?.Id is { Length: > 0 } id ? id : definition.Id;
+        string? error;
+        try { (_, error) = await Api.SetEvidenceBindingAsync(Profile.Id, integrationId, snapshotId); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { error = "The backend did not accept the binding."; }
+        _bindingOutcome = error is null
+            ? new(false, $"{save.EvidenceArchive} is now the canonical source evidence for {definition.DisplayName}.")
+            : new(true, $"{definition.DisplayName} was saved, but its evidence source was not bound: {error}");
+        try { _bindings = await Api.ListEvidenceBindingsAsync(Profile.Id) ?? []; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
     }
 
     private Task ToggleEnabledAsync(IntegrationDefinition definition) =>

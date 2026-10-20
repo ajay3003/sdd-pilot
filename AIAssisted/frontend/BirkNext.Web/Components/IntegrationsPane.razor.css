@@ -178,3 +178,37 @@
 ::deep .ip-field { grid-template-columns: max-content 1fr; align-items: baseline; column-gap: .25rem; }
 ::deep .ip-field > :is(input, select, textarea) { grid-column: 1 / -1; }
 ::deep .ip-fieldset > .ip-check { grid-column: 1 / -1; }
+
+/* Configured integrations owns the one generic Add integration action (header when integrations exist, empty state otherwise). */
+.ip-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.ip-section-head > h3 { margin: 0; font-size: 1rem; }
+.ip-wrap { overflow-wrap: anywhere; }
+
+/* Add integration: template guidance and evidence source are distinct from the configuration fieldsets. */
+::deep .ip-template, ::deep .ip-evidence { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .6rem .75rem .7rem; display: grid; gap: .4rem; min-width: 0; background: var(--clr-surface); }
+::deep .ip-template h4, ::deep .ip-evidence h4 { margin: 0; font-size: .88rem; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+::deep .ip-template .ip-field { max-width: 34rem; }
+::deep .ip-template-confirm { border: 1px solid #fde68a; background: #fffbeb; border-radius: var(--radius-md); padding: .5rem .7rem; display: grid; gap: .4rem; font-size: .84rem; }
+::deep .ip-template-confirm p { margin: 0; }
+::deep .ip-template-preview { display: grid; gap: .3rem; }
+::deep .ip-template-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .25rem 1rem; margin: 0; }
+::deep .ip-template-facts > div { min-width: 0; }
+::deep .ip-template-facts dt { font-size: .72rem; color: var(--clr-text-muted); }
+::deep .ip-template-facts dd { margin: 0; font-size: .84rem; overflow-wrap: anywhere; }
+::deep .ip-template-note { margin: 0; font-size: .82rem; }
+::deep .ip-evidence > p { margin: 0; font-size: .84rem; }
+::deep .ip-evidence-choices { border: none; margin: 0; padding: 0; display: grid; gap: .3rem; min-width: 0; }
+::deep .ip-evidence-choices legend { font-size: .8rem; font-weight: 700; padding: 0; margin-bottom: .2rem; }
+::deep .ip-evidence-choices .ip-check { align-items: flex-start; }
+::deep .ip-editor .ip-wrap { overflow-wrap: anywhere; min-width: 0; }
+::deep .ip-prov { font-size: .72rem; color: var(--clr-text-muted); }
+::deep .ip-prov-needs { color: #92400e; }
+::deep .ip-editor .ip-link { background: none; border: none; padding: 0; color: var(--clr-link, #2563eb); cursor: pointer; font-size: .84rem; text-decoration: underline; }
+::deep .ip-editor .ip-pill { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid var(--clr-border); white-space: nowrap; }
+::deep .ip-editor .ip-pill-ready { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+::deep .ip-editor .ip-pill-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+::deep .ip-editor .ip-pill-warning { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+::deep .ip-editor .ip-pill-muted { background: var(--clr-surface); color: var(--clr-text-muted); }
+@media (max-width: 600px) {
+    ::deep .ip-editor-actions > .btn-primary, ::deep .ip-editor-actions > .btn-secondary { flex: 1 1 100%; }
+}

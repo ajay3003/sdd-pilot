@@ -168,9 +168,13 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         var fromSource = definition.Origin == IntegrationRecordOrigin.SourceSuggestion;
         var consumer = fromSource && definition.Consumer.MappingState == ConsumerMappingState.Confirmed
             ? definition.Consumer with { MappingState = ConsumerMappingState.Suggested, MappingConfirmedAt = null } : definition.Consumer;
+        var origin = fromSource ? IntegrationRecordOrigin.SourceSuggestion
+            : definition.Origin == IntegrationRecordOrigin.Template && !string.IsNullOrWhiteSpace(definition.TemplateKey) ? IntegrationRecordOrigin.Template : IntegrationRecordOrigin.Manual;
         var created = definition with
         {
-            Id = id, EnvironmentId = environmentId, Origin = fromSource ? IntegrationRecordOrigin.SourceSuggestion : IntegrationRecordOrigin.Manual, Consumer = consumer,
+            // A template is setup guidance: the record keeps that origin and the template key, never a later template version's values.
+            Id = id, EnvironmentId = environmentId, Consumer = consumer,
+            Origin = origin, TemplateKey = origin == IntegrationRecordOrigin.Template ? definition.TemplateKey!.Trim() : null,
             UserModified = true, UpdatedAt = _clock.GetUtcNow(),
         };
         db.IntegrationDefinitions.Add(ToRecord(created));
@@ -185,7 +189,7 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         if (record is null) return null;
         var current = FromRecord(record);
         // Identity and provenance are not editable; everything else is the user's.
-        var updated = definition with { Id = id, EnvironmentId = environmentId, Origin = current.Origin, UserModified = true, UpdatedAt = _clock.GetUtcNow() };
+        var updated = definition with { Id = id, EnvironmentId = environmentId, Origin = current.Origin, TemplateKey = current.TemplateKey, UserModified = true, UpdatedAt = _clock.GetUtcNow() };
         Apply(record, updated);
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Integration {IntegrationId} updated in environment {EnvironmentId} (platform {PlatformId}).", id, environmentId, updated.PlatformId);
