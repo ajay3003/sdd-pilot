@@ -1,0 +1,69 @@
+{
+  "$comment": "Safe facts of the Skolenærvær Altinn app's OpenAPI document (sha256 below), shipped as a Test Pack reference. Values only — never secrets, identities or runtime state. Pinned against the document by a LocalFixture test.",
+  "provenance": [
+    "OpenAPI 3.0.4",
+    "Document version (info.version) 8.12.7.264"
+  ],
+  "fingerprint": "3f8c6cb5008d66d675da7044602581b996837e996588d977b50f8890fc72e535",
+  "facts": [
+    {
+      "label": "App identifier",
+      "value": "buf/skolenaervaer",
+      "semanticKey": "Application.Route"
+    },
+    {
+      "label": "API title",
+      "value": "Altinn 3 App API for School attendance",
+      "semanticKey": "Application.DisplayName"
+    },
+    {
+      "label": "Server · Local",
+      "value": "http://local.altinn.cloud",
+      "semanticKey": "Environment.Server.Local"
+    },
+    {
+      "label": "Server · TT02",
+      "value": "https://buf.apps.tt02.altinn.no",
+      "semanticKey": "Environment.Server.Test"
+    },
+    {
+      "label": "Server · Production",
+      "value": "https://buf.apps.altinn.no",
+      "semanticKey": "Environment.Server.Production"
+    },
+    {
+      "label": "Form data type",
+      "value": "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn",
+      "semanticKey": "Application.FormDataType"
+    },
+    {
+      "label": "Content type",
+      "value": "application/xml",
+      "semanticKey": "Payload.ContentType"
+    },
+    {
+      "label": "Process task",
+      "value": "Task_1",
+      "semanticKey": "Application.TaskId"
+    },
+    {
+      "label": "Task name",
+      "value": "Utfylling",
+      "semanticKey": "Application.TaskName"
+    },
+    {
+      "label": "Authentication scheme",
+      "value": "Bearer JWT",
+      "semanticKey": "Authentication.Scheme"
+    },
+    {
+      "label": "Security scheme name",
+      "value": "AltinnToken"
+    },
+    {
+      "label": "Token providers",
+      "value": "maskinporten, id-porten",
+      "semanticKey": "Authentication.TokenProvider"
+    }
+  ]
+}

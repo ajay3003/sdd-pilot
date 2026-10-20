@@ -16,7 +16,7 @@
         }
         else if (value is not null)
         {
-            <p class="svh-text"><span class="svh-label">Suggested from bound source</span> <code data-testid="@($"{TestId}-value")">@value</code>
+            <p class="svh-text"><span class="svh-label">@Origin</span> <code data-testid="@($"{TestId}-value")">@value</code>
                 <span class="svh-muted">· @string.Join("; ", provenance) · not runtime verified</span></p>
             @if (!string.Equals(value, Current?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
@@ -38,4 +38,6 @@
     [Parameter] public string FieldLabel { get; set; } = "this field";
     [Parameter] public EventCallback<string> OnUse { get; set; }
     [Parameter] public string TestId { get; set; } = "source-value-hint";
+    /// <summary>Where the suggestion comes from ("Suggested from bound source", "From Test Pack reference").</summary>
+    [Parameter] public string Origin { get; set; } = "Suggested from bound source";
 }

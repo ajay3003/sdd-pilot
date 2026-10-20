@@ -102,7 +102,7 @@ public static class TestPackSources
 
     /// <summary>The state of every source role of a pack, with the next action at the owner that resolves it.</summary>
     public static IReadOnlyList<TestPackSourceStatus> Statuses(IIntegrationJourneyPack pack, JourneyPackContext context) =>
-        pack.SourceRoles.Select(role => Status(pack, context, role) with { NearMisses = NearMisses(role, context) }).ToArray();
+        pack.SourceRoles.Select(role => Status(pack, context, role) with { NearMisses = role.Provider == TestPackSourceProvider.TestPackReference ? [] : NearMisses(role, context) }).ToArray();
 
     /// <summary>The Infrastructure as Code formats a snapshot declares ("Terraform", "Bicep" …), in a stable order.</summary>
     public static IReadOnlyList<string> InfrastructureFormats(IqrSourceSnapshot snapshot) =>
@@ -127,6 +127,8 @@ public static class TestPackSources
     public static TestPackSourceStatus Status(IIntegrationJourneyPack pack, JourneyPackContext context, TestPackSourceRole role)
     {
         var candidates = Candidates(pack, context, role);
+        // A Test Pack reference has its own states (available / unavailable); an imported document of the same source is additional evidence only.
+        if (role.Provider == TestPackSourceProvider.TestPackReference) return TestPackReferences.Status(pack, role, candidates);
         if (!role.BindingRequired) return Unbound(role, candidates);
         var integrations = Integrations(pack, context, role);
         var names = integrations.Select(item => item.DisplayName).ToArray();

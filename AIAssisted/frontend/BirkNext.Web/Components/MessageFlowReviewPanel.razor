@@ -131,15 +131,15 @@
             <div hidden="@(_section != "configuration")" data-testid="mfr-configuration-sections">
             <ReviewDisclosure Text="Application" CollapseText="Application" Hint="@SectionHint(_environment != "Unknown", _product, _app, _submission != "Unknown", _baseUrl, _endpoint)" TestId="mfr-section-application" Class="mfr-section">
             <fieldset class="mfr-group" data-testid="mfr-group-application"><legend class="visually-hidden">Application</legend><div class="mfr-form">
-                <SourceValueHint Resolution="@Hint("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" />
+                <SourceValueHint Resolution="@Hint("Environment")" Origin="@HintOrigin("Environment")" Current="@(_environment == "Unknown" ? "" : _environment)" FieldLabel="Environment" OnUse="value => _environment = value" TestId="mfr-environment-suggestion" />
                 <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
                 <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
-                <SourceValueHint Resolution="@Hint("App identifier")" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
+                <SourceValueHint Resolution="@Hint("App identifier")" Origin="@HintOrigin("App identifier")" Current="@_app" FieldLabel="App identifier" OnUse="value => _app = value" TestId="mfr-app-suggestion" />
                 <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
                 <label>Safe base URL reference<input @bind="_baseUrl" /></label>
-                <SourceValueHint Resolution="@Hint("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" />
+                <SourceValueHint Resolution="@Hint("Safe base URL reference")" Origin="@HintOrigin("Safe base URL reference")" Current="@_baseUrl" FieldLabel="Safe base URL reference" OnUse="value => _baseUrl = value" TestId="mfr-base-url-suggestion" />
                 <label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
-                <SourceValueHint Resolution="@Hint("Endpoint reference")" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
+                <SourceValueHint Resolution="@Hint("Endpoint reference")" Origin="@HintOrigin("Endpoint reference")" Current="@_endpoint" FieldLabel="Endpoint reference" OnUse="value => _endpoint = value" TestId="mfr-endpoint-suggestion" />
                 @if (SafeEmptySuggestions.Count > 0)
                 {
                     <p class="mfr-source-fill"><button type="button" class="btn-secondary" data-testid="mfr-use-source-values" @onclick="UseSourceValues">Use @SafeEmptySuggestions.Count safe source value@(SafeEmptySuggestions.Count == 1 ? "" : "s")</button>
@@ -270,18 +270,28 @@
 
     /// <summary>The bound source's value for a form field (by the requirement's consumer field), as a hint: a value, a conflict, or nothing.</summary>
     private BirkNext.SourceDomains.SourceConfigurationResolution? Hint(string field) =>
-        _guidance?.Suggestions.FirstOrDefault(item => item.Requirement.ConsumerField == field
-            && (item.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict || (item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested
+        Offered.FirstOrDefault(item => item.Requirement.ConsumerField == field
+            && (item.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict || (item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference
                 && (field != "Environment" || item.Value == "Test")))) is { } suggestion
             ? new(suggestion.Requirement.SemanticKey, BirkNext.SourceDomains.SourceEnvironmentRole.Any,
                 suggestion.State == BirkNext.SourceDomains.SourceSuggestionState.Conflict ? BirkNext.SourceDomains.SourceConfigurationResolutionState.Conflict : BirkNext.SourceDomains.SourceConfigurationResolutionState.Declared,
                 suggestion.Candidates)
             : null;
 
+    /// <summary>The guidance this panel may offer: bound-source values only while a canonical binding exists (the newest snapshot never stands in
+    /// for one); Test Pack reference values regardless, labelled as such.</summary>
+    private IEnumerable<BirkNext.SourceDomains.SourceConfigurationSuggestion> Offered =>
+        (_guidance?.Suggestions ?? []).Where(item => _binding is not null || item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference);
+
+    /// <summary>Where a field's hint comes from: the bound imported source, or the test pack's built-in reference.</summary>
+    private string HintOrigin(string field) =>
+        _guidance?.Suggestions.FirstOrDefault(item => item.Requirement.ConsumerField == field)?.State == BirkNext.SourceDomains.SourceSuggestionState.Reference
+            ? "From Test Pack reference" : "Suggested from bound source";
+
     /// <summary>Safe, unambiguous bound suggestions whose form field is still empty.</summary>
     private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> SafeEmptySuggestions =>
-        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && item.Value is not null
-            && item.Requirement.ConsumerField is { } field && FieldEmpty(field) && (field != "Environment" || item.Value == "Test")).ToList() ?? [];
+        Offered.Where(item => item.Requirement.AutoApply && item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference && item.Value is not null
+            && item.Requirement.ConsumerField is { } field && FieldEmpty(field) && (field != "Environment" || item.Value == "Test")).ToList();
 
     private bool FieldEmpty(string field) => field switch
     {
@@ -343,8 +353,9 @@
             var resolved = await AltinnSourceBinding.ResolveAsync(Api, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId!);
             _bindingIntegration = resolved.IntegrationName;
             _binding = resolved.Binding;
-            // The pack's source guidance for this provider's fields: bound evidence only, never applied by loading.
-            _guidance = resolved.Binding is not null && resolved.PackId is { } packId && Services.GetService<IIntegrationJourneysApiService>() is { } journeys
+            // The pack's source guidance for this provider's fields: bound evidence, or the pack's Test Pack reference where no bound source
+            // declares a value (shown as such). Never applied by loading.
+            _guidance = resolved.PackId is { } packId && Services.GetService<IIntegrationJourneysApiService>() is { } journeys
                 && journeys.SourceGuidanceAsync(EnvironmentId!, packId) is { } read ? (await read)?.Value : null;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }

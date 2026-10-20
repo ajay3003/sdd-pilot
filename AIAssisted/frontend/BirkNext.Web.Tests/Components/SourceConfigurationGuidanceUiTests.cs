@@ -43,7 +43,7 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
     public void Every_state_is_a_distinct_word_and_runtime_is_never_verified_by_source()
     {
         Enum.GetValues<SourceSuggestionState>().Select(SourceGuidancePresentation.StateLabel).Should().OnlyHaveUniqueItems()
-            .And.BeEquivalentTo(["Not in the bound source", "Available but not bound", "Suggested from bound source", "Configuration conflict", "Required source missing"]);
+            .And.BeEquivalentTo(["Not in the bound source", "Available but not bound", "Suggested from bound source", "Configuration conflict", "Required source missing", "From Test Pack reference"]);
         Suggested().RuntimeVerified.Should().BeFalse();
         SourceGuidancePresentation.Configured(Suggested()).Should().Be("Not configured");
         SourceGuidancePresentation.Configured(Suggested("https://other.invalid")).Should().Be("https://other.invalid (differs from source)");
@@ -275,6 +275,24 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-unbound]"));
         cut.FindAll("[data-testid=mfr-app-suggestion]").Should().BeEmpty();
         cut.FindAll("[data-testid=mfr-use-source-values]").Should().BeEmpty("the newest snapshot never stands in for a binding");
+    }
+
+    [Fact]
+    public void Without_a_binding_a_Test_Pack_reference_value_is_offered_as_such_and_never_as_bound_source()
+    {
+        var reference = new SourceConfigurationSuggestion(Requirement("App identifier") with { SemanticKey = "Application.Route" }, SourceSuggestionState.Reference)
+        {
+            Value = "demo/app", ReferenceValue = "demo/app",
+            Candidates = [new SourceConfigurationCandidate("demo/app", [Declared("Application.Route", "demo/app", "Test Pack reference", "App identifier", SourceConfigurationEvidenceKind.OpenApi)])],
+        };
+        var (api, cut) = RenderPanel(new AltinnTestConfiguration(), new TestPackSourceGuidance("demo", [reference]), bound: false);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-app-suggestion]"));
+        var hint = cut.Find("[data-testid=mfr-app-suggestion]").TextContent;
+        hint.Should().Contain("From Test Pack reference").And.Contain("demo/app").And.Contain("Test Pack reference → App identifier").And.Contain("not runtime verified");
+        hint.Should().NotContain("bound source");
+        cut.Find("[data-testid=mfr-app-suggestion-use]").Click();
+        Input(cut, "App identifier").Should().Be("demo/app", "using it fills the form only");
+        api.Verify(x => x.SaveMessageFlowReviewDetailedAsync(It.IsAny<string>(), It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     // ── Save: field-specific refusal, never the value ──────────────────────────────────────────────────────────────

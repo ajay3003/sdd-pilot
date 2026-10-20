@@ -144,11 +144,14 @@ public static class SourceSetupPresentation
         TestPackSourceState.Available => "Available · no binding needed",
         TestPackSourceState.ReviewRequired => "Review required",
         TestPackSourceState.NotProvided => "Not provided",
+        TestPackSourceState.ReferenceAvailable => "Test Pack reference · Available",
+        TestPackSourceState.ReferenceUnavailable => "Test Pack reference · Unavailable",
         _ => "Missing",
     };
 
     public static string StateTone(TestPackSourceState state) => state switch
     {
+        TestPackSourceState.ReferenceAvailable or TestPackSourceState.ReferenceUnavailable => "neutral",
         TestPackSourceState.Bound or TestPackSourceState.Available => "available",
         TestPackSourceState.AvailableNotBound or TestPackSourceState.ReviewRequired => "partial",
         TestPackSourceState.Missing => "rejected",
@@ -160,6 +163,7 @@ public static class SourceSetupPresentation
     public static (string Text, string Href)? Action(TestPackSourceStatus status, string importAnchor)
     {
         var label = status.Role.Label;
+        if (IsReference(status)) return null; // built into BirkNext: nothing to import or bind
         return (status.State, status.NextActionTarget) switch
         {
             (TestPackSourceState.Missing, _) => ($"Import {label} source package", importAnchor),
@@ -196,6 +200,15 @@ public static class SourceSetupPresentation
 
     // ── Compact source cards ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>A source the test pack provides itself (built-in reference): never imported, never bound, never "missing".</summary>
+    public static bool IsReference(TestPackSourceStatus status) => status.Role.Provider == TestPackSourceProvider.TestPackReference;
+
+    /// <summary>The card's first badge: who provides the source, or how much the pack needs it.</summary>
+    public static string ProviderLabel(TestPackSourceStatus status) => IsReference(status) ? "Test Pack reference" : RequirementLabel(status.Role.Requirement);
+
+    /// <summary>Card order: required imported sources, then Test Pack references, then optional/conditional sources.</summary>
+    public static int Order(TestPackSourceStatus status) => IsReference(status) ? 1 : status.Role.Requirement == TestPackSourceRequirement.Required ? 0 : 2;
+
     /// <summary>Several matching snapshots of different content and none bound: the tester chooses (never the newest).</summary>
     public static bool IsAmbiguous(TestPackSourceStatus status) =>
         status.State == TestPackSourceState.ReviewRequired && !status.Candidates.Any(c => c.Bound)
@@ -209,11 +222,15 @@ public static class SourceSetupPresentation
         TestPackSourceState.ReviewRequired when IsAmbiguous(status) => "Ambiguous",
         TestPackSourceState.ReviewRequired => "Review binding",
         TestPackSourceState.NotProvided => "Not provided",
+        TestPackSourceState.ReferenceAvailable => "Available",
+        TestPackSourceState.ReferenceUnavailable => "Unavailable",
         _ => "Missing",
     };
 
     public static string CardTone(TestPackSourceStatus status) => status.State switch
     {
+        TestPackSourceState.ReferenceAvailable => "reference",
+        TestPackSourceState.ReferenceUnavailable => "unavailable",
         TestPackSourceState.Bound => "bound",
         TestPackSourceState.AvailableNotBound or TestPackSourceState.Available => "available",
         TestPackSourceState.ReviewRequired => "review",
@@ -224,6 +241,7 @@ public static class SourceSetupPresentation
     /// <summary>The matching source's archive name (provenance), or how many match; null when nothing matches.</summary>
     public static string? SourceName(TestPackSourceStatus status)
     {
+        if (IsReference(status)) return status.State == TestPackSourceState.ReferenceAvailable ? $"Built-in {status.Reference?.Kind ?? "reference"} reference" : null;
         if (status.Candidates.Count == 0) return null;
         if (IsAmbiguous(status)) return $"{status.Candidates.Select(c => c.Fingerprint).Distinct().Count()} matching imported sources";
         var main = status.Candidates.FirstOrDefault(c => c.Bound) ?? status.Candidates[0];
@@ -243,6 +261,8 @@ public static class SourceSetupPresentation
     /// <summary>One short sentence; the technical explanation stays in Details.</summary>
     public static string Sentence(TestPackSourceStatus status) => status.State switch
     {
+        TestPackSourceState.ReferenceAvailable => "Provides the metadata the Test Pack uses. No separate import required.",
+        TestPackSourceState.ReferenceUnavailable => "Reference could not be loaded.",
         TestPackSourceState.Bound => "Canonical source evidence is bound.",
         TestPackSourceState.AvailableNotBound or TestPackSourceState.Available => "Matching imported source found.",
         TestPackSourceState.ReviewRequired when IsAmbiguous(status) => "Multiple matching sources found. Choose one.",
@@ -257,8 +277,10 @@ public static class SourceSetupPresentation
     /// <summary>A card action: short visible text, a specific accessible name, the target.</summary>
     public sealed record CardAction(string Text, string AccessibleName, string Href);
 
-    public static CardAction Primary(TestPackSourceStatus status, string importAnchor)
+    /// <summary>The card's action. A Test Pack reference has none here: its details open in place (View reference details / View diagnostics).</summary>
+    public static CardAction? Primary(TestPackSourceStatus status, string importAnchor)
     {
+        if (IsReference(status)) return null;
         var label = status.Role.Label;
         var open = status.Candidates.FirstOrDefault(c => c.Bound) ?? status.Candidates.FirstOrDefault();
         return status.State switch
@@ -275,6 +297,7 @@ public static class SourceSetupPresentation
     /// <summary>The quieter second action where one is useful (bind, view binding, configure); null otherwise.</summary>
     public static CardAction? Secondary(TestPackSourceStatus status)
     {
+        if (IsReference(status)) return null;
         var label = status.Role.Label;
         return (status.State, status.NextActionTarget) switch
         {
@@ -289,7 +312,8 @@ public static class SourceSetupPresentation
     /// <summary>Overall progress from the actual states: required availability, bindings still needed, ambiguity, missing, optional sources.</summary>
     public static string Progress(TestPackSourceSetup pack)
     {
-        var required = pack.Sources.Where(s => s.Role.Requirement == TestPackSourceRequirement.Required).ToList();
+        // Imported requirements, Test Pack references and optional sources are counted separately: a reference is never a missing import.
+        var required = pack.Sources.Where(s => !IsReference(s) && s.Role.Requirement == TestPackSourceRequirement.Required).ToList();
         var parts = new List<string>();
         var available = required.Count(s => s.State is TestPackSourceState.Bound or TestPackSourceState.AvailableNotBound or TestPackSourceState.Available);
         var missing = required.Count(s => s.State == TestPackSourceState.Missing);
@@ -302,7 +326,11 @@ public static class SourceSetupPresentation
         var review = required.Count(s => s.State == TestPackSourceState.ReviewRequired && !IsAmbiguous(s));
         if (review > 0) parts.Add($"{review} binding to review");
         if (missing > 0 && missing < required.Count) parts.Add($"{missing} missing");
-        foreach (var optional in pack.Sources.Where(s => s.Role.Requirement != TestPackSourceRequirement.Required))
+        var references = pack.Sources.Where(IsReference).ToList();
+        var referencesAvailable = references.Count(s => s.State == TestPackSourceState.ReferenceAvailable);
+        if (referencesAvailable > 0) parts.Add($"{referencesAvailable} Test Pack reference{(referencesAvailable == 1 ? "" : "s")} available");
+        if (references.Count - referencesAvailable is var unavailable and > 0) parts.Add($"{unavailable} Test Pack reference{(unavailable == 1 ? "" : "s")} unavailable");
+        foreach (var optional in pack.Sources.Where(s => !IsReference(s) && s.Role.Requirement != TestPackSourceRequirement.Required))
             parts.Add($"optional {optional.Role.Label} {(optional.State == TestPackSourceState.NotProvided ? "not provided" : "available")}");
         return string.Join(" · ", parts);
     }

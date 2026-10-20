@@ -107,6 +107,15 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-state-bound { background: #f0fdfa; border-color: #99f6e4; color: #115e59; }
 .pi-state-review { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .pi-state-optional { background: var(--clr-surface, #f8fafc); border-color: var(--clr-border); color: #475569; }
+/* Test Pack reference: metadata the pack ships itself — informational, never "verified" green and never a missing import. */
+.pi-source-reference { border-left-color: #4f46e5; }
+.pi-source-unavailable { border-left-color: #b45309; }
+.pi-state-reference { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+.pi-state-unavailable { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.pi-badge-reference { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+.pi-reference-details > summary { font-weight: 600; }
+.pi-reference-details .pi-source-facts dd { overflow-wrap: anywhere; min-width: 0; }
+.pi-reference-limit { margin: .35rem 0; font-size: .8rem; padding: .35rem .5rem; border-left: 3px solid #c7d2fe; background: #f8fafc; }
 .pi-source-name { margin: 0; font-weight: 600; font-size: .88rem; }
 .pi-source-binding { margin: 0; font-size: .82rem; color: #92400e; }
 .pi-source-bound .pi-source-binding { color: #115e59; }

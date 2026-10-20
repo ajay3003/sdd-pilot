@@ -44,6 +44,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Test Pack references ship inside the assembly (never as loose content, never imported). -->
+    <Content Remove="Services\IntegrationJourneys\Packs\**\*.reference.json" />
+    <EmbeddedResource Include="Services\IntegrationJourneys\Packs\**\*.reference.json" LogicalName="TestPackReference.%(Filename)%(Extension)" />
     <Content Update="Tools\LighthouseRunner\package.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Tools\LighthouseRunner\package-lock.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Tools\LighthouseRunner\run-lighthouse.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

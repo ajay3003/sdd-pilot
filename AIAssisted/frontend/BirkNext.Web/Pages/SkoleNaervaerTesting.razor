@@ -60,7 +60,9 @@
                                 <li class="snt-source-card" data-testid="snt-source-card" data-role="@source.Role.Key" data-state="@source.State">
                                     <div class="snt-source-card-head"><strong>@source.Role.Label</strong>
                                         <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-state">@SourceGuidancePresentation.SourceStateLabel(source.State)</span></div>
-                                    <p class="snt-source-line" data-testid="snt-source-archive">@(source.BoundArchives.Count > 0 ? $"Source: {string.Join(", ", source.BoundArchives)}"
+                                    <p class="snt-source-line" data-testid="snt-source-archive">@(source.Role.Provider == TestPackSourceProvider.TestPackReference
+                                        ? source.State == TestPackSourceState.ReferenceAvailable ? $"Built-in {source.Reference?.Kind ?? "reference"} reference · no separate import required" : "Reference could not be loaded"
+                                        : source.BoundArchives.Count > 0 ? $"Source: {string.Join(", ", source.BoundArchives)}"
                                         : source.AvailableArchives.Count > 0 ? $"Available: {string.Join(", ", source.AvailableArchives)}" : $"Expected: {source.Role.ExpectedArtifact}")</p>
                                     <p class="snt-source-line snt-muted">Used for: @string.Join(", ", source.Role.Capabilities)</p>
                                     @if (source.State != TestPackSourceState.Bound && href is not null)
@@ -281,7 +283,7 @@
 
     /// <summary>Values the bound source declares that are safe to store into empty fields (an explicit action; never over a stored value).</summary>
     private IReadOnlyList<BirkNext.SourceDomains.SourceConfigurationSuggestion> ApplicableSourceValues =>
-        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State == BirkNext.SourceDomains.SourceSuggestionState.Suggested && item.ConfiguredValue is null).ToList() ?? [];
+        _guidance?.Suggestions.Where(item => item.Requirement.AutoApply && item.State is BirkNext.SourceDomains.SourceSuggestionState.Suggested or BirkNext.SourceDomains.SourceSuggestionState.Reference && item.ConfiguredValue is null).ToList() ?? [];
 
     private async Task ApplySourceValuesAsync()
     {
@@ -305,12 +307,14 @@
     /// <summary>"6 values: 4 suggested from bound source · 1 conflict …" — every state in words.</summary>
     private static string GuidanceSummary(TestPackSourceGuidance guidance)
     {
-        var open = guidance.Suggestions.Count(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.Suggested);
-        var suggested = guidance.Suggestions.Count - open;
+        var referenced = guidance.Suggestions.Count(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference);
+        var open = guidance.Suggestions.Count(item => item.State is not BirkNext.SourceDomains.SourceSuggestionState.Suggested and not BirkNext.SourceDomains.SourceSuggestionState.Reference);
+        var suggested = guidance.Suggestions.Count - open - referenced;
         var configured = guidance.Suggestions.Count(item => item.ConfiguredValue is not null);
+        var reference = referenced > 0 ? $" · {referenced} from the Test Pack reference" : "";
         return open == 0
-            ? $"All {guidance.Suggestions.Count} source requirements are answered by bound sources ({configured} configured)."
-            : $"{open} of {guidance.Suggestions.Count} source requirements cannot yet be assessed from bound sources · {suggested} suggested · {configured} configured.";
+            ? $"All {guidance.Suggestions.Count} source requirements are answered by bound sources or the Test Pack reference ({configured} configured){reference}."
+            : $"{open} of {guidance.Suggestions.Count} source requirements cannot yet be assessed from bound sources · {suggested} suggested{reference} · {configured} configured.";
     }
 
     /// <summary>A rule's required source and what is bound or available for it.</summary>

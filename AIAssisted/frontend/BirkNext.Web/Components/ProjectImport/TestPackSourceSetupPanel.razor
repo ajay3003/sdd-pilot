@@ -4,28 +4,30 @@
 
 @* Source setup of every registered test pack that declares logical sources, as status-first cards rendered from the pack's own metadata and the
    backend's resolution. Availability (a compatible stored snapshot, any import) and binding (canonical IQR evidence) are separate lines; the
-   technical requirement, matching evidence and provenance stay behind Details. Generic: it names no pack, product or file. *@
+   technical requirement, matching evidence and provenance stay behind Details. A Test Pack reference (metadata the pack ships itself) is its own
+   kind of card: no import or binding action, its facts and limits behind "View reference details". Generic: it names no pack, product or file. *@
 @foreach (var pack in Setup.Packs)
 {
     var headingId = $"pi-setup-{Slug(pack.PackId)}";
     <section class="pi-card pi-setup" aria-labelledby="@headingId" data-testid="pi-source-setup" data-pack="@pack.PackId">
         <h2 id="@headingId">@pack.DisplayName source setup</h2>
         <p class="pi-setup-progress" data-testid="pi-setup-progress">@S.Progress(pack)</p>
-        <p class="pi-muted pi-setup-note">Sources are matched by their content in any stored import, not by file name or by which project is current.@(Setup.BindingsRead ? "" : " No target environment is selected, so bindings are not shown.")</p>
+        <p class="pi-muted pi-setup-note" data-testid="pi-setup-note">@(pack.Sources.Any(S.IsReference) ? $"{pack.DisplayName} uses imported source evidence and Test Pack reference metadata. " : "")Imported source packages are matched by their content in any stored import, not by file name or by which project is current.@(pack.Sources.Any(S.IsReference) ? " Test Pack references are built into BirkNext and do not need to be uploaded." : "")@(Setup.BindingsRead ? "" : " No target environment is selected, so bindings are not shown.")</p>
         <div class="pi-source-grid" role="list" aria-label="@($"{pack.DisplayName} sources")">
-            @foreach (var source in pack.Sources.OrderBy(s => s.Role.Requirement == TestPackSourceRequirement.Required ? 0 : 1))
+            @foreach (var source in pack.Sources.OrderBy(S.Order))
             {
-                var optional = source.Role.Requirement != TestPackSourceRequirement.Required;
+                var reference = S.IsReference(source);
+                var optional = !reference && source.Role.Requirement != TestPackSourceRequirement.Required;
                 var primary = S.Primary(source, ImportAnchor);
                 var secondary = S.Secondary(source);
                 var boundTo = BoundTo(source);
                 var titleId = $"{headingId}-{Slug(source.Role.Key)}";
                 <article class="pi-source-card pi-source-@S.CardTone(source) @(optional ? "is-optional" : "")" role="listitem" aria-labelledby="@titleId"
-                         data-testid="pi-setup-source" data-role="@source.Role.Key" data-state="@source.State" data-requirement="@source.Role.Requirement">
+                         data-testid="pi-setup-source" data-role="@source.Role.Key" data-state="@source.State" data-requirement="@source.Role.Requirement" data-provider="@source.Role.Provider">
                     <header class="pi-source-head">
                         <h3 id="@titleId">@source.Role.Label</h3>
                         <div class="pi-source-badges">
-                            <span class="pi-badge pi-badge-neutral" data-testid="pi-setup-requirement">@S.RequirementLabel(source.Role.Requirement)</span>
+                            <span class="pi-badge @(reference ? "pi-badge-reference" : "pi-badge-neutral")" data-testid="pi-setup-requirement">@S.ProviderLabel(source)</span>
                             <span class="pi-badge pi-state-@S.CardTone(source)" data-testid="pi-setup-state">@S.CardState(source)</span>
                         </div>
                     </header>
@@ -40,10 +42,49 @@
                         <p class="pi-source-usedby"><span class="pi-source-label">Used for</span> @source.Role.Capabilities[0]@(source.Role.Capabilities.Count > 1 ? $" and {source.Role.Capabilities.Count - 1} more" : "")</p>
                     }
                     <p class="pi-source-sentence" data-testid="pi-setup-detail">@S.Sentence(source)</p>
-                    <div class="pi-source-actions">
-                        <a class="@(optional ? "btn-secondary" : "btn-primary")" href="@primary.Href" aria-label="@primary.AccessibleName" data-testid="pi-setup-action">@primary.Text</a>
-                        @if (secondary is { } second) { <a class="pi-source-secondary" href="@second.Href" aria-label="@second.AccessibleName" data-testid="pi-setup-secondary">@second.Text</a> }
-                    </div>
+                    @if (primary is { } action)
+                    {
+                        <div class="pi-source-actions">
+                            <a class="@(optional ? "btn-secondary" : "btn-primary")" href="@action.Href" aria-label="@action.AccessibleName" data-testid="pi-setup-action">@action.Text</a>
+                            @if (secondary is { } second) { <a class="pi-source-secondary" href="@second.Href" aria-label="@second.AccessibleName" data-testid="pi-setup-secondary">@second.Text</a> }
+                        </div>
+                    }
+                    @if (reference)
+                    {
+                        var available = source.State == TestPackSourceState.ReferenceAvailable;
+                        <details class="pi-source-details pi-reference-details" data-testid="pi-setup-reference">
+                            <summary><span aria-hidden="true">@(available ? "View reference details" : "View diagnostics")</span><span class="visually-hidden">@(available ? $"View {source.Role.Label} reference details" : $"View {source.Role.Label} reference diagnostics")</span></summary>
+                            @if (source.Reference is { } info)
+                            {
+                                @if (available)
+                                {
+                                    <dl class="pi-source-facts" data-testid="pi-reference-facts">
+                                        <div><dt>Reference type</dt><dd data-testid="pi-reference-kind">@info.Kind</dd></div>
+                                        @foreach (var fact in info.Facts) { <div data-testid="pi-reference-fact"><dt>@fact.Label</dt><dd>@fact.Value</dd></div> }
+                                        @if (info.Provenance.Count > 0) { <div><dt>Document</dt><dd>@string.Join(" · ", info.Provenance)</dd></div> }
+                                        @if (info.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd><code title="@fingerprint">@ProjectImportPresentation.ShortFingerprint(fingerprint)</code></dd></div> }
+                                        @if (S.JourneysText(source, pack.JourneyNames) is { Length: > 0 } referenceUsedBy) { <div><dt>Used by</dt><dd>@referenceUsedBy</dd></div> }
+                                    </dl>
+                                    <p class="pi-reference-limit" data-testid="pi-reference-limitation">@info.Limitation</p>
+                                    @if (info.NotProven.Count > 0)
+                                    {
+                                        <p class="pi-muted">It does not prove:</p>
+                                        <ul class="pi-list" data-testid="pi-reference-not-proven">@foreach (var item in info.NotProven) { <li>@item</li> }</ul>
+                                    }
+                                }
+                                else
+                                {
+                                    <ul class="pi-list" data-testid="pi-reference-diagnostics">@foreach (var item in info.Diagnostics) { <li>@item</li> }</ul>
+                                }
+                            }
+                            @if (source.Candidates.Count > 0)
+                            {
+                                <p class="pi-muted" data-testid="pi-reference-imported">Also imported as source evidence (additional; it does not replace the reference): @string.Join(", ", source.Candidates.Select(c => c.ArchiveFileName).Distinct())</p>
+                            }
+                        </details>
+                    }
+                    else
+                    {
                     <details class="pi-source-details" data-testid="pi-setup-details">
                         <summary><span aria-hidden="true">Details</span><span class="visually-hidden">View @source.Role.Label source details</span></summary>
                         <dl class="pi-source-facts">
@@ -74,6 +115,7 @@
                         }
                         <p class="pi-muted">@source.Detail</p>
                     </details>
+                    }
                 </article>
             }
         </div>

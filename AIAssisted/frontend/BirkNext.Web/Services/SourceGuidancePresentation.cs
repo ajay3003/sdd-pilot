@@ -15,6 +15,7 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.AvailableNotBound => "Available but not bound",
         SourceSuggestionState.Conflict => "Configuration conflict",
         SourceSuggestionState.SourceMissing => "Required source missing",
+        SourceSuggestionState.Reference => "From Test Pack reference",
         _ => "Not in the bound source",
     };
 
@@ -27,6 +28,8 @@ public static class SourceGuidancePresentation
         TestPackSourceState.ReviewRequired => "Review required",
         TestPackSourceState.Available => "Available",
         TestPackSourceState.NotProvided => "Not provided (optional)",
+        TestPackSourceState.ReferenceAvailable => "Test Pack reference · Available",
+        TestPackSourceState.ReferenceUnavailable => "Test Pack reference · Unavailable",
         _ => "Missing",
     };
 
@@ -34,6 +37,7 @@ public static class SourceGuidancePresentation
     {
         TestPackSourceState.Bound or TestPackSourceState.Available => "ready",
         TestPackSourceState.Missing or TestPackSourceState.NotProvided => "muted",
+        TestPackSourceState.ReferenceAvailable or TestPackSourceState.ReferenceUnavailable => "neutral",
         _ => "attention",
     };
 
@@ -78,6 +82,7 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.Conflict => "attention",
         SourceSuggestionState.AvailableNotBound => "attention",
         SourceSuggestionState.SourceMissing => "attention",
+        SourceSuggestionState.Reference => "info",
         _ => "muted",
     };
 
@@ -108,6 +113,9 @@ public static class SourceGuidancePresentation
         SourceSuggestionState.Suggested when suggestion.Requirement.ConsumerField is { } field && (suggestion.ConfiguredValue is null || suggestion.ConfiguredDiffers) =>
             ($"Review and use the suggested value in {suggestion.Requirement.Owner} → {field}", null),
         SourceSuggestionState.Suggested => ("Nothing to configure; verify it at runtime", null),
+        SourceSuggestionState.Reference when suggestion.Requirement.ConsumerField is { } referenceField && (suggestion.ConfiguredValue is null || suggestion.ConfiguredDiffers) =>
+            ($"Review and use the Test Pack reference value in {suggestion.Requirement.Owner} → {referenceField}", null),
+        SourceSuggestionState.Reference => ("Reference metadata only; verify it at runtime", null),
         SourceSuggestionState.Conflict => ($"Decide which value is correct in {suggestion.Requirement.Owner}", null),
         SourceSuggestionState.AvailableNotBound => ("Bind the snapshot in Integration Quality Review → Evidence", "/integration-quality-review?view=evidence"),
         SourceSuggestionState.SourceMissing => ($"Import the {suggestion.SourceRoleLabel ?? suggestion.Requirement.LogicalSource} source in Source Analysis", "/source-analysis"),

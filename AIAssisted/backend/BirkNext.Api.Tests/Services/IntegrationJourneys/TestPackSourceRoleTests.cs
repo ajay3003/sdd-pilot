@@ -60,7 +60,7 @@ public sealed class TestPackSourceRoleTests
     private static TestPackSourceStatus Source(TestPackSourceGuidance guidance, string role) => guidance.Sources.Single(item => item.Role.Key == role);
 
     [Fact]
-    public async Task OnlyMuBound_MuIsBound_M2lbIsAvailableButNotBound_AndTheAltinnAppSourceIsMissing()
+    public async Task OnlyMuBound_MuIsBound_M2lbIsAvailableButNotBound_AndTheAltinnAppIsTheTestPackReference()
     {
         await using var harness = new IntegrationJourneyHarness();
         harness.Active.Catalog.Extra.Add(Intake);
@@ -75,8 +75,8 @@ public sealed class TestPackSourceRoleTests
         m2lb.State.Should().Be(TestPackSourceState.AvailableNotBound);
         m2lb.AvailableArchives.Should().Equal("M2LB (2).zip");
         m2lb.NextActionTarget.Should().Be("target-environment-integrations", "no M2LB integration is configured yet");
-        Source(guidance, "altinn-app").State.Should().Be(TestPackSourceState.Missing);
-        Source(guidance, "altinn-app").NextActionTarget.Should().Be("source-analysis");
+        Source(guidance, "altinn-app").State.Should().Be(TestPackSourceState.ReferenceAvailable, "the pack provides the Altinn app metadata itself");
+        Source(guidance, "altinn-app").Candidates.Should().BeEmpty("a reference is not an imported snapshot");
 
         // Architecture rules need M2LB: not assessed, never "component not found in the MU source".
         rules.Findings.Should().HaveCount(4).And.OnlyContain(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed);
@@ -140,11 +140,15 @@ public sealed class TestPackSourceRoleTests
     }
 
     [Fact]
-    public async Task NoSourceAtAll_EveryRoleIsMissing_AndTheLocalFixtureIsNeverAManualSource()
+    public async Task NoSourceAtAll_EveryImportedRoleIsMissing_TheReferenceIsAvailable_AndTheLocalFixtureIsNeverAManualSource()
     {
         await using var harness = new IntegrationJourneyHarness();
         var (guidance, rules) = await ReadAsync(harness);
-        guidance.Sources.Where(item => item.Role.Requirement == TestPackSourceRequirement.Required).Should().OnlyContain(item => item.State == TestPackSourceState.Missing);
+        guidance.Sources.Where(item => item.Role.Requirement == TestPackSourceRequirement.Required && item.Role.Provider == TestPackSourceProvider.ImportedSource)
+            .Select(item => item.Role.Key).Should().Equal("mu", "m2lb");
+        guidance.Sources.Where(item => item.Role.Provider == TestPackSourceProvider.ImportedSource && item.Role.Requirement == TestPackSourceRequirement.Required)
+            .Should().OnlyContain(item => item.State == TestPackSourceState.Missing);
+        Source(guidance, "altinn-app").State.Should().Be(TestPackSourceState.ReferenceAvailable);
         Source(guidance, "infrastructure").State.Should().Be(TestPackSourceState.NotProvided, "Infrastructure as Code is optional for Skolenærvær, never a missing requirement");
         rules.Findings.Should().OnlyContain(finding => finding.Detail.Contains("No M2LB source is imported", StringComparison.Ordinal));
         var text = System.Text.Json.JsonSerializer.Serialize(new { guidance, rules, roles = Pack(harness).SourceRoles });
@@ -315,6 +319,7 @@ public sealed class TestPackSourceRoleTests
         var (guidance, _) = await ReadAsync(harness);
         Source(guidance, "altinn-app").Candidates.Select(item => item.ArchiveFileName).Should().Equal(["altinn-app-contract.zip"],
             "only a document declaring the app route / form data type / process task is the Altinn application");
+        Source(guidance, "altinn-app").State.Should().Be(TestPackSourceState.ReferenceAvailable, "an imported Altinn document is additional evidence and never replaces the reference");
     }
 
     [Fact]
@@ -362,7 +367,7 @@ public sealed class TestPackSourceRoleTests
         sources["mu"].State.Should().Be(TestPackSourceState.Bound);
         sources["mu"].Candidates.Single().Should().Match<TestPackSourceCandidate>(item => item.Bound && item.SnapshotId == mu.Id);
         sources["m2lb"].State.Should().Be(TestPackSourceState.AvailableNotBound);
-        sources["altinn-app"].State.Should().Be(TestPackSourceState.Missing);
+        sources["altinn-app"].State.Should().Be(TestPackSourceState.ReferenceAvailable);
         sources["infrastructure"].State.Should().Be(TestPackSourceState.NotProvided);
         var text = System.Text.Json.JsonSerializer.Serialize(setup);
         text.Should().NotContain("skolenaervaer.json").And.NotContain("testdata");

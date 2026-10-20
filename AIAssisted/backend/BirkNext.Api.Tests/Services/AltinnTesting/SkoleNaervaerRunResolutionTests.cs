@@ -570,6 +570,7 @@ public sealed class SkoleNaervaerRunResolutionTests
     [InlineData("evidence:skole-telemetry", JourneyPrerequisiteCategory.Observation)]
     [InlineData("evidence:skole-graphql", JourneyPrerequisiteCategory.Observation)]
     [InlineData("contract-impact", JourneyPrerequisiteCategory.Contract)]
+    [InlineData("app-reference", JourneyPrerequisiteCategory.Contract)]
     public async Task EveryImplementedPrerequisite_AppearsExactlyOnce_WithItsCategoryAndASource(string key, JourneyPrerequisiteCategory category)
     {
         var view = await RapportmottakAsync(await ReadyAsync());
@@ -586,7 +587,7 @@ public sealed class SkoleNaervaerRunResolutionTests
         "unattended-provider", "reporter-auth", "synthetic-reporter", "reporter-profile", "test-reporter", "synthetic-data", "app-policy",
         "submission-contract", "public-metadata", "process-contract", "report-xsd", "altinn-auth", "reporter-role", "meldingshode", "backend-build",
         "executor", "observation", "source:MU", "source:MM", "source:Skolenærværsrapport", "report-verifier",
-        "evidence:mm-telemetry", "evidence:skole-telemetry", "evidence:skole-graphql", "contract-impact",
+        "evidence:mm-telemetry", "evidence:skole-telemetry", "evidence:skole-graphql", "contract-impact", "app-reference",
     ];
 
     [Fact]
@@ -689,11 +690,15 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await ReadyAsync();
         bed.Harness.Sources.Snapshots.Add(snapshot);
         var guidance = await GuidanceAsync(bed);
-        guidance.Values.Where(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.NotDeclared)
+        // Values the Test Pack reference declares come from the reference; the unbound snapshot's own values are never used.
+        guidance.Values.Where(item => item.State is not BirkNext.SourceDomains.SourceSuggestionState.NotDeclared and not BirkNext.SourceDomains.SourceSuggestionState.Reference)
             .Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound && item.Value == null && item.Candidates.Count == 0);
-        guidance.Values.Should().NotContain(item => item.Value != null, "an unbound snapshot offers no value");
+        guidance.Values.Where(item => item.Value != null).Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference
+                && item.Candidates.SelectMany(candidate => candidate.Provenance).All(value => value.Artifact == "Test Pack reference"),
+            "an unbound snapshot offers no value; only the reference does, with its own provenance");
         guidance["altinn-test-server"].UnboundSources.Should().Equal("skolenaervaer-app.zip");
-        guidance["altinn-test-server"].Detail.Should().Contain("not bound in Integration Quality Review").And.Contain("not source verified");
+        guidance["altinn-test-server"].Detail.Should().Contain("Test Pack reference").And.Contain("skolenaervaer-app.zip also declares it but is not bound");
+        guidance["altinn-environment"].State.Should().Be(BirkNext.SourceDomains.SourceSuggestionState.AvailableNotBound, "the reference does not declare the environment");
     }
 
     [Fact]
@@ -716,9 +721,12 @@ public sealed class SkoleNaervaerRunResolutionTests
     {
         var bed = await ReadyAsync();
         var guidance = await GuidanceAsync(bed);
-        guidance.Values.Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.SourceMissing
+        // The Test Pack reference supplies what the Altinn app's API description declares; everything else names its missing logical source.
+        guidance.Values.Where(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.Reference).Select(item => item.Requirement.Key)
+            .Should().BeEquivalentTo(["altinn-app-route", "altinn-test-server", "altinn-form-data-type", "altinn-content-type", "altinn-process-task", "altinn-auth-scheme"]);
+        guidance.Values.Where(item => item.State != BirkNext.SourceDomains.SourceSuggestionState.Reference).Should().OnlyContain(item => item.State == BirkNext.SourceDomains.SourceSuggestionState.SourceMissing
             && item.Detail.Contains(item.Requirement.EvidenceType, StringComparison.Ordinal) && item.SourceRoleLabel != null && item.Detail.Contains(item.SourceRoleLabel, StringComparison.Ordinal),
-            "without any source the required logical source is named as missing");
+            "without any imported source the required logical source is named as missing");
         guidance.Values.Should().NotContain(item => item.Detail.Contains("process.bpmn", StringComparison.Ordinal) || item.Detail.Contains("skolenaervaer.json", StringComparison.Ordinal),
             "a requirement names the evidence type, never a particular file");
     }
@@ -749,6 +757,40 @@ public sealed class SkoleNaervaerRunResolutionTests
         await ReadyAsync(configuration: AltinnTestKit.ReadyConfiguration with { Environment = ExternalTestEnvironment.Unknown, AppIdentifier = null, BaseUrlReference = null, EndpointReference = null }, liveContract: false);
 
     private static int MandatoryReady(IntegrationJourneyView view) => view.Prerequisites.Count(item => item.Mandatory && item.State == JourneyReadinessState.Ready);
+
+    [Fact]
+    public async Task TheTestPackReference_SatisfiesOnlyTheMetadataRow_NeverRuntimeAuthorizationReporterOrExecution()
+    {
+        var bed = await UnconfiguredAsync();
+        var view = await RapportmottakAsync(bed);
+        var reference = Row(view, "app-reference");
+        (reference.State, reference.Mandatory, reference.Source).Should().Be((JourneyReadinessState.Ready, false, "Test Pack reference"));
+        reference.Detail.Should().Contain("not the deployed app").And.Contain("not runtime verified");
+        Row(view, "altinn-app").State.Should().NotBe(JourneyReadinessState.Ready, "reference metadata never approves or deploys the app");
+        Row(view, "altinn-environment").State.Should().NotBe(JourneyReadinessState.Ready);
+        Row(view, "observation").State.Should().NotBe(JourneyReadinessState.Ready, "reference metadata is never a runtime observation");
+        view.Prerequisites.Where(row => row.Key != "app-reference").Should().NotContain(row => row.Source == "Test Pack reference");
+        view.RunnableScenarios.Should().BeEmpty("a reference never makes Rapportmottak executable");
+        bed.Harness.MessageFlows.Configuration.VerifiedScopes.Should().BeEmpty();
+        bed.Harness.Bindings.Items.Should().BeEmpty("a reference is never an IQR binding");
+        bed.Harness.Sources.Snapshots.Should().BeEmpty("a reference is never a Source Analysis snapshot");
+    }
+
+    [Fact]
+    public async Task BoundImportedEvidence_StaysAuthoritative_AndADifferentReferenceValueIsShownNotChosen()
+    {
+        var bed = await UnconfiguredAsync();
+        var hub = HubSnapshot("hub.zip", HubSettings());
+        bed.Harness.Sources.Snapshots.Add(hub);
+        bed.Harness.Bindings.Bind(ReportIntake, hub);
+        var guidance = await GuidanceAsync(bed);
+        var route = guidance["altinn-app-route"];
+        route.State.Should().Be(SourceSuggestionState.Suggested, "the bound imported source declares the app route");
+        route.ReferenceValue.Should().Be("buf/skolenaervaer");
+        guidance["altinn-form-data-type"].State.Should().Be(SourceSuggestionState.Reference, "only the reference declares the form data type");
+        guidance["altinn-form-data-type"].Value.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
+        guidance.Values.Should().OnlyContain(item => !item.RuntimeVerified);
+    }
 
     [Fact]
     public async Task TheHubConfiguration_DeclaresTheAppRouteBaseUrlTestEnvironmentAndWebhook_PerApp_WithoutConflict()
@@ -832,9 +874,10 @@ public sealed class SkoleNaervaerRunResolutionTests
         var bed = await UnconfiguredAsync();
         bed.Harness.Sources.Snapshots.Add(HubSnapshot("unbound.zip", HubSettings()));
         var unbound = await Service(bed).ApplySourceConfigurationAsync(Env, SkoleNaervaerJourneyPack.Id, default);
-        unbound.Applied.Should().BeEmpty();
+        unbound.Applied.Should().OnlyContain(item => item.Provenance == "Test Pack reference", "an unbound snapshot supplies nothing; only the Test Pack reference fills an empty field");
         unbound.NotApplied.Should().OnlyContain(item => item.Reason.StartsWith("Available but not bound", StringComparison.Ordinal));
-        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().BeNull();
+        bed.Harness.MessageFlows.Configuration.AppIdentifier.Should().Be("buf/skolenaervaer", "the reference's app identifier, never the unbound snapshot's");
+        bed.Harness.MessageFlows.Configuration.EndpointReference.Should().BeNull("the reference does not declare the intake webhook");
 
         var bound = HubSnapshot("bound.zip", HubSettings("https://bound.example.invalid/hook"), DateTimeOffset.UtcNow.AddDays(-3));
         bed.Harness.Sources.Snapshots.Add(bound);

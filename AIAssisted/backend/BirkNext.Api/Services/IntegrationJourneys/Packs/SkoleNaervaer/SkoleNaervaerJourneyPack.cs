@@ -137,14 +137,17 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             Capabilities = ["Meldingsutvekslermottak (MM)", "Skoletjenesten", "SkoleAdapter", "Utdanning", "Skolenærværsrapport", "Period closure", "Service Bus", "Event Hub", "Contracts and XSDs"],
             Journeys = [UtdanningsdataId, RapportmottakId, PeriodeavslutningId],
         },
-        new(AltinnAppSourceRole, "Altinn Skolenærvær application", "The Altinn app's own API description (identity, servers, form data type, process task, authentication).")
+        // Provided by the pack itself: the app's OpenAPI facts are a built-in Test Pack reference (no import needed). An imported Altinn app
+        // document is still recognized, as additional imported evidence that never replaces the reference.
+        new(AltinnAppSourceRole, "Altinn application/API", "The Altinn app's own API description (identity, servers, form data type, process task, authentication).")
         {
+            Provider = TestPackSourceProvider.TestPackReference,
             ComponentTokens = ["skolenaervaer"], RequiresApiDocument = true,
             // An Altinn app document declares the app route, form data type or process task; another API that only says "skolenærvær" is not it.
             ApiDocumentKeys = [BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationRoute, BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType,
                 BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationTaskId], ExpectedArtifact = "OpenAPI / Swagger document or application metadata of the Altinn app",
             Capabilities = ["App identity (org/app)", "Server / environment", "Form data type", "Process task", "Authentication scheme"], Journeys = [RapportmottakId],
-            RequirementCondition = "Required for the Altinn application metadata Rapportmottak submits with.",
+            RequirementCondition = "Provides the Altinn application metadata Rapportmottak submits with.",
         },
         // No Skolenærvær prerequisite needs declared infrastructure: it adds resource/runtime evidence and never blocks the pack. Any IaC format
         // counts — the capability is Infrastructure as Code, not one technology.
@@ -156,6 +159,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             Capabilities = ["Azure resource names", "Namespaces and resource groups", "Managed identities", "Event Hub / Service Bus platform references", "Deployment bindings"],
         },
     ];
+    public IReadOnlyList<TestPackReference> References { get; } = [SkoleNaervaerAltinnReference.Reference(AltinnAppSourceRole)];
+
     private const string ApiDocument = "OpenAPI / Swagger document";
     private const string AppReference = "Altinn app reference in configuration (e.g. an event subscription) or OpenAPI / Swagger document";
     /// <summary>Which app's values are meant when a source declares several apps (an Altinn route's app segment).</summary>
@@ -224,6 +229,17 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         if (applied.Count == 0) return [];
         var (saved, _) = await messageFlows.SaveAsync(context.EnvironmentId, package with { AltinnConfiguration = config }, ct);
         return saved is null ? [] : applied;
+    }
+
+    /// <summary>Whether the Altinn app's reference metadata is available (Test Pack reference). Never mandatory and never a runtime fact.</summary>
+    private JourneyPrerequisite AppReferenceRow(JourneyPackContext context)
+    {
+        var status = TestPackSources.Status(this, context, SourceRoles.Single(role => role.Key == AltinnAppSourceRole));
+        var available = status.State == TestPackSourceState.ReferenceAvailable;
+        return new JourneyPrerequisite("app-reference", "Altinn app reference metadata", JourneyPrerequisiteCategory.Contract,
+            available ? JourneyReadinessState.Ready : JourneyReadinessState.NotReady,
+            available ? $"Reference available: app {SkoleNaervaerAltinnReference.AppScope}, form data type, content type, process task and authentication scheme from the Test Pack reference. Reference metadata only — not the deployed app, not runtime verified."
+                : $"Test Pack reference unavailable: {string.Join(" ", status.Reference?.Diagnostics ?? [])}", Mandatory: false) { Source = TestPackReferences.ProvenanceLabel };
     }
 
     /// <summary>The canonical source-evidence binding of the configured integration that fulfils this journey's report-intake requirement.</summary>
@@ -910,6 +926,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     new JourneyPrerequisite("altinn-app", "Approved Altinn app", JourneyPrerequisiteCategory.Integration,
                         contract.AppApproved ? JourneyReadinessState.Ready : string.IsNullOrWhiteSpace(config.AppIdentifier) ? JourneyReadinessState.NotConfigured : JourneyReadinessState.NotReady,
                         contract.AppDetail, Scenarios: AltinnCallingScenarios) { Source = IqrSource },
+                    // Metadata only: the built-in reference supplies the app's declared facts for configuration and planning. It never makes the
+                    // app approved, deployed, reachable or runnable — those rows stay their own.
+                    AppReferenceRow(context),
                     // Reporter authentication: unattended (default) or the interactive fallback; either mode can satisfy it. Each unattended part is
                     // reported on its own below, so a missing secret or reporter is visible as exactly that.
                     new JourneyPrerequisite("reporter-auth", "Reporter authentication", JourneyPrerequisiteCategory.Authentication,

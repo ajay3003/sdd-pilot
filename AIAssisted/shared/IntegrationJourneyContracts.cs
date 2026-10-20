@@ -351,18 +351,47 @@ public sealed record TestPackSourceRole(string Key, string Label, string Descrip
     public bool RequiresInfrastructureAsCode { get; init; }
     /// <summary>False when the source is read as workspace evidence directly: no IQR binding is needed for it to count.</summary>
     public bool BindingRequired { get; init; } = true;
+    /// <summary>Who provides the source: an imported Source Analysis snapshot (default), or reference metadata the test pack ships with BirkNext.
+    /// A Test Pack reference is never imported, never a snapshot and never an IQR binding; its states are its own (available / unavailable).</summary>
+    public TestPackSourceProvider Provider { get; init; } = TestPackSourceProvider.ImportedSource;
+}
+
+/// <summary>ImportedSource: a Source Analysis snapshot the tester imports (matched by content, bound in IQR). TestPackReference: metadata the test
+/// pack provides itself (e.g. a built-in OpenAPI reference) — supports configuration and test planning, never canonical evidence or runtime truth.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestPackSourceProvider { ImportedSource, TestPackReference }
+
+/// <summary>One fact a Test Pack reference declares: a label, the value and the generic semantic key it supplies (when it supplies one).</summary>
+public sealed record TestPackReferenceFact(string Label, string Value)
+{
+    public string? SemanticKey { get; init; }
+}
+
+/// <summary>A Test Pack reference as loaded: what it is, the safe facts it declares, its provenance and what it does not prove. When it cannot
+/// be loaded, <see cref="Diagnostics"/> says why (never a file-system path in the normal view).</summary>
+public sealed record TestPackReferenceView(string Kind, string Title)
+{
+    public IReadOnlyList<TestPackReferenceFact> Facts { get; init; } = [];
+    /// <summary>Document version facts (e.g. "OpenAPI 3.0.4", "info.version 8.12.7.264"), shown as provenance only.</summary>
+    public IReadOnlyList<string> Provenance { get; init; } = [];
+    public string? Fingerprint { get; init; }
+    public string Limitation { get; init; } = "";
+    /// <summary>What the reference does not prove (deployment, runtime health, credentials, reporter, execution …).</summary>
+    public IReadOnlyList<string> NotProven { get; init; } = [];
+    public IReadOnlyList<string> Diagnostics { get; init; } = [];
 }
 
 /// <summary>Required: the pack's journeys need it. Optional: adds evidence, never blocks. Conditional: needed only when <see cref="TestPackSourceRole.RequirementCondition"/> applies.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestPackSourceRequirement { Required, Optional, Conditional }
 
-/// <summary>Bound = a canonical binding provides the source; AvailableNotBound = a stored snapshot is recognized as the source but no binding
+/// <summary>ReferenceAvailable / ReferenceUnavailable = a Test Pack reference loaded / could not be loaded (never an imported-source state).
+/// Bound = a canonical binding provides the source; AvailableNotBound = a stored snapshot is recognized as the source but no binding
 /// uses it (never authoritative); Missing = no snapshot is recognized as a required source; ReviewRequired = the bound snapshot is not recognized
 /// as this source (wrong source context) or several snapshots of different content match and none is bound; Available = recognized, and the
 /// source needs no binding; NotProvided = an optional or conditional source that no snapshot provides (never a failure).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TestPackSourceState { Bound, AvailableNotBound, Missing, ReviewRequired, Available, NotProvided }
+public enum TestPackSourceState { Bound, AvailableNotBound, Missing, ReviewRequired, Available, NotProvided, ReferenceAvailable, ReferenceUnavailable }
 
 /// <summary>One stored snapshot recognized as a logical source. Archive name and fingerprint are provenance; the snapshot id is the identity.</summary>
 public sealed record TestPackSourceCandidate(Guid SnapshotId, string ArchiveFileName, string Fingerprint, DateTimeOffset AnalyzedAt)
@@ -395,6 +424,9 @@ public sealed record TestPackSourceStatus(TestPackSourceRole Role, TestPackSourc
     public IReadOnlyList<TestPackSourceCandidate> Candidates { get; init; } = [];
     /// <summary>Snapshots named like the source that are not recognized as it, with the reason (explanation only; never affects the state).</summary>
     public IReadOnlyList<TestPackSourceNearMiss> NearMisses { get; init; } = [];
+    /// <summary>The Test Pack reference (provider TestPackReference only); imported snapshots recognized as the same source stay in Candidates as
+    /// additional imported evidence and never replace it.</summary>
+    public TestPackReferenceView? Reference { get; init; }
 }
 
 /// <summary>A test pack's logical sources and their state in one environment — what Import Project shows before asking for another upload.</summary>

@@ -451,4 +451,91 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         current.QuerySelector("[data-testid=pi-current-logical]")!.TextContent.Should().Be("Platform");
         cut.FindAll("[data-testid=pi-previous-match]").Select(b => b.TextContent).Should().Contain("Matches Message hub source requirement");
     }
+
+    // ── Test Pack references: provided by the pack, never an imported source ────────────────────────────────────────────────────────
+
+    private static TestPackSourceStatus Reference(bool available) =>
+        new(Role("app", "Demo application/API", journeys: "intake") with { Provider = TestPackSourceProvider.TestPackReference }, available ? TestPackSourceState.ReferenceAvailable : TestPackSourceState.ReferenceUnavailable)
+        {
+            Reference = new TestPackReferenceView("OpenAPI", "Built-in OpenAPI reference")
+            {
+                Facts = available ? [new("App identifier", "demo/app") { SemanticKey = "Application.Route" }, new("Form data type", "demo_form_data_type_with_a_very_long_identifier_v2_0_0") { SemanticKey = "Application.FormDataType" }] : [],
+                Provenance = available ? ["OpenAPI 3.0.4"] : [], Fingerprint = available ? MuSha : null,
+                Limitation = "Reference data supports configuration and test planning. It is not canonical source evidence and does not verify the deployed application.",
+                NotProven = available ? ["Client id, client secret, redirect URI or scopes"] : [],
+                Diagnostics = available ? [] : ["The reference could not be loaded (InvalidDataException: not valid JSON)."],
+            },
+            Detail = available ? "Demo application/API is provided by the Test Pack reference." : "The Test Pack reference could not be loaded.",
+        };
+
+    private static IReadOnlyList<TestPackSourceStatus> WithReference(bool available) =>
+    [
+        new(Role("hub", "Message hub", journeys: "intake"), TestPackSourceState.Missing) { Detail = "Missing.", NextAction = "Import it in Source Analysis", NextActionTarget = "source-analysis" },
+        new(Role("platform", "Platform", journeys: "intake"), TestPackSourceState.ReviewRequired)
+        {
+            Candidates = [Candidate(M2lbSnapshot, "platform.zip", M2lbSha), Candidate(OldM2lbSnapshot, "platform-old.zip", OldM2lbSha)], AvailableArchives = ["platform.zip", "platform-old.zip"],
+            Detail = "Several snapshots match.", NextAction = "Bind one", NextActionTarget = "iqr-evidence",
+        },
+        Reference(available),
+        new(Role("infra", "Infrastructure as Code", TestPackSourceRequirement.Optional), TestPackSourceState.Available)
+        { Candidates = [Candidate(MuSnapshot, "terraform.zip", MuSha)], AvailableArchives = ["terraform.zip"], Detail = "Available.", NextAction = "Open Source Analysis", NextActionTarget = "source-analysis" },
+    ];
+
+    private static AngleSharp.Dom.IElement Card(IRenderedComponent<ProjectImportPage> cut, string role) =>
+        cut.FindAll("[data-testid=pi-setup-source]").Single(r => r.GetAttribute("data-role") == role);
+
+    [Fact]
+    public void ABuiltInReference_IsATestPackReferenceCard_Available_WithoutAnImportAction()
+    {
+        _setup = Setup(true, WithReference(available: true));
+        var cut = RenderPage();
+        var card = Card(cut, "app");
+        card.GetAttribute("data-provider").Should().Be("TestPackReference");
+        card.QuerySelector("[data-testid=pi-setup-requirement]")!.TextContent.Should().Be("Test Pack reference");
+        card.QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Available");
+        card.QuerySelector("[data-testid=pi-setup-state]")!.ClassList.Should().Contain("pi-state-reference").And.NotContain("pi-state-bound", "a reference is never shown as verified");
+        card.QuerySelector("[data-testid=pi-setup-journeys]")!.TextContent.Should().Be("Report intake");
+        card.QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("Provides the metadata the Test Pack uses. No separate import required.");
+        card.QuerySelectorAll("[data-testid=pi-setup-action], [data-testid=pi-setup-secondary], [data-testid=pi-setup-details]").Should().BeEmpty("nothing to import, bind or match");
+        card.TextContent.Should().NotContain("Import").And.NotContain("Missing").And.NotContain("Required");
+
+        var details = card.QuerySelector("[data-testid=pi-setup-reference]")!;
+        details.HasAttribute("open").Should().BeFalse("the card stays compact");
+        details.QuerySelector("summary")!.TextContent.Should().Contain("View reference details");
+        details.QuerySelector("summary .visually-hidden")!.TextContent.Should().Be("View Demo application/API reference details");
+        details.QuerySelector("[data-testid=pi-reference-kind]")!.TextContent.Should().Be("OpenAPI");
+        details.QuerySelectorAll("[data-testid=pi-reference-fact]").Select(f => f.TextContent).Should().Equal("App identifierdemo/app", "Form data typedemo_form_data_type_with_a_very_long_identifier_v2_0_0");
+        details.QuerySelector("[data-testid=pi-reference-limitation]")!.TextContent.Should().Contain("not canonical source evidence");
+        details.QuerySelector("[data-testid=pi-reference-not-proven]")!.TextContent.Should().Contain("client secret");
+        cut.Markup.Should().NotContain("skolenaervaer.json").And.NotContain("testdata");
+    }
+
+    [Fact]
+    public void Counts_KeepImportedRequirementsReferencesAndOptionalSourcesApart_AndTheNoteExplainsBoth()
+    {
+        _setup = Setup(true, WithReference(available: true));
+        var cut = RenderPage();
+        cut.Find("[data-testid=pi-setup-progress]").TextContent.Should()
+            .Be("0 of 2 required sources available · 1 ambiguous · 1 missing · 1 Test Pack reference available · optional Infrastructure as Code available");
+        cut.Find("[data-testid=pi-setup-note]").TextContent.Should().Contain("imported source evidence and Test Pack reference metadata")
+            .And.Contain("matched by their content").And.Contain("built into BirkNext and do not need to be uploaded");
+        cut.FindAll("[data-testid=pi-setup-source]").Select(c => c.GetAttribute("data-role")).Should().Equal(["hub", "platform", "app", "infra"],
+            "required imported sources first, then references, then optional sources");
+    }
+
+    [Fact]
+    public void AnUnavailableReference_SaysSo_WithDiagnostics_NeverAsAMissingImport()
+    {
+        _setup = Setup(true, WithReference(available: false));
+        var cut = RenderPage();
+        var card = Card(cut, "app");
+        card.QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Unavailable");
+        card.QuerySelector("[data-testid=pi-setup-requirement]")!.TextContent.Should().Be("Test Pack reference");
+        card.QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("Reference could not be loaded.");
+        card.QuerySelector("[data-testid=pi-setup-reference] summary")!.TextContent.Should().Contain("View diagnostics");
+        card.QuerySelector("[data-testid=pi-reference-diagnostics]")!.TextContent.Should().Contain("could not be loaded");
+        card.QuerySelectorAll("[data-testid=pi-setup-action]").Should().BeEmpty("importing is not the recovery for a built-in reference");
+        card.TextContent.Should().NotContain("Missing").And.NotContain("Import source");
+        cut.Find("[data-testid=pi-setup-progress]").TextContent.Should().Contain("1 Test Pack reference unavailable");
+    }
 }

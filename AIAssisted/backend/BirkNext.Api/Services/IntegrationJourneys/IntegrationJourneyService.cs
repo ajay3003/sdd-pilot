@@ -170,6 +170,23 @@ public sealed class IntegrationJourneyService(
             var available = roles.SelectMany(role => TestPackSources.Available(pack, context, role)).DistinctBy(item => item.Id).ToArray();
             var labels = string.Join(" or ", roles.Select(role => role.Label));
             var suggestion = SourceAnalysis.SourceConfigurationGuidance.Suggest([requirement], bound, [.. bound, .. available], configured)[0] with { SourceRoleLabel = labels };
+            // Precedence: bound imported evidence, then the pack's Test Pack reference — a difference is shown, never resolved silently.
+            var referenced = TestPackReferences.Values(pack, roles, requirement.SemanticKey, requirement.ScopeHint);
+            var reference = referenced.Count == 0 ? null : string.Join(", ", referenced.Select(item => item.Value).Distinct(StringComparer.Ordinal));
+            if (reference is not null && suggestion.State is SourceSuggestionState.Suggested or SourceSuggestionState.Conflict)
+                return suggestion with
+                {
+                    ReferenceValue = reference,
+                    Detail = string.Equals(suggestion.Value, reference, StringComparison.OrdinalIgnoreCase) ? suggestion.Detail
+                        : $"{suggestion.Detail} The Test Pack reference declares {reference}; the bound imported source stays authoritative.",
+                };
+            if (reference is not null)
+                return suggestion with
+                {
+                    State = SourceSuggestionState.Reference, Value = reference, ReferenceValue = reference, Candidates = [new SourceConfigurationCandidate(reference, referenced)],
+                    Detail = "From the Test Pack reference (built into BirkNext). Reference metadata — not imported source evidence and not runtime verified."
+                        + (suggestion.UnboundSources.Count > 0 ? $" {string.Join(", ", suggestion.UnboundSources)} also declares it but is not bound in Integration Quality Review; its value is not used." : ""),
+                };
             if (suggestion.State != SourceSuggestionState.NotDeclared) return suggestion;
             return bound.Length > 0
                 ? suggestion with { Detail = $"The bound {labels} source does not declare it. Expected evidence: {requirement.EvidenceType}." }
@@ -257,7 +274,8 @@ public sealed class IntegrationJourneyService(
             notApplied.Add(new(key, eligible[key].Requirement.Label, "Not stored: the field is not empty or the consumer does not accept this value."));
         return new SourceConfigurationApplyResult(
             [.. stored.Where(eligible.ContainsKey).Select(key => new SourceConfigurationApplied(key, eligible[key].Requirement.Label, eligible[key].Value!,
-                string.Join("; ", eligible[key].Candidates.SelectMany(candidate => candidate.Provenance).Select(SourceAnalysis.SourceConfigurationGuidance.Provenance).Distinct())))],
+                eligible[key].State == SourceSuggestionState.Reference ? TestPackReferences.ProvenanceLabel
+                    : string.Join("; ", eligible[key].Candidates.SelectMany(candidate => candidate.Provenance).Select(SourceAnalysis.SourceConfigurationGuidance.Provenance).Distinct())))],
             notApplied);
     }
 

@@ -161,7 +161,7 @@ public sealed record SourceConfigurationApplyResult(IReadOnlyList<SourceConfigur
 /// binding provides; AvailableNotBound = only an unbound snapshot declares it (never used); Conflict = bound artifacts disagree;
 /// NotDeclared = the required source is bound but does not declare it; SourceMissing = no snapshot of the required source exists.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceSuggestionState { NotDeclared, AvailableNotBound, Suggested, Conflict, SourceMissing }
+public enum SourceSuggestionState { NotDeclared, AvailableNotBound, Suggested, Conflict, SourceMissing, Reference }
 
 public sealed record SourceConfigurationSuggestion(SourceConfigurationRequirement Requirement, SourceSuggestionState State)
 {
@@ -177,6 +177,9 @@ public sealed record SourceConfigurationSuggestion(SourceConfigurationRequiremen
     public string? ConfiguredValue { get; init; }
     /// <summary>The logical source the value was looked for in (label), when the requirement names one.</summary>
     public string? SourceRoleLabel { get; init; }
+    /// <summary>What the test pack's built-in reference declares for the requirement (provenance "Test Pack reference"). It is the suggestion only
+    /// when no bound imported evidence declares the value (state Reference); otherwise it is shown beside it, and a difference is a conflict note.</summary>
+    public string? ReferenceValue { get; init; }
     /// <summary>Always false: a declared value is not runtime verified.</summary>
     public bool RuntimeVerified { get; init; }
     public string Detail { get; init; } = "";

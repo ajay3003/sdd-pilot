@@ -75,7 +75,7 @@ public static class IntegrationTemplatePresentation
     public static TemplateEvidenceState Evidence(TestPackSourceStatus? status, IntegrationEvidenceBinding? ownBinding)
     {
         if (ownBinding is not null) return TemplateEvidenceState.Bound;
-        if (status is null) return TemplateEvidenceState.NotRequired;
+        if (status is null || status.Role.Provider == TestPackSourceProvider.TestPackReference) return TemplateEvidenceState.NotRequired;
         var choices = Choices(status);
         if (choices.Count == 0) return TemplateEvidenceState.Missing;
         if (SourceSetupPresentation.IsAmbiguous(status) || choices.Select(c => c.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1) return TemplateEvidenceState.Ambiguous;
