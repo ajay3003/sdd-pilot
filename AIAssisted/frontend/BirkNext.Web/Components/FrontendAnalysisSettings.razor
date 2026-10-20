@@ -223,14 +223,8 @@
                 {
                     <p class="fa-framework-evidence">Framework evidence: @_detectionResult.FrameworkEvidence · @_detectionResult.FrameworkConfidence</p>
                 }
-                @if (_detectionResult.ManualAuthenticationVerificationRequired)
-                {
-                    @* Authentication-specific, never a target-wide gate: detection proved reachability and configuration, not sign-in. *@
-                    <p class="fa-result-limitation" data-testid="detection-auth-limitation">
-                        Authentication runtime verification: <strong>Not verified</strong>. Sign-in requires a managed Microsoft Edge work profile, which BirkNext cannot verify automatically.
-                        <button type="button" class="fa-inline-link" data-testid="detection-auth-open" @onclick='() => _activeTab = "auth"'>Optional manual sign-in check on the Authentication tab</button>
-                    </p>
-                }
+                @* Detection owns reachability, framework, environment/profile and declarative authentication only. Whether sign-in works is
+                   owned by runtime/browser verification and the Authentication tab — never stated here. *@
 
                 <div class="fa-result-actions">
                     @if (CanContinueDetectionInBrowser() && !IsDetectionStale)
@@ -2650,6 +2644,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             DetectionState.Checking => "checking",
             DetectionState.Complete => "checked",
+            DetectionState.ManualAuthenticationVerificationRequired when DetectionReady => "checked",
             DetectionState.ManualAuthenticationVerificationRequired => "auth-required",
             DetectionState.AuthenticationRequired => "auth-required",
             DetectionState.Partial => "partial",
@@ -2841,7 +2836,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Server preflight succeeded. Browser inspection is required to finish detection.",
         DetectionState.AuthenticationRequired => "Authentication is required to finish detection in the browser.",
         DetectionState.Complete => "Review the detected/proposed settings below.",
-        DetectionState.ManualAuthenticationVerificationRequired => "Target reached and configuration detected. Sign-in requires a managed Microsoft Edge work profile, so authentication was not runtime-verified.",
+        DetectionState.ManualAuthenticationVerificationRequired => "Target reached and application configuration detected.",
         DetectionState.Failed => _detectionResult?.Message ?? "Detection could not be completed safely.",
         DetectionState.Stale => DiscoveryStaleMessage,
         // NotChecked: show historical message if available

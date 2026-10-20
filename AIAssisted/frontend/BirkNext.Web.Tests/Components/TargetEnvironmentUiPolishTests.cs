@@ -83,8 +83,8 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
 
         Occurrences(cut.Markup, LongPhrase).Should().Be(0, "a manual sign-in requirement is not a target-wide verification state");
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Target detection complete");
-        cut.FindAll("[data-testid=detection-auth-limitation]").Should().ContainSingle()
-            .Which.TextContent.Should().Contain("Authentication runtime verification: Not verified");
+        cut.FindAll("[data-testid=detection-auth-limitation]").Should().BeEmpty("detection never states sign-in or runtime verification");
+        cut.Find("section.fa-result").TextContent.Should().NotContain("Not verified").And.NotContain("work profile").And.NotContain("sign-in check");
         cut.FindAll("section.fa-verification").Should().BeEmpty();
         cut.Markup.Should().NotContain("Mark verification").And.NotContain("Activation requires");
     }
@@ -117,7 +117,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
     public void TheManualSignInCheckStillRecordsAResult_OnTheAuthenticationTab()
     {
         var cut = Detect();
-        cut.Find("[data-testid=detection-auth-open]").Click();
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();
         cut.FindAll("[role=tab][aria-selected=true]").Single().TextContent.Trim().Should().Be("Authentication");
 
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open manual sign-in check").Click();

@@ -33,6 +33,11 @@ public sealed class ManualAuthenticationVerificationTests
         Assert.False(result.DetectionResponse.BrowserRuntimeInspectionRequired);
         Assert.NotEqual(true, result.BrowserRuntimeInspectionRequired);
         strategy.VerifyNoOtherCalls();
+        // Detection states only what it established; sign-in belongs to runtime/browser verification and the Authentication tab.
+        Assert.Equal("Target reached and application configuration detected.", result.Message);
+        Assert.Equal(result.Message, result.DetectionResponse.Message);
+        foreach (var claim in new[] { "sign-in", "work profile", "verify", "verified" })
+            Assert.DoesNotContain(claim, result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

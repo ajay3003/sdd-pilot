@@ -258,7 +258,7 @@ public sealed class DetectionVerificationCopyTests : BunitContext
         cut.Markup.Should().NotContain(LongPhrase);
         cut.Find("#detection-result-heading").TextContent.Trim().Should().Be("Target detection complete");
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Target detection complete");
-        cut.FindAll("[data-testid=detection-auth-limitation]").Should().ContainSingle();
+        cut.FindAll("[data-testid=detection-auth-limitation]").Should().BeEmpty("sign-in is not a detection fact; the Authentication tab owns it");
         cut.FindAll("[data-testid=manual-verification-status]").Should().BeEmpty();
         cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty();
     }
@@ -269,7 +269,7 @@ public sealed class DetectionVerificationCopyTests : BunitContext
     public void TheSignInCheckLeadsWithItsActionAndKeepsTheWorkflow()
     {
         var cut = Detect();
-        cut.Find("[data-testid=detection-auth-open]").Click();
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();
 
         cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open manual sign-in check");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Open manual sign-in check").Click();
@@ -294,7 +294,7 @@ public sealed class DetectionVerificationCopyTests : BunitContext
     public void AuthenticationStatusIsExposedToAssistiveTechnology()
     {
         var cut = Detect();
-        cut.Find("[data-testid=detection-auth-open]").Click();
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();
 
         cut.Find("[data-testid=authentication-runtime-state]").GetAttribute("role").Should().Be("status");
         cut.Find("#authentication-verification-heading").TagName.Should().Be("H3");

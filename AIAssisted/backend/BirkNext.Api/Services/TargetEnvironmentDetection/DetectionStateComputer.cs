@@ -254,7 +254,7 @@ public sealed class DetectionStateComputer : IDetectionStateComputer
             DetectedAt = DateTime.UtcNow,
             DetectedUrl = detectedUrl,
             IsUrlCurrent = isUrlCurrent,
-            Message = response.ManualAuthenticationVerificationRequired && isUrlCurrent ? ManualAuthenticationVerification.Reason : GetStateMessage(state, response, isUrlCurrent),
+            Message = response.ManualAuthenticationVerificationRequired && isUrlCurrent ? ManualAuthenticationVerification.DetectionMessage : GetStateMessage(state, response, isUrlCurrent),
             BrowserRuntimeInspectionRequired = browserRuntimeRequired ? true : null
         };
     }

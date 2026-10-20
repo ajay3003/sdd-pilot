@@ -55,15 +55,22 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
     private static string CheckStatus(IRenderedComponent<Component> cut) =>
         cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim();
 
-    /// <summary>Detection reaches a target whose sign-in needs a managed browser: detection is complete, authentication is not runtime-verified,
-    /// and there is no global verification section or gate — only an optional sign-in check on the Authentication tab.</summary>
+    /// <summary>Detection reaches a target whose sign-in needs a managed browser: detection is complete and states only what it established
+    /// (no sign-in or runtime-verification claim); there is no global verification section or gate — only an optional sign-in check on the
+    /// Authentication tab, which owns it.</summary>
     [Fact]
     public void Required_IsAnAuthenticationLimitation_NotAGlobalGate()
     {
         var cut = Open();
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => Assert.Contains("Target detection complete", cut.Markup));
-        Assert.Contains("Authentication runtime verification: Not verified", cut.Find("[data-testid=detection-auth-limitation]").TextContent);
+        var result = cut.Find("section.fa-result").TextContent;
+        Assert.Contains("Target reached and application configuration detected.", result);
+        Assert.DoesNotContain("runtime verification", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sign-in", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("work profile", result, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Not verified", result);
+        Assert.Empty(cut.FindAll("[data-testid=detection-auth-limitation], [data-testid=detection-auth-open]"));
         Assert.Empty(cut.FindAll("section.fa-verification"));
         Assert.DoesNotContain("Mark verification", cut.Markup);
         Assert.DoesNotContain("Activation requires", cut.Markup);
@@ -81,6 +88,39 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Assert.False(ActivationDisabled(cut));
         _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once);
         _api.VerifyNoOtherCalls();
+    }
+
+    /// <summary>Detect settings re-run: it updates only detection facts. A sign-in result recorded on the Authentication tab is neither
+    /// cleared, recreated nor copied into the detection result, and the environment-state dimensions (trust, runtime evidence) do not move.</summary>
+    [Fact]
+    public void DetectingAgain_KeepsTheRecordedSignInResultWithItsOwner_AndChangesNoStateDimension()
+    {
+        var cut = Open();
+        Click(cut, "Detect settings");
+        AuthenticationTab(cut);
+        Click(cut, "Open manual sign-in check");
+        Click(cut, "Record sign-in check completed");
+        var profile = _settings.Settings.Profiles.Single(x => x.Id == "dev");
+        cut.WaitForAssertion(() => Assert.NotNull(profile.ManualVerification));
+        var recordedAt = profile.ManualVerification!.VerifiedAt;
+        var state = cut.Find("[data-testid=te-state]").TextContent;
+        var trust = cut.Find("[data-testid=te-state-trust]").TextContent;
+
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Target Application").Click();
+        Click(cut, "Detect settings");
+        cut.WaitForAssertion(() => Assert.Contains("Target detection complete", cut.Markup));
+        var result = cut.Find("section.fa-result").TextContent;
+        Assert.Contains("Detected authentication", result);
+        Assert.Contains("Configured authentication", result);
+        Assert.DoesNotContain("recorded manually", result);
+        Assert.DoesNotContain("Not verified", result);
+        Assert.Equal(state, cut.Find("[data-testid=te-state]").TextContent);
+        Assert.Equal(trust, cut.Find("[data-testid=te-state-trust]").TextContent);
+
+        AuthenticationTab(cut);
+        Assert.Equal("Completed (recorded manually)", CheckStatus(cut));
+        Assert.Equal(ManualAuthenticationVerificationStatus.Passed, profile.ManualVerification!.Result);
+        Assert.Equal(recordedAt, profile.ManualVerification.VerifiedAt);
     }
 
     [Theory]
@@ -191,7 +231,8 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Click(cut, "Detect settings");
         _api.Verify(x => x.DetectManualManagedEdgeAsync(Url, default), Times.Once);
         _api.Verify(x => x.DetectFromUrlAsync(It.IsAny<string>(), default), Times.Never);
-        Assert.Contains("Authentication runtime verification: Not verified", cut.Find("[data-testid=detection-auth-limitation]").TextContent);
+        Assert.Empty(cut.FindAll("[data-testid=detection-auth-limitation]"));
+        Assert.DoesNotContain("sign-in", cut.Find("section.fa-result").TextContent, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Continue detection in browser", cut.Markup);
     }
 }
