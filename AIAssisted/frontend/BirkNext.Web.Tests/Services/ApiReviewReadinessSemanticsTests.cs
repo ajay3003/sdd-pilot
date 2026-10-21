@@ -69,7 +69,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: true, history);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Ready);
-        readiness.Title.Should().Be("Review can run");
+        readiness.Title.Should().Be("Ready to run");
         readiness.SelectedCount.Should().Be(2);
         readiness.CanRun.Should().BeTrue();
     }
@@ -87,7 +87,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: true);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Title.Should().Be("Review can run with limitations");
+        readiness.Title.Should().Be("Ready to run with limitations");
         readiness.Message.Should().Contain("REST contract validation is unavailable");
         readiness.CanRun.Should().BeTrue("a missing contract limits the review, it does not block it");
         readiness.Items.Should().Contain(i => i.Label.Contains("responses reviewed structurally") && i.State == ApiReviewReadinessItemState.Warning);
@@ -128,7 +128,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: false);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Title.Should().Be("Review can run with limitations");
+        readiness.Title.Should().Be("Ready to run with limitations");
         readiness.Message.Should().Contain("Authenticated requests cannot be sent");
         readiness.ActionText.Should().Be("Open Authentication setup");
         readiness.ActionHref.Should().Be("/admin/system-settings?section=target-environments&tab=auth&profile=dev");

@@ -237,7 +237,7 @@ public static class ApiReviewPresentation
 
     /// <summary>
     /// Readiness mirrors <see cref="ApiReviewRunEligibility"/>: Blocked iff Run is disabled, otherwise Ready or
-    /// "Review can run with limitations".
+    /// "Ready to run with limitations".
     ///
     /// What counts as a material limitation: something that removes a check the selected scope would otherwise run.
     /// <list type="bullet">
@@ -276,11 +276,11 @@ public static class ApiReviewPresentation
                         "The backend did not report authenticated capability; confirm it is running, then return here."),
                     _ => ("no authenticated API context is available", null),
                 };
-                return new(ApiReviewReadinessLevel.Blocked, "Review cannot run",
+                return new(ApiReviewReadinessLevel.Blocked, "Blocked",
                     $"{subject} authenticated access, but {missing}.", chosen.Count, [], eligibility.ActionText, href, help,
                     $"Run unavailable — authenticated API context is required for the selected {(chosen.Count == 1 ? "API" : "APIs")}.");
             }
-            return new(ApiReviewReadinessLevel.Blocked, "Review cannot run", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href,
+            return new(ApiReviewReadinessLevel.Blocked, "Blocked", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href,
                 RunUnavailableReason: $"Run unavailable — {eligibility.Reason}");
         }
 
@@ -328,11 +328,11 @@ public static class ApiReviewPresentation
 
         var authMissing = authTargets > 0 && !authenticated;
         return limitations.Count > 0
-            ? new(ApiReviewReadinessLevel.Limited, "Review can run with limitations",
+            ? new(ApiReviewReadinessLevel.Limited, "Ready to run with limitations",
                 $"{eligibility.Reason} {string.Join(". ", limitations)}.".Trim(), chosen.Count, items,
                 authMissing ? ApiReviewRunEligibility.NoAuthContextAction : null,
                 authMissing ? AuthenticationHref(context) : null)
-            : new(ApiReviewReadinessLevel.Ready, "Review can run", eligibility.Reason, chosen.Count, items, null, null);
+            : new(ApiReviewReadinessLevel.Ready, "Ready to run", eligibility.Reason, chosen.Count, items, null, null);
     }
 
     // ── Targets ───────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -862,14 +862,20 @@
                     @EndpointDiscoveryPresentation.IntroductionDetail
                 </p>
 
+                @if (ReturnHref is { } returnHref)
+                {
+                    <p class="fa-return" data-testid="te-return-api-review"><a class="btn-secondary" href="@returnHref">Back to API Quality Review</a></p>
+                }
                 <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus"
                                       CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())"
                                       OnOpenAuthentication='() => _activeTab = "auth"' />
 
-                <details class="fa-endpoint-review-settings" data-testid="endpoint-api-review-settings">
+                @* Opened (once) by the "Review authorization checks" deep link; afterwards the person's own toggling wins. *@
+                <details class="fa-endpoint-review-settings" data-testid="endpoint-api-review-settings" open="@(_authorizationDeepLink ? true : null)">
                     <summary>API review safety settings</summary>
                     <p>These settings constrain API Quality Review and frontend security checks. They do not approve discovered source values.</p>
-                    <RuntimeSecurityExpectationsEditor Settings="@EndpointSecuritySettings.RuntimeSecurity" Editable="_isEditMode" />
+                    <RuntimeSecurityExpectationsEditor @ref="_securityEditor" Settings="@EndpointSecuritySettings.RuntimeSecurity" Editable="_isEditMode"
+                                                       Suggestions="_authorizationSuggestions" SourceNote="@_authorizationSourceNote" />
                     <dl class="fa-endpoint-security-summary">
                         @SecurityListField("Expected response headers", "headers", EndpointSecuritySettings.ExpectedSecurityHeaders)
                         @SecurityListField("Allowed backend domains", "backend", EndpointSecuritySettings.AllowedBackendDomains)
@@ -1552,6 +1558,48 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// <summary>Corrective place inside the initial tab ("focus=" key); only the Integrations tab uses it (mappings, runtime, contracts).</summary>
     [Parameter] public string? InitialFocus { get; set; }
 
+    /// <summary>Same-app review route "Back" returns to after a deep link (e.g. API Quality Review with its selected targets).</summary>
+    [Parameter] public string? ReturnHref { get; set; }
+
+    /// <summary>The InitialFocus value API Quality Review sends to open, edit and focus the Authorization checks editor.</summary>
+    public const string AuthorizationChecksFocus = "authorization-checks";
+
+    private RuntimeSecurityExpectationsEditor? _securityEditor;
+    private bool _authorizationDeepLink;
+    private bool _focusAuthorizationPending;
+    private string? _authorizationAppliedFor;
+    private IReadOnlyList<BirkNext.RuntimeSecurity.AuthorizationScenario> _authorizationSuggestions = [];
+    private string? _authorizationSourceNote;
+    private string? _authorizationSuggestionsFor;
+
+    /// <summary>
+    /// The deep link lands on the editor itself: the safety settings open, the profile enters edit mode (nothing is saved until Save) and focus
+    /// moves to Authorization checks after render. Applied once per profile so later clicks are the person's.
+    /// </summary>
+    /// <returns>True when the deep link was applied now (the caller re-renders before focusing).</returns>
+    private bool ApplyAuthorizationFocus()
+    {
+        if (!string.Equals(InitialFocus, AuthorizationChecksFocus, StringComparison.Ordinal) || _activeTab != "endpoint" || CurrentProfile is null) return false;
+        if (_authorizationAppliedFor == CurrentProfile.Id) return false;
+        _authorizationAppliedFor = CurrentProfile.Id;
+        _authorizationDeepLink = true;
+        if (!_isEditMode) EnterEditMode();
+        _focusAuthorizationPending = true;
+        return true;
+    }
+
+    /// <summary>Suggestions for the profile shown, when it is the active Target Environment (its API targets come from Endpoint Discovery).</summary>
+    private async Task LoadAuthorizationSuggestionsAsync()
+    {
+        if (_activeTab != "endpoint" || CurrentProfile is not { } profile || _authorizationSuggestionsFor == profile.Id) return;
+        _authorizationSuggestionsFor = profile.Id;
+        if (FaSettings.Settings.ActiveProfileId != profile.Id) { _authorizationSuggestions = []; _authorizationSourceNote = null; return; }
+        var inputs = await new AuthorizationCheckInputsLoader(ServiceProvider).LoadForActiveAsync(JS);
+        _authorizationSuggestions = AuthorizationCheckCatalog.Suggestions(inputs.Targets, inputs.SourceEndpoints, inputs.PackExpectations);
+        _authorizationSourceNote = inputs.SourceNote;
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
     /// <summary>Expands the Authentication diagnostics panel (deep link from the Browser Automation Diagnostic).</summary>
     [Parameter] public bool OpenHeadlessAuthDiagnostic { get; set; }
     private string? _appliedInitialProfileId;
@@ -1855,6 +1903,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (ApplyAuthorizationFocus()) StateHasChanged();   // render the opened, editable section first; focus it on the next render
+        else if (_focusAuthorizationPending && _securityEditor is not null && _isEditMode)
+        {
+            _focusAuthorizationPending = false;
+            await _securityEditor.FocusAuthorizationAsync();
+        }
+        await LoadAuthorizationSuggestionsAsync();
         if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
         if (_activeTab == "features" && CurrentProfile is { } engineProfile && _passiveSecurityStatusProfileId != engineProfile.Id)

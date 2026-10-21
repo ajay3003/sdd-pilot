@@ -17,16 +17,17 @@ public sealed partial class ApiQualityReviewLandingUITests
 
         var rest = "https://api-dev.bufetat.no/api/autorisasjon";
         var graphQl = "https://api-dev.bufetat.no/api/autorisasjon/graphql";
-        page.FindAll("[data-testid=aqr-scope-endpoint]").Select(e => e.TextContent).Should().Contain(e => e.Contains(rest));
-        page.FindAll("[data-testid=aqr-scope-endpoint]").Select(e => e.TextContent).Should().Contain(e => e.Contains(graphQl));
+        page.FindAll("[data-testid=aqr-target-review-endpoint]").Select(e => e.TextContent).Should().Contain(e => e.Contains(rest));
+        page.FindAll("[data-testid=aqr-target-review-endpoint]").Select(e => e.TextContent).Should().Contain(e => e.Contains(graphQl));
         page.FindAll("[data-testid=aqr-target-path]").Select(e => e.TextContent).Should().Contain(e => e.Contains(rest)).And.Contain(e => e.Contains(graphQl));
         page.FindAll("[data-testid=aqr-copy-url]").Select(e => e.GetAttribute("aria-label"))
             .Should().Contain(["Copy REST endpoint URL", "Copy GraphQL endpoint URL"]);
         page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(e => e.TextContent.Contains("Authenticated · Ready"));
         page.Find("[data-testid=aqr-target-authentication]").TextContent.Should().Be("Required (Microsoft Entra ID)");
-        page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Review can run with limitations").And.Contain("REST contract validation unavailable");
+        page.Find("[data-testid=aqr-readiness]").TextContent.Should().Contain("Ready to run with limitations").And.Contain("REST contract validation unavailable");
+        page.Find("[data-testid=aqr-main-limitation]").TextContent.Should().Contain("REST contract validation unavailable for Autorisasjon API.");
         page.Find("[data-testid=aqr-domain][data-domain=contracts] [data-testid=aqr-domain-state]").TextContent.Should().Be("Limited");
-        page.Find("[data-testid=aqr-domain][data-domain=contracts] [data-testid=aqr-domain-limitation]").TextContent.Should().Contain("OpenAPI");
+        page.Find("[data-testid=aqr-domain-detail][data-domain=contracts] [data-testid=aqr-domain-limitation]").TextContent.Should().Contain("OpenAPI");
         page.Find("[data-testid=aqr-add-openapi]").TextContent.Should().Be("Configure contract");
         page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract]").TextContent.Should().Contain("Retrieval will be attempted during review");
         page.Find("[data-testid=aqr-add-schema]").TextContent.Should().Be("Configure schema fallback");
@@ -42,11 +43,14 @@ public sealed partial class ApiQualityReviewLandingUITests
 
         page.FindAll("[data-testid=aqr-overview], [data-testid=aqr-run-row], [data-testid=aqr-domains], [data-testid=aqr-target-section], [data-testid=aqr-additional-checks], [data-testid=aqr-details]")
             .Select(e => e.GetAttribute("data-testid"))
-            .Should().Equal("aqr-run-row", "aqr-overview", "aqr-domains", "aqr-target-section", "aqr-additional-checks", "aqr-details");
-        page.Find("[data-testid=aqr-fuzzing-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        page.Find("[data-testid=aqr-authorization-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+            .Should().Equal("aqr-run-row", "aqr-overview", "aqr-target-section", "aqr-domains", "aqr-additional-checks", "aqr-details");
+        // Optional active checks: state only until expanded (Task 9 §12, §55).
+        page.Find("[data-testid=aqr-active-checks-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.Find("[data-testid=aqr-fuzzing-state]").TextContent.Should().Be("Off");
+        page.Find("[data-testid=aqr-fuzzing-off]").TextContent.Should().Be("No active fuzz requests will be sent.");
+        page.FindAll("[data-testid=aqr-fuzzing-summary] select, [data-testid=aqr-fuzzing-summary] input").Should().BeEmpty("no fuzzing configuration is shown by default");
         page.Find("[data-testid=aqr-configure-authorization]").GetAttribute("href")
-            .Should().Contain("section=target-environments").And.Contain("tab=endpoint").And.Contain("profile=dev");
+            .Should().Contain("section=target-environments").And.Contain("tab=endpoint").And.Contain("profile=dev").And.Contain("focus=authorization-checks").And.Contain("return=");
         page.Find("[data-testid=aqr-access-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
     }
 

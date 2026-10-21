@@ -56,7 +56,7 @@
 
     <div class="asf-actions">
         <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-analyze" disabled="@(!CanAnalyze)" @onclick="AnalyzeAsync">Check what can be tested</button>
-        <button type="button" class="btn-primary" data-testid="aqr-fuzzing-run" disabled="@(!CanRun)" aria-describedby="aqr-fuzzing-run-help" @onclick="RunAsync">Run safe fuzzing</button>
+        <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-run" disabled="@(!CanRun)" aria-describedby="aqr-fuzzing-run-help" @onclick="RunAsync">Run safe fuzzing</button>
         @if (_running)
         {
             <button type="button" class="btn-secondary" data-testid="aqr-fuzzing-cancel" disabled="@_cancelRequested" @onclick="CancelAsync">Cancel</button>

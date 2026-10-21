@@ -669,3 +669,47 @@
         radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.2), transparent) right center / 0.75rem 100% no-repeat scroll,
         var(--clr-surface-white);
 }
+
+/* ── Readiness-first pre-run (decision · summary strip · target reviews · coverage strip · active checks) ── */
+.aqr-decision-counts { margin: .3rem 0 0; font-weight: 600; color: var(--clr-text-heading); }
+.aqr-main-limitation { margin: .5rem 0 0; padding: .5rem .7rem; border-left: 3px solid var(--clr-warning-border); background: var(--clr-surface); border-radius: var(--radius-sm); }
+.aqr-main-limitation p { margin: 0; }
+.aqr-main-limitation p + p { margin-top: .2rem; }
+.aqr-main-limitation strong, .aqr-decision-line strong, .aqr-target-runs strong { margin-right: .35rem; }
+.aqr-decision-line { margin: .4rem 0 0; font-size: .9rem; }
+.aqr-blockers { margin-top: .6rem; }
+.aqr-blockers h3 { margin: 0 0 .3rem; font-size: .95rem; }
+.aqr-blockers ul { margin: 0 0 .5rem; padding-left: 0; list-style: none; }
+
+.aqr-summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: .5rem .9rem; margin: 0; }
+.aqr-summary-strip > div { min-width: 0; padding: .55rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.aqr-summary-strip dt { font-size: .74rem; letter-spacing: .035em; text-transform: uppercase; color: var(--clr-text-muted); }
+.aqr-summary-strip dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.aqr-strip-link { margin-left: .5rem; }
+
+.aqr-target-reviews { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr)); gap: .75rem; }
+.aqr-target-review { min-width: 0; padding: .8rem .9rem; }
+.aqr-target-review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem; }
+.aqr-target-review-head h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.aqr-target-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .35rem .75rem; margin: .55rem 0 0; }
+.aqr-target-facts dt { font-size: .74rem; color: var(--clr-text-muted); }
+.aqr-target-facts dd { margin: .1rem 0 0; font-weight: 600; color: var(--clr-text-heading); overflow-wrap: anywhere; }
+.aqr-target-review-note { margin: .45rem 0 0; }
+.aqr-target-runs p { margin: .35rem 0 0; font-size: .88rem; overflow-wrap: anywhere; }
+.aqr-link-button { background: none; border: 0; padding: 0; margin-top: .4rem; font: inherit; font-size: .88rem; font-weight: 600; color: var(--clr-primary); cursor: pointer; }
+.aqr-link-button:hover, .aqr-link-button:focus-visible { text-decoration: underline; }
+.aqr-target-review .aqr-link { display: inline-block; margin-top: .4rem; }
+
+.aqr-coverage-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr)); gap: .4rem .75rem; margin: .4rem 0; }
+.aqr-coverage-strip > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem; padding: .4rem .6rem; border: 1px solid var(--clr-border); border-radius: var(--radius-sm); background: var(--clr-surface-white); }
+.aqr-coverage-strip dt { font-weight: 600; font-size: .88rem; color: var(--clr-text-heading); }
+.aqr-coverage-strip dd { margin: 0; }
+.aqr-domain-list { margin: .35rem 0 0; padding-left: 1.1rem; font-size: .88rem; line-height: 1.55; }
+
+.aqr-active-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: .5rem .9rem; margin: .4rem 0 .5rem; }
+.aqr-active-checks > div { min-width: 0; padding: .55rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); }
+.aqr-active-checks dt { font-weight: 600; color: var(--clr-text-heading); }
+.aqr-active-checks dd { margin: .2rem 0 0; display: flex; flex-direction: column; gap: .15rem; overflow-wrap: anywhere; }
+.aqr-setup-summary { margin-bottom: .6rem; }
+.aqr-strip-note { display: block; font-size: .82rem; }
+.aqr-targets-disclosure { margin-bottom: .9rem; }

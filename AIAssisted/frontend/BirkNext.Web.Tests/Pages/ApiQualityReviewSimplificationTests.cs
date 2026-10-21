@@ -157,7 +157,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     public void CanRunWithLimitations_SeparatesReadyLimitationsAndInformational_AndRunSitsInTheDecision()
     {
         var page = Landing(authenticated: true);
-        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations"));
+        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to run with limitations"));
         Groups(page).Should().Contain(["ready", "limitation"]).And.NotContain("blocking");
         page.Find("[data-testid=aqr-decision-group][data-group=limitation]").TextContent.Should().Contain("REST contract validation unavailable");
         page.Find("[data-testid=aqr-decision-group][data-group=ready]").TextContent.Should().Contain("selected");
@@ -169,10 +169,11 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     public void CannotRun_ShowsOnlyTheBlocker_NotLimitations()
     {
         var page = Landing(authenticated: false, endpoints: [Ep("/api/autorisasjon/roller", auth: true)]);
-        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot run"));
+        page.WaitForAssertion(() => page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Blocked"));
         Groups(page).Should().Equal("blocking");
         page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
-        page.Find("[data-testid=aqr-run]").HasAttribute("disabled").Should().BeTrue();
+        page.FindAll("[data-testid=aqr-run]").Should().BeEmpty("the exact blockers replace the Run button");
+        page.Find("[data-testid=aqr-blockers]").TextContent.Should().Contain("Authenticated access unavailable for");
     }
 
     [Fact]
@@ -189,12 +190,12 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     {
         var page = Landing(authenticated: true);
         page.Find("[data-testid=aqr-diagnostics-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        page.Find("[data-testid=aqr-diagnostics-toggle]").TextContent.Should().Contain("Diagnostics & setup");
+        page.Find("[data-testid=aqr-diagnostics-toggle]").TextContent.Should().Contain("Technical setup & diagnostics");
         var body = page.Find("[data-testid=aqr-diagnostics-body]");
         body.HasAttribute("hidden").Should().BeTrue();
         foreach (var id in new[] { "aqr-contracts-disclosure", "aqr-schema-artifacts-disclosure", "aqr-access-details", "aqr-readonly-disclosure", "aqr-target-details" })
             body.QuerySelector($"[data-testid={id}]").Should().NotBeNull($"{id} lives inside Diagnostics & setup");
-        page.Find("[data-testid=aqr-additional-checks]").TextContent.Should().Contain("Optional active checks").And.Contain("Not required to run");
+        page.Find("[data-testid=aqr-additional-checks]").TextContent.Should().Contain("Optional active checks").And.Contain("Do not block the read-only review");
     }
 
     [Fact]

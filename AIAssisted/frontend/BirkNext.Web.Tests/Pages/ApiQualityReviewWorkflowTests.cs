@@ -184,22 +184,24 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing();
 
         var target = page.Find("[data-testid=aqr-environment]");
-        VisibleText(target).Should().NotContainAny("Review can run with limitations", "Ready to review", "Authenticated unavailable", "Authenticated available");
+        VisibleText(target).Should().NotContainAny("Ready to run with limitations", "Ready to review", "Authenticated unavailable", "Authenticated available");
         page.FindAll("[data-testid=aqr-status-pill]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-readiness]").Should().ContainSingle();
     }
 
     // ── §44. Review scope and the API target disclosure ───────────────────────────────────────────────────────────
 
-    // 7, 8, 9, 10.
+    // 7, 8, 9, 10, Task 9 §6. Target · API targets · Access: one compact line each.
     [Fact]
     public void ScopeSummaryCountsSelectedTargetsByProtocolAndAuthenticationNeed()
     {
-        var page = Landing();
+        var page = Landing(authenticated: true);
 
-        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 API targets selected");
+        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 selected");
         page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL");
-        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("Access requirements: 1 authenticated · 1 public");
+        page.Find("[data-testid=aqr-decision-counts]").TextContent.Should().Be("2 API targets selected · 2/2 access ready");
+        page.FindAll("[data-testid=aqr-target-review]").Select(r => r.QuerySelector("[data-testid=aqr-target-review-access]")!.TextContent.Trim())
+            .Should().BeEquivalentTo(["Authenticated", "Public"], "access requirements are stated per target");
 
         // Derived, not hard-coded: the counts follow the selected targets.
         var targets = page.FindAll("[data-testid=aqr-target]");
@@ -212,54 +214,57 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing(endpoints: PublicEndpoints(), requiresAuth: false);
 
-        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("1 API target selected");
-        page.FindAll("[data-testid=aqr-scope-auth]").Should().BeEmpty();
+        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("1 selected");
+        page.FindAll("[data-testid=aqr-target-review]").Should().OnlyContain(r => r.QuerySelector("[data-testid=aqr-target-review-access]")!.TextContent.Trim() == "Public");
         page.FindAll("[data-testid=aqr-access-text]").Should().BeEmpty();
     }
 
-    // 11, 12, 13.
+    // 11, 12, 13, Task 9 §7. Selected targets are cards with their review state; the selection picker is one disclosure away.
     [Fact]
     public void ApiTargetsAreOpenByDefault_AndSelectionWorks()
     {
         var page = Landing();
 
-        Collapsed(page, "aqr-targets-disclosure").Should().BeFalse("API targets is the main pre-run detail section");
-        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("Targets").And.Contain("1 REST · 1 GraphQL");
+        page.FindAll("[data-testid=aqr-target-review]").Should().HaveCount(2, "every selected target is visible as a card with its review state");
+        Collapsed(page, "aqr-targets-disclosure").Should().BeTrue("the selection picker is secondary once targets are selected");
+        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("Change API selection").And.Contain("1 REST · 1 GraphQL");
 
+        page.Find("[data-testid=aqr-targets-disclosure-toggle]").Click();
         var body = Body(page, "aqr-targets-disclosure");
         body.HasAttribute("hidden").Should().BeFalse();
         body.QuerySelectorAll("[data-testid=aqr-target]").Should().HaveCount(2);
         body.QuerySelectorAll("[data-testid=aqr-targets-table] tbody tr[data-testid=aqr-target]").Should().HaveCount(2);
 
-        // 13. Deselecting still drives the scope summary above.
+        // 13. Deselecting still drives the scope summary and the cards.
         page.FindAll("[data-testid=aqr-target-checkbox]")[1].Change(false);
-        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("1 API target selected");
+        page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("1 selected");
+        page.FindAll("[data-testid=aqr-target-review]").Should().ContainSingle();
     }
 
     // ── §45. Access copy ──────────────────────────────────────────────────────────────────────────────────────────
 
-    // 14, 15, 16.
+    // 14, 15, 16. One access vocabulary; the unreachable target is named once, as a blocked card.
     [Fact]
     public void AccessUsesOneVocabularyAndStatesUnavailabilityOnce()
     {
         var page = Landing(authenticated: false);
 
         var accessCard = page.Find("[data-testid=aqr-access]");
-        accessCard.TextContent.Should().Contain("need an authenticated API context");
         // Mixed scope: the public target is ready, the authenticated one is not — public reachability never makes it ready.
-        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1 of 2 ready");
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1/2 ready");
         var rows = page.FindAll("[data-testid=aqr-targets-table] tbody tr[data-testid=aqr-target]");
         rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Public", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Public · Ready");
         rows.Single(r => r.QuerySelector("[data-testid=aqr-target-access]")!.TextContent.StartsWith("Authenticated", StringComparison.Ordinal)).QuerySelector("[data-testid=aqr-target-access]")!.TextContent.Should().Be("Authenticated · Not ready");
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated unavailable");
         accessCard.TextContent.Should().NotContain("Not connected", "there is no connection concept behind this state");
-        // The readiness card owns the one action toward Authentication; the access card does not repeat it.
+        page.FindAll("[data-testid=aqr-target-review][data-state=Blocked]").Should().ContainSingle()
+            .Which.QuerySelector("[data-testid=aqr-target-fix-access]").Should().NotBeNull("the blocked target carries its one corrective action");
         page.FindAll("[data-testid=aqr-access-action]").Should().BeEmpty();
-        page.FindAll("[data-testid=aqr-access-text]").Should().BeEmpty("how many targets need authentication is Review scope's fact");
+        page.FindAll("[data-testid=aqr-access-text]").Should().BeEmpty();
 
-        // 15. The unavailability is stated once where a reader can act on it, not repeated across the decision area.
+        // 15. The unavailability is stated where a reader can act on it, not repeated across the decision area.
         var visible = VisibleText(page.Find("[data-testid=aqr-decide]"));
-        Occurrences(visible, "authenticated access").Should().BeLessThanOrEqualTo(2, "the scope count and the frontend sign-in help");
+        Occurrences(visible, "authenticated access").Should().BeLessThanOrEqualTo(3, "the run decision, the blocked card and the frontend sign-in help");
         visible.Should().NotContain("Start the Local HTTPS Proxy", "the procedure belongs in the details");
         visible.Should().NotContain("backend gateway");
     }
@@ -304,7 +309,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to run with limitations");
         page.Find("[data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated API context unavailable");
         page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be("Open Authentication setup");
@@ -337,7 +342,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
     // ── §47. Review domains ───────────────────────────────────────────────────────────────────────────────────────
 
-    // 24, 28.
+    // 24, 28, Task 9 §9. One compact coverage summary; the domain explanations are one disclosure away.
     [Fact]
     public void AllReviewDomainsRenderWithScopeVocabularyOnly()
     {
@@ -345,7 +350,8 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.FindAll("[data-testid=aqr-domain]").Select(d => d.GetAttribute("data-domain"))
             .Should().Equal("security", "contracts", "errors", "performance", "rest", "graphql");
-        page.Find("#aqr-domains-heading").TextContent.Should().Be("What will be reviewed");
+        page.Find("#aqr-domains-heading").TextContent.Should().Be("Review coverage");
+        page.Find("[data-testid=aqr-coverage-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
 
         // 28. Access and configuration words are never a domain state.
         page.FindAll("[data-testid=aqr-domain-state]").Select(s => s.TextContent.Trim())
@@ -358,23 +364,29 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing(authenticated: false);
 
-        var security = page.Find("[data-testid=aqr-domain][data-domain='security']");
-        security.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
-        security.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Authenticated checks cannot run until authenticated API access is available.");
-        security.TextContent.Should().NotContain("selected target", "scope counts belong to Review scope, not to every card");
+        page.Find("[data-testid=aqr-domain][data-domain='security'] [data-testid=aqr-domain-state]").TextContent.Trim().Should().Be("Limited");
+        var detail = page.Find("[data-testid=aqr-domain-detail][data-domain='security']");
+        detail.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Authenticated checks cannot run until authenticated API access is available.");
+        detail.TextContent.Should().NotContain("selected target", "scope counts belong to the scope summary, not to every domain");
     }
 
-    // 26. A missing REST contract limits Contracts; REST itself is still reviewed.
+    // 26, Task 9 §10. A missing REST contract limits Contracts and the REST target; REST itself is still reviewed.
     [Fact]
     public void AMissingRestContractLimitsContractsWithoutRemovingRest()
     {
-        var page = Landing();
+        var page = Landing(authenticated: true);
 
         page.Find("[data-testid=aqr-domain][data-domain='contracts'] [data-testid=aqr-domain-state]").TextContent.Trim().Should().Be("Limited");
-        var rest = page.Find("[data-testid=aqr-domain][data-domain='rest']");
-        rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
-        rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Should().NotContain("Not included");
-        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Structural review available. Published contract comparison unavailable.");
+        page.Find("[data-testid=aqr-domain][data-domain='rest'] [data-testid=aqr-domain-state]").TextContent.Trim().Should().Be("Limited");
+        page.Find("[data-testid=aqr-domain-detail][data-domain='rest'] [data-testid=aqr-domain-limitation]").TextContent
+            .Should().Be("Structural review available. Published contract comparison unavailable.");
+
+        var rest = page.Find("[data-testid=aqr-target-review][data-type=REST]");
+        rest.GetAttribute("data-state").Should().Be("Limited");
+        rest.QuerySelector("[data-testid=aqr-target-review-contract]")!.TextContent.Should().Be("Not configured");
+        rest.QuerySelector("[data-testid=aqr-target-review-runs]")!.TextContent.Should().Contain("Structural response review");
+        rest.QuerySelector("[data-testid=aqr-target-review-not-runs]")!.TextContent.Should().Contain("Contract compatibility validation");
+        rest.QuerySelector("[data-testid=aqr-target-configure-contract]").Should().NotBeNull();
     }
 
     // 27. GraphQL stays in the review; only its schema evidence is limited.
@@ -394,8 +406,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing();
 
-        var errors = page.Find("[data-testid=aqr-domain][data-domain='errors']");
-        errors.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent
+        page.Find("[data-testid=aqr-domain-detail][data-domain='errors'] [data-testid=aqr-domain-limitation]").TextContent
             .Should().Be("Write and destructive operations are never executed.");
     }
 
@@ -522,7 +533,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.FindAll("h1").Should().ContainSingle();
         var h2 = page.FindAll("h2").Select(h => h.TextContent.Trim()).ToList();
-        h2.Should().Contain(["Target", "API scope", "Access", "What will be reviewed", "API targets", "Optional active checks", "Diagnostics & setup"]);
+        h2.Should().Contain(["API targets", "Review coverage", "Optional active checks", "Technical setup & diagnostics"]);
         h2.Should().OnlyHaveUniqueItems();
 
         foreach (var toggle in page.FindAll(".disclosure-toggle"))

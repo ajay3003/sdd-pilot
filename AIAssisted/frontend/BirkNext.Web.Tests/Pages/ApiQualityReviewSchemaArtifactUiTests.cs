@@ -54,9 +54,10 @@ public sealed partial class ApiQualityReviewLandingUITests
         Register(Context(), true, WithDocuments(AutorisasjonEndpoints()));
         var page = Render<ApiQualityReview>();
 
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-domain][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-domain-detail][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent
             .Should().Contain("Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility."));
-        page.Find("[data-testid=aqr-domain][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent.Should().Be("Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility.");
+        page.Find("[data-testid=aqr-target-review][data-type=GraphQL] [data-testid=aqr-target-review-fallback]").TextContent.Should().Be("Configured");
+        page.Find("[data-testid=aqr-domain-detail][data-domain='graphql'] [data-testid=aqr-domain-limitation]").TextContent.Should().Be("Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility.");
         page.Find("[data-testid=aqr-contract-row][data-protocol='GraphQL']").GetAttribute("data-state").Should().Be("ArtifactFallback");
         page.Markup.Should().NotContain("Compatible", "pre-run never shows a compatibility result");
     }
@@ -67,7 +68,8 @@ public sealed partial class ApiQualityReviewLandingUITests
         Register(Context(), true, WithDocuments(AutorisasjonEndpoints()));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-schema-artifacts-disclosure]"));
-        page.Find("[data-testid=aqr-schema-artifacts-disclosure] .disclosure-hint").TextContent.Should().Be("None configured");
+        page.Find("[data-testid=aqr-schema-artifacts-disclosure] .disclosure-hint").TextContent.Should().Be("Not configured");
+        page.Find("[data-testid=aqr-target-review][data-type=GraphQL] [data-testid=aqr-target-review-fallback]").TextContent.Should().Be("Not configured");
         page.Find("[data-testid=aqr-schema-artifacts-disclosure] button").Click();
         page.FindAll("[data-testid=gsa-load-error]").Should().BeEmpty("a successful load shows no error");
         var target = page.Find("[data-testid=gsa-target]");

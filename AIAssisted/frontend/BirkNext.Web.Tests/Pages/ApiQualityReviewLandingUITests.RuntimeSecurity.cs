@@ -37,16 +37,22 @@ public sealed partial class ApiQualityReviewLandingUITests
             Trust = new TrustedTargetDecision { State = trust, ProfileId = "dev", ServerEnvironmentType = "Development", RegisteredOrigins = [$"https://{ApiHost}"], Reason = trust == TrustedTargetState.Trusted ? "Registered." : "This Target Environment is not registered by the server." },
         });
 
+    // Task 9 §19, §27, §57: with nothing configured, a protected API still has its predefined baseline (unauthenticated → denied); it runs
+    // only on a server-registered environment and never invents a role rule.
     [Fact]
-    public void Authorization_NoScenarios_RunDisabled_StatesTheWarning()
+    public void Authorization_NoConfiguredChecks_OffersOnlyThePredefinedBaseline()
     {
         Execution(TrustedTargetState.Trusted);
         Register(Context(), authenticated: true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-authorization]"));
         page.Find("[data-testid=aqr-authorization-warning]").TextContent.Should().Be(RuntimeSecurityWording.NotAPenetrationTest);
-        page.Find("[data-testid=aqr-authorization-run]").HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=aqr-authorization-run-help]").TextContent.Should().Contain("Configure authorization scenarios in Target Environments → Endpoint Discovery");
+        var rows = page.FindAll("[data-testid=aqr-authorization-plan-row]");
+        rows.Should().NotBeEmpty().And.OnlyContain(r => r.GetAttribute("data-origin") == "PredefinedBaseline" && r.GetAttribute("data-configured") == "false");
+        rows.Should().OnlyContain(r => r.TextContent.Contains("Anonymous") && r.TextContent.Contains("Denied"));
+        page.Find("[data-testid=aqr-authorization-run]").HasAttribute("disabled").Should().BeFalse("the baseline is confirmed by definition and the environment is registered");
+        page.Find("[data-testid=aqr-authorization-summary]").TextContent.Should().Be($"{rows.Count} available · {rows.Count} ready");
+        page.Find("[data-testid=aqr-authorization-impact]").TextContent.Should().Contain("does not block read-only API review");
     }
 
     [Fact]
@@ -58,7 +64,9 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-authorization-trust]").GetAttribute("data-state").Should().Be("NotRegistered"));
         page.Find("[data-testid=aqr-authorization-run]").HasAttribute("disabled").Should().BeTrue();
         page.Find("[data-testid=aqr-authorization-run-help]").TextContent.Should().Contain("not registered by the server");
-        page.FindAll("[data-testid=aqr-authorization-plan-row]").Should().HaveCount(2);
+        page.FindAll("[data-testid=aqr-authorization-plan-row][data-configured=true]").Should().HaveCount(2);
+        page.FindAll("[data-testid=aqr-authorization-plan-row]").Should().OnlyContain(r => r.GetAttribute("data-readiness") == "BlockedByExecutionPermission",
+            "server registration gates every check, configured or predefined");
     }
 
     [Fact]
@@ -105,7 +113,10 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-authorization-run]").Click();
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-authorization-result-row]").Should().HaveCount(2));
         page.FindAll("[data-testid=aqr-authorization-result-row]").Select(r => r.GetAttribute("data-outcome")).Should().Equal("VerifiedAllow", "UnexpectedAllow");
-        sent!.Scenarios.Should().ContainSingle().Which.Identities.Select(i => i.Expected).Should().Equal(AuthorizationExpectation.Allow, AuthorizationExpectation.Deny);
+        // The configured check is sent as configured; the predefined baselines go with it, and nothing else.
+        sent!.Scenarios.Single(s => s.Origin == AuthorizationCheckOrigin.Manual).Identities.Select(i => i.Expected).Should().Equal(AuthorizationExpectation.Allow, AuthorizationExpectation.Deny);
+        sent.Scenarios.Where(s => s.Origin != AuthorizationCheckOrigin.Manual).Should().OnlyContain(s => s.Origin == AuthorizationCheckOrigin.PredefinedBaseline
+            && s.Identities.Count == 1 && s.Identities[0].Alias == AuthorizationIdentityAliases.Anonymous && s.Identities[0].Expected == AuthorizationExpectation.Deny);
         sent.Review.Targets.Should().NotBeEmpty();
         page.Markup.Should().NotContain("Bearer").And.NotContain("eyJ");
         _history.For("dev").AuthorizationRuns.Should().ContainSingle().Which.RunId.Should().Be("auth-1");

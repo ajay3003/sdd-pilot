@@ -76,7 +76,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         Register(Context(), authenticated: false);
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-no-targets]").TextContent.Should().Contain(ApiReviewRunEligibility.NoTargetsReason));
-        RunButton(page).HasAttribute("disabled").Should().BeTrue();
+        page.FindAll("[data-testid=aqr-run]").Should().BeEmpty();
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(ApiReviewRunEligibility.NoTargetsReason);
         page.Find("[data-testid=aqr-run-action]").GetAttribute("href").Should().Be(ApiReviewRunEligibility.TargetEnvironmentsHref);
         page.Find("[data-testid=aqr-env-name]").TextContent.Should().Be("M2LB DEV");
@@ -102,12 +102,12 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         Register(Context(), authenticated: false, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked"));
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot run");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Blocked");
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().NotContain("can run with limitations");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
             "Both selected APIs require authenticated access, but no authenticated API context is available.");
-        RunButton(page).HasAttribute("disabled").Should().BeTrue();
-        RunButton(page).GetAttribute("aria-describedby").Should().Be("aqr-run-unavailable", "a disabled Run carries its reason programmatically");
+        // No Run button while the review cannot run (Task 9 §49); the reason stays available programmatically.
+        page.FindAll("[data-testid=aqr-run]").Should().BeEmpty();
         page.Find("#aqr-run-unavailable").TextContent.Should().Be("Run unavailable — authenticated API context is required for the selected APIs.");
         page.Find("#aqr-run-reason").Should().NotBeNull();
 
