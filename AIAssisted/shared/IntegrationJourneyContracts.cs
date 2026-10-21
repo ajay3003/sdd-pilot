@@ -543,6 +543,22 @@ public sealed record TestPackDescriptor
     public IReadOnlyList<string> ExecutionProviders { get; init; } = [];
     public bool SupportsHistory { get; init; }
     public IReadOnlyList<TestPackNavigationGroup> Navigation { get; init; } = [];
+    /// <summary>Authorization expectations the pack knows for its APIs (generic selectors; never credentials).</summary>
+    public IReadOnlyList<TestPackAuthorizationExpectation> AuthorizationExpectations { get; init; } = [];
+}
+
+/// <summary>
+/// One authorization expectation a Test Pack declares. <see cref="ApiSelector"/> matches an API target whose name or base path contains it
+/// (case-insensitive); REST operations are selected by method and path template, GraphQL by a query document. An empty <see cref="Role"/> means
+/// an unauthenticated request. <see cref="Confirmed"/> is the pack's own statement that the expectation is authoritative.
+/// </summary>
+public sealed record TestPackAuthorizationExpectation(string ApiSelector, string Role, BirkNext.RuntimeSecurity.AuthorizationExpectation Expected)
+{
+    public string Method { get; init; } = "GET";
+    public string? Path { get; init; }
+    public string? GraphQlQuery { get; init; }
+    public bool Confirmed { get; init; } = true;
+    public string Note { get; init; } = "";
 }
 
 // ── Integration templates (Add integration guidance) ──────────────────────────────────────────────────────────────────────────

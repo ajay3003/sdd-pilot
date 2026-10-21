@@ -57,7 +57,13 @@ public enum CodeRiskObservationKind
 public sealed record CodeRiskObservation(CodeRiskObservationKind Kind, string File, int Line, string Symbol, string Detail, bool InTestCode);
 
 /// <summary>An HTTP or GraphQL entry point and the authorization metadata its source declares (attributes/fluent calls only).</summary>
-public sealed record CodeEndpointAuthorization(string Key, string Kind, string Display, string File, int Line, bool Authorized, bool AllowAnonymous, string Basis);
+/// <param name="Policies">Policy names the source names literally (<c>[Authorize(Policy = "X")]</c>, <c>[Authorize("X")]</c>, <c>RequireAuthorization("X")</c>).
+/// Null in snapshots analyzed before policies were captured; empty when none is named.</param>
+/// <param name="Roles">Role names from <c>[Authorize(Roles = "A,B")]</c>. Null in older snapshots.</param>
+/// <param name="Route">HTTP route template when the source states it literally (controller <c>[Route]</c> + verb template, or a minimal-API pattern);
+/// null when unknown. GraphQL entries carry the resolver field name instead.</param>
+public sealed record CodeEndpointAuthorization(string Key, string Kind, string Display, string File, int Line, bool Authorized, bool AllowAnonymous, string Basis,
+    IReadOnlyList<string>? Policies = null, IReadOnlyList<string>? Roles = null, string? Route = null);
 
 /// <summary>Two or more declarations with the same normalized structure (DTO shape or method body). Locations only.</summary>
 public sealed record CodeDuplicateGroup(string Kind, string Fingerprint, string Description, List<CodeLocation> Locations);

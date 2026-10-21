@@ -30,3 +30,14 @@
     .rse-identities thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
     .rse-identities tr { border-bottom: 1px solid var(--clr-border-subtle); padding: 0.3rem 0; }
 }
+
+/* Authorization checks: identity mapping, suggestions, provenance. */
+.rse-group:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: 2px; }
+.rse-subgroup { margin: .5rem 0 .75rem; padding: .5rem .65rem; border: 1px dashed var(--clr-border); border-radius: var(--radius-sm); }
+.rse-subgroup h5 { margin: 0 0 .25rem; font-size: .92rem; }
+.rse-suggestions { list-style: none; margin: .3rem 0 0; padding: 0; display: grid; gap: .45rem; }
+.rse-suggestions li { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; padding: .4rem .5rem; border: 1px solid var(--clr-border); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.rse-pill { display: inline-block; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--clr-border); background: var(--clr-surface); font-size: .76rem; font-weight: 600; color: var(--clr-text-muted); white-space: nowrap; }
+.rse-evidence { font-size: .8rem; }
+.rse-provenance { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: 0 0 .3rem; }
+.rse-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-size: .88rem; margin: 0 0 .4rem; }

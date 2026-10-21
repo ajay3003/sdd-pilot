@@ -23,9 +23,10 @@ public interface IAiCodeRiskAnalyzer
 /// never source text, string values or exception messages. Everything is single-pass or hash-indexed (no pairwise file comparison).
 /// Other languages present in the archive are reported as unsupported, never as clean.
 /// </summary>
-public sealed class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
+public sealed partial class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
 {
-    public const int Version = 1;
+    /// <summary>2: endpoint authorization carries literal policy/role names and route templates.</summary>
+    public const int Version = 2;
     public const int MaxObservationsPerKind = 2_000;
     public const int MaxFiles = 20_000;
 
@@ -456,8 +457,14 @@ public sealed class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
             else if (isGraphQl && !isController) { kind = "GraphQL"; verb = type.Identifier.Text; }
             if (kind is null) continue;
             var basis = methodAuthorized ? "[Authorize] on the operation" : classAuthorized ? "[Authorize] on the type" : methodAnonymous || classAnonymous ? "[AllowAnonymous]" : "no authorization metadata";
+            // Literal names only: the method's own [Authorize] attributes and the type's both apply (ASP.NET Core combines them).
+            var authorize = type.AttributeLists.Concat(method.AttributeLists).SelectMany(a => a.Attributes).Where(a => AttributeName(a).EndsWith("Authorize", StringComparison.Ordinal)).ToList();
+            var policies = authorize.SelectMany(AuthorizePolicies).Distinct(StringComparer.Ordinal).ToList();
+            var roles = authorize.SelectMany(AuthorizeRoles).Distinct(StringComparer.Ordinal).ToList();
+            var route = kind == "HTTP" ? ControllerRoute(type, method, verb!) : GraphQlField(method);
             endpoints.Add(new($"{kind}|{typeName}.{method.Identifier.Text}|{verb}", kind, $"{(kind == "HTTP" ? verb!.Replace("Http", "").ToUpperInvariant() : "GraphQL")} {type.Identifier.Text}.{method.Identifier.Text}",
-                unit.Path, Line(method), methodAuthorized || classAuthorized && !methodAnonymous, methodAnonymous || classAnonymous && !methodAuthorized, basis));
+                unit.Path, Line(method), methodAuthorized || classAuthorized && !methodAnonymous, methodAnonymous || classAnonymous && !methodAuthorized, basis,
+                policies, roles, route));
         }
     }
 
@@ -474,7 +481,50 @@ public sealed class CodeRiskSourceAnalyzer : IAiCodeRiskAnalyzer
             .FirstOrDefault(v => v.Identifier.Text == group)?.Initializer?.Value.ToString();
         var authorized = chain.Contains(".RequireAuthorization(", StringComparison.Ordinal) || groupDeclaration?.Contains(".RequireAuthorization(", StringComparison.Ordinal) == true;
         var anonymous = chain.Contains(".AllowAnonymous(", StringComparison.Ordinal);
+        var policies = new[] { chain, groupDeclaration ?? "" }.SelectMany(text => RequireAuthorizationPolicies().Matches(text))
+            .SelectMany(m => StringLiteral().Matches(m.Groups[1].Value).Select(l => l.Groups[1].Value)).Where(p => p.Length > 0).Distinct(StringComparer.Ordinal).ToList();
         endpoints.Add(new($"HTTP|{verb} {route}|minimal", "HTTP", $"{verb} {route}", unit.Path, Line(invocation), authorized && !anonymous, anonymous,
-            authorized ? "RequireAuthorization()" : anonymous ? "AllowAnonymous()" : "no authorization metadata"));
+            authorized ? "RequireAuthorization()" : anonymous ? "AllowAnonymous()" : "no authorization metadata",
+            policies, [], route.StartsWith('/') ? route : "/" + route));
     }
+
+    /// <summary><c>[Authorize("X")]</c> and <c>[Authorize(Policy = "X")]</c>: literal policy names only, never resolved constants.</summary>
+    private static IEnumerable<string> AuthorizePolicies(AttributeSyntax attribute) =>
+        (attribute.ArgumentList?.Arguments ?? []).Where(a => a.NameEquals is null && a.NameColon is null || a.NameEquals?.Name.Identifier.Text == "Policy" || a.NameColon?.Name.Identifier.Text == "policy")
+            .Select(a => a.Expression).OfType<LiteralExpressionSyntax>().Select(l => l.Token.ValueText.Trim()).Where(p => p.Length > 0);
+
+    /// <summary><c>[Authorize(Roles = "A,B")]</c>: comma-separated literal role names.</summary>
+    private static IEnumerable<string> AuthorizeRoles(AttributeSyntax attribute) =>
+        (attribute.ArgumentList?.Arguments ?? []).Where(a => a.NameEquals?.Name.Identifier.Text == "Roles").Select(a => a.Expression).OfType<LiteralExpressionSyntax>()
+            .SelectMany(l => l.Token.ValueText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    /// <summary>Controller route template from literal <c>[Route]</c> on the type and the verb (or <c>[Route]</c>) template on the action; null when absent.</summary>
+    private static string? ControllerRoute(TypeDeclarationSyntax type, MethodDeclarationSyntax method, string verb)
+    {
+        static string? Template(IEnumerable<AttributeSyntax> attributes, Func<string, bool> name) => attributes.Where(a => name(AttributeName(a)))
+            .Select(a => a.ArgumentList?.Arguments.FirstOrDefault(arg => arg.NameEquals is null)?.Expression).OfType<LiteralExpressionSyntax>().Select(l => l.Token.ValueText).FirstOrDefault();
+        var typeTemplate = Template(type.AttributeLists.SelectMany(a => a.Attributes), n => n == "Route");
+        var methodAttributes = method.AttributeLists.SelectMany(a => a.Attributes).ToList();
+        var methodTemplate = Template(methodAttributes, n => n == verb) ?? Template(methodAttributes, n => n == "Route");
+        if (typeTemplate is null && methodTemplate is null) return null;
+        var controller = type.Identifier.Text.EndsWith("Controller", StringComparison.Ordinal) ? type.Identifier.Text[..^"Controller".Length] : type.Identifier.Text;
+        var combined = methodTemplate is { } m && m.StartsWith('/') ? m : string.Join('/', new[] { typeTemplate, methodTemplate }.Where(t => !string.IsNullOrEmpty(t)).Select(t => t!.Trim('/')));
+        combined = combined.Replace("[controller]", controller, StringComparison.OrdinalIgnoreCase).Replace("[action]", method.Identifier.Text, StringComparison.OrdinalIgnoreCase);
+        return "/" + combined.TrimStart('/');
+    }
+
+    /// <summary>HotChocolate convention: the resolver method name without a Get prefix or Async suffix, camel-cased.</summary>
+    private static string GraphQlField(MethodDeclarationSyntax method)
+    {
+        var name = method.Identifier.Text;
+        if (name.EndsWith("Async", StringComparison.Ordinal) && name.Length > 5) name = name[..^5];
+        if (name.StartsWith("Get", StringComparison.Ordinal) && name.Length > 3 && char.IsUpper(name[3])) name = name[3..];
+        return char.ToLowerInvariant(name[0]) + name[1..];
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\.RequireAuthorization\(([^)]*)\)")]
+    private static partial System.Text.RegularExpressions.Regex RequireAuthorizationPolicies();
+
+    [System.Text.RegularExpressions.GeneratedRegex("\"([^\"]*)\"")]
+    private static partial System.Text.RegularExpressions.Regex StringLiteral();
 }

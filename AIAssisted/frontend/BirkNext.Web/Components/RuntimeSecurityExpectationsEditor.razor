@@ -1,6 +1,8 @@
 @using BirkNext.RuntimeSecurity
+@using BirkNext.Web.Services
 @* Runtime security expectations of one Target Environment (Endpoint Discovery API review safety settings). Every field states which review reads it, so no
-   setting exists without a consumer. Manual only: source discovery never fills these. Never enter passwords, tokens or cookie values. *@
+   setting exists without a consumer. Source discovery never fills these: suggested authorization checks are listed separately and are stored only when
+   a person adds them, and a suggested expectation stays unconfirmed until its owner confirms it. Never enter passwords, tokens or cookie values. *@
 
 <section class="rse" data-testid="runtime-security-expectations" aria-labelledby="rse-heading">
     <h4 id="rse-heading">Runtime security expectations</h4>
@@ -53,15 +55,73 @@
             <textarea id="rse-cookie-domains" class="form-control" rows="2" value="@Lines(Settings.Cookies.AllowedDomains)" @onchange="e => Settings.Cookies.AllowedDomains = Parse(e.Value)"></textarea>
         </fieldset>
 
-        <fieldset class="rse-group" data-testid="rse-authz">
-            <legend>Authorization scenarios</legend>
+        <fieldset class="rse-group" data-testid="rse-authz" id="rse-authz" tabindex="-1" @ref="_authorizationSection">
+            <legend>Authorization checks</legend>
             <p class="rse-usage">Used by: @RuntimeSecuritySettingsUsage.AuthorizationScenarios</p>
-            <p class="rse-muted">Each identity has its own explicit Allow/Deny expectation for the same safe request (REST GET/HEAD or one GraphQL query). Identities: <code>anonymous</code>, <code>proxy-session</code> (the Local HTTPS proxy credential) or a server-registered test identity.</p>
+            <p class="rse-muted">Verify that configured identities are correctly allowed or denied for selected API operations. Each identity has its own explicit expectation for the same safe request (REST GET/HEAD or one GraphQL query).</p>
+
+            @* Target Environment owns identities: a role label maps to an execution alias, never to a credential. *@
+            <section class="rse-subgroup" data-testid="rse-authz-identities" aria-labelledby="rse-authz-identities-heading">
+                <h5 id="rse-authz-identities-heading">Test identities</h5>
+                <p class="rse-muted">Map each role a check needs to the identity that acts as it: <code>anonymous</code>, <code>proxy-session</code> (the Local HTTPS proxy credential) or a server-registered test identity. Credentials are never entered here.</p>
+                @if (UnmappedRoles.Count > 0)
+                {
+                    <p class="rse-warning" data-testid="rse-authz-unmapped">Roles without a test identity: @string.Join(", ", UnmappedRoles)</p>
+                }
+                <table class="rse-identities">
+                    <caption class="rse-visually-hidden">Role to test identity mapping</caption>
+                    <thead><tr><th scope="col">Role</th><th scope="col">Test identity</th><th scope="col"><span class="rse-visually-hidden">Remove</span></th></tr></thead>
+                    <tbody>
+                        @for (var mi = 0; mi < Settings.AuthorizationIdentities.Count; mi++)
+                        {
+                            var mapping = Settings.AuthorizationIdentities[mi];
+                            var mid = $"rse-authz-map-{mi}";
+                            <tr data-testid="rse-authz-mapping">
+                                <td><label class="rse-visually-hidden" for="@($"{mid}-role")">Role</label><input id="@($"{mid}-role")" class="form-control" value="@mapping.Role" @onchange="e => mapping.Role = e.Value?.ToString()?.Trim() ?? string.Empty" /></td>
+                                <td><label class="rse-visually-hidden" for="@($"{mid}-alias")">Test identity</label><input id="@($"{mid}-alias")" class="form-control" list="rse-identity-aliases" value="@mapping.Alias" @onchange="e => mapping.Alias = e.Value?.ToString()?.Trim() ?? string.Empty" /></td>
+                                <td><button type="button" class="btn-secondary rse-small" aria-label="@($"Remove mapping {mapping.Role}")" @onclick="() => Settings.AuthorizationIdentities.Remove(mapping)">Remove</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <button type="button" class="btn-secondary rse-small" data-testid="rse-authz-mapping-add" @onclick="AddMapping">Add identity mapping</button>
+            </section>
+
+            @if (OpenSuggestions.Count > 0 || SourceNote is not null)
+            {
+                <section class="rse-subgroup" data-testid="rse-authz-suggestions" aria-labelledby="rse-authz-suggestions-heading">
+                    <h5 id="rse-authz-suggestions-heading">Suggested checks (@OpenSuggestions.Count)</h5>
+                    <p class="rse-muted">From the API's own requirements, literal source authorization metadata and Test Packs. Nothing here is stored until you add it; suggestions from source stay "Needs confirmation" until you confirm the expected outcome.</p>
+                    @if (SourceNote is { } note) { <p class="rse-muted" data-testid="rse-authz-source-note">@note</p> }
+                    <ul class="rse-suggestions">
+                        @foreach (var suggestion in OpenSuggestions)
+                        {
+                            <li data-testid="rse-authz-suggestion" data-origin="@suggestion.Origin">
+                                <strong>@suggestion.DisplayName</strong>
+                                <span class="rse-pill">@AuthorizationCheckCatalog.OriginLabel(suggestion.Origin)</span>
+                                <span class="rse-muted">@string.Join(" · ", suggestion.Identities.Select(i => $"{(string.IsNullOrWhiteSpace(i.Role) ? i.Alias : i.Role)}: {AuthorizationCheckCatalog.ExpectedLabel(i.Expected)}"))</span>
+                                @if (suggestion.Evidence is { } evidence) { <span class="rse-muted rse-evidence">@evidence</span> }
+                                <button type="button" class="btn-secondary rse-small" data-testid="rse-authz-suggestion-add" disabled="@(Settings.AuthorizationScenarios.Count >= AuthorizationScenarioRules.MaxScenarios)"
+                                        aria-label="@($"Add check {suggestion.DisplayName}")" @onclick="() => AddSuggestion(suggestion)">Add check</button>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
             @for (var si = 0; si < Settings.AuthorizationScenarios.Count; si++)
             {
                 var s = Settings.AuthorizationScenarios[si];
                 var sid = $"rse-authz-{si}";
-                <div class="rse-scenario" data-testid="rse-authz-scenario">
+                <div class="rse-scenario" data-testid="rse-authz-scenario" data-origin="@s.Origin">
+                    <p class="rse-muted rse-provenance">
+                        <span class="rse-pill">@AuthorizationCheckCatalog.OriginLabel(s.Origin)</span>
+                        @if (s.Evidence is { } scenarioEvidence) { <span>@scenarioEvidence</span> }
+                    </p>
+                    <div class="rse-confirm">
+                        <input id="@($"{sid}-confirmed")" type="checkbox" data-testid="rse-authz-confirmed" checked="@(s.Confirmation == AuthorizationCheckConfirmation.Confirmed)"
+                               @onchange="e => s.Confirmation = e.Value is true ? AuthorizationCheckConfirmation.Confirmed : AuthorizationCheckConfirmation.NeedsConfirmation" />
+                        <label for="@($"{sid}-confirmed")">Confirmed expectation</label> <span class="rse-muted">(unconfirmed checks are never run)</span>
+                    </div>
                     <div class="rse-row">
                         <label for="@($"{sid}-id")">Scenario id</label>
                         <input id="@($"{sid}-id")" class="form-control" value="@s.ScenarioId" @onchange="e => s.ScenarioId = e.Value?.ToString()?.Trim() ?? string.Empty" />
@@ -119,7 +179,7 @@
                 </div>
             }
             <datalist id="rse-identity-aliases"><option value="anonymous"></option><option value="proxy-session"></option></datalist>
-            <button type="button" class="btn-secondary rse-small" data-testid="rse-authz-add" disabled="@(Settings.AuthorizationScenarios.Count >= AuthorizationScenarioRules.MaxScenarios)" @onclick="AddScenario">Add scenario</button>
+            <button type="button" class="btn-secondary rse-small" data-testid="rse-authz-add" disabled="@(Settings.AuthorizationScenarios.Count >= AuthorizationScenarioRules.MaxScenarios)" @onclick="AddScenario">Add check</button>
         </fieldset>
 
         <fieldset class="rse-group" data-testid="rse-bodyfuzz">
@@ -161,7 +221,12 @@
             <div><dt>API documentation exposure</dt><dd data-testid="rse-summary-docs">@ExposureLabel(Settings.ApiDocumentationExposure)@(Settings.ApiDocumentationPaths.Count > 0 ? $" · {Settings.ApiDocumentationPaths.Count} path(s)" : "")</dd></div>
             <div><dt>CORS allowed origins</dt><dd>@(Settings.Cors.AllowedOrigins.Count == 0 ? "Not specified" : string.Join(", ", Settings.Cors.AllowedOrigins))@(Settings.Cors.AllowCredentials is { } c ? (c ? " · credentials expected" : " · credentials not expected") : "")</dd></div>
             <div><dt>Auth/session cookies</dt><dd>@(Settings.Cookies.AuthCookieNames.Count == 0 ? "None declared (cookies are observations only)" : string.Join(", ", Settings.Cookies.AuthCookieNames))</dd></div>
-            <div><dt>Authorization scenarios</dt><dd data-testid="rse-summary-authz">@Settings.AuthorizationScenarios.Count</dd></div>
+            <div><dt>Authorization checks</dt><dd data-testid="rse-summary-authz">@Settings.AuthorizationScenarios.Count</dd></div>
+            <div><dt>Test identity mappings</dt><dd data-testid="rse-summary-identities">@(Settings.AuthorizationIdentities.Count == 0 ? "None" : string.Join(", ", Settings.AuthorizationIdentities.Select(m => $"{m.Role} → {m.Alias}")))</dd></div>
+            @if (OpenSuggestions.Count > 0)
+            {
+                <div><dt>Suggested checks</dt><dd data-testid="rse-summary-suggestions">@OpenSuggestions.Count not added · edit the environment to review them</dd></div>
+            }
             <div><dt>Body-fuzzing opt-ins</dt><dd data-testid="rse-summary-bodyfuzz">@(Settings.BodyFuzzOperations.Count(o => o.Policy == BodyFuzzingPolicy.ReadOnlyBodySafe)) read-only · @(Settings.BodyFuzzOperations.Count(o => o.Policy == BodyFuzzingPolicy.StateChangingWithCleanup)) state-changing (blocked without cleanup)</dd></div>
         </dl>
     }
@@ -170,6 +235,44 @@
 @code {
     [Parameter, EditorRequired] public RuntimeSecurityExpectations Settings { get; set; } = new();
     [Parameter] public bool Editable { get; set; }
+    /// <summary>Suggested authorization checks (baseline, source, Test Pack); listed until added, never stored by themselves.</summary>
+    [Parameter] public IReadOnlyList<AuthorizationScenario> Suggestions { get; set; } = [];
+    /// <summary>Why some kind of suggestion is unavailable (e.g. the snapshot predates policy capture).</summary>
+    [Parameter] public string? SourceNote { get; set; }
+
+    private ElementReference _authorizationSection;
+
+    /// <summary>Moves focus (and scroll) to the Authorization checks section — the target of the API Quality Review deep link.</summary>
+    public async Task FocusAuthorizationAsync()
+    {
+        try { await _authorizationSection.FocusAsync(); } catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+    }
+
+    private IReadOnlyList<AuthorizationScenario> OpenSuggestions
+    {
+        get
+        {
+            var configured = Settings.AuthorizationScenarios.Select(AuthorizationCheckCatalog.Signature).ToHashSet(StringComparer.Ordinal);
+            return Suggestions.Where(s => !configured.Contains(AuthorizationCheckCatalog.Signature(s))).ToList();
+        }
+    }
+
+    private IReadOnlyList<string> UnmappedRoles => Settings.AuthorizationScenarios.SelectMany(s => s.Identities)
+        .Where(i => string.IsNullOrWhiteSpace(i.Alias) && !string.IsNullOrWhiteSpace(i.Role) && AuthorizationCheckCatalog.MappedAlias(i.Role, Settings.AuthorizationIdentities) is null)
+        .Select(i => i.Role).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Stores a copy of the suggestion exactly as suggested — its origin, evidence and confirmation state included.</summary>
+    private void AddSuggestion(AuthorizationScenario suggestion)
+    {
+        if (Settings.AuthorizationScenarios.Count >= AuthorizationScenarioRules.MaxScenarios) return;
+        Settings.AuthorizationScenarios.Add(System.Text.Json.JsonSerializer.Deserialize<AuthorizationScenario>(System.Text.Json.JsonSerializer.Serialize(suggestion))!);
+    }
+
+    private void AddMapping()
+    {
+        var role = UnmappedRoles.FirstOrDefault(r => Settings.AuthorizationIdentities.All(m => !string.Equals(m.Role, r, StringComparison.OrdinalIgnoreCase))) ?? "";
+        Settings.AuthorizationIdentities.Add(new AuthorizationIdentityMapping { Role = role });
+    }
 
     private const string DefaultRestMethod = "GET";
     private const string DefaultBodyMethod = "POST";

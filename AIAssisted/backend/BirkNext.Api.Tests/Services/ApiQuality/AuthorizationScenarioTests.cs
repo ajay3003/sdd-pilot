@@ -94,6 +94,27 @@ public sealed class AuthorizationScenarioTests
         Assert.Equal(HttpMethod.Get, anonymous.Method);
     }
 
+    // Task 9 §23, §38: a suggested check whose expectation nobody confirmed, or whose role has no mapped test identity, is never sent —
+    // the backend applies the shared rule itself, whatever the client sends.
+    [Fact]
+    public async Task UnconfirmedOrUnmappedChecks_AreRefused_NothingSent()
+    {
+        var handler = new Handler { Respond = (_, _) => Text(HttpStatusCode.OK, "{}") };
+        var unconfirmed = Scenario();
+        unconfirmed.Origin = AuthorizationCheckOrigin.SourceDerived;
+        unconfirmed.Confirmation = AuthorizationCheckConfirmation.NeedsConfirmation;
+        var unmapped = Scenario("admin-only", identities: [Identity("", AuthorizationExpectation.Allow, role: "AdminOnly")]);
+
+        foreach (var scenario in new[] { unconfirmed, unmapped })
+        {
+            var report = await Service(handler).RunAsync(Run(scenarios: scenario));
+            Assert.Empty(handler.Requests);
+            Assert.DoesNotContain(report.Observations, o => o.Outcome is AuthorizationOutcome.VerifiedAllow or AuthorizationOutcome.VerifiedDeny or AuthorizationOutcome.UnexpectedAllow);
+        }
+        Assert.Contains("needs confirmation", AuthorizationScenarioRules.Validate(unconfirmed));
+        Assert.Contains("no mapped test identity", AuthorizationScenarioRules.Validate(unmapped));
+    }
+
     [Fact]
     public async Task UnexpectedAllow_IsReported_NotCollapsedIntoGenericFailure()
     {

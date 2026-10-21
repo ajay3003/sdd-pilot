@@ -212,6 +212,32 @@ Counts and differences between identities are never evidence. Bounds: 20 scenari
 apart, 15 s timeout, cancellation. Results keep aliases, roles, status codes and the expectation fingerprint — never a credential — and are
 kept in API review history (latest five per Target Environment).
 
+### Authorization checks: origins, confirmation and identities
+
+Testers see scenarios as **authorization checks** (one operation × one identity × one expected outcome); the stored model is still
+`AuthorizationScenario` in `RuntimeSecurityExpectations.AuthorizationScenarios`. There is no second store. Each check carries an `origin`:
+
+| Origin | Source | Confirmation when suggested |
+|---|---|---|
+| Predefined baseline | The API target requires authentication → an unauthenticated request (`anonymous`) is denied. REST uses an observed GET without path parameters; GraphQL `{ __typename }`. | Confirmed (restates the target's own requirement) |
+| Source-derived | Literal `[Authorize(Policy = "X")]`, `[Authorize("X")]`, `[Authorize(Roles = "A,B")]`, `[AllowAnonymous]`, `RequireAuthorization("X")`, matched to an observed operation by method and route template | Needs confirmation |
+| Test Pack | `TestPackDescriptor.AuthorizationExpectations` (API selector, method + path or GraphQL query, role, expected) | As the pack declares |
+| Manual | Written in the editor | Confirmed |
+
+Nothing is guessed: an endpoint that is only "authenticated" gets the baseline and no role checks; a constant or computed policy name is not
+resolved. A policy or role yields "holder allowed" and "without it denied", both **Needs confirmation**. Unconfirmed checks — and checks whose
+role has no mapped test identity — fail `AuthorizationScenarioRules.Validate`, so the backend never sends them.
+
+Identities: the Target Environment maps role labels to execution aliases (`authorizationIdentities`: role → `anonymous`, `proxy-session` or a
+server-provider alias). No credential is stored. A check is **Ready** only when it is confirmed, its identities are mapped, its request is safe
+and the server permits active checks (trusted target, Local/Dev/QA/Test, protected execution available). Otherwise its state is Needs identity,
+Needs confirmation, Unsafe operation approval required (never sent), Blocked by execution permission or Not applicable. Authorization checks are
+optional: they never block the read-only review.
+
+API Quality Review → **Review authorization checks** opens Target Environments → Endpoint Discovery → API review safety settings for the same
+environment, in edit mode with Authorization checks focused (`&focus=authorization-checks`), and a Back link (`&return=`, same-app
+`/api-quality-review` URLs only) that restores the selected API targets.
+
 ## Request-body fuzzing (AQR → Safe fuzzing)
 
 Off by default ("Include request-body cases for explicitly opted-in operations"). Policies per operation: Disabled, Read-only body safe,

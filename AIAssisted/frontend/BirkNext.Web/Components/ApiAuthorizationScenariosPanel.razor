@@ -1,18 +1,19 @@
 @using BirkNext.Web.Models
 @using BirkNext.ApiReview
 @using BirkNext.RuntimeSecurity
+@using BirkNext.Web.Services
 @inject IApiReviewService ReviewService
 @inject IApiReviewHistoryService History
 @inject IReportExportService ExportService
 @inject IServiceProvider Services
 @inject IJSRuntime JS
 
-@* API Quality Review → Authorization scenarios. Each configured identity is compared with its own explicit Allow/Deny expectation for
-   the same safe request. The backend decides trust (server registration), environment safety and every request; no credential is ever
+@* API Quality Review → Authorization checks (model: AuthorizationScenario). Each identity is compared with its own explicit Allow/Deny
+   expectation for the same safe request; only checks that are Ready (confirmed, identity mapped, execution permitted) are sent. The backend decides trust (server registration), environment safety and every request; no credential is ever
    entered, stored or shown here. Never presented as a penetration test. *@
 <section class="aas-panel" data-testid="aqr-authorization" aria-labelledby="aqr-authorization-heading">
     <div class="aas-head">
-        <h2 id="aqr-authorization-heading">Authorization scenarios</h2>
+        <h2 id="aqr-authorization-heading">Authorization checks</h2>
         <span class="aas-pill aas-pill-@StateTone" data-testid="aqr-authorization-state">@StateLabel</span>
     </div>
     <p class="aas-intro" data-testid="aqr-authorization-warning">@RuntimeSecurityWording.NotAPenetrationTest</p>
@@ -22,7 +23,7 @@
         <div><dt>Environment</dt><dd>@(Context?.ActiveProfile.Name ?? "No active Target Environment") <span class="aas-pill aas-pill-muted">@(Context?.ActiveProfile.EnvironmentType.ToString() ?? "Unknown")</span></dd></div>
         <div><dt>Server registration</dt><dd data-testid="aqr-authorization-trust" data-state="@(_execution?.Trust.State.ToString() ?? "Unknown")">@TrustText</dd></div>
         <div><dt>Sign-in</dt><dd data-testid="aqr-authorization-signin">@SignInText</dd></div>
-        <div><dt>Scenarios</dt><dd data-testid="aqr-authorization-count">@Scenarios.Count configured for this Target Environment</dd></div>
+        <div><dt>Checks</dt><dd data-testid="aqr-authorization-count">@(Checks is { } checks ? checks.Headline : $"{Scenarios.Count} configured for this Target Environment")</dd></div>
     </dl>
 
     @if (_execution is { ProtectedExecutionAvailable: false })
@@ -32,11 +33,32 @@
         </div>
     }
 
-    @if (Scenarios.Count > 0)
+    @if (Checks is { Items.Count: > 0 } plan)
     {
-        <div class="aas-tablewrap" tabindex="0" role="region" aria-label="Configured authorization scenarios">
+        <div class="aas-tablewrap" tabindex="0" role="region" aria-label="Authorization checks">
             <table class="aas-table" data-testid="aqr-authorization-plan">
-                <thead><tr><th scope="col">Scenario</th><th scope="col">Resource</th><th scope="col">Identity / role</th><th scope="col">Expected</th></tr></thead>
+                <thead><tr><th scope="col">API</th><th scope="col">Operation</th><th scope="col">Identity</th><th scope="col">Expected</th><th scope="col">Source</th><th scope="col">State</th></tr></thead>
+                <tbody>
+                    @foreach (var item in plan.Items)
+                    {
+                        <tr data-testid="aqr-authorization-plan-row" data-readiness="@item.Readiness" data-origin="@item.Origin" data-configured="@item.Configured.ToString().ToLowerInvariant()">
+                            <td>@item.Api</td>
+                            <td class="aas-mono">@item.Operation</td>
+                            <td>@item.Identity</td>
+                            <td>@AuthorizationCheckCatalog.ExpectedLabel(item.Expected)</td>
+                            <td>@AuthorizationCheckCatalog.OriginLabel(item.Origin)@(item.Configured ? "" : " · suggested")</td>
+                            <td><span class="aas-pill aas-pill-@(item.Readiness == AuthorizationCheckReadiness.Ready ? "ready" : "muted")">@AuthorizationCheckCatalog.ReadinessLabel(item.Readiness)</span> <span class="aas-muted">@item.Reason</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (Checks is null && Scenarios.Count > 0)
+    {
+        <div class="aas-tablewrap" tabindex="0" role="region" aria-label="Configured authorization checks">
+            <table class="aas-table" data-testid="aqr-authorization-plan">
+                <thead><tr><th scope="col">Check</th><th scope="col">Resource</th><th scope="col">Identity / role</th><th scope="col">Expected</th></tr></thead>
                 <tbody>
                     @foreach (var s in Scenarios)
                     {
@@ -56,7 +78,7 @@
     }
 
     <div class="aas-actions">
-        <button type="button" class="btn-primary" data-testid="aqr-authorization-run" disabled="@(!CanRun)" aria-describedby="aqr-authorization-run-help" @onclick="RunAsync">Run authorization scenarios</button>
+        <button type="button" class="btn-secondary" data-testid="aqr-authorization-run" disabled="@(!CanRun)" aria-describedby="aqr-authorization-run-help" @onclick="RunAsync">Run authorization checks</button>
         @if (_report is not null)
         {
             <button type="button" class="btn-secondary" data-testid="aqr-authorization-export" @onclick="ExportAsync">Export HTML</button>
@@ -105,6 +127,10 @@
     [Parameter] public FrontendAnalysisContext? Context { get; set; }
     [Parameter] public Func<ApiReviewRunRequest?>? BuildReviewRequest { get; set; }
     [Parameter] public string? ProjectName { get; set; }
+    /// <summary>The checks of the selected scope with readiness. When given, only its Ready checks are sent (the host owns the catalog).</summary>
+    [Parameter] public AuthorizationCheckSummary? Checks { get; set; }
+    /// <summary>The host's server execution status; when given the panel does not fetch it again.</summary>
+    [Parameter] public SecurityExecutionStatus? Execution { get; set; }
 
     private ISecurityExecutionTokenProvider? SignIn => Services.GetService<ISecurityExecutionTokenProvider>();
     private SecurityExecutionStatus? _execution;
@@ -116,6 +142,16 @@
     private string? _profileId;
 
     private List<AuthorizationScenario> Scenarios => Context?.SecuritySettings.RuntimeSecurity?.AuthorizationScenarios ?? [];
+    private List<AuthorizationIdentityMapping> Mappings => Context?.SecuritySettings.RuntimeSecurity?.AuthorizationIdentities ?? [];
+
+    /// <summary>
+    /// What a run sends: with a catalog, its Ready checks resolved to mapped identities; without one, the configured scenarios that pass the
+    /// shared validation (unconfirmed or unmapped checks fail it). Every field — origin and confirmation included — is preserved, so the backend
+    /// re-applies the same rules.
+    /// </summary>
+    private List<AuthorizationScenario> RunSet => Checks is { } checks
+        ? AuthorizationCheckCatalog.Runnable(checks, Mappings)
+        : Scenarios.Select(s => AuthorizationCheckCatalog.Resolve(s, Mappings)).Where(s => AuthorizationScenarioRules.Validate(s) is null).ToList();
     private string? ClientBlocked => ClientBlockedReason(Context?.ActiveProfile.EnvironmentType.ToString());
 
     /// <summary>Client mirror of the backend rule (the backend decides): Production and unclassified environments are never tested.</summary>
@@ -123,17 +159,18 @@
         string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase) ? "Production environments are never tested by authorization scenarios."
         : ApiActiveTestingEnvironments.IsAllowed(environmentType) ? null
         : "Authorization scenarios run only against Local, Development, QA or Test environments.";
-    private bool CanRun => !_busy && ClientBlocked is null && Scenarios.Count > 0 && _execution is { ProtectedExecutionAvailable: true, Trust.Allowed: true }
+    private bool CanRun => !_busy && ClientBlocked is null && RunSet.Count > 0 && _execution is { ProtectedExecutionAvailable: true, Trust.Allowed: true }
         && BuildReviewRequest?.Invoke() is { Targets.Count: > 0 };
 
     private string RunHelp => _busy ? "Running…"
         : ClientBlocked is { } blocked ? $"Run is disabled: {blocked}"
-        : Scenarios.Count == 0 ? "Configure authorization scenarios in Target Environments → Endpoint Discovery → API review safety settings."
+        : Scenarios.Count == 0 && (Checks?.Available ?? 0) == 0 ? "Configure authorization checks in Target Environments → Endpoint Discovery → API review safety settings → Authorization checks."
         : _execution is null ? "Run is disabled: the backend could not be asked whether this environment is registered."
         : !_execution.ProtectedExecutionAvailable ? $"Run is disabled: {SecurityExecutionStatus.AuthenticationRequiredMessage}"
         : !_execution.Trust.Allowed ? $"Run is disabled: {_execution.Trust.Reason}"
         : BuildReviewRequest?.Invoke() is not { Targets.Count: > 0 } ? "Select the API targets the scenarios belong to."
-        : $"Sends at most {Scenarios.Sum(s => s.Identities.Count)} safe request(s), one at a time.";
+        : RunSet.Count == 0 ? "No check is ready: confirm suggested expectations and map their roles to test identities first."
+        : $"Sends at most {RunSet.Sum(s => s.Identities.Count)} safe request(s), one at a time.";
 
     private string StateLabel => ClientBlocked is not null ? "Blocked" : _execution is { ProtectedExecutionAvailable: false } ? "Sign-in required"
         : _execution?.Trust.Allowed == true ? "Ready" : _execution is null ? "Unknown" : "Not registered";
@@ -149,7 +186,7 @@
         {
             _profileId = id;
             _error = null;
-            _execution = await ReviewService.GetSecurityExecutionAsync(id);
+            _execution = Execution ?? await ReviewService.GetSecurityExecutionAsync(id);
             await History.LoadAsync(JS);
             if (History.For(id).AuthorizationRuns.FirstOrDefault() is { } previous) { _report = previous; _historical = true; }
         }
@@ -158,23 +195,17 @@
     private async Task RunAsync()
     {
         if (!CanRun || BuildReviewRequest?.Invoke() is not { } review || Context is null) return;
-        _busy = true; _error = null; _status = "Running authorization scenarios…";
+        _busy = true; _error = null; _status = "Running authorization checks…";
         try
         {
-            var (report, error) = await ReviewService.RunAuthorizationAsync(new AuthorizationRunRequest { Review = review, Scenarios = Scenarios.Select(Copy).ToList() });
-            if (report is null) { _error = error ?? "Authorization scenarios could not run."; _status = ""; return; }
+            var (report, error) = await ReviewService.RunAuthorizationAsync(new AuthorizationRunRequest { Review = review, Scenarios = RunSet });
+            if (report is null) { _error = error ?? "Authorization checks could not run."; _status = ""; return; }
             _report = report; _historical = false;
             _status = report.BlockedReason is { } blocked ? $"Not run: {blocked}" : $"Finished: {report.Observations.Count} identity result(s).";
             await History.RecordAuthorizationAsync(JS, Context.ActiveProfile.Id, report);
         }
         finally { _busy = false; }
     }
-
-    private static AuthorizationScenario Copy(AuthorizationScenario s) => new()
-    {
-        ScenarioId = s.ScenarioId, DisplayName = s.DisplayName, ApiType = s.ApiType, Url = s.Url, Method = s.Method, GraphQlQuery = s.GraphQlQuery,
-        SuccessStatusCodes = [.. s.SuccessStatusCodes], Identities = s.Identities.Select(i => new AuthorizationScenarioIdentity { Alias = i.Alias, Role = i.Role, Expected = i.Expected, NotFoundMeansDeny = i.NotFoundMeansDeny }).ToList(),
-    };
 
     private async Task ExportAsync()
     {

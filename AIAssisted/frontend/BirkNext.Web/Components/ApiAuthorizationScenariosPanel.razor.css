@@ -37,3 +37,8 @@
 }
 .aas-actions .btn-primary:disabled, .aas-actions .btn-secondary:disabled { opacity: 1; color: var(--clr-text-muted); background: var(--clr-surface); border-color: var(--clr-border-input); }
 .aas-actions button:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+
+/* The check plan has six columns: keep each readable and let the table scroll inside its own region on narrow screens. */
+.aas-table { min-width: 46rem; }
+.aas-table th:nth-child(1), .aas-table td:nth-child(1) { min-width: 9rem; }
+.aas-table td:nth-child(2) { min-width: 10rem; overflow-wrap: anywhere; }

@@ -68,6 +68,37 @@ public sealed class AuthorizationScenarioIdentity
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AuthorizationScenarioApiType { Rest, GraphQl }
 
+/// <summary>Where an authorization check (tester-facing name of a scenario) came from. Provenance only — it never grants execution permission.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AuthorizationCheckOrigin
+{
+    /// <summary>Written by a person.</summary>
+    Manual,
+    /// <summary>A generic expectation that holds for any protected API (e.g. an unauthenticated request is denied).</summary>
+    PredefinedBaseline,
+    /// <summary>Suggested from authorization metadata the source declares (policies, roles, [AllowAnonymous]).</summary>
+    SourceDerived,
+    /// <summary>Suggested from a published contract's security requirements.</summary>
+    ContractDerived,
+    /// <summary>Declared by a Test Pack.</summary>
+    TestPack,
+}
+
+/// <summary>Whether the expectation of a check has been confirmed by its owner. Unconfirmed checks are never executed.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AuthorizationCheckConfirmation { Confirmed, NeedsConfirmation }
+
+/// <summary>
+/// A Target Environment's test identity for a role label used by authorization checks: which execution alias (anonymous, proxy-session, or a
+/// server-registered identity provider alias) acts as that role. Never a credential — credentials stay with the Target Environment's authenticated
+/// context or the server identity provider.
+/// </summary>
+public sealed class AuthorizationIdentityMapping
+{
+    [JsonPropertyName("role")] public string Role { get; set; } = "";
+    [JsonPropertyName("alias")] public string Alias { get; set; } = "";
+}
+
 /// <summary>An explicit allow/deny expectation for one safe request. Count differences between identities are never used as evidence.</summary>
 public sealed class AuthorizationScenario
 {
@@ -83,6 +114,14 @@ public sealed class AuthorizationScenario
     /// <summary>Status codes that count as allowed (default: any 2xx).</summary>
     [JsonPropertyName("successStatusCodes")] public List<int> SuccessStatusCodes { get; set; } = [];
     [JsonPropertyName("identities")] public List<AuthorizationScenarioIdentity> Identities { get; set; } = [];
+    /// <summary>Provenance. Legacy scenarios deserialize as Manual.</summary>
+    [JsonPropertyName("origin")] public AuthorizationCheckOrigin Origin { get; set; } = AuthorizationCheckOrigin.Manual;
+    /// <summary>Suggested checks stay NeedsConfirmation until their owner confirms them; the backend refuses to execute them. Legacy: Confirmed.</summary>
+    [JsonPropertyName("confirmation")] public AuthorizationCheckConfirmation Confirmation { get; set; } = AuthorizationCheckConfirmation.Confirmed;
+    /// <summary>Short, redacted provenance ("[Authorize(Policy = \"AdminOnly\")] · Orders.cs:42"). Never source text or values.</summary>
+    [JsonPropertyName("evidence")] public string? Evidence { get; set; }
+    /// <summary>The API target the check was created for (display and filtering; execution is still bound by URL origin).</summary>
+    [JsonPropertyName("targetId")] public string? TargetId { get; set; }
 }
 
 /// <summary>Opt-in states for request-body fuzzing per operation. Unknown operations are always blocked.</summary>
@@ -118,6 +157,8 @@ public sealed class RuntimeSecurityExpectations
     [JsonPropertyName("cors")] public CorsExpectations Cors { get; set; } = new();
     [JsonPropertyName("cookies")] public CookieSecurityExpectations Cookies { get; set; } = new();
     [JsonPropertyName("authorizationScenarios")] public List<AuthorizationScenario> AuthorizationScenarios { get; set; } = [];
+    /// <summary>Role label → execution alias for this Target Environment's test identities (no credentials).</summary>
+    [JsonPropertyName("authorizationIdentities")] public List<AuthorizationIdentityMapping> AuthorizationIdentities { get; set; } = [];
     [JsonPropertyName("bodyFuzzOperations")] public List<BodyFuzzOperationOptIn> BodyFuzzOperations { get; set; } = [];
 
     private static readonly JsonSerializerOptions CopyOptions = new();
@@ -150,7 +191,7 @@ public static class RuntimeSecuritySettingsUsage
     public const string ApiDocumentationExposure = "API Quality Review → Runtime security: API documentation exposure";
     public const string Cors = "API Quality Review → Runtime security: CORS (allowed-origin and foreign-origin preflights)";
     public const string Cookies = "Frontend Quality Review → Static Security: cookie security (frontend document Set-Cookie and Local HTTPS proxy observed cookies)";
-    public const string AuthorizationScenarios = "API Quality Review → Authorization scenarios (trusted non-production targets only)";
+    public const string AuthorizationScenarios = "API Quality Review → Authorization checks (trusted non-production targets only)";
     public const string BodyFuzzOperations = "API Quality Review → Safe fuzzing: request-body cases (trusted non-production targets only)";
 }
 
@@ -629,11 +670,14 @@ public static partial class AuthorizationScenarioRules
     public static string? Validate(AuthorizationScenario s)
     {
         if (string.IsNullOrWhiteSpace(s.ScenarioId) || s.ScenarioId.Length > 64) return "A scenario id (≤ 64 characters) is required.";
+        if (s.Confirmation == AuthorizationCheckConfirmation.NeedsConfirmation) return "This check needs confirmation of its expected outcome before it can run.";
         if (!Uri.TryCreate(s.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0 || uri.Fragment.Length > 0)
             return "The URL must be an absolute http(s) URL without user info or fragment.";
         if (s.Url.Length > 2048 || s.Url.Contains("..", StringComparison.Ordinal)) return "The URL is too long or contains a traversal sequence.";
         if (s.Identities.Count is 0 or > MaxIdentitiesPerScenario) return $"A scenario needs 1–{MaxIdentitiesPerScenario} identities with explicit expectations.";
-        if (s.Identities.Any(i => string.IsNullOrWhiteSpace(i.Alias) || i.Alias.Length > 64)) return "Every identity needs an alias.";
+        if (s.Identities.Any(i => string.IsNullOrWhiteSpace(i.Alias) || i.Alias.Length > 64))
+            return s.Identities.Any(i => string.IsNullOrWhiteSpace(i.Alias) && !string.IsNullOrWhiteSpace(i.Role))
+                ? "A role in this check has no mapped test identity." : "Every identity needs an alias.";
         if (s.ApiType == AuthorizationScenarioApiType.Rest)
         {
             if (s.Method.Trim().ToUpperInvariant() is not ("GET" or "HEAD")) return "Authorization scenarios send safe requests only: GET or HEAD.";
