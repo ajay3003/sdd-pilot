@@ -586,6 +586,9 @@ public sealed record IntegrationTemplateDefinition(string Key, string DisplayNam
     public string? SourceResource { get; init; }
     /// <summary>The pack source role whose snapshot is this integration's canonical evidence (e.g. the repository that implements it).</summary>
     public string? EvidenceSourceRoleKey { get; init; }
+    /// <summary>Which side of the integration the evidence source implements (e.g. the receiving service). Unknown: contract discovery lists
+    /// source candidates for both sides and asks for confirmation.</summary>
+    public BirkNext.Integrations.IntegrationSourceSide EvidenceSourceSide { get; init; }
     /// <summary>Which facts of a Test Pack reference describe this integration's authentication and submission contract (null: none).</summary>
     public IntegrationTemplateReferenceUse? Reference { get; init; }
 }
@@ -600,6 +603,8 @@ public sealed record IntegrationTemplateReferenceUse(string RoleKey)
     public IReadOnlyList<string> AuthenticationFacts { get; init; } = [];
     public IReadOnlyList<string> ContractFacts { get; init; } = [];
     public string? SchemaFactKey { get; init; }
+    /// <summary>Which side the reference describes (e.g. the sending application): its declared data type is that side's contract metadata.</summary>
+    public BirkNext.Integrations.IntegrationSourceSide Side { get; init; }
 }
 
 /// <summary>An XML schema in a snapshot recognized as the template's evidence source whose name equals the reference's schema fact exactly. A

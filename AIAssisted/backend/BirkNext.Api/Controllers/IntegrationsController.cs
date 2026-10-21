@@ -118,7 +118,7 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         return await catalog.UpdatePlatformAsync(environmentId, id, platform, ct) is { } updated ? Ok(updated) : NotFound();
     }
 
-    // Trusted event contracts (JSON Schema) per integration and role. Metadata only is returned — never the schema text.
+    // Trusted contracts (JSON Schema or XSD) per integration and role. Metadata only is returned — never the schema text.
     [HttpGet("contracts")]
     public async Task<ActionResult<IReadOnlyList<IntegrationContractArtifact>>> Contracts([FromQuery] string environmentId, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
         Ok(await store.ListAsync(environmentId, ct));
@@ -136,6 +136,31 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
     [HttpDelete("contracts")]
     public async Task<IActionResult> DeleteContract([FromQuery] string environmentId, [FromQuery] string integrationId, [FromQuery] IntegrationContractRole role, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
         await store.DeleteAsync(environmentId, integrationId, role, ct) ? NoContent() : NotFound();
+
+    /// <summary>Producer/consumer contract discovery from the integration's canonical source binding (read-only; nothing is selected or bound).</summary>
+    [HttpGet("{id}/contract-discovery")]
+    public async Task<ActionResult<IntegrationContractDiscovery>> ContractDiscovery(string id, [FromQuery] string environmentId,
+        [FromServices] IIntegrationContractStore contracts, [FromServices] BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore bindings,
+        [FromServices] BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore sources, [FromServices] BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService journeys,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var discovery = await new IntegrationContractDiscoveryService(catalog, bindings, sources, contracts, journeys).DiscoverAsync(environmentId, id, ct);
+        return discovery is null ? NotFound() : Ok(discovery);
+    }
+
+    /// <summary>Uses one discovered source contract for one side (explicit, per side). Only a candidate of the current binding with retained content.</summary>
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    [HttpPut("contracts/source-selection")]
+    public async Task<ActionResult<IntegrationContractArtifact>> SelectSourceContract([FromBody] IntegrationContractSourceSelectionRequest request,
+        [FromServices] IIntegrationContractStore contracts, [FromServices] BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore bindings,
+        [FromServices] BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore sources, [FromServices] BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService journeys,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.EnvironmentId)) return BadRequest(new { message = "environmentId is required." });
+        var (artifact, error) = await new IntegrationContractDiscoveryService(catalog, bindings, sources, contracts, journeys).SelectAsync(request, ct);
+        return artifact is null ? BadRequest(new { message = error }) : Ok(artifact);
+    }
 
     /// <summary>One-time import of integrations that were stored in the browser Target Environment profile.</summary>
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

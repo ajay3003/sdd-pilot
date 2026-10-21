@@ -34,8 +34,8 @@
             <dl class="ip-summary" data-testid="ip-summary">
                 <div><dt>Environment</dt><dd data-testid="ip-summary-env">@IntegrationsOverviewPresentation.Environment(Profile)</dd></div>
                 <div><dt>Configured integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
-                <div><dt>Source suggestions</dt><dd data-testid="ip-summary-suggestions">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
-                <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime">@IntegrationsOverviewPresentation.Label(runtime)</span></dd></div>
+                <div><dt>New integrations suggested by source</dt><dd data-testid="ip-summary-suggestions" title="Integrations Source Analysis detected that are not configured here — not contract candidates and not consumer mapping candidates.">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
+                <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime" title="@IntegrationsOverviewPresentation.Meaning(runtime)">@IntegrationsOverviewPresentation.Label(runtime)</span></dd></div>
             </dl>
             @* The create action belongs to Configured integrations (its empty state, or its header); the summary stays informational. *@
             @if (_catalog.Integrations.Count > 0 && suggestions.Available && suggestions.Total > 0)
@@ -130,7 +130,7 @@
                                 {
                                     var open = _viewing == row.Definition.Id;
                                     var note = SourceIntegrationsPresentation.SourceNote(src.Match);
-                                    var rowRuntime = IntegrationsOverviewPresentation.Runtime(IntegrationsPanePresentation.Platform(_catalog, row.Definition));
+                                    var rowRuntime = IntegrationsOverviewPresentation.Runtime(row.Definition, IntegrationsPanePresentation.Platform(_catalog, row.Definition));
                                     <tr @key="row.Definition.Id" data-testid="ip-row" data-integration-id="@row.Definition.Id" data-configuration="@row.Configuration" data-mapping-category="@src.Mapping" data-source-match="@(src.Match?.State.ToString() ?? "")" data-origin="@row.Definition.Origin">
                                         <th scope="row" class="ip-cell-source"><strong data-testid="ip-row-source">@src.Entity</strong>@if (!row.Definition.Enabled) { <span class="ip-pill ip-pill-muted">Disabled</span> }
                                             @if (src.Qualifier is { } qualifier) { <span class="ip-cell-sub">@qualifier</span> }
@@ -148,8 +148,8 @@
                                             <span class="ip-pill ip-pill-@(binding is null ? "muted" : "ready")">@(binding is null ? "Not bound" : "Bound")</span>
                                             @if (binding is not null) { <span class="ip-cell-sub ip-wrap" title="Bound in Integration Quality Review">@binding.ArchiveName</span> }
                                             <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-row-source-evidence-open" aria-label="@($"Open IQR evidence for {src.Entity}")">@(binding is null ? "Bind in IQR Evidence" : "Open IQR Evidence")</a></td>
-                                        <td data-testid="ip-row-runtime"><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(rowRuntime)">@IntegrationsOverviewPresentation.Label(rowRuntime)</span>
-                                            @if (rowRuntime != RuntimeEvidenceStatus.Configured && IntegrationsPanePresentation.Platform(_catalog, row.Definition) is { } rowPlatform)
+                                        <td data-testid="ip-row-runtime" data-runtime="@rowRuntime"><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(rowRuntime)" title="@IntegrationsOverviewPresentation.Meaning(rowRuntime, row.Definition.Kind)">@IntegrationsOverviewPresentation.Label(rowRuntime)</span>
+                                            @if (rowRuntime is not RuntimeEvidenceStatus.Configured and not RuntimeEvidenceStatus.Unavailable && IntegrationsPanePresentation.Platform(_catalog, row.Definition) is { } rowPlatform)
                                             { <button type="button" class="ip-link" data-testid="ip-row-runtime-configure" aria-label="@($"Configure runtime evidence for {src.Entity}")" @onclick="() => BeginRuntime(rowPlatform)">Configure</button> }</td>
                                         <td class="ip-actions">
                                             <a class="ip-link" href="/integration-quality-review" data-testid="ip-row-iqr" aria-label="@($"Review {src.Entity} in Integration Quality Review")">Review</a>
@@ -206,62 +206,112 @@
                                     @if (open)
                                     {
                                         var definition = row.Definition;
-                                        <tr class="ip-detail-row" id="@($"ip-detail-{Slug(definition.Id)}")" data-testid="ip-row-detail">
+                                        var platform = IntegrationsPanePresentation.Platform(_catalog, definition);
+                                        var detailBinding = _bindings.FirstOrDefault(b => b.IntegrationId == definition.Id);
+                                        var contractDiscovery = _discoveries.GetValueOrDefault(definition.Id);
+                                        var fieldEvidence = IntegrationDetailPresentation.FieldEvidence(definition, src.Match, _sources?.Discovery?.ArchiveName);
+                                        var view = IntegrationDetailPresentation.View(definition, platform, detailBinding, contractDiscovery, fieldEvidence);
+                                        var detailRuntime = IntegrationsOverviewPresentation.Runtime(definition, platform);
+                                        var slug = Slug(definition.Id);
+                                        <tr class="ip-detail-row" id="@($"ip-detail-{slug}")" data-testid="ip-row-detail">
                                             <td colspan="7">
-                                                <p class="ip-muted" data-testid="ip-detail-source">Source evidence: @(src.Match is { } m ? $"{SourceIntegrationLabels.Match(m.State)} — {m.Detail}" : "Not analyzed")
-                                                    <a class="ip-link" href="/source-analysis" data-testid="ip-detail-open-source">Open Source Analysis</a></p>
-                                                <dl class="ip-dl ip-dl-technical">
-                                                    <div><dt>Display name</dt><dd>@definition.DisplayName</dd></div>
-                                                    <div><dt>Configured channel</dt><dd class="ip-mono">@(row.Topic ?? "Not configured")</dd></div>
-                                                    <div><dt>Source</dt><dd class="ip-mono">@(definition.SourceResource ?? "Not configured")</dd></div>
-                                                    <div><dt>Consumer group</dt><dd class="ip-mono" data-testid="ip-detail-consumer-group">@(definition.ConsumerGroup ?? "Unknown / not configured")</dd></div>
-                                                    <div><dt>Consumer mapping</dt><dd data-testid="ip-detail-mapping">@IntegrationConfigurationRules.MappingLabel(row.MappingState)@(definition.Consumer.MappingSource is { } mappingSource ? $" · {mappingSource}" : "")@(definition.Consumer.MappingConfirmedAt is { } at ? $" · {at.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "")</dd></div>
-                                                    <div><dt>Origin</dt><dd data-testid="ip-detail-origin">@IntegrationsOverviewPresentation.Origin(definition)</dd></div>
-                                                    @if (definition.Consumer.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="ip-mono">@app</dd></div> }
-                                                    @if (definition.Consumer.ManagedIdentity is { } mi) { <div><dt>Managed identity</dt><dd class="ip-mono">@mi</dd></div> }
-                                                    <div><dt>Producer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ProducerAuthentication)</dd></div>
-                                                    <div><dt>Consumer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ConsumerAuthentication)</dd></div>
-                                                    <div><dt>Contract</dt><dd>@IntegrationConfigurationRules.ContractLabel(definition.ContractRelationship)</dd></div>
-                                                    <div><dt>Health / worker URL</dt><dd>@(definition.HealthUrl ?? "Not configured") / @(definition.WorkerUrl ?? "Not configured")</dd></div>
-                                                    <div><dt>Configuration status</dt><dd>@IntegrationConfigurationRules.Label(row.Configuration) · @row.ConfigurationDetail</dd></div>
-                                                    <div><dt>Review readiness (IQR)</dt><dd>@row.ReviewReadiness · @row.ReviewReadinessDetail</dd></div>
-                                                </dl>
-
-                                                @if (definition.Consumer.MappingState == ConsumerMappingState.Suggested && definition.Consumer.DisplayName is { } suggested)
-                                                {
-                                                    <div class="ip-mapping" data-testid="ip-mapping-suggested">
-                                                        <p class="ip-muted">Suggested consumer: <strong>@suggested</strong> — @(definition.Consumer.MappingSource ?? "suggested source"). Receiver rights never confirm a mapping; a person does.</p>
-                                                        <div class="ip-mapping-actions">
-                                                            <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-mapping-confirm" @onclick="() => BeginConfirm(definition, null)">Confirm @suggested</button>
-                                                            <button type="button" class="ip-link" data-testid="ip-mapping-change" @onclick="() => BeginEdit(definition)">Change</button>
-                                                        </div>
-                                                    </div>
-                                                }
-
-                                                <div class="ip-contracts" data-testid="ip-contracts" role="group" tabindex="-1" @ref="_contractsFocus" id="@($"ip-contracts-{Slug(definition.Id)}")" aria-label="@($"Event contracts for {definition.DisplayName}")">
-                                                    <h4>Event contracts (JSON Schema)</h4>
-                                                    @foreach (var role in new[] { IntegrationContractRole.Producer, IntegrationContractRole.Consumer })
+                                                <div class="ip-detail-groups">
+                                                <section class="ip-group" aria-labelledby="@($"ip-g-identity-{slug}")" data-testid="ip-group-identity">
+                                                    <h4 id="@($"ip-g-identity-{slug}")">Identity &amp; routing</h4>
+                                                    <dl class="ip-dl ip-dl-fields">
+                                                        <div><dt>Display name</dt><dd>@definition.DisplayName</dd></div>
+                                                        <div><dt>Type</dt><dd data-testid="ip-detail-kind">@IntegrationConfigurationRules.KindLabel(definition.Kind)</dd></div>
+                                                        @foreach (var field in view.Identity) { @FieldRow(field) }
+                                                        <div><dt>Origin</dt><dd data-testid="ip-detail-origin">@IntegrationsOverviewPresentation.Origin(definition)<span class="ip-field-reason">@IntegrationDetailPresentation.OriginMeaning(definition)</span></dd></div>
+                                                        @if (definition.Consumer.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="ip-mono">@app</dd></div> }
+                                                        @if (definition.Consumer.ManagedIdentity is { } mi) { <div><dt>Managed identity</dt><dd class="ip-mono">@mi</dd></div> }
+                                                    </dl>
+                                                    @if (view.NotApplicable.Count > 0)
                                                     {
-                                                        var artifact = _contracts.FirstOrDefault(c => c.IntegrationId == definition.Id && c.Role == role);
-                                                        var errorId = $"ip-contract-error-{Slug(definition.Id)}-{role.ToString().ToLowerInvariant()}";
-                                                        var contractError = _contractErrors.TryGetValue((definition.Id, role), out var ce) ? ce : null;
-                                                        <div class="ip-contract" data-testid="ip-contract" data-role="@role" data-configured="@(artifact is not null ? "true" : "false")">
-                                                            <span class="ip-contract-role">@role contract</span>
-                                                            @if (artifact is not null)
-                                                            {
-                                                                <span class="ip-contract-file" data-testid="ip-contract-file">@artifact.FileName</span>
-                                                                <span class="ip-muted ip-mono">sha256 @artifact.ShortHash · @artifact.FieldCount field(s)@(artifact.Version is { } v ? $" · {v}" : "")</span>
-                                                            }
-                                                            else { <span class="ip-muted">None</span> }
-                                                            <label class="ip-file-button">
-                                                                <InputFile class="ip-file-input" accept=".json" OnChange="args => UploadContractAsync(definition, role, args)" aria-describedby="@(contractError is not null ? errorId : null)" aria-label="@($"{(artifact is null ? "Upload" : "Replace")} {role.ToString().ToLowerInvariant()} contract")" data-testid="ip-contract-input" />
-                                                                <span aria-hidden="true">@(artifact is null ? "Upload" : "Replace")</span>
-                                                            </label>
-                                                            @if (artifact is not null) { <button type="button" class="ip-link ip-link-danger" data-testid="ip-contract-remove" @onclick="() => RemoveContractAsync(definition, role)" aria-label="@($"Remove {role.ToString().ToLowerInvariant()} contract {artifact.FileName}")">Remove</button> }
-                                                            @if (contractError is not null) { <p class="ip-field-error" id="@errorId" role="alert" data-testid="ip-contract-error">Invalid contract: @contractError</p> }
+                                                        <p class="ip-muted" data-testid="ip-detail-not-applicable"><strong>Not applicable for @IntegrationConfigurationRules.KindLabel(definition.Kind):</strong> @string.Join(", ", view.NotApplicable.Select(f => f.Label)). These fields are never counted as missing.</p>
+                                                    }
+                                                    @if (definition.Consumer.MappingState == ConsumerMappingState.Suggested && definition.Consumer.DisplayName is { } suggested)
+                                                    {
+                                                        <div class="ip-mapping" data-testid="ip-mapping-suggested">
+                                                            <p class="ip-muted">Suggested consumer: <strong>@suggested</strong> — @(definition.Consumer.MappingSource ?? "suggested source"). Receiver rights never confirm a mapping; a person does.</p>
+                                                            <div class="ip-mapping-actions">
+                                                                <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-mapping-confirm" @onclick="() => BeginConfirm(definition, null)">Confirm @suggested</button>
+                                                                <button type="button" class="ip-link" data-testid="ip-mapping-change" @onclick="() => BeginEdit(definition)">Change</button>
+                                                            </div>
                                                         </div>
                                                     }
-                                                    <p class="ip-muted">Compatibility needs both contracts. Uploading both marks the relationship "Both available" — never "Verified" automatically.</p>
+                                                    else if (view.Configuration.Field(IntegrationField.ConsumerMapping) is { Resolution: IntegrationFieldResolution.NeedsConfirmation, Value: { } candidateConsumer })
+                                                    {
+                                                        <div class="ip-mapping" data-testid="ip-mapping-review">
+                                                            <p class="ip-muted">Candidate consumer: <strong>@candidateConsumer</strong>. A person confirms which component receives this integration; evidence alone never does.</p>
+                                                            <div class="ip-mapping-actions">
+                                                                <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-mapping-review-open" aria-label="@($"Review mapping: confirm {candidateConsumer} as consumer of {definition.DisplayName}")" @onclick="() => BeginConfirm(definition, null)">Review mapping</button>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </section>
+
+                                                <section class="ip-group" aria-labelledby="@($"ip-g-evidence-{slug}")" data-testid="ip-group-evidence">
+                                                    <h4 id="@($"ip-g-evidence-{slug}")">Evidence</h4>
+                                                    <dl class="ip-dl ip-dl-fields">
+                                                        <div data-testid="ip-detail-source-evidence" data-bound="@(detailBinding is null ? "false" : "true")"><dt>Source evidence</dt>
+                                                            <dd><span class="ip-pill ip-pill-@(detailBinding is null ? "muted" : "ready")">@(detailBinding is null ? "Not bound" : "Bound")</span>@if (detailBinding is not null) { <span class="ip-wrap"> @detailBinding.ArchiveName</span> }
+                                                                <span class="ip-field-reason">@(detailBinding is null ? "No canonical source binding: bind one in IQR Evidence. Source configuration and source evidence are separate — an unbound integration is not misconfigured." : "The integration's canonical Source Analysis snapshot (chosen in IQR Evidence). Source evidence is not runtime verification.")</span></dd></div>
+                                                        <div><dt>Runtime evidence</dt><dd data-testid="ip-detail-runtime" data-runtime="@detailRuntime"><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(detailRuntime)">@IntegrationsOverviewPresentation.Label(detailRuntime)</span>
+                                                            <span class="ip-field-reason">@IntegrationsOverviewPresentation.Meaning(detailRuntime, definition.Kind)</span></dd></div>
+                                                        <div><dt>Mapping evidence</dt><dd data-testid="ip-detail-mapping-evidence">@(mappingChecks.TryGetValue(definition.Id, out var mappingCheck) ? IntegrationMappingEvidenceCheck.Label(mappingCheck.OverallState) : "Not checked")
+                                                            <span class="ip-field-reason">@(mappingChecks.ContainsKey(definition.Id) ? "Result of the last mapping test. A test never confirms a mapping." : "No mapping test has run in this session.")</span></dd></div>
+                                                    </dl>
+                                                    <p class="ip-muted" data-testid="ip-detail-source">@IntegrationDetailPresentation.ChannelMatch(src.Match, _sources?.Discovery?.ArchiveName, _sources?.Discovery?.SourceSnapshotId, detailBinding)
+                                                        <a class="ip-link" href="/source-analysis" data-testid="ip-detail-open-source">Open Source Analysis</a></p>
+                                                </section>
+
+                                                <section class="ip-group" aria-labelledby="@($"ip-g-auth-{slug}")" data-testid="ip-group-authentication">
+                                                    <h4 id="@($"ip-g-auth-{slug}")">Authentication</h4>
+                                                    <dl class="ip-dl ip-dl-fields">
+                                                        @foreach (var field in view.Authentication) { @FieldRow(field) }
+                                                    </dl>
+                                                    @if (view.Authentication.Any(f => f.Resolution is IntegrationFieldResolution.NotConfigured or IntegrationFieldResolution.NotAssessed))
+                                                    {
+                                                        <p class="ip-muted"><button type="button" class="ip-link" data-testid="ip-detail-auth-edit" disabled="@(_editing is not null)" @onclick="() => BeginEdit(definition)">Configure authentication</button> — the mechanism name only; no credential is stored.</p>
+                                                    }
+                                                </section>
+
+                                                @ContractsGroup(definition, contractDiscovery, slug)
+
+                                                <section class="ip-group" aria-labelledby="@($"ip-g-runtime-{slug}")" data-testid="ip-group-runtime">
+                                                    <h4 id="@($"ip-g-runtime-{slug}")">Runtime / health</h4>
+                                                    <dl class="ip-dl ip-dl-fields">
+                                                        @foreach (var field in view.RuntimeHealth) { @FieldRow(field) }
+                                                        @if (IntegrationsOverviewPresentation.HasRuntimeProvider(definition.Kind))
+                                                        {
+                                                            <div><dt>Runtime provider</dt><dd>@(platform?.Name ?? "No platform assigned")</dd></div>
+                                                        }
+                                                    </dl>
+                                                </section>
+
+                                                <section class="ip-group ip-group-wide" aria-labelledby="@($"ip-g-readiness-{slug}")" data-testid="ip-group-readiness">
+                                                    <h4 id="@($"ip-g-readiness-{slug}")">Readiness</h4>
+                                                    <div class="ip-readiness-cols">
+                                                        <div data-testid="ip-detail-configuration" data-state="@view.Configuration.State">
+                                                            <p><strong>Configuration status</strong> <span class="ip-pill ip-pill-@IntegrationsPanePresentation.StateTone(view.Configuration.State)">@IntegrationDetailPresentation.ConfigurationHeadline(view.Configuration)</span></p>
+                                                            @ReadinessList("Missing required configuration", view.Configuration.Missing.Select(f => $"{f.Label} not configured"), "ip-config-missing")
+                                                            @ReadinessList("Needs confirmation", view.Configuration.ToConfirm.Select(f => $"{f.Label}: {IntegrationFieldRules.Label(f.Resolution).ToLowerInvariant()}"), "ip-config-confirm")
+                                                            @ReadinessList("Needed for some checks", view.Configuration.ConditionalGaps.Select(f => $"{f.Label} — {f.Condition?.ToLowerInvariant()}"), "ip-config-conditional")
+                                                            @ReadinessList("Not assessed (does not block)", view.Configuration.NotAssessed.Select(f => $"{f.Label}{(f.Requirement == IntegrationFieldRequirement.Optional ? " (optional)" : "")}"), "ip-config-not-assessed")
+                                                            @ReadinessList("Not applicable", view.NotApplicable.Select(f => f.Label), "ip-config-not-applicable")
+                                                            @if (view.Configuration.State == IntegrationConfigurationState.Ready) { <p class="ip-muted">All required configuration is present and confirmed.</p> }
+                                                        </div>
+                                                        <div data-testid="ip-detail-readiness" data-readiness="@view.Readiness.Label">
+                                                            <p><strong>Review readiness (IQR)</strong> <span class="ip-pill ip-pill-@(view.Readiness.Label == "Ready" ? "ready" : view.Readiness.Label == "Partial" ? "attention" : "muted")">@view.Readiness.Label</span></p>
+                                                            <p class="ip-muted">@view.Readiness.Detail</p>
+                                                            @ReadinessList("Ready", view.Readiness.Ready, "ip-readiness-ready")
+                                                            @ReadinessList("Needs attention", view.Readiness.NeedsAttention, "ip-readiness-attention")
+                                                            @ReadinessList("Not assessed", view.Readiness.NotAssessed, "ip-readiness-not-assessed")
+                                                            @ReadinessList("Not blocking", view.Readiness.NotBlocking, "ip-readiness-not-blocking")
+                                                        </div>
+                                                    </div>
+                                                </section>
                                                 </div>
 
                                                 <p class="ip-detail-actions">
@@ -592,6 +642,11 @@
         if (_focusConfirm) { _focusConfirm = false; try { await _confirmFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusSuggestions) { _focusSuggestions = false; try { await _suggestionsFocus.FocusAsync(); } catch (InvalidOperationException) { } }
         if (_focusAddTrigger) { _focusAddTrigger = false; try { await _addTrigger.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } }
+        if (_viewing is { } viewing && !_discoveries.ContainsKey(viewing) && _discoveryLoading.Add(viewing))
+        {
+            await LoadDiscoveryAsync(viewing);
+            StateHasChanged();
+        }
     }
 
     private void ReviewMappings() { ClearFilters(); _stateFilter = nameof(IntegrationConfigurationState.NeedsConfirmation); }
@@ -741,6 +796,201 @@
         }
         finally { _mappingBusy.Remove(definition.Id); }
     }
+    /// <summary>Contract discovery per integration (null value: the backend could not provide it). Read when a detail opens; cleared on reload.</summary>
+    private readonly Dictionary<string, IntegrationContractDiscovery?> _discoveries = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _discoveryLoading = new(StringComparer.Ordinal);
+    /// <summary>The side whose candidate list is open (integration id, role).</summary>
+    private (string Id, IntegrationContractRole Role)? _candidateReview;
+
+    private static string FieldTestId(IntegrationField field) => field switch
+    {
+        IntegrationField.ConsumerGroup => "ip-detail-consumer-group",
+        IntegrationField.ConsumerMapping => "ip-detail-mapping",
+        _ => $"ip-field-{field.ToString().ToLowerInvariant()}",
+    };
+
+    /// <summary>One field: its resolution (text, never color-only), value and provenance, requirement, and why — separate facts, never one label.</summary>
+    private static RenderFragment FieldRow(IntegrationFieldStatus field) => __builder =>
+    {
+        <div data-testid="ip-field" data-field="@field.Field" data-resolution="@field.Resolution" data-requirement="@field.Requirement">
+            <dt>@field.Label</dt>
+            <dd data-testid="@FieldTestId(field.Field)">
+                <span class="ip-pill ip-pill-@IntegrationDetailPresentation.Tone(field.Resolution)">@IntegrationFieldRules.Label(field.Resolution)</span>
+                @if (field.Value is { } value) { <span class="ip-field-value ip-wrap">@value</span> }
+                @if (field.Provenance is { } provenance && provenance != "Configured") { <span class="ip-field-provenance">Provenance: @provenance</span> }
+                @if (field.Requirement is IntegrationFieldRequirement.Optional or IntegrationFieldRequirement.Conditional) { <span class="ip-field-requirement">@IntegrationFieldRules.Label(field.Requirement)</span> }
+                @* A configured value's provenance says enough; the reason is shown where it explains a state (or a value the kind does not use). *@
+                @if (field.Resolution != IntegrationFieldResolution.Configured || field.Requirement == IntegrationFieldRequirement.NotApplicable) { <span class="ip-field-reason">@field.Reason</span> }
+            </dd>
+        </div>
+    };
+
+    private static RenderFragment ReadinessList(string heading, IEnumerable<string> items, string testId) => __builder =>
+    {
+        var list = items.Where(i => !string.IsNullOrWhiteSpace(i)).ToList();
+        if (list.Count == 0) return;
+        <div class="ip-readiness-list" data-testid="@testId">
+            <p class="ip-readiness-heading">@heading</p>
+            <ul>@foreach (var item in list) { <li>@item</li> }</ul>
+        </div>
+    };
+
+    /// <summary>Contracts by side, evidence first: discovered candidates lead, upload is the fallback; compatibility is its own state.</summary>
+    private RenderFragment ContractsGroup(IntegrationDefinition definition, IntegrationContractDiscovery? discovery, string slug) => __builder =>
+    {
+        var loading = _discoveryLoading.Contains(definition.Id);
+        var loaded = _discoveries.ContainsKey(definition.Id);
+        <section class="ip-group ip-group-wide ip-contracts" data-testid="ip-contracts" tabindex="-1" @ref="_contractsFocus" id="@($"ip-contracts-{slug}")" aria-labelledby="@($"ip-g-contracts-{slug}")">
+            <h4 id="@($"ip-g-contracts-{slug}")">Integration contracts</h4>
+            <p class="ip-muted">XSD, JSON Schema, OpenAPI, AsyncAPI, WSDL, Protobuf, GraphQL schema or other. Discovered from the integration's bound source first; uploading is the fallback.</p>
+            @if (loading && !loaded) { <p class="ip-muted" role="status" data-testid="ip-contract-discovery-loading">Discovering contracts in the bound source…</p> }
+            else if (loaded && discovery is null) { <p class="ip-muted" data-testid="ip-contract-discovery-unavailable">Contract discovery is unavailable right now; contracts can still be uploaded.</p> }
+            else if (discovery is not null)
+            {
+                <p class="ip-muted" data-testid="ip-contract-discovery-source">@(discovery.SourceBound ? $"Bound source: {discovery.Archive}. {discovery.SourceSideBasis}" : "No canonical source binding — nothing is discovered from another snapshot.")</p>
+                @foreach (var limitation in discovery.Limitations) { <p class="ip-muted" data-testid="ip-contract-discovery-limitation">@limitation</p> }
+            }
+            <div class="ip-contract-sides">
+            @foreach (var role in new[] { IntegrationContractRole.Producer, IntegrationContractRole.Consumer })
+            {
+                var side = discovery?.Side(role);
+                var artifact = _contracts.FirstOrDefault(c => c.IntegrationId == definition.Id && c.Role == role);
+                var roleName = role == IntegrationContractRole.Producer ? "producer" : "consumer";
+                var errorId = $"ip-contract-error-{slug}-{roleName}";
+                var contractError = _contractErrors.TryGetValue((definition.Id, role), out var ce) ? ce : null;
+                var hasCandidates = side is { Candidates.Count: > 0 };
+                var reviewing = _candidateReview == (definition.Id, role);
+                var party = role == IntegrationContractRole.Producer ? definition.Producer : definition.Consumer.DisplayName;
+                <div class="ip-contract" data-testid="ip-contract" data-role="@role" data-configured="@(artifact is not null ? "true" : "false")" data-state="@(side?.State.ToString() ?? "")">
+                    <h5 class="ip-contract-role">@(role == IntegrationContractRole.Producer ? "Producer" : "Consumer")@(party is { Length: > 0 } ? $" — {party}" : "")</h5>
+                    <dl class="ip-dl ip-dl-fields">
+                        @if (side is not null)
+                        {
+                            <div><dt>Contract</dt><dd data-testid="ip-contract-state"><span class="ip-pill ip-pill-@IntegrationDetailPresentation.Tone(side.State)">@IntegrationContractLabels.State(side.State)</span></dd></div>
+                            @if (side.Primary is { } primary)
+                            {
+                                <div><dt>Type</dt><dd>@IntegrationContractLabels.Type(primary.Type)@(primary.Version is { } v ? $" · version {v}" : "")</dd></div>
+                                <div><dt>Source evidence</dt><dd class="ip-mono ip-wrap" data-testid="ip-contract-primary">@primary.File</dd></div>
+                                <div><dt>Why selected</dt><dd data-testid="ip-contract-why">@(primary.Evidence.FirstOrDefault()?.Text ?? "—") <span class="ip-field-reason">Evidence: @IntegrationContractLabels.Rank(primary.Rank)</span></dd></div>
+                            }
+                        }
+                        <div><dt>Selected contract</dt><dd>@if (artifact is not null)
+                            {
+                                <span class="ip-contract-file ip-wrap" data-testid="ip-contract-file">@artifact.FileName</span>
+                                <span class="ip-muted ip-mono"> @artifact.Format · sha256 @artifact.ShortHash · @artifact.FieldCount field(s)@(artifact.Version is { } version ? $" · {version}" : "")</span>
+                                <span class="ip-field-provenance" data-testid="ip-contract-origin">Provenance: @IntegrationContractLabels.Origin(artifact.Origin)@(artifact.SourceArchive is { } archive ? $" ({archive})" : "")</span>
+                                @if (side?.Selected is { Stale: true }) { <span class="ip-pill ip-pill-attention" data-testid="ip-contract-stale">Selected from an earlier source binding — needs confirmation</span> }
+                            }
+                            else { <span class="ip-muted">None selected</span> }</dd></div>
+                        @if (side is { ReferenceHints.Count: > 0 })
+                        {
+                            <div><dt>Reference metadata</dt><dd><ul class="ip-plain-list">@foreach (var hint in side.ReferenceHints) { <li>@hint</li> }</ul></dd></div>
+                        }
+                    </dl>
+                    @if (side is not null) { <p class="ip-muted" data-testid="ip-contract-explanation">@side.Explanation</p> }
+                    <div class="ip-contract-actions">
+                        @if (hasCandidates)
+                        {
+                            <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-contract-review" aria-expanded="@(reviewing ? "true" : "false")" aria-controls="@($"ip-candidates-{slug}-{roleName}")"
+                                    @onclick="() => _candidateReview = reviewing ? null : (definition.Id, role)">@(reviewing ? "Hide candidates" : $"Review candidate{(side!.Candidates.Count == 1 ? "" : "s")} ({side!.Candidates.Count})")</button>
+                        }
+                        @if (side?.Primary is { IsEntry: true, ContentAvailable: true } usable && side.State is IntegrationContractCandidateState.Resolved or IntegrationContractCandidateState.Candidate
+                             && (artifact is null || side.Selected is { Stale: true } || artifact.SourceContractId != usable.ContractId))
+                        {
+                            <button type="button" class="ip-link" data-testid="ip-contract-use-primary" disabled="@(_saveState == SaveState.Saving)" aria-label="@($"Use {System.IO.Path.GetFileName(usable.File)} as the {roleName} contract")"
+                                    @onclick="() => UseContractAsync(definition, discovery!, role, usable)">Use this contract</button>
+                        }
+                        <label class="ip-file-button">
+                            <InputFile class="ip-file-input" accept=".json,.xsd" OnChange="args => UploadContractAsync(definition, role, args)" aria-describedby="@(contractError is not null ? errorId : null)"
+                                       aria-label="@($"{(artifact is null ? hasCandidates ? "Upload a different" : "Upload" : "Replace")} {roleName} contract")" data-testid="ip-contract-input" />
+                            <span aria-hidden="true">@(artifact is not null ? "Replace" : hasCandidates ? "Upload different contract" : "Upload contract")</span>
+                        </label>
+                        @if (artifact is not null) { <button type="button" class="ip-link ip-link-danger" data-testid="ip-contract-remove" @onclick="() => RemoveContractAsync(definition, role)" aria-label="@($"Remove {roleName} contract {artifact.FileName}")">Remove</button> }
+                    </div>
+                    @if (contractError is not null) { <p class="ip-field-error" id="@errorId" role="alert" data-testid="ip-contract-error">Invalid contract: @contractError</p> }
+                    @if (reviewing && side is not null)
+                    {
+                        <div class="ip-candidates" id="@($"ip-candidates-{slug}-{roleName}")" data-testid="ip-contract-candidates" role="group" aria-label="@($"{(role == IntegrationContractRole.Producer ? "Producer" : "Consumer")} contract candidates")">
+                            <ul class="ip-plain-list">
+                                @foreach (var candidate in side.Candidates)
+                                {
+                                    <li class="ip-candidate" data-testid="ip-contract-candidate" data-rank="@candidate.Rank" data-entry="@(candidate.IsEntry ? "true" : "false")">
+                                        <p><strong class="ip-wrap">@System.IO.Path.GetFileName(candidate.File)</strong> <span class="ip-muted">@IntegrationContractLabels.Type(candidate.Type)@(candidate.Version is { } cv ? $" · version {cv}" : "")@(candidate.TargetNamespace is { } ns ? $" · {ns}" : "")</span></p>
+                                        <p class="ip-muted ip-mono ip-wrap">@candidate.File</p>
+                                        <p><span class="ip-pill ip-pill-@(candidate.Rank == IntegrationContractEvidenceRank.FilenameSimilarity ? "muted" : "info")">@IntegrationContractLabels.Rank(candidate.Rank)</span>
+                                            @if (candidate.TestCopy) { <span class="ip-pill ip-pill-muted">Test-project copy</span> }
+                                            @if (candidate.ParseFailed) { <span class="ip-pill ip-pill-attention">Parse failed</span> }</p>
+                                        <ul class="ip-evidence-list">@foreach (var item in candidate.Evidence) { <li>@item.Text</li> }</ul>
+                                        @if (candidate.SupportingSchemas.Count > 0) { <p class="ip-muted">Supporting schemas: @string.Join(", ", candidate.SupportingSchemas)</p> }
+                                        @if (candidate.ContentAvailable)
+                                        {
+                                            <button type="button" class="ip-link" data-testid="ip-contract-use" disabled="@(_saveState == SaveState.Saving || artifact?.SourceContractId == candidate.ContractId && side.Selected is { Stale: false })"
+                                                    aria-label="@($"Use {System.IO.Path.GetFileName(candidate.File)} as the {roleName} contract")" @onclick="() => UseContractAsync(definition, discovery!, role, candidate)">Use this contract</button>
+                                        }
+                                        else { <p class="ip-muted">Content not retained in the snapshot — upload it instead.</p> }
+                                    </li>
+                                }
+                            </ul>
+                            @if (side.Supporting.Count > 0)
+                            {
+                                <p class="ip-muted" data-testid="ip-contract-supporting">Supporting/library schemas (never the primary contract): @string.Join(", ", side.Supporting.Select(s => System.IO.Path.GetFileName(s.File)))</p>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            </div>
+            @{
+                var compatibility = discovery?.Compatibility ?? (_contracts.Count(c => c.IntegrationId == definition.Id) == 2 ? IntegrationContractCompatibilityState.ReadyToAssess : IntegrationContractCompatibilityState.NotAssessable);
+                var compatibilityReason = discovery?.CompatibilityReason ?? (compatibility == IntegrationContractCompatibilityState.ReadyToAssess
+                    ? "Both contracts are stored. Availability is not compatibility: the contracts still have to be compared."
+                    : "Needs a contract on both sides.");
+            }
+            <div class="ip-contract-compat" data-testid="ip-contract-compatibility" data-state="@compatibility">
+                <p><strong>Compatibility</strong> <span class="ip-pill ip-pill-@IntegrationDetailPresentation.Tone(compatibility)">@IntegrationContractLabels.Compatibility(compatibility)</span></p>
+                <p class="ip-muted">@compatibilityReason</p>
+                @if (discovery is { CompatibilityDifferences.Count: > 0 }) { <ul class="ip-evidence-list" data-testid="ip-contract-differences">@foreach (var difference in discovery.CompatibilityDifferences) { <li class="ip-wrap">@difference</li> }</ul> }
+            </div>
+        </section>
+    };
+
+    /// <summary>Reads contract discovery for an opened detail (once per load). Never selects or binds anything.</summary>
+    private async Task LoadDiscoveryAsync(string integrationId)
+    {
+        var environmentId = Profile.Id;
+        try
+        {
+            var discovery = await Api.ContractDiscoveryAsync(environmentId, integrationId);
+            if (Profile.Id == environmentId) _discoveries[integrationId] = discovery;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or NotSupportedException)
+        {
+            if (Profile.Id == environmentId) _discoveries[integrationId] = null;
+        }
+        finally { _discoveryLoading.Remove(integrationId); }
+    }
+
+    /// <summary>A person uses one discovered candidate for one side: stored with its snapshot as provenance; the binding is never changed.</summary>
+    private async Task UseContractAsync(IntegrationDefinition definition, IntegrationContractDiscovery discovery, IntegrationContractRole role, IntegrationContractCandidate candidate)
+    {
+        if (discovery.SnapshotId is not { } snapshotId) return;
+        var key = (definition.Id, role);
+        _contractErrors.Remove(key);
+        string? rejected = null;
+        await TrackAsync($"{System.IO.Path.GetFileName(candidate.File)} selected from source evidence as the {role.ToString().ToLowerInvariant()} contract of {definition.DisplayName}.", async () =>
+        {
+            var (_, error) = await Api.SelectSourceContractAsync(new IntegrationContractSourceSelectionRequest(Profile.Id, definition.Id, role, snapshotId, candidate.ContractId));
+            rejected = error;
+        });
+        if (rejected is not null)
+        {
+            _contractErrors[key] = rejected;
+            _saveState = SaveState.Failed;
+            _saveMessage = $"Save failed: the {role.ToString().ToLowerInvariant()} contract was not selected.";
+        }
+        else _candidateReview = null;
+    }
+
     public void Dispose() { _mappingCancellation.Cancel(); _mappingCancellation.Dispose(); }
 
     private sealed record EditState(IntegrationDefinition? Original);
@@ -800,6 +1050,8 @@
             _catalog = await Api.GetCatalogAsync(Profile);
             _notices.AddRange(_catalog.Notices.Except(_notices).ToList());
             _contracts = await Api.ContractsAsync(Profile.Id);
+            // Discovery depends on the binding and the stored contracts: re-read it for the open detail after every change.
+            _discoveries.Clear();
             _messaging = await Api.ApplicationMessagingAsync(Profile.Id);
             try { _bindings = await Api.ListEvidenceBindingsAsync(Profile.Id) ?? []; }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _bindings = []; }

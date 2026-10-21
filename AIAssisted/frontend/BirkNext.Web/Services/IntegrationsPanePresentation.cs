@@ -76,39 +76,18 @@ public static class IntegrationsPanePresentation
     }
 
     /// <summary>
-    /// What Integration Quality Review can assess for this integration — not whether its configuration is complete. An unknown
-    /// consumer group or missing contract limits only the checks that need them.
+    /// What Integration Quality Review can assess for this integration — not whether its configuration is complete. The shared, causal rules
+    /// (<see cref="IntegrationReadinessRules"/>) decide it from the kind's review profile; a not-applicable field never limits it.
     /// </summary>
     public static (string Label, string Detail) ReviewReadiness(IntegrationDefinition definition, IntegrationPlatform? platform = null,
         IntegrationConfigurationState configuration = IntegrationConfigurationState.Ready)
     {
-        if (!definition.Enabled) return ("Not included", "Disabled integrations are not reviewed.");
-        if (definition.Kind != IntegrationKind.EventHub) return ("Configuration only", $"Domain review for {IntegrationConfigurationRules.KindLabel(definition.Kind)} is not implemented yet.");
-        var limits = new List<string>();
-        if (definition.Consumer.MappingState != ConsumerMappingState.Confirmed) limits.Add("consumer not confirmed");
-        var (group, assumed) = IntegrationConfigurationRules.EffectiveConsumerGroup(definition, platform);
-        if (group is null) limits.Add("consumer group unknown (no checkpoint review)");
-        else if (assumed) limits.Add($"consumer group {group} is a configured assumption (needs confirmation; no checkpoint verdict)");
-        if (definition.ContractRelationship == ContractRelationshipState.NotConfigured) limits.Add("no contract (no compatibility review)");
-        if (platform is not null)
-        {
-            var runtime = platform.RuntimeEvidence;
-            var missingRuntime = new List<string>();
-            if (runtime?.EventHubMetadata != true) missingRuntime.Add("Event Hub metadata");
-            if (runtime?.ResolvedCheckpointContainerUrl() is null) missingRuntime.Add("checkpoint evidence");
-            // Telemetry is Application Insights by resource or a Log Analytics workspace; a workspace is never required.
-            if (runtime?.TelemetryConfigured != true) missingRuntime.Add("runtime telemetry");
-            if (missingRuntime.Count > 0) limits.Add("not configured: " + string.Join(", ", missingRuntime));
-        }
-        if (limits.Count == 0) return ("Ready", "All configured prerequisites are present.");
-        var lead = configuration == IntegrationConfigurationState.NeedsConfiguration
-            ? "Some configuration is missing, so the checks that need it are not assessed."
-            : "Configuration is usable, but some runtime, checkpoint, consumer or contract evidence is unavailable.";
-        return ("Partial", $"{lead} Missing: {string.Join("; ", limits)}. Partial is not a failure; the review runs with limitations.");
+        var readiness = IntegrationReadinessRules.Assess(definition, platform);
+        return (readiness.Label, readiness.Detail);
     }
 
     /// <summary>Review readiness labels in filter order. Values are the ones <see cref="ReviewReadiness"/> produces — no extra states.</summary>
-    public static readonly string[] ReadinessLabels = ["Ready", "Partial", "Configuration only", "Not included"];
+    public static readonly string[] ReadinessLabels = IntegrationReadinessRules.Labels;
 
     /// <summary>The configured producer text as entered — no technology is special-cased.</summary>
     private static string ProducerShort(string? producer) => string.IsNullOrWhiteSpace(producer) ? "Not configured" : producer;

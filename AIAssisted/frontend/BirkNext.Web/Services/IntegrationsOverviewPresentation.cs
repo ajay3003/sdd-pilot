@@ -17,8 +17,9 @@ public sealed record SuggestionSummary(bool Available, int Total, int StronglySu
 /// </summary>
 public enum TerraformSupport { NotCompared, SeededAssumption, Supported, NeedsReview }
 
-/// <summary>Runtime evidence configuration of an integration or environment: configuration only, never observed health.</summary>
-public enum RuntimeEvidenceStatus { NotConfigured, Partial, Configured }
+/// <summary>Runtime evidence setup of an integration or environment: whether its runtime evidence SOURCES are configured — never observed health.
+/// Unavailable: the integration's kind has no runtime evidence provider (e.g. HTTP/API), so there is nothing to configure.</summary>
+public enum RuntimeEvidenceStatus { NotConfigured, Partial, Configured, Unavailable }
 
 /// <summary>
 /// Target Environment → Integrations overview: configured integrations, suggestions from Source Analysis and runtime-evidence setup. It reads
@@ -141,9 +142,19 @@ public static class IntegrationsOverviewPresentation
         }
     }
 
-    /// <summary>The environment's runtime-evidence setup: Not configured while nothing is configured or no platform has any source.</summary>
+    /// <summary>Kinds whose runtime evidence comes from a configured platform source (namespace metadata, checkpoints, telemetry, SCIM endpoint).</summary>
+    public static bool HasRuntimeProvider(IntegrationKind kind) => kind is IntegrationKind.EventHub or IntegrationKind.ServiceBus or IntegrationKind.IdentityProvisioning;
+
+    /// <summary>One integration's runtime evidence setup: Unavailable when its kind has no runtime provider, else its platform's sources.</summary>
+    public static RuntimeEvidenceStatus Runtime(IntegrationDefinition definition, IntegrationPlatform? platform) =>
+        HasRuntimeProvider(definition.Kind) ? Runtime(platform) : RuntimeEvidenceStatus.Unavailable;
+
+    /// <summary>The environment's runtime-evidence setup: Not configured while nothing is configured or no platform has any source; Unavailable
+    /// when no configured integration has a kind with a runtime evidence provider.</summary>
     public static RuntimeEvidenceStatus Runtime(IntegrationCatalog catalog)
     {
+        if (catalog.Integrations.Count > 0 && !catalog.Integrations.Any(i => HasRuntimeProvider(i.Kind)) && !catalog.Platforms.Any(p => p.Kind == IntegrationKind.IdentityProvisioning))
+            return RuntimeEvidenceStatus.Unavailable;
         var used = catalog.Platforms.Where(p => catalog.Integrations.Any(i => i.PlatformId == p.Id) || p.Kind == IntegrationKind.IdentityProvisioning).Select(Runtime).ToList();
         if (catalog.Integrations.Count == 0 || used.Count == 0 || used.All(s => s == RuntimeEvidenceStatus.NotConfigured)) return RuntimeEvidenceStatus.NotConfigured;
         return used.All(s => s == RuntimeEvidenceStatus.Configured) ? RuntimeEvidenceStatus.Configured : RuntimeEvidenceStatus.Partial;
@@ -153,7 +164,19 @@ public static class IntegrationsOverviewPresentation
     {
         RuntimeEvidenceStatus.Configured => "Configured",
         RuntimeEvidenceStatus.Partial => "Partial",
+        RuntimeEvidenceStatus.Unavailable => "Unavailable",
         _ => "Not configured",
+    };
+
+    /// <summary>What a runtime evidence status means (evidence setup, never health).</summary>
+    public static string Meaning(RuntimeEvidenceStatus status, IntegrationKind? kind = null) => status switch
+    {
+        RuntimeEvidenceStatus.Configured => "Runtime evidence sources are configured. Configured is not observed: a review run reads them.",
+        RuntimeEvidenceStatus.Partial => "Some runtime evidence sources are configured; the checks that need the others are not assessed.",
+        RuntimeEvidenceStatus.Unavailable => kind is { } k
+            ? $"No runtime evidence provider exists for {IntegrationConfigurationRules.KindLabel(k)} integrations; nothing is observed at runtime, and there is nothing to configure."
+            : "No configured integration has a runtime evidence provider; nothing is observed at runtime.",
+        _ => "The platform's runtime evidence sources are not configured, so runtime evidence cannot be read. This is not a health result.",
     };
 
     public static string Tone(RuntimeEvidenceStatus status) => status switch

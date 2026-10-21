@@ -32,7 +32,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     {
         var cut = Open();
         cut.FindAll(".ip-summary > div").Should().HaveCount(4);
-        cut.FindAll(".ip-summary dt").Select(d => d.TextContent).Should().Equal("Environment", "Configured integrations", "Source suggestions", "Runtime evidence");
+        cut.FindAll(".ip-summary dt").Select(d => d.TextContent).Should().Equal("Environment", "Configured integrations", "New integrations suggested by source", "Runtime evidence");
         cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");
         cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("15 mappings need confirmation");
         cut.Find("[data-testid=ip-review-mappings]").Click();

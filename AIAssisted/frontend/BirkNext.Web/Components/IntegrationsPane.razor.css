@@ -219,3 +219,34 @@
 @media (max-width: 600px) {
     ::deep .ip-editor-actions > .btn-primary, ::deep .ip-editor-actions > .btn-secondary { flex: 1 1 100%; }
 }
+
+/* Integration detail: grouped (identity & routing, evidence, authentication, contracts, runtime/health, readiness). Each field shows its
+   resolution as text, then value, provenance, requirement and reason — never one ambiguous combined value. */
+.ip-detail-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: .6rem; min-width: 0; }
+.ip-group { min-width: 0; padding: .5rem .65rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; align-content: start; }
+.ip-group-wide { grid-column: 1 / -1; }
+.ip-group h4 { margin: 0; font-size: .88rem; }
+.ip-group h5 { margin: 0; font-size: .84rem; }
+.ip-group p { margin: 0; }
+.ip-dl-fields { grid-template-columns: minmax(0, 1fr); gap: .45rem; }
+.ip-dl-fields > div { display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr); gap: .1rem .6rem; align-items: baseline; }
+.ip-dl-fields dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .45rem; min-width: 0; }
+.ip-field-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; min-width: 0; }
+.ip-field-provenance, .ip-field-requirement { font-size: .74rem; color: var(--clr-text-muted); }
+.ip-field-requirement { border: 1px dashed var(--clr-border); border-radius: 999px; padding: 0 .4rem; }
+.ip-field-reason { flex-basis: 100%; font-size: .76rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.ip-readiness-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr)); gap: .6rem 1.2rem; min-width: 0; }
+.ip-readiness-cols > div { min-width: 0; display: grid; gap: .3rem; align-content: start; }
+.ip-readiness-list ul, .ip-evidence-list, .ip-plain-list { margin: .1rem 0 0; padding-left: 1.1rem; font-size: .8rem; overflow-wrap: anywhere; }
+.ip-plain-list { padding-left: 0; list-style: none; display: grid; gap: .4rem; }
+.ip-readiness-heading { font-size: .74rem; font-weight: 600; color: var(--clr-text-muted); }
+.ip-contract-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: .6rem; min-width: 0; }
+.ip-contracts .ip-contract { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: .35rem; padding: .45rem .55rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); }
+.ip-contracts .ip-contract-role { min-width: 0; }
+.ip-contract-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .7rem; }
+.ip-candidates { border-top: 1px solid var(--clr-border); padding-top: .4rem; min-width: 0; }
+.ip-candidate { padding: .35rem .45rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); display: grid; gap: .2rem; min-width: 0; }
+.ip-contract-compat { display: grid; gap: .25rem; min-width: 0; }
+@media (max-width: 600px) {
+    .ip-dl-fields > div { grid-template-columns: minmax(0, 1fr); }
+}

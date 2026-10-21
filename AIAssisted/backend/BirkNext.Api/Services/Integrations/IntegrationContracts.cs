@@ -176,6 +176,11 @@ public interface IIntegrationContractStore
     Task<IReadOnlyList<IntegrationContractArtifact>> ListAsync(string environmentId, CancellationToken ct = default);
     Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveAsync(IntegrationContractUpload upload, CancellationToken ct = default);
     Task<bool> DeleteAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default);
+    /// <summary>Stores a contract a person selected from the integration's bound source evidence (explicit; replaces only that side).</summary>
+    Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveSourceSelectionAsync(string environmentId, string integrationId, IntegrationContractRole role,
+        Guid snapshotId, string archive, string contractId, string fileName, string content, CancellationToken ct = default);
+    /// <summary>The stored content of one side's contract, for structural comparison (null when none is stored).</summary>
+    Task<(IntegrationContractArtifact Artifact, string Content)?> ContentAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default);
     /// <summary>Every artifact of the environment with its parsed contract (a stored artifact that no longer parses has a problem instead).</summary>
     Task<IReadOnlyList<(IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)>> LoadAsync(string environmentId, CancellationToken ct = default);
 }
@@ -193,28 +198,91 @@ public sealed class IntegrationContractStore(AppDbContext db, IIntegrationCatalo
         if (string.IsNullOrWhiteSpace(upload.EnvironmentId) || string.IsNullOrWhiteSpace(upload.IntegrationId))
             return (null, "A contract must be bound to a Target Environment and an integration.");
         var fileName = System.IO.Path.GetFileName((upload.FileName ?? "").Replace('\\', '/'));
-        var (contract, error) = JsonSchemaContract.Parse(fileName, upload.Content);
-        if (contract is null)
+        IntegrationContractArtifact artifact;
+        if (fileName.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))
         {
-            logger.LogInformation("Contract rejected for {IntegrationId} ({Role}) in {EnvironmentId}: {Reason}", upload.IntegrationId, upload.Role, upload.EnvironmentId, error);
-            return (null, error);
+            var (xsd, xsdError) = ParseXsd(fileName, upload.Content);
+            if (xsd is null)
+            {
+                logger.LogInformation("Contract rejected for {IntegrationId} ({Role}) in {EnvironmentId}: {Reason}", upload.IntegrationId, upload.Role, upload.EnvironmentId, xsdError);
+                return (null, xsdError);
+            }
+            artifact = xsd with { EnvironmentId = upload.EnvironmentId, IntegrationId = upload.IntegrationId, Role = upload.Role };
         }
-        var role = upload.Role.ToString();
-        var record = await db.IntegrationContractArtifacts.FirstOrDefaultAsync(a => a.EnvironmentId == upload.EnvironmentId && a.IntegrationId == upload.IntegrationId && a.Role == role, ct);
-        var artifact = new IntegrationContractArtifact
+        else
         {
-            EnvironmentId = upload.EnvironmentId, IntegrationId = upload.IntegrationId, Role = upload.Role, FileName = fileName, ContentHash = JsonSchemaContract.Hash(upload.Content),
-            Version = contract.Version, FieldCount = contract.Fields.Count, ImportedAt = DateTimeOffset.UtcNow,
+            var (contract, error) = JsonSchemaContract.Parse(fileName, upload.Content);
+            if (contract is null)
+            {
+                logger.LogInformation("Contract rejected for {IntegrationId} ({Role}) in {EnvironmentId}: {Reason}", upload.IntegrationId, upload.Role, upload.EnvironmentId, error);
+                return (null, error);
+            }
+            artifact = new IntegrationContractArtifact
+            {
+                EnvironmentId = upload.EnvironmentId, IntegrationId = upload.IntegrationId, Role = upload.Role, FileName = fileName, ContentHash = JsonSchemaContract.Hash(upload.Content),
+                Version = contract.Version, FieldCount = contract.Fields.Count, ImportedAt = DateTimeOffset.UtcNow,
+            };
+        }
+        return (await StoreAsync(artifact, upload.Content, ct), null);
+    }
+
+    public async Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveSourceSelectionAsync(string environmentId, string integrationId, IntegrationContractRole role,
+        Guid snapshotId, string archive, string contractId, string fileName, string content, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId))
+            return (null, "A contract must be bound to a Target Environment and an integration.");
+        var (xsd, error) = ParseXsd(System.IO.Path.GetFileName(fileName.Replace('\\', '/')), content);
+        if (xsd is null) return (null, error);
+        var artifact = xsd with
+        {
+            EnvironmentId = environmentId, IntegrationId = integrationId, Role = role, Origin = IntegrationContractOrigin.SourceSelection,
+            SourceSnapshotId = snapshotId, SourceArchive = archive, SourceContractId = contractId,
         };
-        if (record is null) db.IntegrationContractArtifacts.Add(record = new IntegrationContractArtifactRecord { EnvironmentId = upload.EnvironmentId, IntegrationId = upload.IntegrationId, Role = role });
-        record.Content = upload.Content;
+        return (await StoreAsync(artifact, content, ct), null);
+    }
+
+    public async Task<(IntegrationContractArtifact Artifact, string Content)?> ContentAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default)
+    {
+        var name = role.ToString();
+        var record = await db.IntegrationContractArtifacts.AsNoTracking().FirstOrDefaultAsync(a => a.EnvironmentId == environmentId && a.IntegrationId == integrationId && a.Role == name, ct);
+        return record is null ? null : (Metadata(record), record.Content);
+    }
+
+    /// <summary>An XSD read with the same parser Source Analysis uses (no DTD, no resolver, imports never fetched).</summary>
+    private static (IntegrationContractArtifact? Artifact, string? Error) ParseXsd(string fileName, string content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return (null, "The file is empty.");
+        if (System.Text.Encoding.UTF8.GetByteCount(content) > JsonSchemaContract.MaxBytes) return (null, $"The file is larger than {JsonSchemaContract.MaxBytes / 1024} KB.");
+        try
+        {
+            var parsed = BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadXmlSchema(fileName, content);
+            if (parsed?.XmlSchema is null) return (null, "The file is not an XML Schema (xs:schema root expected).");
+            return (new IntegrationContractArtifact
+            {
+                FileName = fileName, Format = "XSD", ContentHash = JsonSchemaContract.Hash(content), Version = parsed.Version,
+                FieldCount = parsed.XmlSchema.Elements.Count, ImportedAt = DateTimeOffset.UtcNow,
+            }, null);
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or System.Xml.Schema.XmlSchemaException)
+        {
+            return (null, "The file is not a readable XML Schema.");
+        }
+    }
+
+    private async Task<IntegrationContractArtifact> StoreAsync(IntegrationContractArtifact artifact, string content, CancellationToken ct)
+    {
+        var role = artifact.Role.ToString();
+        var record = await db.IntegrationContractArtifacts.FirstOrDefaultAsync(a => a.EnvironmentId == artifact.EnvironmentId && a.IntegrationId == artifact.IntegrationId && a.Role == role, ct);
+        if (record is null) db.IntegrationContractArtifacts.Add(record = new IntegrationContractArtifactRecord { EnvironmentId = artifact.EnvironmentId, IntegrationId = artifact.IntegrationId, Role = role });
+        record.Content = content;
         record.ContentHash = artifact.ContentHash;
         record.DocumentJson = JsonSerializer.Serialize(artifact, Json);
         record.ImportedAt = artifact.ImportedAt;
         await db.SaveChangesAsync(ct);
-        await SyncRelationshipAsync(upload.EnvironmentId, upload.IntegrationId, ct);
-        logger.LogInformation("Contract {Role} for {IntegrationId} in {EnvironmentId} stored: {FileName}, {Hash}, {Fields} field(s).", role, upload.IntegrationId, upload.EnvironmentId, fileName, artifact.ShortHash, artifact.FieldCount);
-        return (artifact, null);
+        await SyncRelationshipAsync(artifact.EnvironmentId, artifact.IntegrationId, ct);
+        logger.LogInformation("Contract {Role} for {IntegrationId} in {EnvironmentId} stored ({Origin}): {FileName}, {Hash}, {Fields} field(s).", role, artifact.IntegrationId, artifact.EnvironmentId,
+            artifact.Origin, artifact.FileName, artifact.ShortHash, artifact.FieldCount);
+        return artifact;
     }
 
     public async Task<bool> DeleteAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default)
@@ -230,7 +298,14 @@ public sealed class IntegrationContractStore(AppDbContext db, IIntegrationCatalo
 
     public async Task<IReadOnlyList<(IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)>> LoadAsync(string environmentId, CancellationToken ct = default) =>
         (await db.IntegrationContractArtifacts.AsNoTracking().Where(a => a.EnvironmentId == environmentId).ToListAsync(ct))
-            .Select(r => { var meta = Metadata(r); var (contract, error) = JsonSchemaContract.Parse(meta.FileName, r.Content); return (meta, contract, error); }).ToList();
+            .Select(r =>
+            {
+                var meta = Metadata(r);
+                // JSON Schema is what the event-stream review compares; an XSD stays a stored contract with that limitation stated.
+                if (meta.Format == "XSD") return (meta, (JsonSchemaContract?)null, (string?)"XSD contract: the event-stream review compares JSON Schema contracts only.");
+                var (contract, error) = JsonSchemaContract.Parse(meta.FileName, r.Content);
+                return (meta, contract, error);
+            }).ToList();
 
     /// <summary>The configured relationship follows the uploaded artifacts (Producer / Consumer / Both available). "Verified" is set by a person only and is kept.</summary>
     private async Task SyncRelationshipAsync(string environmentId, string integrationId, CancellationToken ct)

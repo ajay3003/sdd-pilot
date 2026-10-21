@@ -223,6 +223,40 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         return Task.CompletedTask;
     }
 
+    /// <summary>Contract discovery per integration id (null = discovery unavailable, as when the backend cannot read it).</summary>
+    public Dictionary<string, IntegrationContractDiscovery> Discoveries { get; } = [];
+
+    public Task<IntegrationContractDiscovery?> ContractDiscoveryAsync(string environmentId, string integrationId, CancellationToken ct = default)
+    {
+        Calls.Add($"contract-discovery:{integrationId}");
+        if (!Discoveries.TryGetValue(integrationId, out var discovery)) return Task.FromResult<IntegrationContractDiscovery?>(null);
+        // The stored contracts are part of discovery (as the backend reports them); a source selection pins its snapshot.
+        IntegrationContractSide WithSelection(IntegrationContractSide side) => Contracts.FirstOrDefault(c => c.IntegrationId == integrationId && c.Role == side.Role) is { } stored
+            ? side with { Selected = new IntegrationContractSelection { Origin = stored.Origin, FileName = stored.FileName, Format = stored.Format, ShortHash = stored.ShortHash,
+                ContractId = stored.SourceContractId, SourceSnapshotId = stored.SourceSnapshotId, SourceArchive = stored.SourceArchive,
+                Stale = stored.Origin == IntegrationContractOrigin.SourceSelection && stored.SourceSnapshotId != discovery.SnapshotId } }
+            : side with { Selected = null };
+        return Task.FromResult<IntegrationContractDiscovery?>(discovery with { Producer = WithSelection(discovery.Producer), Consumer = WithSelection(discovery.Consumer) });
+    }
+
+    public Task<(IntegrationContractArtifact? Artifact, string? Error)> SelectSourceContractAsync(IntegrationContractSourceSelectionRequest request, CancellationToken ct = default)
+    {
+        Calls.Add($"contract-select:{request.IntegrationId}:{request.Role}:{request.ContractId}");
+        Mutating();
+        var discovery = Discoveries.GetValueOrDefault(request.IntegrationId);
+        var candidate = discovery?.Side(request.Role).Candidates.FirstOrDefault(c => c.ContractId == request.ContractId);
+        if (discovery is null || candidate is null || discovery.SnapshotId != request.SnapshotId) return Task.FromResult<(IntegrationContractArtifact?, string?)>((null, "That contract is not a candidate for this side in the bound source."));
+        var artifact = new IntegrationContractArtifact
+        {
+            EnvironmentId = request.EnvironmentId, IntegrationId = request.IntegrationId, Role = request.Role, FileName = System.IO.Path.GetFileName(candidate.File), Format = "XSD",
+            ContentHash = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210", FieldCount = 12, ImportedAt = DateTimeOffset.UtcNow,
+            Origin = IntegrationContractOrigin.SourceSelection, SourceSnapshotId = request.SnapshotId, SourceArchive = discovery.Archive, SourceContractId = candidate.ContractId,
+        };
+        Contracts.RemoveAll(c => c.IntegrationId == request.IntegrationId && c.Role == request.Role);
+        Contracts.Add(artifact);
+        return Task.FromResult<(IntegrationContractArtifact?, string?)>((artifact, null));
+    }
+
     public Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {
         Calls.Add("import");

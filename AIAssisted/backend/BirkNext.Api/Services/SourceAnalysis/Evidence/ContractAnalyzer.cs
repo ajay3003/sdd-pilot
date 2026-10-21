@@ -21,10 +21,10 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// </summary>
 internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.Contracts, "Contract and schema analyzer", Version, 1,
         ["OpenAPI", "GraphQL SDL", "GraphQL operations", "AsyncAPI", "JSON Schema", "Protobuf", "Message contracts (C#)", "Generated clients"], [],
-        ["Contracts", "Operations", "Types and fields (required/optional)", "Producer/consumer hints", "Contract drift classes"]);
+        ["Contracts", "Operations", "Types and fields (required/optional)", "Producer/consumer hints", "Code and project references to contract files", "Contract drift classes"]);
 
     private const int MaxTypes = 200;
     private const int MaxOperations = 400;
@@ -93,6 +93,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         }
 
         contracts.AddRange(GeneratedClients(context));
+        contracts = CodeReferences(context, contracts, ct);
 
         context.Contracts = context.Envelope(new ContractEvidence
         {
@@ -144,6 +145,72 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                 : docs ? "Documentation/specification copy — no owning project" : "No owning project",
             EvidenceState = ArchitectureEvidenceState.Inferred,
         };
+    }
+
+    // ── Code references ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private const int MaxReferencesPerContract = 20;
+    private static readonly Regex SchemaLoading = new(@"XmlSchemaSet|XmlSchema\.Read|Schemas\.Add|ValidationType\.Schema|JsonSchema|\.Validate\s*\(|XmlSerializer|Deserialize",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex PackagedItem = new(@"<(EmbeddedResource|Content|None)\s+[^>]*Include\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Which source, test, configuration and project files name a formal contract's file literally — the evidence integration contract
+    /// discovery ranks by (a validator reference beats a packaged file, which beats a test reference). Literal file names only: a name built at
+    /// runtime or loaded from storage leaves no reference, which discovery reports as such rather than guessing.
+    /// </summary>
+    private static List<SourceContract> CodeReferences(SourceEvidenceContext context, List<SourceContract> contracts, CancellationToken ct)
+    {
+        var formal = contracts.Where(c => c.Type is not SourceContractType.MessageContract and not SourceContractType.GeneratedClient && c.File.Contains('.')).ToList();
+        if (formal.Count == 0) return contracts;
+        var names = formal.Select(c => System.IO.Path.GetFileName(c.File)).Where(n => n.Length > 4).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var found = new Dictionary<string, List<SourceContractCodeReference>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in context.Files.Where(f => f.Role is SourceFileRole.SourceCode or SourceFileRole.Test or SourceFileRole.Configuration))
+        {
+            ct.ThrowIfCancellationRequested();
+            var loads = file.Role != SourceFileRole.Configuration && SchemaLoading.IsMatch(file.Content);
+            var test = file.Role == SourceFileRole.Test || context.ProjectOf(file.Path)?.IsTest == true;
+            foreach (var name in names)
+            {
+                var at = file.Content.IndexOf(name, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) continue;
+                var kind = test ? "Test code reference" : file.Role == SourceFileRole.Configuration ? "Configuration reference" : loads ? "Validator" : "Code reference";
+                Add(name, new(SourceEvidenceRedaction.SafePath(file.Path), file.Line(at), kind, context.ComponentOf(file.Path)?.Name));
+            }
+        }
+        // A project file that packages the contract (EmbeddedResource/Content glob) ties it to that project's component — not to a handler.
+        foreach (var project in context.Files.Where(f => f.Role == SourceFileRole.ProjectMetadata && f.Path.EndsWith("proj", StringComparison.OrdinalIgnoreCase)))
+            foreach (Match match in PackagedItem.Matches(project.Content))
+            {
+                var pattern = Glob(project.Directory, match.Groups[2].Value);
+                foreach (var contract in formal.Where(c => pattern.IsMatch(c.File)))
+                    Add(System.IO.Path.GetFileName(contract.File), new(SourceEvidenceRedaction.SafePath(project.Path), project.Line(match.Index), "Embedded resource",
+                        context.ComponentOf(contract.File)?.Name), contract.File);
+            }
+        // A contract's references: those naming its file (any copy with that name) plus the project files that package exactly its path.
+        return [.. contracts.Select(c =>
+        {
+            if (!formal.Contains(c)) return c;
+            var references = (found.GetValueOrDefault(System.IO.Path.GetFileName(c.File)) ?? []).Concat(found.GetValueOrDefault(c.File) ?? [])
+                .DistinctBy(r => (r.File, r.Kind)).Take(MaxReferencesPerContract).ToList();
+            return references.Count == 0 ? c : c with { CodeReferences = references };
+        })];
+
+        void Add(string name, SourceContractCodeReference reference, string? exactPath = null)
+        {
+            var key = exactPath ?? name;
+            if (!found.TryGetValue(key, out var list)) found[key] = list = [];
+            if (list.Count < MaxReferencesPerContract && !list.Any(r => r.File == reference.File && r.Kind == reference.Kind)) list.Add(reference);
+        }
+    }
+
+    /// <summary>An MSBuild include (relative to the project directory, <c>\</c> or <c>/</c>, <c>*</c>/<c>**</c>) as a path regex.</summary>
+    private static Regex Glob(string projectDirectory, string include)
+    {
+        var relative = include.Replace('\\', '/').TrimStart('.', '/');
+        var full = projectDirectory.Length == 0 ? relative : $"{projectDirectory}/{relative}";
+        var pattern = Regex.Escape(full).Replace(@"\*\*/", "(?:.*/)?").Replace(@"\*\*", ".*").Replace(@"\*", "[^/]*").Replace(@"\?", "[^/]");
+        return new Regex($"^{pattern}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     private static SourceContract Base(EvidenceFile file, SourceContractType type, string format) => new()

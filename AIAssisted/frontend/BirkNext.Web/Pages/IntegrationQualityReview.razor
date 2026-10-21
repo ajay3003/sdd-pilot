@@ -216,7 +216,7 @@
                                 <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-contract-missing">@foreach (var item in b.NotVerified) { <li>@item</li> }</ul></div>
                         </div>
                     }
-                    else { <p class="iqr-muted">Event contracts (for example JSON Schema) are referenced in Target Environment → Integrations; schema contracts found by Source Analysis come from the bound snapshot. Configured is not observed.</p> }
+                    else { <p class="iqr-muted">Integration contracts (XSD, JSON Schema, OpenAPI, AsyncAPI, WSDL, Protobuf, GraphQL schema) are discovered per side from each integration's bound snapshot in Target Environment → Integrations; uploading is the fallback. Configured is not observed.</p> }
                     <div class="iqr-system-actions">
                         <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusContracts)" data-testid="iqr-manage-contracts">Manage contract references in Integrations</a>
                     </div>

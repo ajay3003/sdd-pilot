@@ -325,6 +325,7 @@ public sealed class IntegrationJourneyService(
                             : evidence.Candidates.Select(c => c.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1 ? TestPackSourceState.ReviewRequired : TestPackSourceState.AvailableNotBound,
                         SchemaName = view.SchemaName,
                         SchemaFiles = [.. view.SchemaCandidates.Where(c => bound is null || c.SnapshotId == bound.Id).Select(c => c.File).Distinct(StringComparer.Ordinal)],
+                        SourceSide = template.EvidenceSourceSide, ReferenceSide = template.Reference?.Side ?? IntegrationSourceSide.Unknown,
                     });
                 }
             }

@@ -189,7 +189,7 @@ public static class IntegrationReviewExport
         sb.Append(table(["Integration", "Topic", "Consumer", "Mapping", "Consumer group", "Configuration"], result.ConfigurationSnapshot.Integrations.Where(i => i.Enabled).Select(i => new[]
         {
             esc(i.DisplayName), esc(i.EndpointOrTopic ?? "Not configured"), esc(i.Consumer.DisplayName ?? "Needs confirmation"),
-            esc(IntegrationConfigurationRules.MappingLabel(i.Consumer.MappingState)), esc(i.ConsumerGroup ?? "Unknown / not configured"),
+            esc(IntegrationConfigurationRules.MappingLabel(i.Consumer.MappingState)), esc(ConsumerGroup(i, result.ConfigurationSnapshot.Platforms.FirstOrDefault(p => p.Id == i.PlatformId))),
             esc(IntegrationConfigurationRules.Label(IntegrationConfigurationRules.Evaluate(i, result.ConfigurationSnapshot.Platforms.FirstOrDefault(p => p.Id == i.PlatformId)).State)),
         })));
         sb.Append("</section>\n");
@@ -233,4 +233,10 @@ public static class IntegrationReviewExport
 
         return buildHtml("Integration Quality Review", projectName, $"Environment: {result.EnvironmentName}  Completed: {result.CompletedAt:yyyy-MM-dd HH:mm} UTC", sb.ToString());
     }
+
+    /// <summary>The consumer group column: the configured value, else the shared field state (Not configured / Not applicable / Needs confirmation) — one state, never "Unknown / not configured".</summary>
+    private static string ConsumerGroup(IntegrationDefinition integration, IntegrationPlatform? platform) =>
+        IntegrationFieldRules.Assess(integration, platform).Field(IntegrationField.ConsumerGroup) is { } group
+            ? group.Value is { } value ? group.Resolution == IntegrationFieldResolution.Configured ? value : $"{value} ({IntegrationFieldRules.Label(group.Resolution).ToLowerInvariant()})" : IntegrationFieldRules.Label(group.Resolution)
+            : "—";
 }

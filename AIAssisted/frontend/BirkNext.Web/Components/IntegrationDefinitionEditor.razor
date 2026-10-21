@@ -93,9 +93,13 @@
         {
             <p class="ip-muted" data-testid="ip-edit-kind-first">Choose a type to see the fields that apply to it.</p>
         }
-        else if (_model.Kind != IntegrationKind.EventHub)
+        else if (IntegrationReviewCapabilities.Of(_model.Kind.Value) == IntegrationReviewCapability.ConfigurationOnly)
         {
-            <p class="ip-muted" data-testid="ip-edit-kind-note">Integration Quality Review assesses configuration for this type; its domain review is not implemented yet.</p>
+            <p class="ip-muted" data-testid="ip-edit-kind-note">Integration Quality Review assesses configuration for this type; no domain review profile exists for it.</p>
+        }
+        else if (_model.Kind == IntegrationKind.HttpApi)
+        {
+            <p class="ip-muted" data-testid="ip-edit-kind-note">HTTP/API integrations are reviewed with their own profile (endpoint, authentication evidence, contracts, the consumer's source). Consumer group, source resource and worker endpoint do not apply. Authentication is needed only when the endpoint requires callers to authenticate.</p>
         }
         <label class="ip-field">Integration system
             <input class="form-control" data-testid="ip-edit-system" @bind="_model.SystemName" placeholder="e.g. BIRK CDC / Debezium" />
@@ -126,7 +130,7 @@
         @if (!IsHttpApi)
         {
             <label class="ip-field">Consumer group
-                <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Unknown / not configured" aria-describedby="ip-edit-consumer-group-help" />
+                <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Leave blank until confirmed" aria-describedby="ip-edit-consumer-group-help" />
             </label>
             <p class="ip-muted" id="ip-edit-consumer-group-help" data-testid="ip-edit-consumer-group-help">Consumer group is required for checkpoint/lag review. Leave blank if not confirmed — <code>$Default</code> is never assumed.</p>
         }
@@ -311,7 +315,8 @@
         <legend class="ip-sr">F. Operations</legend>
         <p class="ip-muted">Optional operational links for this integration.</p>
         <label class="ip-field">Health URL <input class="form-control ip-mono" @bind="_model.HealthUrl" @onblur='() => Touch("urls")' /></label>
-        <label class="ip-field">Worker URL <input class="form-control ip-mono" @bind="_model.WorkerUrl" @onblur='() => Touch("urls")' /></label>
+        @* A worker endpoint belongs to a background consumer (queue/topic/stream processor); a request/response API has none. *@
+        @if (!IsHttpApi || !string.IsNullOrWhiteSpace(_model.WorkerUrl)) { <label class="ip-field">Worker URL <input class="form-control ip-mono" @bind="_model.WorkerUrl" @onblur='() => Touch("urls")' /></label> }
         <label class="ip-field">Monitoring URL <input class="form-control ip-mono" @bind="_model.MonitoringUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Runbook URL <input class="form-control ip-mono" @bind="_model.RunbookUrl" @onblur='() => Touch("urls")' /></label>
         @if (Show("urls") && UrlErrors().ToList() is { Count: > 0 } urlErrors) { <span class="ip-field-error" role="status">@string.Join(" ", urlErrors)</span> }

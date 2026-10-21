@@ -73,7 +73,7 @@ public sealed class IntegrationReviewPresentationV2Tests
         var html = new ReportExportService().ExportIntegrationReview(M2lbFixture.Result(), "BirkNext");
         html.Should().Contain("Integration Quality Review").And.Contain("evhns-m2lb-dev-nwe-001").And.Contain("Network probe")
             .And.Contain("No runtime evidence source").And.Contain("Confirm consumer mappings").And.Contain("Not assessed");
-        html.Should().Contain("Unknown / not configured").And.NotContain("$Default");
+        html.Should().Contain("Not configured").And.NotContain("Unknown / not configured").And.NotContain("$Default");
         foreach (var forbidden in new[] { "SharedAccessKey", "Endpoint=sb://", "client_secret", "password" }) html.Should().NotContainEquivalentOf(forbidden);
         html.Should().Contain("connect-offsets", "technical topics are listed as not reviewed");
     }

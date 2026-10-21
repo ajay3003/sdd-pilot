@@ -97,9 +97,15 @@ public interface IIntegrationCatalogApiService
     /// <summary>Imports integrations still stored in the browser Target Environment profile. The backend imports once per environment.</summary>
     Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IReadOnlyList<IntegrationContractArtifact>> ContractsAsync(string environmentId, CancellationToken ct = default);
-    /// <summary>Uploads a trusted JSON Schema for one side of an integration. Returns the stored metadata, or the validation reason.</summary>
+    /// <summary>Uploads a trusted JSON Schema or XSD for one side of an integration. Returns the stored metadata, or the validation reason.</summary>
     Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveContractAsync(IntegrationContractUpload upload, CancellationToken ct = default);
     Task RemoveContractAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default);
+    /// <summary>Producer/consumer contract discovery from the integration's canonical source binding (read-only). Null when it cannot be read.</summary>
+    Task<IntegrationContractDiscovery?> ContractDiscoveryAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
+        Task.FromResult<IntegrationContractDiscovery?>(null);
+    /// <summary>Uses one discovered source contract for one side (explicit). Returns the stored metadata, or why it was refused.</summary>
+    Task<(IntegrationContractArtifact? Artifact, string? Error)> SelectSourceContractAsync(IntegrationContractSourceSelectionRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(IntegrationContractArtifact?, string?)>((null, "Selecting a source contract is unavailable."));
     Task<IntegrationReviewReadiness> ReadinessAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IReadOnlyList<IntegrationReviewRunSummary>> HistoryAsync(string environmentId, CancellationToken ct = default);
@@ -483,6 +489,24 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     {
         using var response = await http.DeleteAsync($"api/integrations/contracts?{Env(environmentId)}&integrationId={Uri.EscapeDataString(integrationId)}&role={role}", ct);
         if (!response.IsSuccessStatusCode && (int)response.StatusCode != 404) response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<IntegrationContractDiscovery?> ContractDiscoveryAsync(string environmentId, string integrationId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/integrations/{Uri.EscapeDataString(integrationId)}/contract-discovery?{Env(environmentId)}", ct);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<IntegrationContractDiscovery>(Json, ct) : null;
+    }
+
+    public async Task<(IntegrationContractArtifact? Artifact, string? Error)> SelectSourceContractAsync(IntegrationContractSourceSelectionRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PutAsJsonAsync("api/integrations/contracts/source-selection", request, Json, ct);
+        if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationContractArtifact>(Json, ct), null);
+        if ((int)response.StatusCode == 400)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);
+            return (null, problem.TryGetProperty("message", out var message) ? message.GetString() : "The contract could not be selected.");
+        }
+        return (null, $"The contract could not be selected (HTTP {(int)response.StatusCode}).");
     }
 
     public async Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)

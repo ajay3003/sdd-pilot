@@ -11,13 +11,8 @@ namespace BirkNext.Api.Services.Integrations;
 /// </summary>
 public static class IntegrationReviewProfiles
 {
-    public static IntegrationReviewCapability Capability(IntegrationKind kind) => kind switch
-    {
-        IntegrationKind.EventHub => IntegrationReviewCapability.EventStream,
-        IntegrationKind.ServiceBus => IntegrationReviewCapability.MessageBroker,
-        IntegrationKind.HttpApi => IntegrationReviewCapability.HttpApi,
-        _ => IntegrationReviewCapability.ConfigurationOnly,
-    };
+    /// <summary>The shared kind → profile mapping (the Integrations pane's per-integration readiness uses the same one).</summary>
+    public static IntegrationReviewCapability Capability(IntegrationKind kind) => IntegrationReviewCapabilities.Of(kind);
 
     public static string Label(IntegrationReviewCapability capability) => capability switch
     {

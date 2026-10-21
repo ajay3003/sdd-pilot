@@ -36,6 +36,9 @@
     <Compile Include="../../shared/StandardsReferenceContracts.cs" Link="Models/StandardsReferenceContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
     <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
+    <Compile Include="../../shared/IntegrationFieldRules.cs" Link="Models/IntegrationFieldRules.cs" />
+    <Compile Include="../../shared/IntegrationReadinessRules.cs" Link="Models/IntegrationReadinessRules.cs" />
+    <Compile Include="../../shared/IntegrationContractDiscoveryContracts.cs" Link="Models/IntegrationContractDiscoveryContracts.cs" />
     <Compile Include="../../shared/MessageFlowReviewContracts.cs" Link="Models/MessageFlowReviewContracts.cs" />
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />

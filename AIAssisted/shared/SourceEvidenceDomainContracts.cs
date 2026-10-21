@@ -426,6 +426,10 @@ public sealed record XmlSchemaDependencyEvidence(string Kind, string? Namespace,
 public sealed record XmlSchemaEvidence(string? TargetNamespace, string? ExplicitVersion, string VersionEvidence,
     List<XmlSchemaElementEvidence> Elements, List<XmlSchemaAttributeEvidence> Attributes, List<XmlSchemaTypeEvidence> Types, List<XmlSchemaDependencyEvidence> Dependencies);
 
+/// <summary>A source or project file that names a contract's file literally. Kind: "Validator" (the referencing file also loads/validates a
+/// schema), "Code reference", "Test code reference" or "Embedded resource" (a project file packages it). Literal names only — never a guess.</summary>
+public sealed record SourceContractCodeReference(string File, int Line, string Kind, string? Component = null);
+
 public sealed record ContractField(string Name, string Type, bool Required);
 public sealed record ContractTypeShape(string Name, string Kind, List<ContractField> Fields);
 /// <summary>"GET /orders/{id}", "query orders", "rpc GetOrder", "publish orders.created".</summary>
@@ -444,6 +448,8 @@ public sealed record SourceContract
     public string? Producer { get; init; }
     public string? ProducerBasis { get; init; }
     public List<string> ConsumerHints { get; init; } = [];
+    /// <summary>Code/project files naming this contract's file (analyzer v2+; empty in older snapshots, which did not record them).</summary>
+    public List<SourceContractCodeReference> CodeReferences { get; init; } = [];
     public List<ContractOperation> Operations { get; init; } = [];
     public List<ContractTypeShape> Types { get; init; } = [];
     public XmlSchemaEvidence? XmlSchema { get; init; }

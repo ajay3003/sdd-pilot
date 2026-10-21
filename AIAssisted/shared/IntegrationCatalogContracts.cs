@@ -346,7 +346,7 @@ public sealed record IntegrationDefinition
 public enum IntegrationContractRole { Producer, Consumer }
 
 /// <summary>
-/// A trusted event contract (JSON Schema) uploaded for one side of one integration. Metadata only; the schema text stays in the backend.
+/// A trusted contract (JSON Schema or XSD) uploaded, or selected from source evidence, for one side of one integration. Metadata only; the schema text stays in the backend.
 /// Replacing it never changes an earlier review, which keeps its own snapshot of what it compared.
 /// </summary>
 public sealed record IntegrationContractArtifact
@@ -362,6 +362,12 @@ public sealed record IntegrationContractArtifact
     public string? Version { get; init; }
     public int FieldCount { get; init; }
     public DateTimeOffset ImportedAt { get; init; }
+    /// <summary>Manual upload, or a contract a person selected from the integration's bound source evidence.</summary>
+    public IntegrationContractOrigin Origin { get; init; } = IntegrationContractOrigin.ManualUpload;
+    /// <summary>For a source selection: the snapshot (and its archive) it was selected from, and the Source Analysis contract id.</summary>
+    public Guid? SourceSnapshotId { get; init; }
+    public string? SourceArchive { get; init; }
+    public string? SourceContractId { get; init; }
     [JsonIgnore] public string ShortHash => ContentHash.Length > 12 ? ContentHash[..12] : ContentHash;
 }
 
@@ -442,23 +448,13 @@ public static class IntegrationConfigurationRules
         : topic.Kind == IntegrationKind.EventHub && !string.IsNullOrWhiteSpace(platform?.RuntimeEvidence?.ExpectedConsumerGroup) ? (platform.RuntimeEvidence.ExpectedConsumerGroup.Trim(), true)
         : (null, false);
 
+    /// <summary>Completeness from the shared field rules (<see cref="IntegrationFieldRules"/>): only applicable, required, unresolved fields are
+    /// missing; fields a person must decide are listed to confirm. Not applicable, optional and not-assessed fields are neither.</summary>
     public static (IntegrationConfigurationState State, List<string> Missing, List<string> Unconfirmed) Evaluate(IntegrationDefinition definition, IntegrationPlatform? platform)
     {
-        var missing = new List<string>();
-        var unconfirmed = new List<string>();
-        if (!definition.Enabled) return (IntegrationConfigurationState.Disabled, missing, unconfirmed);
-        if (string.IsNullOrWhiteSpace(definition.DisplayName)) missing.Add("Display name");
-        if (string.IsNullOrWhiteSpace(definition.EndpointOrTopic)) missing.Add(definition.Kind == IntegrationKind.HttpApi ? "Endpoint" : "Topic");
-        if (definition.Kind is IntegrationKind.EventHub or IntegrationKind.ServiceBus && string.IsNullOrWhiteSpace(platform?.Namespace)) missing.Add("Namespace");
-        if (string.IsNullOrWhiteSpace(definition.Producer)) missing.Add("Producer");
-        if (definition.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured) missing.Add("Producer authentication");
-        if (string.IsNullOrWhiteSpace(definition.Consumer.DisplayName)) unconfirmed.Add("Consumer");
-        else if (definition.Consumer.MappingState != ConsumerMappingState.Confirmed) unconfirmed.Add("Consumer mapping");
-        if (definition.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured) missing.Add("Consumer authentication");
-        var state = missing.Count > 0 ? IntegrationConfigurationState.NeedsConfiguration
-            : unconfirmed.Count > 0 ? IntegrationConfigurationState.NeedsConfirmation
-            : IntegrationConfigurationState.Ready;
-        return (state, missing, unconfirmed);
+        var assessment = IntegrationFieldRules.Assess(definition, platform);
+        if (assessment.State == IntegrationConfigurationState.Disabled) return (IntegrationConfigurationState.Disabled, [], []);
+        return (assessment.State, [.. assessment.Missing.Select(f => f.Label)], [.. assessment.ToConfirm.Select(f => f.Label)]);
     }
 
     public static string Label(IntegrationConfigurationState state) => state switch
@@ -648,6 +644,10 @@ public sealed record IntegrationReviewEvidenceFacts(string IntegrationId)
     public string? BoundArchive { get; init; }
     public string? SchemaName { get; init; }
     public IReadOnlyList<string> SchemaFiles { get; init; } = [];
+    /// <summary>Which side of the integration the evidence source implements (template metadata; Unknown when the template does not say).</summary>
+    public IntegrationSourceSide SourceSide { get; init; }
+    /// <summary>Which side the reference (and so <see cref="SchemaName"/>) describes.</summary>
+    public IntegrationSourceSide ReferenceSide { get; init; }
 }
 
 // ── Event Hub runtime evidence as IQR consumes it (snapshot of one run) ─────────────────────────────────────────────────

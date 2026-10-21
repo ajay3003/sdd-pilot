@@ -65,7 +65,11 @@ public sealed class IntegrationsPaneTests : BunitContext
         var cut = Open();
         cut.Markup.Should().NotContain("$Default");
         cut.FindAll("[data-testid=ip-row-view]")[0].Click();
-        cut.Find("[data-testid=ip-detail-consumer-group]").TextContent.Should().Be("Unknown / not configured");
+        // An Event Hub consumer group is conditionally required (checkpoint review): empty is "Not configured" for those checks only — one state, never "Unknown / not configured".
+        var group = cut.Find("[data-testid=ip-detail-consumer-group]");
+        group.QuerySelector(".ip-pill")!.TextContent.Should().Be("Not configured");
+        group.TextContent.Should().Contain("checkpoint").And.NotContain("Unknown");
+        group.ParentElement!.GetAttribute("data-requirement").Should().Be("Conditional");
     }
 
     [Fact]
