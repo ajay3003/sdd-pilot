@@ -141,7 +141,7 @@ public sealed class IntegrationQualityReviewEventHubRuntimeTests : BunitContext
         AngleSharp.Dom.IElement Detail(string domain) { Row(domain).QuerySelector("[data-testid=iqr-domain-toggle]")!.Click(); return cut.Find("[data-testid=iqr-domain-detail]"); }
         var flow = Row("MessageFlow");
         flow.GetAttribute("data-readiness").Should().Be("Partial");
-        flow.QuerySelector(".iqr-pill")!.TextContent.Should().Be("Partial", "status is a text label, never colour alone");
+        flow.QuerySelector(".iqr-pill")!.TextContent.Should().Be("Partially reviewable", "status is a review-scoped text label, never colour alone");
         flow.QuerySelector(".iqr-pill")!.ClassList.Should().Contain("iqr-pill-observed");
         flow.QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent.Should().Be("Application-processing telemetry: not configured", "the main limitation is the first missing item");
         var flowDetail = Detail("MessageFlow");

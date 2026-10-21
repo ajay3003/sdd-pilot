@@ -37,23 +37,21 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
     private IRenderedComponent<IntegrationQualityReview> Open() => Render<IntegrationQualityReview>();
 
     [Fact]
-    public void TopSummaryIsCompactAndSaysRunWithLimitations()
+    public void OverviewIsDecisionFirst_ReviewAndActiveTestReadinessSeparate_NoMetadataWall()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-summary-target]").TextContent.Should().Be("Dev");
-        cut.Find("[data-testid=iqr-summary-systems]").TextContent.Should().Be("1");
-        cut.Find("[data-testid=iqr-summary-topics]").TextContent.Should().Be("16");
-        cut.Find("[data-testid=iqr-summary-enabled]").TextContent.Should().Be("16 of 16");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
-        cut.Find("[data-testid=iqr-readiness-coverage]").TextContent.Should().StartWith("4 of 10 domains are currently assessable or partially assessable.");
+        cut.Find("[data-testid=iqr-review-readiness]").TextContent.Should().Be("Partially reviewable");
+        cut.Find("[data-testid=iqr-active-tests-readiness]").TextContent.Should().Be("Not known", "active-test readiness is its own answer, read from the journeys");
+        cut.Find("[data-testid=iqr-attention-count]").TextContent.Should().Be("4 things need attention");
+        cut.FindAll("[data-testid=iqr-group-overview] [data-testid^=iqr-summary-]").Should().BeEmpty("counts of systems and topics are not decisions");
+        cut.FindAll("[data-testid=iqr-group-overview] table, [data-testid=iqr-group-overview] [data-testid=iqr-evidence-source]").Should().BeEmpty();
     }
 
     [Fact]
     public void NeedsAttentionIsCompactAndEveryFixDeepLinksToIntegrations()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Can run with limitations");
-        cut.Find("[data-testid=iqr-readiness] h3").TextContent.Should().Be("Review readiness Can run with limitations");
+        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Partially reviewable");
         var items = cut.FindAll("[data-testid=iqr-attention-item]");
         items.Select(i => i.GetAttribute("data-key")).Should().Equal("mappings", "runtime", "contracts", "groups");
         items[0].TextContent.Should().Contain("15 need confirmation");
@@ -63,7 +61,7 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         cut.Find("[data-testid=iqr-action-mappings]").GetAttribute("href").Should().Contain("tab=integrations").And.Contain("profile=dev").And.EndWith("focus=mappings");
         cut.Find("[data-testid=iqr-action-runtime]").GetAttribute("href").Should().EndWith("focus=runtime");
         cut.Find("[data-testid=iqr-action-contracts]").GetAttribute("href").Should().EndWith("focus=contracts");
-        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run review", "a read-only review, never an execution-like label");
         cut.Find("[data-testid=iqr-run]").HasAttribute("disabled").Should().BeFalse();
         cut.Find("#iqr-run-note").TextContent.Should().Be("Read-only review. No messages are published, consumed or changed.");
         // The full backend reason list is still available, but collapsed — not a wall of bullets before the Run action.
@@ -153,10 +151,10 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=iqr-history] .disclosure-body").HasAttribute("hidden").Should().BeTrue();
         cut.Find("[data-testid=iqr-history]").TextContent.Should().Contain("do not change the current readiness");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
+        cut.Find("[data-testid=iqr-review-readiness]").TextContent.Should().Be("Partially reviewable");
         cut.Find("[data-testid=iqr-history] button").Click();
         cut.Find("[data-testid=iqr-history-list]").TextContent.Should().Contain("Completed");
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
+        cut.Find("[data-testid=iqr-review-readiness]").TextContent.Should().Be("Partially reviewable");
     }
 
     [Fact]

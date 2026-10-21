@@ -100,7 +100,7 @@ public sealed class ActiveEventPolicy(ActiveEventOptions options)
         if (!Tokens(fqdn).Concat(Tokens(hub)).Any(t => t == marker || t.EndsWith(marker, StringComparison.Ordinal)))
             return (null, $"Neither the namespace nor the hub name carries the {environmentType!.Trim()} marker \"{marker}\".");
         if (!options.AllowedDestinations.Any(d => d.NamespaceFqdn.Trim().TrimEnd('/').Equals(fqdn, StringComparison.OrdinalIgnoreCase) && d.EventHub.Trim().Equals(hub, StringComparison.OrdinalIgnoreCase)))
-            return (null, "This namespace/hub is not enrolled for active tests in backend configuration (ActiveEventTesting:AllowedDestinations).");
-        return (new ApprovedEventHubDestination(fqdn, hub), "Enrolled DEV/QA destination; environment, target URL and name guards passed.");
+            return (null, "This namespace/hub is not enabled for active tests (technical: ActiveEventTesting:AllowedDestinations).");
+        return (new ApprovedEventHubDestination(fqdn, hub), "Approved DEV/QA destination; environment, target URL and name guards passed.");
     }
 }

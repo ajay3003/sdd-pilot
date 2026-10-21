@@ -20,10 +20,13 @@ public static class AltinnSourceBinding
     public static async Task<Resolved> ResolveAsync(IIntegrationCatalogApiService api, IIntegrationJourneysApiService? journeys, string environmentId, CancellationToken ct = default)
     {
         if (journeys is null || string.IsNullOrWhiteSpace(environmentId)) return new(null, null, null);
-        var match = ((await journeys.PacksAsync(environmentId, ct)).Value ?? [])
+        var entries = ((await journeys.PacksAsync(environmentId, ct)).Value ?? [])
             .SelectMany(pack => pack.Journeys.SelectMany(view => view.MatchedIntegrations).Select(item => (Pack: pack.PackId, Item: item)))
-            .FirstOrDefault(entry => entry.Item.RequirementKey == ReportIntakeRequirement && entry.Item.IntegrationId is not null);
-        if (match.Item?.IntegrationId is not { } integrationId) return new(null, null, null);
+            .Where(entry => entry.Item.RequirementKey == ReportIntakeRequirement).ToList();
+        var match = entries.FirstOrDefault(entry => entry.Item.IntegrationId is not null);
+        // The pack that requires the report intake is known even before its integration is configured (its documented flow can be shown).
+        if (match.Item?.IntegrationId is not { } integrationId)
+            return new(null, null, null) { PackId = entries.Select(entry => entry.Pack).FirstOrDefault(pack => !string.IsNullOrEmpty(pack)) };
         var binding = ((await api.ListEvidenceBindingsAsync(environmentId, ct)) ?? []).FirstOrDefault(item => item.IntegrationId == integrationId);
         return new(integrationId, match.Item.DisplayName, binding) { PackId = string.IsNullOrEmpty(match.Pack) ? null : match.Pack };
     }

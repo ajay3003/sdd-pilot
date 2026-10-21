@@ -41,7 +41,7 @@ public static class SourceGuidancePresentation
     public static string? ActionHref(string? target) => target switch
     {
         "source-analysis" => "/source-analysis",
-        "iqr-evidence" => "/integration-quality-review?view=evidence",
+        "iqr-evidence" => "/integration-quality-review?view=setup-evidence",
         "target-environment-integrations" => "/admin/system-settings?section=target-environments&tab=integrations",
         _ => null,
     };

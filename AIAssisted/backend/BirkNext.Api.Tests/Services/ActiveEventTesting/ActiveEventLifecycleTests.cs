@@ -185,8 +185,8 @@ public sealed class ActiveEventLifecycleTests
     [InlineData("production", "not permitted against a Production environment")]
     [InlineData("production-url", "target application host carries a production marker")]
     [InlineData("fake-qa-label", "marker \"qa\"")]
-    [InlineData("not-enrolled", "not enrolled for active execution")]
-    [InlineData("alternate-hub", "not enrolled for active tests in backend configuration")]
+    [InlineData("not-enrolled", "not enabled for active runs")]
+    [InlineData("alternate-hub", "not enabled for active tests")]
     [InlineData("alternate-namespace", "not an Azure Event Hubs namespace host")]
     public async Task TargetTrust_FailsClosed_AndNothingIsSent(string variant, string expected)
     {

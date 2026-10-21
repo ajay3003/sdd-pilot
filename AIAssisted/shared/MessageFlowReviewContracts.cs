@@ -239,6 +239,14 @@ public static class MessageFlowTestCaseDesigner
 /// <summary>Portable examples for the generic flow-review UI. Example facts are documentation evidence, never a detected project configuration.</summary>
 public static class MessageFlowReviewExamples
 {
+    /// <summary>The documented flow a test pack ships for its message-flow review (null when the pack documents none). Shown automatically
+    /// when the stored review has no flow yet — documentation evidence, never saved by showing it.</summary>
+    public static (MessageFlowDefinition Flow, IReadOnlyList<ManualIntegrationTestCase> TestCases)? DocumentedFor(string? packId) => packId switch
+    {
+        "skolenaervaer" => (SkolenærværDocumented, SkolenærværTestCases),
+        _ => null,
+    };
+
     public static MessageFlowDefinition GenericFixture => Build("generic-external-message-fixture", "External portal to reporting service",
         ["ExternalPortal", "MessageExchange", "Queue", "Blob", "StatelessIntake", "DomainService", "IdentityService", "ReportingConsumer"],
         [FlowNodeRole.ExternalSender, FlowNodeRole.MessageExchange, FlowNodeRole.QueueBroker, FlowNodeRole.PayloadStore,

@@ -241,7 +241,7 @@ public sealed class ActiveEventLifecycleService(
         var environmentProblem = trusted is null ? trustReason
             : !trusted.ExecutionAllowed ? "The trusted environment does not allow active execution (ExecutionAllowed is false)."
             : ActiveEventPolicy.EnvironmentBlock(trusted.EnvironmentType);
-        Add("environment", "Trusted environment (DEV/QA only)", environmentProblem is null ? ActiveEventReadinessState.Ready : ActiveEventReadinessState.Blocked,
+        Add("environment", "Active execution (DEV/QA only)", environmentProblem is null ? ActiveEventReadinessState.Ready : ActiveEventReadinessState.Blocked,
             environmentProblem ?? $"{trusted!.DisplayName}: backend-owned {trusted.EnvironmentType} environment.", ActiveEventReadinessCategory.TrustedEnvironment);
 
         var integration = context.Integration;
@@ -250,7 +250,7 @@ public sealed class ActiveEventLifecycleService(
             : !string.Equals(integration.Kind.ToString(), descriptor.RequiredIntegrationType, StringComparison.OrdinalIgnoreCase) ? "The integration type does not satisfy the scenario."
             : platform is null ? "The integration has no configured platform."
             : trusted is not null && !trusted.IntegrationIds.Contains(integration.Id, StringComparer.Ordinal)
-                ? "The integration is not enrolled for active execution in the trusted environment (TargetEnvironments:Trusted:IntegrationIds)."
+                ? "The integration is not enabled for active runs in this environment (technical: TargetEnvironments:Trusted:IntegrationIds)."
             : null;
         var resource = integration?.EndpointOrTopic?.Trim();
         var endpoint = platform?.NamespaceFqdn?.Trim();
@@ -280,7 +280,7 @@ public sealed class ActiveEventLifecycleService(
             SourceResource = integration?.SourceResource,
             SafeMetadata = new Dictionary<string, string> { ["destinationApproval"] = approved is null ? "blocked" : "approved" },
         };
-        Add("destination", "Enrolled destination", approved is null ? ActiveEventReadinessState.Blocked : ActiveEventReadinessState.Ready,
+        Add("destination", "Approved destination", approved is null ? ActiveEventReadinessState.Blocked : ActiveEventReadinessState.Ready,
             approved is null ? destinationReason : $"{destinationReason} Resolved from the enabled integration; the client cannot choose it.", ActiveEventReadinessCategory.Destination);
 
         var transport = transports.Resolve(descriptor.RequiredTransportType);

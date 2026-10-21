@@ -160,7 +160,7 @@ public sealed class IntegrationCatalogTopologyProvider : ITopologyProvider
             var consumer = integration.Consumer.DisplayName ?? integration.Consumer.LogicalName ?? integration.DestinationSystem;
             var enrolled = context.Trusted?.IntegrationIds.Contains(integration.Id, StringComparer.Ordinal) == true;
             var provenance = new TopologyProvenance(TopologySource.IntegrationCatalog, integration.Id,
-                $"{integration.DisplayName}{(enrolled ? " · enrolled in the trusted environment" : "")}", integration.UpdatedAt == default ? null : integration.UpdatedAt);
+                $"{integration.DisplayName}{(enrolled ? " · enabled for active runs" : "")}", integration.UpdatedAt == default ? null : integration.UpdatedAt);
             var (type, protocol) = integration.Kind switch
             {
                 IntegrationKind.HttpApi => (TopologyInterfaceType.Rest, "HTTP"),

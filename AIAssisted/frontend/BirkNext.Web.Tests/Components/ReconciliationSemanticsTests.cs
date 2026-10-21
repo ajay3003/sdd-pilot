@@ -104,10 +104,10 @@ public sealed class ReconciliationSemanticsTests : BunitContext
     [Fact]
     public void Review_readiness_has_exactly_three_run_states()
     {
-        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = false, Headline = "Cannot run" }).Should().Be("Cannot run");
-        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = true, Headline = "Can run with limitations" }).Should().Be("Can run with limitations");
-        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = true, Headline = "Ready" }).Should().Be("Ready to run");
-        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = false, Headline = "Can run with limitations" }).Should().Be("Cannot run", "the Run gate decides, never a stale headline");
+        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = false, Headline = "Cannot run" }).Should().Be("Not reviewable");
+        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = true, Headline = "Can run with limitations" }).Should().Be("Partially reviewable");
+        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = true, Headline = "Ready" }).Should().Be("Reviewable");
+        IntegrationReviewPrerunPresentation.ReadinessLabel(new IntegrationReviewReadiness { CanRun = false, Headline = "Can run with limitations" }).Should().Be("Not reviewable", "the Run gate decides, never a stale headline");
     }
 
     // ── Target Environment ──────────────────────────────────────────────────────────────────────────────────────────────

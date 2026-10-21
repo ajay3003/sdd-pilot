@@ -21,9 +21,8 @@
     }
     else if (_package is { } package)
     {
+        @if (_documentedShown) { <p class="mfr-note" data-testid="mfr-documented-flow">Showing the test pack's documented flow. It is documentation evidence; nothing is saved until you save the review configuration.</p> }
         <div class="mfr-actions">
-            <button type="button" class="btn-secondary" @onclick="LoadGeneric">Load generic example</button>
-            <button type="button" class="btn-secondary" @onclick="LoadPilot">Load documented Skolenærvær pilot</button>
             <button type="button" class="btn-primary" data-testid="mfr-save" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving…" : "Save review configuration")</button>
             @if (_saved) { <span role="status" data-testid="mfr-saved">Saved</span> }
             @if (_error is not null)
@@ -37,10 +36,25 @@
             }
         </div>
         <p class="mfr-note">Saved separately from Target Environment integration settings. Configuration is not verification; no messages are sent or consumed here.</p>
+        @* Example loaders are developer/demo tools: a pack's documented flow is shown automatically, so testers never need them. *@
+        <ReviewDisclosure Text="Developer tools" CollapseText="Hide developer tools" Hint="examples" TestId="mfr-developer-tools" Class="disclosure-inline">
+            <div class="mfr-actions">
+                <button type="button" class="btn-secondary" @onclick="LoadGeneric">Load generic example</button>
+                <button type="button" class="btn-secondary" @onclick="LoadPilot">Load documented Skolenærvær pilot</button>
+            </div>
+            <p class="mfr-note">Replaces the flow and example configuration in this form (not saved until you save).</p>
+        </ReviewDisclosure>
         @* One provider section at a time (hidden, never removed: every value stays bound and is saved as before). The readiness line stays
            visible; the full prerequisite list is the Readiness section. *@
-        <p class="mfr-readiness-line" data-testid="mfr-readiness-line"><strong>@package.Readiness.Ready / @package.Readiness.Total</strong> prerequisites configured · Active submission @(package.Readiness.CanRunActiveTest ? "can run" : "blocked")
-            @if (_section != "readiness") { <button type="button" class="mfr-link-button" @onclick='() => _section = "readiness"' data-testid="mfr-readiness-open">View readiness</button> }</p>
+        var counts = MessageFlowReadinessCounts.From(package.Readiness, KnownReadinessKeys());
+        @* Known (resolvable now) ≠ saved for the active run (explicitly stored) ≠ runtime verified (observed): three counts, never one "configured". *@
+        <dl class="mfr-counts" data-testid="mfr-readiness-line">
+            <div><dt>Known configuration</dt><dd data-testid="mfr-count-known">@counts.Known of @counts.Total</dd></div>
+            <div><dt>Saved for active run</dt><dd data-testid="mfr-count-saved">@counts.Saved of @counts.Total</dd></div>
+            <div><dt>Runtime verified</dt><dd data-testid="mfr-count-verified">@counts.Verified of @counts.Total</dd></div>
+            <div><dt>Active submission</dt><dd>@(package.Readiness.CanRunActiveTest ? "Can run" : "Blocked")
+                @if (_section != "readiness") { <button type="button" class="mfr-link-button" @onclick='() => _section = "readiness"' data-testid="mfr-readiness-open">View readiness</button> }</dd></div>
+        </dl>
         <nav class="mfr-subnav" aria-label="Altinn provider sections" data-testid="mfr-subnav">
             @foreach (var (key, label) in Sections)
             {
@@ -85,7 +99,8 @@
         </div>
         <div class="mfr-view" data-testid="mfr-view-readiness" hidden="@(_section != "readiness")">
             <section class="mfr-card mfr-readiness-card" aria-labelledby="mfr-readiness-heading" data-testid="mfr-readiness"><h3 id="mfr-readiness-heading">Altinn test readiness</h3>
-                <p data-testid="mfr-readiness-count"><strong>@package.Readiness.Ready / @package.Readiness.Total</strong> prerequisites configured. Active submission remains blocked.</p>
+                @{ var readinessCounts = MessageFlowReadinessCounts.From(package.Readiness, KnownReadinessKeys()); }
+                <p data-testid="mfr-readiness-count"><strong>@readinessCounts.Saved of @readinessCounts.Total saved for the active run</strong> · @readinessCounts.Known known · @readinessCounts.Verified runtime verified.@(package.Readiness.CanRunActiveTest ? "" : " Active submission remains blocked.")</p>
                 @{ var open = package.Readiness.Items.Where(item => !item.Satisfied).ToList(); }
                 @if (open.Count > 0)
                 {
@@ -95,7 +110,7 @@
                 }
                 <p><a class="btn-secondary mfr-configure" href="#mfr-config-heading" @onclick="FocusConfigurationAsync" @onclick:preventDefault data-testid="mfr-configure-altinn">Configure Altinn</a></p>
                 <ReviewDisclosure Text="@($"View all {package.Readiness.Total} prerequisites")" CollapseText="Hide prerequisites" TestId="mfr-readiness-all" Class="disclosure-inline">
-                    <ul class="mfr-readiness">@foreach (var item in package.Readiness.Items) { <li data-testid="mfr-readiness-item" data-satisfied="@(item.Satisfied ? "true" : "false")"><span class="mfr-readiness-mark" aria-hidden="true">@(item.Satisfied ? "✓" : "○")</span><span class="mfr-readiness-text"><strong>@item.Label:</strong> @(item.Satisfied ? "Configured" : "Needs attention") · @item.State <small>@item.Explanation</small></span></li> }</ul>
+                    <ul class="mfr-readiness">@foreach (var item in package.Readiness.Items) { <li data-testid="mfr-readiness-item" data-satisfied="@(item.Satisfied ? "true" : "false")"><span class="mfr-readiness-mark" aria-hidden="true">@(item.Satisfied ? "✓" : "○")</span><span class="mfr-readiness-text"><strong>@item.Label:</strong> @(item.Satisfied ? "Saved for active run" : KnownReadinessKeys().Contains(item.Key) ? "Known · not saved for active run" : "Needs attention") · @item.State <small>@item.Explanation</small></span></li> }</ul>
                 </ReviewDisclosure>
                 <p class="mfr-note">Implementation readiness: not source verified. QA configuration: not verified. Runtime: not observed.</p>
             </section>
@@ -310,6 +325,19 @@
     /// <summary>A value an integration record owns is read from there: the form offers no copy.</summary>
     private bool OwnedByIntegration(string field) => Resolved(field) is { ResolvedFrom: BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration };
 
+    /// <summary>Readiness items whose values are known now (resolved from the integration, canonical source, Test Pack reference or a pack
+    /// default, or stored here) — known is not saved for the active run.</summary>
+    private IReadOnlySet<string> KnownReadinessKeys()
+    {
+        var fields = ApplicationFields().Where(item => item.Value is not null).Select(item => item.Field).ToHashSet(StringComparer.Ordinal);
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        if (fields.Contains("Environment")) keys.Add("environment");
+        if (fields.Contains("Endpoint reference")) keys.Add("endpoint");
+        if (fields.Contains("App identifier") && fields.Contains("Altinn product / service type")) keys.Add("product");
+        if (_binding is not null) keys.Add("implementation");
+        return keys;
+    }
+
     /// <summary>The Application section's fields: known (stored here or resolved elsewhere, with origin) vs still to configure here.</summary>
     private IReadOnlyList<(string Field, string? Value, string Origin)> ApplicationFields() =>
     [
@@ -386,6 +414,7 @@
             _package = await Api.GetMessageFlowReviewAsync(EnvironmentId); Apply(_package.AltinnConfiguration); _name = _package.Flow.Name;
             _legacySnapshot = _package.AltinnConfiguration.SourceSnapshotId;
             await LoadBindingAsync();
+            ShowDocumentedFlow();
             // A schema chosen in another snapshot than the binding must be chosen again (review required); the stored value is untouched until saved.
             var mismatch = _binding is not null && _legacySnapshot is { } saved && saved != _binding.SnapshotId;
             if (EffectiveSnapshot is { } snapshotId) { _sourceContract = mismatch ? "" : _package.AltinnConfiguration.SourceContractId ?? ""; await LoadSourceContractsAsync(snapshotId); }
@@ -401,6 +430,7 @@
         {
             var resolved = await AltinnSourceBinding.ResolveAsync(Api, Services.GetService<IIntegrationJourneysApiService>(), EnvironmentId!);
             _bindingIntegration = resolved.IntegrationName;
+            _packId = resolved.PackId;
             _binding = resolved.Binding;
             // The pack's source guidance for this provider's fields: bound evidence, or the pack's Test Pack reference where no bound source
             // declares a value (shown as such). Never applied by loading.
@@ -418,6 +448,27 @@
     {
         var set = values.Count(value => value switch { bool flag => flag, string text => !string.IsNullOrWhiteSpace(text), _ => value is not null });
         return set == 0 ? "Not configured" : set == values.Length ? $"Configured ({set} of {values.Length})" : $"Partly configured ({set} of {values.Length})";
+    }
+
+    private string? _packId;
+    private bool _documentedShown;
+
+    /// <summary>A stored review without a flow shows the pack's documented flow (no "load pilot" step). Only the flow and its test cases are
+    /// shown: the stored Altinn configuration is kept exactly as saved, and nothing is saved by showing it.</summary>
+    private void ShowDocumentedFlow()
+    {
+        if (_package is not { } package || package.Flow.Nodes.Count > 0 || MessageFlowReviewExamples.DocumentedFor(_packId) is not { } documented) return;
+        var flow = documented.Flow with { EnvironmentId = EnvironmentId!, TargetEnvironmentReference = EnvironmentId };
+        var config = package.AltinnConfiguration;
+        _package = package with
+        {
+            Flow = flow, TestCases = documented.TestCases.Count > 0 ? documented.TestCases : MessageFlowTestCaseDesigner.Generate(flow),
+            Readiness = IntegrationMessageFlowReadiness.Evaluate(flow, config, Resolved("Endpoint reference") is { ResolvedFrom: BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration, ResolvedValue: { } owned } ? owned : null),
+            ManualTestPlan = IntegrationMessageFlowReadiness.ManualPlan(flow, config),
+        };
+        _name = flow.Name;
+        _fromNode = flow.Nodes.FirstOrDefault()?.Id ?? ""; _toNode = flow.Nodes.Skip(1).FirstOrDefault()?.Id ?? "";
+        _documentedShown = true;
     }
 
     private void LoadGeneric() => Load(MessageFlowReviewExamples.GenericFixture, new AltinnTestConfiguration(), []);
@@ -441,7 +492,7 @@
         _package = _package with { Flow = selectedFlow, AltinnConfiguration = config, TestCases = cases.Count > 0 ? cases : MessageFlowTestCaseDesigner.Generate(selectedFlow),
             Readiness = IntegrationMessageFlowReadiness.Evaluate(selectedFlow, config, Resolved("Endpoint reference") is { ResolvedFrom: BirkNext.SourceDomains.ConfigurationValueOrigin.ConfiguredIntegration, ResolvedValue: { } owned } ? owned : null), ManualTestPlan = IntegrationMessageFlowReadiness.ManualPlan(selectedFlow, config) };
         _fromNode = _package.Flow.Nodes.FirstOrDefault()?.Id ?? ""; _toNode = _package.Flow.Nodes.Skip(1).FirstOrDefault()?.Id ?? "";
-        Apply(config); _saved = false;
+        Apply(config); _saved = false; _documentedShown = false;
     }
 
     private void Apply(AltinnTestConfiguration c)

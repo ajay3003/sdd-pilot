@@ -9,23 +9,53 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class IntegrationReviewPrerunPresentation
 {
+    // ── Views ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    public const string OverviewView = "overview";
+    public const string SetupView = "setup-evidence";
+    public const string ReviewView = "review";
+    public const string TestView = "test-verify";
+    public const string LegacyExtensionsView = "extensions";
+
+    /// <summary>The four top-level views, in order.</summary>
+    public static readonly (string Key, string Label)[] Views =
+        [(OverviewView, "Overview"), (SetupView, "Setup & Evidence"), (ReviewView, "Review"), (TestView, "Test & Verify")];
+
+    /// <summary>A requested ?view= as one of the four views. Older names keep working: setup → Overview; integrations and evidence → Setup &amp;
+    /// Evidence; coverage → Review; active-tests, extensions and test-configuration → Test &amp; Verify. Anything else is Overview.</summary>
+    public static string ResolveView(string? requested) => requested?.Trim().ToLowerInvariant() switch
+    {
+        SetupView or "integrations" or "evidence" => SetupView,
+        ReviewView or "coverage" => ReviewView,
+        TestView or "active-tests" or LegacyExtensionsView or "test-configuration" => TestView,
+        _ => OverviewView,
+    };
+
+    public static string CapabilityLabel(IntegrationReviewCapability capability) => capability switch
+    {
+        IntegrationReviewCapability.EventStream => "Event Hub",
+        IntegrationReviewCapability.MessageBroker => "Service Bus",
+        IntegrationReviewCapability.HttpApi => "HTTP/API",
+        _ => "Configuration only",
+    };
+
     public const string FocusMappings = "mappings";
     public const string FocusRuntime = "runtime";
     public const string FocusContracts = "contracts";
 
     public static string Href(string? profileId, string focus) => IntegrationReviewPresentation.IntegrationsHref(profileId) + "&focus=" + focus;
 
-    public const string CannotRun = "Cannot run";
-    public const string CanRunWithLimitations = "Can run with limitations";
-    public const string ReadyToRun = "Ready to run";
+    public const string CannotRun = "Not reviewable";
+    public const string CanRunWithLimitations = "Partially reviewable";
+    public const string ReadyToRun = "Reviewable";
 
-    /// <summary>The one review run state, from the backend's Run gate and headline: Cannot run, Can run with limitations or Ready to run.
-    /// The heading, the summary and the Run button all use it, so "Cannot run" never sits next to an offered run.</summary>
+    /// <summary>The one review state, from the backend's Run gate and headline — review-scoped (Reviewable, Partially reviewable, Not
+    /// reviewable), never "Ready", which reads as runtime or execution readiness. The run is read-only whatever the state.</summary>
     public static string ReadinessLabel(IntegrationReviewReadiness readiness) =>
         !readiness.CanRun ? CannotRun : readiness.Headline == "Ready" ? ReadyToRun : CanRunWithLimitations;
 
-    /// <summary>The Run button text, only offered when the review can run.</summary>
-    public static string RunLabel(IntegrationReviewReadiness readiness) => readiness.Headline == "Ready" ? "Run Integration Quality Review" : "Run with limitations";
+    /// <summary>The Run button text, only offered when the review can run: always "Run review" — a read-only review, never active execution.</summary>
+    public static string RunLabel(IntegrationReviewReadiness readiness) => "Run review";
 
     /// <summary>No enabled integration: the review has nothing to assess until Target Environment → Integrations has one.</summary>
     public static bool NoEnabledIntegrations(IntegrationReviewReadiness readiness) => readiness.EnabledIntegrations == 0;
@@ -109,14 +139,18 @@ public static class IntegrationReviewPrerunPresentation
         var items = new List<AttentionItem>();
         if (!readiness.CanRun) return items;
         var unconfirmed = UnconfirmedMappings(readiness);
-        if (unconfirmed > 0)
-            items.Add(new("mappings", "Mappings", $"{unconfirmed} need{(unconfirmed == 1 ? "s" : "")} confirmation", "Review mappings", Href(profileId, FocusMappings)));
+        if (unconfirmed == 1)
+            items.Add(new("mappings", "Consumer mapping", "Needs confirmation", "Confirm consumer mapping", Href(profileId, FocusMappings)));
+        else if (unconfirmed > 1)
+            items.Add(new("mappings", "Consumer mappings", $"{unconfirmed} need confirmation", "Review mappings", Href(profileId, FocusMappings)));
         var (available, total) = RuntimeAvailability(readiness);
         if (total > 0 && available < total)
             items.Add(AzureRuntimeOff(readiness)
                 ? new("runtime", "Runtime evidence", $"Sources configured ({readiness.RuntimeSourcesConfigured} of {readiness.RuntimeSourcesTotal}) · Azure runtime not enabled for this instance", "View runtime evidence", Href(profileId, FocusRuntime))
                 : new("runtime", "Runtime evidence", $"{available} of {total} available", "Configure runtime evidence", Href(profileId, FocusRuntime)));
-        var topics = readiness.Systems.Sum(s => s.Topics);
+        // An integration whose test pack knows its reference or source contract has contract evidence: it is never "Not configured".
+        var covered = readiness.Subjects.Count(s => HasContractEvidence(s.Facts));
+        var topics = readiness.Systems.Sum(s => s.Topics) - covered;
         var contracts = readiness.Systems.Sum(s => s.ContractsConfigured);
         if (topics > 0 && contracts < topics)
             items.Add(new("contracts", "Contracts", contracts == 0 ? "Not configured" : $"{contracts} of {topics} topics", "Manage contracts", Href(profileId, FocusContracts)));
@@ -137,6 +171,66 @@ public static class IntegrationReviewPrerunPresentation
                 items.Add(new("servicebus-runtime", "Service Bus runtime", IntegrationReviewLabels.EvidenceState(serviceBus.RuntimeState), "Configure Service Bus runtime evidence", Href(profileId, ServiceBusPresentation.Focus)));
         }
         return items;
+    }
+
+    // ── The integration under review (subject) ─────────────────────────────────────────────────────────────────────────
+
+    public static bool HasContractEvidence(IntegrationReviewEvidenceFacts? facts) =>
+        facts is not null && (facts.ContractReference.Count > 0 || facts.BoundArchive is not null || facts.SourceMatches > 0);
+
+    /// <summary>The integration shown when the page opens: the selected one, else the first (a selector offers the others).</summary>
+    public static IntegrationReviewSubject? Subject(IntegrationReviewReadiness readiness, string? selectedId) =>
+        readiness.Subjects.FirstOrDefault(s => s.IntegrationId == selectedId) ?? readiness.Subjects.FirstOrDefault();
+
+    /// <summary>"HTTP/API · Altinn → Meldingsutveksleren (MU)".</summary>
+    public static string SubjectLine(IntegrationReviewSubject subject) =>
+        IntegrationConfigurationRules.KindLabel(subject.Kind) + (subject.Producer is null && subject.Consumer is null ? "" : $" · {subject.Producer ?? "Producer not set"} → {subject.Consumer ?? "Consumer not set"}");
+
+    public sealed record StateRow(string Key, string Label, string Value, string Tone);
+
+    /// <summary>
+    /// Separate states of one integration in the shared vocabulary: Configured (persisted by its owner), mapping, source evidence (Bound /
+    /// Available · needs binding / Review required / Missing), contract/reference (Partial when reference or source evidence exists) and runtime
+    /// evidence (Available only when a runtime source is). Active execution is a separate gate shown beside these, never one of them.
+    /// </summary>
+    public static IReadOnlyList<StateRow> SubjectStates(IntegrationReviewSubject subject, IntegrationReviewReadiness readiness, bool hasBinding)
+    {
+        var facts = subject.Facts;
+        var source = facts?.SourceState is { } state ? ProjectImport.SourceSetupPresentation.StateLabel(state)
+            : hasBinding ? "Bound" : readiness.SourceSnapshots.Count > 0 ? ProjectImport.SourceSetupPresentation.AvailableNeedsBinding : "Missing";
+        var contract = HasContractEvidence(facts) ? "Partial" : "Not available";
+        var (available, total) = RuntimeAvailability(readiness);
+        var runtime = total == 0 ? "Not verified" : available == 0 ? "Not configured" : available < total ? "Partially available" : "Available";
+        var configured = !string.IsNullOrWhiteSpace(subject.EndpointOrTopic);
+        var confirmed = subject.MappingState == ConsumerMappingState.Confirmed;
+        return
+        [
+            new("configuration", "Configuration", configured ? "Configured" : "Needs configuration", configured ? "ready" : "attention"),
+            new("mapping", "Consumer mapping", confirmed ? "Confirmed" : "Needs confirmation", confirmed ? "ready" : "attention"),
+            new("source", $"{facts?.SourceRole ?? "Source"} evidence", source, source == "Bound" ? "ready" : source == "Missing" ? "fail" : "attention"),
+            new("contract", "Contract/reference", contract, contract == "Partial" ? "attention" : "muted"),
+            new("runtime", "Runtime evidence", runtime, runtime == "Available" ? "ready" : "muted"),
+        ];
+    }
+
+    public sealed record ContractBreakdown(IReadOnlyList<string> Available, IReadOnlyList<string> NotVerified);
+
+    /// <summary>Contract/reference evidence of one integration, split into what is available (reference, source, schema candidate) and what is
+    /// missing or not verified. Only items the facts support are listed; runtime contract validation is never claimed.</summary>
+    public static ContractBreakdown Contract(IntegrationReviewSubject subject)
+    {
+        var facts = subject.Facts;
+        var available = new List<string>();
+        var notVerified = new List<string>();
+        if (facts?.ContractReference.Count > 0)
+            available.Add($"{facts.ReferenceTitle ?? "Test Pack reference"} (Test Pack reference): {string.Join(", ", facts.ContractReference.Select(f => $"{f.Label} {f.Value}"))}");
+        if (facts?.BoundArchive is { } archive) available.Add($"{facts.SourceRole ?? "Source"} source contracts: {archive} (canonical binding)");
+        else if (facts?.SourceMatches > 0) available.Add($"{facts.SourceRole ?? "Source"} source evidence available · needs binding");
+        if (facts?.SchemaFiles.Count == 1) available.Add($"Schema candidate: {facts.SchemaFiles[0]}");
+        else if (facts?.SchemaFiles.Count > 1) notVerified.Add($"Schema selection: {facts.SchemaFiles.Count} candidates — review required");
+        if (facts is not null && facts.BoundArchive is null) notVerified.Add(facts.SourceMatches > 0 ? "Canonical source binding" : "Source evidence for the consumer");
+        notVerified.Add("Runtime contract validation: not verified");
+        return new(available, notVerified);
     }
 
     // ── Mapping evidence (session) ──────────────────────────────────────────────────────────────────────────────────────

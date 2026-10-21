@@ -79,8 +79,8 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
         string T(string id) => string.Join("|", cut.FindAll($"[data-testid={id}]").Select(e => e.TextContent.Trim()));
         string A(string id, string attribute) => string.Join("|", cut.FindAll($"[data-testid={id}]").Select(e => e.GetAttribute(attribute)));
         return string.Join("\n",
-            "scope: " + string.Join(" / ", new[] { "iqr-summary-target", "iqr-summary-systems", "iqr-summary-topics", "iqr-summary-enabled", "iqr-summary-readiness" }.Select(T)),
-            "headline: " + A("iqr-readiness", "data-headline") + " · " + cut.Find("[data-testid=iqr-readiness] h3").TextContent.Trim(),
+            "readiness: review " + T("iqr-review-readiness") + " / active tests " + T("iqr-active-tests-readiness"),
+            "headline: " + A("iqr-readiness", "data-headline") + " · " + A("iqr-readiness", "data-state"),
             "attention: " + string.Join(" ; ", cut.FindAll("[data-testid=iqr-attention-item]").Select(i => $"{i.GetAttribute("data-key")}={i.QuerySelector(".iqr-attention-value")!.TextContent.Trim()}")),
             "run: " + T("iqr-run"),
             "domains: " + string.Join(" ; ", cut.FindAll("[data-domain][data-readiness]").Select(d => $"{d.GetAttribute("data-domain")}={d.GetAttribute("data-readiness")}").Distinct()),
@@ -92,10 +92,10 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
     }
 
     private const string ExpectedSemantics = """
-        scope: Dev / 1 / 16 / 16 of 16 / Can run with limitations
-        headline: Can run with limitations · Review readiness Can run with limitations
+        readiness: review Partially reviewable / active tests Not known
+        headline: Can run with limitations · Partially reviewable
         attention: mappings=15 need confirmation ; runtime=0 of 4 available ; contracts=Not configured ; groups=Not configured for 16 topics ; servicebus-runtime=Not configured
-        run: Run with limitations
+        run: Run review
         domains: Configuration=Ready ; Connectivity=Limited ; Contract=NotAssessable ; MessageFlow=NotAssessable ; Reliability=NotAssessable ; ErrorHandling=NotAssessable ; Security=Limited ; Observability=Limited ; Performance=NotAssessable ; DataQuality=NotAssessable
         runtime: 0 of 4 available · AzureMetadata:NotConfigured,AzureResourceManager:NotConfigured,CheckpointStore:NotConfigured,ApplicationInsights:NotConfigured
         systems: 16 · 1 confirmed · 8 suggested · 7 unconfirmed · Not configured for 16 topics · Not configured
@@ -122,56 +122,68 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
     }
 
     [Fact]
-    public void FourViews_OverviewFirst_EachReviewGroupInItsOwnView_InTheSameOrder()
+    public void FourViews_OverviewFirst_EachGroupInItsOwnView_InTheSameOrder()
     {
         var cut = Open();
-        cut.FindAll("[data-testid=iqr-views] a").Select(a => a.TextContent).Should().Equal("Review setup", "Integrations", "Evidence", "Review coverage", "Active tests", "Extensions");
+        cut.FindAll("[data-testid=iqr-views] a").Select(a => a.TextContent).Should().Equal("Overview", "Setup & Evidence", "Review", "Test & Verify");
+        cut.FindAll("[data-testid=iqr-views] a").Select(a => a.TextContent).Should().NotContain(["Extensions", "Review setup", "Review coverage"], "no technical or duplicate top-level views");
         cut.Find("[data-testid=iqr-view-overview]").GetAttribute("aria-current").Should().Be("page");
         cut.FindAll("[data-testid=iqr-views] a[aria-current]").Should().ContainSingle("only the current view is marked");
-        cut.FindAll(".iqr-group-heading").Select(h => h.TextContent.Trim()).Should().Equal("Review overview", "Evidence", "Review coverage", "Integration areas");
-        cut.FindAll(".iqr-group-heading").Should().OnlyContain(h => h.TagName == "H2");
         cut.Find("[data-testid=iqr-group-overview]").HasAttribute("hidden").Should().BeFalse();
         cut.Find("[data-testid=iqr-group-evidence]").HasAttribute("hidden").Should().BeTrue("one view at a time");
-        cut.Find("[data-testid=iqr-group-areas]").HasAttribute("hidden").Should().BeTrue();
         cut.Find("[data-testid=iqr-group-coverage]").HasAttribute("hidden").Should().BeTrue();
         var order = new[]
         {
-            "iqr-group-overview", "iqr-scope", "iqr-readiness",
-            "iqr-group-evidence", "iqr-evidence-stages", "iqr-source-evidence", "iqr-evidence-sources", "iqr-contracts",
+            "iqr-group-overview", "iqr-readiness",
+            "iqr-group-evidence", "iqr-evidence-stages", "iqr-source-evidence", "iqr-contracts", "iqr-evidence-sources",
+            "iqr-setup-advanced", "iqr-systems", "iqr-servicebus", "iqr-scim", "iqr-messaging",
             "iqr-group-coverage", "iqr-domain-readiness",
-            "iqr-group-areas", "iqr-systems", "iqr-servicebus", "iqr-scim", "iqr-messaging",
         }.Select(id => Position(cut, id)).ToList();
         order.Should().BeInAscendingOrder();
-        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Can run with limitations");
-        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations", "the run gate stays in the overview");
+        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Partially reviewable");
+        cut.Find("[data-testid=iqr-review-readiness]").TextContent.Should().Be("Partially reviewable", "review-scoped wording, never \"Ready\"");
+        cut.Find("[data-testid=iqr-active-tests-readiness]").Should().NotBeNull("active-test readiness is a separate answer");
+        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run review", "the run gate stays in the overview");
+        cut.Find("[data-testid=iqr-group-overview]").TextContent.Should().Contain("Read-only review. No messages are published, consumed or changed.");
         cut.FindAll("[data-testid=iqr-group-overview] [data-testid=iqr-run]").Should().HaveCount(1);
-        cut.FindAll("[data-testid=act-panel]").Should().BeEmpty("the test modules are not mounted, and load nothing, outside Active tests");
+        cut.Find("[data-testid=iqr-setup-advanced-body]").HasAttribute("hidden").Should().BeTrue("systems, transports and provisioning detail is advanced");
+        cut.FindAll("[data-testid=act-panel]").Should().BeEmpty("the test modules are not mounted, and load nothing, outside Test & Verify");
         cut.FindAll("[data-testid=mfr-panel]").Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("integrations", "iqr-group-areas")]
-    [InlineData("evidence", "iqr-group-evidence")]
-    public void AViewLink_ShowsOnlyThatView(string view, string group)
+    [InlineData("setup-evidence", "setup-evidence", "iqr-group-evidence")]
+    [InlineData("integrations", "setup-evidence", "iqr-group-evidence")]
+    [InlineData("evidence", "setup-evidence", "iqr-group-evidence")]
+    [InlineData("review", "review", "iqr-group-coverage")]
+    [InlineData("coverage", "review", "iqr-group-coverage")]
+    [InlineData("setup", "overview", "iqr-group-overview")]
+    public void AViewLink_AndItsLegacyName_ShowOnlyThatView(string requested, string view, string group)
     {
-        Services.GetRequiredService<NavigationManager>().NavigateTo($"integration-quality-review?view={view}");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"integration-quality-review?view={requested}");
         var cut = Open();
         cut.Find($"[data-testid=iqr-view-{view}]").GetAttribute("aria-current").Should().Be("page");
         cut.Find($"[data-testid={group}]").HasAttribute("hidden").Should().BeFalse();
-        cut.Find("[data-testid=iqr-group-overview]").HasAttribute("hidden").Should().BeTrue();
+        foreach (var other in new[] { "iqr-group-overview", "iqr-group-evidence", "iqr-group-coverage" }.Where(g => g != group))
+            cut.Find($"[data-testid={other}]").HasAttribute("hidden").Should().BeTrue();
     }
 
     [Theory]
+    [InlineData("test-verify")]
     [InlineData("active-tests")]
     [InlineData("test-configuration")]
-    public void ActiveTests_HoldsActiveTestsSummaryFirst_AndJourneyCounts_SeparateFromReviewReadiness(string view)
+    [InlineData("extensions")]
+    public void TestAndVerify_HoldsExecutionPacksJourneysAndActiveTests_SeparateFromReviewReadiness(string view)
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo($"integration-quality-review?view={view}");
         var cut = Open();
-        cut.Find("[data-testid=iqr-view-active-tests]").GetAttribute("aria-current").Should().Be("page", "the former Test Configuration link opens Active tests");
-        new[] { "iqr-group-active-tests-view", "iqr-active-test-readiness-note", "act-panel", "iqr-journeys-summary" }.Select(id => Position(cut, id)).Should().BeInAscendingOrder();
+        cut.Find("[data-testid=iqr-view-test-verify]").GetAttribute("aria-current").Should().Be("page", "older Active tests / Extensions links open Test & Verify");
+        new[] { "iqr-group-active-tests-view", "iqr-active-execution", "iqr-active-test-readiness-note", "iqr-test-packs", "iqr-journeys-summary", "act-panel", "iqr-group-test-configuration" }
+            .Select(id => Position(cut, id)).Should().BeInAscendingOrder();
         cut.Find("[data-testid=iqr-active-test-readiness-note]").TextContent.Should().Contain("Active-test readiness").And.Contain("separate from").And.Contain("review readiness");
-        cut.FindAll("[data-testid=mfr-panel]").Should().BeEmpty("provider configuration lives under Extensions");
+        cut.Find("[data-testid=iqr-active-execution]").TextContent.Should().NotContain("Trusted environment").And.NotContain("Not trusted");
+        cut.Find("[data-testid=iqr-provider-configuration-toggle]").GetAttribute("aria-expanded").Should().Be(view == "extensions" ? "true" : "false",
+            "provider configuration is secondary; an old Extensions link opens it");
         cut.Find("#act-heading").TextContent.Should().Be("Active tests");
         cut.Find("[data-testid=act-summary-scenarios]").TextContent.Should().Be("3 available");
         cut.Find("[data-testid=act-summary-scenario]").TextContent.Should().Be("Normal Person");
@@ -190,15 +202,29 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
     }
 
     [Fact]
-    public void Extensions_HoldsTestPacksAndProviderConfiguration_OutsideTheGenericViews()
+    public void TestPacks_AndProviderConfiguration_LiveInTestAndVerify_NeverAsExtensions()
     {
-        Services.GetRequiredService<NavigationManager>().NavigateTo("integration-quality-review?view=extensions");
+        Services.GetRequiredService<NavigationManager>().NavigateTo("integration-quality-review?view=test-verify");
         var cut = Open();
-        new[] { "iqr-group-test-configuration", "iqr-test-packs", "mfr-panel" }.Select(id => Position(cut, id)).Should().BeInAscendingOrder();
-        cut.FindAll("[data-testid=act-panel]").Should().BeEmpty();
-        // Altinn wording belongs to the provider only: the generic Evidence view names contract/schema evidence, not a provider.
+        new[] { "iqr-test-packs", "iqr-group-test-configuration", "mfr-panel" }.Select(id => Position(cut, id)).Should().BeInAscendingOrder();
+        cut.Markup.Should().NotContain(">Extensions<");
+        // Provider wording belongs to the provider only: the generic Setup & Evidence view names contract/reference evidence, not a provider.
         cut.Find("[data-testid=iqr-group-evidence]").TextContent.Should().NotContain("Altinn");
-        cut.Find("[data-testid=iqr-contracts]").TextContent.Should().Contain("Contract/schema evidence");
+        cut.Find("[data-testid=iqr-contracts]").TextContent.Should().Contain("Contract/reference evidence");
+    }
+
+    [Fact]
+    public void BrowserBackAndForward_FollowTheViewInTheUrl()
+    {
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        navigation.NavigateTo("integration-quality-review?view=review");
+        var cut = Open();
+        cut.Find("[data-testid=iqr-view-review]").GetAttribute("aria-current").Should().Be("page");
+        navigation.NavigateTo("integration-quality-review?view=setup-evidence");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-view-setup-evidence]").GetAttribute("aria-current").Should().Be("page"));
+        navigation.NavigateTo("integration-quality-review?view=review");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-group-coverage]").HasAttribute("hidden").Should().BeFalse("going back restores the earlier view"));
+        cut.Find("[data-testid=iqr-view-review]").GetAttribute("href").Should().EndWith("view=review", "each view is a real link, so history works");
     }
 
     [Theory]

@@ -331,7 +331,7 @@
                 checks.Add(new("integration", "Integration configuration (IQR)", ActiveEventReadinessState.NotConfigured,
                     provider.NotApplicableReason.Length > 0 ? provider.NotApplicableReason : "No configured integration applies to this provider.", ActiveEventReadinessCategory.Integration));
             if (_trust is { Trusted: false } untrusted && checks.All(c => c.Key != "environment"))
-                checks.Add(new("environment", "Trusted environment (DEV/QA only)", ActiveEventReadinessState.Blocked, untrusted.Detail, ActiveEventReadinessCategory.TrustedEnvironment));
+                checks.Add(new("environment", "Active execution (DEV/QA only)", ActiveEventReadinessState.Blocked, untrusted.Detail, ActiveEventReadinessCategory.TrustedEnvironment));
             if (_providers.Count == 0 && _trust is null) return checks;
             checks.Add(Authentication.Configured
                 ? new("authentication", "Authentication", ActiveEventReadinessState.Ready, "Entra is configured; the browser requests a BirkNext API token for protected calls.", ActiveEventReadinessCategory.Authentication)

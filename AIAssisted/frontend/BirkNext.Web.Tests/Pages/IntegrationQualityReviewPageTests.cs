@@ -46,8 +46,8 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
     public void PreRunSummarisesTheConfiguredSystemAndItsTopics()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-summary-systems]").TextContent.Should().Be("1");
-        cut.Find("[data-testid=iqr-summary-topics]").TextContent.Should().Be("16");
+        cut.FindAll("[data-testid=iqr-system]").Should().ContainSingle("one configured system, shown under Setup & Evidence → Advanced");
+        cut.Find("[data-testid=iqr-system-topics]").TextContent.Should().Be("16");
         cut.Find("[data-testid=iqr-system-consumers]").TextContent.Should().Contain("1 confirmed").And.Contain("8 suggested").And.Contain("7 unconfirmed");
         cut.Find("[data-testid=iqr-system-groups]").TextContent.Should().Be("Not configured for 16 topics", "an unknown consumer group is stated, never invented");
     }
@@ -56,10 +56,10 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
     public void ReadinessIsCapabilitySpecificAndLimitationsDoNotBlock()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Can run with limitations");
+        cut.Find("[data-testid=iqr-review-readiness]").TextContent.Should().Be("Partially reviewable");
         cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-headline").Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-run]").HasAttribute("disabled").Should().BeFalse();
-        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run review");
         var cards = cut.FindAll("[data-testid=iqr-domain-readiness-card]");
         cards.Should().HaveCount(10);
         cards.Single(c => c.GetAttribute("data-domain") == "Configuration").GetAttribute("data-readiness").Should().Be("Ready");
@@ -72,10 +72,9 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         _api.Readiness = new IntegrationReviewReadiness { Headline = "Cannot run", Reasons = ["No enabled integration is configured."] };
         var cut = Open();
         cut.FindAll("[data-testid=iqr-run]").Should().BeEmpty("Cannot run never shows a (disabled) run button");
-        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-state").Should().Be("Cannot run");
-        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No integrations are enabled for this Target Environment.");
+        cut.Find("[data-testid=iqr-zero-integrations]").TextContent.Should().Contain("No configured integrations.");
         cut.Find("[data-testid=iqr-zero-integrations-action]").GetAttribute("href").Should().Contain("tab=integrations").And.Contain("profile=dev");
-        cut.Find("[data-testid=iqr-assess-scope-toggle]").GetAttribute("aria-expanded").Should().Be("false", "the review-area matrix waits behind a disclosure until something is configured");
+        cut.FindAll("[data-testid=iqr-readiness], [data-testid=iqr-attention-item]").Should().BeEmpty("an empty environment is one clear empty state, not a page of empty technical UI");
     }
 
     [Fact]

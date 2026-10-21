@@ -66,6 +66,10 @@
 .mfr-subnav-active { border-color: #1d4ed8; background: #eff6ff; color: #1e3a8a; font-weight: 600; }
 .mfr-view[hidden], .mfr-view [hidden] { display: none !important; }
 .mfr-readiness-line { margin: .2rem 0; font-size: .88rem; }
+.mfr-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: .3rem 1rem; margin: .3rem 0; }
+.mfr-counts > div { min-width: 0; }
+.mfr-counts dt { font-size: .72rem; color: var(--clr-text-muted, #4b5563); }
+.mfr-counts dd { margin: 0; font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
 .mfr-link-button { background: none; border: none; padding: 0 0 0 .5rem; color: var(--clr-link, #2563eb); text-decoration: underline; cursor: pointer; font-size: .86rem; min-height: 24px; }
 @media (max-width: 520px) { .mfr-card { padding: .55rem; } .mfr-view .mfr-group { padding: 0; border: 0; } }
 /* Application values known once (stored here or resolved from their owner) vs still to configure here. */

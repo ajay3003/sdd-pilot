@@ -246,7 +246,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         Row("platform").QuerySelector("[data-testid=pi-setup-packages]")!.TextContent.Should().Be("platform.zip");
         Row("platform").QuerySelector("[data-testid=pi-setup-detail]")!.TextContent.Should().Be("Matching imported source found.");
         Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.TextContent.Should().Be("Bind evidence");
-        Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+        Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.GetAttribute("href").Should().Be("/integration-quality-review?view=setup-evidence");
         Row("platform").QuerySelector("[data-testid=pi-setup-secondary]")!.GetAttribute("aria-label").Should().Be("Bind Platform evidence in IQR Evidence");
 
         Row("app").QuerySelector("[data-testid=pi-setup-state]")!.TextContent.Should().Be("Missing");
@@ -294,7 +294,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         cut.Find("[data-testid=pi-setup-state]").TextContent.Should().Be("Ambiguous", "several matching snapshots and none bound: the tester chooses, never the newest");
         cut.Find("[data-testid=pi-setup-packages]").TextContent.Should().Be("2 matching imported sources");
         cut.Find("[data-testid=pi-setup-action]").TextContent.Should().Be("Choose source");
-        cut.Find("[data-testid=pi-setup-action]").GetAttribute("href").Should().Be("/integration-quality-review?view=evidence");
+        cut.Find("[data-testid=pi-setup-action]").GetAttribute("href").Should().Be("/integration-quality-review?view=setup-evidence");
     }
 
     [Fact]

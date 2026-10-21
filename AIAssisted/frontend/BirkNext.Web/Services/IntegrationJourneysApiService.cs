@@ -224,7 +224,7 @@ public static class IntegrationJourneyPresentation
 
     public static string Category(JourneyPrerequisiteCategory category) => category switch
     {
-        JourneyPrerequisiteCategory.TrustedEnvironment => "Trusted environment",
+        JourneyPrerequisiteCategory.TrustedEnvironment => "Active execution",
         JourneyPrerequisiteCategory.SourceEvidence => "Source evidence",
         JourneyPrerequisiteCategory.SyntheticData => "Synthetic test data",
         JourneyPrerequisiteCategory.DownstreamVerification => "Downstream verification",
@@ -262,7 +262,7 @@ public static class IntegrationJourneyPresentation
     {
         var items = view.Prerequisites.Where(item => item.Category == JourneyPrerequisiteCategory.Integration && item.Key.StartsWith("integration:", StringComparison.Ordinal)).ToArray();
         return items.Length == 0 ? "No integration required" : items.All(item => item.State == JourneyReadinessState.Ready) ? "Configured" :
-            items.Any(item => item.State == JourneyReadinessState.NotConfigured) ? "Not configured" : "Configured, not enrolled";
+            items.Any(item => item.State == JourneyReadinessState.NotConfigured) ? "Not configured" : "Configured · not enabled for active runs";
     }
 
     public static string Verification(IntegrationJourneyView view) => view.LastRun is { } last

@@ -22,7 +22,7 @@ public static class ActiveEventPresentation
         ActiveEventReadinessCategory.SourceContract => "Source contract",
         ActiveEventReadinessCategory.CdcCapture => "CDC capture",
         ActiveEventReadinessCategory.Integration => "Integration configuration",
-        ActiveEventReadinessCategory.TrustedEnvironment => "Trusted environment",
+        ActiveEventReadinessCategory.TrustedEnvironment => "Active execution",
         ActiveEventReadinessCategory.Destination => "Destination",
         ActiveEventReadinessCategory.Transport => "Transport",
         ActiveEventReadinessCategory.Authentication => "Authentication",

@@ -21,6 +21,22 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
     }
 
     [Fact]
+    public void AnActivePacksDocumentedFlow_IsShownWithoutAPilotButton_AndNothingIsSaved()
+    {
+        var journeys = new Mock<IIntegrationJourneysApiService>();
+        journeys.Setup(j => j.PacksAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>(
+            [new IntegrationJourneyPackView { PackId = "skolenaervaer", Journeys = [new IntegrationJourneyView { MatchedIntegrations =
+                [new JourneyMatchedIntegration(AltinnSourceBinding.ReportIntakeRequirement, null, null, IntegrationKind.HttpApi, false, "Not configured")] }] }], null, System.Net.HttpStatusCode.OK));
+        Services.AddSingleton(journeys.Object);
+        var cut = Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot"));
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-documented-flow]").TextContent.Should().Contain("nothing is saved"));
+        cut.Markup.Should().Contain("Encrypted blob").And.Contain("Skoletjenesten");
+        cut.Find("[data-testid=mfr-developer-tools-body]").HasAttribute("hidden").Should().BeTrue("example loaders are developer tools, not the tester flow");
+        _api.Verify(x => x.SaveMessageFlowReviewDetailedAsync(It.IsAny<string>(), It.IsAny<IntegrationMessageFlowPackage>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public void PilotIsExplicitlyLoadedAsDocumentedAndActiveExecutionIsBlocked()
     {
         var cut = Render<MessageFlowReviewPanel>(p => p.Add(x => x.EnvironmentId, "pilot"));
@@ -126,7 +142,8 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=mfr-subnav] button").Select(button => button.TextContent).Should().Equal(
             "Overview", "Configuration", "Readiness", "Contracts", "Checkpoints & test plan"));
         cut.Find("[data-testid=mfr-subnav-overview]").GetAttribute("aria-current").Should().Be("true");
-        cut.Find("[data-testid=mfr-readiness-line]").TextContent.Should().Contain("1 / 15").And.Contain("Active submission blocked");
+        cut.Find("[data-testid=mfr-count-saved]").TextContent.Should().Be("1 of 15");
+        cut.Find("[data-testid=mfr-readiness-line]").TextContent.Should().Contain("Known configuration").And.Contain("Saved for active run").And.Contain("Runtime verified").And.Contain("Blocked").And.NotContain("prerequisites configured");
         cut.Find("[data-testid=mfr-view-configuration]").HasAttribute("hidden").Should().BeTrue("the configuration form is not on the overview");
         cut.Find("[data-testid=mfr-view-checkpoints]").HasAttribute("hidden").Should().BeTrue();
 
@@ -157,7 +174,7 @@ public sealed class MessageFlowReviewPanelTests : BunitContext
             new("data", "Synthetic data", false, "Missing", "Not approved."),
         ], []));
 
-        cut.Find("[data-testid=mfr-readiness-count]").TextContent.Should().StartWith("1 / 5 prerequisites configured");
+        cut.Find("[data-testid=mfr-readiness-count]").TextContent.Should().StartWith("1 of 5 saved for the active run").And.Contain("runtime verified").And.NotContain("prerequisites configured");
         cut.FindAll("[data-testid=mfr-readiness-blockers] li strong").Select(e => e.TextContent).Should().Equal("Authentication type", "Scopes", "Test reporter");
         cut.Find("[data-testid=mfr-readiness]").TextContent.Should().Contain("1 more in the full list");
         cut.Find("[data-testid=mfr-readiness-all-toggle]").GetAttribute("aria-expanded").Should().Be("false");

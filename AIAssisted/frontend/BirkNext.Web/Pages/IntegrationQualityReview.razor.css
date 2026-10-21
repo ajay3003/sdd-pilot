@@ -151,3 +151,22 @@
 .iqr-bindings, .iqr-packs { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
 .iqr-bindings li, .iqr-packs li { overflow-wrap: anywhere; }
 .iqr-readiness-distinction { border-left: 3px solid #93a3b8; padding-left: .6rem; }
+
+/* Tester workflow: the integration under review first, its separate states, review vs active-test readiness, known values with their owner. */
+.iqr-subject-select { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .86rem; margin: 0 0 .6rem; max-width: 100%; }
+.iqr-subject-select select { max-width: 100%; min-width: 0; }
+.iqr-subject h2 { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
+.iqr-states, .iqr-readiness-pair, .iqr-known { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .45rem 1rem; margin: .6rem 0 0; }
+.iqr-states > div, .iqr-readiness-pair > div, .iqr-known > div { min-width: 0; }
+.iqr-states dt, .iqr-readiness-pair dt, .iqr-known dt { font-size: .74rem; color: var(--clr-text-muted); }
+.iqr-states dd, .iqr-readiness-pair dd, .iqr-known dd { margin: .15rem 0 0; font-size: .86rem; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
+.iqr-readiness-pair { margin: 0 0 .6rem; }
+.iqr-attention-heading { margin: .2rem 0 .3rem; font-size: .92rem; }
+.iqr-provenance { font-size: .76rem; }
+.iqr-wrap { overflow-wrap: anywhere; min-width: 0; }
+.iqr-breakdown { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .4rem 1rem; min-width: 0; }
+.iqr-breakdown > div { min-width: 0; overflow-wrap: anywhere; }
+.iqr-pack { border-top: 1px solid var(--clr-border-subtle, #eef2f7); padding-top: .5rem; margin-top: .5rem; display: grid; gap: .35rem; justify-items: start; min-width: 0; }
+.iqr-pack h4 { margin: 0; font-size: .95rem; }
+.iqr-pack-journeys { margin: 0; padding-left: 1.1rem; display: grid; gap: .2rem; font-size: .86rem; overflow-wrap: anywhere; }
+.iqr-execution h3 { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 .3rem; }
