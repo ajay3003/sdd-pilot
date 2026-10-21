@@ -388,6 +388,21 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         row.Prerequisite.Should().Be("Authenticated HTTP/API context");
         row.Reason.Should().Be("No authenticated context.", "an empty surface result reason never hides the plan's");
         row.ReleaseImpactLabel.Should().Be("Blocking");
+
+        // With no reason text anywhere, the typed outcome reason still explains a planned engine that did not complete.
+        var silent = new FrontendQualityReviewReport
+        {
+            TargetUrl = Url, ExecutionPlan = plan,
+            EngineOutcomes = [new FrontendQualityEngineOutcome
+            {
+                EngineId = FrontendQualityEngineId.StaticSecurity, DisplayName = "Static Security", Enabled = true,
+                Requirement = FrontendQualityEngineRequirement.Required, ExecutionState = FrontendQualityEngineExecutionState.Unavailable,
+                OutcomeReason = FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
+                Surfaces = [new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Public, "Not assessed", false, null, "", true)],
+            }],
+        };
+        FrontendQualityPostRunPresentation.EngineRows(silent).First().Reason.Should()
+            .Be(FrontendQualityEngineOutcomePresentation.GetLabel(FrontendQualityEngineOutcomeReason.ReadinessUnavailable));
     }
 
     // ── History ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

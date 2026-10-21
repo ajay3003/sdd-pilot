@@ -168,7 +168,8 @@ public static class FrontendQualityPostRunPresentation
                 var primarySurface = primary?.Surface ?? engine.Surfaces.FirstOrDefault(s => s.Primary)?.Surface;
                 var surfacePlan = primarySurface is { } planned ? engine.For(planned) : null;
                 // The first reason that says something: an empty surface reason must not hide the engine's own.
-                var reason = completed ? null : new[] { primary?.Reason, outcome?.SanitizedFailureReason, surfacePlan?.Reason, engine.Reason }
+                var reason = completed ? null : new[] { primary?.Reason, outcome?.SanitizedFailureReason, surfacePlan?.Reason, engine.Reason,
+                        outcome is { OutcomeReason: not FrontendQualityEngineOutcomeReason.None } o ? FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason) : null }
                     .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
                 // The prerequisite of the surface the engine ran (or was meant to run) on: "Authenticated HTTP/API context", not the public label.
                 var prerequisite = surfacePlan?.Prerequisite is { Length: > 0 } p ? p : engine.Prerequisite;
