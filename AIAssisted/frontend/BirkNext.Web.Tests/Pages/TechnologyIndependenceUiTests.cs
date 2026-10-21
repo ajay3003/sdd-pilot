@@ -116,7 +116,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-tech-iac\\.terraform]"));
 
         var link = cut.Find("[data-testid=tc-terraform-source-analysis]");
-        link.GetAttribute("href").Should().Be("source-analysis?area=Infrastructure");
+        link.GetAttribute("href").Should().Be("source-analysis?area=quality-evidence&view=infrastructure");
         link.TextContent.Should().Be("Terraform");
         cut.Find("[data-testid=tc-tech-iac\\.terraform]").GetAttribute("data-overall").Should().Be("Full");
         cut.FindAll("[data-testid=tc-terraform-source-analysis]").Should().ContainSingle("only the Terraform row links to the Infrastructure as Code area");

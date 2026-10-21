@@ -1,13 +1,17 @@
-@* The one second-level view switcher of Source Analysis (Architecture, Database, Observability, Infrastructure, Configuration). A labelled
-   <nav> of real buttons; the current view carries aria-current. Views only: actions such as Export never go in here. Each button keeps
-   its existing test id ({Prefix}-{slug}). *@
+@* The one second-level view switcher of Source Analysis. A labelled <nav> of real buttons; the current view carries aria-current. Views only:
+   actions such as Export never go in here. Optional groups add a caption (aria-hidden, never a tab) before their views, so a long list reads as
+   a few groups instead of a wall of equal tabs. Each button keeps its existing test id ({Prefix}-{slug}). *@
 <nav class="sa-subnav" aria-label="@Label" data-testid="@TestId">
     <ul class="sa-subnav-list">
-        @foreach (var view in Views)
+        @foreach (var (caption, views) in Sections)
         {
-            var current = view == Current;
-            <li><button type="button" class="sa-subnav-item @(current ? "is-current" : "")" aria-current="@(current ? "true" : null)"
-                        data-testid="@($"{Prefix}-{(Slug?.Invoke(view) ?? view.ToLowerInvariant())}")" @onclick="() => Select(view)">@view</button></li>
+            @if (caption is not null) { <li class="sa-subnav-caption" aria-hidden="true" data-testid="sa-subnav-caption">@caption</li> }
+            @foreach (var view in views)
+            {
+                var current = view == Current;
+                <li><button type="button" class="sa-subnav-item @(current ? "is-current" : "")" aria-current="@(current ? "true" : null)"
+                            data-testid="@($"{Prefix}-{(Slug?.Invoke(view) ?? view.ToLowerInvariant())}")" @onclick="() => Select(view)">@view</button></li>
+            }
         }
     </ul>
 </nav>
@@ -20,6 +24,20 @@
     [Parameter, EditorRequired] public string Prefix { get; set; } = "";
     [Parameter] public Func<string, string>? Slug { get; set; }
     [Parameter] public string? TestId { get; set; }
+    /// <summary>Optional captioned groups (caption null = no caption). Views not in any group are listed first without a caption.</summary>
+    [Parameter] public IReadOnlyList<(string? Caption, IReadOnlyList<string> Views)>? Groups { get; set; }
+
+    private IEnumerable<(string? Caption, IReadOnlyList<string> Views)> Sections
+    {
+        get
+        {
+            if (Groups is null) { yield return (null, Views); yield break; }
+            var grouped = Groups.SelectMany(g => g.Views).ToHashSet(StringComparer.Ordinal);
+            var loose = Views.Where(v => !grouped.Contains(v)).ToList();
+            if (loose.Count > 0) yield return (null, loose);
+            foreach (var group in Groups) yield return (group.Caption, group.Views.Where(Views.Contains).ToList());
+        }
+    }
 
     private Task Select(string view) => CurrentChanged.InvokeAsync(view);
 }

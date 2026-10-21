@@ -1395,3 +1395,41 @@
 }
 
 .callout-body > a { font-size: 0.82rem; font-weight: 600; }
+
+/* ======================================================
+   EXPORT MENU
+   One "Export ▾" button with a short list of formats (ExportMenu shared component). The list is positioned under the button and
+   never widens the page.
+   ====================================================== */
+
+.export-menu { position: relative; display: inline-block; }
+.export-menu-toggle { white-space: nowrap; }
+.export-menu-list {
+    position: absolute;
+    right: 0;
+    z-index: 20;
+    min-width: 9rem;
+    max-width: min(16rem, 90vw);
+    margin: 0.25rem 0 0;
+    padding: 0.25rem;
+    list-style: none;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+.export-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 0;
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    color: var(--clr-text-body);
+    font: inherit;
+    font-size: 0.88rem;
+    text-align: left;
+    cursor: pointer;
+}
+.export-menu-item:hover { background: var(--clr-surface); }
+.export-menu-item:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: -2px; }

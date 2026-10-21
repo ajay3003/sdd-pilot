@@ -17,7 +17,7 @@ public sealed record SourceAreaCard(string Area, string Title, string Descriptio
 /// </summary>
 public static class SourceAnalysisOverview
 {
-    public const string SafetyNote = "Source only: no live Azure, database, messaging or HTTP connection is used.";
+    public const string SafetyNote = "Source Analysis never connects to live Azure, databases, messaging or HTTP services.";
     // The page states once that everything is source only; a card names only its own area-specific limitation.
     public const string ArchitectureCardLimitation = "Deployment and runtime state not verified";
     public const string DatabaseCardLimitation = "Deployed schema and physical database identity not verified";

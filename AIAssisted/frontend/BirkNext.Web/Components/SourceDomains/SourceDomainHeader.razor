@@ -1,13 +1,16 @@
 @using BirkNext.SourceDomains
 @using BirkNext.Web.Services
 
-@* Header every source-evidence domain page shares: title + analysis status (completeness, never quality), the domain's OWN source limitation
-   (the generic source-only note is stated once at the top of Source Analysis) and the provenance of the evidence (snapshot fingerprint,
-   analyzer version, extraction time). *@
+@* Header every quality-evidence domain page shares: title + analysis status (completeness, never quality) with its primary reason, the domain's
+   OWN source limitation (the generic source-only note is stated once at the top of Source Analysis), and the provenance of the evidence
+   (snapshot fingerprint, analyzer version, extraction time) one disclosure away. *@
 <h2 id="@HeadingId" tabindex="-1">@Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(Result.Status)" HiddenPrefix="Analysis status: " TestId="@($"sd-{Slug}-status")" /></h2>
+@if ((Reason ?? Result.StatusReason) is { } reason && Result.Status != SourceDomainStatus.Complete) { <p class="sd-reason sa-status-reason" data-testid="@($"sd-{Slug}-reason")">@reason</p> }
 <p class="sa-scope-note" role="note" data-testid="@($"sd-{Slug}-boundary")">@Note</p>
-<p class="sd-muted sd-provenance" data-testid="@($"sd-{Slug}-provenance")">Source <code title="@Result.SourceFingerprint">@SourceAnalysisOverview.ShortFingerprint(Result.SourceFingerprint)</code> · analyzer v@(Result.AnalyzerVersion) · extracted @SourceAnalysisOverview.Utc(Result.ExtractedAt)@(Result.Technologies.Count > 0 ? $" · {string.Join(", ", Result.Technologies)}" : "")</p>
-@if (Result.StatusReason is { } reason) { <p class="sd-reason" data-testid="@($"sd-{Slug}-reason")">@reason</p> }
+<ReviewDisclosure Text="View provenance" CollapseText="Hide provenance" TestId="@($"sd-{Slug}-provenance-detail")" Class="disclosure-small">
+    <p class="sd-muted sd-provenance" data-testid="@($"sd-{Slug}-provenance")">Source <code title="@Result.SourceFingerprint">@SourceAnalysisOverview.ShortFingerprint(Result.SourceFingerprint)</code> · analyzer v@(Result.AnalyzerVersion) · extracted @SourceAnalysisOverview.Utc(Result.ExtractedAt)@(Result.Technologies.Count > 0 ? $" · {string.Join(", ", Result.Technologies)}" : "")</p>
+    @if (Result.StatusReason is { } analyzerReason && Reason is not null) { <p class="sd-muted">Analyzer: @analyzerReason</p> }
+</ReviewDisclosure>
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter, EditorRequired] public string Slug { get; set; } = "";
@@ -15,4 +18,6 @@
     /// <summary>What this domain specifically cannot tell from source (e.g. "execution not assessed").</summary>
     [Parameter, EditorRequired] public string Note { get; set; } = "";
     [Parameter] public string? HeadingId { get; set; }
+    /// <summary>The primary reason for a non-complete status from the domain's own data (e.g. "58 uncategorized keys"); the analyzer's reason otherwise.</summary>
+    [Parameter] public string? Reason { get; set; }
 }

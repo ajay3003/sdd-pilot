@@ -59,6 +59,22 @@ public static class SourceObservabilityPresentation
     public static string StateSummary(IEnumerable<ObservabilityDimension> dimensions) =>
         string.Join(" · ", StateCounts(dimensions).Select(x => $"{x.Count} {ObservabilitySnapshot.Label(x.State).ToLowerInvariant()}"));
 
+    /// <summary>The one state that represents a group: needs review, then partial, then strong evidence, then not found.</summary>
+    public static ObservabilityDimensionState Headline(IReadOnlyCollection<ObservabilityDimension> dimensions) =>
+        dimensions.Any(d => d.State == ObservabilityDimensionState.NeedsReview) ? ObservabilityDimensionState.NeedsReview
+        : dimensions.Any(d => d.State == ObservabilityDimensionState.Partial) ? ObservabilityDimensionState.Partial
+        : dimensions.Any(d => d.State == ObservabilityDimensionState.StronglySupported) ? ObservabilityDimensionState.StronglySupported
+        : dimensions.Any(d => d.State == ObservabilityDimensionState.Detected) ? ObservabilityDimensionState.Detected
+        : dimensions.Any(d => d.State == ObservabilityDimensionState.NotFound) ? ObservabilityDimensionState.NotFound
+        : ObservabilityDimensionState.NotAssessed;
+
+    /// <summary>Dimension counts by evidence strength (strong = detected or strongly supported; no evidence found = not found).</summary>
+    public static (int Strong, int Partial, int NeedsReview, int NotFound) EvidenceSummary(IReadOnlyCollection<ObservabilityDimension> dimensions) => (
+        dimensions.Count(d => d.State is ObservabilityDimensionState.Detected or ObservabilityDimensionState.StronglySupported),
+        dimensions.Count(d => d.State == ObservabilityDimensionState.Partial),
+        dimensions.Count(d => d.State == ObservabilityDimensionState.NeedsReview),
+        dimensions.Count(d => d.State == ObservabilityDimensionState.NotFound));
+
     public static string ComponentName(SourceObservabilitySnapshot s, string? id) => id is null ? "Snapshot-wide"
         : s.Components.FirstOrDefault(c => c.ComponentId == id)?.Name ?? (id.IndexOf(':') is var i and >= 0 ? id[(i + 1)..] : id);
 

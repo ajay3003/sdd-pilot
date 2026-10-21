@@ -124,7 +124,7 @@ public static class TechnologyCoverageGuidance
     public static CoverageAction? TechnologyAction(DetectedTechnology technology, TechnologySupportDescriptor? descriptor)
     {
         if (descriptor is null || descriptor.Overall is SupportLevel.Unsupported or SupportLevel.NotApplicable) return null;
-        if (technology.TechnologyId == "iac.terraform") return new("Open Infrastructure as Code", "source-analysis?area=Infrastructure");
+        if (technology.TechnologyId == "iac.terraform") return new("Open Infrastructure as Code", "source-analysis?area=quality-evidence&view=infrastructure");
         if (technology.Area == TechnologyArea.Integration && TechnologySupportRegistry.IsSupported(descriptor.Configuration))
             return new("Configure integrations", TargetEnvironments + "&tab=integrations");
         if (technology.Area == TechnologyArea.Pipeline) return new("Open Pipeline Review", "pipeline-review");

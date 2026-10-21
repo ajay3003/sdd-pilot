@@ -148,7 +148,7 @@
                                     var open = _openTech.Contains(t.TechnologyId);
                                     <tr data-testid="tc-tech-@t.TechnologyId" data-overall="@descriptor?.Overall">
                                         <th scope="row">
-                                            @if (t.TechnologyId == "iac.terraform") { <a href="source-analysis?area=Infrastructure" data-testid="tc-terraform-source-analysis">@t.DisplayName</a> }
+                                            @if (t.TechnologyId == "iac.terraform") { <a href="source-analysis?area=quality-evidence&view=infrastructure" data-testid="tc-terraform-source-analysis">@t.DisplayName</a> }
                                             else { @t.DisplayName }
                                             <span class="sd-context">@P.Area(t.Area)</span>
                                         </th>

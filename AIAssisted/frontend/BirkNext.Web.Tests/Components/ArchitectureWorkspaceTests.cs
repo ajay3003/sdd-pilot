@@ -69,12 +69,13 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         cut.Find("[data-testid=arch-status]").TextContent.Should().Be("Partial");
         var overview = cut.Find("[data-testid=arch-overview]").TextContent;
         overview.Should().Contain("Components3").And.Contain("Messaging channels1").And.Contain("Datastores1");
-        cut.Find("[data-testid=arch-dep-states]").TextContent.Should().Contain("Unresolved1").And.Contain("Inferred1");
+        cut.Find("[data-testid=arch-dependency-summary]").TextContent.Should().Contain("unresolved");
+        cut.Find("[data-testid=arch-dep-states]").TextContent.Should().Contain("Unresolved1").And.Contain("Inferred1", "every evidence state stays reachable behind View dependency evidence");
         cut.Find("[data-testid=arch-diagnostics]").TextContent.Should().Contain("not application defects").And.NotContain("Billing:BaseUrl", "raw unresolved evidence is a drill-down");
         cut.Find("[data-testid=arch-unresolved-detail-toggle]").Click();
         cut.Find("[data-testid=arch-unresolved-table]").TextContent.Should().Contain("Billing:BaseUrl");
         cut.Markup.Should().NotContain(">Passed<").And.NotContain(">Failed<");
-        cut.FindAll("nav[aria-label='Architecture views'] button").Select(b => b.TextContent).Take(7).Should().Equal(["Overview", "System", "Integrations", "Messaging", "Data", "Dependencies", "Changes"]);
+        cut.FindAll("nav[aria-label='Architecture views'] button").Select(b => b.TextContent).Take(7).Should().Equal(["Summary", "System", "Integrations", "Messaging", "Datastores", "Dependencies", "Changes"]);
     }
 
     [Fact]
@@ -128,7 +129,8 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     {
         var cut = RenderModel();
         Tab(cut, "system");
-        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Component type").And.Contain("Confirmed only").And.Contain("Include inferred").And.Contain("Hide unresolved").And.Contain("Libraries");
+        cut.Find("[data-testid=arch-toolbar]").TextContent.Should().Contain("Type", "component type is a core filter");
+        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Confirmed only").And.Contain("Include inferred").And.Contain("Hide unresolved").And.Contain("Libraries");
         cut.Find("[data-testid=arch-canvas]").GetAttribute("aria-label").Should().Contain("table below lists the same relationships");
         var edgeTable = cut.Find("[data-testid=arch-edge-table]");
         edgeTable.QuerySelectorAll("tbody tr").Length.Should().Be(5);
@@ -190,8 +192,9 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         cut.Find("[data-testid=arch-dep-search]").Input("Billing");
         var row = cut.Find("[data-testid=arch-dep-row]");
         row.GetAttribute("data-state").Should().Be("Unresolved");
-        row.TextContent.Should().Contain("Unresolved: Billing:BaseUrl").And.Contain("target not identified");
-        row.QuerySelector("button")!.Click();
+        row.QuerySelector("[data-testid=arch-dep-unresolved]")!.TextContent.Should().Contain("Billing:BaseUrl");
+        row.TextContent.Should().Contain("Target unresolved");
+        row.QuerySelector("[data-testid=arch-dep-evidence]")!.Click();
         cut.Find("[data-testid=arch-edge-detail]").TextContent.Should().Contain("nothing was guessed from names");
     }
 
@@ -200,14 +203,16 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     {
         var cut = RenderModel();
         Tab(cut, "changes");
-        cut.Find("[data-testid=arch-no-previous]").TextContent.Should().Contain("No previous snapshot available").And.Contain("at least two analyzed source snapshots").And.Contain("not deployment drift");
+        cut.Find("[data-testid=arch-no-previous]").TextContent.Should().Contain("No earlier architecture analysis is available for comparison");
+        cut.Find("[data-testid=arch-change-label]").TextContent.Should().Contain("not deployment drift");
         var older = Model() with { SnapshotId = Guid.NewGuid(), Components = Model().Components.Where(c => c.Name != "Search.Worker").ToList(), Dependencies = Model().Dependencies.Where(d => d.Id != "d-sub").ToList() };
         var with = RenderModel([("older.zip", older)]);
         Tab(with, "changes");
         with.Find("[data-testid=arch-change-label]").TextContent.Should().Contain("not deployment drift");
+        with.FindAll("[data-testid=arch-change-group]").Should().NotBeEmpty("a summary by area comes first");
         var changes = with.FindAll("[data-testid=arch-changes] li");
-        changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.TextContent.Contains("Component") && li.TextContent.Contains("Search.Worker"));
-        changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.TextContent.Contains("Dependency"));
+        changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.ParentElement!.GetAttribute("data-area")!.StartsWith("Component") && li.TextContent.Contains("Search.Worker"));
+        changes.Should().Contain(li => li.GetAttribute("data-kind") == "Added" && li.ParentElement!.GetAttribute("data-area")!.StartsWith("Dependenc"));
     }
 
     [Fact]

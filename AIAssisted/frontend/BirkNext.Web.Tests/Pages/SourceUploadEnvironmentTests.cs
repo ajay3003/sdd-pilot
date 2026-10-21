@@ -61,7 +61,8 @@ public sealed class SourceUploadEnvironmentTests : BunitContext
         cut.WaitForElement("[data-testid=sa-empty-upload]");
         cut.FindAll("[data-testid=sa-no-target]").Should().BeEmpty("source snapshots need no Target Environment");
         cut.Find("[data-testid=sa-target-state]").TextContent.Should().Be("Not selected");
-        cut.Find("[data-testid=sa-target-context]").TextContent.Should().Contain("Runtime-dependent evidence").And.Contain("Not available");
+        cut.Find("[data-testid=sa-runtime-verification]").TextContent.Should().Be("Not performed here");
+        cut.Find("[data-testid=sa-runtime-dependent]").TextContent.Should().Contain("Runtime-dependent evidence is not available here");
         _api.Verify(a => a.ListSourceSnapshotsAsync("", It.IsAny<CancellationToken>()), Times.Once, "the workspace's snapshots are listed without a target");
     }
 

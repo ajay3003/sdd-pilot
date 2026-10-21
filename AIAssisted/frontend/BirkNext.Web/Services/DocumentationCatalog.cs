@@ -58,10 +58,10 @@ public static class DocumentationCatalog
     [new("General","Identifies the environment profile and its general configuration."),new("Target Application","Configured or detected target application characteristics."),new("Authentication","Authentication configuration, its verification state and the verification prerequisites (HTTPS inspection certificate, Local HTTPS Proxy, dedicated Edge browser)."),new("Endpoint Discovery","Observed network/API endpoint evidence and API review safety settings."),new("Browser Discovery","Browser Companion session and raw browser evidence."),new("Performance Thresholds","Explicit performance expectations for target-facing reviews."),new("Core Web Vitals","Frontend Core Web Vitals thresholds."),new("Frontend Review Engines","Per-environment frontend engine activation and policy."),new("Validation","Configuration validation findings."),new("Integrations","Configured integration source of truth consumed by Integration Quality Review.")];
     public static IReadOnlyList<string> DocumentedTargetEnvironmentTabs => DocumentedTargetTabs.Select(t => t.Name).ToArray();
     public static readonly IReadOnlyList<SourceAnalysisGroup> SourceAnalysisGroups =
-    [new("Core analysis", ["Overview", "Architecture", "Database", "Observability"]),new("Source evidence", ["Infrastructure", "Configuration", "CI/CD", "Contracts"])];
+    [new("Areas", ["Overview", "Architecture", "Data", "Quality Evidence"]),new("Quality evidence", ["Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts"])];
     public static IReadOnlyList<string> SourceAnalysisDomains => SourceAnalysisGroups.SelectMany(g => g.Areas).ToArray();
     public static readonly IReadOnlyList<string> DocumentedSourceAnalysisDomains =
-    ["Overview", "Architecture", "Database", "Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts"];
+    ["Overview", "Architecture", "Data", "Quality Evidence", "Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts"];
 
     private static readonly IReadOnlyDictionary<string, DocumentationGuideDetail> GuideDetails = new Dictionary<string, DocumentationGuideDetail>(StringComparer.OrdinalIgnoreCase)
     {

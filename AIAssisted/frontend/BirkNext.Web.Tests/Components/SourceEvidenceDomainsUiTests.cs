@@ -136,18 +136,18 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     // ── Landing ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Landing_shows_four_compact_evidence_rows_and_keeps_the_three_core_cards()
+    public void Overview_shows_four_compact_quality_evidence_rows_after_the_three_core_rows()
     {
         var cut = Page(Snapshot(Evidence()));
-        cut.FindAll("[data-testid=sa-area-card]").Should().HaveCount(3, "core analysis cards are unchanged");
-        var rows = cut.FindAll("[data-testid=sa-evidence-row]");
-        rows.Select(r => r.GetAttribute("data-area")).Should().Equal("Infrastructure", "Configuration", "CI/CD", "Contracts");
-        rows.Select(r => r.GetAttribute("data-status")).Should().Equal("Partial", "Complete", "Partial", "Partial");
-        cut.Find("[data-testid=sa-evidence-row][data-area=Infrastructure] [data-metric=Resources] dd").TextContent.Should().Be("3");
-        cut.Find("[data-testid=sa-evidence-row][data-area='CI/CD'] [data-metric=Pipelines] dd").TextContent.Should().Be("1", "templates are counted separately");
-        cut.FindAll("[data-testid=sa-evidence-row]").Should().OnlyContain(r => r.QuerySelectorAll("[data-testid=sa-evidence-metric]").Length == 1, "one headline count per domain");
+        cut.FindAll("[data-testid=sa-summary-rows] > li").Select(r => r.GetAttribute("data-key")).Should().Equal("architecture", "data", "observability");
+        var rows = cut.FindAll("[data-testid=sa-evidence-rows] > li");
+        rows.Select(r => r.GetAttribute("data-key")).Should().Equal("configuration", "cicd", "contracts", "infrastructure");
+        rows.Select(r => r.GetAttribute("data-status")).Should().Equal("Complete", "Partial", "Partial", "Partial");
+        cut.Find("[data-testid=sa-evidence-rows] [data-key=infrastructure] .sa-summary-detail").TextContent.Should().Be("3 resources");
+        cut.Find("[data-testid=sa-evidence-rows] [data-key=cicd] .sa-summary-detail").TextContent.Should().Be("1 pipeline", "templates are counted separately");
+        rows.Where(r => r.GetAttribute("data-status") != "Complete").Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-summary-reason]") != null, "every Partial shows its reason");
         cut.Find("[data-testid=sa-target-context]").TextContent.Should().Contain("Source only", "the source-only mode is stated once, at the top");
-        cut.Find("[data-testid=sa-overview-evidence]").TextContent.Should().NotContain(SourceDomainText.SourceBoundary, "the generic banner is not repeated per section");
+        cut.Find("[data-testid=sa-overview-summary]").TextContent.Should().NotContain(SourceDomainText.SourceBoundary, "the generic banner is not repeated per section");
     }
 
     [Fact]
@@ -165,21 +165,27 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     public void Historical_snapshots_show_not_analyzed_rows_and_an_explicit_note_in_each_area()
     {
         var cut = Page(Snapshot(null));
-        cut.FindAll("[data-testid=sa-evidence-row]").Should().OnlyContain(r => r.GetAttribute("data-status") == "Not analyzed");
-        cut.FindAll("[data-testid=sa-evidence-metric]").Should().BeEmpty("a not-analyzed domain has no counts");
-        cut.Find("[data-testid=area-infrastructure]").Click();
+        var rows = cut.FindAll("[data-testid=sa-evidence-rows] > li");
+        rows.Should().HaveCount(4).And.OnlyContain(r => r.GetAttribute("data-status") == "Not assessed");
+        rows.Should().OnlyContain(r => r.QuerySelector(".sa-summary-detail") == null, "a not-analyzed domain has no counts");
+        rows.Should().OnlyContain(r => r.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Contains("predates the source-evidence domains"));
+        cut.Find("[data-testid=area-qualityevidence]").Click();
+        cut.Find("[data-testid=sa-quality-infrastructure]").Click();
         cut.Find("[data-testid=evidence-missing]").TextContent.Should().Contain("predates the source-evidence domains");
     }
 
     [Fact]
-    public void Navigation_groups_core_analysis_and_source_evidence_and_opens_each_domain()
+    public void Navigation_has_four_areas_and_quality_evidence_opens_each_domain()
     {
         var cut = Page(Snapshot(Evidence()));
-        cut.FindAll("[data-testid=sa-area-group]").Select(g => g.GetAttribute("aria-label")).Should().Equal("Core analysis", "Source evidence");
-        foreach (var (id, workspace) in new[] { ("area-infrastructure", "infrastructure-workspace"), ("area-configuration", "configuration-workspace"), ("area-cicd", "cicd-workspace"), ("area-contracts", "contracts-workspace") })
+        cut.FindAll("[data-testid=sa-areas] a").Select(a => a.TextContent).Should().Equal("Overview", "Architecture", "Data", "Quality Evidence");
+        cut.Find("[data-testid=area-qualityevidence]").Click();
+        cut.FindAll("[data-testid=sa-quality-rows] > li").Should().HaveCount(5, "the Quality Evidence landing summarizes all five domains first");
+        foreach (var (slug, workspace) in new[] { ("infrastructure", "infrastructure-workspace"), ("configuration", "configuration-workspace"), ("cicd", "cicd-workspace"), ("contracts", "contracts-workspace") })
         {
-            cut.Find($"[data-testid={id}]").Click();
-            cut.Find($"[data-testid={id}]").GetAttribute("aria-current").Should().Be("page");
+            cut.Find($"[data-testid=sa-quality-{slug}]").Click();
+            cut.Find($"[data-testid=sa-quality-{slug}]").GetAttribute("aria-current").Should().Be("true");
+            cut.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page");
             cut.Find($"[data-testid={workspace}]").Children.Where(c => c.TagName == "P").Should().NotContain(p => p.TextContent.Contains(SourceDomainText.SourceBoundary), "each domain shows only its own limitation");
             cut.Find($"[data-testid={workspace}] .sa-scope-note").TextContent.Should().NotBeNullOrWhiteSpace();
         }
@@ -196,7 +202,8 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, Evidence()));
         cut.Find("[data-testid=sd-infra-status]").TextContent.Should().Contain("Partial");
         cut.Find("[data-testid=sd-infra-provenance]").TextContent.Should().Contain("abcdef01").And.Contain("analyzer v1");
-        cut.Find("[data-testid=sd-infra-overview]").TextContent.Should().Contain("Messaging");
+        cut.Find("[data-testid=sd-infra-overview]").TextContent.Should().Contain("Resources3");
+        cut.Find("[data-testid=sd-infra-categories]").TextContent.Should().Contain("Messaging");
         cut.Find("[data-testid=sd-infra-tab-resources]").Click();
         cut.FindAll("[data-testid=sd-infra-resource]").Should().HaveCount(3);
         cut.Find("[data-testid=sd-infra-filter-category]").Change("Messaging");
@@ -216,7 +223,8 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     {
         var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, Evidence(infrastructure: false)));
         cut.Find("[data-testid=sd-infra-status]").TextContent.Should().Contain("Not detected");
-        cut.Find("[data-testid=sd-infra-not-assessed]").TextContent.Should().Contain("not a failure");
+        cut.Find("[data-testid=sd-infra-not-assessed]").TextContent.Should().Contain("Not detected in this source").And.Contain("may exist in another source package or repository");
+        cut.Find("[data-testid=sd-infra-coverage-link]").GetAttribute("href").Should().Be("technology-coverage");
         cut.FindAll("[data-testid=sd-infra-overview]").Should().BeEmpty();
         cut.FindAll("[data-testid^=sd-infra-tab-]").Should().BeEmpty();
     }
@@ -241,8 +249,8 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
         var row = cut.Find("[data-testid=sd-cicd-pipeline][data-template=false]");
         row.QuerySelector("[data-testid=sd-cicd-trigger-types]")!.TextContent.Should().Be("Push", "the row shows trigger types only");
         row.TextContent.Should().NotContain("branches main", "branches and paths are in the expandable detail");
-        row.QuerySelectorAll("td")[1].TextContent.Should().Be("1", "the included template's unit-test step counts (cycle-safe)");
-        row.QuerySelectorAll("td")[2].TextContent.Should().Be("1");
+        row.QuerySelectorAll("td")[1].TextContent.Should().Be("1 test step", "the included template's unit-test step counts (cycle-safe)");
+        row.QuerySelectorAll("td")[2].TextContent.Should().Be("1 deploy step");
         cut.Find("[data-testid=sd-cicd-open]").GetAttribute("aria-expanded").Should().Be("false");
         cut.Find("[data-testid=sd-cicd-open]").Click();
         cut.Find("[data-testid=sd-cicd-open]").GetAttribute("aria-expanded").Should().Be("true");
@@ -261,7 +269,7 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
         cut.Find("[data-testid=sd-contracts-filter-type]").Change("OpenApi");
         var row = cut.FindAll("[data-testid=sd-contract]").Should().ContainSingle().Subject;
         row.QuerySelector("[data-testid=sd-contract-role]")!.TextContent.Should().Be("Producer");
-        row.QuerySelector("[data-testid=sd-contract-component]")!.TextContent.Should().Be("Api");
+        row.QuerySelector("[data-testid=sd-contract-component]")!.TextContent.Should().EndWith("Api");
         cut.Find("[data-testid=sd-contract-toggle]").Click();
         cut.Find("[data-testid=sd-contract-detail]").TextContent.Should().Contain("id: string (required)").And.Contain("total: number").And.Contain(SourceDomainText.ContractNotVerified);
     }

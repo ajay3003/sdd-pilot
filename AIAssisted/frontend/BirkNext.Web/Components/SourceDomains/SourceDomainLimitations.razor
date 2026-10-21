@@ -1,19 +1,20 @@
 @using BirkNext.SourceDomains
 @using BirkNext.Web.Services
 
-@* Analyzer coverage (what the analyzer can read — Partial for heuristic readers, Unsupported reported, never guessed), diagnostics and
-   limitations of one domain. Two compact disclosures in one row (collapsed by default, aria-expanded on the toggle); the detail is unchanged. *@
+@* Analyzer details of one domain in ONE collapsed disclosure: coverage (what the analyzer can read — Partial for heuristic readers, Unsupported
+   reported, never guessed), then limitations and diagnostics. Limits of the analysis — never application defects. *@
 <div class="sa-disclosures" data-testid="@($"sd-{Slug}-limitations")">
-    <ReviewDisclosure Text="@($"Analyzer coverage ({CapabilityList.Count})")" CollapseText="Hide analyzer coverage" TestId="@($"sd-{Slug}-coverage")" Class="disclosure-inline">
-        <div class="sd-scroll" tabindex="0" role="region" aria-label="Analyzer coverage">
+    <ReviewDisclosure Text="@($"Analyzer details ({LimitationCount} limitations)")" CollapseText="Hide analyzer details" TestId="@($"sd-{Slug}-analyzer")" Class="disclosure-small">
+        <h4>Coverage</h4>
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Analyzer coverage" data-testid="@($"sd-{Slug}-coverage")">
             <table>
                 <thead><tr><th scope="col">Technology</th><th scope="col">Parser coverage</th><th scope="col">What is read</th></tr></thead>
                 <tbody>@foreach (var c in CapabilityList) { <tr data-testid="@($"sd-{Slug}-capability")"><th scope="row">@c.Technology</th><td><SourceStatusBadge Dimension="SourceStatusDimension.ParserSupport" Label="@c.Support.ToString()" /></td><td>@c.Detail</td></tr> }</tbody>
             </table>
         </div>
-    </ReviewDisclosure>
-    <ReviewDisclosure Text="@($"Limitations ({Result.Limitations.Count + Result.Diagnostics.Count})")" CollapseText="Hide limitations and diagnostics" TestId="@($"sd-{Slug}-limits")" Class="disclosure-inline">
-        <ul class="sd-list">
+        <h4>Limitations</h4>
+        <p class="sd-muted">What the analyzer could not interpret with certainty — not application defects.</p>
+        <ul class="sd-list" data-testid="@($"sd-{Slug}-limits")">
             @foreach (var l in Result.Limitations) { <li>@l</li> }
             @foreach (var d in Result.Diagnostics) { <li data-testid="@($"sd-{Slug}-diagnostic")"><strong>@d.Kind:</strong> @d.Message @if (d.File is { } f) { <span class="sd-path">@SourceEvidenceDomainsPresentation.Location(f, d.Line)</span> }</li> }
         </ul>
@@ -24,4 +25,5 @@
     [Parameter, EditorRequired] public SourceDomainResult Result { get; set; } = default!;
     [Parameter] public IEnumerable<DomainCapability> Capabilities { get; set; } = [];
     private List<DomainCapability> CapabilityList => Capabilities.ToList();
+    private int LimitationCount => Result.Limitations.Count + Result.Diagnostics.Count;
 }

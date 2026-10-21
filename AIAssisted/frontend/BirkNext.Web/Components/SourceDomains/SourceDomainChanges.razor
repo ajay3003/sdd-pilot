@@ -1,29 +1,37 @@
 @using BirkNext.SourceDomains
 @using BirkNext.Web.Services
 
-@* Source-to-source changes of one domain against the latest earlier analysis of the same repository. A difference is a SOURCE change —
-   never runtime or deployment drift (e.g. "Infrastructure source change", not "Terraform drift"). *@
-<section class="sd-panel" aria-labelledby="@($"sd-{Slug}-changes-heading")" data-testid="@($"sd-{Slug}-changes")">
-    <h3 id="@($"sd-{Slug}-changes-heading")">@Label source changes</h3>
-    <p class="sd-muted">@SourceEvidenceDiff.Label</p>
+@* Source-to-source changes of one domain against the latest earlier analysis of the same repository: counts first (added, removed, changed per
+   area), the change list one disclosure away. A difference is a SOURCE change — never runtime or deployment drift. Without an earlier analysis
+   this is one short line, not a panel. *@
+<section class="sd-panel sd-changes" aria-labelledby="@($"sd-{Slug}-changes-heading")" data-testid="@($"sd-{Slug}-changes")">
+    <h3 id="@($"sd-{Slug}-changes-heading")">@Label changes</h3>
     @if (Previous is not { } previous)
     {
-        <p class="sd-empty" data-testid="@($"sd-{Slug}-changes-empty")">No earlier analysis of this repository with source-evidence domains is stored, so there is nothing to compare with.</p>
+        <p class="sa-empty-line" data-testid="@($"sd-{Slug}-changes-empty")">No earlier @Label.ToLowerInvariant() analysis is available for comparison.</p>
     }
     else
     {
         var changes = SourceEvidenceDiff.Compare(previous.Evidence, Current).Where(c => c.Domain == Domain).ToList();
-        <p class="sd-muted" data-testid="@($"sd-{Slug}-changes-against")">Compared with <strong>@previous.Label</strong> (older) → selected snapshot.</p>
-        @if (changes.Count == 0) { <p class="sd-empty" data-testid="@($"sd-{Slug}-changes-none")">No @Label.ToLowerInvariant() source changes between the two snapshots.</p> }
+        <p class="sd-muted" data-testid="@($"sd-{Slug}-changes-against")">Compared with <strong>@previous.Label</strong> (older) → selected snapshot. @SourceEvidenceDiff.Label</p>
+        @if (changes.Count == 0) { <p class="sa-empty-line" data-testid="@($"sd-{Slug}-changes-none")">No @Label.ToLowerInvariant() source changes between the two snapshots.</p> }
         else
         {
-            <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{Label} source changes")">
-                <table data-testid="@($"sd-{Slug}-changes-table")">
-                    <thead><tr><th scope="col">Change</th><th scope="col">Area</th><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
-                    <tbody>@foreach (var c in changes.Take(300)) { <tr data-testid="@($"sd-{Slug}-change")"><td>@c.Kind@(c.ContractChange != ContractChangeClass.None ? $" · {c.ContractChange}" : "")</td><td>@c.Area</td><th scope="row">@c.Name<span class="sd-context">@c.Key</span></th><td>@c.Detail</td></tr> }</tbody>
-                </table>
-            </div>
-            @if (changes.Count > 300) { <p class="sd-muted">First 300 of @changes.Count changes shown.</p> }
+            <dl class="sa-change-summary" data-testid="@($"sd-{Slug}-changes-summary")">
+                <div><dt>Added</dt><dd>@changes.Count(c => c.Kind == SourceEvidenceChangeKind.Added)</dd></div>
+                <div><dt>Removed</dt><dd>@changes.Count(c => c.Kind == SourceEvidenceChangeKind.Removed)</dd></div>
+                <div><dt>Changed</dt><dd>@changes.Count(c => c.Kind == SourceEvidenceChangeKind.Changed)</dd></div>
+                @foreach (var g in SourceAnalysisReview.EvidenceChanges(changes)) { <div data-testid="@($"sd-{Slug}-change-group")"><dt>@g.Label</dt><dd>@SourceAnalysisReview.ChangeText(g)</dd></div> }
+            </dl>
+            <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="@($"sd-{Slug}-changes-detail")" Class="disclosure-small">
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{Label} source changes")">
+                    <table data-testid="@($"sd-{Slug}-changes-table")">
+                        <thead><tr><th scope="col">Change</th><th scope="col">Area</th><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>@foreach (var c in changes.Take(300)) { <tr data-testid="@($"sd-{Slug}-change")"><td>@c.Kind@(c.ContractChange != ContractChangeClass.None ? $" · {c.ContractChange}" : "")</td><td>@c.Area</td><th scope="row">@c.Name<span class="sd-context">@c.Key</span></th><td>@c.Detail</td></tr> }</tbody>
+                    </table>
+                </div>
+                @if (changes.Count > 300) { <p class="sd-muted">First 300 of @changes.Count changes shown.</p> }
+            </ReviewDisclosure>
         }
     }
 </section>

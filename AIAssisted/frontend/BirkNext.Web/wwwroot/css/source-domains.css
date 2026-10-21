@@ -224,3 +224,48 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 .evh-list code { overflow-wrap: anywhere; white-space: normal; }
 .evh-use { background: none; border: 0; padding: 0 0 0 .4rem; color: var(--clr-link, #1d4ed8); text-decoration: underline; cursor: pointer; font-size: .8rem; }
 .sd-envvalue { display: block; overflow-wrap: anywhere; white-space: normal; }
+
+/* ── Source Analysis review hierarchy (four areas, summary first) ─────────────────────────────────────────────────────── */
+.sa-snapshot-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; min-width: 0; }
+.sa-snapshot-head h2 { margin: 0; font-size: 1rem; }
+.sa-current-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sa-secondary-action { display: inline-flex; align-items: center; text-decoration: none; }
+.sa-file-label { position: relative; cursor: pointer; }
+.sa-helper { font-size: .8rem; }
+.sa-status-reason { margin: .1rem 0 .4rem; color: #374151; font-weight: 600; overflow-wrap: anywhere; }
+.sa-summary-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+/* Wrapping row: title + status, then the reason and detail take the remaining width or move to their own line — never a sliver column. */
+.sa-summary-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; padding: .45rem .6rem; border: 1px solid #e5e7eb; border-radius: 6px; min-width: 0; }
+.sa-summary-title { font-weight: 600; flex: 0 0 9rem; max-width: 100%; }
+.sa-summary-reason { flex: 1 1 14rem; min-width: 0; overflow-wrap: break-word; }
+.sa-summary-detail { flex: 1 1 10rem; min-width: 0; font-size: .82rem; overflow-wrap: break-word; }
+.sa-summary-open { white-space: nowrap; margin-left: auto; }
+.sa-summary-subheading { font-size: .9rem; margin: .9rem 0 .4rem; }
+.sa-attention-list { margin: .25rem 0 .5rem; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
+.sa-count { display: inline-block; min-width: 1.5rem; padding: 0 .4rem; border-radius: 999px; background: #eef2ff; color: #1e3a8a; font-size: .8rem; text-align: center; }
+.sa-subnav-caption { align-self: center; padding: 0 .25rem 0 .6rem; font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; }
+.arch-toolbar-core, .db-toolbar-core { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem .75rem; margin: .5rem 0; min-width: 0; }
+.arch-toolbar-core label, .db-toolbar-core label { display: inline-flex; align-items: center; gap: .35rem; }
+.arch-toolbar-core label, .db-toolbar-core label { font-size: .85rem; color: #374151; }
+.arch-toolbar-core :is(input, select), .db-toolbar-core :is(input, select) { font: inherit; font-size: .875rem; min-height: 2rem; padding: .25rem .5rem; color: #111827;
+    background: #fff; border: 1px solid #d1d5db; border-radius: 6px; }
+.arch-toolbar-core :is(input, select):focus-visible, .db-toolbar-core :is(input, select):focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.arch-search input, .db-search input { min-width: 0; width: min(16rem, 60vw); }
+.arch-menu { margin: 0; }
+.arch-menu-body { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; padding: .5rem .6rem; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; max-width: 100%; }
+.arch-causes, .db-causes { margin: .25rem 0 .5rem; padding-left: 1.1rem; }
+.arch-context { display: block; font-size: .8rem; color: #6b7280; overflow-wrap: anywhere; }
+.db-selection-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .4rem 0; }
+.sa-empty-line { margin: .3rem 0; color: #4b5563; }
+.sa-change-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .4rem .9rem; margin: .5rem 0; }
+.sa-change-summary dt { font-size: .78rem; color: #6b7280; }
+.sa-change-summary dd { margin: 0; font-weight: 600; }
+.sa-change-area { margin: .6rem 0 .2rem; font-size: .9rem; }
+.sd-lead { margin: .4rem 0; font-size: 1.05rem; font-weight: 600; }
+.sd-neutral { padding: .6rem .8rem; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; max-width: 48rem; }
+.sd-neutral p { margin: .2rem 0 .4rem; }
+.sa-group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: .6rem; margin-top: .6rem; }
+.sa-group-cards .sa-group-card h4 { display: flex; flex-wrap: wrap; gap: .3rem; align-items: baseline; margin: 0 0 .3rem; }
+@media (max-width: 640px) {
+    .sa-summary-title { flex-basis: auto; }
+}

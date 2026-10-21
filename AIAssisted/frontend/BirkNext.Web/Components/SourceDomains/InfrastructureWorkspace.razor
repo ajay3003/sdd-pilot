@@ -6,41 +6,46 @@
    Summary first; resources, dependencies, identity, networking, messaging, datastores and telemetry are filterable drill-downs.
    Declared ≠ exists ≠ reachable ≠ permitted ≠ delivering. *@
 <section class="sd-workspace" aria-labelledby="sd-infra-heading" data-testid="infrastructure-workspace">
-    <SourceDomainHeader Title="Infrastructure as Code" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
-    @if (!SourceEvidenceDomainsPresentation.Assessed(I))
+    @if (I.Status == SourceDomainStatus.NotDetected)
     {
-        <div class="sd-empty" data-testid="sd-infra-not-assessed">
-            <p><strong>@(I.Status == SourceDomainStatus.NotDetected ? "No supported Infrastructure as Code files detected." : SourceDomainText.Label(I.Status))</strong></p>
-            <p class="sd-muted">This is not a failure: infrastructure may be defined in another repository or outside IaC. Supported: Terraform; Bicep, ARM, Kubernetes and Helm partially.</p>
+        @* Neutral and compact: no supported IaC in this source is not "no infrastructure". *@
+        <h2 id="sd-infra-heading" tabindex="-1">Infrastructure <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="Not detected" HiddenPrefix="Analysis status: " TestId="sd-infra-status" /></h2>
+        <div class="sd-neutral" data-testid="sd-infra-not-assessed">
+            <p><strong>Not detected in this source.</strong> This source does not contain supported Infrastructure as Code files. Infrastructure may exist in another source package or repository.</p>
+            <p class="sd-muted">Supported: Terraform · Bicep · ARM · Kubernetes · Helm (partial)</p>
+            <a class="btn-secondary" href="technology-coverage" data-testid="sd-infra-coverage-link">Review source coverage</a>
         </div>
+    }
+    else if (!SourceEvidenceDomainsPresentation.Assessed(I))
+    {
+        <SourceDomainHeader Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
+        <div class="sd-neutral" data-testid="sd-infra-not-assessed"><p><strong>@SourceDomainText.Label(I.Status)</strong> @I.StatusReason</p></div>
         <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
     }
     else
     {
+        <SourceDomainHeader Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" Note="@SourceEvidenceDomainsPresentation.InfrastructureNote" HeadingId="sd-infra-heading" />
         <SourceViewNav Label="Infrastructure views" Views="Tabs" @bind-Current="_tab" Prefix="sd-infra-tab" Slug="Slug" />
         @switch (_tab)
         {
             case "Overview":
+                var resources = I.Resources.Where(r => r.Kind == "resource").ToList();
+                <p class="sd-lead" data-testid="sd-infra-lead">Infrastructure detected</p>
                 <dl class="sd-summary" data-testid="sd-infra-overview">
-                    <div><dt>Resources</dt><dd>@I.Resources.Count(r => r.Kind == "resource")</dd></div>
-                    <div><dt>Data sources</dt><dd>@I.Resources.Count(r => r.Kind == "data")</dd></div>
-                    <div><dt>Modules</dt><dd>@I.Modules.Count</dd></div>
-                    <div><dt>Dependencies</dt><dd>@I.Dependencies.Count</dd></div>
-                    <div><dt>Environments</dt><dd>@I.Environments.Count</dd></div>
-                    <div><dt>Identity &amp; RBAC</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.IdentityCategories))</dd></div>
-                    <div><dt>Networking</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.NetworkCategories))</dd></div>
-                    <div><dt>Messaging</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, InfrastructureCategory.Messaging))</dd></div>
-                    <div><dt>Datastores</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.DatastoreCategories))</dd></div>
-                    <div><dt>Observability</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, InfrastructureCategory.Observability))</dd></div>
-                    <div><dt>Unresolved references</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
+                    <div><dt>Resources</dt><dd>@resources.Count</dd></div>
+                    <div><dt>Resource types</dt><dd>@resources.Select(r => r.ResourceType).Distinct().Count()</dd></div>
+                    <div><dt>Bindings</dt><dd>@I.Dependencies.Count</dd></div>
+                    <div><dt>Environment references</dt><dd>@I.Environments.Count</dd></div>
+                    <div><dt>Needs review</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
                 </dl>
+                <div class="sa-actions"><button type="button" class="btn-primary" data-testid="sd-infra-review" @onclick='() => _tab = "Resources"'>Review infrastructure</button></div>
                 <section class="sd-panel" aria-labelledby="sd-infra-categories-heading" data-testid="sd-infra-categories">
-                    <h3 id="sd-infra-categories-heading">Declared resources by category</h3>
-                    <p class="sd-muted">Provider-neutral categories; the provider adapter adds the detail. A declaration does not prove the resource exists.</p>
+                    <h3 id="sd-infra-categories-heading">Declared resources by kind</h3>
+                    <p class="sd-muted">A declaration does not prove the resource exists.</p>
                     <dl class="sd-mini">
-                        @foreach (var g in I.Resources.Where(r => r.Kind == "resource").GroupBy(r => r.Category).OrderByDescending(g => g.Count()).ThenBy(g => g.Key))
+                        @foreach (var g in resources.GroupBy(r => KindGroup(r.Category)).OrderBy(g => Array.IndexOf(KindOrder, g.Key)))
                         {
-                            <div data-testid="sd-infra-category" data-category="@g.Key"><dt>@SourceDomainText.Label(g.Key) <span class="sd-context">@string.Join(", ", g.Select(r => r.CategoryDetail).Distinct().Take(3))</span></dt><dd>@g.Count()</dd></div>
+                            <div data-testid="sd-infra-category" data-category="@g.Key"><dt>@g.Key <span class="sd-context">@string.Join(", ", g.Select(r => r.CategoryDetail).Where(x => x.Length > 0).Distinct().Take(3))</span></dt><dd>@g.Count()</dd></div>
                         }
                     </dl>
                 </section>
@@ -148,6 +153,18 @@
     }
 </section>
 @code {
+    private static readonly string[] KindOrder = ["Compute", "Messaging", "Storage", "Identity", "Networking", "Monitoring", "Other"];
+    /// <summary>Presentation grouping of the provider-neutral categories into the seven kinds a reviewer scans first.</summary>
+    private static string KindGroup(InfrastructureCategory category) => category switch
+    {
+        InfrastructureCategory.Compute or InfrastructureCategory.ApiGateway or InfrastructureCategory.ContainerRegistry => "Compute",
+        InfrastructureCategory.Messaging => "Messaging",
+        InfrastructureCategory.Database or InfrastructureCategory.Storage or InfrastructureCategory.Cache => "Storage",
+        InfrastructureCategory.Identity or InfrastructureCategory.AccessControl or InfrastructureCategory.SecretStore => "Identity",
+        InfrastructureCategory.Networking or InfrastructureCategory.Dns => "Networking",
+        InfrastructureCategory.Observability => "Monitoring",
+        _ => "Other",
+    };
     [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
     [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
 

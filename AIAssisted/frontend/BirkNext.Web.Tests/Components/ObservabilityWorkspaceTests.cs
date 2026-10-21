@@ -162,7 +162,7 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
     {
         var cut = Workspace();
         cut.Find("[data-testid=obs-tab-changes]").Click();
-        cut.Find("[data-testid=obs-no-previous]").TextContent.Should().Contain("No previous snapshot available");
+        cut.Find("[data-testid=obs-no-previous]").TextContent.Should().Contain("No earlier observability analysis is available for comparison");
 
         var previous = Fixture() with
         {
@@ -183,7 +183,9 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
     public void ExportsTheStoredSnapshotAsJson()
     {
         var cut = Workspace();
-        cut.Find("[data-testid=obs-export-json]").Click();
+        cut.FindAll("[data-testid=obs-export-menu-toggle]").Should().ContainSingle("one Export menu per area");
+        cut.Find("[data-testid=obs-export-menu-toggle]").Click();
+        cut.Find("[data-testid=obs-export-menu-json]").Click();
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "downloadJsonFile" && (string)i.Arguments[0]! == "source-observability.json" && ((string)i.Arguments[1]!).Contains("\"SourceFingerprint\""));
     }
 
@@ -213,26 +215,28 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
         Services.AddSingleton<IReportExportService, ReportExportService>();
         var cut = Render<SourceAnalysis>();
 
-        var card = cut.Find("[data-testid=sa-area-card][data-area=Observability]");
-        card.GetAttribute("data-analysis").Should().Be(observability.Id.ToString());
-        card.QuerySelector("[data-testid=sa-area-status]")!.TextContent.Should().Be("Partial");
-        card.QuerySelectorAll("[data-testid=sa-metric]").Select(m => (m.GetAttribute("data-metric"), m.QuerySelector("dd")!.TextContent)).Should().Equal(
-            ("Correlation boundaries", "4"), ("Findings needing review", "4"), ("Unresolved boundaries", "1"));
-        card.QuerySelector("[data-testid=sa-area-limitation]")!.TextContent.Should().Be(SourceObservabilityPresentation.CardLimitation);
+        var row = cut.Find("[data-testid=sa-summary-row][data-key=observability]");
+        row.GetAttribute("data-status").Should().Be("Partial");
+        row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Be("4 findings need review", "Partial always says why, from the snapshot's own findings");
+        cut.FindAll("[data-testid=sa-attention-item]").Should().Contain(i => i.TextContent.Contains("4 observability findings"));
         cut.Find("[data-testid=sa-open-observability]").Click();
-        cut.Find("[data-testid=area-observability]").GetAttribute("aria-current").Should().Be("page");
-        cut.Find("[data-testid=obs-fingerprint]").GetAttribute("title").Should().Be(observability.SourceFingerprint);
+        cut.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page");
+        cut.Find("[data-testid=sa-quality-observability]").GetAttribute("aria-current").Should().Be("true");
+        cut.Find("[data-testid=obs-fingerprint]").GetAttribute("title").Should().Be(observability.SourceFingerprint, "the domain opens from the same selected snapshot");
         api.Verify(a => a.AnalyzeSourceSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "opening Observability never re-analyzes");
 
         cut.Find("[data-testid=source-snapshot]").Change(snapshots[1].Id.ToString());
-        cut.Find("[data-testid=area-observability]").Click();
+        cut.Find("[data-testid=sa-quality-observability]").Click();
         cut.Find("[data-testid=observability-missing]").TextContent.Should().Contain("predates observability analysis");
         cut.Find("[data-testid=area-overview]").Click();
-        cut.Find("[data-testid=sa-area-card][data-area=Observability] [data-testid=sa-area-status]").TextContent.Should().Be("Not analyzed");
+        var missing = cut.Find("[data-testid=sa-summary-row][data-key=observability]");
+        missing.GetAttribute("data-status").Should().Be("Not assessed");
+        missing.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Contain("predates observability analysis", "no counts and no fake zero");
         cut.Find("[data-testid=source-snapshot]").Change(id.ToString());
-        cut.Find("[data-testid=area-observability]").Click();
+        cut.Find("[data-testid=area-qualityevidence]").Click();
+        cut.Find("[data-testid=sa-quality-observability]").Click();
         cut.Find("[data-testid=obs-tab-changes]").Click();
         cut.Find("[data-testid=obs-no-previous]").Should().NotBeNull("another repository's snapshot is never the comparison baseline");
-        cut.FindAll("[data-testid=sa-area-card][data-area=Observability] [data-testid=sa-metric]").Should().BeEmpty();
+        cut.FindAll("[data-testid=obs-change-row]").Should().BeEmpty();
     }
 }

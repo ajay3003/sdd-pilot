@@ -1,0 +1,37 @@
+@* One export pattern for review pages: a single "Export ▾" button (aria-expanded/aria-controls) that opens a short list of formats. Each
+   entry is a real button; choosing one runs it and closes the menu, Escape closes it. Only the formats that apply to the current view are
+   passed in (SVG only where a diagram is shown). Styles: components.css (.export-menu*). *@
+<div class="export-menu @Class" data-testid="@TestId" @onkeydown="OnKeyDown">
+    <button type="button" class="btn-secondary export-menu-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_listId"
+            data-testid="@(TestId is null ? null : $"{TestId}-toggle")" @onclick="() => _open = !_open">@Label <span aria-hidden="true">▾</span></button>
+    <ul id="@_listId" class="export-menu-list" hidden="@(!_open)" aria-label="@($"{Label} formats")">
+        @foreach (var option in Options)
+        {
+            <li><button type="button" class="export-menu-item" data-testid="@(TestId is null ? null : $"{TestId}-{option.Key}")" @onclick="() => Run(option)">@option.Label</button></li>
+        }
+    </ul>
+</div>
+
+@code {
+    /// <summary>One export format: a stable key (test id suffix), its visible label and the action.</summary>
+    public sealed record Option(string Key, string Label, Func<Task> Run);
+
+    [Parameter, EditorRequired] public IReadOnlyList<Option> Options { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Export";
+    [Parameter] public string? TestId { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private readonly string _listId = $"export-{Guid.NewGuid():N}";
+    private bool _open;
+
+    private async Task Run(Option option)
+    {
+        _open = false;
+        await option.Run();
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") _open = false;
+    }
+}

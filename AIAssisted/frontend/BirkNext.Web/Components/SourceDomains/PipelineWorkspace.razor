@@ -4,7 +4,7 @@
 @* Source Analysis → CI/CD: pipeline definitions of the selected snapshot (stored analysis). A step listed here is what a pipeline intends to
    run — never that it ran or passed; no execution history is read. Secrets are names only. *@
 <section class="sd-workspace" aria-labelledby="sd-cicd-heading" data-testid="cicd-workspace">
-    <SourceDomainHeader Title="CI/CD" Slug="cicd" Result="P" Note="@SourceEvidenceDomainsPresentation.PipelineNote" HeadingId="sd-cicd-heading" />
+    <SourceDomainHeader Title="CI/CD" Slug="cicd" Result="P" Note="@SourceEvidenceDomainsPresentation.PipelineNote" HeadingId="sd-cicd-heading" Reason="@SourceAnalysisReview.CiCdReason(P)" />
     @if (!SourceEvidenceDomainsPresentation.Assessed(P))
     {
         <div class="sd-empty" data-testid="sd-cicd-not-assessed">
@@ -17,28 +17,30 @@
     {
         var runnable = P.Pipelines.Where(p => !p.IsTemplate).ToList();
         var steps = P.Pipelines.SelectMany(p => p.Steps).ToList();
+        var templates = P.Pipelines.Count(p => p.IsTemplate);
+        var iac = steps.Count(s => s.Kind is PipelineStepKind.InfrastructureDeploy or PipelineStepKind.InfrastructurePlan);
+        var checks = steps.Count(s => SourceEvidenceDomainsPresentation.IsCheck(s.Kind));
+        <p class="sd-lead" data-testid="sd-cicd-lead">@SourceAnalysisReview.Plural(runnable.Count, "pipeline", "pipelines") detected</p>
         <dl class="sd-summary" data-testid="sd-cicd-overview">
-            <div><dt>Pipelines</dt><dd>@runnable.Count</dd></div>
-            <div><dt>Templates</dt><dd>@P.Pipelines.Count(p => p.IsTemplate)</dd></div>
-            <div><dt>Triggers</dt><dd>@runnable.Sum(p => p.Triggers.Count(t => t.Type != "none"))</dd></div>
-            <div><dt>Build steps</dt><dd>@steps.Count(s => s.Kind is PipelineStepKind.Build or PipelineStepKind.Restore or PipelineStepKind.ContainerBuild)</dd></div>
-            <div><dt>Test steps</dt><dd data-testid="sd-cicd-tests">@steps.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind))</dd></div>
-            <div><dt>Security / dependency checks</dt><dd data-testid="sd-cicd-checks">@steps.Count(s => SourceEvidenceDomainsPresentation.IsCheck(s.Kind))</dd></div>
-            <div><dt>Deployment stages</dt><dd>@P.Pipelines.Sum(p => p.Stages.Count(s => s.Deployment))</dd></div>
-            <div><dt>IaC steps</dt><dd>@steps.Count(s => s.Kind is PipelineStepKind.InfrastructureDeploy or PipelineStepKind.InfrastructurePlan)</dd></div>
+            <div><dt>Build</dt><dd>@SourceAnalysisReview.Plural(steps.Count(s => s.Kind is PipelineStepKind.Build or PipelineStepKind.Restore or PipelineStepKind.ContainerBuild), "step", "steps")</dd></div>
+            <div><dt>Tests</dt><dd data-testid="sd-cicd-tests">@SourceAnalysisReview.Plural(steps.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind)), "step", "steps")</dd></div>
+            <div><dt>Deployment</dt><dd>@SourceAnalysisReview.Plural(P.Pipelines.Sum(p => p.Stages.Count(s => s.Deployment)), "stage", "stages")</dd></div>
+            <div><dt>Triggers</dt><dd>@runnable.Sum(p => p.Triggers.Count(t => t.Type != "none")) detected</dd></div>
+            <div data-testid="sd-cicd-checks-item"><dt>Security / dependency checks</dt><dd data-testid="sd-cicd-checks">@(checks == 0 ? "Not detected" : SourceAnalysisReview.Plural(checks, "step", "steps"))</dd></div>
+            @if (templates > 0) { <div><dt>Templates</dt><dd>@templates</dd></div> }
+            @if (iac > 0) { <div><dt>IaC steps</dt><dd>@iac</dd></div> }
         </dl>
+        <div class="sa-actions"><button type="button" class="btn-primary" data-testid="sd-cicd-review" @onclick="ReviewPipelines">Review pipelines</button></div>
         var groups = SourceEvidenceDomainsPresentation.PipelineGroups(P);
         <section class="sd-panel" aria-labelledby="sd-cicd-pipelines-heading" data-testid="sd-cicd-pipelines">
-            <h3 id="sd-cicd-pipelines-heading">Pipelines <span class="sd-count">@P.Pipelines.Count</span></h3>
-            <p class="sd-muted">Step counts include the templates a pipeline includes (resolved inside this snapshot). Trigger branches, paths and schedules are under Details.</p>
+            <h3 id="sd-cicd-pipelines-heading" tabindex="-1">Pipelines <span class="sd-count">@P.Pipelines.Count</span></h3>
             @if (groups.Any(g => g.Stem is not null))
             {
-                <p class="sa-help-text" data-testid="sd-cicd-grouping-note">Pipelines whose names differ only by an environment suffix (for example -dev / -qa) are shown together. This is a presentation grouping by name — it does not establish shared ownership or deployment.</p>
+                <p class="sa-help-text" data-testid="sd-cicd-grouping-note">Pipelines whose names differ only by an environment suffix (for example -dev / -qa) are shown together — a presentation grouping by name, not shared ownership or deployment.</p>
             }
-            <p class="sa-scroll-hint" aria-hidden="true">Scroll sideways to see every column.</p>
             <div class="sd-scroll sa-stack" tabindex="0" role="region" aria-label="Pipelines">
                 <table role="table" data-testid="sd-cicd-pipeline-table">
-                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Pipeline</th><th role="columnheader" scope="col">Trigger types</th><th role="columnheader" scope="col">Tests</th><th role="columnheader" scope="col">Checks</th><th role="columnheader" scope="col">Deploy</th><th role="columnheader" scope="col">Environments</th><th role="columnheader" scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Pipeline</th><th role="columnheader" scope="col">Trigger</th><th role="columnheader" scope="col">Tests</th><th role="columnheader" scope="col">Deploy</th><th role="columnheader" scope="col">Environment</th><th role="columnheader" scope="col">Review state</th><th role="columnheader" scope="col"><span class="visually-hidden">Pipeline details</span></th></tr></thead>
                     @foreach (var group in groups)
                     {
                         <tbody role="rowgroup" data-testid="sd-cicd-group" data-group="@(group.Stem ?? (group.Templates ? "templates" : group.Pipelines[0].Id))">
@@ -55,14 +57,16 @@
                                 var effective = SourceEvidenceDomainsPresentation.EffectiveSteps(P, p);
                                 var open = _open.Contains(p.Id);
                                 var detailId = DetailId(p);
+                                var tests = effective.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind));
+                                var deploys = effective.Count(s => SourceEvidenceDomainsPresentation.IsDeploy(s.Kind));
                                 <tr role="row" data-testid="sd-cicd-pipeline" data-template="@(p.IsTemplate ? "true" : "false")">
-                                    <th role="rowheader" scope="row">@p.Name<span class="sd-context sd-path">@SourceDomainText.Label(p.Platform) · @p.File</span></th>
-                                    <td role="cell" data-label="Trigger types" data-testid="sd-cicd-trigger-types">@SourceEvidenceDomainsPresentation.TriggerTypes(p)</td>
-                                    <td role="cell" data-label="Tests">@effective.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind))</td>
-                                    <td role="cell" data-label="Checks">@effective.Count(s => SourceEvidenceDomainsPresentation.IsCheck(s.Kind))</td>
-                                    <td role="cell" data-label="Deploy">@effective.Count(s => SourceEvidenceDomainsPresentation.IsDeploy(s.Kind))</td>
-                                    <td role="cell" data-label="Environments">@(p.Environments.Count == 0 ? "—" : string.Join(", ", p.Environments))</td>
-                                    <td role="cell"><button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" aria-controls="@(open ? detailId : null)" data-testid="sd-cicd-open" @onclick="() => Toggle(p.Id)">@(open ? "Hide details" : "Details")<span class="visually-hidden"> for @p.Name</span></button></td>
+                                    <th role="rowheader" scope="row">@p.Name</th>
+                                    <td role="cell" data-label="Trigger" data-testid="sd-cicd-trigger-types">@SourceEvidenceDomainsPresentation.TriggerTypes(p)</td>
+                                    <td role="cell" data-label="Tests">@SourceAnalysisReview.Plural(tests, "test step", "test steps")</td>
+                                    <td role="cell" data-label="Deploy">@SourceAnalysisReview.Plural(deploys, "deploy step", "deploy steps")</td>
+                                    <td role="cell" data-label="Environment">@(p.Environments.Count == 0 ? "—" : string.Join(", ", p.Environments))</td>
+                                    <td role="cell" data-label="Review state" data-testid="sd-cicd-review-state">@PipelineReviewState(p, tests)</td>
+                                    <td role="cell"><button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" aria-controls="@(open ? detailId : null)" data-testid="sd-cicd-open" @onclick="() => Toggle(p.Id)">@(open ? "Hide pipeline details" : "View pipeline details")<span class="visually-hidden"> for @p.Name</span></button></td>
                                 </tr>
                                 @if (open)
                                 {
@@ -88,6 +92,15 @@
     private readonly HashSet<string> _showOther = [];
     private readonly Dictionary<string, string> _detailIds = [];
     private void Toggle(string id) { if (!_open.Add(id)) _open.Remove(id); }
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private async Task ReviewPipelines() { try { await JS.InvokeVoidAsync("birknextFocusElement", "sd-cicd-pipelines-heading"); } catch (JSException) { } }
+    /// <summary>A short review state per pipeline from its own definition: templates are included elsewhere; no CI trigger / no test step are
+    /// worth a look; otherwise defined (never "passed": nothing ran).</summary>
+    private static string PipelineReviewState(PipelineDefinition p, int tests) =>
+        p.IsTemplate ? "Template"
+        : p.Triggers.All(t => t.Type is "none" or "manual") ? "No CI trigger"
+        : tests == 0 ? "No test step"
+        : "Defined";
     private string DetailId(PipelineDefinition p) => _detailIds.TryGetValue(p.Id, out var id) ? id : _detailIds[p.Id] = $"sd-cicd-detail-{_detailIds.Count + 1}";
 
     /// <summary>The full evidence of one pipeline: exact trigger rules (branches, paths, cron), stages, templates, secret names and every step.</summary>
@@ -95,7 +108,7 @@
     {
         var showOther = _showOther.Contains(selected.Id);
         <dl class="sd-facts">
-            <div><dt>File</dt><dd class="sd-path">@selected.File</dd></div>
+            <div><dt>File</dt><dd class="sd-path">@SourceDomainText.Label(selected.Platform) · @selected.File</dd></div>
             <div><dt>Triggers</dt><dd data-testid="sd-cicd-triggers">@if (selected.Triggers.Count == 0) { <span>None declared</span> } else { <ul class="sd-list">@foreach (var t in selected.Triggers) { <li>@SourceEvidenceDomainsPresentation.TriggerText(t)</li> }</ul> }</dd></div>
             <div><dt>Stages</dt><dd>@(selected.Stages.Count == 0 ? "—" : string.Join(" → ", selected.Stages.Select(s => s.Deployment ? $"{s.Name} (deploys to {s.Environment ?? "an environment"})" : s.Name)))</dd></div>
             <div><dt>Templates</dt><dd class="sd-path">@(selected.Templates.Count == 0 ? "—" : string.Join(", ", selected.Templates))</dd></div>

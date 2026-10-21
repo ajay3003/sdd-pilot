@@ -16,10 +16,10 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Source Analysis information hierarchy: the group captions of the main navigation are not tabs, every area uses the same second-level
-/// view navigation, export actions sit outside it, the source-only context is stated once, Observability is grouped by concept, Configuration
-/// promotes four counts, CI/CD rows are compact and grouped by name only where names establish it, Contracts are grouped by type with the
-/// parser-coverage column named for what it is, and the four status dimensions stay visually distinct. Presentation only: counts are unchanged.
+/// Source Analysis information hierarchy: exactly four top-level areas (Overview, Architecture, Data, Quality Evidence) as real links, legacy
+/// area links mapped onto them, every area using the same second-level view navigation, one Export menu outside it, the source-only context
+/// stated once, Observability grouped by concept, Configuration summary-first, CI/CD rows compact and grouped by name only where names establish
+/// it, Contracts grouped by type with parsing in plain words, and the four status dimensions visually distinct. Presentation only: counts are unchanged.
 /// </summary>
 public sealed class SourceAnalysisHierarchyTests : BunitContext
 {
@@ -44,6 +44,13 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
+    /// <summary>Opens a quality-evidence domain the way a user does: Quality Evidence, then the domain in its view navigation.</summary>
+    private static void OpenDomain(IRenderedComponent<SourceAnalysis> cut, string slug)
+    {
+        cut.Find("[data-testid=area-qualityevidence]").Click();
+        cut.Find($"[data-testid=sa-quality-{slug}]").Click();
+    }
+
     private IRenderedComponent<SourceAnalysis> Page()
     {
         _snapshots =
@@ -64,26 +71,19 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     // ── Main navigation ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Group_captions_are_not_tabs_and_only_the_eight_areas_are_links()
+    public void Exactly_four_areas_are_links_and_quality_evidence_holds_the_five_domains()
     {
         var cut = Page();
         var nav = cut.Find("[data-testid=sa-areas]");
-        var labels = cut.FindAll("[data-testid=sa-area-group-label]");
-        labels.Select(l => l.TextContent).Should().Equal("Core analysis", "Source evidence");
-        foreach (var label in labels)
-        {
-            label.TagName.Should().Be("SPAN", "a caption is not a control");
-            label.HasAttribute("tabindex").Should().BeFalse();
-            label.HasAttribute("role").Should().BeFalse();
-            label.HasAttribute("href").Should().BeFalse();
-            label.GetAttribute("aria-hidden").Should().Be("true", "the group's own aria-label names it once");
-            label.ClassList.Should().NotContain("sa-area-tab");
-        }
         nav.QuerySelectorAll("[role=tab], [role=tablist], button").Should().BeEmpty("areas are links, not ARIA tabs or buttons");
         var links = nav.QuerySelectorAll("a.sa-area-tab");
-        links.Select(a => a.TextContent).Should().Equal("Overview", "Architecture", "Database", "Observability", "Infrastructure as Code", "Configuration", "CI/CD", "Contracts");
+        links.Select(a => a.TextContent).Should().Equal("Overview", "Architecture", "Data", "Quality Evidence");
         links.Should().OnlyContain(a => a.GetAttribute("href")!.Contains("area="), "every area is a real deep link (keyboard and new-tab capable)");
-        cut.FindAll("[data-testid=sa-area-group]").Select(g => (g.GetAttribute("role"), g.GetAttribute("aria-label"))).Should().Equal(("group", "Core analysis"), ("group", "Source evidence"));
+        cut.FindAll("[data-testid=sa-area-group-label]").Should().BeEmpty("no eight-tab legacy bar with group captions");
+        cut.Find("[data-testid=area-qualityevidence]").Click();
+        var domains = cut.Find("nav.sa-subnav[aria-label='Quality evidence domains']");
+        domains.QuerySelectorAll("button").Select(b => b.TextContent).Should().Equal("Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts");
+        cut.FindAll("[data-testid=sa-quality-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("observability", "infrastructure", "configuration", "cicd", "contracts");
     }
 
     [Fact]
@@ -91,9 +91,9 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     {
         var cut = Page();
         cut.FindAll("[data-testid=sa-areas] [aria-current]").Should().ContainSingle().Which.TextContent.Should().Be("Overview");
-        cut.Find("[data-testid=area-contracts]").Click();
-        cut.FindAll("[data-testid=sa-areas] [aria-current]").Should().ContainSingle().Which.GetAttribute("data-testid").Should().Be("area-contracts");
-        cut.Find("[data-testid=area-contracts]").GetAttribute("aria-current").Should().Be("page");
+        OpenDomain(cut, "contracts");
+        cut.FindAll("[data-testid=sa-areas] [aria-current]").Should().ContainSingle().Which.GetAttribute("data-testid").Should().Be("area-qualityevidence");
+        cut.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page");
         cut.Find("[data-testid=contracts-workspace]");
         cut.Find("[data-testid=area-architecture]").Click();
         cut.FindAll("[data-testid=sa-areas] [aria-current]").Should().ContainSingle().Which.GetAttribute("data-testid").Should().Be("area-architecture");
@@ -105,7 +105,7 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         var cut = Page();
         var context = cut.Find("[data-testid=sa-target-context]");
         cut.Find("[data-testid=sa-evidence-mode]").TextContent.Should().Be("Source only");
-        cut.Find("[data-testid=sa-runtime-verification]").TextContent.Should().Contain("Not performed");
+        cut.Find("[data-testid=sa-runtime-verification]").TextContent.Should().Be("Not performed here");
         cut.Find("[data-testid=sa-target-state]").TextContent.Should().Be("Not selected");
         context.TextContent.Should().Contain(SourceAnalysisOverview.SafetyNote);
         cut.Markup.Split(SourceDomainText.SourceBoundary).Length.Should().Be(1, "the generic per-page banner is gone from the Overview");
@@ -119,14 +119,14 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         var cut = Page();
         foreach (var (area, workspace, note) in new[]
                  {
-                     ("area-infrastructure", "infrastructure-workspace", SourceEvidenceDomainsPresentation.InfrastructureNote),
-                     ("area-configuration", "configuration-workspace", SourceEvidenceDomainsPresentation.ConfigurationNote),
-                     ("area-cicd", "cicd-workspace", SourceEvidenceDomainsPresentation.PipelineNote),
-                     ("area-contracts", "contracts-workspace", SourceEvidenceDomainsPresentation.ContractsNote),
-                     ("area-observability", "observability-workspace", SourceObservabilityPresentation.Boundary),
+                     ("infrastructure", "infrastructure-workspace", SourceEvidenceDomainsPresentation.InfrastructureNote),
+                     ("configuration", "configuration-workspace", SourceEvidenceDomainsPresentation.ConfigurationNote),
+                     ("cicd", "cicd-workspace", SourceEvidenceDomainsPresentation.PipelineNote),
+                     ("contracts", "contracts-workspace", SourceEvidenceDomainsPresentation.ContractsNote),
+                     ("observability", "observability-workspace", SourceObservabilityPresentation.Boundary),
                  })
         {
-            cut.Find($"[data-testid={area}]").Click();
+            OpenDomain(cut, area);
             var page = cut.Find($"[data-testid={workspace}]");
             page.QuerySelector(".sa-scope-note")!.TextContent.Should().Be(note);
             page.QuerySelectorAll(".sd-boundary, .arch-limitation, .obs-limitation").Should().BeEmpty("source limitations use the informational note, not warning styling");
@@ -137,93 +137,104 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     // ── Overview ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Overview_cards_carry_three_high_value_counts_that_match_the_models()
+    public void Overview_is_decision_first_with_one_row_per_domain_and_attention_apart_from_limitations()
     {
         var cut = Page();
-        var o = _snapshots[0].Observability!;
-        string Metric(string area, string metric) => cut.Find($"[data-testid=sa-area-card][data-area={area}] [data-metric='{metric}'] dd").TextContent;
-        cut.FindAll("[data-testid=sa-area-card][data-area=Observability] [data-testid=sa-metric]").Select(m => m.GetAttribute("data-metric"))
-            .Should().Equal("Correlation boundaries", "Findings needing review", "Unresolved boundaries");
-        Metric("Observability", "Correlation boundaries").Should().Be(o.Boundaries.Count.ToString());
-        Metric("Observability", "Findings needing review").Should().Be(SourceObservabilityPresentation.NeedsReview(o).ToString());
-        Metric("Observability", "Unresolved boundaries").Should().Be(o.Correlation.PropagationUnresolved.ToString());
-        cut.FindAll("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-metric]").Select(m => m.GetAttribute("data-metric"))
-            .Should().Equal("Components", "Messaging channels", "Unresolved dependencies");
-        cut.FindAll("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-metric]").Select(m => m.GetAttribute("data-metric"))
-            .Should().Equal("Database candidates", "Tables / entities", "Unresolved evidence");
-        cut.FindAll("[data-testid=sa-evidence-row]").Select(r => r.QuerySelector("[data-testid=sa-evidence-metric]")!.GetAttribute("data-metric"))
-            .Should().Equal("Resources", "Entries", "Pipelines", "Contracts");
-        cut.Find("[data-testid=sa-cross-domain]").TextContent.Should().Contain("Cross-source relationships", "cross-source relationships stay on the Overview");
+        var snapshot = _snapshots[0];
+        cut.FindAll("[data-testid=sa-summary-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("architecture", "data", "observability");
+        cut.FindAll("[data-testid=sa-evidence-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("configuration", "cicd", "contracts", "infrastructure");
+        foreach (var row in cut.FindAll("[data-testid=sa-summary-row][data-status=Partial]"))
+            row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().NotBeNullOrWhiteSpace("a Partial status always carries its reason");
+        cut.Find("[data-testid=sa-summary-row][data-key=observability] [data-testid=sa-summary-reason]").TextContent
+            .Should().Be($"{SourceObservabilityPresentation.NeedsReview(snapshot.Observability!)} findings need review");
+        cut.Find("[data-testid=sa-attention-count]").TextContent.Should().Be(SourceAnalysisReview.Attention(snapshot).Sum(a => a.Count).ToString());
+        cut.Find("[data-testid=sa-analyzer-limitations-toggle]").GetAttribute("aria-expanded").Should().Be("false", "analyzer limitations are separate and collapsed");
+        cut.Find("[data-testid=sa-cross-domain-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false", "cross-source relationships are one disclosure away");
+        cut.Find("[data-testid=sa-cross-domain]").TextContent.Should().Contain("Cross-source relationships");
         cut.Find("[data-testid=sa-generated-docs]");
+        cut.FindAll("[data-testid=sa-overview-actions] .btn-primary").Should().ContainSingle().Which.TextContent.Should().Be("Review architecture");
     }
 
     // ── Second-level navigation and actions ─────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("area-architecture", "Architecture views", 7)]
-    [InlineData("area-database", "Database views", 5)]
-    [InlineData("area-observability", "Observability views", 4)]
-    [InlineData("area-infrastructure", "Infrastructure views", 11)]
-    [InlineData("area-configuration", "Configuration views", 4)]
-    public void Every_area_uses_the_same_view_navigation_with_views_only(string area, string label, int views)
+    [InlineData("architecture", "Architecture views", 7, "Summary")]
+    [InlineData("data", "Data views", 5, "Overview")]
+    [InlineData("observability", "Observability views", 4, "Overview")]
+    [InlineData("infrastructure", "Infrastructure views", 11, "Overview")]
+    [InlineData("configuration", "Configuration views", 4, "Summary")]
+    public void Every_area_uses_the_same_view_navigation_with_views_only(string area, string label, int views, string first)
     {
         var cut = Page();
-        cut.Find($"[data-testid={area}]").Click();
+        if (area is "architecture" or "data") cut.Find($"[data-testid=area-{area}]").Click();
+        else OpenDomain(cut, area);
         var nav = cut.Find($"nav.sa-subnav[aria-label='{label}']");
         var items = nav.QuerySelectorAll("button");
         items.Should().HaveCount(views).And.OnlyContain(b => b.ClassList.Contains("sa-subnav-item") && b.GetAttribute("type") == "button");
-        nav.QuerySelectorAll("[aria-current]").Should().ContainSingle().Which.TextContent.Should().Be("Overview");
+        nav.QuerySelectorAll("[aria-current]").Should().ContainSingle().Which.TextContent.Should().Be(first);
         nav.QuerySelectorAll("[aria-pressed], [role=tab]").Should().BeEmpty("one pattern: buttons with aria-current");
         nav.TextContent.Should().NotContain("Export", "actions never sit inside view navigation");
+        nav.QuerySelectorAll(".sa-subnav-caption").Should().OnlyContain(c => c.GetAttribute("aria-hidden") == "true", "a caption is never a tab");
         var last = items[^1].TextContent;
         items[^1].Click();
         cut.Find($"nav.sa-subnav[aria-label='{label}']").QuerySelectorAll("[aria-current]").Should().ContainSingle().Which.TextContent.Should().Be(last);
     }
 
     [Fact]
-    public void Export_actions_sit_in_the_section_header_and_keep_their_behaviour()
+    public void One_export_menu_per_area_sits_in_the_section_header_and_keeps_its_behaviour()
     {
         var arch = Render<ArchitectureWorkspace>(p => p.Add(x => x.Snapshot, new ArchitectureSnapshot { Status = ArchitectureStatus.Partial, SourceFingerprint = Fp }));
-        arch.Find("[data-testid=arch-actions]").GetAttribute("role").Should().Be("group");
-        arch.Find("[data-testid=arch-views]").QuerySelectorAll("[data-testid=arch-export], [data-testid=arch-export-json]").Should().BeEmpty();
-        arch.Find("[data-testid=arch-export]").Click();
-        arch.Find("[data-testid=arch-export-json]").Click();
+        arch.Find("[data-testid=arch-views]").TextContent.Should().NotContain("Export");
+        arch.FindAll("[data-testid=arch-actions] .export-menu-toggle").Should().ContainSingle("one Export button, the formats behind it").Which.TextContent.Should().Contain("Export");
+        arch.Find("[data-testid=arch-actions] .export-menu-list").HasAttribute("hidden").Should().BeTrue("formats show only when the menu is opened");
+        arch.Find("[data-testid=arch-export-menu-toggle]").Click();
+        arch.FindAll("[data-testid=arch-export-menu] li button").Select(b => b.TextContent).Should().Equal(["HTML", "JSON"], "SVG only where the graph is shown");
+        arch.Find("[data-testid=arch-export-menu-html]").Click();
+        arch.Find("[data-testid=arch-export-menu-toggle]").Click();
+        arch.Find("[data-testid=arch-export-menu-json]").Click();
         JSInterop.Invocations.Select(i => i.Identifier).Should().Contain(["downloadHtmlFile", "downloadJsonFile"]);
         JSInterop.Invocations.Single(i => i.Identifier == "downloadHtmlFile").Arguments[0].Should().Be("source-architecture-abcdef012345.html");
+        arch.Find("[data-testid=arch-tab-system]").Click();
+        arch.Find("[data-testid=arch-export-menu-toggle]").Click();
+        arch.FindAll("[data-testid=arch-export-menu] li button").Select(b => b.TextContent).Should().Equal("HTML", "JSON", "SVG");
 
         var db = Render<DatabaseWorkspace>(p => p.Add(x => x.Snapshot, new DatabaseArchitectureSnapshot { Status = DatabaseAnalysisStatus.Partial, SourceFingerprint = Fp }));
         db.Find("[data-testid=db-views]").TextContent.Should().NotContain("Export");
-        db.Find("[data-testid=db-export]").Click();
-        db.Find("[data-testid=db-export-json]").Click();
+        db.Find("[data-testid=db-export-menu-toggle]").Click();
+        db.Find("[data-testid=db-export-menu-html]").Click();
+        db.Find("[data-testid=db-export-menu-toggle]").Click();
+        db.Find("[data-testid=db-export-menu-json]").Click();
         JSInterop.Invocations.Count(i => i.Identifier == "downloadHtmlFile" && (string)i.Arguments[0]! == "source-database-report.html").Should().Be(1);
         JSInterop.Invocations.Count(i => i.Identifier == "downloadJsonFile" && (string)i.Arguments[0]! == "source-database-model.json").Should().Be(1);
 
         var obs = Render<ObservabilityWorkspace>(p => p.Add(x => x.Snapshot, ObservabilityWorkspaceTests.Fixture()));
         obs.Find("[data-testid=obs-views]").TextContent.Should().NotContain("Export");
-        obs.Find("[data-testid=obs-actions] [data-testid=obs-export-json]").Click();
+        obs.Find("[data-testid=obs-export-menu-toggle]").Click();
+        obs.Find("[data-testid=obs-actions] [data-testid=obs-export-menu-json]").Click();
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "downloadJsonFile" && (string)i.Arguments[0]! == "source-observability.json");
     }
 
     // ── Compact disclosures ─────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Analyzer_coverage_and_limitations_are_compact_disclosures_that_announce_their_state()
+    public void Analyzer_coverage_and_limitations_are_one_compact_disclosure_that_announces_its_state()
     {
-        var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence(infrastructure: false)));
+        var cut = Render<InfrastructureWorkspace>(p => p.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence()));
         var row = cut.Find("[data-testid=sd-infra-limitations]");
         row.ClassList.Should().Contain("sa-disclosures");
         row.QuerySelectorAll(".sd-panel").Should().BeEmpty("no half-page card holds a single button");
-        var coverage = cut.Find("[data-testid=sd-infra-coverage-toggle]");
-        coverage.TextContent.Should().Contain("Analyzer coverage (2)");
-        coverage.GetAttribute("aria-expanded").Should().Be("false");
-        cut.Find("[data-testid=sd-infra-limits-toggle]").TextContent.Should().Contain("Limitations (1)");
-        coverage.Click();
-        cut.Find("[data-testid=sd-infra-coverage-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        row.QuerySelectorAll("button.disclosure-toggle").Should().ContainSingle("coverage and limitations are one pattern, not a pair of buttons");
+        var toggle = cut.Find("[data-testid=sd-infra-analyzer-toggle]");
+        toggle.TextContent.Should().Contain("Analyzer details (").And.Contain("limitations)");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.Click();
+        cut.Find("[data-testid=sd-infra-analyzer-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         cut.FindAll("[data-testid=sd-infra-capability]").Should().HaveCount(2, "the detail is unchanged");
 
         var obs = Render<ObservabilityWorkspace>(p => p.Add(x => x.Snapshot, ObservabilityWorkspaceTests.Fixture()));
-        obs.Find("[data-testid=obs-capability-detail-toggle]").TextContent.Should().Contain("Analyzer coverage (2)").And.Contain("1 unsupported");
-        obs.Find("[data-testid=obs-limitations-detail-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        obs.Find("[data-testid=obs-capability-detail-toggle]").TextContent.Should().Contain("Analyzer details").And.Contain("1 unsupported");
+        obs.Find("[data-testid=obs-capability-detail-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        obs.FindAll("[data-testid=obs-limitations-detail-toggle]").Should().BeEmpty("no second raw Limitations button");
     }
 
     // ── Observability ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -263,22 +274,25 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     public void Component_table_merges_overlapping_columns_without_dropping_data()
     {
         var cut = Render<ObservabilityWorkspace>(p => p.Add(x => x.Snapshot, ObservabilityWorkspaceTests.Fixture()));
-        cut.FindAll("[data-testid=obs-components] thead th").Select(t => t.TextContent).Should().Equal("Component", "Correlation · tracing", "Logging", "Exporters", "Runtime");
+        cut.FindAll("[data-testid=obs-components] thead th").Select(t => t.TextContent).Should().Equal("Component", "Tracing", "Logging", "Exporters", "Runtime");
         var row = cut.Find("[data-testid=obs-component-row][data-component='component:Orders.Api']");
-        row.TextContent.Should().Contain("OpenTelemetry").And.Contain("Microsoft.Extensions.Logging").And.Contain("10 log call(s)").And.Contain("OTLP exporter").And.Contain("Needs review").And.Contain("Partial");
+        row.TextContent.Should().Contain("OpenTelemetry").And.Contain("Microsoft.Extensions.Logging").And.Contain("10 log call(s)").And.Contain("OTLP exporter").And.Contain("Needs review").And.Contain("Partial")
+            .And.Contain("Not assessed in Source Analysis", "runtime telemetry is never implied");
     }
 
     // ── Configuration ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Configuration_promotes_four_counts_and_names_environment_labels_as_source_labels()
+    public void Configuration_is_summary_first_and_names_environment_labels_as_source_labels()
     {
         var evidence = SourceEvidenceDomainsUiTests.Evidence();
         var cut = Render<ConfigurationWorkspace>(p => p.Add(x => x.Evidence, evidence));
-        cut.FindAll("[data-testid=sd-config-overview] dt").Select(d => d.TextContent).Should().Equal("Configuration files", "Entries", "Environment labels", "Sensitive references");
+        cut.FindAll("[data-testid=sd-config-overview] dt").Select(d => d.TextContent).Should().Equal("Classification coverage", "Environment labels", "Sensitive references", "Needs attention");
+        cut.Find("[data-testid=sd-config-lead]").TextContent.Should().Be($"{evidence.Configuration.Entries.Count} entries across {evidence.Configuration.Files.Count} files");
+        cut.Find("[data-testid=sd-config-labels]").TextContent.Should().Contain("not verified Target Environments");
         cut.Find("[data-testid=sd-config-environments] h3").TextContent.Should().Be("Environment labels found in source");
-        cut.Markup.Should().NotContain("Environments in source");
         cut.Find("[data-testid=sd-config-environments]").TextContent.Should().Contain("not deployed environments");
+        cut.Find("[data-testid=sd-config-categories-detail-toggle]").GetAttribute("aria-expanded").Should().Be("false", "the full category table is secondary");
         cut.FindAll("[data-testid=sd-config-category]").Sum(r => int.Parse(r.QuerySelector("td")!.TextContent)).Should().Be(evidence.Configuration.Entries.Count, "the breakdown covers every entry");
         cut.Find("[data-testid=sd-config-signals]").TextContent.Should().Contain("Placeholders").And.Contain("Potential conflicts");
         cut.Find("[data-testid=sd-config-conflict-count]").TextContent.Should().Be("1");
@@ -325,9 +339,10 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         var cut = Render<PipelineWorkspace>(p => p.Add(x => x.Evidence, evidence));
         cut.FindAll("[data-testid=sd-cicd-pipeline]").Should().HaveCount(3);
         cut.FindAll("[data-testid=sd-cicd-group-header]").Should().ContainSingle().Which.TextContent.Should().Contain("orders").And.Contain("2 variants by name: dev, qa");
-        cut.Find("[data-testid=sd-cicd-grouping-note]").TextContent.Should().Contain("does not establish shared ownership");
+        cut.Find("[data-testid=sd-cicd-grouping-note]").TextContent.Should().Contain("not shared ownership");
         cut.FindAll("[data-testid=sd-cicd-trigger-types]").Select(t => t.TextContent).Should().AllBe("Push, Schedule", "distinct trigger types only");
-        cut.FindAll("[data-testid=sd-cicd-pipeline-table] thead th").Select(t => t.TextContent).Should().Equal("Pipeline", "Trigger types", "Tests", "Checks", "Deploy", "Environments", "Details");
+        cut.FindAll("[data-testid=sd-cicd-pipeline-table] thead th").Select(t => t.TextContent).Should().Equal("Pipeline", "Trigger", "Tests", "Deploy", "Environment", "Review state", "Pipeline details");
+        cut.FindAll("[data-testid=sd-cicd-open]").Should().OnlyContain(b => b.TextContent.StartsWith("View pipeline details"), "no generic Details button");
         cut.FindAll("[data-testid=sd-cicd-open]")[2].Click();
         var detail = cut.Find("[data-testid=sd-cicd-triggers]");
         detail.QuerySelectorAll("li").Select(l => l.TextContent).Should().Equal("Push · branches main", "Schedule · cron 0 3 * * *", "Push · branches release/*");
@@ -371,9 +386,9 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         cut.Find("[data-group=graphql] [data-testid=sd-contracts-group-toggle]").Click();
         cut.Find("[data-group=graphql] [data-testid=sd-contracts-group-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         cut.FindAll("[data-group=graphql] [data-testid=sd-contract]").Should().HaveCount(2);
-        cut.FindAll("[data-group=graphql] thead th").Select(t => t.TextContent).Should().Equal("Contract", "Type", "Role", "Component", "Evidence", "Operations", "Types", "Parser coverage", "Details");
+        cut.FindAll("[data-group=graphql] thead th").Select(t => t.TextContent).Should().Equal("Contract", "Type", "Owner / component", "Used by", "Evidence", "Parsing", "Evidence details");
         cut.Find("[data-group=clients] [data-testid=sd-contracts-group-toggle]").Click();
-        cut.FindAll("[data-group=clients] thead th").Select(t => t.TextContent).Should().Equal(["Contract", "Role", "Component", "Evidence", "Parser coverage", "Details"], "operation and type counts mean nothing for a generated client here");
+        cut.FindAll("[data-group=clients] thead th").Select(t => t.TextContent).Should().Equal(["Contract", "Owner / component", "Used by", "Evidence", "Parsing", "Evidence details"], "a single-type group needs no Type column");
     }
 
     [Fact]
@@ -388,19 +403,22 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     }
 
     [Fact]
-    public void Ownership_is_split_into_role_component_and_evidence_and_read_is_parser_coverage()
+    public void Ownership_and_usage_come_from_source_and_parsing_is_plain_language()
     {
         var cut = Render<ContractsWorkspace>(p => p.Add(x => x.Evidence, Contracts()));
         cut.Find("[data-testid=sd-contracts-search]").Input("Person");
         var consumer = cut.FindAll("[data-testid=sd-contract]").Single(r => r.TextContent.Contains("Person queries"));
         consumer.QuerySelector("[data-testid=sd-contract-role]")!.TextContent.Should().Be("Consumer");
-        consumer.QuerySelector("[data-testid=sd-contract-component]")!.TextContent.Should().Be("Web");
+        consumer.QuerySelector("[data-testid=sd-contract-component]")!.TextContent.Should().Contain("Web");
+        consumer.QuerySelector("[data-testid=sd-contract-usage]")!.TextContent.Should().Be("Web", "a consumer hint is usage stated in source");
         consumer.QuerySelector("[data-testid=sd-contract-evidence]")!.GetAttribute("data-dimension").Should().Be("Confidence");
         consumer.QuerySelector("[data-testid=sd-contract-evidence]")!.TextContent.Should().Be("Inferred");
-        consumer.QuerySelector("[data-testid=sd-contract-parser]")!.GetAttribute("data-dimension").Should().Be("ParserSupport");
-        cut.FindAll("th").Select(t => t.TextContent).Should().NotContain("Read").And.Contain("Parser coverage");
-        cut.Find("th[aria-describedby=sd-contracts-parser-help]").TextContent.Should().Be("Parser coverage");
+        consumer.QuerySelector("[data-testid=sd-contract-parser]")!.TextContent.Should().Be("Partial");
+        cut.FindAll("[data-testid=sd-contracts-table] th").Select(t => t.TextContent).Should().NotContain("Read").And.NotContain("Parser coverage").And.Contain("Parsing");
+        cut.Find("[data-testid=sd-contracts-parsing-help]").TextContent.Should().Contain("some constructs were interpreted heuristically");
+        cut.Find("[data-testid=sd-contracts-how-toggle]").GetAttribute("aria-expanded").Should().Be("false", "parser notes are behind How contract analysis works");
         cut.Find("#sd-contracts-parser-help").TextContent.Should().Contain("not contract quality, compatibility or a pass/fail result");
+        cut.FindAll("[data-testid=sd-contract-toggle]").Should().OnlyContain(b => b.TextContent.StartsWith("View evidence"));
     }
 
     // ── Status semantics ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -423,12 +441,12 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     public void Status_badges_use_the_dimension_that_matches_the_backend_concept()
     {
         var cut = Page();
-        cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-status]").GetAttribute("data-dimension").Should().Be("Completeness");
+        cut.Find("[data-testid=sa-summary-row][data-key=architecture] [data-testid=sa-summary-status]").GetAttribute("data-dimension").Should().Be("Completeness");
         cut.Find("[data-testid=sa-cross-domain-links-toggle]").Click();
         cut.FindAll("[data-testid=sa-cross-domain-link] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "Confidence");
-        cut.Find("[data-testid=area-observability]").Click();
+        OpenDomain(cut, "observability");
         cut.FindAll("[data-testid=obs-dimension] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "Observation");
-        cut.Find("[data-testid=area-infrastructure]").Click();
+        OpenDomain(cut, "infrastructure");
         cut.Find("[data-testid=sd-infra-status]").GetAttribute("data-dimension").Should().Be("Completeness");
         cut.FindAll("[data-testid=sd-infra-capability] .sa-status").Should().OnlyContain(b => b.GetAttribute("data-dimension") == "ParserSupport");
     }

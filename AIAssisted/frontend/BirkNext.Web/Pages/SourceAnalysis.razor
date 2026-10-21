@@ -16,12 +16,12 @@
 @inject IJSRuntime JS
 @inject IServiceProvider ServiceProvider
 
-@* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database, Observability), so no
-   summary can mix snapshots. Architecture and Database keep their own models; this page only reads their stored results — opening it
-   never re-analyzes. Source only: nothing live is contacted. Hiding the feature (Feature Visibility) hides the menu entry only. *@
+@* Source Analysis: one selected stored source snapshot drives four areas (Overview, Architecture, Data, Quality Evidence), so no summary can mix
+   snapshots. Review decisions come first (status + reason, things needing attention); analyzer output, provenance and limitations are one
+   disclosure away. Opening it never re-analyzes. Source only: nothing live is contacted. *@
 <PageTitle>Source Analysis</PageTitle>
 <div class="sa-page">
-    <PageHeader Title="Source Analysis" Description="Architecture, database design, observability and reusable source evidence (infrastructure, configuration, CI/CD, contracts) derived from source snapshots — created by Import Project or by a source-only upload." />
+    <PageHeader Title="Source Analysis" Description="What the source shows: architecture, data design and quality evidence from a stored source snapshot." />
     @if (ReturnTarget is { } back)
     {
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
@@ -34,18 +34,19 @@
     }
     else
     {
-        @* The one persistent evidence-mode context: every area below is source only, so areas show only their own specific limitation.
-           Separate facts: the source snapshot belongs to the workspace; the Target Environment is runtime context for other reviews. *@
+        @* One compact evidence-mode context: everything below is source only. The explanation of statuses and runtime-dependent evidence is one
+           disclosure away. The source snapshot belongs to the workspace; the Target Environment is runtime context for other reviews. *@
         <section class="sa-context" aria-label="Evidence context" data-testid="sa-target-context">
             <dl class="sa-context-facts">
                 <div><dt>Evidence mode</dt><dd data-testid="sa-evidence-mode">Source only</dd></div>
-                <div><dt>Source snapshot</dt><dd data-testid="sa-source-state">@SourceStateSummary</dd></div>
-                <div><dt>Runtime verification</dt><dd data-testid="sa-runtime-verification">Not performed in Source Analysis</dd></div>
+                <div><dt>Snapshot</dt><dd data-testid="sa-source-state">@SourceStateSummary</dd></div>
+                <div><dt>Runtime verification</dt><dd data-testid="sa-runtime-verification">Not performed here</dd></div>
                 <div><dt>Target Environment</dt><dd data-testid="sa-target-state">@(_profile is null ? "Not selected" : "Selected")</dd></div>
-                <div><dt>Runtime-dependent evidence</dt><dd>@(_profile is null ? "Not available — select a Target Environment for runtime reviews" : "Available to runtime reviews")</dd></div>
             </dl>
             <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
             <ReviewDisclosure Text="How to read statuses" CollapseText="Hide status guide" TestId="sa-status-legend" Class="disclosure-inline">
+                <p class="sa-muted" data-testid="sa-runtime-dependent">Runtime-dependent evidence is @(_profile is null ? "not available here — select a Target Environment for runtime reviews" : "available to runtime reviews, never to Source Analysis").
+                    Partial means some evidence could only be read partially (never a failure); Not detected means nothing of that kind is in this source (not that the capability is absent).</p>
                 <dl class="sa-legend" data-testid="sa-status-legend-list">
                     @foreach (var (dimension, examples) in StatusLegend)
                     {
@@ -57,30 +58,60 @@
                 </dl>
             </ReviewDisclosure>
         </section>
+        var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
         <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
-            <h2 id="sa-snapshot-heading">Source snapshot</h2>
-            <div class="sa-controls">
-                @* Import Project is the recommended path: one archive feeds project documents and this snapshot. A source-only upload stays
-                   available for archives that are source only, or to analyze the same source again. Without a snapshot these actions are
-                   offered once, in the empty state below, so they are not repeated here. *@
-                @if (!NoSnapshotSelected)
+            <div class="sa-snapshot-head">
+                <h2 id="sa-snapshot-heading">Current snapshot</h2>
+                @if (selected is not null)
                 {
-                    <div class="sa-upload-group">
-                        <a class="sa-file-button" href="project-import" data-testid="sa-import-project">Import Project</a>
-                        <label class="sa-file-button">
-                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (.zip, maximum 50 MB)" data-testid="sa-upload" />
-                            <span aria-hidden="true">Upload source only</span>
-                        </label>
-                        <span class="sa-muted">ZIP · maximum 50 MB</span>
-                    </div>
+                    <p class="sa-current-title" data-testid="sa-current" data-snapshot="@selected.Id">
+                        <strong data-testid="sa-current-archive">@selected.Archive.FileName</strong>
+                        <span class="sa-muted"><span data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</span> files · Analyzed <span data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</span></span>
+                        <span class="sa-pill sa-pill-@(selected.Status == SourceAnalysisStatus.Ready ? "complete" : "partial")"><span class="visually-hidden">Source evidence: </span><span data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</span></span>
+                    </p>
                 }
-                <label class="sa-field">Existing snapshot
+            </div>
+            <div class="sa-controls">
+                <label class="sa-field">Change snapshot
                     <select id="sa-snapshot-select" class="form-control" @bind="_selected" @bind:after="SnapshotChanged" data-testid="source-snapshot" disabled="@(_busy || _snapshots.Count == 0)">
                         <option value="">@(_snapshots.Count == 0 ? "No stored snapshot yet" : "Select a source snapshot")</option>
                         @foreach (var snapshot in _snapshots) { <option value="@snapshot.Id">@SourceAnalysisOverview.OptionLabel(snapshot)</option> }
                     </select>
                 </label>
+                @* Import Project is the recommended path; a source-only upload stays available. Without a snapshot these actions are offered once,
+                   in the empty state below. *@
+                @if (!NoSnapshotSelected)
+                {
+                    <div class="sa-upload-group">
+                        <a class="btn-secondary sa-secondary-action" href="project-import" data-testid="sa-import-project">Import project</a>
+                        <label class="btn-secondary sa-secondary-action sa-file-label">
+                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source only (.zip, maximum 50 MB)" data-testid="sa-upload" />
+                            <span aria-hidden="true">Upload source</span>
+                        </label>
+                        <span class="sa-muted sa-helper">ZIP · maximum 50 MB</span>
+                    </div>
+                }
             </div>
+            @if (selected is not null)
+            {
+                <ReviewDisclosure Text="View snapshot details" CollapseText="Hide snapshot details" TestId="sa-snapshot-details" Class="disclosure-small">
+                    <dl class="sa-facts sa-facts-compact" data-testid="sa-snapshot-facts">
+                        <div><dt>Fingerprint</dt><dd><code class="sa-mono" data-testid="sa-current-fingerprint" title="@selected.Archive.Sha256">@selected.Archive.Sha256</code></dd></div>
+                        <div><dt>Commit</dt><dd>@selected.Commit@(selected.Branch is { } branch ? $" · {branch}" : "")</dd></div>
+                        <div><dt>Created by</dt><dd data-testid="sa-current-origin">@(selected.ProjectImport is { } import ? $"Project Import · {SourceAnalysisOverview.Utc(import.ImportedAt)}" : "Source-only upload")</dd></div>
+                        <div><dt>Analyzed</dt><dd>@selected.AnalyzedAt.ToString("u")</dd></div>
+                        <div><dt>Analyzer version</dt><dd>@selected.AnalyzerVersion@(selected.Architecture is { } av ? $" · architecture v{av.AnalyzerVersion}" : "")@(selected.DatabaseArchitecture is { } dv ? $" · database v{dv.AnalyzerVersion}" : "")</dd></div>
+                        <div><dt>Snapshot id</dt><dd><code class="sa-mono">@selected.Id</code></dd></div>
+                    </dl>
+                    @if (selected.ProjectImport is { } provenance)
+                    {
+                        <p class="sa-muted" data-testid="sa-import-provenance" data-import="@provenance.ImportId">
+                            Created from Project Import <code class="sa-mono">@provenance.ImportId</code> — the same archive the project documents were imported from.
+                            <a href="project-import" data-testid="sa-import-link">View the imported project</a>
+                        </p>
+                    }
+                </ReviewDisclosure>
+            }
             @if (_busy) { <p class="sa-status" role="status" data-testid="sa-analyzing">Analyzing source… The architecture and database are extracted from the archive.</p> }
             @if (_error is { } uploadFailure)
             {
@@ -102,7 +133,6 @@
             }
         </section>
 
-        var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
         @if (_busy)
         {
             <section class="sa-card sa-progress" aria-labelledby="sa-progress-heading" data-testid="sa-analyzing-areas">
@@ -110,20 +140,10 @@
                 <dl class="sa-facts">
                     <div><dt>Source snapshot</dt><dd data-testid="sa-progress-archive">@(_pendingArchive ?? "Uploaded archive")</dd></div>
                     <div><dt>Architecture</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
-                    <div><dt>Database</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
-                    <div><dt>Observability</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
-                    <div><dt>Source evidence</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span> <span class="sa-muted">Infrastructure · Configuration · CI/CD · Contracts</span></dd></div>
+                    <div><dt>Data</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
+                    <div><dt>Quality evidence</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span> <span class="sa-muted">Observability · Infrastructure · Configuration · CI/CD · Contracts</span></dd></div>
                 </dl>
                 <p class="sa-muted">The uploaded archive is being analyzed. @SourceAnalysisOverview.SafetyNote</p>
-                <div class="sa-area-grid">
-                    @foreach (var (area, provides) in new[] { ("Architecture", SourceAnalysisOverview.ArchitectureProvides), ("Database", SourceAnalysisOverview.DatabaseProvides), ("Observability", SourceObservabilityPresentation.Provides) })
-                    {
-                        <article class="sa-area-preview" data-testid="sa-area-card" data-area="@area">
-                            <h3>@area <span class="sa-pill sa-pill-muted">Analyzing</span></h3>
-                            <p class="sa-muted">Will provide: @string.Join(" · ", provides)</p>
-                        </article>
-                    }
-                </div>
             </section>
         }
         else if (selected is null)
@@ -146,10 +166,9 @@
                     }
                     <p>Import the project (one ZIP for documents and source), upload a source-only archive, or choose an existing snapshot to explore:</p>
                     <ul class="sa-preview" data-testid="sa-preview">
-                        <li><strong>Architecture</strong> — components, dependencies, messaging channels, data stores and external systems found in source.</li>
-                        <li><strong>Database structure</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
-                        <li><strong>Observability</strong> — correlation and tracing boundaries, logging quality and telemetry configuration found in source.</li>
-                        <li><strong>Source evidence</strong> — infrastructure as code, configuration, CI/CD pipelines and contracts, reusable by every review.</li>
+                        <li><strong>Architecture</strong> — components, dependencies, messaging channels, datastores and external systems found in source.</li>
+                        <li><strong>Data</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
+                        <li><strong>Quality evidence</strong> — observability, infrastructure as code, configuration, CI/CD pipelines and contracts.</li>
                         <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
                     </ul>
                     <dl class="sa-actions sa-action-list" data-testid="sa-empty-actions">
@@ -180,100 +199,55 @@
         }
         else
         {
-            @* Two labelled groups of real links (?area= deep links). The group names are captions, never tabs: not focusable, not clickable,
-               announced once as the group's name. The current area carries aria-current="page". *@
-            <nav class="sa-areas sa-area-groups" aria-label="Source Analysis areas" data-testid="sa-areas">
-                @foreach (var (group, areas) in AreaGroups)
-                {
-                    <div class="sa-area-group" role="group" aria-label="@group" data-testid="sa-area-group">
-                        <span class="sa-area-group-label" aria-hidden="true" data-testid="sa-area-group-label">@group</span>
-                        <ul class="sa-area-list">
-                            @foreach (var area in areas)
+            @* Exactly four top-level areas, as real links (?area= deep links); the current one carries aria-current="page". *@
+            <nav class="sa-areas" aria-label="Source Analysis areas" data-testid="sa-areas">
+                <ul class="sa-area-list">
+                    @foreach (var area in SourceAnalysisAreas.Top)
+                    {
+                        <li><a id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab" href="@AreaHref(area)" aria-current="@(_area == area ? "page" : null)"
+                               data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)" @onclick:preventDefault>@area</a></li>
+                    }
+                </ul>
+            </nav>
+            @if (_area == SourceAnalysisAreas.Overview)
+            {
+                var attention = SourceAnalysisReview.Attention(selected);
+                var limitations = SourceAnalysisReview.Limitations(selected);
+                <section class="sa-card sa-summary" aria-labelledby="sa-current-heading" data-testid="sa-overview-summary">
+                    <h2 id="sa-current-heading" tabindex="-1">Analysis summary</h2>
+                    <ul class="sa-summary-rows" data-testid="sa-summary-rows">
+                        @foreach (var row in SourceAnalysisReview.CoreRows(selected)) { @SummaryRow(row) }
+                    </ul>
+                    <h3 class="sa-summary-subheading">Quality evidence</h3>
+                    <ul class="sa-summary-rows sa-summary-rows-compact" data-testid="sa-evidence-rows">
+                        @foreach (var row in SourceAnalysisReview.EvidenceRows(selected)) { @SummaryRow(row) }
+                    </ul>
+                </section>
+                <section class="sa-card sa-attention" aria-labelledby="sa-attention-heading" data-testid="sa-attention">
+                    <h2 id="sa-attention-heading">Things needing attention <span class="sa-count" data-testid="sa-attention-count">@attention.Sum(a => a.Count)</span></h2>
+                    @if (attention.Count == 0) { <p class="sa-muted" data-testid="sa-attention-none">Nothing in this snapshot needs review.</p> }
+                    else
+                    {
+                        <ul class="sa-attention-list">
+                            @foreach (var item in attention)
                             {
-                                <li><a id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab" href="@AreaHref(area)" aria-current="@(_area == area ? "page" : null)"
-                                       data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)" @onclick:preventDefault>@(area == "Infrastructure" ? "Infrastructure as Code" : area)</a></li>
+                                <li data-testid="sa-attention-item" data-key="@item.Key"><span>@item.Text</span> <a href="@ReviewHref(item.Area, item.Domain)" @onclick="() => OpenReview(item.Area, item.Domain, item.View)" @onclick:preventDefault>Review<span class="visually-hidden">@(" " + item.Text)</span></a></li>
                             }
                         </ul>
-                    </div>
-                }
-            </nav>
-            @if (_area == "Overview")
-            {
-                <section class="sa-card sa-current" aria-labelledby="sa-current-heading" data-testid="sa-current" data-snapshot="@selected.Id">
-                    <h2 id="sa-current-heading" tabindex="-1">Current snapshot</h2>
-                    <p class="sa-current-title"><strong data-testid="sa-current-archive">@selected.Archive.FileName</strong> <span class="sa-pill sa-pill-@(selected.Status == SourceAnalysisStatus.Ready ? "complete" : "partial")"><span class="visually-hidden">Source evidence: </span><span data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</span></span></p>
-                    <dl class="sa-facts sa-facts-compact">
-                        <div><dt>Fingerprint</dt><dd><code data-testid="sa-current-fingerprint" title="@selected.Archive.Sha256">@SourceAnalysisOverview.ShortFingerprint(selected.Archive.Sha256)</code></dd></div>
-                        <div><dt>Analyzed</dt><dd data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</dd></div>
-                        <div><dt>Files</dt><dd data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</dd></div>
-                        <div><dt>Commit</dt><dd>@selected.Commit@(selected.Branch is { } branch ? $" · {branch}" : "")</dd></div>
-                        <div><dt>Created by</dt><dd data-testid="sa-current-origin">@(selected.ProjectImport is { } import ? $"Project Import · {SourceAnalysisOverview.Utc(import.ImportedAt)}" : "Source-only upload")</dd></div>
-                    </dl>
-                    @if (selected.ProjectImport is { } provenance)
-                    {
-                        <p class="sa-muted" data-testid="sa-import-provenance" data-import="@provenance.ImportId">
-                            Created from Project Import <code class="sa-mono">@provenance.ImportId</code> — the same archive the project documents were imported from.
-                            <a href="project-import" data-testid="sa-import-link">View the imported project</a>
-                        </p>
                     }
-                    <div class="sa-actions">
-                        <button type="button" class="btn-secondary" data-testid="sa-change-snapshot" @onclick="FocusSelectorAsync">Change snapshot</button>
-                        <ReviewDisclosure Text="Full fingerprint" CollapseText="Hide full fingerprint" TestId="sa-fingerprint" Class="disclosure-inline">
-                            <code class="sa-mono">@selected.Archive.Sha256</code>
-                        </ReviewDisclosure>
+                    <div class="sa-actions" data-testid="sa-overview-actions">
+                        <button type="button" class="btn-primary" data-testid="sa-review-architecture" @onclick="() => OpenReview(SourceAnalysisAreas.Architecture, null, null)">Review architecture</button>
+                        <button type="button" class="btn-secondary" data-testid="sa-review-data" @onclick="() => OpenReview(SourceAnalysisAreas.Data, null, null)">Review data</button>
+                        <button type="button" class="btn-secondary" data-testid="sa-review-observability" @onclick='() => OpenReview(SourceAnalysisAreas.Quality, "Observability", null)'>Review observability</button>
                     </div>
+                    <ReviewDisclosure Text="@($"Analyzer limitations ({limitations})")" CollapseText="Hide analyzer limitations" TestId="sa-analyzer-limitations" Class="disclosure-small">
+                        <p class="sa-muted">What the analyzers could not interpret with certainty. Limitations of source analysis — not application defects. Each area lists its own under Analyzer details.</p>
+                    </ReviewDisclosure>
                 </section>
-
-                <section class="sa-areas-section" aria-labelledby="sa-areas-heading" data-testid="sa-overview-areas">
-                    <h2 id="sa-areas-heading">Analysis areas</h2>
-                    <div class="sa-area-grid">
-                        @foreach (var card in new[] { SourceAnalysisOverview.Architecture(selected), SourceAnalysisOverview.Database(selected), SourceAnalysisOverview.Observability(selected) })
-                        {
-                            var headingId = $"sa-card-{card.Area.ToLowerInvariant()}";
-                            <article class="sa-card sa-area-card" aria-labelledby="@headingId" data-testid="sa-area-card" data-area="@card.Area" data-status="@card.Status" data-analysis="@card.AnalysisId">
-                                <h3 id="@headingId">@card.Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@card.Status" TestId="sa-area-status" /></h3>
-                                <p class="sa-muted">@card.Description</p>
-                                @if (card.Reason is { } reason) { <p class="sa-reason" data-testid="sa-area-reason">@reason</p> }
-                                @if (card.Metrics.Count > 0)
-                                {
-                                    <dl class="sa-metrics" data-testid="sa-area-metrics">
-                                        @foreach (var metric in card.Metrics) { <div data-testid="sa-metric" data-metric="@metric.Label"><dt>@metric.Label</dt><dd>@metric.Value</dd></div> }
-                                    </dl>
-                                }
-                                <p class="sa-limitation" data-testid="sa-area-limitation">@card.Limitation</p>
-                                <div class="sa-actions">
-                                    <button type="button" class="btn-primary" data-testid="@($"sa-open-{card.Area.ToLowerInvariant()}")" @onclick="() => OpenFromCard(card.Area)">@card.Action</button>
-                                </div>
-                            </article>
-                        }
-                    </div>
-                </section>
-
-                <section class="sa-areas-section" aria-labelledby="sa-evidence-heading" data-testid="sa-overview-evidence">
-                    <h2 id="sa-evidence-heading">Source evidence</h2>
-                    <p class="sa-muted">Reusable evidence other reviews consume from this snapshot. One status, one headline count and the main signal per domain — the detail is in each area.</p>
-                    <ul class="sd-rows">
-                        @foreach (var row in SourceEvidenceDomainsPresentation.Rows(selected))
-                        {
-                            var rowHeading = $"sa-row-{SourceEvidenceDomainsPresentation.Slug(row.Area)}";
-                            <li class="sd-row" data-testid="sa-evidence-row" data-area="@row.Area" data-status="@row.Status" aria-labelledby="@rowHeading">
-                                <h3 id="@rowHeading">@row.Title <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@row.Status" TestId="sa-evidence-status" /></h3>
-                                <div class="sd-row-body">
-                                    @if (row.Metrics.Count > 0)
-                                    {
-                                        <dl class="sd-row-metrics" data-testid="sa-evidence-metrics">
-                                            @foreach (var metric in row.Metrics) { <div data-testid="sa-evidence-metric" data-metric="@metric.Label"><dt>@metric.Label</dt><dd>@metric.Value</dd></div> }
-                                        </dl>
-                                    }
-                                    <p class="sa-muted" data-testid="sa-evidence-reason">@(row.Reason ?? row.Description)</p>
-                                </div>
-                                <button type="button" class="btn-secondary" data-testid="@($"sa-open-{SourceEvidenceDomainsPresentation.Slug(row.Area)}")" @onclick="() => OpenFromCard(row.Area)">Open @row.Title<span class="visually-hidden"> evidence</span></button>
-                            </li>
-                        }
-                    </ul>
-                    @if (selected.EvidenceDomains is { } evidence)
-                    {
-                        var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
+                @if (selected.EvidenceDomains is { } evidence)
+                {
+                    var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
+                    <ReviewDisclosure Text="@($"View cross-source relationships ({evidence.CrossDomain.Links.Count})")" CollapseText="Hide cross-source relationships" TestId="sa-cross-domain-disclosure" Class="disclosure-small">
                         <section class="sa-card" aria-labelledby="sa-links-heading" data-testid="sa-cross-domain">
                             <h3 id="sa-links-heading">Cross-source relationships <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(evidence.CrossDomain.Status)" /></h3>
                             @if (summary.Count == 0) { <p class="sa-muted" data-testid="sa-cross-domain-empty">@(evidence.CrossDomain.StatusReason ?? "No relationships between the source-evidence domains of this snapshot.")</p> }
@@ -300,37 +274,47 @@
                                 }
                             }
                         </section>
-                    }
-                    <BirkNext.Web.Components.GeneratedDocumentation.GeneratedDocumentationSourceSummary Snapshot="selected" />
-                </section>
+                        <BirkNext.Web.Components.GeneratedDocumentation.GeneratedDocumentationSourceSummary Snapshot="selected" />
+                    </ReviewDisclosure>
+                }
             }
-            else if (_area is "Infrastructure" or "Configuration" or "CI/CD" or "Contracts")
+            else if (_area == SourceAnalysisAreas.Quality)
             {
-                @if (selected.EvidenceDomains is { } evidence)
+                <SourceViewNav Label="Quality evidence domains" Views="SourceAnalysisAreas.QualityDomains" Current="@(_domain ?? "")" CurrentChanged="OpenDomain" Prefix="sa-quality" Slug="SourceAnalysisAreas.Slug" TestId="sa-quality-nav" />
+                @if (_domain is null)
+                {
+                    <section class="sa-card" aria-labelledby="sa-quality-heading" data-testid="sa-quality-landing">
+                        <h2 id="sa-quality-heading" tabindex="-1">Quality evidence</h2>
+                        <ul class="sa-summary-rows" data-testid="sa-quality-rows">
+                            @foreach (var row in SourceAnalysisReview.QualityRows(selected)) { @SummaryRow(row, true) }
+                        </ul>
+                    </section>
+                }
+                else if (_domain == "Observability")
+                {
+                    @if (selected.Observability is { } observability)
+                    {
+                        <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" Layers="@selected.EvidenceDomains?.CrossDomain.ObservabilityLayers" />
+                    }
+                    else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
+                }
+                else if (selected.EvidenceDomains is { } evidence)
                 {
                     var previous = SourceEvidenceDomainsPresentation.Previous(_snapshots, selected);
-                    @if (_area == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else if (_area == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else if (_area == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    @if (_domain == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else if (_domain == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else if (_domain == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
                     else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
                 }
                 else { <p class="sa-card" data-testid="evidence-missing">@SourceEvidenceDomainsPresentation.HistoricalNote</p> }
             }
-            else if (_area == "Architecture")
+            else if (_area == SourceAnalysisAreas.Architecture)
             {
                 @if (selected.Architecture is { } architecture)
                 {
-                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" ChooseSnapshot="FocusSelectorAsync" />
+                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" ChooseSnapshot="FocusSelectorAsync" InitialTab="@_architectureTab" />
                 }
                 else { <p class="sa-card" data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
-            }
-            else if (_area == "Observability")
-            {
-                @if (selected.Observability is { } observability)
-                {
-                    <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" Layers="@selected.EvidenceDomains?.CrossDomain.ObservabilityLayers" />
-                }
-                else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
             }
             else
             {
@@ -344,6 +328,8 @@
     /// <summary>The review that sent the user here (an allow-listed internal route identifier — never an arbitrary URL).</summary>
     [SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
     [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
+    /// <summary>The quality-evidence domain under Quality Evidence (observability, infrastructure, configuration, cicd, contracts).</summary>
+    [SupplyParameterFromQuery(Name = "view")] public string? View { get; set; }
     /// <summary>An exact snapshot to open (Import Project links its own snapshot by id). Never substituted by another snapshot.</summary>
     [SupplyParameterFromQuery(Name = "snapshot")] public string? SnapshotParam { get; set; }
     private string? _linkedMissing;
@@ -356,12 +342,12 @@
     };
     private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;
 
-    /// <summary>Core analysis areas, then the reusable source-evidence domains — grouped so the navigation stays readable.</summary>
-    private static readonly (string Group, string[] Areas)[] AreaGroups = DocumentationCatalog.SourceAnalysisGroups
-        .Select(group => (group.Label, group.Areas.ToArray())).ToArray();
-    private static string AreaSlug(string area) => area.Replace("/", "");
-    /// <summary>The deep link of an area: the current query (selected snapshot, return target) with only the area replaced.</summary>
-    private string AreaHref(string area) => Navigation.GetUriWithQueryParameter("area", area);
+    private static string AreaSlug(string area) => area.Replace("/", "").Replace(" ", "");
+    /// <summary>The deep link of an area: the current query (selected snapshot, return target) with only the area (and view) replaced.</summary>
+    private string AreaHref(string area) => Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = SourceAnalysisAreas.AreaParam(area), ["view"] = null });
+    private string ReviewHref(string area, string? domain) => area == SourceAnalysisAreas.Quality && domain is not null
+        ? Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = SourceAnalysisAreas.AreaParam(area), ["view"] = SourceAnalysisAreas.Slug(domain) })
+        : AreaHref(area);
     /// <summary>The four status dimensions with the labels each one uses — kept apart in the legend as on every page.</summary>
     private static readonly (SourceStatusDimension Dimension, string[] Examples)[] StatusLegend =
     [
@@ -370,8 +356,9 @@
         (SourceStatusDimension.Observation, ["Detected", "Partial", "Needs review", "Not found"]),
         (SourceStatusDimension.ParserSupport, ["Supported", "Partial"]),
     ];
-    private static readonly string[] ValidAreas = ["Infrastructure", "Configuration", "CI/CD", "Contracts", "Architecture", "Observability", "Database", "Overview"];
-    private string _area = "Overview";
+    private string _area = SourceAnalysisAreas.Overview;
+    private string? _domain;
+    private string? _architectureTab;
     private string? _focusDatabase;
     private string? _databaseTab;
     private string? _focusId;
@@ -379,24 +366,37 @@
     private string? _pendingArchive;
     private SourceAnalysisSnapshotKey? _snapshotKey;
 
-    protected override void OnParametersSet()
-    {
-        if (Area is { } area && ValidAreas.Contains(area, StringComparer.Ordinal)) _area = area;
-        else if (Area is null) _area = "Overview";
-    }
+    /// <summary>Legacy ?area= values (Database, Observability, Infrastructure, Configuration, CI/CD, Contracts) map onto the four areas.</summary>
+    protected override void OnParametersSet() => (_area, _domain) = SourceAnalysisAreas.Resolve(Area, View);
     private void OpenArea(string area)
     {
-        _area = area; _focusDatabase = null; _databaseTab = null;
-        if (ValidAreas.Contains(area, StringComparer.Ordinal)) Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("area", area));
+        _area = area; _domain = null; _focusDatabase = null; _databaseTab = null; _architectureTab = null;
+        Navigation.NavigateTo(AreaHref(area));
     }
-    /// <summary>From an Overview card: the same selected snapshot, the matching area; Open Database Diagram lands on the diagram.</summary>
-    private void OpenFromCard(string area)
+    private void OpenDomain(string domain)
     {
-        OpenArea(area);
-        if (area == "Database") _databaseTab = "Diagram";
+        _area = SourceAnalysisAreas.Quality; _domain = domain;
+        Navigation.NavigateTo(ReviewHref(SourceAnalysisAreas.Quality, domain));
+    }
+    /// <summary>From a summary row or attention item: the same snapshot, the matching area or quality domain, focus moved to its navigation.</summary>
+    private void OpenReview(string area, string? domain, string? view)
+    {
+        if (area == SourceAnalysisAreas.Quality && domain is not null) OpenDomain(domain);
+        else OpenArea(area);
+        if (area == SourceAnalysisAreas.Architecture) _architectureTab = view;
         _focusId = $"sa-area-{AreaSlug(area)}";
     }
-    private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
+    private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = SourceAnalysisAreas.Data; }
+
+    /// <summary>One summary row: domain, status (never colour only), the primary reason for a non-complete status and where to review it.</summary>
+    private RenderFragment SummaryRow(SourceSummaryRow row, bool open = false) =>
+        @<li class="sa-summary-row" data-testid="sa-summary-row" data-key="@row.Key" data-status="@row.Status">
+            <span class="sa-summary-title">@row.Title</span>
+            <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@row.Status" TestId="sa-summary-status" />
+            @if (row.Reason is { } reason) { <span class="sa-summary-reason" data-testid="sa-summary-reason">@reason</span> }
+            @if (row.Detail is { } detail) { <span class="sa-muted sa-summary-detail">@detail</span> }
+            <a class="sa-summary-open" href="@ReviewHref(row.Area, row.Domain)" data-testid="@($"sa-open-{row.Key}")" @onclick="() => OpenReview(row.Area, row.Domain, null)" @onclick:preventDefault>@(open ? "Open" : "Review")<span class="visually-hidden">@(" " + row.Title)</span></a>
+        </li>;
     // A new or reselected snapshot changes the source input: applicability (sidebar, Recommended Workflow) re-reads it now.
     private void SnapshotChanged()
     {
@@ -527,7 +527,7 @@
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null; _pendingArchive = args.File.Name;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { SnapshotState.Invalidate(); await Load(); _selected = snapshot.Id.ToString(); SnapshotChanged(); _area = "Overview"; Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("area", (string?)null)); _focusId = "sa-current-heading"; } }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile?.Id ?? "", args.File.Name, stream); _error = error; if (snapshot is not null) { SnapshotState.Invalidate(); await Load(); _selected = snapshot.Id.ToString(); SnapshotChanged(); _area = SourceAnalysisAreas.Overview; _domain = null; Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = null, ["view"] = null })); _focusId = "sa-current-heading"; } }
         catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
         catch (HttpRequestException ex) when (BackendRequestClassifier.FromException("Source upload", ex).IsTransportFailure) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
         catch (HttpRequestException ex) { _error = new("SOURCE_UPLOAD_FAILED", "upload", $"{BackendRequestClassifier.FromException("Source upload", ex).UserMessage} Existing snapshots are unchanged."); }
