@@ -49,27 +49,23 @@
                         @foreach (var option in Options(ExpectedKey)) { <option value="@option.Value">@option.Label</option> }
                     </select>
                 </div>
+                @* Existing run first: a run BirkNext recorded already carries its identifiers; manual identifiers are the fallback. *@
                 <div class="mvp-field">
                     <label for="@($"{_id}-run")">Existing BirkNext run</label>
-                    <select id="@($"{_id}-run")" data-testid="mvp-source-run" @bind="_sourceRun">
-                        <option value="">None</option>
+                    <select id="@($"{_id}-run")" data-testid="mvp-source-run" @bind="_sourceRun" aria-describedby="@($"{_id}-run-help")">
+                        <option value="">@(SourceRuns.Any() ? "Choose a run" : "No recorded runs")</option>
                         @foreach (var run in SourceRuns) { <option value="@run.RunId.ToString("D")">@($"{run.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {run.ScenarioId} · {run.State} · {run.RunId.ToString("N")[..8]}")</option> }
                     </select>
+                    <span id="@($"{_id}-run-help")" class="mvp-muted" data-testid="mvp-run-help">@(SourceRuns.Any() ? "Recommended: the run already knows its Altinn instance and message." : "No BirkNext run is recorded in this environment yet; identify the message manually below.")</span>
                 </div>
             </fieldset>
-            <fieldset class="mvp-group" data-testid="mvp-group-identifiers">
-                <legend>Identifiers</legend>
-                <div class="mvp-field">
-                    <label for="@($"{_id}-instance")">Altinn instance GUID</label>
-                    <input id="@($"{_id}-instance")" data-testid="mvp-instance" @bind="_instance" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-instance-help")" />
-                    <span id="@($"{_id}-instance-help")" class="mvp-muted">Optional. Only the short reference is kept.</span>
-                </div>
-                <div class="mvp-field">
-                    <label for="@($"{_id}-message")">MU message id</label>
-                    <input id="@($"{_id}-message")" data-testid="mvp-message" @bind="_message" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-message-help")" />
-                    <span id="@($"{_id}-message-help")" class="mvp-muted">Optional. Meldingshode/Id (a UUID); needed for MM and Skoletjenesten evidence.</span>
-                </div>
-            </fieldset>
+            @if (SourceRuns.Any())
+            {
+                <ReviewDisclosure Text="Identify message manually" CollapseText="Hide manual identifiers" TestId="mvp-manual" Class="disclosure-inline">
+                    @Identifiers
+                </ReviewDisclosure>
+            }
+            else { @Identifiers }
             <fieldset class="mvp-group" data-testid="mvp-group-observation">
                 <legend>Observation</legend>
                 <div class="mvp-field">
@@ -229,6 +225,24 @@
     private ActiveEventAuthenticationState Authentication => _authentication ??= Services.GetService<ActiveEventAuthenticationState>() ?? ActiveEventAuthenticationState.NotConfigured;
     private JourneyScenarioDescriptor? Scenario => _view?.Journey.Scenarios.FirstOrDefault(item => item.ScenarioId == MessageVerificationPresentation.ScenarioId);
     private IEnumerable<JourneyPrerequisite> Providers => _view?.Prerequisites.Where(item => item.Key.StartsWith("evidence:", StringComparison.Ordinal)) ?? [];
+    /// <summary>Manual identifiers (the secondary path when a recorded run exists).</summary>
+    private RenderFragment Identifiers => __builder =>
+    {
+        <fieldset class="mvp-group" data-testid="mvp-group-identifiers">
+            <legend>Identifiers</legend>
+            <div class="mvp-field">
+                <label for="@($"{_id}-instance")">Altinn instance GUID</label>
+                <input id="@($"{_id}-instance")" data-testid="mvp-instance" @bind="_instance" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-instance-help")" />
+                <span id="@($"{_id}-instance-help")" class="mvp-muted">Optional. Only the short reference is kept.</span>
+            </div>
+            <div class="mvp-field">
+                <label for="@($"{_id}-message")">MU message id</label>
+                <input id="@($"{_id}-message")" data-testid="mvp-message" @bind="_message" autocomplete="off" spellcheck="false" aria-describedby="@($"{_id}-message-help")" />
+                <span id="@($"{_id}-message-help")" class="mvp-muted">Optional. Meldingshode/Id (a UUID); needed for MM and Skoletjenesten evidence.</span>
+            </div>
+        </fieldset>
+    };
+
     private IEnumerable<IntegrationJourneyRunSummary> SourceRuns => _history.Where(item => item.ScenarioId != MessageVerificationPresentation.ScenarioId);
     private IReadOnlyList<IntegrationJourneyRunSummary> Verifications => _history.Where(item => item.ScenarioId == MessageVerificationPresentation.ScenarioId).ToList();
     private IReadOnlyList<JourneyScenarioInputOption> Options(string key) => Scenario?.Inputs?.FirstOrDefault(item => item.Key == key)?.Options ?? [];
@@ -240,7 +254,7 @@
     private string Note => !CanExecute ? $"Not available: {ExecutionGate.Detail(Authentication, _access)}"
         : !Runnable ? $"Not available: {_view?.ReadinessSummary} The backend re-checks every prerequisite."
         : !HasTarget ? "Choose an existing run, or enter an Altinn instance GUID or an MU message id."
-        : "Read-only: the backend reads recorded evidence and approved telemetry only, and re-checks the trusted environment and your permission.";
+        : "Read-only: the backend reads recorded evidence and approved telemetry only, and re-checks evidence access and your permission.";
 
     protected override async Task OnParametersSetAsync()
     {

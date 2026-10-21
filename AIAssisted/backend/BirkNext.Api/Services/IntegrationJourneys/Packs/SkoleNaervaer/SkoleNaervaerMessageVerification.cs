@@ -314,7 +314,7 @@ public sealed class SkoleNaervaerMessageEvidence(IntegrationJourneyRunStore hist
     internal static (IntegrationPlatform? Platform, MessageEvidenceProviderState State, string Detail) Scope(IntegrationCatalog catalog, TrustedExecutionEnvironment? environment,
         string[] tokens, string component)
     {
-        if (environment is null) return (null, MessageEvidenceProviderState.Blocked, "The environment is not a backend trusted environment.");
+        if (environment is null) return (null, MessageEvidenceProviderState.Blocked, "Runtime evidence access is not enabled for this environment (technical: TargetEnvironments:Trusted).");
         var candidates = catalog.Integrations.Where(item => item.Enabled && ArchitectureRuleEvaluator.MatchesAny(tokens, item.Producer, item.SourceSystem,
             item.Consumer.DisplayName, item.Consumer.LogicalName, item.DestinationSystem, item.DisplayName)).ToArray();
         if (candidates.Length == 0)
@@ -322,7 +322,7 @@ public sealed class SkoleNaervaerMessageEvidence(IntegrationJourneyRunStore hist
         var enrolled = candidates.Where(item => environment.IntegrationIds.Contains(item.Id, StringComparer.Ordinal)).ToArray();
         if (enrolled.Length == 0)
             return (null, MessageEvidenceProviderState.Blocked,
-                $"The {component} integration is configured but not enrolled in the trusted environment (TargetEnvironments:Trusted IntegrationIds), so its evidence is not approved for reading.");
+                $"Runtime evidence access is not enabled for the {component} integration in this environment, so its evidence is not approved for reading (technical: TargetEnvironments:Trusted IntegrationIds).");
         var platform = enrolled.Select(item => catalog.Platforms.FirstOrDefault(platform => platform.Id == item.PlatformId))
             .FirstOrDefault(platform => platform?.RuntimeEvidence?.TelemetryConfigured == true);
         return platform is null

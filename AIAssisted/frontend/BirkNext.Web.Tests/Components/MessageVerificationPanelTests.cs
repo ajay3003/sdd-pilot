@@ -40,8 +40,8 @@ public sealed class MessageVerificationPanelTests : BunitContext
             .And.Contain(text => text.Contains("MM outcome events"));
         // A compact provider grid: availability (Available / Not ready / Not available) and the reason, never a verdict on the message.
         cut.FindAll("[data-testid=mvp-providers] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Evidence provider", "Availability", "Reason / detail");
-        cut.FindAll("[data-testid=mvp-provider-state]").Select(state => state.TextContent).Should().OnlyContain(state => state == "Available" || state == "Not ready" || state == "Not available");
-        cut.Find("[data-testid=mvp-provider][data-state=NotConfigured] [data-testid=mvp-provider-state]").TextContent.Should().Be("Not ready", "configured-but-missing evidence is not a failure");
+        cut.FindAll("[data-testid=mvp-provider-state]").Select(state => state.TextContent).Should().OnlyContain(state => state == "Available" || state == "Not configured" || state == "Not permitted" || state == "Not available" || state == "Partially available");
+        cut.Find("[data-testid=mvp-provider][data-state=NotConfigured] [data-testid=mvp-provider-state]").TextContent.Should().Be("Not configured", "configured-but-missing evidence is not a failure");
         cut.Find("[data-testid=mvp-read-only]").TextContent.Should().Contain("never sends, submits or changes a message");
         // The form is grouped: what to verify, which identifiers, which observation window.
         cut.FindAll("[data-testid=mvp-form] legend").Select(l => l.TextContent).Should().Equal("Verification target", "Identifiers", "Observation");

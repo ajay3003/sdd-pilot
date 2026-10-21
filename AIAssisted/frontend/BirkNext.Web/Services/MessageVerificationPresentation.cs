@@ -78,10 +78,14 @@ public static class MessageVerificationPresentation
 
     /// <summary>An evidence provider's availability for a verification now: Available, Not ready (configuration or approval missing) or Not
     /// available (no read surface). Availability says nothing about the message itself: missing evidence is not a failure.</summary>
+    /// <summary>A provider's availability by its actual cause: Available, Not configured (no source named), Not permitted (evidence access is
+    /// not enabled for this environment), Not available (no approved provider exists) — never one undifferentiated "Not ready".</summary>
     public static string Availability(JourneyReadinessState state) => state switch
     {
         JourneyReadinessState.Ready => "Available",
+        JourneyReadinessState.NotConfigured => "Not configured",
         JourneyReadinessState.NotAvailable => "Not available",
-        _ => "Not ready",
+        JourneyReadinessState.Partial => "Partially available",
+        _ => "Not permitted",
     };
 }

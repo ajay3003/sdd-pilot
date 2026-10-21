@@ -13,51 +13,72 @@
 
 <PageTitle>Skolenærvær Testing</PageTitle>
 
-@* The Skolenærvær test pack's page: the first registered test pack, rendered from its generic descriptor (journeys, verification views, rules,
+@* The Skolenærvær test pack's page in four areas (Overview, Journeys, Verify, History), rendered from its generic descriptor (journeys, verification views, rules,
    history). One navigation only (?tab=). Readiness, blockers and evidence are the shared engines' own (Integration Journey, Active Event,
    Message Verification, Integration Topology, Test Data); this page summarizes them and hands off to their owners — it embeds no other
    feature's navigation. Source evidence is the canonical Integration Quality Review binding; nothing is selected, run or assessed here. *@
 <div class="snt-page">
     <PageHeader Title="Skolenærvær Testing"
-                Description="Review and test Skolenærvær integrations using BirkNext's shared CDC, integration journey and source-evidence engines." />
+                Description="Review readiness, run Skolenærvær test journeys, and verify evidence across the integration flow." />
 
-    <nav class="snt-nav" aria-label="Skolenærvær Testing sections" data-testid="snt-nav">
+    @* Four areas from the pack's navigation groups (Overview, Journeys, Verify, History). An area with several views has its own secondary
+       navigation; every view keeps its ?tab= id, so older deep links still open the same view. *@
+    <nav class="snt-nav" aria-label="Skolenærvær Testing areas" data-testid="snt-nav">
         @foreach (var group in Navigation_)
         {
-            <div class="snt-nav-group" role="group" aria-label="@group.Label" data-testid="snt-nav-group">
-                <span class="snt-nav-caption" aria-hidden="true">@group.Label</span>
-                <span class="snt-nav-list">
-                    @foreach (var view in group.Views)
-                    {
-                        <a href="@TabHref(view.ViewId)" class="snt-tab @(_tab == view.ViewId ? "snt-tab-active" : "")" aria-current="@(_tab == view.ViewId ? "page" : null)"
-                           data-tab="@view.ViewId" @onclick="() => SelectTabAsync(view.ViewId)" @onclick:preventDefault>@view.DisplayName</a>
-                    }
-                </span>
-            </div>
+            var active = CurrentGroup == group;
+            var first = group.Views[0].ViewId;
+            <a href="@TabHref(first)" class="snt-tab @(active ? "snt-tab-active" : "")" aria-current="@(active ? "page" : null)"
+               data-testid="snt-area" data-area="@group.Label" data-tab="@first" @onclick="() => SelectTabAsync(first)" @onclick:preventDefault>@group.Label</a>
         }
     </nav>
+    @if (CurrentGroup is { Views.Count: > 1 } area)
+    {
+        <nav class="snt-subnav" aria-label="@($"{area.Label} views")" data-testid="snt-subnav">
+            @foreach (var (caption, views) in SubnavSections(area))
+            {
+                <span class="snt-subnav-section" role="group" aria-label="@(caption ?? area.Label)" data-testid="snt-subnav-section">
+                    @if (caption is not null) { <span class="snt-subnav-caption" aria-hidden="true">@caption</span> }
+                    @foreach (var view in views)
+                    {
+                        <a href="@TabHref(view.ViewId)" class="snt-subtab @(_tab == view.ViewId || CurrentView == view ? "snt-subtab-active" : "")" aria-current="@(CurrentView == view ? "page" : null)"
+                           data-testid="snt-subtab" data-tab="@view.ViewId" @onclick="() => SelectTabAsync(view.ViewId)" @onclick:preventDefault>@view.DisplayName</a>
+                    }
+                </span>
+            }
+        </nav>
+    }
 
     @if (CurrentView is { Kind: TestPackViewKind.Overview })
     {
         <section id="snt-overview" class="snt-panel" aria-labelledby="snt-overview-heading">
             <h2 id="snt-overview-heading" tabindex="-1">Overview</h2>
             <dl class="snt-context" data-testid="snt-context">
-                <div><dt>Workspace</dt><dd data-testid="snt-workspace">@(Workspace.ProjectName is { } project ? project : "No Sample Project selected · source evidence comes from Integration Quality Review bindings")</dd></div>
-                <div><dt>Target Environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
-                <div><dt>Source evidence</dt><dd data-testid="snt-source">@_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
+                <div><dt>Target environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
+                @if (Workspace.ProjectName is { } project) { <div><dt>Project workspace</dt><dd data-testid="snt-workspace">@project</dd></div> }
+                <div><dt>Source evidence</dt><dd data-testid="snt-source">Provided by Integration Quality Review bindings · @_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=setup-evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
                 @if (_profile is not null && _pack is not null)
                 {
                     <div><dt>Active execution</dt><dd data-testid="snt-active-execution">@TestPackPresentation.ActiveExecution(_pack)
-                        @if (!_pack.EnvironmentTrusted) { <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link" data-testid="snt-execution-settings">Target Environment safety</a> }</dd></div>
+                        @if (!_pack.EnvironmentTrusted) { <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link" data-testid="snt-execution-settings">Manage active execution</a> }</dd></div>
                 }
             </dl>
 
-            @if (_guidance is { } guidance && (guidance.Sources.Count > 0 || guidance.Suggestions.Count > 0))
+            @if (_guidance is { } guidance && guidance.Sources.Count > 0)
             {
-                <section class="snt-source-requirements" aria-labelledby="snt-source-requirements-heading" data-testid="snt-source-requirements">
-                    <h3 class="snt-subheading" id="snt-source-requirements-heading">Source setup</h3>
-                    @if (guidance.Sources.Count > 0)
-                    {
+                <section class="snt-summary-card" aria-labelledby="snt-source-requirements-heading" data-testid="snt-source-requirements">
+                    <h3 class="snt-subheading" id="snt-source-requirements-heading">Source evidence</h3>
+                    <ul class="snt-source-summary" data-testid="snt-source-summary-list">
+                        @foreach (var source in guidance.Sources.OrderBy(BirkNext.Web.Services.ProjectImport.SourceSetupPresentation.Order))
+                        {
+                            var optional = source.Role.Provider == TestPackSourceProvider.ImportedSource && source.Role.Requirement != TestPackSourceRequirement.Required;
+                            <li class="snt-source-summary-item @(optional ? "is-optional" : "")" data-testid="snt-source-summary" data-role="@source.Role.Key">
+                                <span class="snt-source-name">@source.Role.Label@if (optional) { <span class="snt-muted"> · optional</span> }</span>
+                                <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-summary-state">@SourceSummaryLabel(source)</span>
+                            </li>
+                        }
+                    </ul>
+                    <ReviewDisclosure Text="View source setup" CollapseText="Hide source setup" TestId="snt-source-setup-details" Class="disclosure-inline">
                         <ul class="snt-source-cards" data-testid="snt-source-setup" aria-label="Logical sources">
                             @foreach (var source in guidance.Sources)
                             {
@@ -77,14 +98,21 @@
                                 </li>
                             }
                         </ul>
-                    }
-                    <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(guidance) Runtime verification is separate.</p>
-                    @if (guidance.Suggestions.Count > 0)
-                    {
-                        <ReviewDisclosure Text="@($"View {guidance.Suggestions.Count} source requirements")" CollapseText="Hide source requirements" TestId="snt-source-values" Class="disclosure-inline">
-                            <SourceGuidanceList Suggestions="guidance.Suggestions" TestId="snt-source-guidance" Label="Source requirements" />
-                        </ReviewDisclosure>
-                    }
+                    </ReviewDisclosure>
+                </section>
+            }
+            @if (_guidance is { Suggestions.Count: > 0 } configuration)
+            {
+                var known = configuration.Suggestions.Count(item => item.ResolvedValue is not null);
+                <section class="snt-summary-card" aria-labelledby="snt-configuration-heading" data-testid="snt-configuration">
+                    <h3 class="snt-subheading" id="snt-configuration-heading">Configuration</h3>
+                    <p data-testid="snt-config-known"><strong>@known of @configuration.Suggestions.Count known</strong>@if (configuration.Suggestions.Count - known > 0) { <span> · @(configuration.Suggestions.Count - known) need attention</span> }</p>
+                    <ReviewDisclosure Text="View provenance" CollapseText="Hide provenance" TestId="snt-config-provenance" Class="disclosure-inline">
+                        <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(configuration) Runtime verification is separate.</p>
+                    </ReviewDisclosure>
+                    <ReviewDisclosure Text="@($"View {configuration.Suggestions.Count} source requirements")" CollapseText="Hide source requirements" TestId="snt-source-values" Class="disclosure-inline">
+                        <SourceGuidanceList Suggestions="configuration.Suggestions" TestId="snt-source-guidance" Label="Source requirements" />
+                    </ReviewDisclosure>
                 </section>
             }
 
@@ -95,21 +123,22 @@
             }
             <div class="snt-scroll" role="region" aria-labelledby="snt-journeys-heading">
                 <table class="snt-table snt-stack" role="table" data-testid="snt-journeys">
-                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Journey</th><th role="columnheader" scope="col">Configuration</th><th role="columnheader" scope="col">Source evidence</th><th role="columnheader" scope="col">Execution readiness</th><th role="columnheader" scope="col">Blockers</th><th role="columnheader" scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Journey</th><th role="columnheader" scope="col">Configuration</th><th role="columnheader" scope="col">Source evidence</th><th role="columnheader" scope="col">Execution</th><th role="columnheader" scope="col">Attention</th><th role="columnheader" scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
                     <tbody role="rowgroup">
                         @foreach (var journey in Journeys)
                         {
                             var view = View(journey.JourneyId);
+                            var actions = view is null ? 0 : AttentionGroups(journey.JourneyId).Count;
                             <tr role="row" class="snt-journey-row" data-testid="snt-journey" data-journey="@journey.JourneyId">
                                 <th role="rowheader" scope="row"><span class="snt-journey-name">@journey.DisplayName</span><span class="snt-flow">@journey.Flow</span></th>
-                                <td role="cell" data-label="Configuration">@Dimension("Configuration", view is null ? Unknown : TestPackPresentation.Configuration(view))</td>
+                                <td role="cell" data-label="Configuration">@Dimension("Configuration", view is null ? Unknown : JourneyConfiguration(view))</td>
                                 <td role="cell" data-label="Source evidence">@Dimension("Source evidence", view is null ? Unknown : TestPackPresentation.SourceEvidence(view))
                                     @if (SourceGuidancePresentation.ForJourney(_guidance, journey.JourneyId) is { Count: > 0 } sources)
                                     {
                                         <span class="snt-journey-sources" data-testid="snt-journey-sources">@string.Join(" · ", sources.Select(SourceGuidancePresentation.SourceShort))</span>
                                     }</td>
-                                <td role="cell" data-label="Execution readiness" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
-                                <td role="cell" data-label="Blockers" data-testid="snt-journey-blockers">@(view is null ? "—" : BlockerCount(journey.JourneyId).ToString())</td>
+                                <td role="cell" data-label="Execution" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
+                                <td role="cell" data-label="Attention" data-testid="snt-journey-blockers">@(view is null ? "—" : actions == 0 ? "None" : $"{actions} action{(actions == 1 ? "" : "s")}")</td>
                                 <td role="cell"><a class="btn-secondary snt-open" href="@TabHref(journey.JourneyId)" @onclick="() => SelectTabAsync(journey.JourneyId)" @onclick:preventDefault
                                        aria-label="@($"Open {journey.DisplayName}")" data-testid="snt-journey-open">Open</a></td>
                             </tr>
@@ -122,18 +151,20 @@
                 <ul class="snt-verify-summary" data-testid="snt-verify-summary">
                     @foreach (var verification in verifications)
                     {
-                        <li data-testid="snt-verify-item" data-view="@verification.ViewId"><a href="@TabHref(verification.ViewId)" @onclick="() => SelectTabAsync(verification.ViewId)" @onclick:preventDefault>@verification.DisplayName</a>
-                            <span class="snt-muted">· @verification.Description</span> @Dimension("Availability", VerificationAvailability(verification))</li>
+                        <li data-testid="snt-verify-item" data-view="@verification.ViewId"><span class="snt-dimension-label">@verification.DisplayName</span> @Dimension("Availability", VerificationAvailability(verification))
+                            <a href="@TabHref(verification.ViewId)" @onclick="() => SelectTabAsync(verification.ViewId)" @onclick:preventDefault data-testid="snt-open-verify">Open Verify</a></li>
                     }
                 </ul>
             }
 
             @if (_profile is not null)
             {
-                <section class="snt-topology" aria-label="Expected topology" data-testid="snt-topology">
-                    <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected topology" Compact="true"
-                                        SourceHint="(from, to) => SourceGuidancePresentation.ConnectionHint(SourceGuidancePresentation.ForComponents(_guidance, from, to))" />
-                </section>
+                <ReviewDisclosure Text="Expected topology" CollapseText="Hide expected topology" Hint="connections and what evidence each needs" TestId="snt-topology-details" Class="disclosure-inline">
+                    <section class="snt-topology" aria-label="Expected topology" data-testid="snt-topology">
+                        <TopologyPathsPanel EnvironmentId="@_profile.Id" ProfileId="skolenaervaer" Title="Expected topology" Compact="true"
+                                            SourceHint="(from, to) => SourceGuidancePresentation.ConnectionHint(SourceGuidancePresentation.ForComponents(_guidance, from, to))" />
+                    </section>
+                </ReviewDisclosure>
             }
         </section>
     }
@@ -144,11 +175,6 @@
         <section id="@SectionId(journeyId)" class="snt-panel" aria-labelledby="@($"{SectionId(journeyId)}-heading")" data-testid="snt-journey-view" data-journey="@journeyId">
             <h2 id="@($"{SectionId(journeyId)}-heading")" tabindex="-1">@(journey?.DisplayName ?? journeyId)</h2>
             <p class="snt-flow" data-testid="snt-flow"><span class="snt-dimension-label">Flow</span> @(journey?.Flow ?? "")</p>
-            @if (journeyId == PeriodeavslutningId)
-            {
-                <p data-testid="snt-period-semantics">Service Bus accepted is not the same as Bufdata processed.</p>
-                <p data-testid="snt-period-operator">Period closure is an operator action: Skolenærværsrapport locks a period on its own schedule, its drift endpoint only postpones the lock, and BirkNext never locks a period or publishes the event.</p>
-            }
             @if (_profile is null)
             {
                 <p role="status" data-testid="snt-not-ready">Not ready: select a Target Environment to load this journey's readiness. Nothing has been run or assessed.</p>
@@ -161,21 +187,33 @@
             else
             {
                 @JourneyStatus(view)
+                @if (journeyId == PeriodeavslutningId)
+                {
+                    <div class="snt-operator" data-testid="snt-period-operator">
+                        <p>Period closure is operator-controlled. BirkNext does not lock periods or publish the closure event.</p>
+                        <ReviewDisclosure Text="Why?" CollapseText="Hide explanation" TestId="snt-period-why" Class="disclosure-inline">
+                            <p>Skolenærværsrapport locks a period on its own schedule; its drift endpoint only postpones the lock, and an immediate trigger exists for local development only. BirkNext never locks a period or publishes the event.</p>
+                        </ReviewDisclosure>
+                        <p class="snt-muted" data-testid="snt-period-semantics">Service Bus accepted is not the same as Bufdata processed.</p>
+                    </div>
+                }
+                @if (journeyId == RapportmottakId) { @RapportmottakHeader(view) }
+                @AttentionSummary(journeyId, view)
                 @if (view.Journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent)
                 {
                     @* Hand-off: the shared Active Event tests own this journey's scenarios, safety checks, runs and history. *@
+                    var blocked = TestPackPresentation.ExecutionReadiness(view) != "Ready";
                     <dl class="snt-handoff" data-testid="snt-handoff">
                         <div><dt>Execution provider</dt><dd data-testid="snt-provider">Shared Active Event Tests <span class="snt-muted">(@view.Journey.DelegatedProviderId)</span></dd></div>
-                        <div><dt>Execution readiness</dt><dd data-testid="snt-handoff-readiness">@(TestPackPresentation.ExecutionReadiness(view) == "Ready" ? "Ready" : $"Blocked — {BlockerCount(journeyId)} prerequisite{(BlockerCount(journeyId) == 1 ? "" : "s")}")</dd></div>
+                        <div><dt>Execution</dt><dd data-testid="snt-handoff-readiness">@(blocked ? "Blocked" : "Executable after confirmation")</dd></div>
                     </dl>
-                    <p><a class="btn-primary" href="/integration-quality-review?view=active-tests" data-testid="snt-open-active-tests">Open Active Event Tests</a></p>
+                    <p><a class="btn-secondary" href="/integration-quality-review?view=test-verify" data-testid="snt-open-active-tests">@(blocked ? "Review Active Event Tests setup" : "Open Active Event Tests")</a></p>
                     <p class="snt-muted">Scenarios run from Active Event Tests in Integration Quality Review; Event Hub configuration and safety checks are shared. Nothing runs from this page.</p>
-                    @Prerequisites(view, collapsed: true)
+                    @PrerequisiteDetails(view)
                 }
                 else
                 {
-                    @if (journeyId == RapportmottakId) { @RapportmottakHeader(view) }
-                    @Prerequisites(view, collapsed: false)
+                    @PrerequisiteDetails(view)
                     <div id="@($"{SectionId(journeyId)}-run")" class="snt-focus-target" tabindex="-1">
                         @if (journeyId == RapportmottakId)
                         {
@@ -185,8 +223,9 @@
                         }
                         else
                         {
-                            <h3 class="snt-subheading">Steps and run</h3>
-                            <IntegrationJourneyPanel Profile="_profile" PackId="@PackId" Embedded="true" ShowPrerequisites="false" InitialJourneyId="@journeyId" />
+                            <ReviewDisclosure Text="Steps and expected outcomes" CollapseText="Hide steps" TestId="snt-steps" Class="disclosure-inline">
+                                <IntegrationJourneyPanel Profile="_profile" PackId="@PackId" Embedded="true" ShowPrerequisites="false" InitialJourneyId="@journeyId" />
+                            </ReviewDisclosure>
                         }
                     </div>
                     @if (journeyId == RapportmottakId) { @RapportmottakDetails(view) }
@@ -198,7 +237,7 @@
     {
         <section id="snt-verification" class="snt-panel" aria-labelledby="snt-verification-heading">
             <h2 id="snt-verification-heading" tabindex="-1">@verificationView.DisplayName</h2>
-            <p>What actually happened to one Skolenærvær message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only: nothing is sent.</p>
+            <p class="snt-muted"><span class="snt-dimension-label">Runtime verification</span> What actually happened to one message, from evidence that already exists: BirkNext's run history and, where approved, MM's and Skoletjenesten's telemetry. Read-only: nothing is sent.</p>
             @if (_profile is null)
             {
                 <div class="snt-empty" role="status" data-testid="snt-verification-not-ready">
@@ -216,33 +255,45 @@
     {
         <section id="snt-rules" class="snt-panel" aria-labelledby="snt-rules-heading">
             <h2 id="snt-rules-heading" tabindex="-1">Architecture Rules</h2>
-            <p>Each rule is assessed only on Source Analysis dependency evidence from the logical source it needs, bound in Integration Quality Review. Evidence and assessment are separate: no evidence is Not assessed, never a pass.</p>
+            <p class="snt-muted"><span class="snt-dimension-label">Source-based checks</span> Each rule is assessed only on Source Analysis dependency evidence from the logical source it needs, bound in Integration Quality Review. No evidence is Not assessed, never a pass.</p>
             @if (_profile is null)
             {
                 <p role="status" data-testid="snt-rules-not-ready">Not assessed: select a Target Environment and bind source evidence.</p>
             }
             else if (_rules is { } report)
             {
+                var root = RulesRootCause(report);
+                @if (root is { } cause)
+                {
+                    <div class="snt-summary-card" data-testid="snt-rules-summary">
+                        <p><strong data-testid="snt-rules-summary-count">@cause.Count rule@(cause.Count == 1 ? "" : "s") cannot be assessed</strong></p>
+                        <p data-testid="snt-rules-summary-reason">Reason: @cause.Reason</p>
+                        @if (cause.Matches.Count > 0) { <p class="snt-muted" data-testid="snt-rules-summary-matches">Matching sources: @string.Join(", ", cause.Matches)</p> }
+                        <p><a class="btn-primary" href="@cause.ActionHref" data-testid="snt-rules-summary-action">@cause.ActionLabel</a></p>
+                    </div>
+                }
                 <p class="snt-muted" data-testid="snt-rules-provenance">Evidence source: @(report.SourceArchive is { } archive ? $"Source Analysis snapshot {archive}"
                     : report.RuleSources.Count > 0 ? "per rule — the bound snapshot of the source each rule needs" : "none — no Source Analysis snapshot is bound in Integration Quality Review → Evidence")</p>
                 @if (report.Limitations.Count > 0) { <ul class="snt-notes" data-testid="snt-rules-limitations">@foreach (var item in report.Limitations) { <li>@item</li> }</ul> }
-                <div class="snt-scroll" role="region" tabindex="0" aria-label="Architecture rule results">
-                    <table class="snt-table snt-stack" role="table" data-testid="snt-rule-results">
-                        <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Rule</th><th role="columnheader" scope="col">Required source</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Assessment</th><th role="columnheader" scope="col">Reason</th></tr></thead>
-                        <tbody role="rowgroup">
-                            @foreach (var finding in report.Findings)
-                            {
-                                <tr role="row" data-testid="snt-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
-                                    <th role="rowheader" scope="row">@finding.Title</th>
-                                    <td role="cell" data-label="Required source" data-testid="snt-rule-source">@RuleSource(report, finding)</td>
-                                    <td role="cell" data-label="Evidence" data-testid="snt-rule-evidence">@RuleEvidence(report, finding)</td>
-                                    <td role="cell" data-label="Assessment"><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)" data-testid="snt-rule-assessment">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
-                                    <td role="cell" data-label="Reason" data-testid="snt-rule-reason">@finding.Detail</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <ReviewDisclosure Text="@($"View {(root is null ? "" : "affected ")}rules ({report.Findings.Count})")" CollapseText="Hide rules" TestId="snt-rules-details" Class="disclosure-inline" Expanded="@(root is null)">
+                    <div class="snt-scroll" role="region" tabindex="0" aria-label="Architecture rule results">
+                        <table class="snt-table snt-stack" role="table" data-testid="snt-rule-results">
+                            <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Rule</th><th role="columnheader" scope="col">Required source</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Assessment</th><th role="columnheader" scope="col">Reason</th></tr></thead>
+                            <tbody role="rowgroup">
+                                @foreach (var finding in report.Findings)
+                                {
+                                    <tr role="row" data-testid="snt-rule" data-rule="@finding.RuleId" data-outcome="@finding.Outcome">
+                                        <th role="rowheader" scope="row">@finding.Title</th>
+                                        <td role="cell" data-label="Required source" data-testid="snt-rule-source">@RuleSource(report, finding)</td>
+                                        <td role="cell" data-label="Evidence" data-testid="snt-rule-evidence">@RuleEvidence(report, finding)</td>
+                                        <td role="cell" data-label="Assessment"><span class="snt-pill snt-pill-@IntegrationJourneyPresentation.RuleTone(finding.Outcome)" data-testid="snt-rule-assessment">@IntegrationJourneyPresentation.Rule(finding.Outcome)</span></td>
+                                        <td role="cell" data-label="Reason" data-testid="snt-rule-reason">@finding.Detail</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
             }
             else
             {
@@ -397,54 +448,82 @@
     {
         "Configured" or "Verified" or "Ready" or "Available (read-only)" => "ready",
         "Partial" => "attention",
-        "Not configured" or "Missing" or "Blocked" or "Not available" or "Not ready" => "attention",
+        "Not configured" or "Missing" or "Missing integration" or "Blocked" or "Not available" or "Not ready" or "Available · needs binding" => "attention",
         _ => "neutral",
     };
 
     private RenderFragment JourneyStatus(IntegrationJourneyView view) => __builder =>
     {
         <div class="snt-dimensions" data-testid="snt-status" data-journey="@view.Journey.JourneyId">
-            <span><span class="snt-dimension-label">Configuration</span> @Dimension("Configuration", TestPackPresentation.Configuration(view))</span>
+            <span><span class="snt-dimension-label">Configuration</span> @Dimension("Configuration", JourneyConfiguration(view))</span>
             <span><span class="snt-dimension-label">Source evidence</span> @Dimension("Source evidence", TestPackPresentation.SourceEvidence(view))</span>
-            <span><span class="snt-dimension-label">Execution readiness</span> @Dimension("Execution readiness", TestPackPresentation.ExecutionReadiness(view))</span>
+            <span><span class="snt-dimension-label">Execution</span> @Dimension("Execution readiness", TestPackPresentation.ExecutionReadiness(view))</span>
             <span><span class="snt-dimension-label">Assessment</span> @Dimension("Assessment", "Not assessed")</span>
         </div>
-        <p class="snt-muted">@view.ReadinessSummary</p>
     };
 
-    /// <summary>Blockers grouped by their category metadata, each with its source; resolved prerequisites stay compact (one line when none).</summary>
-    private RenderFragment Prerequisites(IntegrationJourneyView view, bool collapsed) => __builder =>
+    /// <summary>Group titles in this pack's own terms; the grouping itself is the shared, generic one.</summary>
+    private static readonly IReadOnlyDictionary<string, string> GroupTitles = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        var journeyId = view.Journey.JourneyId;
-        var blockers = Blockers(journeyId);
-        var resolved = view.Prerequisites.Where(item => item.State == JourneyReadinessState.Ready).ToList();
-        <section class="snt-blockers-section" aria-labelledby="@($"{SectionId(journeyId)}-blockers")" data-testid="snt-needs-attention">
-            <h3 class="snt-subheading" id="@($"{SectionId(journeyId)}-blockers")">Blockers (@blockers.Count)</h3>
-            @if (blockers.Count == 0) { <p class="snt-muted" data-testid="snt-nothing-unresolved">Nothing is blocking execution. Ready to run is not passed.</p> }
-            else if (collapsed)
-            {
-                <ReviewDisclosure Text="@($"View {blockers.Count} blocker{(blockers.Count == 1 ? "" : "s")}")" CollapseText="Hide blockers" TestId="snt-blocker-details" Class="disclosure-inline">
-                    @BlockerGroups(blockers)
-                </ReviewDisclosure>
-            }
+        ["authentication"] = "ID-porten test setup", ["run-configuration"] = "Altinn run configuration", ["verification"] = "Bufdata / downstream verification",
+    };
+
+    /// <summary>What a journey needs from the tester, as owner-aware action groups (never a wall of raw checks).</summary>
+    private IReadOnlyList<TestPackPresentation.BlockerGroup> AttentionGroups(string journeyId) =>
+        TestPackPresentation.BlockerGroups(Blockers(journeyId), _guidance, _profile?.Id, GroupTitles, SourceGuidancePresentation.ForJourney(_guidance, journeyId));
+
+    /// <summary>"N things need attention": one card per group with its state, owner and one action; the first is the primary next action
+    /// (Rapportmottak's safe configuration, when offered, is its primary action instead).</summary>
+    private RenderFragment AttentionSummary(string journeyId, IntegrationJourneyView view) => __builder =>
+    {
+        var groups = AttentionGroups(journeyId);
+        var safeConfigPrimary = journeyId == RapportmottakId && ApplicableSourceValues.Count > 0 && _applyResult is null;
+        var primaryGroup = safeConfigPrimary ? null : TestPackPresentation.PrimaryGroup(groups);
+        <section class="snt-attention" aria-labelledby="@($"{SectionId(journeyId)}-attention")" data-testid="snt-needs-attention" data-count="@groups.Count">
+            <h3 class="snt-subheading" id="@($"{SectionId(journeyId)}-attention")">@(groups.Count == 0 ? "Nothing needs attention" : $"{groups.Count} thing{(groups.Count == 1 ? "" : "s")} need{(groups.Count == 1 ? "s" : "")} attention")</h3>
+            @if (groups.Count == 0) { <p class="snt-muted" data-testid="snt-nothing-unresolved">Nothing is blocking execution. Executable is not passed.</p> }
             else
             {
                 @if (journeyId == RapportmottakId && SkoleNaervaerReadinessPresentation.InteractiveFallbackOnly(view.Prerequisites))
                 {
                     <p class="snt-muted" data-testid="snt-fallback-note">The unattended setup is incomplete. The interactive TestID sign-in fallback can still run it, but the first TT02 run is unattended.</p>
                 }
-                @BlockerGroups(blockers)
+                <ol class="snt-group-cards" data-testid="snt-rapport-blockers">
+                    @for (var i = 0; i < groups.Count; i++)
+                    {
+                        var group = groups[i];
+                        var primary = group == primaryGroup;
+                        <li class="snt-group-card" data-testid="snt-blocker-group" data-group="@group.Key">
+                            <div class="snt-group-card-head"><strong>@group.Title</strong> <span class="snt-pill snt-pill-attention" data-testid="snt-blocker-state">@group.State</span></div>
+                            <p class="snt-group-card-text">@group.Explanation</p>
+                            @if (group.KnownValues.Count > 0) { <p class="snt-muted" data-testid="snt-blocker-known">Known: @string.Join("; ", group.KnownValues)</p> }
+                            <p class="snt-muted snt-group-card-meta"><span data-testid="snt-blocker-owner">Owner: @group.Owner</span> · <span data-testid="snt-blocker-checks">@group.Items.Count check@(group.Items.Count == 1 ? "" : "s")</span></p>
+                            @if (group.ActionHref is { } href) { <a class="@(primary ? "btn-primary" : "btn-secondary") snt-group-action" href="@href" data-testid="snt-blocker-action" aria-label="@($"{group.ActionLabel}: {group.Title}")">@group.ActionLabel</a> }
+                            else if (group.ActionGroup is { } detail) { <button type="button" class="@(primary ? "btn-primary" : "btn-secondary") snt-group-action" data-testid="snt-blocker-action" aria-label="@($"{group.ActionLabel}: {group.Title}")" @onclick="() => OpenGroupAsync(detail)">@group.ActionLabel</button> }
+                        </li>
+                    }
+                </ol>
             }
         </section>
-        <section class="snt-resolved-section" aria-label="Resolved automatically" data-testid="snt-resolved" data-count="@resolved.Count">
-            @if (resolved.Count == 0) { <p class="snt-muted" data-testid="snt-resolved-none">Resolved automatically: 0</p> }
-            else
+    };
+
+    /// <summary>Every underlying prerequisite check, for diagnosis: blockers by category with their source guidance, and what resolved
+    /// automatically (only when something did). Collapsed by default.</summary>
+    private RenderFragment PrerequisiteDetails(IntegrationJourneyView view) => __builder =>
+    {
+        var blockers = Blockers(view.Journey.JourneyId);
+        var resolved = view.Prerequisites.Where(item => item.State == JourneyReadinessState.Ready).ToList();
+        <ReviewDisclosure Text="@($"Show {blockers.Count + resolved.Count} prerequisite check{(blockers.Count + resolved.Count == 1 ? "" : "s")}")" CollapseText="Hide prerequisite checks"
+                          Hint="@($"{blockers.Count} open")" TestId="snt-blocker-details" Class="disclosure-inline" @bind-Expanded="_detailsOpen">
+            <p class="snt-muted">@view.ReadinessSummary</p>
+            @CheckList(blockers)
+            @if (resolved.Count > 0)
             {
-                <ReviewDisclosure Text="@($"Resolved automatically: {resolved.Count}")" CollapseText="Hide resolved prerequisites" TestId="snt-resolved-details" Class="disclosure-inline">
+                <section class="snt-resolved-section" aria-label="Resolved automatically" data-testid="snt-resolved" data-count="@resolved.Count">
+                    <h4 class="snt-group-heading">Resolved automatically (@resolved.Count)</h4>
                     @foreach (var (group, items) in TestPackPresentation.Grouped(resolved))
                     {
-                        <h4 class="snt-group-heading">@group</h4>
-                        <ul class="snt-resolved-list">
+                        <ul class="snt-resolved-list" aria-label="@group">
                             @foreach (var item in items)
                             {
                                 <li data-testid="snt-resolved-item" data-key="@item.Key"><span class="snt-mark snt-mark-ok" aria-hidden="true">✓</span>
@@ -453,30 +532,31 @@
                             }
                         </ul>
                     }
-                </ReviewDisclosure>
+                </section>
             }
-        </section>
+        </ReviewDisclosure>
     };
 
-    private RenderFragment BlockerGroups(IReadOnlyList<JourneyPrerequisite> blockers) => __builder =>
+    /// <summary>The raw checks by category, each with its source, why it is open and (behind "Why is this blocked?") the source guidance.</summary>
+    private RenderFragment CheckList(IReadOnlyList<JourneyPrerequisite> blockers) => __builder =>
     {
-        <div class="snt-blocker-groups" data-testid="snt-rapport-blockers">
+        <div class="snt-blocker-groups" data-testid="snt-check-list">
             @foreach (var (group, items) in TestPackPresentation.Grouped(blockers))
             {
-                <section class="snt-blocker-group" aria-label="@($"{group} blockers")" data-testid="snt-blocker-group" data-group="@group">
+                <section class="snt-blocker-group" aria-label="@($"{group} checks")" data-testid="snt-check-group" data-group="@group">
                     <h4 class="snt-group-heading">@group <span class="snt-count">@items.Count</span></h4>
                     <ul class="snt-attention-list">
                         @foreach (var item in items)
                         {
                             var action = SkoleNaervaerReadinessPresentation.ActionFor(item, _profile?.Id);
                             var guidance = SourceGuidancePresentation.For(_guidance, item.Key);
-                            <li data-key="@item.Key" data-category="@item.Category" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">✗</span>
+                            <li data-key="@item.Key" data-category="@item.Category" data-testid="snt-attention-item"><span class="snt-mark snt-mark-open" aria-hidden="true">○</span>
                                 <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source" data-testid="snt-source-badge"><span class="visually-hidden">Source: </span>@TestPackPresentation.Source(item)</span>
                                     <span class="snt-kind" data-testid="snt-kind"><span class="visually-hidden">Needs: </span>@SourceGuidancePresentation.RequirementKind(item, guidance.Count > 0)</span>
                                     <span class="snt-muted snt-row-detail">@item.Detail</span>
                                     @if (guidance.Count > 0)
                                     {
-                                        <ReviewDisclosure Text="Source guidance" CollapseText="Hide source guidance" TestId="snt-blocker-guidance" Class="disclosure-inline">
+                                        <ReviewDisclosure Text="Why is this blocked?" CollapseText="Hide technical details" TestId="snt-blocker-guidance" Class="disclosure-inline">
                                             <SourceGuidanceList Suggestions="guidance" TestId="snt-blocker-guidance-list" Label="@($"Source guidance for {item.Label}")" />
                                         </ReviewDisclosure>
                                     }
@@ -489,7 +569,6 @@
         </div>
     };
 
-    /// <summary>Rapportmottak's provider-specific header: TT02 submission readiness and the hand-offs to its owners.</summary>
     /// <summary>Source, reference, runtime and active-execution states side by side — separate dimensions, never one "Ready".</summary>
     private RenderFragment ReadinessDimensions(string journeyId) => __builder =>
     {
@@ -502,41 +581,55 @@
         </div>
         @if (_pack is { EnvironmentTrusted: false })
         {
-            <p class="snt-muted" data-testid="snt-execution-note">Active execution is this target environment's execution policy, not its health; source evidence and reference metadata never change it.
-                <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link">Target Environment safety</a></p>
+            <p class="snt-muted" data-testid="snt-execution-note">Active execution is this environment's execution setting, not its health; source evidence and reference metadata never change it.
+                <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link">Manage active execution</a></p>
         }
     };
 
+    /// <summary>Rapportmottak first: readiness dimensions, the safe configuration (reviewed, then explicitly applied) and a run action whose
+    /// wording follows readiness (Prepare while blocked, Start when executable after confirmation).</summary>
     private RenderFragment RapportmottakHeader(IntegrationJourneyView view) => __builder =>
     {
         var decision = SkoleNaervaerReadinessPresentation.Decision(SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites));
+        var executable = decision.Code == "A";
         @* The decision's internal code (A–F, a root-cause order) is not a formal classification, so only its label is shown. *@
         <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code"><span class="snt-dimension-label">TT02 submission readiness</span> <strong>@decision.Label</strong>
-            @if (decision.Code == "A") { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
+            @if (executable) { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
         @ReadinessDimensions(view.Journey.JourneyId)
-        <div class="snt-actions" data-testid="snt-rapport-actions">
-            <button type="button" class="btn-primary" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">Open Rapportmottak run</button>
-            <a class="btn-secondary" href="/integration-quality-review?view=extensions" data-testid="snt-configure-altinn">Configure Altinn</a>
-            @if (ApplicableSourceValues.Count > 0)
-            {
-                <button type="button" class="btn-secondary" data-testid="snt-apply-source" disabled="@_applying" @onclick="ApplySourceValuesAsync"
-                        aria-describedby="snt-apply-preview">Apply safe configuration (@ApplicableSourceValues.Count)</button>
-            }
-            <a class="btn-secondary" href="/admin/system-settings?section=target-environments" data-testid="snt-open-target">Open Target Environment</a>
-        </div>
         @if (ApplicableSourceValues.Count > 0 && _applyResult is null)
         {
-            <p class="snt-muted" id="snt-apply-preview" data-testid="snt-apply-preview">Stores into empty fields only: @string.Join(", ", ApplicableSourceValues.Select(item => $"{item.Requirement.Label} = {item.ResolvedValue} ({SourceGuidancePresentation.Origin(item)})")). Never secrets, reporters, identities or execution permission.</p>
+            <section id="safe-configuration" class="snt-summary-card snt-safe-config" aria-labelledby="snt-safe-config-heading" data-testid="snt-safe-config" tabindex="-1">
+                <h3 class="snt-subheading" id="snt-safe-config-heading">Safe configuration available</h3>
+                <p>@ApplicableSourceValues.Count known value@(ApplicableSourceValues.Count == 1 ? "" : "s") can be saved for the active run.</p>
+                @if (!_reviewingApply)
+                {
+                    <button type="button" class="btn-primary" data-testid="snt-review-apply" @onclick="() => _reviewingApply = true">Review &amp; apply @ApplicableSourceValues.Count value@(ApplicableSourceValues.Count == 1 ? "" : "s")</button>
+                }
+                else
+                {
+                    <p><strong>These values will be saved for the active run</strong> (empty fields only — an explicit value is never overwritten):</p>
+                    <ul data-testid="snt-apply-preview">@foreach (var item in ApplicableSourceValues) { <li data-testid="snt-apply-preview-item" data-key="@item.Requirement.Key">@item.Requirement.Label: <code>@item.ResolvedValue</code> <span class="snt-muted">· @SourceGuidancePresentation.Origin(item)</span></li> }</ul>
+                    <p class="snt-muted">Never secrets, reporters, identities, execution permission or runtime state.</p>
+                    <div class="snt-actions">
+                        <button type="button" class="btn-primary" data-testid="snt-apply-source" disabled="@_applying" @onclick="ApplySourceValuesAsync">Apply @ApplicableSourceValues.Count value@(ApplicableSourceValues.Count == 1 ? "" : "s")</button>
+                        <button type="button" class="btn-secondary" data-testid="snt-apply-cancel" @onclick="() => _reviewingApply = false">Cancel</button>
+                    </div>
+                }
+            </section>
         }
         @if (_applyResult is { } applied)
         {
             <div class="snt-apply-result" role="status" data-testid="snt-apply-result">
-                <p><strong>@(applied.Applied.Count == 0 ? "Nothing was applied." : $"Applied {applied.Applied.Count} value{(applied.Applied.Count == 1 ? "" : "s")} (stored as configuration; not runtime verified):")</strong></p>
+                <p><strong>@(applied.Applied.Count == 0 ? "Nothing was applied." : $"Saved {applied.Applied.Count} value{(applied.Applied.Count == 1 ? "" : "s")} for the active run (configuration; not runtime verified):")</strong></p>
                 @if (applied.Applied.Count > 0) { <ul>@foreach (var item in applied.Applied) { <li data-testid="snt-applied-item" data-key="@item.Key">@item.Label: <code>@item.Value</code> <span class="snt-muted">· @item.Provenance</span></li> }</ul> }
                 @if (applied.NotApplied.Count > 0) { <ul class="snt-muted">@foreach (var item in applied.NotApplied) { <li data-testid="snt-not-applied-item" data-key="@item.Key">@item.Label — @item.Reason</li> }</ul> }
             </div>
         }
         @if (_applyError is not null) { <p role="alert" data-testid="snt-apply-error">@_applyError</p> }
+        <div class="snt-actions" data-testid="snt-rapport-actions">
+            <button type="button" class="@(executable ? "btn-primary" : "btn-secondary")" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">@(executable ? "Start Rapportmottak run" : "Prepare Rapportmottak run")</button>
+            <a class="snt-inline-link" href="/integration-quality-review?view=test-verify" data-testid="snt-configure-altinn">Open Altinn run configuration</a>
+        </div>
         <p class="snt-muted">Opening the run sends nothing. A real TT02 submission starts only after you confirm it there, and the backend re-checks every gate.</p>
     };
 
@@ -555,7 +648,7 @@
                             <div class="snt-local-setup" data-testid="snt-local-setup">
                                 <p>The run page stores nothing: it reads each value from its owner when the readiness is loaded.</p>
                                 <ul>
-                                    <li><strong>Integration Quality Review → Extensions → Altinn provider:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=extensions">Open Altinn test configuration</a></li>
+                                    <li><strong>Integration Quality Review → Test &amp; Verify → Altinn provider:</strong> app, environment, ID-porten client id and scopes, approved test reporter reference and synthetic identity set. <a href="/integration-quality-review?view=test-verify">Open Altinn run configuration</a></li>
                                     <li><strong>Local execution config</strong> (this backend's process only, never a committed file): Enabled, the registered redirect URI, the client secret, the approved synthetic TestID reporters and their Altinn profile confirmation, approved synthetic children and the app-policy confirmation. Set them with <code>AIAssisted/scripts/configure-skolenaervaer-tt02-local.ps1</code> and restart the backend from that window.</li>
                                     <li><strong>Target Environment:</strong> the trusted target and its enrolled integrations. <a href="/admin/system-settings?section=target-environments">Open Target Environment</a></li>
                                     <li><strong>Test Data:</strong> approved synthetic reporters and identities. <a href="/test-data">Open Test Data</a></li>
@@ -602,18 +695,89 @@
 
     /// <summary>What a rule's evidence is, separately from its assessment.</summary>
     private static string RuleEvidence(ArchitectureRuleReport report, ArchitectureRuleFinding finding) =>
-        report.SourceSnapshotId is null ? "Missing — no source snapshot"
+        report.SourceSnapshotId is null
+            ? report.RuleSources.FirstOrDefault(item => item.RuleId == finding.RuleId)?.State switch
+            {
+                TestPackSourceState.AvailableNotBound => $"{BirkNext.Web.Services.ProjectImport.SourceSetupPresentation.AvailableNeedsBinding} — no canonical source selected",
+                TestPackSourceState.ReviewRequired => "Review required — no canonical source selected",
+                TestPackSourceState.Missing or null => "Missing — no source snapshot",
+                _ => "No canonical source selected",
+            }
         : finding.Evidence.Count > 0 ? $"{finding.Evidence.Count} dependency reference{(finding.Evidence.Count == 1 ? "" : "s")} in source"
         : finding.Outcome == ArchitectureRuleOutcome.NotAssessed ? "Inconclusive — component not found in source" : "No dependency found in source";
 
     private void ToggleGroup(string key, bool open) { if (open) _openGroups.Add(key); else _openGroups.Remove(key); }
 
-    /// <summary>A blocker's action that is explained on this page (local execution setup, contract metadata) opens that detail group.</summary>
+    /// <summary>A blocker's action that is explained on this page opens that detail: Rapportmottak's technical groups (local execution setup,
+    /// contract metadata), otherwise the journey's prerequisite checks.</summary>
     private async Task OpenGroupAsync(string key)
     {
-        _openGroups.Add(key);
+        var rapport = CurrentView?.JourneyId == RapportmottakId && View(RapportmottakId) is { } view && DetailGroups(view).Any(group => group.Key == key);
+        if (rapport) _openGroups.Add(key); else _detailsOpen = true;
         StateHasChanged();
-        try { await JS.InvokeVoidAsync("birknextFocusElement", $"snt-group-{key}"); } catch (JSException) { }
+        try { await JS.InvokeVoidAsync("birknextFocusElement", rapport ? $"snt-group-{key}" : "snt-blocker-details-toggle"); } catch (JSException) { }
+    }
+
+    private bool _detailsOpen;
+    private bool _reviewingApply;
+
+    /// <summary>The top-level area holding the current view.</summary>
+    private TestPackNavigationGroup? CurrentGroup => Navigation_.FirstOrDefault(group => group.Views.Contains(CurrentView!)) ?? Navigation_.FirstOrDefault();
+
+    /// <summary>An area's secondary navigation: verification views split into runtime verification and source-based checks, so a rule check
+    /// never reads as runtime verification; other areas are one list.</summary>
+    private static IReadOnlyList<(string? Caption, IReadOnlyList<TestPackView> Views)> SubnavSections(TestPackNavigationGroup group)
+    {
+        var runtime = group.Views.Where(view => view.Kind == TestPackViewKind.Verification).ToList();
+        var source = group.Views.Where(view => view.Kind == TestPackViewKind.Rules).ToList();
+        if (runtime.Count == 0 || source.Count == 0) return [(null, group.Views)];
+        var rest = group.Views.Except(runtime).Except(source).ToList();
+        return [("Runtime verification", runtime), ("Source-based checks", source), .. rest.Count > 0 ? new[] { ((string?)null, (IReadOnlyList<TestPackView>)rest) } : []];
+    }
+
+    /// <summary>The compact source state on the Overview: the shared wording, "Reference available" for a Test Pack reference.</summary>
+    private static string SourceSummaryLabel(TestPackSourceStatus source) => source.State switch
+    {
+        TestPackSourceState.ReferenceAvailable => "Reference available",
+        TestPackSourceState.ReferenceUnavailable => "Reference unavailable",
+        TestPackSourceState.Available => "Available",
+        _ => SourceGuidancePresentation.SourceStateLabel(source),
+    };
+
+    /// <summary>A journey's configuration in tester terms: a missing integration says so; otherwise how many of its values are known (from
+    /// their owners, never re-entered); "Not configured" only when nothing is known.</summary>
+    private string JourneyConfiguration(IntegrationJourneyView view)
+    {
+        if (view.Prerequisites.Any(item => item.Category == JourneyPrerequisiteCategory.Integration && item.Key.StartsWith("integration:", StringComparison.Ordinal)
+                && item.State == JourneyReadinessState.NotConfigured)) return "Missing integration";
+        var keys = view.Prerequisites.Select(item => item.Key).ToHashSet(StringComparer.Ordinal);
+        var values = _guidance?.Suggestions.Where(item => item.Requirement.PrerequisiteKey is { } key && keys.Contains(key)).ToList() ?? [];
+        return values.Count == 0 ? TestPackPresentation.Configuration(view) : $"{values.Count(item => item.ResolvedValue is not null)}/{values.Count} known";
+    }
+
+    private sealed record RootCause(int Count, string Reason, IReadOnlyList<string> Matches, string ActionLabel, string ActionHref);
+
+    /// <summary>One summary when every rule that cannot be assessed waits on the same logical source in the same state (for example its
+    /// source is available but not bound) — the rules stay listed behind it. Null when the causes differ or nothing is blocked.</summary>
+    private RootCause? RulesRootCause(ArchitectureRuleReport report)
+    {
+        var blocked = report.Findings.Where(finding => finding.Outcome == ArchitectureRuleOutcome.NotAssessed).ToList();
+        if (blocked.Count == 0) return null;
+        var sources = blocked.Select(finding => report.RuleSources.FirstOrDefault(item => item.RuleId == finding.RuleId)).ToList();
+        if (sources.Any(item => item is null)) return null;
+        var causes = sources.Select(item => (item!.SourceRole, item.SourceRoleLabel, item.State)).Distinct().ToList();
+        if (causes.Count != 1 || causes[0].State == TestPackSourceState.Bound) return null;
+        var (role, label, state) = causes[0];
+        var status = _guidance?.Sources.FirstOrDefault(item => item.Role.Key == role);
+        var name = label ?? role;
+        return state switch
+        {
+            TestPackSourceState.Missing => new(blocked.Count, $"No {name} source has been imported.", [], $"Import {name} source", "/project-import"),
+            TestPackSourceState.ReviewRequired => new(blocked.Count, $"Several {name} sources match; one must be chosen as canonical evidence.",
+                status?.AvailableArchives ?? [], $"Choose {name} evidence", SourceGuidancePresentation.ActionHref("iqr-evidence")!),
+            _ => new(blocked.Count, $"{name} source evidence is available but not bound.", status?.AvailableArchives ?? [.. sources.Select(item => item!.AvailableArchive).OfType<string>().Distinct()],
+                $"Bind {name} evidence", SourceGuidancePresentation.ActionHref("iqr-evidence")!),
+        };
     }
 
     private async Task SelectTabAsync(string key)

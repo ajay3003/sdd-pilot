@@ -392,8 +392,11 @@
         </div>
         @if (!Embedded || _tab == "history")
         {
+            @* An empty history has nothing to export: the button waits until there is a run. *@
+            var nothingToExport = _tab == "history" && _history.Count == 0;
             <div class="ijp-actions">
-                <button type="button" class="btn-secondary" data-testid="ijp-export" @onclick="ExportAsync">Export HTML</button>
+                <button type="button" class="btn-secondary" data-testid="ijp-export" @onclick="ExportAsync" disabled="@nothingToExport" aria-describedby="@(nothingToExport ? $"{_id}-export-note" : null)">Export HTML</button>
+                @if (nothingToExport) { <span class="ijp-muted" id="@($"{_id}-export-note")" data-testid="ijp-export-note">Available once a run is recorded.</span> }
             </div>
         }
     }

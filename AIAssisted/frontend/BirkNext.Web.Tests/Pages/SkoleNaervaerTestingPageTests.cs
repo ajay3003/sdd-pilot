@@ -62,16 +62,41 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open();
 
         page.FindAll("[data-testid=snt-nav]").Should().ContainSingle("the page has exactly one primary navigation");
-        page.FindAll("[data-testid=snt-nav-group]").Select(group => group.GetAttribute("aria-label")).Should().Equal("Overview", "Journeys", "Verify", "History");
-        page.FindAll(".snt-nav-caption").Should().OnlyContain(caption => caption.TagName == "SPAN" && caption.GetAttribute("aria-hidden") == "true" && !caption.HasAttribute("href"));
-        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().Equal("Overview", "Utdanningsdata", "Rapportmottak", "Periodeavslutning", "Message Verification", "Architecture Rules", "History");
-        // Path-qualified links: with <base href="/"> a bare "?tab" or "#id" would leave the page.
+        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().Equal(["Overview", "Journeys", "Verify", "History"], "four top-level areas, never seven equal tabs");
+        // Path-qualified links: with <base href="/"> a bare "?tab" or "#id" would leave the page. An area opens its first view.
         page.FindAll(".snt-nav a").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer", "extensions/skolenaervaer?tab=utdanningsdata",
-            "extensions/skolenaervaer?tab=rapportmottak", "extensions/skolenaervaer?tab=periodeavslutning", "extensions/skolenaervaer?tab=message-verification",
-            "extensions/skolenaervaer?tab=architecture-rules", "extensions/skolenaervaer?tab=history");
+            "extensions/skolenaervaer?tab=message-verification", "extensions/skolenaervaer?tab=history");
         page.FindAll(".snt-nav a[aria-current=page]").Select(a => a.TextContent).Should().Equal("Overview");
+        page.FindAll("[data-testid=snt-subnav]").Should().BeEmpty("the overview has no secondary navigation");
         page.FindAll(".snt-panel").Should().ContainSingle().Which.Id.Should().Be("snt-overview");
         _journeys.Calls.Should().Contain("test-packs", "the navigation comes from the pack's own descriptor");
+    }
+
+    [Theory]
+    [InlineData("utdanningsdata", "Journeys")]
+    [InlineData("rapportmottak", "Journeys")]
+    [InlineData("periodeavslutning", "Journeys")]
+    [InlineData("message-verification", "Verify")]
+    [InlineData("architecture-rules", "Verify")]
+    [InlineData("history", "History")]
+    public void Old_deep_links_open_their_view_under_its_area(string tab, string area)
+    {
+        var page = Open(tab);
+        page.Find(".snt-nav a[aria-current=page]").TextContent.Should().Be(area);
+        if (area == "History") { page.FindAll("[data-testid=snt-subnav]").Should().BeEmpty(); return; }
+        page.Find($"[data-testid=snt-subtab][data-tab={tab}]").GetAttribute("aria-current").Should().Be("page");
+    }
+
+    [Fact]
+    public void Journeys_and_Verify_have_secondary_navigation_and_verification_kinds_are_labelled_apart()
+    {
+        var journeys = Open("rapportmottak");
+        journeys.FindAll("[data-testid=snt-subtab]").Select(a => a.TextContent).Should().Equal("Utdanningsdata", "Rapportmottak", "Periodeavslutning");
+        journeys.Find("[data-testid=snt-subnav]").GetAttribute("aria-label").Should().Be("Journeys views");
+
+        var verify = Open("message-verification");
+        verify.FindAll("[data-testid=snt-subnav-section]").Select(s => s.GetAttribute("aria-label")).Should().Equal("Runtime verification", "Source-based checks");
+        verify.FindAll("[data-testid=snt-subtab]").Select(a => a.TextContent).Should().Equal("Message Verification", "Architecture Rules");
     }
 
     [Fact]
@@ -82,15 +107,15 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             Navigation = [.. FakeJourneys.SkolenaervaerDescriptor().Navigation.Where(group => group.Label != "Verify")],
         };
         var page = Open();
-        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().NotContain(["Message Verification", "Architecture Rules"]);
+        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().NotContain("Verify");
     }
 
     [Fact]
     public void ASectionLink_ShowsThatSection_AndMovesFocusToItsHeading()
     {
-        var page = Open();
+        var page = Open("utdanningsdata");
 
-        page.FindAll(".snt-nav a").Single(a => a.TextContent == "Rapportmottak").Click();
+        page.FindAll("[data-testid=snt-subtab]").Single(a => a.TextContent == "Rapportmottak").Click();
 
         page.FindAll(".snt-panel").Should().ContainSingle().Which.Id.Should().Be("snt-rapport");
         JSInterop.VerifyInvoke("birknextFocusElement").Arguments.Should().Equal("snt-rapport-heading");
@@ -110,7 +135,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.FindAll("[data-testid=ijp-panel]").Should().ContainSingle());
         page.Find("[data-testid=ijp-panel]").GetAttribute("data-embedded").Should().Be("true");
         page.FindAll("[data-testid=ijp-tabs], [data-testid=ijp-packs], [role=tablist], #ijp-heading").Should().BeEmpty("the shared journey panel is hosted without its own navigation");
-        page.FindAll("nav").Should().ContainSingle("one navigation only");
+        page.FindAll("nav").Select(n => n.GetAttribute("data-testid")).Should().BeSubsetOf(["snt-nav", "snt-subnav"], "only the page's own area and view navigation");
     }
 
     // ── Without / while loading a Target Environment ────────────────────────────────────────────────────────────────
@@ -157,14 +182,14 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         string Cell(string journey, string label) => State(page.Find($"[data-journey={journey}] td[data-label='{label}']"));
         Cell("utdanningsdata", "Configuration").Should().Be("Not applicable", "the sample journey declares no integration requirement");
         Cell("utdanningsdata", "Source evidence").Should().Be("Missing");
-        Cell("utdanningsdata", "Execution readiness").Should().Be("Blocked");
+        Cell("utdanningsdata", "Execution").Should().Be("Blocked");
         Cell("periodeavslutning", "Source evidence").Should().Be("Not applicable", "it declares no source-evidence prerequisite");
-        page.Find("[data-journey=rapportmottak] [data-testid=snt-journey-blockers]").TextContent.Should().Be("2");
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-journey-blockers]").TextContent.Should().Be("2 actions", "grouped tester actions, not raw checks");
         page.Find("[data-journey=utdanningsdata] th").TextContent.Should().Contain("BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning");
         page.FindAll("[data-testid=ijp-panel], [data-testid=atp-panel], [data-testid=mvp], [data-testid=act-panel]").Should().BeEmpty("no feature is rendered inline on the overview");
         page.FindAll("[data-testid=snt-journey-open]").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer?tab=utdanningsdata",
             "extensions/skolenaervaer?tab=rapportmottak", "extensions/skolenaervaer?tab=periodeavslutning");
-        page.FindAll("[data-testid=snt-journeys] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Journey", "Configuration", "Source evidence", "Execution readiness", "Blockers", "Action");
+        page.FindAll("[data-testid=snt-journeys] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Journey", "Configuration", "Source evidence", "Execution", "Attention", "Action");
     }
 
     private sealed class FakeTopology(IReadOnlyList<BirkNext.IntegrationTopology.TopologyPathResult> paths) : IIntegrationTopologyApiService
@@ -293,9 +318,13 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         _journeys.ApplyResult = new([new("altinn-app-route", "Altinn app (org/app)", "buf/skolenaervaer", "Configuration hub/appsettings.Development.json → Altinn:StorageAppId (line 14)")],
             [new("altinn-event-webhook", "Report intake webhook", "A value is already configured; it is kept.")]);
         var page = Open("rapportmottak");
-        page.WaitForAssertion(() => page.Find("[data-testid=snt-apply-source]").TextContent.Should().Be("Apply safe configuration (1)",
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-review-apply]").TextContent.Should().Be("Review & apply 1 value",
             "only an auto-applicable, unconfigured suggestion counts"));
         _journeys.Calls.Should().NotContain("apply-source", "nothing is applied by opening the page");
+        page.Find("[data-testid=snt-review-apply]").Click();
+        page.Find("[data-testid=snt-apply-preview]").TextContent.Should().Contain("buf/skolenaervaer", "exactly what will be persisted is shown first");
+        _journeys.Calls.Should().NotContain("apply-source", "reviewing is not applying");
+        page.Find("[data-testid=snt-apply-source]").TextContent.Should().Be("Apply 1 value");
         page.Find("[data-testid=snt-apply-source]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=snt-applied-item]").TextContent.Should().Contain("buf/skolenaervaer").And.Contain("Altinn:StorageAppId"));
         page.Find("[data-testid=snt-apply-result]").TextContent.Should().Contain("not runtime verified");
@@ -334,7 +363,10 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.Find("[data-testid=snt-journey][data-journey=rapportmottak] [data-testid=snt-journey-sources]").TextContent
             .Should().Be("MU (Meldingsutveksleren) bound · M2LB available · needs binding · Altinn Skolenærvær application missing");
         page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("M2LB available · needs binding");
-        page.Find("[data-testid=snt-workspace]").TextContent.Should().Contain("source evidence comes from Integration Quality Review bindings");
+        page.FindAll("[data-testid=snt-workspace]").Should().BeEmpty("no project workspace is needed for this pack, so none is shown as a warning");
+        page.Find("[data-testid=snt-source]").TextContent.Should().StartWith("Provided by Integration Quality Review bindings");
+        page.FindAll("[data-testid=snt-source-summary]").Select(s => s.QuerySelector("[data-testid=snt-source-summary-state]")!.TextContent).Should().Equal("Bound", "Available · needs binding", "Missing");
+        page.Find("[data-testid=snt-source-setup-details-body]").HasAttribute("hidden").Should().BeTrue("source cards are details, not the default view");
         page.Markup.Should().NotContain("skolenaervaer.json", "the BirkNext OpenAPI fixture is never a manual source");
     }
 
@@ -343,7 +375,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     {
         WithTarget();
         var page = Open();
-        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-nav] a.snt-tab").Should().HaveCount(7));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-nav] a.snt-tab").Should().HaveCount(4));
         page.FindAll("[data-testid=snt-nav] ul, [data-testid=snt-nav] li").Should().BeEmpty("no bullets, even before styles load");
     }
 
@@ -386,15 +418,17 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             .Select(id => page.Markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal)).ToList();
         order.Should().OnlyContain(position => position >= 0).And.BeInAscendingOrder("status and actions first, then blockers, then the run, then technical details");
         page.FindAll("[data-testid=snt-rapport-actions] button, [data-testid=snt-rapport-actions] a").Select(e => e.TextContent)
-            .Should().Equal("Open Rapportmottak run", "Configure Altinn", "Open Target Environment");
-        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/integration-quality-review?view=extensions");
+            .Should().Equal("Prepare Rapportmottak run", "Open Altinn run configuration");
+        page.Find("[data-testid=snt-open-run]").ClassList.Should().Contain("btn-secondary", "no strong run action while clearly blocked");
+        page.Find("[data-testid=snt-configure-altinn]").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
 
-        // Blockers grouped by their category metadata, each once, each with its source.
-        page.FindAll("[data-testid=snt-blocker-group]").Select(group => group.GetAttribute("data-group")).Should().Equal("Authentication", "Source evidence");
+        // Tester actions grouped, each with an owner and one action; the raw checks stay behind a disclosure.
+        page.FindAll("[data-testid=snt-blocker-group]").Select(group => group.GetAttribute("data-group")).Should().Equal("source", "authentication");
+        page.FindAll("[data-testid=snt-blocker-owner]").Select(o => o.TextContent).Should().Equal("Owner: Import Project", "Owner: Local execution config");
+        page.Find("[data-testid=snt-blocker-details-body]").HasAttribute("hidden").Should().BeTrue("the prerequisite checks are collapsed");
         page.FindAll("[data-testid=snt-attention-item]").Select(li => li.GetAttribute("data-key")).Should().Equal("altinn-auth", "source:MM");
         page.FindAll("[data-testid=snt-attention-item] [data-testid=snt-source-badge]").Should().OnlyContain(badge => badge.TextContent == "Source: BirkNext");
-        page.Find("[data-testid=snt-resolved-none]").TextContent.Should().Be("Resolved automatically: 0", "zero resolved stays one compact line");
-        page.FindAll("[data-testid=snt-resolved-details]").Should().BeEmpty();
+        page.FindAll("[data-testid=snt-resolved], [data-testid=snt-resolved-none]").Should().BeEmpty("\"Resolved automatically: 0\" is not shown");
 
         var expected = IntegrationJourneyPanelTests.SamplePack().Journeys.Single(view => view.Journey.JourneyId == "rapportmottak").Prerequisites;
         page.FindAll("[data-testid=snt-prerequisite]").Select(li => $"{li.GetAttribute("data-key")}={li.GetAttribute("data-state")}")
@@ -455,14 +489,14 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=snt-tt02-decision]").GetAttribute("data-code").Should().Be("B"));
         page.Find("[data-testid=snt-tt02-decision]").TextContent.Should().Contain("ID-porten configuration incomplete").And.Contain("TT02 submission readiness")
             .And.NotContain("B.", "the internal root-cause order is not a formal classification, so no letter is shown");
-        page.Find("[data-testid=snt-resolved-details-toggle]").TextContent.Should().Contain("Resolved automatically: 17");
-        page.Find("[data-testid=snt-resolved-details-toggle]").Click();
+        page.Find("[data-testid=snt-resolved]").GetAttribute("data-count").Should().Be("17");
         page.Find("[data-testid=snt-resolved-item][data-key=idporten-client] .snt-source").TextContent.Should().Be("Integration Quality Review");
         page.Find("[data-testid=snt-resolved-item][data-key=redirect-uri] .snt-source").TextContent.Should().Be("Local execution config");
         page.Find("[data-testid=snt-resolved-item][data-key=synthetic-data] .snt-source").TextContent.Should().Be("Test Data");
         page.FindAll("[data-testid=snt-attention-item]").Select(li => li.GetAttribute("data-key")).Should().Equal("client-secret");
         page.Find("[data-testid=snt-attention-item]").GetAttribute("data-category").Should().Be("Authentication");
-        page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("Authentication");
+        page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("authentication");
+        page.Find("[data-testid=snt-blocker-group]").TextContent.Should().Contain("ID-porten test setup").And.Contain("1 check incomplete");
 
         page.Find("[data-testid=snt-attention-item] button").TextContent.Should().Be("Configure local execution");
         page.Find("[data-testid=snt-group-local-toggle]").GetAttribute("aria-expanded").Should().Be("false");
@@ -473,6 +507,49 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void Rapportmottak_groups_many_low_level_checks_into_at_most_six_owner_aware_actions_without_trusted_wording()
+    {
+        WithTarget();
+        var unresolved = SkoleNaervaerReadinessPresentation.RunInputs.Where(key => key != "public-metadata").Take(15).ToArray();
+        WithRapportmottakRows(unresolved);
+        _journeys.Pack = _journeys.Pack with { EnvironmentTrusted = false, EnvironmentDetail = "Not in TargetEnvironments:Trusted (technical)." };
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-blocker-group]").Should().NotBeEmpty());
+        var groups = page.FindAll("[data-testid=snt-blocker-group]");
+        groups.Count.Should().BeInRange(1, 6, "tester actions, not a wall of checks");
+        groups.Sum(g => int.Parse(g.QuerySelector("[data-testid=snt-blocker-checks]")!.TextContent.Split(' ')[0])).Should()
+            .Be(page.FindAll("[data-testid=snt-check-list] [data-testid=snt-attention-item]").Count, "every underlying check is still counted and listed in the details");
+        groups.Should().OnlyContain(g => g.QuerySelector("[data-testid=snt-blocker-owner]") != null && g.QuerySelector("[data-testid=snt-blocker-action]") != null);
+        page.FindAll("[data-testid=snt-blocker-action].btn-primary").Should().HaveCountLessThanOrEqualTo(1, "at most one strong next action");
+        var visible = string.Join(" ", page.FindAll("#snt-rapport > *").Where(e => e.Closest("[hidden]") is null && e.GetAttribute("data-testid") != "snt-rapport-details").Select(e => e.TextContent));
+        visible.Should().NotContain("Trusted environment").And.NotContain("Not trusted").And.NotContain("TargetEnvironments:Trusted");
+    }
+
+    [Fact]
+    public void ArchitectureRules_blocked_by_one_missing_binding_are_summarized_once_with_the_rules_behind_a_disclosure()
+    {
+        WithTarget();
+        string[] rules = ["mm-no-person", "adapter-forwards", "utdanning-person", "report-person"];
+        _journeys.Rules = new ArchitectureRuleReport("skolenaervaer", null, null,
+            [.. rules.Select(id => new ArchitectureRuleFinding(id, id, "A", "B", ArchitectureRuleExpectation.MustDependOn, ArchitectureRuleOutcome.NotAssessed,
+                "Not assessed — this rule requires M2LB source evidence. M2LB (2).zip is available but not bound.", [], ""))], [])
+        {
+            RuleSources = [.. rules.Select(id => new ArchitectureRuleSource(id, "m2lb", "M2LB", null, "M2LB (2).zip", TestPackSourceState.AvailableNotBound))],
+        };
+        var page = Open("architecture-rules");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=snt-rules-summary-count]").TextContent.Should().Be("4 rules cannot be assessed"));
+        page.Find("[data-testid=snt-rules-summary-reason]").TextContent.Should().Be("Reason: M2LB source evidence is available but not bound.");
+        page.Find("[data-testid=snt-rules-summary-action]").TextContent.Should().Be("Bind M2LB evidence");
+        page.Find("[data-testid=snt-rules-summary-action]").GetAttribute("href").Should().Be("/integration-quality-review?view=setup-evidence");
+        page.Find("[data-testid=snt-rules-details-body]").HasAttribute("hidden").Should().BeTrue("the affected rules are behind a disclosure");
+        page.FindAll("[data-testid=snt-rule]").Should().HaveCount(4, "each rule stays inspectable");
+        page.FindAll("[data-testid=snt-rule-evidence]").Should().OnlyContain(e => e.TextContent.StartsWith("Available · needs binding"), "an unbound source is never \"Missing\"");
+        page.FindAll("[data-testid=snt-rule-assessment]").Should().OnlyContain(a => a.TextContent == "Not assessed", "missing evidence is never pass or fail");
+    }
+
+    [Fact]
     public void Rapportmottak_HasNoEditableCopyOfConfiguration()
     {
         WithTarget();
@@ -480,7 +557,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open("rapportmottak");
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-attention-item]").Should().ContainSingle());
-        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/integration-quality-review?view=extensions");
+        page.Find("[data-testid=snt-attention-item] a").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
         var outsideRun = page.FindAll("#snt-rapport input, #snt-rapport select, #snt-rapport textarea").Where(field => field.Closest("[data-testid=ijp-panel]") is null && field.Closest("[data-testid=atp-panel]") is null);
         outsideRun.Should().BeEmpty("client id, scopes, redirect, secret, reporter and child are resolved from their owners, never re-entered here");
     }
@@ -494,7 +571,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid=snt-tt02-decision]").GetAttribute("data-code").Should().Be("A"));
         page.Find("[data-testid=snt-tt02-decision]").TextContent.Should().Contain("Ready for first supervised TT02 submission").And.Contain("explicit confirmation");
-        page.Find("[data-testid=snt-nothing-unresolved]").TextContent.Should().Contain("Ready to run is not passed");
+        page.Find("[data-testid=snt-nothing-unresolved]").TextContent.Should().Contain("Executable is not passed");
         _journeys.Started.Should().BeEmpty("ready never starts a submission");
     }
 
@@ -508,8 +585,9 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.Find("#snt-education [data-testid=snt-flow]").TextContent.Should().Contain("BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning");
         page.WaitForAssertion(() => page.Find("[data-testid=snt-provider]").TextContent.Should().Contain("Shared Active Event Tests").And.Contain("skolenaervaer.cdc"));
-        page.Find("[data-testid=snt-handoff-readiness]").TextContent.Should().Be("Blocked — 1 prerequisite");
-        page.Find("[data-testid=snt-open-active-tests]").GetAttribute("href").Should().Be("/integration-quality-review?view=active-tests");
+        page.Find("[data-testid=snt-handoff-readiness]").TextContent.Should().Be("Blocked");
+        page.Find("[data-testid=snt-open-active-tests]").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
+        page.Find("[data-testid=snt-open-active-tests]").TextContent.Should().Be("Review Active Event Tests setup", "never implies execution can run while blocked");
         page.FindAll("[data-testid=act-panel], [data-testid=ijp-panel]").Should().BeEmpty("the Active Event tests are linked, never embedded");
         page.Find("#snt-education").TextContent.Should().NotContain("Altinn");
     }
@@ -520,7 +598,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         WithTarget();
         var page = Open("periodeavslutning");
 
-        page.Find("[data-testid=snt-period-operator]").TextContent.Should().StartWith("Period closure is an operator action")
+        page.Find("[data-testid=snt-period-operator]").TextContent.Should().StartWith("Period closure is operator-controlled.")
             .And.Contain("only postpones the lock").And.Contain("BirkNext never locks a period");
         page.Find("[data-testid=snt-period-semantics]").TextContent.Should().Be("Service Bus accepted is not the same as Bufdata processed.");
         page.WaitForAssertion(() => page.FindAll("#snt-period [data-testid=ijp-steps] th[role=columnheader]").Select(th => th.TextContent)
@@ -530,7 +608,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         step.QuerySelector("[data-testid=ijp-step-observed]")!.TextContent.Should().Be("No observer");
         step.QuerySelector("[data-testid=ijp-step-verified]")!.TextContent.Should().Be("No verifier");
         step.QuerySelector("[data-testid=ijp-step-assessment]")!.TextContent.Should().Be(IntegrationJourneyPresentation.Step(JourneyStepState.NotAssessed), "a missing observer is Not assessed, never a failure");
-        page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("Integration");
+        page.Find("[data-testid=snt-blocker-group]").GetAttribute("data-group").Should().Be("integration");
     }
 
     // ── Verify ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -603,7 +681,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.FindAll("#snt-history [data-testid=ijp-history-filters]").Should().ContainSingle());
         page.Find("#snt-history [data-testid=ijp-history-empty]").TextContent.Should().Contain("No journey runs");
-        page.FindAll("#snt-history [data-testid=ijp-export]").Should().ContainSingle();
+        page.Find("#snt-history [data-testid=ijp-export]").HasAttribute("disabled").Should().BeTrue("an empty history has nothing to export");
         page.FindAll("#snt-history [data-testid=ijp-tabs], #snt-history [data-testid=ijp-overview], #snt-history [data-testid=ijp-journey]").Should().BeEmpty("History embeds no journey navigation or views");
         _journeys.Calls.Should().Contain("history");
     }
