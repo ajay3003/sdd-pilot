@@ -15,6 +15,9 @@ public interface IIntegrationTopologyApiService
     Task<(IntegrationTopologyView? View, string? Error)> GetAsync(string environmentId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default);
     Task<(IntegrationTopologyView? View, string? Error)> DiscoverAsync(string environmentId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default);
     Task<(IReadOnlyList<TopologyPathResult>? Paths, string? Error)> PathsAsync(string environmentId, string profileId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default);
+    /// <summary>A profile's topology source coverage and expected relationships (read-only).</summary>
+    Task<(TopologyCoverageView? Coverage, string? Error)> CoverageAsync(string environmentId, string profileId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) =>
+        Task.FromResult<(TopologyCoverageView?, string?)>((null, "Topology coverage is not available in this host."));
 }
 
 public sealed class IntegrationTopologyApiService(HttpClient http) : IIntegrationTopologyApiService
@@ -43,6 +46,7 @@ public sealed class IntegrationTopologyApiService(HttpClient http) : IIntegratio
         public Task<(IntegrationTopologyView? View, string? Error)> GetAsync(string environmentId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) => Task.FromResult<(IntegrationTopologyView?, string?)>((null, Message));
         public Task<(IntegrationTopologyView? View, string? Error)> DiscoverAsync(string environmentId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) => Task.FromResult<(IntegrationTopologyView?, string?)>((null, Message));
         public Task<(IReadOnlyList<TopologyPathResult>? Paths, string? Error)> PathsAsync(string environmentId, string profileId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<TopologyPathResult>?, string?)>((null, Message));
+        public Task<(TopologyCoverageView? Coverage, string? Error)> CoverageAsync(string environmentId, string profileId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) => Task.FromResult<(TopologyCoverageView?, string?)>((null, Message));
     }
 
     public Task<(IntegrationTopologyView? View, string? Error)> GetAsync(string environmentId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) =>
@@ -56,6 +60,9 @@ public sealed class IntegrationTopologyApiService(HttpClient http) : IIntegratio
         var (paths, error) = await PostAsync<List<TopologyPathResult>>($"api/integration-topology/{Uri.EscapeDataString(environmentId)}/profiles/{Uri.EscapeDataString(profileId)}/paths", observations, ct);
         return (paths, error);
     }
+
+    public Task<(TopologyCoverageView? Coverage, string? Error)> CoverageAsync(string environmentId, string profileId, IReadOnlyList<TopologyObservation> observations, CancellationToken ct = default) =>
+        PostAsync<TopologyCoverageView>($"api/integration-topology/{Uri.EscapeDataString(environmentId)}/profiles/{Uri.EscapeDataString(profileId)}/coverage", observations, ct);
 
     private async Task<(T? Value, string? Error)> PostAsync<T>(string path, IReadOnlyList<TopologyObservation> observations, CancellationToken ct) where T : class
     {

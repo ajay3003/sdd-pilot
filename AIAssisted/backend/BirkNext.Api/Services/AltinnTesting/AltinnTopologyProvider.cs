@@ -30,7 +30,7 @@ public sealed class AltinnTopologyProvider(IIntegrationMessageFlowStore messageF
             ? new TopologyProvenance(TopologySource.ExternalApplicationMetadata, config.AppIdentifier!, $"Public metadata read (form data type {live.FormDataTypeId ?? "unknown"}).", live.CapturedAt)
             : new TopologyProvenance(TopologySource.IntegrationCatalog, config.AppIdentifier!, "Configured in Integration Quality Review → Altinn test configuration; metadata not read.");
         var level = live is not null ? TopologyStatus.Discovered : TopologyStatus.Configured;
-        var component = builder.Component(ComponentName, level, provenance, "ExternalSystem", host is null ? null : $"https://{host}/");
+        var component = builder.Component(ComponentName, level, provenance, "ExternalSystem", host is null ? null : $"https://{host}/", kind: TopologyComponentKind.External);
         builder.Interface(component, TopologyInterfaceType.ExternalApplication, "Altinn App API", TopologyDirection.Provides, config.AppIdentifier!, live?.FormDataTypeId,
             level, provenance, live?.FormDataTypeId is { } dataType ? AltinnContractEvolution.ContractId(config.AppIdentifier!, dataType) : null);
         builder.Source(new(TopologySource.ExternalApplicationMetadata, live is null ? TopologySourceState.NotAvailable : TopologySourceState.Used,

@@ -130,7 +130,11 @@ public sealed class IntegrationTopologyTests : IAsyncLifetime
         Component(view, "ReportService").Interfaces.Should().Contain(item => item.Type == TopologyInterfaceType.Messaging && item.Direction == TopologyDirection.Produces && item.Address == "reports.received");
         Component(view, "Intake").Interfaces.Should().Contain(item => item.Type == TopologyInterfaceType.Messaging && item.Direction == TopologyDirection.Consumes);
         Component(view, "Intake").Location.Should().BeNull("a source-only component has no stated location and still has its interfaces");
-        view.Connections.Should().Contain(item => item.Type == TopologyInterfaceType.Messaging && item.ProducerComponentId == "reportservice" && item.ConsumerComponentId == "intake" && item.Status == TopologyStatus.Discovered);
+        var topic = TopologyBuilder.ResourceKey("servicebus", "reports.received");
+        Component(view, "reports.received").Should().Match<TopologyComponent>(item => item.Kind == TopologyComponentKind.Resource && item.Id == topic, "messaging is resource-centred");
+        view.Connections.Should().Contain(item => item.Type == TopologyInterfaceType.Messaging && item.ProducerComponentId == "reportservice" && item.ConsumerComponentId == topic && item.Status == TopologyStatus.Discovered);
+        view.Connections.Should().Contain(item => item.Type == TopologyInterfaceType.Messaging && item.ProducerComponentId == topic && item.ConsumerComponentId == "intake");
+        TopologyReach.Best(TopologyReach.Chains(view, "reportservice", "intake"))!.State.Should().Be(TopologyRelationshipState.Resolved, "explicit producer and consumer of the named topic");
         view.Connections.Should().Contain(item => item.Type == TopologyInterfaceType.File && item.ConsumerComponentId == "archive" && item.Status == TopologyStatus.Configured);
     }
 

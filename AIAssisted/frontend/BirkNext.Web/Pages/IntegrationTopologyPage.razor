@@ -9,17 +9,18 @@
 
 <PageTitle>Integration Topology</PageTitle>
 
-@* Integration Topology: the canonical view of an environment's components, their interfaces (REST, GraphQL, messaging, file/storage,
-   external applications) and the connections between them, each with the provenance of every source. Read-only; rebuilt from the sources on
-   every load. Configured ≠ discovered ≠ observed, and nothing here means healthy or contract-compatible. *@
+@* Integration Topology: summary and source coverage first, then the expected relationships a Test Pack declares — resolved vs expected but
+   unresolved, each unresolved one with the evidence and source role it needs — and the full inventory (components, interfaces, connections)
+   one disclosure away. Read-only; rebuilt from stored source facts on every load. Expected ≠ resolved ≠ observed. *@
 <div class="it-page" data-testid="it-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Integration Topology" Description="Components, their interfaces and the connections between them, merged from Target Environment, Source Analysis, the integration catalog, application metadata, OpenAPI documents and runtime observations. Every element shows its sources." />
+    <PageHeader Title="Integration Topology" Description="Components and the connections between them, resolved from application source, Infrastructure as Code, configured integrations, application metadata, OpenAPI documents and runtime observations. Every connection says why BirkNext believes it." />
     @if (_profile is not null)
     {
         <div class="it-actions" role="group" aria-label="Topology actions">
-            <button type="button" class="btn-secondary" data-testid="it-refresh" disabled="@_loading" @onclick="() => LoadAsync(false)">Refresh</button>
-            <button type="button" class="btn-primary" data-testid="it-discover" disabled="@_loading" @onclick="() => LoadAsync(true)">Discover interfaces</button>
-            <span class="it-note">Discover interfaces reads the OpenAPI documents trusted components declare (their own host only).</span>
+            <button type="button" class="btn-secondary" data-testid="it-refresh" disabled="@_loading" @onclick="() => LoadAsync(false)">Refresh view</button>
+            <button type="button" class="btn-secondary" data-testid="it-discover" disabled="@_loading" aria-expanded="@(_discoverOpen ? "true" : "false")" aria-controls="it-discovery"
+                    @onclick="() => _discoverOpen = !_discoverOpen">Discover interfaces…</button>
+            <span class="it-note">Refresh view reloads what is already known. Discover interfaces reads OpenAPI documents over the network, only when you run it.</span>
         </div>
     }
 
@@ -35,17 +36,165 @@
 
     @if (_view is { } view)
     {
-        <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · @view.Components.Count component(s), @view.Components.Sum(item => item.Interfaces.Count) interface(s), @view.Connections.Count connection(s)</p>
-
-        <section class="it-card" aria-labelledby="it-sources-heading" data-testid="it-sources">
-            <h2 id="it-sources-heading">Sources</h2>
-            <ul class="it-sources">
-                @foreach (var source in view.Sources)
+        var counts = P.Counts(view);
+        @if (_discoverOpen)
+        {
+            <section class="it-card" id="it-discovery" aria-labelledby="it-discovery-heading" data-testid="it-discovery">
+                <h2 id="it-discovery-heading">Interface discovery</h2>
+                <p>Reads the declared OpenAPI documents of eligible components. This makes read-only HTTP requests to those components' own hosts (one GET each, no redirects followed, no other host). No application data is changed.</p>
+                <dl class="it-facts">
+                    <div><dt>Eligible components</dt><dd data-testid="it-discovery-eligible">@view.Discovery.Eligible.Count</dd></div>
+                    <div><dt>Hosts to query</dt><dd data-testid="it-discovery-hosts">@view.Discovery.Hosts.Count</dd></div>
+                </dl>
+                @if (view.Discovery.Eligible.Count + view.Discovery.Ineligible.Count > 0)
                 {
-                    <li data-testid="it-source" data-state="@source.State"><span class="it-pill it-pill-@(source.State == TopologySourceState.Used ? "ready" : "muted")">@P.Source(source.Source)</span> <span class="it-note">@source.Detail</span></li>
+                    <details class="it-disclosure" data-testid="it-discovery-host-list">
+                        <summary>View hosts</summary>
+                        <ul class="it-plain">
+                            @foreach (var target in view.Discovery.Eligible) { <li><span class="it-mono">@target.Host@target.Path</span> <span class="it-note">@target.Component</span></li> }
+                            @foreach (var target in view.Discovery.Ineligible) { <li><span class="it-note">@target.Component: not queried — @target.Reason</span></li> }
+                        </ul>
+                    </details>
                 }
-            </ul>
+                <div class="it-actions">
+                    <button type="button" class="btn-primary" data-testid="it-discover-run" disabled="@(_loading || view.Discovery.Eligible.Count == 0)" @onclick="() => LoadAsync(true)">Run discovery</button>
+                    @if (view.Discovery.Eligible.Count == 0) { <span class="it-note" data-testid="it-discovery-none">No component of this Target Environment declares a readable OpenAPI document path, so there is nothing to query.</span> }
+                </div>
+            </section>
+        }
+
+        <section class="it-card" aria-labelledby="it-summary-heading" data-testid="it-summary">
+            <h2 id="it-summary-heading">Topology summary</h2>
+            <dl class="it-facts it-summary">
+                <div><dt>Components</dt><dd data-testid="it-count-components">@counts.Components</dd></div>
+                <div><dt>Interfaces</dt><dd data-testid="it-count-interfaces">@counts.Interfaces</dd></div>
+                <div><dt>Resolved connections</dt><dd data-testid="it-count-resolved">@counts.Resolved</dd></div>
+                @if (_coverage is { } summaryCoverage)
+                {
+                    var open = summaryCoverage.Relationships.Count(item => !P.IsResolved(item.State));
+                    <div><dt>Expected but unresolved</dt><dd data-testid="it-count-unresolved">@open of @summaryCoverage.Relationships.Count expected</dd></div>
+                    <div><dt>Source coverage</dt><dd data-testid="it-count-coverage">@(summaryCoverage.CoreSourcesComplete ? "Core sources complete" : "Core sources partial")</dd></div>
+                }
+                <div><dt>Runtime observations</dt><dd data-testid="it-count-observations">@(view.Sources.FirstOrDefault(item => item.Source == TopologySource.BrowserObservation)?.State == TopologySourceState.Used ? "Merged from this browser" : "None")</dd></div>
+                <div><dt>Things needing attention</dt><dd data-testid="it-count-attention">@counts.Attention</dd></div>
+            </dl>
+            <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · resolver v@(view.ResolverVersion) (rebuilt from stored source facts; snapshots are never changed)</p>
         </section>
+
+        @if (_coverage is { } coverage)
+        {
+            <section class="it-card" aria-labelledby="it-coverage-heading" data-testid="it-coverage">
+                <h2 id="it-coverage-heading">Topology source coverage · @coverage.ProfileLabel</h2>
+                <div class="it-role-groups">
+                    @foreach (var (title, roles) in P.RoleGroups(coverage))
+                    {
+                        <div class="it-role-group" data-testid="it-role-group" data-group="@title">
+                            <h3 class="it-subheading">@title</h3>
+                            <ul class="it-plain">
+                                @foreach (var role in roles)
+                                {
+                                    <li class="it-role" data-testid="it-role" data-role="@role.RoleId" data-state="@role.State">
+                                        <span class="it-name">@role.DisplayName</span>
+                                        <span class="it-pill it-pill-@P.RoleTone(role.State)">@P.RoleState(role.State)</span>
+                                        @if (role.State is TopologySourceRoleState.NotProvided or TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.NeedsAnalysis && role.Consequence.Length > 0)
+                                        {
+                                            <span class="it-note" data-testid="it-role-consequence">@role.Consequence</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+                <details class="it-disclosure" data-testid="it-coverage-details">
+                    <summary>View source coverage details</summary>
+                    <div class="it-table-scroll" tabindex="0" role="region" aria-label="Source coverage details (scrolls horizontally)">
+                    <table class="it-table">
+                        <caption class="visually-hidden">Source roles, matching sources and capabilities</caption>
+                        <thead><tr><th scope="col">Source role</th><th scope="col">Need</th><th scope="col">State</th><th scope="col">Matching sources</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var role in coverage.Roles)
+                            {
+                                <tr data-testid="it-role-row">
+                                    <th scope="row">@role.DisplayName</th>
+                                    <td>@P.Requirement(role.Requirement)</td>
+                                    <td>@P.RoleState(role.State)</td>
+                                    <td>@(role.MatchingSources.Count == 0 ? "—" : string.Join(", ", role.MatchingSources))</td>
+                                    <td>@role.Detail @(role.MissingParts.Count > 0 ? $"Missing: {string.Join(", ", role.MissingParts)}." : "") <span class="it-note">@role.Guidance</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    </div>
+                    <p class="it-note">Sources are recognized by their content (components, configuration, infrastructure), never by file name; archive names are shown as provenance only.</p>
+                </details>
+            </section>
+
+            var unresolved = coverage.Relationships.Where(item => !P.IsResolved(item.State)).ToList();
+            var resolved = coverage.Relationships.Where(item => P.IsResolved(item.State)).ToList();
+            <section class="it-card" aria-labelledby="it-relationships-heading" data-testid="it-relationships">
+                <h2 id="it-relationships-heading">Expected relationships</h2>
+                <p data-testid="it-partial">@coverage.Summary@(unresolved.Count > 0 ? " " : "")@if (unresolved.Count > 0) { <a href="/integration-topology#it-unresolved-heading" @onclick:preventDefault @onclick='() => Focus("it-unresolved-heading")' data-testid="it-view-missing">View missing evidence</a> }</p>
+                <dl class="it-facts">
+                    @foreach (var dimension in coverage.Completeness)
+                    {
+                        <div data-testid="it-dimension" data-state="@dimension.State"><dt>@dimension.Dimension topology</dt><dd>@P.Completeness(dimension.State) <span class="it-note">@dimension.Detail</span></dd></div>
+                    }
+                </dl>
+
+                <h3 class="it-subheading" id="it-resolved-heading">Resolved connections (@resolved.Count)</h3>
+                @if (resolved.Count == 0) { <p class="it-note">No expected relationship is resolved yet.</p> }
+                <ul class="it-plain it-relationship-list">
+                    @foreach (var item in resolved)
+                    {
+                        <li data-testid="it-resolved" data-relationship="@item.Id">
+                            <details class="it-disclosure">
+                                <summary><span class="it-name">@item.Label</span> <span class="it-pill it-pill-@P.RelationshipTone(item.State)">@P.Relationship(item.State)</span> <span class="it-note">@item.Transport</span></summary>
+                                @RelationshipDetail(item)
+                            </details>
+                        </li>
+                    }
+                </ul>
+
+                <h3 class="it-subheading" id="it-unresolved-heading" tabindex="-1">Expected but unresolved (@unresolved.Count)</h3>
+                @if (unresolved.Count == 0) { <p class="it-note">Every expected relationship has sufficient evidence.</p> }
+                <ul class="it-plain it-relationship-list">
+                    @foreach (var item in unresolved)
+                    {
+                        <li class="it-unresolved" data-testid="it-unresolved" data-relationship="@item.Id" data-state="@item.State">
+                            <p class="it-unresolved-title"><span class="it-name">@item.Label</span> <span class="it-pill it-pill-@P.RelationshipTone(item.State)">@P.Relationship(item.State)</span> <span class="it-note">@item.Transport</span></p>
+                            <dl class="it-facts">
+                                @if (item.AvailableEvidence is { } available) { <div><dt>Available evidence</dt><dd data-testid="it-available">@available</dd></div> }
+                                <div><dt>Missing</dt><dd data-testid="it-missing">@item.MissingEvidence</dd></div>
+                                @if (item.SourceRoleName is { } roleName)
+                                {
+                                    <div>
+                                        <dt>@(item.Action == "import-source" ? "Additional source needed" : "Source with this evidence")</dt>
+                                        <dd data-testid="it-source-needed">@roleName · @(item.SourceRoleState is { } roleState ? P.RoleState(roleState) : "")@(item.MatchingSources.Count > 0 ? $" · matching source: {string.Join(", ", item.MatchingSources)}" : "")</dd>
+                                    </div>
+                                }
+                            </dl>
+                            @if (item.Action == "import-source")
+                            {
+                                <a class="btn-secondary it-action" href="/project-import" data-testid="it-import-source">Import source</a>
+                            }
+                            else if (item.Action == "use-source")
+                            {
+                                <span class="it-note" data-testid="it-use-source">The source is available, but the evidence above is not stated in it. No re-import is needed for resolver improvements. <a href="/source-analysis">Review in Source Analysis</a></span>
+                            }
+                            @if (item.Evidence.Count > 0)
+                            {
+                                <details class="it-disclosure"><summary>View evidence (@item.Evidence.Count)</summary>@RelationshipDetail(item)</details>
+                            }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+        else if (_coverageError is not null)
+        {
+            <p class="it-note" data-testid="it-coverage-error">Source coverage is not available: @_coverageError</p>
+        }
 
         <section class="it-card" aria-labelledby="it-components-heading" data-testid="it-components">
             <h2 id="it-components-heading">Components</h2>
@@ -53,19 +202,25 @@
             {
                 <p data-testid="it-empty">No source states any component for this environment yet. Analyze source in Source Analysis, configure integrations, or declare the environment's components.</p>
             }
-            <ul class="it-components">
-                @foreach (var component in view.Components)
-                {
-                    var selected = _selected == component.Id;
-                    <li class="it-component" data-testid="it-component" data-name="@component.Name" data-status="@component.Status">
-                        <button type="button" class="it-component-button" aria-expanded="@(selected ? "true" : "false")" aria-controls="it-detail" data-testid="it-select" @onclick="() => Select(component.Id)">
-                            <span class="it-name">@component.Name</span>
-                            <span class="it-pill it-pill-@P.Tone(component.Status)">@P.Status(component.Status)</span>
-                            <span class="it-note">@(component.Interfaces.Count == 0 ? "no interfaces known" : string.Join(" · ", component.Interfaces.GroupBy(item => item.Type).Select(group => $"{group.Count()} {P.Type(group.Key)}")))</span>
-                        </button>
-                    </li>
-                }
-            </ul>
+            @foreach (var group in view.Components.GroupBy(item => item.Kind).OrderBy(group => group.Key))
+            {
+                <details class="it-disclosure" open="@(group.Key == TopologyComponentKind.Application)" data-testid="it-component-group" data-kind="@group.Key">
+                    <summary>@P.Kind(group.Key) (@group.Count())</summary>
+                    <ul class="it-components">
+                        @foreach (var component in group)
+                        {
+                            var selected = _selected == component.Id;
+                            <li class="it-component" data-testid="it-component" data-name="@component.Name" data-status="@component.Status">
+                                <button type="button" class="it-component-button" aria-expanded="@(selected ? "true" : "false")" aria-controls="it-detail" data-testid="it-select" @onclick="() => Select(component.Id)">
+                                    <span class="it-name">@component.Name</span>
+                                    <span class="it-pill it-pill-@P.Tone(component.Status)">@P.Status(component.Status)</span>
+                                    <span class="it-note">@(component.ComponentType ?? "") @(component.Interfaces.Count == 0 ? "" : "· " + string.Join(" · ", component.Interfaces.GroupBy(item => item.Type).Select(g => $"{g.Count()} {P.Type(g.Key)}")))</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </details>
+            }
         </section>
 
         @if (view.Components.FirstOrDefault(item => item.Id == _selected) is { } detail)
@@ -83,12 +238,7 @@
                     <ul class="it-interfaces">
                         @foreach (var item in group)
                         {
-                            <li data-testid="it-interface" data-type="@item.Type" data-status="@item.Status">
-                                <span class="it-mono">@(item.Operation is { } op ? $"{op} " : "")@item.Address</span>
-                                <span class="it-pill it-pill-@P.Tone(item.Status)">@P.Status(item.Status)</span>
-                                <span class="it-note">@P.Direction(item.Direction) · @item.Protocol · @P.Sources(item.Provenance)@(item.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
-                                @foreach (var note in item.Notes) { <span class="it-note it-warn">@note</span> }
-                            </li>
+                            <li data-testid="it-interface" data-type="@item.Type" data-status="@item.Status">@Interface(item)</li>
                         }
                     </ul>
                 }
@@ -99,11 +249,47 @@
             </section>
         }
 
-        <details class="it-card it-all" data-testid="it-connections">
-            <summary>All connections (@view.Connections.Count)</summary>
-            <ul class="it-interfaces">@foreach (var connection in view.Connections) { <li data-testid="it-connection" data-status="@connection.Status">@Connection(view, connection)</li> }</ul>
+        <details class="it-card it-all" data-testid="it-interfaces">
+            <summary>Interfaces (@counts.Interfaces) · @string.Join(" · ", view.Components.SelectMany(item => item.Interfaces).GroupBy(item => item.Type).Select(g => $"{g.Count()} {P.Type(g.Key)}"))</summary>
+            <div class="it-filter" role="search">
+                <label for="it-interface-filter">Filter interfaces</label>
+                <input id="it-interface-filter" type="search" data-testid="it-interface-filter" placeholder="Component, route, topic…" @bind="_interfaceFilter" @bind:event="oninput" />
+            </div>
+            @{ var filtered = view.Components.SelectMany(component => component.Interfaces.Select(item => (Component: component, Interface: item)))
+                   .Where(pair => _interfaceFilter.Length == 0 || pair.Component.Name.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase) || pair.Interface.Address.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase))
+                   .Take(200).ToList(); }
+            <ul class="it-interfaces">
+                @foreach (var pair in filtered) { <li data-testid="it-interface-row"><strong>@pair.Component.Name</strong> @Interface(pair.Interface)</li> }
+            </ul>
+            @if (filtered.Count == 200) { <p class="it-note">Showing the first 200 matches; narrow the filter to see more.</p> }
         </details>
-        <p class="it-note">Configured ≠ discovered ≠ observed. Observed needs runtime evidence; a resolved interface or connection is not healthy and not contract-compatible.</p>
+
+        <details class="it-card it-all" data-testid="it-connections">
+            <summary>All connections (@view.Connections.Count) · @counts.Resolved resolved</summary>
+            <ul class="it-interfaces">
+                @foreach (var connection in view.Connections)
+                {
+                    <li data-testid="it-connection" data-status="@connection.Status" data-relationship="@connection.Relationship">
+                        @Connection(view, connection)
+                        @if (connection.Evidence.Count > 0)
+                        {
+                            <details class="it-disclosure it-evidence"><summary>Why BirkNext believes it</summary>@EvidenceList(connection.Evidence, connection.Unverified)</details>
+                        }
+                    </li>
+                }
+            </ul>
+        </details>
+
+        <details class="it-card it-all" data-testid="it-sources">
+            <summary>Sources used (@view.Sources.Count(item => item.State == TopologySourceState.Used) of @view.Sources.Count)</summary>
+            <ul class="it-sources">
+                @foreach (var source in view.Sources)
+                {
+                    <li data-testid="it-source" data-state="@source.State"><span class="it-pill it-pill-@(source.State == TopologySourceState.Used ? "ready" : "muted")">@P.Source(source.Source)</span> <span class="it-note">@source.Detail</span></li>
+                }
+            </ul>
+        </details>
+        <p class="it-note">Configured ≠ discovered ≠ observed. A resolved connection is supported by source evidence; it is not observed, healthy or contract-compatible unless runtime evidence says so. An expected relationship never creates a connection.</p>
     }
 </div>
 
@@ -111,8 +297,10 @@
     private IIntegrationTopologyApiService? _api;
     private FrontendAnalysisProfile? _profile;
     private IntegrationTopologyView? _view;
-    private string? _error, _selected;
-    private bool _loading = true;
+    private TopologyCoverageView? _coverage;
+    private string? _error, _coverageError, _selected;
+    private string _interfaceFilter = "";
+    private bool _loading = true, _discoverOpen;
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,6 +324,12 @@
             var (view, error) = discover ? await _api.DiscoverAsync(_profile.Id, observations) : await _api.GetAsync(_profile.Id, observations);
             if (view is not null) _view = view;
             _error = error;
+            if (view?.Profiles.FirstOrDefault() is { } profileId)
+            {
+                var (coverage, coverageError) = await _api.CoverageAsync(_profile.Id, profileId, observations);
+                _coverage = coverage;
+                _coverageError = coverageError;
+            }
         }
         finally { _loading = false; }
     }
@@ -153,13 +347,50 @@
         _selected = _selected == id ? null : id;
         if (_selected is null) return;
         await Task.Yield();
-        try { await JS.InvokeVoidAsync("birknextFocusElement", "it-detail-heading"); } catch (JSException) { }
+        await Focus("it-detail-heading");
     }
+
+    private async Task Focus(string id)
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
+    }
+
+    private RenderFragment RelationshipDetail(TopologyRelationshipResult item) =>
+        @<div class="it-relationship-detail" data-testid="it-relationship-detail">
+            <dl class="it-facts">
+                <div><dt>Source</dt><dd>@item.From</dd></div>
+                <div><dt>Target</dt><dd>@item.To</dd></div>
+                <div><dt>Transport</dt><dd>@item.Transport</dd></div>
+                <div><dt>Resource / route</dt><dd>@(item.Route ?? "—")</dd></div>
+                <div><dt>State</dt><dd>@P.Relationship(item.State)</dd></div>
+                <div><dt>Why BirkNext believes it</dt><dd>@item.Why</dd></div>
+            </dl>
+            @EvidenceList(item.Evidence, item.Unverified)
+        </div>;
+
+    private RenderFragment EvidenceList(IReadOnlyList<TopologyEvidence> evidence, string unverified) =>
+        @<div>
+            <ul class="it-evidence-list" data-testid="it-evidence">
+                @foreach (var piece in evidence.OrderByDescending(item => item.Strength))
+                {
+                    <li><span class="it-pill it-pill-@(piece.Strength >= TopologyEvidenceStrength.Strong ? "ready" : "muted")">@P.Strength(piece.Strength)</span> <span class="it-note">@piece.Source@(piece.Reference is { Length: > 0 } reference ? $" · {reference}" : "")</span> <span>@piece.Detail</span></li>
+                }
+            </ul>
+            <p class="it-note" data-testid="it-unverified">What remains unverified: @unverified</p>
+        </div>;
+
+    private RenderFragment Interface(TopologyInterface item) =>
+        @<span class="it-connection">
+            <span class="it-mono">@(item.Operation is { } op ? $"{op} " : "")@item.Address</span>
+            <span class="it-pill it-pill-@P.Tone(item.Status)">@P.Status(item.Status)</span>
+            <span class="it-note">@P.Direction(item.Direction) · @item.Protocol · @P.Sources(item.Provenance)@(item.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
+            @foreach (var note in item.Notes) { <span class="it-note it-warn">@note</span> }
+        </span>;
 
     private RenderFragment Connection(IntegrationTopologyView view, TopologyConnection connection) =>
         @<span class="it-connection">
             <strong>@ComponentName(view, connection.ProducerComponentId) → @ComponentName(view, connection.ConsumerComponentId)</strong>
-            <span class="it-pill it-pill-@P.Tone(connection.Status)">@P.Status(connection.Status)</span>
+            <span class="it-pill it-pill-@(connection.Status == TopologyStatus.Conflict ? "attention" : P.RelationshipTone(connection.Relationship))">@(connection.Status == TopologyStatus.Conflict ? "Conflict" : P.Relationship(connection.Relationship))</span>
             <span class="it-note">@P.Type(connection.Type) · @(connection.Address ?? connection.Protocol) · @P.Sources(connection.Provenance)@(connection.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
             @foreach (var note in connection.Notes) { <span class="it-note it-warn">@note</span> }
         </span>;

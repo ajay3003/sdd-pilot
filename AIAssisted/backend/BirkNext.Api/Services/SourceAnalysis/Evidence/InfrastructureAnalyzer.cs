@@ -13,11 +13,12 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// </summary>
 internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
 {
-    /// <summary>v2: per-environment declared names (tfvars). Snapshots analysed by v1 keep their v1 evidence; nothing is reinterpreted.</summary>
-    public const int Version = 2;
+    /// <summary>v2: per-environment declared names (tfvars). v3: module deployment names and endpoint injections (a setting such as
+    /// X__BaseUrl that reads another module's address). Snapshots analysed earlier keep their evidence; nothing is reinterpreted.</summary>
+    public const int Version = 3;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.Infrastructure, "Infrastructure as Code analyzer", Version, 1,
         ["Terraform", "Terraform variables", "Bicep", "ARM template", "Kubernetes manifest", "Helm chart"], [],
-        ["Resources", "Data sources", "Modules", "Static dependencies", "Variables", "Outputs", "Providers", "Backends", "Access assignments", "Environments"]);
+        ["Resources", "Data sources", "Modules", "Static dependencies", "Variables", "Outputs", "Providers", "Backends", "Access assignments", "Environments", "Endpoint injections"]);
 
     private const string ExternalModule = "External module not analyzed — module sources are never fetched.";
 
@@ -36,6 +37,7 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
         public Dictionary<string, InfrastructureProvider> Providers { get; } = new(StringComparer.Ordinal);
         public List<InfrastructureBackend> Backends { get; } = [];
         public List<AccessAssignment> Access { get; } = [];
+        public List<InfrastructureEndpointInjection> Injections { get; } = [];
         public Dictionary<string, (SourceEnvironmentLabel Label, HashSet<string> Files, string Basis)> Environments { get; } = new(StringComparer.Ordinal);
         public HashSet<string> Unresolved { get; } = new(StringComparer.Ordinal);
         public List<SourceDomainDiagnostic> Diagnostics { get; } = [];
@@ -104,6 +106,7 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
             Providers = [.. b.Providers.Values.OrderBy(p => p.Name, StringComparer.Ordinal)], Modules = b.Modules, Resources = b.Resources,
             Variables = b.Variables, Locals = [.. b.Locals.Distinct().Order(StringComparer.Ordinal)], Outputs = b.Outputs,
             Dependencies = [.. b.Dependencies.DistinctBy(d => (d.FromId, d.ToId, d.Kind))], Backends = b.Backends, AccessAssignments = b.Access,
+            EndpointInjections = [.. b.Injections.DistinctBy(i => (i.FromId, i.Key, i.ToId))],
             Environments = [.. b.Environments.Values.OrderBy(e => e.Label.Kind).ThenBy(e => e.Label.Raw, StringComparer.Ordinal).Select(e => new InfrastructureEnvironment(e.Label, [.. e.Files.Order(StringComparer.Ordinal)], e.Basis))],
             UnresolvedReferences = [.. b.Unresolved.Order(StringComparer.Ordinal)], Diagnostics = b.Diagnostics, Limitations = [.. b.Limitations],
         }, SourceEvidenceDomain.Infrastructure, Version);
@@ -121,6 +124,61 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
     private static string Dir(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
     private static string Id(string dir, string address) => $"{(dir.Length == 0 ? "." : dir)}/{address}";
     private static string Normalize(string path) => SourceArchitecture.ArchitectureInput.Normalize(path);
+
+    /// <summary>Module inputs that name the deployed resource, in order of preference.</summary>
+    private static readonly string[] DeploymentNameInputs = ["container_app_name", "app_name", "function_app_name", "web_app_name", "service_name", "name"];
+
+    /// <summary>
+    /// The deployment name an input expression states, as a template: literals and resolvable variables/locals verbatim, every other part
+    /// '*' (a per-environment variable, a computed value). "local.names.x" reads key x of a local object. Null when nothing literal remains.
+    /// </summary>
+    private static string? NameTemplate(TfModuleScope scope, string expression, Func<TfModuleScope, string, int, string?> resolve, int depth = 0)
+    {
+        if (depth > 3) return null;
+        var e = expression.Trim();
+        if (resolve(scope, e, 0) is { } literal) return Template(literal);
+        var member = Regex.Match(e, @"^local\.([A-Za-z_][A-Za-z0-9_\-]*)\.([A-Za-z_][A-Za-z0-9_\-]*)$");
+        if (member.Success && scope.LocalExpressions.TryGetValue(member.Groups[1].Value, out var obj)
+            && Regex.Match(obj, $@"(?m)^\s*""?{Regex.Escape(member.Groups[2].Value)}""?\s*=\s*(.+?)\s*$") is { Success: true } value)
+            return NameTemplate(scope, value.Groups[1].Value, resolve, depth + 1);
+        var single = Regex.Match(e, @"^local\.([A-Za-z_][A-Za-z0-9_\-]*)$");
+        if (single.Success && scope.LocalExpressions.TryGetValue(single.Groups[1].Value, out var local)) return NameTemplate(scope, local, resolve, depth + 1);
+        if (e.Length < 2 || e[0] != '"' || e[^1] != '"') return null;
+        var text = Regex.Replace(e[1..^1], @"\$\{([^}]*)\}", m => resolve(scope, m.Groups[1].Value.Trim(), 0) ?? "*");
+        return Template(text);
+
+        static string? Template(string value)
+        {
+            var collapsed = Regex.Replace(value, @"\*+", "*");
+            // A deployment name is an identifier: letters, digits, '.', '-', '_' and the '*' wildcard only (anything else is not kept).
+            return collapsed.Count(char.IsLetterOrDigit) >= 3 && collapsed.Length <= 120 && Regex.IsMatch(collapsed, @"^[A-Za-z0-9._*\-]+$") ? collapsed : null;
+        }
+    }
+
+    /// <summary>
+    /// Endpoint settings in an object expression that read another declaration's address: <c>"X__BaseUrl" = "https://${module.y.fqdn}"</c> or
+    /// <c>X_URL = module.y.uri</c>. Keys are returned in ':' form; the target is the module/resource reference and the member it reads.
+    /// </summary>
+    private static IEnumerable<(string Key, string Target, string Member)> EndpointSettings(string expression)
+    {
+        foreach (Match entry in Regex.Matches(expression, @"(?m)^\s*[{,]?\s*""?([A-Za-z_][A-Za-z0-9_\-.:]*)""?\s*=\s*(.+?)\s*,?\s*$"))
+        {
+            var key = entry.Groups[1].Value.Replace("__", ":");
+            if (!EndpointKey.IsMatch(key)) continue;
+            foreach (var reference in HclReader.References(entry.Groups[2].Value))
+            {
+                var parts = reference.Split('.');
+                if (parts.Length < 2 || parts[0] is "var" or "local" or "data") continue;
+                var member = parts[0] == "module" ? parts.Length >= 3 ? parts[2] : ""
+                    : Regex.Match(entry.Groups[2].Value, $@"{Regex.Escape(reference)}\.([A-Za-z_][A-Za-z0-9_]*)").Groups[1].Value;
+                if (member.Length == 0 || !AddressMember.IsMatch(member)) continue;
+                yield return (key, reference, member);
+            }
+        }
+    }
+
+    private static readonly Regex EndpointKey = new(@"(?i)(base_?url|baseaddress|url|uri|endpoint|host|fqdn|address)$", RegexOptions.CultureInvariant);
+    private static readonly Regex AddressMember = new(@"(?i)(fqdn|url|uri|host|endpoint|address|hostname)", RegexOptions.CultureInvariant);
 
     private static SourceEnvironmentLabel? FolderEnvironment(string path)
     {
@@ -264,7 +322,12 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
                             Inputs = block.Attributes.Select(a => a.Name).Where(n => n is not ("source" or "version" or "count" or "for_each" or "providers" or "depends_on")).ToList(),
                             File = safeFile, Line = block.Line,
                             Note = local ? analyzed ? null : "Local module path not found in the selected source." : ExternalModule,
+                            DeploymentName = DeploymentNameInputs.Select(block.Attribute).FirstOrDefault(a => a is not null) is { } nameInput ? NameTemplate(scope, nameInput.Expression, Resolve) : null,
                         });
+                        foreach (var attribute in block.Attributes.Where(a => a.Name is not ("source" or "version" or "depends_on")))
+                            foreach (var (key, target, member) in EndpointSettings(attribute.Expression))
+                                if (Target(scope, target) is { } to && to != id)
+                                    b.Injections.Add(new(id, SourceEvidenceRedaction.Safe(key), to, SourceEvidenceRedaction.Safe(member), safeFile, attribute.Line));
                         if (!local) b.Limitations.Add(ExternalModule);
                         foreach (var attribute in block.Attributes.Where(a => a.Name is not ("source" or "version")))
                             foreach (var reference in HclReader.References(attribute.Expression))

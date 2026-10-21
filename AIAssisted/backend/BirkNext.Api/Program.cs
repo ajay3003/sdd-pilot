@@ -557,6 +557,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyPr
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.AltinnTesting.AltinnTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.IntegrationCatalogTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.OpenApiTopologyProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.CrossSourceTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.ITopologyProvider, BirkNext.Api.Services.IntegrationTopology.ObservationTopologyProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationTopology.IntegrationTopologyService>();
 builder.Services.AddHttpClient(BirkNext.Api.Services.IntegrationTopology.OpenApiTopologyProvider.ClientName, client => client.Timeout = TimeSpan.FromSeconds(20))

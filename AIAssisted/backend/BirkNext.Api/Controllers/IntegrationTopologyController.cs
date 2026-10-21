@@ -30,6 +30,11 @@ public sealed class IntegrationTopologyController(IntegrationTopologyService top
     public async Task<ActionResult<IntegrationTopologyView>> Discover(string environmentId, [FromBody] TopologyRequest request, CancellationToken ct) =>
         Ok((await topology.BuildAsync(environmentId, request with { DiscoverContracts = true }, ct)).View);
 
+    /// <summary>A profile's topology source coverage and expected relationships (read-only; observations, if supplied, are merged, never stored).</summary>
+    [HttpPost("{environmentId}/profiles/{profileId}/coverage")]
+    public async Task<ActionResult<TopologyCoverageView>> Coverage(string environmentId, string profileId, [FromBody] TopologyRequest? request, CancellationToken ct) =>
+        await topology.CoverageAsync(environmentId, profileId, (request ?? new TopologyRequest(null)) with { DiscoverContracts = false }, ct) is { } coverage ? Ok(coverage) : NotFound();
+
     [HttpPost("{environmentId}/profiles/{profileId}/paths")]
     public async Task<ActionResult<IReadOnlyList<TopologyPathResult>>> Paths(string environmentId, string profileId, [FromBody] TopologyRequest? request, CancellationToken ct) =>
         await topology.PathsAsync(environmentId, profileId, (request ?? new TopologyRequest(null)) with { DiscoverContracts = false }, ct) is { } paths ? Ok(paths) : NotFound();

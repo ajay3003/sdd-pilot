@@ -129,7 +129,15 @@ public sealed record InfrastructureModule
     public string File { get; init; } = "";
     public int Line { get; init; }
     public string? Note { get; init; }
+    /// <summary>The name the module deploys under when a name input states it (container_app_name, app_name, name …), with every part that
+    /// varies per environment or is computed written as '*' (e.g. "ca-orders-*-001"). Null when not stated or not readable (analyzer v3+).</summary>
+    public string? DeploymentName { get; init; }
 }
+
+/// <summary>An endpoint setting one declaration injects from another's address (analyzer v3+), e.g. a module's environment variable
+/// <c>OrdersApi__BaseUrl = "https://${module.orders_api.container_app_fqdn}"</c>: <see cref="Key"/> is the setting in ':' form
+/// ("OrdersApi:BaseUrl"), <see cref="ToId"/> the declaration whose address it reads. Static wiring only — never runtime connectivity.</summary>
+public sealed record InfrastructureEndpointInjection(string FromId, string Key, string ToId, string Attribute, string File, int Line);
 
 /// <summary>A value a variable gets in one environment file (tfvars, parameters). Literal values only when safe.</summary>
 public sealed record InfrastructureVariableValue(SourceEnvironmentLabel Environment, string File, int Line, string State, string? SafeValue);
@@ -178,6 +186,8 @@ public sealed record InfrastructureEvidence : SourceDomainResult
     public List<InfrastructureBackend> Backends { get; init; } = [];
     public List<InfrastructureEnvironment> Environments { get; init; } = [];
     public List<AccessAssignment> AccessAssignments { get; init; } = [];
+    /// <summary>Endpoint settings injected from another declaration's address (analyzer v3+; empty on earlier snapshots).</summary>
+    public List<InfrastructureEndpointInjection> EndpointInjections { get; init; } = [];
     /// <summary>References that could not be resolved statically (unknown resource, computed address).</summary>
     public List<string> UnresolvedReferences { get; init; } = [];
 }

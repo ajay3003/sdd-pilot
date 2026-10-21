@@ -21,8 +21,9 @@ public sealed record TopologyExpectedStep(string Label, string From, string To);
 public sealed record TopologyExpectedPath(string Id, string Label, IReadOnlyList<TopologyExpectedStep> Steps);
 
 /// <summary>
-/// A domain's expectations: the components it knows (with explicit aliases for names different sources use) and the paths its scenarios
-/// rely on. A profile never adds a connection: expected is not configured, discovered or observed.
+/// A domain's expectations: the components it knows (with explicit aliases for names different sources use), the paths its scenarios
+/// rely on, the logical source roles its topology needs, its expected relationships and the external applications it ships references for.
+/// A profile never adds a connection: expected is not configured, discovered or observed.
 /// </summary>
 public interface ITopologyProfile
 {
@@ -30,6 +31,9 @@ public interface ITopologyProfile
     string Label { get; }
     IReadOnlyList<TopologyExpectedComponent> Components { get; }
     IReadOnlyList<TopologyExpectedPath> Paths { get; }
+    IReadOnlyList<TopologySourceRoleDefinition> SourceRoles => [];
+    IReadOnlyList<TopologyExpectedRelationship> Relationships => [];
+    IReadOnlyList<TopologyExternalReference> References => [];
 }
 
 /// <summary>Target Environment: the backend-trusted environment's component membership and base locations (configuration only).</summary>
@@ -61,7 +65,8 @@ public sealed class TargetEnvironmentTopologyProvider : ITopologyProvider
 /// <summary>
 /// Source Analysis: components, their declared interfaces (routes, GraphQL, messaging), resolved HTTP/GraphQL dependencies and messaging
 /// channels with their producers and consumers — the existing source-architecture extraction, never parsed again here. Every repository's
-/// newest snapshot counts (separate repositories are separate archives).
+/// newest snapshot counts (separate repositories are separate archives). Messaging is resource-centred: producer → named queue/topic/hub →
+/// consumer, so producers and consumers found in different archives meet at the same resource node.
 /// </summary>
 public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
 {
@@ -69,8 +74,7 @@ public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
 
     public Task ContributeAsync(TopologyContext context, TopologyBuilder builder, CancellationToken ct)
     {
-        var snapshots = context.Snapshots.Where(snapshot => snapshot.Architecture is not null)
-            .GroupBy(snapshot => snapshot.Archive.FileName, StringComparer.OrdinalIgnoreCase).Select(group => group.OrderByDescending(item => item.AnalyzedAt).First()).ToList();
+        var snapshots = TopologySnapshots.Latest(context.Snapshots.Where(snapshot => snapshot.Architecture is not null));
         if (snapshots.Count == 0)
         {
             builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.NotAvailable, "No Source Analysis snapshot with architecture evidence exists for this environment."));
@@ -80,10 +84,12 @@ public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
         {
             var architecture = snapshot.Architecture!;
             TopologyProvenance Provenance(string detail) => new(TopologySource.SourceAnalysis, snapshot.Archive.FileName, detail, snapshot.AnalyzedAt);
+            var byId = architecture.Components.ToDictionary(component => component.Id, StringComparer.Ordinal);
             var names = architecture.Components.ToDictionary(component => component.Id, component => component.Name, StringComparer.Ordinal);
-            string Key(string componentId) => builder.ComponentKey(names.GetValueOrDefault(componentId) ?? componentId);
+            string Key(string componentId) => byId.TryGetValue(componentId, out var known) ? builder.ComponentKey(known.Name, TopologySnapshots.Identities(known)) : builder.ComponentKey(componentId);
             foreach (var component in architecture.Components)
-                builder.Component(component.Name, TopologyStatus.Discovered, Provenance($"{component.ComponentType} in {component.SourceProject}"), component.ComponentType.ToString());
+                builder.Component(component.Name, TopologyStatus.Discovered, Provenance($"{component.ComponentType} in {component.SourceProject}"), component.ComponentType.ToString(),
+                    identities: TopologySnapshots.Identities(component));
             foreach (var item in architecture.Interfaces.Where(item => names.ContainsKey(item.ComponentId)))
             {
                 var (type, direction) = Classify(item.Type, item.Protocol, item.Direction);
@@ -101,23 +107,40 @@ public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
                     note: conflict ? $"Conflicting targets: {string.Join(", ", dependency.ConflictingTargets)}" : !dependency.IsResolved ? "The called component is not resolved from source." : null);
                 if (dependency.ToId is { } to && names.ContainsKey(to) && !conflict)
                     builder.Connection(from, Key(to), type, dependency.Protocol, dependency.TargetReference, TopologyStatus.Discovered,
-                        Provenance("Resolved client dependency in source"), fromInterface: calls, contract: dependency.ContractReference);
+                        Provenance("Resolved client dependency in source"), fromInterface: calls, contract: dependency.ContractReference,
+                        evidence: new("source-client-wiring", dependency.EvidenceState is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported
+                            ? TopologyEvidenceStrength.VeryStrong : TopologyEvidenceStrength.Strong, "Application source",
+                            $"Client wiring in source names the target ({(dependency.Confidence is { Length: > 0 } confidence ? confidence : dependency.Framework ?? dependency.Protocol)}).", snapshot.Archive.FileName));
             }
             foreach (var channel in architecture.MessagingChannels)
             {
                 var protocol = channel.Type.ToString();
                 var address = channel.EntityName ?? channel.Name;
                 var review = channel.NameUnresolved || channel.Confidence is ArchitectureEvidenceState.Unresolved;
-                var produced = channel.Producers.Where(item => names.ContainsKey(item.ComponentId))
-                    .Select(item => (Key(item.ComponentId), builder.Interface(Key(item.ComponentId), TopologyInterfaceType.Messaging, protocol, TopologyDirection.Produces, address, null,
-                        TopologyStatus.Discovered, Provenance($"Produces to {protocol} {address}"), channel.ContractReferences.FirstOrDefault(), review: review))).ToList();
-                var consumed = channel.Consumers.Where(item => names.ContainsKey(item.ComponentId))
-                    .Select(item => (Key(item.ComponentId), builder.Interface(Key(item.ComponentId), TopologyInterfaceType.Messaging, protocol, TopologyDirection.Consumes, address, null,
-                        TopologyStatus.Discovered, Provenance($"Consumes from {protocol} {address}"), channel.ContractReferences.FirstOrDefault(), review: review))).ToList();
-                foreach (var producer in produced)
-                    foreach (var consumer in consumed.Where(item => item.Item1 != producer.Item1))
-                        builder.Connection(producer.Item1, consumer.Item1, TopologyInterfaceType.Messaging, protocol, address, TopologyStatus.Discovered,
-                            Provenance("Producer and consumer of the same channel in source"), producer.Item2, consumer.Item2, channel.ContractReferences.FirstOrDefault(), review: review);
+                var (kind, label) = CrossSourceTopologyProvider.ResourceKind(protocol);
+                // A channel whose name is not resolved in source has no resource identity: its ends stay interfaces needing review, never hops.
+                var resource = review ? null : builder.Resource(kind, address, protocol switch
+                {
+                    nameof(MessagingChannelType.ServiceBusTopic) => "Service Bus topic",
+                    nameof(MessagingChannelType.ServiceBusQueue) => "Service Bus queue",
+                    nameof(MessagingChannelType.EventHub) => "Event Hub",
+                    _ => label,
+                }, TopologyStatus.Discovered, Provenance($"{protocol} {address}"));
+                foreach (var role in channel.Producers.Select(item => (item, true)).Concat(channel.Consumers.Select(item => (item, false))).Where(pair => names.ContainsKey(pair.item.ComponentId)))
+                {
+                    var (end, produces) = role;
+                    var key = Key(end.ComponentId);
+                    var own = builder.Interface(key, TopologyInterfaceType.Messaging, protocol, produces ? TopologyDirection.Produces : TopologyDirection.Consumes, address, null,
+                        TopologyStatus.Discovered, Provenance($"{(produces ? "Produces to" : "Consumes from")} {protocol} {address}"), channel.ContractReferences.FirstOrDefault(), review: review);
+                    if (resource is null) continue;
+                    var evidence = new TopologyEvidence(produces ? "source-producer" : "source-consumer",
+                        end.State is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported ? TopologyEvidenceStrength.VeryStrong : TopologyEvidenceStrength.Strong,
+                        "Application source", $"{names[end.ComponentId]} {(produces ? "produces to" : "consumes from")} {address} in source ({end.Framework ?? protocol}, {end.State}).", snapshot.Archive.FileName);
+                    if (produces) builder.Connection(key, resource, TopologyInterfaceType.Messaging, protocol, address, TopologyStatus.Discovered, Provenance("Producer of a named channel in source"),
+                        fromInterface: own, contract: channel.ContractReferences.FirstOrDefault(), evidence: evidence);
+                    else builder.Connection(resource, key, TopologyInterfaceType.Messaging, protocol, address, TopologyStatus.Discovered, Provenance("Consumer of a named channel in source"),
+                        toInterface: own, contract: channel.ContractReferences.FirstOrDefault(), evidence: evidence);
+                }
             }
         }
         builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.Used, $"{snapshots.Count} repository snapshot(s): {string.Join(", ", snapshots.Select(item => item.Archive.FileName))}.",
@@ -185,7 +208,9 @@ public sealed class IntegrationCatalogTopologyProvider : ITopologyProvider
                     TopologyStatus.Configured, provenance, integration.ConsumerContractReference);
             }
             if (from is not null && to is not null)
-                builder.Connection(from, to, type, protocol, address, TopologyStatus.Configured, provenance, fromInterface, toInterface, integration.ConsumerContractReference ?? integration.ProducerContractReference);
+                builder.Connection(from, to, type, protocol, address, TopologyStatus.Configured, provenance, fromInterface, toInterface, integration.ConsumerContractReference ?? integration.ProducerContractReference,
+                    evidence: new("configured-integration", TopologyEvidenceStrength.VeryStrong, "Configured integration",
+                        $"Integration {integration.DisplayName} states producer {producer}, consumer {consumer} and endpoint {address}.", integration.Id));
         }
         builder.Source(enabled.Count == 0
             ? new(TopologySource.IntegrationCatalog, TopologySourceState.NotAvailable, "No enabled integration is configured in Integration Quality Review for this environment.")
@@ -239,7 +264,10 @@ public static class TrustedComponentPolicy
         if (SafeBaseUrl(component.BaseUrl) is not { } baseUrl || string.IsNullOrWhiteSpace(component.OpenApiPath)) return null;
         var path = component.OpenApiPath.Trim();
         if (!path.StartsWith('/') || path.Contains("..", StringComparison.Ordinal) || path.Contains("://", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)) return null;
-        var address = new Uri(new Uri(baseUrl), path.TrimStart('/'));
-        return string.Equals(address.Host, new Uri(baseUrl).Host, StringComparison.OrdinalIgnoreCase) ? address : null;
+        if (path.Contains('\\') || path.Contains('@') || path.Contains('?') || path.Contains('#')) return null;
+        var root = new Uri(baseUrl);
+        var address = new Uri(root, path.TrimStart('/'));
+        // Same scheme, host and port as the component's own base address: a path can never move discovery to another origin.
+        return address.Scheme == root.Scheme && address.Port == root.Port && string.Equals(address.Host, root.Host, StringComparison.OrdinalIgnoreCase) ? address : null;
     }
 }

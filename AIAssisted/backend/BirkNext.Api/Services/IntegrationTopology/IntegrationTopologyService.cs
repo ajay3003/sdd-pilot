@@ -75,12 +75,18 @@ public sealed class ProfileTopologyProvider(IEnumerable<ITopologyProfile> profil
 /// <summary>
 /// The canonical topology of one environment: it reads the trusted environment, the integration catalog and the Source Analysis snapshots,
 /// runs every provider in order, and merges their statements. Nothing is stored; every read rebuilds from the current sources (with the
-/// sources' own timestamps), so a stale source is visible as such.
+/// sources' own timestamps), so a stale source is visible as such and a resolver improvement applies to existing snapshots without re-import.
 /// </summary>
 public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> providers, IEnumerable<ITopologyProfile> profiles,
     ITrustedExecutionEnvironmentRegistry environments, IIntegrationCatalogService catalog, IReviewSourceEvidenceProvider sources, TimeProvider clock)
 {
     public async Task<(IntegrationTopologyView View, TopologyBuilder Builder)> BuildAsync(string environmentId, TopologyRequest request, CancellationToken ct)
+    {
+        var (view, builder, _) = await BuildCoreAsync(environmentId, request, ct);
+        return (view, builder);
+    }
+
+    private async Task<(IntegrationTopologyView View, TopologyBuilder Builder, TopologyContext Context)> BuildCoreAsync(string environmentId, TopologyRequest request, CancellationToken ct)
     {
         var trusted = environments.Resolve(environmentId, out var trustDetail);
         var configured = await catalog.GetAsync(environmentId, trusted?.EnvironmentType, trusted?.TargetUrl, ct);
@@ -88,7 +94,23 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         var context = new TopologyContext(environmentId, trusted, trustDetail, configured, snapshots, request);
         var builder = new TopologyBuilder();
         foreach (var provider in providers.OrderBy(item => item.Order)) await provider.ContributeAsync(context, builder, ct);
-        return (builder.Build(environmentId, trusted?.DisplayName, clock.GetUtcNow(), [.. profiles.Select(profile => profile.Id)]), builder);
+        var view = builder.Build(environmentId, trusted?.DisplayName, clock.GetUtcNow(), [.. profiles.Select(profile => profile.Id)])
+            with { ResolverVersion = CrossSourceTopologyProvider.ResolverVersion, Discovery = DiscoveryPlan(trusted) };
+        return (view, builder, context);
+    }
+
+    /// <summary>What "Discover interfaces" would read — computed from configuration only, no network call.</summary>
+    public static TopologyDiscoveryPlan DiscoveryPlan(TrustedExecutionEnvironment? trusted)
+    {
+        var declared = trusted?.Components.Where(component => !string.IsNullOrWhiteSpace(component.OpenApiPath)).ToList() ?? [];
+        var eligible = new List<TopologyDiscoveryTarget>();
+        var ineligible = new List<TopologyDiscoveryTarget>();
+        foreach (var component in declared)
+        {
+            if (TrustedComponentPolicy.OpenApiAddress(component) is { } address) eligible.Add(new(component.Name, address.Authority, address.AbsolutePath));
+            else ineligible.Add(new(component.Name, "", component.OpenApiPath ?? "", "The OpenAPI path is not a relative path on the component's own base address (same scheme, host and port)."));
+        }
+        return new(eligible, ineligible);
     }
 
     /// <summary>A profile's expected paths, resolved against the canonical topology (read-only).</summary>
@@ -98,6 +120,64 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         var (view, builder) = await BuildAsync(environmentId, request, ct);
         return [.. profile.Paths.Select(path => TopologyPaths.Resolve(view, builder, profile.Id, path))];
     }
+
+    /// <summary>A profile's source coverage and expected relationships, resolved against the canonical topology (read-only).</summary>
+    public async Task<TopologyCoverageView?> CoverageAsync(string environmentId, string profileId, TopologyRequest request, CancellationToken ct)
+    {
+        if (profiles.FirstOrDefault(item => string.Equals(item.Id, profileId, StringComparison.Ordinal)) is not { } profile) return null;
+        var (view, builder, context) = await BuildCoreAsync(environmentId, request, ct);
+        return TopologyCoverage.Evaluate(profile, view, builder, context.Snapshots, request, clock.GetUtcNow());
+    }
+}
+
+/// <summary>
+/// How one component reaches another: a direct connection, or a chain through intermediate resource nodes (producer → topic → consumer,
+/// application → captured table → connector). A chain is as certain as its weakest hop.
+/// </summary>
+public static class TopologyReach
+{
+    public sealed record Chain(List<TopologyConnection> Hops)
+    {
+        public TopologyRelationshipState State => Hops.Min(hop => hop.Relationship);
+        public bool Conflict => Hops.Any(hop => hop.Status == TopologyStatus.Conflict);
+    }
+
+    /// <summary>One end of a reach query: specific components, or any resource of a kind ("servicebus", "eventhub", "connector", "table").</summary>
+    public sealed record End(IReadOnlyCollection<string>? Components, string? ResourceKind)
+    {
+        public static End Of(string component) => new([component], null);
+        public static End Kind(string kind) => new(null, kind);
+        public bool Matches(string id) => Components?.Contains(id) == true || ResourceKind is { } kind && id.StartsWith(TopologyBuilder.ResourceKey(kind, ""), StringComparison.Ordinal);
+    }
+
+    /// <summary>Chains from → to that pass only through resource nodes (at most <paramref name="maxResources"/>). <paramref name="via"/> (when the
+    /// start is a resource kind) keeps only resources that end feeds.</summary>
+    public static List<Chain> Chains(IntegrationTopologyView view, End from, End to, End? via = null, int maxResources = 2)
+    {
+        var kinds = view.Components.ToDictionary(item => item.Id, item => item.Kind, StringComparer.Ordinal);
+        bool IsResource(string id) => kinds.GetValueOrDefault(id) == TopologyComponentKind.Resource;
+        var outgoing = view.Connections.GroupBy(item => item.ProducerComponentId).ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
+        var starts = view.Components.Select(item => item.Id).Where(from.Matches).ToList();
+        if (via is not null)
+            starts = [.. starts.Where(start => view.Connections.Any(hop => hop.ConsumerComponentId == start && via.Matches(hop.ProducerComponentId)))];
+        var chains = new List<Chain>();
+        void Walk(string at, List<TopologyConnection> path, int resources)
+        {
+            foreach (var hop in outgoing.GetValueOrDefault(at) ?? [])
+            {
+                if (hop.ConsumerComponentId == path.FirstOrDefault()?.ProducerComponentId || path.Any(item => item.ConsumerComponentId == hop.ConsumerComponentId)) continue;
+                var next = new List<TopologyConnection>(path) { hop };
+                if (to.Matches(hop.ConsumerComponentId)) { chains.Add(new(next)); continue; }
+                if (IsResource(hop.ConsumerComponentId) && resources < maxResources) Walk(hop.ConsumerComponentId, next, resources + 1);
+            }
+        }
+        foreach (var start in starts) Walk(start, [], 0);
+        return chains;
+    }
+
+    public static List<Chain> Chains(IntegrationTopologyView view, string from, string to) => Chains(view, End.Of(from), End.Of(to));
+
+    public static Chain? Best(IEnumerable<Chain> chains) => chains.OrderBy(chain => chain.Conflict).ThenByDescending(chain => chain.State).ThenBy(chain => chain.Hops.Count).FirstOrDefault();
 }
 
 /// <summary>Resolves an expected path step by step: a step is resolved only by a connection some source states; expected alone never resolves it.</summary>
@@ -106,18 +186,18 @@ public static class TopologyPaths
     public static TopologyPathResult Resolve(IntegrationTopologyView view, TopologyBuilder builder, string profileId, TopologyExpectedPath path) =>
         new(profileId, path.Id, path.Label, [.. path.Steps.Select(step =>
         {
-            var from = builder.ComponentKey(step.From);
-            var to = builder.ComponentKey(step.To);
-            var connections = view.Connections.Where(item => item.ProducerComponentId == from && item.ConsumerComponentId == to).ToList();
-            if (connections.Count == 0)
+            var chains = TopologyReach.Chains(view, builder.ComponentKey(step.From), builder.ComponentKey(step.To));
+            if (chains.Count == 0)
                 return new TopologyPathStep(step.Label, step.From, step.To, TopologyPathState.Unresolved, TopologyStatus.NotEvaluated, false, null,
                     $"No source states a connection {step.From} → {step.To}. Expected only; not discovered or configured.");
-            if (connections.Any(item => item.Status == TopologyStatus.Conflict))
-                return new TopologyPathStep(step.Label, step.From, step.To, TopologyPathState.Conflict, TopologyStatus.Conflict, false, connections[0].Id,
+            if (chains.Any(chain => chain.Conflict))
+                return new TopologyPathStep(step.Label, step.From, step.To, TopologyPathState.Conflict, TopologyStatus.Conflict, false, chains[0].Hops[0].Id,
                     "Sources disagree about this connection; review it before relying on it.");
-            var best = connections.OrderByDescending(item => item.Status).First();
-            var observed = connections.Any(item => item.Status == TopologyStatus.Observed);
-            return new TopologyPathStep(step.Label, step.From, step.To, TopologyPathState.Resolved, best.Status, observed, best.Id,
-                $"{best.Type} over {best.Address ?? best.Protocol} · {string.Join(", ", best.Provenance.Select(item => item.Source).Distinct())}{(observed ? "" : " · not observed at runtime")}");
+            var best = TopologyReach.Best(chains)!;
+            var status = best.Hops.Min(hop => hop.Status);
+            var observed = best.Hops.All(hop => hop.Status == TopologyStatus.Observed);
+            return new TopologyPathStep(step.Label, step.From, step.To, TopologyPathState.Resolved, status, observed, best.Hops[0].Id,
+                $"{best.Hops[0].Type} over {(best.Hops.Count > 1 ? string.Join(" → ", best.Hops.Take(best.Hops.Count - 1).Select(hop => view.Components.FirstOrDefault(c => c.Id == hop.ConsumerComponentId)?.Name ?? hop.ConsumerComponentId)) : best.Hops[0].Address ?? best.Hops[0].Protocol)}"
+                + $" · {string.Join(", ", best.Hops.SelectMany(hop => hop.Provenance).Select(item => item.Source).Distinct())}{(observed ? "" : " · not observed at runtime")}");
         })]);
 }

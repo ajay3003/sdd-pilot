@@ -91,6 +91,33 @@ No editable endpoint or interface inventory competes with the topology. Critical
 
 It adds no connection or address. The Skolenærvær Overview shows the expected flow, read-only. A step resolves only when a source states that connection, and the panel shows the evidence level and whether it was observed. An unresolved boundary (for example Skoletjenesten → Bufdata, which has no delivery yet, ADR-028) stays unresolved; it is not a failure. Expected ≠ observed.
 
+## Cross-source relationship resolution and source coverage (resolver v2)
+
+`CrossSourceTopologyProvider` (`TopologyResolution.cs`) resolves relationships from generic evidence patterns over stored source facts. It knows no system names.
+
+| Pattern | Evidence | Strength |
+|---|---|---|
+| HTTP client (named, typed, custom wrapper, or a `X:BaseUrl` configuration section) | Base-address host equals the target's CI/CD deployment name (e.g. pipeline `containerAppName`) | Very strong |
+| | Local base address equals the target's launch address (same repository) | Very strong (strong across repositories) |
+| | IaC module sets `X__BaseUrl` from another module's address, both modules mapped to components by deployment-name template | Very strong (IaC) |
+| Service Bus / Event Hub | Resource-centred: producer → named queue/topic/hub → consumer, from source wiring and from configuration keys that state a direction | Very strong (explicit in code) / Strong (configuration) |
+| | IaC declares the same resource | Strong (strengthens hops, never creates one) |
+| CDC | Connector topic prefix (IaC/configuration) + hub names `{prefix}.{database}.{schema}.{table}` give connector → hub and captured table → connector; an application data model mapping the table gives application → table | Strong per source; very strong for an exact database + table model |
+| External application a Test Pack references | Source configuration names the application; a subscription section with its own callback endpoint is inbound | Very strong (subscription) / Strong |
+
+Very strong evidence, or strong evidence from two independent source families, resolves a connection. One strong family gives *Strongly supported*; supporting evidence only gives a *Candidate*. Role assignments, shared namespaces or projects, similar names, comments and expected topology never create a connection.
+
+Test Packs declare, generically:
+- **Source roles** (`TopologySourceRoleDefinition`): required, recommended (full infrastructure), optional, conditional or built-in reference. Each is matched by content (component tokens/prefixes, configuration prefixes, IaC formats), never by archive name.
+- **Expected relationships** (`TopologyExpectedRelationship`): their ends are systems, resource kinds (`resource:servicebus`) or `role:{id}`.
+- **External references** (`TopologyExternalReference`).
+
+`POST api/integration-topology/{env}/profiles/{id}/coverage` returns role coverage, each expected relationship's state, and the missing evidence and source role for every unresolved one. It also returns categorical completeness per dimension (never a percentage).
+
+The projection is rebuilt on every read (`ResolverVersion`), so existing snapshots benefit without re-import and are never written. The Terraform analyzer v3 additionally records module deployment names and endpoint injections. Snapshots analyzed earlier lack only those two facts.
+
+**Discover interfaces** has a preview: eligible components and hosts, computed without any network call. Each component gets one GET of its own declared OpenAPI path, which must have the same scheme, host and port. Redirects are not followed, only local `$ref`s are read, and paths with `\`, `@`, `?` or `#` are refused.
+
 ## Not yet done
 
 - **No GraphQL introspection provider.** GraphQL interfaces come from Source Analysis, observations and the catalog.

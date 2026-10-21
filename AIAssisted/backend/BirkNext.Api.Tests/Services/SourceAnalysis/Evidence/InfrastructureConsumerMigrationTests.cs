@@ -63,7 +63,7 @@ public sealed class InfrastructureConsumerMigrationTests
         ns.EnvironmentNames.Should().BeEquivalentTo([
             new InfrastructureEnvironmentName(new(SourceEnvironmentKind.QA, "qa"), "evhns-payments-qa", "tfvars Infrastructure/qa.tfvars"),
             new InfrastructureEnvironmentName(new(SourceEnvironmentKind.Production, "prod"), "evhns-payments-prod", "tfvars Infrastructure/prod.tfvars")]);
-        Infra().AnalyzerVersion.Should().Be(2);
+        Infra().AnalyzerVersion.Should().BeGreaterThanOrEqualTo(2, "per-environment names are read since analyzer v2");
         JsonSerializer.Serialize(Infra()).Should().NotContain(Sentinel);
     }
 
@@ -145,7 +145,7 @@ public sealed class InfrastructureConsumerMigrationTests
         rows["Application Insights"].State.Should().Be(SourceComparisonState.Differs);
         rows["Service Bus namespace"].State.Should().Be(SourceComparisonState.Matches);
         rows["Service Bus topic payment-completed"].State.Should().Be(SourceComparisonState.Matches);
-        result.SourceInfrastructureComparisons.Should().OnlyContain(c => c.Comparison.SourceSnapshotId == snapshot.Id && c.Comparison.SourceFingerprint == snapshot.Archive.Sha256 && c.Comparison.AnalyzerVersion == 2);
+        result.SourceInfrastructureComparisons.Should().OnlyContain(c => c.Comparison.SourceSnapshotId == snapshot.Id && c.Comparison.SourceFingerprint == snapshot.Archive.Sha256 && c.Comparison.AnalyzerVersion >= 2);
         result.SourceInfrastructureComparisons.Should().OnlyContain(c => c.Comparison.RuntimeState.Contains("assessed separately"));
         result.EvidenceSources.Should().Contain(IntegrationEvidenceSource.SourceInfrastructure);
         result.Domains.Single().Observed.Should().Contain(o => o.StartsWith("Configured vs. declared in source"));
