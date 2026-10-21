@@ -63,6 +63,27 @@ public sealed class ReadinessStatusIntegrityTests
         AssertSafe(result.StatusReason);
     }
 
+    [Theory]
+    [InlineData(LighthouseReadinessState.LaunchFailed, true, false)]
+    [InlineData(LighthouseReadinessState.ChromiumUnavailable, true, false)]
+    public void LighthouseRuntimeComponents_RunnerStartedButBrowserDidNot_ProvesNodeAndDisprovesTheTarget(LighthouseReadinessState state, bool node, bool cdp)
+    {
+        var components = LighthouseReadinessProvider.Components(new LighthouseReadinessResult(state, false))!;
+        components.Single(c => c.Kind == LighthouseReadinessProvider.NodeComponent).Available.Should().Be(node);
+        components.Single(c => c.Kind == LighthouseReadinessProvider.CdpComponent).Available.Should().Be(cdp);
+    }
+
+    [Fact]
+    public void LighthouseRuntimeComponents_Ready_NameNodeAndBrowserVersions_WithoutPathsOrPorts()
+    {
+        var components = LighthouseReadinessProvider.Components(new LighthouseReadinessResult(LighthouseReadinessState.Ready, true, "12.2.1", "v24.16.0", "Chromium", "130.0.6723.31"))!;
+        components.Should().OnlyContain(c => c.Available == true);
+        components.Single(c => c.Kind == LighthouseReadinessProvider.NodeComponent).Detail.Should().Be("Node.js v24.16.0");
+        components.Single(c => c.Kind == LighthouseReadinessProvider.CdpComponent).Detail.Should().Be("Chromium 130.0.6723.31");
+        string.Join(" ", components.Select(c => $"{c.Provider} {c.Detail}")).Should().NotContainAny(":\\", "127.0.0.1", "ws://", "port");
+        LighthouseReadinessProvider.Components(new LighthouseReadinessResult(LighthouseReadinessState.Disabled, false)).Should().BeNull("a disabled engine reports no runtime facts");
+    }
+
     [Fact]
     public async Task LighthouseProcessStartFailure_ReturnsSafeNodeReasonWithoutRawPath()
     {
@@ -77,6 +98,12 @@ public sealed class ReadinessStatusIntegrityTests
             direct.Error.Should().Be("Node.js runtime is unavailable.");
             result.Reason.Should().Be(FrontendQualityEngineReadinessReason.ExecutableUnavailable);
             result.StatusReason.Should().Be("Node.js runtime is unavailable.");
+            // Node and the Chromium/CDP target are reported apart: without Node the runner never started, so the target is undetermined.
+            result.RuntimeComponents.Should().BeEquivalentTo(new[]
+            {
+                new FrontendQualityRuntimeComponent(LighthouseReadinessProvider.NodeComponent, false, "Node.js"),
+                new FrontendQualityRuntimeComponent(LighthouseReadinessProvider.CdpComponent, null, LighthouseReadinessProvider.BundledChromium),
+            });
             AssertSafe(direct.Error);
             AssertSafe(result.StatusReason);
         }

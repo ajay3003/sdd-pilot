@@ -14,6 +14,17 @@ test('axe outcomes retain typed meaning and transport no HTML or node data', () 
   assert.ok(!JSON.stringify(result).includes('secret')); assert.ok(!JSON.stringify(result).includes('personal-data'));
 });
 
+test('impact is transported only from the fixed axe vocabulary and only for rules that carry one', () => {
+  const failing = { id: 'color-contrast', impact: 'serious', tags: ['wcag2aa', 'wcag143'], nodes: [{}, {}] };
+  const odd = { id: 'image-alt', impact: '<script>', tags: ['wcag2a', 'wcag111'], nodes: [{}] };
+  const passing = { id: 'document-title', impact: null, tags: ['wcag2a', 'wcag242'], nodes: [{}] };
+  const result = summarize({ testEngine: { version: '4.11.1' }, violations: [failing, odd], passes: [passing] }, 'visit-2');
+  assert.equal(result.rules[0].impact, 'serious');
+  assert.equal(result.rules[0].count, 2);
+  assert.ok(!('impact' in result.rules[1]), 'an unknown impact value is dropped, never echoed');
+  assert.ok(!('impact' in result.rules[2]));
+});
+
 test('unchanged evidence executes once; new evidence revision executes again', async () => {
   let runs = 0;
   const collect = collector({ run: async () => { runs++; return {}; } });

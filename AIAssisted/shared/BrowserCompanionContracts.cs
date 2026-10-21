@@ -296,6 +296,8 @@ public sealed record BrowserAxeRule
     public string Outcome { get; init; } = "NotTested";
     public List<string> CriterionIds { get; init; } = [];
     public int Count { get; init; }
+    /// <summary>axe's fixed impact vocabulary (minor, moderate, serious, critical) for failing rules; null when not reported (older extensions).</summary>
+    public string? Impact { get; init; }
 }
 
 /// <summary>Only fixed ids, enum-like outcomes, counts and structural selectors cross the boundary.</summary>

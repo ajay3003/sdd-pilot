@@ -5,7 +5,15 @@ public sealed record FrontendQualityEngineReadiness(
     bool IsAvailable,
     string? StatusReason,
     DateTime CheckedAtUtc,
-    FrontendQualityEngineReadinessReason Reason = FrontendQualityEngineReadinessReason.None);
+    FrontendQualityEngineReadinessReason Reason = FrontendQualityEngineReadinessReason.None,
+    IReadOnlyList<FrontendQualityRuntimeComponent>? RuntimeComponents = null);
+
+/// <summary>
+/// One runtime prerequisite of an engine, reported separately so a consumer can tell WHICH one is missing (Lighthouse: the Node execution
+/// runtime and the Chromium/CDP browser target are distinct). <paramref name="Available"/> null = not determined by this check.
+/// Kinds: "NodeRuntime", "CdpTarget". Provider and detail are non-secret (product/version), never a path, port or endpoint.
+/// </summary>
+public sealed record FrontendQualityRuntimeComponent(string Kind, bool? Available, string Provider, string? Detail = null);
 
 public enum FrontendQualityEngineReadinessReason
 {

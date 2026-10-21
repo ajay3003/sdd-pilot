@@ -52,6 +52,18 @@ public sealed class BrowserQualityBoundaryTests
     }
 
     [Fact]
+    public void AxeImpactIsKeptOnlyFromAxesFixedVocabulary()
+    {
+        var sanitizer = new BrowserCompanionEvidenceSanitizer(new BrowserEvidenceSanitizer());
+        var page = sanitizer.Sanitize(new() { Accessibility = new() { Axe = new() { State = "Completed", Version = AxeRuleCatalog.Version,
+            Rules = [new BrowserAxeRule { RuleId = "color-contrast", Outcome = "Fail", Count = 2, Impact = "serious" },
+                     new BrowserAxeRule { RuleId = "image-alt", Outcome = "Fail", Count = 1, Impact = "<b>secret</b>" }] } } });
+        var rules = page.Accessibility!.Axe!.Rules;
+        Assert.Equal("serious", rules.Single(r => r.RuleId == "color-contrast").Impact);
+        Assert.Null(rules.Single(r => r.RuleId == "image-alt").Impact);
+    }
+
+    [Fact]
     public void AxeEvidenceIsBoundedSanitizedAndTyped()
     {
         var sanitizer = new BrowserCompanionEvidenceSanitizer(new BrowserEvidenceSanitizer());

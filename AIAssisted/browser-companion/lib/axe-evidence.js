@@ -8,8 +8,11 @@
       for (const rule of result[kind] || []) {
         const criterionIds = [...new Set((rule.tags || []).map(tag => /^wcag(\d)(\d)(\d{1,2})$/.exec(tag))
           .filter(Boolean).map(m => `${m[1]}.${m[2]}.${m[3]}`))];
-        if (criterionIds.length && /^[a-z0-9-]{1,80}$/.test(rule.id))
-          rules.push({ ruleId: rule.id, outcome, criterionIds, count: Math.min(100000, (rule.nodes || []).length) });
+        if (criterionIds.length && /^[a-z0-9-]{1,80}$/.test(rule.id)) {
+          // axe's own fixed impact vocabulary only (never page content); passes and inapplicable rules carry none.
+          const impact = ['minor', 'moderate', 'serious', 'critical'].includes(rule.impact) ? rule.impact : undefined;
+          rules.push({ ruleId: rule.id, outcome, criterionIds, count: Math.min(100000, (rule.nodes || []).length), ...(impact ? { impact } : {}) });
+        }
       }
     }
     return { state: 'Completed', version: result.testEngine?.version, evidenceVersion, rules: rules.slice(0, 300) };

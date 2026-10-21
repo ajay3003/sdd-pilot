@@ -117,7 +117,9 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
                 {
                     RuleId = r.RuleId, Outcome = r.Outcome is "Pass" or "Fail" or "ManualReviewRequired" or "NotApplicable" ? r.Outcome : "NotTested",
                     CriterionIds = AxeRuleCatalog.Criteria(r.RuleId).ToList(),
-                    Count = Clamp(r.Count)
+                    Count = Clamp(r.Count),
+                    // axe's own fixed impact vocabulary; anything else is dropped rather than echoed.
+                    Impact = r.Impact is "minor" or "moderate" or "serious" or "critical" ? r.Impact : null
                 }).ToList()
         },
         Engine = "BirkNext Accessibility Checks",

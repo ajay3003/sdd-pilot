@@ -34,7 +34,8 @@ public sealed class LighthouseReadinessProvider : IFrontendQualityEngineReadines
                 result.Available,
                 SafeReason(result.State, result.Available),
                 DateTime.UtcNow,
-                MapReason(result.State, result.Available));
+                MapReason(result.State, result.Available),
+                Components(result));
         }
         catch (OperationCanceledException)
         {
@@ -49,6 +50,27 @@ public sealed class LighthouseReadinessProvider : IFrontendQualityEngineReadines
                 FrontendQualityEngineReadinessReason.ProviderError);
         }
     }
+
+    public const string NodeComponent = "NodeRuntime";
+    public const string CdpComponent = "CdpTarget";
+    public const string BundledChromium = "Bundled Chromium (headless, launched by the Lighthouse runner)";
+
+    /// <summary>
+    /// Node and the Chromium/CDP target, apart. NodeUnavailable means the runner never started, so the browser target is undetermined;
+    /// a runner that started but could not launch its browser proves Node and disproves the target.
+    /// </summary>
+    public static IReadOnlyList<FrontendQualityRuntimeComponent>? Components(LighthouseReadinessResult result) => result.State switch
+    {
+        LighthouseReadinessState.Ready when result.Available =>
+        [
+            new(NodeComponent, true, "Node.js", result.NodeVersion is { Length: > 0 } node ? $"Node.js {node}" : null),
+            new(CdpComponent, true, BundledChromium, string.Join(" ", new[] { result.BrowserName, result.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v))) is { Length: > 0 } browser ? browser : null),
+        ],
+        LighthouseReadinessState.NodeUnavailable => [new(NodeComponent, false, "Node.js"), new(CdpComponent, null, BundledChromium)],
+        LighthouseReadinessState.LaunchFailed or LighthouseReadinessState.ChromiumUnavailable =>
+            [new(NodeComponent, true, "Node.js"), new(CdpComponent, false, BundledChromium, "The bundled Chromium could not be started.")],
+        _ => null,
+    };
 
     private static FrontendQualityEngineReadinessReason MapReason(LighthouseReadinessState state, bool available) => (state, available) switch
     {
