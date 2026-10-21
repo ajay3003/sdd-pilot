@@ -25,6 +25,10 @@ public interface IIntegrationJourneyService
     Task<SourceSetupView> SourceSetupAsync(string? environmentId, CancellationToken ct) => Task.FromResult(new SourceSetupView());
     Task<IReadOnlyList<IntegrationTemplateView>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<IntegrationTemplateView>>([]);
+    /// <summary>What the packs know about each configured integration they recognize (reference metadata, logical source state, canonical
+    /// binding, schema candidates) — read-only input for Integration Quality Review's capability profiles.</summary>
+    Task<IReadOnlyList<IntegrationReviewEvidenceFacts>> ReviewFactsAsync(string environmentId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<IntegrationReviewEvidenceFacts>>([]);
     /// <summary>Starts a run. The initiator is the authenticated caller's stable id, for per-caller execution state such as a sign-in; never persisted.</summary>
     Task<IntegrationJourneyRun> StartAsync(IntegrationJourneyRunRequest request, string? initiator, CancellationToken ct);
     /// <summary>Validates a run without executing it: no external call, no gate, no runner, no history. Every gate StartAsync applies is reported.</summary>
@@ -296,6 +300,37 @@ public sealed class IntegrationJourneyService(
         return [.. packs.Packs.SelectMany(pack => pack.IntegrationTemplates.Select(template => IntegrationTemplates.Resolve(pack, context, template, type)))];
     }
 
+    public async Task<IReadOnlyList<IntegrationReviewEvidenceFacts>> ReviewFactsAsync(string environmentId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return [];
+        var context = await ContextAsync(environmentId.Trim(), ct);
+        var facts = new List<IntegrationReviewEvidenceFacts>();
+        foreach (var pack in packs.Packs)
+            foreach (var template in pack.IntegrationTemplates.Where(t => t.RequirementKey is not null))
+            {
+                if (pack.Journeys.SelectMany(journey => journey.Integrations).FirstOrDefault(item => item.Key == template.RequirementKey) is not { } requirement) continue;
+                var view = IntegrationTemplates.Resolve(pack, context, template, context.TrustedEnvironment?.EnvironmentType);
+                foreach (var integration in context.Catalog.Integrations.Where(item => item.Enabled && pack.Matches(requirement, item)))
+                {
+                    // The integration's OWN canonical binding decides Bound; a match elsewhere is availability only.
+                    var bound = context.BoundSnapshot(integration.Id);
+                    var evidence = view.EvidenceSource;
+                    facts.Add(new IntegrationReviewEvidenceFacts(integration.Id)
+                    {
+                        PackName = pack.DisplayName, ReferenceTitle = view.ReferenceSource?.Reference?.Title,
+                        AuthenticationReference = view.AuthenticationReference, ContractReference = view.ContractReference,
+                        SourceRole = evidence?.Role.Label, SourceMatches = evidence?.Candidates.Count ?? 0, BoundArchive = bound?.Archive.FileName,
+                        SourceState = bound is not null ? TestPackSourceState.Bound
+                            : evidence is null ? null : evidence.Candidates.Count == 0 ? evidence.State
+                            : evidence.Candidates.Select(c => c.Fingerprint).Distinct(StringComparer.Ordinal).Count() > 1 ? TestPackSourceState.ReviewRequired : TestPackSourceState.AvailableNotBound,
+                        SchemaName = view.SchemaName,
+                        SchemaFiles = [.. view.SchemaCandidates.Where(c => bound is null || c.SnapshotId == bound.Id).Select(c => c.File).Distinct(StringComparer.Ordinal)],
+                    });
+                }
+            }
+        return [.. facts.DistinctBy(item => item.IntegrationId)];
+    }
+
     public async Task<SourceConfigurationApplyResult> ApplySourceConfigurationAsync(string environmentId, string packId, CancellationToken ct)
     {
         var pack = packs.Find(packId) ?? throw new IntegrationJourneyRequestException("Unknown journey pack.");
@@ -516,14 +551,14 @@ public sealed class IntegrationJourneyService(
                 ? [new JourneyMatchedIntegration(requirement.Key, null, null, requirement.Kind, false, $"No configured {requirement.Kind} integration was found for {requirement.Label}.")]
                 : found.Select(item => new JourneyMatchedIntegration(requirement.Key, item.Id, item.DisplayName, item.Kind, item.Enabled,
                     !item.Enabled ? "Configured in Integration Quality Review but disabled."
-                    : context.TrustedEnvironment?.IntegrationIds.Contains(item.Id, StringComparer.Ordinal) == true ? "Configured and enrolled in the trusted environment."
-                    : "Configured in Integration Quality Review; not enrolled in the trusted environment.")));
+                    : context.TrustedEnvironment?.IntegrationIds.Contains(item.Id, StringComparer.Ordinal) == true ? "Configured · enabled for active runs in this environment."
+                    : "Configured in Integration Quality Review · not enabled for active runs in this environment.")));
             var (state, detail) = found.Length == 0
                 ? (JourneyReadinessState.NotConfigured, $"No configured {requirement.Kind} integration was found for {requirement.Label} ({requirement.Producer} → {requirement.Consumer}). Configure it in Integration Quality Review.")
                 : enabled.Length == 0 ? (JourneyReadinessState.NotReady, $"{requirement.Label}: the configured integration is disabled.")
                 : enrolled.Length == 0 ? (JourneyReadinessState.NotReady, context.TrustedEnvironment is null
-                    ? $"{requirement.Label}: configured, but environment {context.EnvironmentId} is not a backend trusted environment (TargetEnvironments:Trusted). Enrol it with integration id(s) {string.Join(", ", enabled.Select(item => item.Id))}."
-                    : $"{requirement.Label}: configured, but not enrolled in the backend trusted environment {context.EnvironmentId}. Add integration id(s) {string.Join(", ", enabled.Select(item => item.Id))} to its TargetEnvironments:Trusted IntegrationIds (exact ids, no wildcard).")
+                    ? $"{requirement.Label}: configured, but active execution is not enabled for environment {context.EnvironmentId} (technical: TargetEnvironments:Trusted with integration id(s) {string.Join(", ", enabled.Select(item => item.Id))})."
+                    : $"{requirement.Label}: configured, but not enabled for active runs in {context.EnvironmentId} (technical: add integration id(s) {string.Join(", ", enabled.Select(item => item.Id))} to its TargetEnvironments:Trusted IntegrationIds — exact ids, no wildcard).")
                 : (JourneyReadinessState.Ready, $"{requirement.Label}: {string.Join(", ", enrolled.Select(item => item.DisplayName))}.");
             prerequisites.Add(new JourneyPrerequisite(IntegrationKeyPrefix + requirement.Key, requirement.Label, JourneyPrerequisiteCategory.Integration, state, detail)
                 { Source = "Integration Quality Review + Target Environment" });
@@ -703,7 +738,7 @@ public sealed class IntegrationJourneyService(
             if (!applicable.TryGetValue(scenario.ScenarioId, out var targets))
             {
                 result.Add(Row(JourneyScenarioCapabilityStatus.ConditionallyRunnable,
-                    $"Runs in Active Event Testing once an enabled Event Hub integration for {scenario.ResourceLabel} is configured in Integration Quality Review and enrolled in this trusted environment.",
+                    $"Runs in Active Event Testing once an enabled Event Hub integration for {scenario.ResourceLabel} is configured in Integration Quality Review and enabled for active runs in this environment.",
                     [$"Integration: no applicable integration for {scenario.ResourceLabel}."]));
                 continue;
             }

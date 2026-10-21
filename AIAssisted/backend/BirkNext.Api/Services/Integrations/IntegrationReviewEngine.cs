@@ -59,14 +59,24 @@ public sealed class IntegrationReviewEngine(
 
     /// <summary>Pre-run readiness. Application messaging evidence is summarized beside it and never changes a domain's readiness.</summary>
     public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging) =>
-        ReadinessCore(catalog, contracts, messaging) with
+        Readiness(catalog, contracts, messaging, []);
+
+    /// <summary>Pre-run readiness with the evidence facts test packs know per integration (reference metadata, canonical source). Facts only
+    /// inform the HTTP/API profile and the subjects; they never change whether the review can run.</summary>
+    public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging,
+        IReadOnlyList<IntegrationReviewEvidenceFacts> facts)
+    {
+        // Service Bus is its own transport: summarized here, never counted among the Event Hub runtime sources.
+        var serviceBusSummaries = serviceBus is null ? [] : catalog.Platforms.Where(p => p.Enabled && ServiceBusEvidenceService.IsServiceBus(p)).Select(p => serviceBus.Readiness(p, messaging)).ToList();
+        return ReadinessCore(catalog, contracts, messaging, serviceBusSummaries, facts) with
         {
             ApplicationMessaging = ApplicationMessagingReview.Summaries(catalog, messaging, azure),
-            // Service Bus is its own transport: summarized here, never counted among the Event Hub runtime sources.
-            ServiceBus = serviceBus is null ? [] : catalog.Platforms.Where(p => p.Enabled && ServiceBusEvidenceService.IsServiceBus(p)).Select(p => serviceBus.Readiness(p, messaging)).ToList(),
+            ServiceBus = serviceBusSummaries,
         };
+    }
 
-    private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging)
+    private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging,
+        IReadOnlyList<ServiceBusReadiness> serviceBusSummaries, IReadOnlyList<IntegrationReviewEvidenceFacts> facts)
     {
         var enabled = catalog.Integrations.Where(i => i.Enabled).ToList();
         var systems = Systems(catalog, enabled);
@@ -110,7 +120,7 @@ public sealed class IntegrationReviewEngine(
         var transport = azureMetadata || checkpointReady || telemetryReady;
         var perfEvidence = metricsReady || metadataReady || checkpointReady || telemetryReady;
         var consumerAuth = eventHub.Select(i => i.ConsumerAuthentication).Where(a => a != IntegrationAuthMechanism.NotConfigured).Distinct().Select(IntegrationConfigurationRules.AuthLabel).ToList();
-        var domains = new List<IntegrationDomainReadinessRow>
+        var eventStreamDomains = new List<IntegrationDomainReadinessRow>
         {
             enabled.Count == 0 ? Row(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.NotAssessable, "No enabled integration is configured.")
                 : Row(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.Ready,
@@ -198,6 +208,22 @@ public sealed class IntegrationReviewEngine(
                     [], ["Producer contract", "Safe event-structure evidence: events are never read"]),
         };
 
+        // Each capability present gets its own profile: Event Hub rows only for event streams, never for an HTTP/API or broker integration.
+        var factsById = facts.GroupBy(f => f.IntegrationId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var byCapability = enabled.GroupBy(i => IntegrationReviewProfiles.Capability(i.Kind)).ToDictionary(g => g.Key, g => (IReadOnlyList<IntegrationDefinition>)g.ToList());
+        var profiles = new List<(IntegrationReviewCapability, IReadOnlyList<IntegrationDomainReadinessRow>)>();
+        if (byCapability.ContainsKey(IntegrationReviewCapability.EventStream)) profiles.Add((IntegrationReviewCapability.EventStream, eventStreamDomains));
+        if (byCapability.TryGetValue(IntegrationReviewCapability.HttpApi, out var http)) profiles.Add((IntegrationReviewCapability.HttpApi, IntegrationReviewProfiles.HttpApi(http, contracts, factsById)));
+        if (byCapability.TryGetValue(IntegrationReviewCapability.MessageBroker, out var brokers))
+            profiles.Add((IntegrationReviewCapability.MessageBroker, IntegrationReviewProfiles.ServiceBus(brokers, catalog.Platforms, serviceBusSummaries, contracts)));
+        if (byCapability.TryGetValue(IntegrationReviewCapability.ConfigurationOnly, out var others)) profiles.Add((IntegrationReviewCapability.ConfigurationOnly, IntegrationReviewProfiles.ConfigurationOnly(others)));
+        var domains = profiles.Count == 0 ? eventStreamDomains : IntegrationReviewProfiles.Combine(profiles);
+        var subjects = enabled.Select(i => new IntegrationReviewSubject(i.Id, i.DisplayName, i.Kind, IntegrationReviewProfiles.Capability(i.Kind))
+        {
+            Producer = i.Producer, Consumer = i.Consumer.DisplayName, EndpointOrTopic = i.EndpointOrTopic, MappingState = i.Consumer.MappingState,
+            Facts = factsById.GetValueOrDefault(i.Id),
+        }).ToList();
+
         var canRun = enabled.Count > 0;
         var limited = domains.Any(d => d.Readiness is IntegrationDomainReadiness.Limited or IntegrationDomainReadiness.NotAssessable or IntegrationDomainReadiness.Partial);
         var reasons = new List<string>();
@@ -219,7 +245,7 @@ public sealed class IntegrationReviewEngine(
         return new IntegrationReviewReadiness
         {
             EnvironmentId = catalog.EnvironmentId, Systems = systems, ConfiguredIntegrations = catalog.Integrations.Count, EnabledIntegrations = enabled.Count,
-            Domains = domains, CanRun = canRun, EvidenceAdapters = adapters,
+            Domains = domains, CanRun = canRun, EvidenceAdapters = adapters, Subjects = subjects,
             AzureRuntimeEnabled = azureOn, AzureRuntimeReason = azureOn ? null : AzureDisabledReason, RuntimeSourcesConfigured = sourcesConfigured, RuntimeSourcesTotal = sourcesTotal,
             Headline = !canRun ? "Cannot run" : limited ? "Can run with limitations" : "Ready",
             Reasons = canRun ? reasons : ["Enable at least one configured integration in Target Environment → Integrations."],
@@ -244,7 +270,8 @@ public sealed class IntegrationReviewEngine(
                     ConsumerGroupsAssumed = kind == IntegrationKind.EventHub ? g.Count(i => EffectiveGroup(i, platform).Assumed) : 0,
                     ExpectedConsumerGroup = kind == IntegrationKind.EventHub && g.Any(i => EffectiveGroup(i, platform).Assumed) ? platform?.RuntimeEvidence?.ExpectedConsumerGroup?.Trim() : null,
                     ContractsConfigured = g.Count(i => i.ContractRelationship != ContractRelationshipState.NotConfigured),
-                    DomainReviewSupported = kind == IntegrationKind.EventHub,
+                    // A review profile exists for event streams, message brokers and HTTP/API; other types are reviewed on configuration only.
+                    DomainReviewSupported = IntegrationReviewProfiles.Capability(kind) != IntegrationReviewCapability.ConfigurationOnly,
                 };
             }).ToList();
 
@@ -281,7 +308,8 @@ public sealed class IntegrationReviewEngine(
         IReadOnlyList<IntegrationContractArtifact> previousContracts, CancellationToken ct) => RunAsync(catalog, request, contracts, previousContracts, null, ct);
 
     public async Task<IntegrationReviewResult> RunAsync(IntegrationCatalog catalog, IntegrationReviewRunRequest request, IntegrationContractSet contracts,
-        IReadOnlyList<IntegrationContractArtifact> previousContracts, ApplicationMessagingEvidenceSet? messaging, CancellationToken ct)
+        IReadOnlyList<IntegrationContractArtifact> previousContracts, ApplicationMessagingEvidenceSet? messaging, CancellationToken ct,
+        IReadOnlyList<IntegrationReviewEvidenceFacts>? facts = null)
     {
         var messagingRuntime = new Dictionary<string, ApplicationMessagingRuntime>(StringComparer.Ordinal);
         var started = DateTimeOffset.UtcNow;
@@ -418,6 +446,16 @@ public sealed class IntegrationReviewEngine(
                         checks.Add(EndToEndCheck(e, app.ApplicationId, appRuntime.State == IntegrationEvidenceState.Available));
                     }
                     else checks.Add(EndToEndCheck(e, null, false));
+                }
+                else if (e.Topic.Kind == IntegrationKind.HttpApi)
+                {
+                    // HTTP/API: the same capability profile as before the run. Known configuration and reference/source evidence are recorded as
+                    // Configured (evidence of configuration, never a Pass); what only runtime could show stays Not assessed. Nothing is sent.
+                    var factsById = (facts ?? []).Where(f => f.IntegrationId == e.Topic.Id).ToDictionary(f => f.IntegrationId, StringComparer.Ordinal);
+                    foreach (var row in IntegrationReviewProfiles.HttpApi([e.Topic], contracts, factsById).Where(r => r.Domain != IntegrationReviewDomain.Configuration))
+                        checks.Add(Check($"http-{row.Domain.ToString().ToLowerInvariant()}", row.Domain, e.Topic.Id, $"{IntegrationReviewLabels.Domain(row.Domain)} (HTTP/API)",
+                            row.Available is { Count: > 0 } ? IntegrationCheckStatus.Configured : IntegrationCheckStatus.NotAssessed, "",
+                            string.Join("; ", row.Available ?? []), row.Explanation, row.Missing is { Count: > 0 } missing ? string.Join("; ", missing) : null));
                 }
                 else
                 {

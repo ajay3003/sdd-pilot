@@ -751,4 +751,126 @@ public sealed class IntegrationReviewEngineTests
         (result.Quality.QualityPercent is null || result.Quality.QualityPercent == 100).Should().BeTrue("missing runtime support never lowers quality");
         result.Findings.Should().BeEmpty();
     }
+
+    // ── Capability-aware review profiles ────────────────────────────────────────────────────────────────────────────────
+
+    private const string Webhook = "https://intake.example.test/api/hook";
+
+    private static IntegrationDefinition HttpIntake(ConsumerMappingState mapping = ConsumerMappingState.NeedsConfirmation) => new()
+    {
+        Id = "dev:http:intake", EnvironmentId = DevId, DisplayName = "Portal – report intake", Kind = IntegrationKind.HttpApi, Enabled = true, EndpointOrTopic = Webhook,
+        Producer = "Portal", Consumer = new IntegrationConsumer { DisplayName = "Hub", MappingState = mapping },
+    };
+
+    private static IntegrationReviewEvidenceFacts IntakeFacts(string? bound = "hub.zip") => new("dev:http:intake")
+    {
+        PackName = "Demo pack", ReferenceTitle = "Portal app", SourceRole = "Hub", SourceMatches = 1, BoundArchive = bound,
+        SourceState = bound is null ? TestPackSourceState.AvailableNotBound : TestPackSourceState.Bound,
+        AuthenticationReference = [new("Authentication scheme", "Bearer JWT"), new("Security scheme name", "PortalToken")],
+        ContractReference = [new("Form data type", "portal_report_v2"), new("Content type", "application/xml"), new("Process task", "Task_1")],
+        SchemaName = "portal_report_v2", SchemaFiles = ["xsd/portal_report_v2.xsd"],
+    };
+
+    private static readonly string[] MessagingTerms = ["Event Hub", "checkpoint", "Checkpoint", "consumer group", "Consumer group", "Managed Identity", "RBAC", "JSON Schema", "partition"];
+
+    private static string AllText(IntegrationReviewReadiness readiness) =>
+        string.Join("\n", readiness.Domains.SelectMany(d => new[] { d.Explanation }.Concat(d.Available ?? []).Concat(d.Missing ?? [])).Concat(readiness.Reasons));
+
+    [Fact]
+    public void HttpApiIntegration_GetsItsOwnProfile_WithoutEventHubCheckpointIdentityOrJsonSchemaAssumptions()
+    {
+        var catalog = new IntegrationCatalog { EnvironmentId = DevId, Integrations = [HttpIntake()] };
+        var readiness = Engine().Readiness(catalog, IntegrationContractSet.Empty, null, [IntakeFacts()]);
+
+        var text = AllText(readiness);
+        foreach (var term in MessagingTerms) text.Should().NotContain(term, "an HTTP/API webhook has no {0}", term);
+        readiness.Domains.Select(d => d.Domain).Should().Equal(Enum.GetValues<IntegrationReviewDomain>(), "every domain is still shown, scoped to HTTP/API");
+        var byDomain = readiness.Domains.ToDictionary(d => d.Domain);
+        byDomain[IntegrationReviewDomain.Configuration].Readiness.Should().Be(IntegrationDomainReadiness.Ready);
+        byDomain[IntegrationReviewDomain.Connectivity].Available.Should().Contain("HTTPS endpoint").And.Contain(a => a.Contains("Authentication metadata available"));
+        byDomain[IntegrationReviewDomain.Connectivity].Missing.Should().Contain("Target reachability: not observed (read-only review)");
+        byDomain[IntegrationReviewDomain.Contract].Readiness.Should().Be(IntegrationDomainReadiness.Partial);
+        byDomain[IntegrationReviewDomain.Contract].Available.Should().Contain(a => a.StartsWith("Reference: Portal app") && a.Contains("application/xml"))
+            .And.Contain("Hub source evidence bound (hub.zip)").And.Contain("Schema candidate in source: xsd/portal_report_v2.xsd");
+        byDomain[IntegrationReviewDomain.Contract].Missing.Should().Equal("Runtime contract validation: not verified");
+        byDomain[IntegrationReviewDomain.Security].Available.Should().Contain(a => a.Contains("Bearer JWT, PortalToken"));
+        byDomain[IntegrationReviewDomain.Security].Missing.Should().Contain("Runtime identity and authorization: not verified");
+        byDomain[IntegrationReviewDomain.Performance].Readiness.Should().Be(IntegrationDomainReadiness.NotAssessable);
+        readiness.Reasons.Should().NotContain(r => r.Contains("not implemented"), "HTTP/API has a review profile now");
+        readiness.Subjects.Should().ContainSingle().Which.Should().Match<IntegrationReviewSubject>(s =>
+            s.Capability == IntegrationReviewCapability.HttpApi && s.DisplayName == "Portal – report intake" && s.Facts!.BoundArchive == "hub.zip");
+    }
+
+    [Fact]
+    public void HttpApiIntegration_WithoutBinding_SaysWhatIsAvailable_AndNeverClaimsVerification()
+    {
+        var catalog = new IntegrationCatalog { EnvironmentId = DevId, Integrations = [HttpIntake()] };
+        var readiness = Engine().Readiness(catalog, IntegrationContractSet.Empty, null, [IntakeFacts(bound: null)]);
+        var contract = readiness.Domains.Single(d => d.Domain == IntegrationReviewDomain.Contract);
+        contract.Available.Should().Contain("Hub source evidence available · needs binding");
+        contract.Missing.Should().Contain("Canonical source binding (bind it in Setup & Evidence)");
+        readiness.Domains.Single(d => d.Domain == IntegrationReviewDomain.Reliability).Readiness.Should().Be(IntegrationDomainReadiness.NotAssessable, "retry handling needs the bound source");
+        AllText(readiness).Should().NotContain("verified:").And.NotContain(" Pass");
+    }
+
+    [Fact]
+    public async Task EventHubIntegrations_KeepTheirMessagingChecks()
+    {
+        var readiness = Engine().Readiness(await DevCatalog(), IntegrationContractSet.Empty, null, []);
+        var text = AllText(readiness);
+        text.Should().Contain("consumer group").And.Contain("Checkpoint").And.Contain("Event Hub").And.Contain("Managed Identity configured is not authorization proven");
+        readiness.Subjects.Should().OnlyContain(s => s.Capability == IntegrationReviewCapability.EventStream);
+    }
+
+    [Fact]
+    public void ServiceBusIntegrations_GetBrokerChecks_WithoutHttpOrEventHubLeakage()
+    {
+        var platform = new IntegrationPlatform { Id = "dev:servicebus", EnvironmentId = DevId, Name = "Bus", Kind = IntegrationKind.ServiceBus, NamespaceFqdn = "bus.servicebus.windows.net" };
+        var catalog = new IntegrationCatalog
+        {
+            EnvironmentId = DevId, Platforms = [platform],
+            Integrations = [new IntegrationDefinition { Id = "dev:sb:closed", DisplayName = "Period closed", Kind = IntegrationKind.ServiceBus, Enabled = true, PlatformId = platform.Id, EndpointOrTopic = "period-closed" }],
+        };
+        var summary = new ServiceBusReadiness { PlatformId = platform.Id, PlatformName = "Bus", Topics = 1, Subscriptions = 1, RoutesTotal = 2, RoutesMatched = 1, RuntimeState = IntegrationEvidenceState.NotConfigured, RuntimeReason = "No subscription id (test)." };
+        var rows = IntegrationReviewProfiles.ServiceBus(catalog.Integrations, catalog.Platforms, [summary], IntegrationContractSet.Empty);
+        var text = string.Join("\n", rows.SelectMany(r => new[] { r.Explanation }.Concat(r.Available ?? []).Concat(r.Missing ?? [])));
+
+        text.Should().Contain("queues/topics and subscriptions").And.Contain("Dead-letter").And.Contain("Code routes matched: 1 of 2").And.Contain("Message contract");
+        foreach (var term in new[] { "HTTP", "webhook", "Event Hub", "checkpoint", "consumer group", "Test Pack reference" }) text.Should().NotContain(term);
+    }
+
+    [Fact]
+    public async Task SeveralCapabilities_AreCombinedPerDomain_WithTheirCapabilityNamed()
+    {
+        var catalog = await DevCatalog();
+        catalog = catalog with { Integrations = [.. catalog.Integrations, HttpIntake()] };
+        var readiness = Engine().Readiness(catalog, IntegrationContractSet.Empty, null, [IntakeFacts()]);
+        var reliability = readiness.Domains.Single(d => d.Domain == IntegrationReviewDomain.Reliability);
+        reliability.Missing.Should().Contain(m => m.StartsWith("Event Hub · ")).And.Contain(m => m.StartsWith("HTTP/API · "));
+        reliability.Missing.Where(m => m.StartsWith("HTTP/API · ")).Should().NotContain(m => m.Contains("heckpoint"), "no messaging requirement leaks into the HTTP/API part");
+        readiness.Subjects.Select(s => s.Capability).Distinct().Should().BeEquivalentTo([IntegrationReviewCapability.EventStream, IntegrationReviewCapability.HttpApi]);
+    }
+
+    [Fact]
+    public async Task HttpApiRun_RecordsProfileEvidenceAsConfigured_NeverPass_AndSendsNothing()
+    {
+        var probe = new Probe(true);
+        var catalog = new IntegrationCatalog { EnvironmentId = DevId, Integrations = [HttpIntake()] };
+        var result = await Engine(probe: probe).RunAsync(catalog, new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "DEV" }, IntegrationContractSet.Empty, [], null,
+            CancellationToken.None, [IntakeFacts()]);
+        var checks = result.Systems.SelectMany(s => s.Topics).Single().Checks;
+        checks.Should().Contain(c => c.CheckId == "http-contract" && c.Status == IntegrationCheckStatus.Configured && c.Evidence.Contains("application/xml"));
+        checks.Should().Contain(c => c.CheckId == "http-performance" && c.Status == IntegrationCheckStatus.NotAssessed);
+        checks.Where(c => c.Domain != IntegrationReviewDomain.Configuration).Should().NotContain(c => c.Status == IntegrationCheckStatus.Pass, "reference and source evidence are configuration, never a pass");
+        checks.Should().NotContain(c => c.CheckId.EndsWith("-unsupported"));
+        probe.Calls.Should().Be(0, "nothing is contacted for an HTTP/API integration");
+        result.Findings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DomainReadinessLabels_AreReviewScoped_NeverReady()
+    {
+        Enum.GetValues<IntegrationDomainReadiness>().Select(IntegrationReviewLabels.Readiness).Should().NotContain("Ready")
+            .And.Contain(["Reviewable", "Partially reviewable", "Limited", "Not assessable"]);
+    }
 }

@@ -609,6 +609,45 @@ public sealed record IntegrationReviewReadiness
     /// <summary>Event Hub runtime evidence sources configured on the platforms (settings only, whether or not Azure runs).</summary>
     public int RuntimeSourcesConfigured { get; init; }
     public int RuntimeSourcesTotal { get; init; }
+    /// <summary>Each enabled integration as the review sees it: identity, review capability (which decides the domain profile) and the
+    /// evidence facts its test pack knows (reference metadata, canonical source). Display and profile input only.</summary>
+    public List<IntegrationReviewSubject> Subjects { get; init; } = [];
+}
+
+/// <summary>What kind of review an integration gets: the transport/technology decides which checks are relevant (an HTTP/API webhook has
+/// no consumer group or checkpoint; an event stream does).</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
+public enum IntegrationReviewCapability { EventStream, MessageBroker, HttpApi, ConfigurationOnly }
+
+/// <summary>One enabled integration in the review: who it is, its capability and what is known about it — never a result.</summary>
+public sealed record IntegrationReviewSubject(string IntegrationId, string DisplayName, IntegrationKind Kind, IntegrationReviewCapability Capability)
+{
+    public string? Producer { get; init; }
+    public string? Consumer { get; init; }
+    public string? EndpointOrTopic { get; init; }
+    public ConsumerMappingState MappingState { get; init; }
+    public IntegrationReviewEvidenceFacts? Facts { get; init; }
+}
+
+/// <summary>
+/// Evidence a test pack knows about one configured integration, read from its own metadata (never stored on the integration): the Test Pack
+/// reference facts (authentication, submission contract), the logical source and its state (bound / available / missing), the canonical
+/// binding and schema candidates in that source. Runtime is never part of it.
+/// </summary>
+public sealed record IntegrationReviewEvidenceFacts(string IntegrationId)
+{
+    public string? PackName { get; init; }
+    public string? ReferenceTitle { get; init; }
+    public IReadOnlyList<TestPackReferenceFact> AuthenticationReference { get; init; } = [];
+    public IReadOnlyList<TestPackReferenceFact> ContractReference { get; init; } = [];
+    public string? SourceRole { get; init; }
+    public TestPackSourceState? SourceState { get; init; }
+    /// <summary>Snapshots recognized as the logical source (content match, all stored snapshots).</summary>
+    public int SourceMatches { get; init; }
+    /// <summary>The canonical IQR binding of THIS integration (archive name), or null.</summary>
+    public string? BoundArchive { get; init; }
+    public string? SchemaName { get; init; }
+    public IReadOnlyList<string> SchemaFiles { get; init; } = [];
 }
 
 // ── Event Hub runtime evidence as IQR consumes it (snapshot of one run) ─────────────────────────────────────────────────
@@ -932,10 +971,13 @@ public static class IntegrationReviewLabels
         _ => status.ToString(),
     };
 
+    /// <summary>Review-scoped wording: whether a read-only review can assess the area — never "Ready", which reads as runtime or execution readiness.</summary>
     public static string Readiness(IntegrationDomainReadiness readiness) => readiness switch
     {
-        IntegrationDomainReadiness.NotAssessable => "Not assessable",
-        _ => readiness.ToString(),
+        IntegrationDomainReadiness.Ready or IntegrationDomainReadiness.Available => "Reviewable",
+        IntegrationDomainReadiness.Partial => "Partially reviewable",
+        IntegrationDomainReadiness.Limited => "Limited",
+        _ => "Not assessable",
     };
 
     public static string Outcome(IntegrationReviewOutcome outcome) => outcome switch

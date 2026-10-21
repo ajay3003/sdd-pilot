@@ -18,14 +18,28 @@ public interface IIntegrationReviewService
 
 public sealed class IntegrationReviewService(IIntegrationCatalogService catalog, IntegrationReviewEngine engine, IIntegrationContractStore contracts, AppDbContext db, ILogger<IntegrationReviewService> logger,
     IApplicationMessagingStore? messaging = null, BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
-    SourceAnalysis.IReviewSourceEvidenceProvider? source = null, AzureEnvironment.IAzureEnvironmentEvidenceProvider? azure = null) : IIntegrationReviewService
+    SourceAnalysis.IReviewSourceEvidenceProvider? source = null, AzureEnvironment.IAzureEnvironmentEvidenceProvider? azure = null,
+    IntegrationJourneys.IIntegrationJourneyService? journeys = null) : IIntegrationReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    /// <summary>What test packs know per integration (reference metadata, canonical source). Read-only; a failure only removes the facts.</summary>
+    private async Task<IReadOnlyList<IntegrationReviewEvidenceFacts>> FactsAsync(string environmentId, CancellationToken ct)
+    {
+        if (journeys is null) return [];
+        try { return await journeys.ReviewFactsAsync(environmentId, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Integration review evidence facts could not be read for {EnvironmentId}; the review continues without them.", environmentId);
+            return [];
+        }
+    }
 
     public async Task<IntegrationReviewReadiness> ReadinessAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
         var configured = await catalog.GetAsync(environmentId, environmentType, targetUrl, ct);
-        var readiness = engine.Readiness(configured, new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), messaging is null ? null : await messaging.GetAsync(environmentId, ct));
+        var readiness = engine.Readiness(configured, new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), messaging is null ? null : await messaging.GetAsync(environmentId, ct),
+            await FactsAsync(environmentId, ct));
         // SCIM identity provisioning is summarized beside the other layers; it never changes whether the review can run.
         readiness = scim is null ? readiness : readiness with { Scim = [.. await scim.ReadinessAsync(configured, ct)] };
         // Source evidence comes from Source Analysis snapshots (the one ingestion point); runtime readiness never depends on it.
@@ -53,7 +67,7 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         var previousContracts = previous is null ? [] : JsonSerializer.Deserialize<IntegrationReviewResult>(previous, Json)?.ContractSnapshot ?? [];
         request = request with { EnvironmentType = environmentType ?? request.EnvironmentType };
         var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts,
-            messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct);
+            messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct, await FactsAsync(request.EnvironmentId, ct));
         result = SourceEvidence.IqrSourceReview.Augment(result, selected);
         // Observed (Azure Environment Analysis): the newest stored snapshot of this Target Environment, read — never re-queried — and kept with the run.
         if (azure is { Enabled: true } && await azure.ResolveAsync(request.EnvironmentId, null, ct) is { } observed)

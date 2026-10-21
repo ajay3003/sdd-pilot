@@ -158,7 +158,7 @@ public sealed class IntegrationJourneyEngineTests
         foreach (var key in harness.Active.Settings.Keys.Where(key => harness.Active.Settings[key] == ExampleOrdersJourneyPack.BusId).ToList()) harness.Active.Settings.Remove(key);
         var unenrolled = await harness.Service(new ExampleOrdersJourneyPack()).StartAsync(Request(), null, default);
         unenrolled.OverallState.Should().Be(JourneyRunState.Blocked);
-        unenrolled.StateReason.Should().Contain("not enrolled");
+        unenrolled.StateReason.Should().Contain("not enabled for active runs");
         executor.Executed.Should().BeEmpty();
     }
 

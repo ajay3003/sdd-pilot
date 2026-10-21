@@ -213,6 +213,34 @@ public sealed class IntegrationTemplateTests
     }
 
     [Fact]
+    public async Task ReviewFacts_DescribeOnlyRecognizedIntegrations_FromTheReferenceAndTheirOwnBinding()
+    {
+        const string name = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
+        await using var harness = new IntegrationJourneyHarness();
+        var mu = WithSchemas(Repo("mu.zip", 'a', "Buf.Meldingsutveksler.Service"), name);
+        harness.Sources.Snapshots.Add(mu);
+        harness.Active.Catalog.Extra.Add(new IntegrationDefinition
+        {
+            Id = "dev:http:intake", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "Report intake", Kind = IntegrationKind.HttpApi, Enabled = true,
+            Producer = "Altinn", Consumer = new IntegrationConsumer { DisplayName = "MU" },
+        });
+        var service = harness.Service(Pack(harness));
+
+        var unbound = (await service.ReviewFactsAsync(ActiveEventTestHarness.Env, default)).Single(f => f.IntegrationId == "dev:http:intake");
+        (unbound.SourceState, unbound.BoundArchive, unbound.SourceMatches, unbound.SourceRole).Should().Be((TestPackSourceState.AvailableNotBound, (string?)null, 1, "MU (Meldingsutveksleren)"));
+        unbound.AuthenticationReference.Select(f => f.Value).Should().Contain("Bearer JWT");
+        unbound.ContractReference.Select(f => f.Value).Should().Contain(["application/xml", "Task_1"]);
+        unbound.SchemaFiles.Should().Equal($"TestData/xsd/{name}.xsd");
+
+        harness.Bindings.Items.Add(IntegrationEvidenceBinding.For(ActiveEventTestHarness.Env, "dev:http:intake", mu, DateTimeOffset.UtcNow));
+        var bound = (await service.ReviewFactsAsync(ActiveEventTestHarness.Env, default)).Single(f => f.IntegrationId == "dev:http:intake");
+        (bound.SourceState, bound.BoundArchive).Should().Be((TestPackSourceState.Bound, "mu.zip"));
+        (await service.ReviewFactsAsync(ActiveEventTestHarness.Env, default)).Should().NotContain(f => f.IntegrationId != "dev:http:intake" && f.AuthenticationReference.Count > 0,
+            "facts belong only to integrations a pack recognizes");
+        (await service.ReviewFactsAsync("", default)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AnExistingRecordThatFulfilsTheRequirement_IsReportedAsAlreadyConfigured()
     {
         await using var harness = new IntegrationJourneyHarness();
