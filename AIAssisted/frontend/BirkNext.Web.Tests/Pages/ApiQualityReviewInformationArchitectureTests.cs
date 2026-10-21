@@ -108,7 +108,12 @@ public sealed partial class ApiQualityReviewLandingUITests
         // Overview says the same thing.
         page.Find("[data-testid=aqr-tab-overview]").Click();
         page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent
-            .Should().Contain("6 observed operations").And.Contain("Compatibility not assessed — schema unavailable").And.NotContain("0 / 6");
+            .Should().Contain("Reviewed — runtime schema unavailable").And.Contain("HTTP 400")
+            .And.Contain("6 observed operations").And.Contain("Compatibility not assessed — schema unavailable").And.NotContain("0 / 6");
+        page.Find("[data-testid=aqr-tab-graphql]").Click();
+        var summary = page.Find("[data-testid=aqr-protocol-summary]");
+        summary.TextContent.Should().Contain("Operations observed6").And.Contain("Read-only queries executed1").And.Contain("Runtime schemaUnavailable").And.Contain("Contract compatibilityNot assessed");
+        page.Find("[data-testid=aqr-protocol-note]").TextContent.Should().Contain("__typename").And.Contain("not business response performance");
     }
 
     [Fact]
@@ -132,7 +137,7 @@ public sealed partial class ApiQualityReviewLandingUITests
         var row = page.Find("[data-testid=aqr-operation-row]");
         row.Children[1].TextContent.Should().Contain("Successful");
         row.Children[2].TextContent.Should().Be("200");
-        row.Children[4].TextContent.Should().Contain("Warnings: 1").And.NotContain("Pass");
+        row.Children[4].TextContent.Should().Be("1 issue observed · 0 failed checks").And.NotContain("Pass");
     }
 
     [Fact]
@@ -141,13 +146,13 @@ public sealed partial class ApiQualityReviewLandingUITests
         Register(Context(), true, AutorisasjonEndpoints(), LimitedEvidence);
         var page = await RenderAndRun();
         page.Find("[data-testid=aqr-tab-security]").Click();
-        page.Find("[data-check-id=sec-tls]").TextContent.Should().Contain("HTTPS observed").And.Contain("does not assess full TLS");
+        page.Find("[data-check-id=sec-tls]").TextContent.Should().Contain("Passed").And.Contain("does not assess full TLS");
         page.Find("[data-testid=aqr-security-note]").TextContent.Should().Contain("does not establish that the API is secure");
         page.Find("[data-testid=aqr-tab-errors]").Click();
-        page.Find("[data-check-id=errors-leak]").TextContent.Should().Contain("No internal-detail indicators observed").And.NotContain("No internal details in error responses");
+        page.Find("[data-check-id=errors-leak]").TextContent.Should().Contain("Observed").And.Contain("No internal-error indicators found").And.NotContain("No internal details in error responses");
         page.Find("[data-testid=aqr-tab-performance]").Click();
         // The REST Payload setting (500 KB), not the larger GraphQL one it used to share.
-        page.Find("[data-check-id=rest-payload]").TextContent.Should().Contain("Pass").And.Contain("warning > 512,000 bytes (500 KB)").And.NotContain("1048576").And.NotContain("1,048,576");
+        page.Find("[data-check-id=rest-payload]").TextContent.Should().Contain("Within configured review threshold").And.Contain("warning > 512,000 bytes (500 KB)").And.NotContain("1048576").And.NotContain("1,048,576");
         page.Find("[data-testid=aqr-performance-note]").TextContent.Should().Contain("backend gateway to the API").And.Contain("Not end-user");
     }
 

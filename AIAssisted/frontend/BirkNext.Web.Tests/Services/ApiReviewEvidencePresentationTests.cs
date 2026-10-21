@@ -17,26 +17,27 @@ public sealed class ApiReviewEvidencePresentationTests
             .Should().Be("Drift checks · 2 completed · 0 changes detected");
     }
 
+    // Task 10 §49–§56: one vocabulary. Passed = an expectation was checked and satisfied; Observed = evidence without a pass/fail assertion.
     [Theory]
-    [InlineData("sec-tls", "HTTPS observed")]
-    [InlineData("sec-hsts", "Header observed")]
-    [InlineData("sec-cache-control", "Header observed")]
-    [InlineData("sec-server-disclosure", "No issue detected")]
-    [InlineData("cors-preflight", "Response observed")]
+    [InlineData("sec-tls", "Passed")]
+    [InlineData("sec-hsts", "Passed")]
+    [InlineData("sec-cache-control", "Passed")]
+    [InlineData("sec-server-disclosure", "Passed")]
+    [InlineData("cors-preflight", "Observed")]
     [InlineData("cors-policy", "Observed")]
     [InlineData("gql-introspection", "Observed")]
-    [InlineData("gql-error-leak", "No indicators observed")]
-    [InlineData("errors-unknown-route", "Pass")]
-    [InlineData("gql-error-shape", "Pass")]
-    [InlineData("rest-latency", "Pass")]
-    [InlineData("gql-latency", "Pass")]
+    [InlineData("gql-error-leak", "Observed")]
+    [InlineData("errors-unknown-route", "Passed")]
+    [InlineData("gql-error-shape", "Passed")]
+    [InlineData("rest-latency", "Passed")]
+    [InlineData("gql-latency", "Passed")]
     public void BoundedCheckLabelsPreserveEngineResult(string id, string label)
     {
         var check = new ApiReviewCheck { CheckId = id, Result = ApiReviewCheckResult.Pass };
         ApiReviewEvidencePresentation.CheckLabel(check, new()).Should().Be(label);
-        check.Result.Should().Be(ApiReviewCheckResult.Pass);
-        ApiReviewEvidencePresentation.CheckLabel(check with { Result = ApiReviewCheckResult.NotTested }, new()).Should().Be("Not tested");
-        ApiReviewEvidencePresentation.CheckLabel(check with { Result = ApiReviewCheckResult.Fail }, new()).Should().Be("Fail");
+        check.Result.Should().Be(ApiReviewCheckResult.Pass, "only the wording is unified; the recorded result never changes");
+        ApiReviewEvidencePresentation.CheckLabel(check with { Result = ApiReviewCheckResult.NotTested }, new()).Should().Be("Not assessed");
+        ApiReviewEvidencePresentation.CheckLabel(check with { Result = ApiReviewCheckResult.Fail }, new()).Should().Be("Issue detected");
     }
 
     [Fact]
@@ -49,7 +50,7 @@ public sealed class ApiReviewEvidencePresentationTests
         missing.Result.Should().Be(ApiReviewCheckResult.NotTested);
         missing.Detail.Should().Be("Payload size was not recorded.");
         var compression = new ApiReviewCheck { CheckId = "rest-compression", Result = ApiReviewCheckResult.Warning, Detail = "No Content-Encoding on primary response" };
-        ApiReviewEvidencePresentation.CheckLabel(compression, new()).Should().Be("Warning");
+        ApiReviewEvidencePresentation.CheckLabel(compression, new()).Should().Be("Issue detected", "the warning is preserved as an issue");
         ApiReviewEvidencePresentation.CheckDetail(compression, new()).Should().Be(compression.Detail);
     }
 

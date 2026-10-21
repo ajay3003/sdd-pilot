@@ -187,7 +187,8 @@ public sealed partial class ApiQualityReviewLandingUITests
         rows.Select(r => r.GetAttribute("data-status")).Should().Equal("Verified", "UnexpectedlyPublic");
         rows[0].TextContent.Should().Contain("Verified").And.Contain("HTTP 401");
         rows[1].TextContent.Should().Contain("Unexpectedly public");
-        page.Find("[data-testid=aqr-auth-enforcement-note]").TextContent.Should().Contain("authorization is not tested");
+        page.Find("[data-testid=aqr-auth-enforcement-note]").TextContent.Should().Contain("does not verify authorization correctness between identities or roles");
+        page.Find("[data-testid=aqr-authorization-correctness]").TextContent.Should().Contain("Not validated");
         page.FindAll("[data-testid=aqr-header-row]").Select(r => r.GetAttribute("data-result")).Should().Equal("Pass", "NotApplicable");
         page.Find("[data-testid=aqr-header-expectations-note]").TextContent.Should().Contain("API review safety settings").And.Contain("presence only");
         page.Find("[data-testid=aqr-security-scope]").TextContent.Should().Contain("synthetic foreign origin").And.Contain("cookies are inspected by Frontend Quality Review").And.Contain("does not establish that the API is secure");

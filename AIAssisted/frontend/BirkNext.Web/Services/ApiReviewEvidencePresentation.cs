@@ -13,8 +13,9 @@ public static class ApiReviewEvidencePresentation
         ? "Available"
         : contract.Status == ApiReviewCheckResult.Blocked ? "Blocked" : "Unavailable";
 
+    /// <summary>Execution is its own fact: an operation that was not sent is "Not executed", never a review result.</summary>
     public static string Execution(ApiReviewOperationResult operation) => !operation.Executed
-        ? ApiReviewStatusLabels.ResultLabel(operation.Result is ApiReviewCheckResult.Blocked ? ApiReviewCheckResult.Blocked : ApiReviewCheckResult.NotTested)
+        ? operation.Result is ApiReviewCheckResult.Blocked ? "Not executed — blocked" : "Not executed"
         : operation.StatusCode is >= 200 and < 300 ? "Successful" : "Executed";
 
     public static IEnumerable<ApiReviewCheck> Checks(ApiReviewReport report) =>
@@ -83,35 +84,9 @@ public static class ApiReviewEvidencePresentation
         return $"{contract} contract checks executed · {drift} drift/history checks executed";
     }
 
-    public static string CheckLabel(ApiReviewCheck check, ApiReviewPolicy policy)
-    {
-        if (check.CheckId == "rest-payload" && check.Result == ApiReviewCheckResult.Pass && policy.RestPayloadThreshold <= 0)
-            return "Observed";
-        // Header checks that detected something produce a finding with its own severity; the check says what it saw,
-        // not a second severity-like word. Other results (threshold warnings, failures) keep their real meaning.
-        if (check.Result == ApiReviewCheckResult.Warning)
-        {
-            var observedLabel = check.CheckId switch
-            {
-                "sec-hsts" or "sec-xcto" or "sec-cache-control" => "Issue detected",
-                "sec-server-disclosure" => "Disclosure observed",
-                _ => null,
-            };
-            if (observedLabel is not null) return observedLabel;
-        }
-        if (check.Result != ApiReviewCheckResult.Pass) return ApiReviewStatusLabels.ResultLabel(check.Result);
-        if (check.Area == ApiReviewFindingType.Drift) return "No changes detected";
-        return check.CheckId switch
-        {
-            "sec-tls" => "HTTPS observed",
-            "sec-hsts" or "sec-cache-control" or "rest-rate-limit-headers" or "rest-compression" => "Header observed",
-            "sec-server-disclosure" => "No issue detected",
-            "cors-preflight" => "Response observed",
-            "cors-policy" or "gql-introspection" => "Observed",
-            "errors-leak" or "gql-error-leak" => "No indicators observed",
-            _ => "Pass",
-        };
-    }
+    /// <summary>The canonical label (Task 10 §49): Passed, Issue detected, Observed, Not assessed, Not applicable, Manual review — timing and
+    /// payload checks say "within/exceeded configured review threshold". The recorded result is never changed, only worded.</summary>
+    public static string CheckLabel(ApiReviewCheck check, ApiReviewPolicy policy) => ApiReviewStatusTaxonomy.Label(check, policy);
 
     public static string CheckSummary(IReadOnlyList<ApiReviewCheck> checks, ApiReviewPolicy policy)
     {
@@ -137,7 +112,8 @@ public static class ApiReviewEvidencePresentation
         "cors-preflight" => $"{check.Detail} HTTP response only; browser CORS enforcement was not tested.",
         "cors-policy" => $"{check.Detail} Observed response headers only; this is not a complete CORS assessment.",
         "gql-introspection" => $"{check.Detail} Introspection response observed; this does not validate schema coverage or authorization.",
-        "errors-leak" or "gql-error-leak" when check.Result == ApiReviewCheckResult.Pass => "No internal-detail indicators observed in the sampled error response.",
+        "errors-leak" or "gql-error-leak" when check.Result == ApiReviewCheckResult.Pass => "No internal-error indicators found in the sampled error response.",
+        _ when check.Result is ApiReviewCheckResult.NotTested or ApiReviewCheckResult.Blocked && string.IsNullOrWhiteSpace(check.Detail) => "Not assessed: no reason was recorded by this review.",
         // Newer results carry the policy in their own detail (the values the engine evaluated); older ones get it from the report's
         // policy snapshot. Either way it is the policy of THAT run, never today's settings.
         "rest-payload" when check.Detail.Contains("warning >", StringComparison.Ordinal) => check.Detail,

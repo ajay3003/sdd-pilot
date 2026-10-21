@@ -418,9 +418,10 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = await Result();
 
-        page.FindAll("[data-testid=aqr-result-summary], [data-testid=aqr-key-findings], [data-testid=aqr-tabpanel], [data-testid=aqr-result-details]")
+        // Task 10 §7: the result, then the Overview — what needs attention, coverage & limitations, manual review — then diagnostics.
+        page.FindAll("[data-testid=aqr-result-summary], [data-testid=aqr-tabpanel], [data-testid=aqr-key-findings], [data-testid=aqr-coverage-section], [data-testid=aqr-manual-review], [data-testid=aqr-service-summary], [data-testid=aqr-result-details]")
             .Select(e => e.GetAttribute("data-testid"))
-            .Should().Equal("aqr-result-summary", "aqr-key-findings", "aqr-tabpanel", "aqr-result-details");
+            .Should().Equal("aqr-result-summary", "aqr-tabpanel", "aqr-key-findings", "aqr-coverage-section", "aqr-manual-review", "aqr-service-summary", "aqr-result-details");
 
         // 32, 33, 34. Coverage is a compact visible summary; read-only policy, authentication and the target inventory are
         // collapsed technical detail inside the one Technical & execution details section.
@@ -445,9 +446,11 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = await Result();
 
-        var run = page.Find("[data-testid=aqr-result-summary] [data-testid=aqr-run]");
-        run.TextContent.Trim().Should().Be("Run API Quality Review again");
-        run.Closest(".disclosure-body").Should().BeNull();
+        // Task 10 §5, §60: one click away, but secondary — the result leads, not the button.
+        var run = page.Find(".page-header [data-testid=aqr-run]");
+        run.TextContent.Trim().Should().Be("Run review again");
+        run.ClassList.Should().Contain("btn-secondary");
+        page.FindAll("[data-testid=aqr-results] .btn-primary").Should().BeEmpty();
     }
 
     // ── §49. Manual review stays distinct from findings ───────────────────────────────────────────────────────────
@@ -490,7 +493,9 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = await Result(authenticated: false);
 
         // Execution state and manual-review obligation are separate badges: the execution state alone must still be exact.
-        page.Find("[data-testid=aqr-result-state]").QuerySelectorAll("span")[0].TextContent.Trim().Should().Be("Partial coverage");
+        // Task 10 §6: execution is its own fact — and a run where a service was never executed says so.
+        page.Find("[data-testid=aqr-outcome-execution] dd").TextContent.Trim().Should().Be("Completed — partial coverage");
+        page.Find("[data-testid=aqr-outcome-coverage] dd").TextContent.Trim().Should().Be("Limited");
         page.Find("[data-testid=aqr-result-manual]").TextContent.Should().Contain("Manual review required");
         page.Find("[data-testid=aqr-result-summary-text]").TextContent
             .Should().Contain("could not be reached").And.Contain("never as a pass");
@@ -563,7 +568,9 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             .Select(b => b.TextContent.Trim()).ToList();
 
         // 1, 7. Navigate first, then export — the same order the Frontend Quality Review result uses.
-        actions.Should().Equal("Back to API Quality Review", "Export HTML");
+        // Every header action is secondary; export formats sit in one Export menu (Task 10 §61).
+        actions.Should().Equal("Back to API Quality Review", "Run review again", "Export ▾", "HTML");
+        page.Find(".page-header").QuerySelectorAll(".btn-primary").Should().BeEmpty();
         // 8. Reachable by its accessible name, and never an icon alone.
         page.Find("[data-testid=aqr-back]").TextContent.Trim().Should().Be("Back to API Quality Review");
     }
@@ -636,7 +643,8 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = await Result();
         var export = Services.GetRequiredService<IReportExportService>();
 
-        await page.InvokeAsync(() => page.Find("[data-testid=aqr-export]").Click());
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-export-toggle]").Click());
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-export-html]").Click());
 
         Mock.Get(export).Verify(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>(), It.IsAny<ApiFuzzingReport?>()), Times.Once);
     }

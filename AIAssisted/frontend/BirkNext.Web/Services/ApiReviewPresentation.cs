@@ -577,16 +577,15 @@ public static class ApiReviewPresentation
             string.Join(" · ", items.GroupBy(label).OrderByDescending(g => g.Count()).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}"));
         return
         [
-            ("authentication", "Authentication", enforcement.Count == 0 ? "Not applicable" : Counts(enforcement, ApiFuzzingPresentation.EnforcementLabel)),
-            ("cors", "CORS", cors.Count == 0 ? "No preflights recorded" : Counts(cors, o => o.Assessment switch
-            {
-                BirkNext.RuntimeSecurity.CorsAssessment.AsExpected => "Expected",
-                BirkNext.RuntimeSecurity.CorsAssessment.Observation => "Observation",
-                BirkNext.RuntimeSecurity.CorsAssessment.NotVerified => "Not verified",
-                _ => "Unexpected",
-            })),
-            ("headers", "Headers", headers.Count == 0 ? "Not assessed" : headers.Count(h => h.Result == SecurityHeaderOutcome.Missing) is var missing and > 0
+            // Authentication ENFORCEMENT: an anonymous request was refused. Never authorization correctness (Task 10 §32).
+            ("authentication", "Authentication enforcement", enforcement.Count == 0 ? "Not applicable — no service requires authentication"
+                : $"{enforcement.Count(t => t == ApiAuthenticationEnforcementStatus.Verified)} of {enforcement.Count} service{(enforcement.Count == 1 ? "" : "s")} verified"
+                  + (enforcement.Count(t => t != ApiAuthenticationEnforcementStatus.Verified) is var other and > 0 ? $" · {Counts(enforcement.Where(t => t != ApiAuthenticationEnforcementStatus.Verified), ApiFuzzingPresentation.EnforcementLabel)}" : "")),
+            ("cors", "CORS", cors.Count == 0 ? "No preflights recorded" : $"{report.Targets.Count(t => t.CorsProbes.Count > 0)} service{(report.Targets.Count(t => t.CorsProbes.Count > 0) == 1 ? "" : "s")} observed · " + Counts(cors, o => CorsLabel(o.Assessment))),
+            ("headers", "Security headers", headers.Count == 0 ? "Not assessed" : headers.Count(h => h.Result == SecurityHeaderOutcome.Missing) is var missing and > 0
                 ? $"{missing} expected header{(missing == 1 ? "" : "s")} missing" : "Expected headers present"),
+            ("technology", "Technology disclosure", report.Findings.Where(f => RuleIdOf(f) == "sec-server-disclosure").ToList() is { Count: > 0 } disclosure
+                ? $"{disclosure.Select(LogicalIssueKey).Distinct().Count()} observation issue (Info)" : "No disclosure observed"),
             ("documentation", "Documentation exposure", docs.Count == 0 ? "Not verified" : Counts(docs, d => d.Assessment switch
             {
                 BirkNext.RuntimeSecurity.ApiDocumentationAssessment.AsExpected => "As expected",
@@ -597,6 +596,15 @@ public static class ApiReviewPresentation
             })),
         ];
     }
+
+    /// <summary>CORS in evidence terms: header configuration observed, never browser enforcement verified (Task 10 §34).</summary>
+    public static string CorsLabel(BirkNext.RuntimeSecurity.CorsAssessment assessment) => assessment switch
+    {
+        BirkNext.RuntimeSecurity.CorsAssessment.AsExpected => "Expected",
+        BirkNext.RuntimeSecurity.CorsAssessment.Observation => "Observed",
+        BirkNext.RuntimeSecurity.CorsAssessment.NotVerified => "Not assessed",
+        _ => "Issue detected",
+    };
 
     /// <summary>The typed rule id. Reports recorded before <see cref="ApiReviewFinding.RuleId"/> existed carry it as the
     /// prefix of <see cref="ApiReviewFinding.Id"/> ("sec-no-hsts-12345"), whose numeric suffix is per observation.</summary>

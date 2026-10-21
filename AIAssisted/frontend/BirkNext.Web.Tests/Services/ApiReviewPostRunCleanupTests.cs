@@ -226,7 +226,7 @@ public sealed class ApiReviewPostRunCleanupTests
         var check = new ApiReviewCheck { CheckId = "sec-server-disclosure", Area = ApiReviewFindingType.Security, Result = ApiReviewCheckResult.Warning };
         var finding = Finding("sec-server-disclosure", "Autorisasjon API", Origin, ApiReviewSeverity.Info, "Server technology disclosed");
 
-        ApiReviewEvidencePresentation.CheckLabel(check, new ApiReviewPolicy()).Should().Be("Disclosure observed");
+        ApiReviewEvidencePresentation.CheckLabel(check, new ApiReviewPolicy()).Should().Be("Observed", "an Info observation, never Pass/Fail (Task 10 §36, §87)");
         ApiReviewStatusLabels.FindingCheckLabel(finding).Should().Be("Observed");
         finding.Severity.Should().Be(ApiReviewSeverity.Info);
         ApiReviewStatusLabels.FindingCheckLabel(finding).Should().NotBe("Warning", "a severity-like word beside Info read as a contradiction");
@@ -247,17 +247,20 @@ public sealed class ApiReviewPostRunCleanupTests
     public void ThresholdAndExpectedBehaviourPassesAndNoIndicatorsObservedAreUnchanged()
     {
         var policy = new ApiReviewPolicy();
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Pass");
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Warning }, policy).Should().Be("Warning", "a threshold warning keeps its real meaning");
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-unknown-route", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Pass");
-        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("No indicators observed");
+        // §43: a review threshold, never an SLA "Pass".
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Within configured review threshold");
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-latency", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Warning }, policy).Should().Be("Exceeded configured review threshold", "a threshold warning keeps its real meaning");
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "rest-unknown-route", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Passed");
+        // §39: no indicators in the sampled response is an observation, not a major status category.
+        ApiReviewEvidencePresentation.CheckLabel(new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("Observed");
+        ApiReviewEvidencePresentation.CheckDetail(new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Result = ApiReviewCheckResult.Pass }, policy).Should().Be("No internal-error indicators found in the sampled error response.");
     }
 
     [Fact]
     public void ManualReviewAndFailedChecksBehindFindingsKeepTheirMeaning()
     {
         ApiReviewStatusLabels.FindingCheckLabel(Finding("gql-observed-mutation", "x", "e", ApiReviewSeverity.Info, result: ApiReviewCheckResult.ManualReview)).Should().Be("Manual review");
-        ApiReviewStatusLabels.FindingCheckLabel(Finding("sec-no-tls", "x", "e", ApiReviewSeverity.High, result: ApiReviewCheckResult.Fail)).Should().Be("Check failed");
+        ApiReviewStatusLabels.FindingCheckLabel(Finding("sec-no-tls", "x", "e", ApiReviewSeverity.High, result: ApiReviewCheckResult.Fail)).Should().Be("Issue detected");
     }
 
     // ── Export ────────────────────────────────────────────────────────────────────────────────────────────────────────

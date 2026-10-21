@@ -270,21 +270,21 @@ public static class ApiReviewStatusLabels
     public static string FindingCheckLabel(ApiReviewFinding finding) => finding.Result switch
     {
         ApiReviewCheckResult.ManualReview => "Manual review",
-        ApiReviewCheckResult.Fail => "Check failed",
+        ApiReviewCheckResult.Fail => "Issue detected",
         ApiReviewCheckResult.Warning when finding.Severity == ApiReviewSeverity.Info => "Observed",
         ApiReviewCheckResult.Warning => "Issue detected",
         var other => ResultLabel(other),
     };
 
+    /// <summary>The canonical wording of a raw result (Task 10 §49). Context-specific labels (observations, review thresholds) come from
+    /// <see cref="BirkNext.Web.Services.ApiReviewStatusTaxonomy"/>.</summary>
     public static string ResultLabel(ApiReviewCheckResult result) => result switch
     {
-        ApiReviewCheckResult.Pass => "Pass",
-        ApiReviewCheckResult.Fail => "Fail",
-        ApiReviewCheckResult.Warning => "Warning",
+        ApiReviewCheckResult.Pass => "Passed",
+        ApiReviewCheckResult.Fail or ApiReviewCheckResult.Warning => "Issue detected",
         ApiReviewCheckResult.ManualReview => "Manual review",
         ApiReviewCheckResult.NotApplicable => "Not applicable",
-        ApiReviewCheckResult.Blocked => "Blocked",
-        _ => "Not tested",
+        _ => "Not assessed",
     };
 
     public static string ContractLabel(ApiReviewContractSummary? contract)

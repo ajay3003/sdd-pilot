@@ -224,7 +224,8 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         panel.QuerySelectorAll("[data-testid=aqr-manual-review]").Should().ContainSingle();
         page.FindAll("[data-testid=aqr-manual-review]").Should().ContainSingle();
         page.Find("[data-testid=aqr-manual-review]").TextContent.Should().Contain("not findings");
-        page.FindAll("[data-testid=aqr-coverage-row]").Select(r => r.GetAttribute("data-coverage")).Should().Contain(["REST", "GraphQL", "Contracts", "Security", "Access"]);
+        page.FindAll("[data-testid=aqr-coverage-row]").Select(r => r.GetAttribute("data-coverage")).Should().Equal("REST", "GraphQL", "Contracts", "Security", "Error handling", "Performance");
+        page.FindAll("[data-testid=aqr-result-access]").Should().ContainSingle("access is stated once, in the result — not as a coverage row");
         page.Find("[data-testid=aqr-services-table]");
         page.Find("[data-testid=aqr-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.FindAll("[data-testid=aqr-technical]").Should().ContainSingle();
@@ -238,7 +239,8 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.Find("[data-testid=aqr-issue-counts]").TextContent.Should().StartWith("3 logical issues · 4 source findings");
         var hsts = page.FindAll("[data-testid=aqr-key-issue]").Single(li => li.TextContent.Contains("HSTS"));
         hsts.GetAttribute("data-sources").Should().Be("2");
-        hsts.QuerySelector("[data-testid=aqr-key-issue-occurrences]")!.TextContent.Should().Be("2 occurrences");
+        hsts.QuerySelector("[data-testid=aqr-key-issue-occurrences]")!.TextContent.Should().Be("View findings (2)");
+        hsts.QuerySelector("[data-testid=aqr-key-issue-affects]")!.TextContent.Should().EndWith("2 observations");
 
         Tab(page, "findings");
         var rows = page.FindAll("[data-testid=aqr-finding-row]");
@@ -247,6 +249,19 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.FindAll("[data-testid=aqr-finding-row][data-finding-id^=sec-no-hsts] [data-testid=aqr-finding-issue]").Select(c => c.TextContent).Should().AllBe("1 of 2 occurrences");
         page.Find("[data-testid=aqr-findings-count]").TextContent.Should().Be("Source findings (4)");
             }
+
+    // Task 10 §69, §89: an Overview issue links to its domain evidence and to Findings filtered to that issue.
+    [Fact]
+    public async Task OverviewIssue_LinksToItsDomainEvidence()
+    {
+        var page = await Result();
+        var hsts = page.FindAll("[data-testid=aqr-key-issue]").Single(li => li.TextContent.Contains("HSTS"));
+        hsts.QuerySelector("[data-testid=aqr-key-issue-area]")!.TextContent.Should().Be("Security");
+        hsts.QuerySelector("[data-testid=aqr-key-issue-recommendation]").Should().NotBeNull();
+        hsts.QuerySelector("[data-testid=aqr-key-issue-evidence]")!.Click();
+        page.Find("[data-testid=aqr-tab-security]").GetAttribute("aria-selected").Should().Be("true");
+        page.FindAll("[data-testid=aqr-key-issue]").Should().BeEmpty("the canonical issue cards render once, on the Overview");
+    }
 
     [Fact]
     public async Task KeyIssueOccurrences_OpenFindingsFilteredToThatLogicalIssue_AndDetailsExplainTheRelation()
@@ -345,8 +360,10 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
     {
         var page = await Result();
         Tab(page, "security");
-        page.FindAll("[data-testid=aqr-security-summary-item]").Select(i => i.GetAttribute("data-key")).Should().Equal("authentication", "cors", "headers", "documentation");
-        page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dd").TextContent.Should().Be("1 verified");
+        page.FindAll("[data-testid=aqr-security-summary-item]").Select(i => i.GetAttribute("data-key")).Should().Equal("authentication", "cors", "headers", "technology", "documentation");
+        page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dt").TextContent.Should().Be("Authentication enforcement");
+        page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dd").TextContent.Should().Be("1 of 1 service verified");
+        page.Find("[data-testid=aqr-authorization-correctness]").TextContent.Should().Contain("Not validated");
         page.Find("[data-testid=aqr-security-summary-item][data-key=headers] dd").TextContent.Should().Be("2 expected headers missing");
         page.Find("[data-testid=aqr-security-summary-item][data-key=documentation] dd").TextContent.Should().Be("Not verified");
         foreach (var id in new[] { "aqr-security-authentication", "aqr-security-cors", "aqr-security-headers", "aqr-security-documentation" }) page.Find($"[data-testid={id}]");

@@ -713,3 +713,42 @@
 .aqr-setup-summary { margin-bottom: .6rem; }
 .aqr-strip-note { display: block; font-size: .82rem; }
 .aqr-targets-disclosure { margin-bottom: .9rem; }
+
+/* ── Decision-first post-run (Task 10) ── */
+/* One stable content width: cards and prose stay readable on ultrawide screens; wide tables scroll inside their own regions. */
+.aqr-results { width: 100%; max-width: 96rem; min-width: 0; }
+.aqr-results > *, .aqr-tabpanel > * { min-width: 0; }
+
+.aqr-outcome { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: .5rem .9rem; margin: .6rem 0 .4rem; }
+.aqr-outcome > div { padding: .5rem .65rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); min-width: 0; }
+.aqr-outcome dt { font-size: .74rem; letter-spacing: .03em; text-transform: uppercase; color: var(--clr-text-muted); }
+.aqr-outcome dd { margin: .25rem 0 0; }
+.aqr-result-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .5rem .9rem; margin: .5rem 0; }
+.aqr-result-counts > div { min-width: 0; }
+.aqr-result-counts dt { font-size: .8rem; color: var(--clr-text-muted); }
+.aqr-result-counts dd { margin: .1rem 0 0; font-size: 1.35rem; font-weight: 700; color: var(--clr-text-heading); }
+
+.aqr-sev-strip-label { font-size: .8rem; color: var(--clr-text-muted); align-self: center; margin-right: .25rem; }
+.aqr-issue-cards { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(26rem, 100%), 1fr)); gap: .6rem; max-width: 72rem; }
+.aqr-issue-card { display: block; min-width: 0; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); overflow-wrap: anywhere; }
+.aqr-issue-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.aqr-issue-card-head h4 { margin: 0; font-size: .95rem; flex: 1 1 12rem; min-width: 0; }
+.aqr-issue-card p { margin: .3rem 0 0; font-size: .88rem; }
+.aqr-issue-links { display: flex; flex-wrap: wrap; gap: .3rem 1rem; }
+.aqr-limitations { margin: .3rem 0 0; padding-left: 1.1rem; display: grid; gap: .25rem; font-size: .9rem; max-width: 72rem; }
+.aqr-limitations strong { margin-right: .35rem; }
+
+.aqr-protocol-summary, .aqr-contract-causes { margin-bottom: .9rem; }
+.aqr-protocol-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: .35rem .9rem; }
+.aqr-protocol-facts dd { overflow-wrap: anywhere; }
+.aqr-contract-causes { display: grid; gap: .35rem; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); }
+.aqr-contract-causes > div { display: grid; grid-template-columns: minmax(9rem, 12rem) 1fr; gap: .5rem; }
+@media (max-width: 600px) { .aqr-contract-causes > div { grid-template-columns: 1fr; gap: .1rem; } }
+.aqr-key-findings.aqr-issue-cards > li.aqr-issue-card { display: block; }
+/* Explicit single track: an implicit grid track sizes to content and let the issue-card grid widen the page below 1100px. */
+.aqr-overview-section { grid-template-columns: minmax(0, 1fr); }
+/* The page lead keeps a readable width: the header actions wrap below it instead of squeezing it to a few characters. */
+.aqr-page ::deep .page-header-left { flex: 1 1 22rem; }
+/* Fact lists are label/value cards in a responsive grid, not the two-column technical rows. */
+.aqr-page .aqr-protocol-facts > div { display: block; padding: 0.3rem 0; }
+.aqr-page .aqr-protocol-facts dd { margin-top: 0.1rem; }

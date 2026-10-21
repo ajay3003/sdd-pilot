@@ -82,8 +82,10 @@ public sealed partial class ApiQualityReviewLandingUITests
         card.QuerySelector("[data-testid=aqr-gql-coverage]")!.TextContent.Should().Be("Complete");
         page.FindAll("[data-testid=aqr-gql-incompatible-detail]").Should().HaveCount(2);
         page.Find("[data-testid=aqr-gql-client-impact]").TextContent.Should().Contain("Removed root field `sok` — used by Query GammelSok");
+        // The causal summary names drift comparison first; the detailed sections keep compatibility before the drift section.
+        page.Find("[data-testid=aqr-contract-cause][data-key=compatibility]").TextContent.Should().Contain("Incompatible");
         var text = page.Find("[data-testid=aqr-tabpanel]").TextContent;
-        text.IndexOf("GraphQL client/server compatibility", StringComparison.Ordinal).Should().BeLessThan(text.IndexOf("Drift comparison", StringComparison.Ordinal));
+        text.IndexOf("GraphQL client/server compatibility", StringComparison.Ordinal).Should().BeLessThan(text.LastIndexOf("Drift comparison", StringComparison.Ordinal));
     }
 
     [Fact]

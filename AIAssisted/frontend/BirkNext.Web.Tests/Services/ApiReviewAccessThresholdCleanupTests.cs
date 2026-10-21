@@ -72,10 +72,10 @@ public sealed class ApiReviewAccessThresholdCleanupTests
         var policy = new ApiReviewPolicy();
         ApiReviewEvidencePresentation.CheckSummary(checks, policy).Should().StartWith("Error-handling checks (5)");
         // Bounded behavioural checks pass; indicator scans say what they looked for, never "Pass".
-        ApiReviewEvidencePresentation.CheckLabel(checks[0], policy).Should().Be("Pass");
-        ApiReviewEvidencePresentation.CheckLabel(checks[3], policy).Should().Be("Pass");
-        ApiReviewEvidencePresentation.CheckLabel(checks[2], policy).Should().Be("No indicators observed");
-        ApiReviewEvidencePresentation.CheckLabel(checks[4], policy).Should().Be("No indicators observed");
+        ApiReviewEvidencePresentation.CheckLabel(checks[0], policy).Should().Be("Passed");
+        ApiReviewEvidencePresentation.CheckLabel(checks[3], policy).Should().Be("Passed");
+        ApiReviewEvidencePresentation.CheckLabel(checks[2], policy).Should().Be("Observed");
+        ApiReviewEvidencePresentation.CheckLabel(checks[4], policy).Should().Be("Observed");
         ApiReviewEvidencePresentation.CheckLabel(checks[1], policy).Should().Be(ApiReviewStatusLabels.ResultLabel(ApiReviewCheckResult.Warning));
         // Other areas keep the generic heading.
         ApiReviewEvidencePresentation.CheckSummary([new ApiReviewCheck { CheckId = "sec-tls", Area = ApiReviewFindingType.Security, Result = ApiReviewCheckResult.Pass }], policy)
