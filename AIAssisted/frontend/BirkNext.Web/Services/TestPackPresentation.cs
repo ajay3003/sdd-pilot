@@ -23,13 +23,45 @@ public static class TestPackPresentation
     /// <summary>Configuration: whether the journey's required integrations are configured (Target Environment → Integrations).</summary>
     public static string Configuration(IntegrationJourneyView view) => view.Journey.Integrations.Count == 0 ? "Not applicable" : view.Maturity.Configured ? "Configured" : "Not configured";
 
-    /// <summary>Source evidence: from the journey's own source-evidence prerequisites — Verified (all ready), Partial, Missing or Not applicable.</summary>
+    /// <summary>Source evidence: from the journey's own source-evidence prerequisites — Verified (all bound and found), "Available · needs
+    /// binding" (found only in unbound snapshots), Partial, Missing (nothing found at all) or Not applicable. Unbound is never Missing.</summary>
     public static string SourceEvidence(IntegrationJourneyView view)
     {
         var source = view.Prerequisites.Where(item => item.Category == JourneyPrerequisiteCategory.SourceEvidence).ToList();
         if (source.Count == 0) return "Not applicable";
         var ready = source.Count(item => item.State == JourneyReadinessState.Ready);
-        return ready == source.Count ? "Verified" : ready == 0 ? "Missing" : "Partial";
+        var unbound = source.Count(item => item.State == JourneyReadinessState.Partial);
+        return ready == source.Count ? "Verified" : ready == 0 && unbound == 0 ? "Missing"
+            : ready == 0 && unbound == source.Count ? ProjectImport.SourceSetupPresentation.AvailableNeedsBinding : "Partial";
+    }
+
+    // ── Active execution (execution-specific, never environment health) ─────────────────────────────────────────────────
+
+    /// <summary>Where the trusted-environment execution policy is described (Target Environment); the policy itself is backend configuration.</summary>
+    public const string ExecutionSettingsHref = "/admin/system-settings?section=target-environments";
+
+    /// <summary>Whether this environment may run active tests — the backend's trusted-environment gate (trusted and execution allowed).
+    /// Source imports, bindings, templates and reference metadata never change it.</summary>
+    public static string ActiveExecution(IntegrationJourneyPackView? pack) => pack is null ? "Not known" : pack.EnvironmentTrusted ? "Allowed" : "Not allowed";
+
+    /// <summary>One readiness dimension of a journey: its name, its value and a tone (the value always carries the meaning).</summary>
+    public sealed record ReadinessDimension(string Key, string Label, string Value, string Tone);
+
+    /// <summary>
+    /// The separate readiness dimensions of a journey that are not its configuration: each logical source it needs (imported source or Test
+    /// Pack reference, in the shared source wording), runtime (only a run observes it) and active execution (the backend gate). Never one
+    /// combined "Ready".
+    /// </summary>
+    public static IReadOnlyList<ReadinessDimension> Dimensions(TestPackSourceGuidance? guidance, string journeyId, IntegrationJourneyPackView? pack)
+    {
+        var dimensions = SourceGuidancePresentation.ForJourney(guidance, journeyId).Select(source => ProjectImport.SourceSetupPresentation.IsReference(source)
+                ? new ReadinessDimension($"source:{source.Role.Key}", $"{source.Role.Label} reference", source.State == TestPackSourceState.ReferenceAvailable ? "Available" : "Unavailable",
+                    source.State == TestPackSourceState.ReferenceAvailable ? "ready" : "attention")
+                : new ReadinessDimension($"source:{source.Role.Key}", $"{source.Role.Label} source", SourceGuidancePresentation.SourceStateLabel(source), SourceGuidancePresentation.SourceStateTone(source.State)))
+            .ToList();
+        dimensions.Add(new("runtime", "Runtime", "Not verified", "neutral"));
+        dimensions.Add(new("execution", "Active execution", ActiveExecution(pack), pack?.EnvironmentTrusted == true ? "ready" : "neutral"));
+        return dimensions;
     }
 
     /// <summary>Execution readiness: Ready when at least one scenario may be started (after confirmation), else Blocked. Ready is never passed.</summary>

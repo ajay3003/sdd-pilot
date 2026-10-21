@@ -407,6 +407,8 @@ public sealed record TestPackSourceCandidate(Guid SnapshotId, string ArchiveFile
     public IReadOnlyList<string> Technologies { get; init; } = [];
     /// <summary>Why it was recognized: the component, project, configuration or API names that matched the role (names only, bounded).</summary>
     public IReadOnlyList<string> MatchedOn { get; init; } = [];
+    /// <summary>The snapshot's Source Analysis status ("Ready", "Partial" …); provenance only.</summary>
+    public string? AnalysisStatus { get; init; }
 }
 
 /// <summary>A stored snapshot whose name or repository suggests the role (a hint only) but whose content is not recognized as it — shown so
@@ -568,6 +570,27 @@ public sealed record IntegrationTemplateDefinition(string Key, string DisplayNam
     public string? SourceResource { get; init; }
     /// <summary>The pack source role whose snapshot is this integration's canonical evidence (e.g. the repository that implements it).</summary>
     public string? EvidenceSourceRoleKey { get; init; }
+    /// <summary>Which facts of a Test Pack reference describe this integration's authentication and submission contract (null: none).</summary>
+    public IntegrationTemplateReferenceUse? Reference { get; init; }
+}
+
+/// <summary>
+/// How a template reads a pack's Test Pack reference: the role that provides it, the facts (by label) that describe authentication and the
+/// submission contract, and the fact (by semantic key) whose value names the schema to look for in the evidence source. Reference facts are
+/// known metadata for display only: never saved on the integration, never runtime configuration, never verified.
+/// </summary>
+public sealed record IntegrationTemplateReferenceUse(string RoleKey)
+{
+    public IReadOnlyList<string> AuthenticationFacts { get; init; } = [];
+    public IReadOnlyList<string> ContractFacts { get; init; } = [];
+    public string? SchemaFactKey { get; init; }
+}
+
+/// <summary>An XML schema in a snapshot recognized as the template's evidence source whose name equals the reference's schema fact exactly. A
+/// candidate only: what the source contains, not what the deployed receiver validates against.</summary>
+public sealed record IntegrationTemplateSchemaCandidate(Guid SnapshotId, string ArchiveFileName, string SchemaName, string File)
+{
+    public string? Version { get; init; }
 }
 
 /// <summary>A template value and where it came from ("Template", "Template · Development").</summary>
@@ -586,4 +609,14 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     public TestPackSourceStatus? EvidenceSource { get; init; }
     /// <summary>Configured integrations that already fulfil the template's requirement (adding another is usually a duplicate).</summary>
     public IReadOnlyList<string> AlreadyConfigured { get; init; } = [];
+    /// <summary>The Test Pack reference the template reads and its state (null: the template uses none).</summary>
+    public TestPackSourceStatus? ReferenceSource { get; init; }
+    /// <summary>Reference facts describing authentication (scheme, token providers …) — known metadata, never run configuration.</summary>
+    public IReadOnlyList<TestPackReferenceFact> AuthenticationReference { get; init; } = [];
+    /// <summary>Reference facts describing the submission contract (data type, content type, task …).</summary>
+    public IReadOnlyList<TestPackReferenceFact> ContractReference { get; init; } = [];
+    /// <summary>The schema name the reference declares (e.g. the form data type), looked up in the evidence source; null when none.</summary>
+    public string? SchemaName { get; init; }
+    /// <summary>Schemas named exactly <see cref="SchemaName"/> in the snapshots recognized as the evidence source (never chosen automatically).</summary>
+    public IReadOnlyList<IntegrationTemplateSchemaCandidate> SchemaCandidates { get; init; } = [];
 }

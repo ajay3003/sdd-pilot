@@ -196,6 +196,13 @@
 ::deep .ip-template-facts dt { font-size: .72rem; color: var(--clr-text-muted); }
 ::deep .ip-template-facts dd { margin: 0; font-size: .84rem; overflow-wrap: anywhere; }
 ::deep .ip-template-note { margin: 0; font-size: .82rem; }
+::deep div.ip-template-note { display: grid; gap: .35rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .5rem .7rem; min-width: 0; }
+::deep div.ip-template-note p { margin: 0; }
+::deep div.ip-template-note .btn-secondary { justify-self: start; }
+/* Known reference metadata and run configuration are separate blocks inside Authentication / Contract: never mixed with editable fields. */
+::deep .ip-reference { border-left: 3px solid var(--clr-border); padding: .1rem 0 .1rem .6rem; display: grid; gap: .3rem; min-width: 0; }
+::deep .ip-reference h5 { margin: 0; font-size: .8rem; font-weight: 700; }
+::deep .ip-reference p { margin: 0; font-size: .78rem; }
 ::deep .ip-evidence > p { margin: 0; font-size: .84rem; }
 ::deep .ip-evidence-choices { border: none; margin: 0; padding: 0; display: grid; gap: .3rem; min-width: 0; }
 ::deep .ip-evidence-choices legend { font-size: .8rem; font-weight: 700; padding: 0; margin-bottom: .2rem; }

@@ -281,6 +281,24 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
         cut.FindAll("[data-testid=mfr-use-source-values]").Should().BeEmpty("the newest snapshot never stands in for a binding");
     }
 
+    [Fact]
+    public void Without_a_binding_each_required_source_says_its_shared_state_and_available_is_never_missing()
+    {
+        var guidance = HubGuidance() with
+        {
+            Sources =
+            [
+                new(new TestPackSourceRole("hub", "Hub", "") { Journeys = ["intake"] }, TestPackSourceState.AvailableNotBound)
+                    { Candidates = [new(Guid.NewGuid(), "hub.zip", new string('a', 64), DateTimeOffset.UnixEpoch)] },
+                new(new TestPackSourceRole("shop", "Shop", "") { Journeys = ["intake"] }, TestPackSourceState.Missing),
+                new(new TestPackSourceRole("app", "App", "") { Journeys = ["intake"], Provider = TestPackSourceProvider.TestPackReference }, TestPackSourceState.ReferenceAvailable),
+            ],
+        };
+        var (_, cut) = RenderPanel(new AltinnTestConfiguration(), guidance, bound: false);
+        // The reference is not an imported source and is never listed as missing.
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mfr-source-states]").TextContent.Should().Be("Hub available · needs binding · Shop missing"));
+    }
+
     // ── One shared resolution in IQR: known values shown with their origin, owned values read (not copied) ──────────────────
 
     private const string Webhook = "https://mu.example.test/api/altinn/webhook";

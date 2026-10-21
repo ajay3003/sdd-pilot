@@ -41,8 +41,10 @@
             <h3 class="ijp-pack-title" data-testid="ijp-pack-title">@pack.DisplayName</h3>
             <p class="ijp-muted">@pack.Description</p>
             <p class="ijp-trust" data-testid="ijp-trust" data-trusted="@(pack.EnvironmentTrusted ? "true" : "false")">
-                <span class="ijp-pill ijp-pill-@(pack.EnvironmentTrusted ? "ready" : "neutral")">@(pack.EnvironmentTrusted ? "Trusted environment" : "Environment not trusted for execution")</span>
+                <span class="ijp-muted">Active execution</span>
+                <span class="ijp-pill ijp-pill-@(pack.EnvironmentTrusted ? "ready" : "neutral")">@TestPackPresentation.ActiveExecution(pack)</span>
                 <span class="ijp-muted">@pack.EnvironmentDetail</span>
+                @if (!pack.EnvironmentTrusted) { <a class="ijp-link" href="@TestPackPresentation.ExecutionSettingsHref" data-testid="ijp-trust-settings">Target Environment safety</a> }
             </p>
 
             <div class="ijp-tabs" role="tablist" aria-label="@($"{pack.DisplayName} views")" data-testid="ijp-tabs">

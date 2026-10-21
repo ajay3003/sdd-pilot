@@ -102,6 +102,23 @@ public static class IntegrationsOverviewPresentation
         };
     }
 
+    /// <summary>What a suggestion is ("Messaging · Service Bus queue"), so a bare channel name never reads as a recommended business integration.</summary>
+    public static string SuggestionKind(SourceIntegrationCandidate candidate) => string.Join(" · ", new[]
+    {
+        candidate.Pattern == IntegrationPattern.Unknown ? null : SourceIntegrationLabels.Pattern(candidate.Pattern),
+        candidate.DestinationType ?? (candidate.Transport == IntegrationTransport.Unknown ? null : SourceIntegrationLabels.Transport(candidate.Transport)),
+    }.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>Where a suggestion was detected: the snapshot's archive and the source project its evidence sits in (most evidence first).
+    /// Provenance only; it never says the suggestion is the same integration as a configured one.</summary>
+    public static string DetectedIn(SourceIntegrationCandidate candidate, string? archive)
+    {
+        var project = candidate.Evidence.Select(e => e.File.Replace('\\', '/')).Where(file => file.Contains('/'))
+            .GroupBy(file => file[..file.IndexOf('/')], StringComparer.Ordinal).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => g.Key).FirstOrDefault();
+        return string.Join(" · ", new[] { archive is { Length: > 0 } ? $"Detected in {archive}" : "Detected in Source Analysis", project }.OfType<string>());
+    }
+
     /// <summary>Whether the catalog already configures this candidate's channel (the backend refuses the duplicate too).</summary>
     public static bool AlreadyConfigured(IntegrationCatalog catalog, SourceIntegrationCandidate candidate) =>
         candidate.ChannelName is { Length: > 0 } channel

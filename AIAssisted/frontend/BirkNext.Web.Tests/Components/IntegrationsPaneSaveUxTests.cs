@@ -200,8 +200,12 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         {
             var toggle = cut.Find($"[data-testid=ip-edit-section-{section}] .disclosure-toggle");
             toggle.GetAttribute("aria-expanded").Should().Be("false", $"{section} is collapsed by default");
-            cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Not configured");
         }
+        foreach (var section in new[] { "authentication", "contract" })
+            cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Not configured");
+        foreach (var section in new[] { "operations", "ownership" })
+            cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Optional · not set").And.NotContain("Not configured",
+                "optional links and an owner that is never inferred are not missing setup");
         cut.Find("[data-testid=ip-edit-advanced] .disclosure-toggle").GetAttribute("aria-expanded").Should().Be("false");
 
         cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.ServiceBus));

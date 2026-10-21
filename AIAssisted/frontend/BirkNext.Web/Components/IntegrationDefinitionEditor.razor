@@ -48,7 +48,8 @@
                     <dl class="ip-template-facts">
                         <div><dt>Type</dt><dd>@IntegrationConfigurationRules.KindLabel(applied.Kind)</dd></div>
                         @if (applied.Values.TryGetValue("Producer", out var from) && applied.Values.TryGetValue("Consumer", out var to)) { <div><dt>Flow</dt><dd>@from.Value → @to.Value</dd></div> }
-                        @if (applied.EvidenceSource is { } evidence) { <div><dt>Evidence</dt><dd>@evidence.Role.Label</dd></div> }
+                        @if (applied.EvidenceSource is { } evidence) { <div><dt>Evidence</dt><dd>@evidence.Role.Label · <span data-testid="ip-edit-template-evidence-state">@IntegrationTemplatePresentation.Label(EvidenceState)</span></dd></div> }
+                        @if (applied.ReferenceSource is { } reference) { <div><dt>@reference.Role.Label</dt><dd data-testid="ip-edit-template-reference">@IntegrationTemplatePresentation.ReferenceLabel(applied)</dd></div> }
                         @if (applied.Journeys.Count > 0) { <div><dt>Used by</dt><dd data-testid="ip-edit-template-journeys">@string.Join(", ", applied.Journeys)</dd></div> }
                     </dl>
                     @if (applied.AlreadyConfigured.Count > 0 && IsNew)
@@ -106,12 +107,16 @@
     {
     <fieldset class="ip-fieldset">
         <legend>@(_model.Kind == IntegrationKind.HttpApi ? "B. Endpoint" : "B. Messaging endpoint")</legend>
-        <label class="ip-field">Platform
-            <select class="form-control" data-testid="ip-edit-platform" @bind="_model.PlatformId">
-                <option value="">None</option>
-                @foreach (var p in Platforms) { <option value="@p.Id">@p.Name</option> }
-            </select>
-        </label>
+        @* A platform is the environment's shared messaging platform (an Event Hubs / Service Bus namespace); an HTTP/API integration has none. *@
+        @if (!IsHttpApi)
+        {
+            <label class="ip-field">Messaging platform
+                <select class="form-control" data-testid="ip-edit-platform" @bind="_model.PlatformId">
+                    <option value="">None</option>
+                    @foreach (var p in Platforms) { <option value="@p.Id">@p.Name</option> }
+                </select>
+            </label>
+        }
         <label class="ip-field">@EndpointLabel <span aria-hidden="true">*</span>
             <input class="form-control ip-mono" data-testid="ip-edit-topic" @bind="_model.EndpointOrTopic" @bind:event="oninput" @onblur='() => Touch("topic")' aria-required="true" aria-invalid="@Invalid("topic", string.IsNullOrWhiteSpace(_model.EndpointOrTopic))" />
             @Provenance("EndpointOrTopic")
@@ -170,47 +175,86 @@
             var choices = IntegrationTemplatePresentation.Choices(status);
             <dl class="ip-template-facts">
                 <div><dt>@SourceSetupPresentation.RequirementLabel(status.Role.Requirement) source</dt><dd data-testid="ip-edit-evidence-role">@status.Role.Label</dd></div>
-                <div><dt>Expected evidence</dt><dd>@status.Role.ExpectedArtifact</dd></div>
+                @if (choices.Count == 0) { <div><dt>Expected evidence</dt><dd>@status.Role.ExpectedArtifact</dd></div> }
+                else if (choices.Count == 1) { <div><dt>Matching source</dt><dd class="ip-wrap" data-testid="ip-edit-evidence-candidate">@choices[0].ArchiveFileName</dd></div> }
+                else { <div><dt>Matching sources</dt><dd data-testid="ip-edit-evidence-count">@choices.Count matching @status.Role.Label snapshots</dd></div> }
             </dl>
             <p class="ip-muted" data-testid="ip-edit-evidence-meaning">@IntegrationTemplatePresentation.Meaning(EvidenceState)</p>
             @if (choices.Count == 0)
             {
-                <p class="ip-editor-actions"><a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import source</a></p>
+                <p class="ip-editor-actions"><a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import @status.Role.Label source</a></p>
             }
             else if (choices.Count == 1)
             {
                 var only = choices[0];
-                <p data-testid="ip-edit-evidence-candidate"><span class="ip-wrap">@only.ArchiveFileName</span>@if (only.MatchedOn.Count > 0) { <span class="ip-muted"> · matched on @string.Join(", ", only.MatchedOn.Take(3))</span> }</p>
+                <ReviewDisclosure Text="Source details" CollapseText="Hide source details" TestId="ip-edit-evidence-details" Class="disclosure-inline">
+                    <dl class="ip-template-facts" data-testid="ip-edit-evidence-detail-list">
+                        <div><dt>Logical source</dt><dd>@status.Role.Label</dd></div>
+                        <div><dt>Archive</dt><dd class="ip-wrap">@only.ArchiveFileName</dd></div>
+                        @if (only.AnalysisStatus is { } analysis) { <div><dt>Analysis</dt><dd data-testid="ip-edit-evidence-analysis">@analysis</dd></div> }
+                        <div><dt>Snapshot</dt><dd><span class="ip-mono">@Short(only.Fingerprint)</span> <span class="ip-muted">· analyzed @only.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</span></dd></div>
+                        @if (only.MatchedOn.Count > 0) { <div><dt>Matched on</dt><dd class="ip-wrap">@string.Join(", ", only.MatchedOn.Take(3))</dd></div> }
+                    </dl>
+                </ReviewDisclosure>
                 <div class="ip-editor-actions">
-                    <button type="button" class="@(_evidenceChoice == only.SnapshotId ? "btn-primary" : "btn-secondary")" data-testid="ip-edit-evidence-use" aria-pressed="@(_evidenceChoice == only.SnapshotId ? "true" : "false")" @onclick="() => ToggleEvidence(only.SnapshotId)">@(_evidenceChoice == only.SnapshotId ? "Using this source" : "Use this source")</button>
-                    <a class="ip-link" href="@ProjectImportPresentation.SourceAnalysisHref(only.SnapshotId)" data-testid="ip-edit-evidence-open">Open source</a>
-                    <a class="ip-link" href="project-import" data-testid="ip-edit-evidence-import">Import another source</a>
+                    <button type="button" class="@(_evidenceChoice == only.SnapshotId ? "btn-primary" : "btn-secondary")" data-testid="ip-edit-evidence-use" aria-pressed="@(_evidenceChoice == only.SnapshotId ? "true" : "false")" @onclick="() => ToggleEvidence(only.SnapshotId)">@(_evidenceChoice == only.SnapshotId ? "Using for IQR evidence" : "Use for IQR evidence")</button>
+                    <a class="ip-link" href="@ProjectImportPresentation.SourceAnalysisHref(only.SnapshotId)" data-testid="ip-edit-evidence-open">Open Source Analysis</a>
                 </div>
             }
             else
             {
                 <fieldset class="ip-evidence-choices" data-testid="ip-edit-evidence-choices">
-                    <legend>Choose source</legend>
+                    <legend>Choose evidence</legend>
                     <label class="ip-check"><input type="radio" name="ip-evidence-choice" data-testid="ip-edit-evidence-none-choice" checked="@(_evidenceChoice is null)" @onchange="() => _evidenceChoice = null" /> Do not bind now</label>
                     @foreach (var choice in choices)
                     {
                         <label class="ip-check" data-testid="ip-edit-evidence-option"><input type="radio" name="ip-evidence-choice" value="@choice.SnapshotId" checked="@(_evidenceChoice == choice.SnapshotId)" @onchange="() => _evidenceChoice = choice.SnapshotId" />
-                            <span class="ip-wrap">@choice.ArchiveFileName <span class="ip-muted">· analyzed @choice.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC@(choice.Bound ? " · bound to another integration" : "")</span></span></label>
+                            <span class="ip-wrap">@choice.ArchiveFileName <span class="ip-muted">· @Short(choice.Fingerprint) · analyzed @choice.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC@(choice.Bound ? " · bound to another integration" : "")</span></span></label>
                     }
                 </fieldset>
             }
             @if (_evidenceChoice is { } chosen && choices.FirstOrDefault(c => c.SnapshotId == chosen) is { } picked)
             {
-                <p class="ip-template-note" role="status" data-testid="ip-edit-evidence-effect"><strong>@picked.ArchiveFileName</strong> will become the canonical source evidence for this integration when it is saved. It is bound right after the integration is stored; IQR Evidence is where it is changed later.</p>
+                @* The explicit choice is confirmed by saving; nothing is bound by choosing a template or opening this form. *@
+                <div class="ip-template-note" role="status" data-testid="ip-edit-evidence-effect">
+                    <p><strong>Bind on save</strong></p>
+                    <dl class="ip-template-facts" data-testid="ip-edit-evidence-confirm">
+                        <div><dt>Integration</dt><dd>@(string.IsNullOrWhiteSpace(_model.DisplayName) ? "This integration" : _model.DisplayName)</dd></div>
+                        <div><dt>Source</dt><dd class="ip-wrap">@picked.ArchiveFileName</dd></div>
+                        <div><dt>Logical source</dt><dd>@status.Role.Label</dd></div>
+                        <div><dt>Action</dt><dd>Use this Source Analysis snapshot as canonical evidence for this integration.</dd></div>
+                    </dl>
+                    <p class="ip-muted">It is bound right after the integration is saved; the snapshot itself is not copied or changed. IQR Evidence is where it is changed later.</p>
+                    <button type="button" class="btn-secondary" data-testid="ip-edit-evidence-cancel" @onclick="() => _evidenceChoice = null">Do not bind</button>
+                </div>
             }
         }
     </section>
 
-    <ReviewDisclosure Text="D. Authentication" CollapseText="D. Authentication" Hint="@(_model.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured && _model.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured ? "Not configured" : "Configured")"
+    <ReviewDisclosure Text="D. Authentication" CollapseText="D. Authentication" Hint="@IntegrationTemplatePresentation.SectionHint(_model.ProducerAuthentication != IntegrationAuthMechanism.NotConfigured || _model.ConsumerAuthentication != IntegrationAuthMechanism.NotConfigured, AuthReference.Count > 0, optional: false)"
                       TestId="ip-edit-section-authentication" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
         <legend class="ip-sr">D. Authentication</legend>
-        <p class="ip-muted">The mechanism only — never a key, connection string or secret.</p>
+        @if (AuthReference.Count > 0)
+        {
+            @* Known metadata from the Test Pack reference, kept apart from run configuration: it is never saved on this integration, never a
+               credential and never a sign-in or runtime result. *@
+            <section class="ip-reference" aria-labelledby="ip-auth-reference-heading" data-testid="ip-edit-auth-reference">
+                <h5 id="ip-auth-reference-heading">Authentication metadata</h5>
+                @ReferenceFacts(AuthReference, "ip-edit-auth-fact")
+                <p class="ip-muted">Source: @TestPackReferenceLabel · how the application's API is called. Not stored on this integration and not verified at runtime.</p>
+            </section>
+            <section class="ip-reference" aria-labelledby="ip-auth-run-heading" data-testid="ip-edit-auth-run">
+                <h5 id="ip-auth-run-heading">Run-specific configuration</h5>
+                <dl class="ip-template-facts">
+                    <div><dt>Client / application reference</dt><dd data-testid="ip-edit-auth-run-client">Not configured here</dd></div>
+                    <div><dt>Reporter</dt><dd data-testid="ip-edit-auth-run-reporter">Not configured here</dd></div>
+                    <div><dt>Authorization</dt><dd data-testid="ip-edit-auth-run-authorization">Not verified</dd></div>
+                </dl>
+                <p class="ip-muted">Set for runs in <a class="ip-link" href="/integration-quality-review?view=extensions" data-testid="ip-edit-auth-run-link">Integration Quality Review → Extensions</a>; never a secret in this form.</p>
+            </section>
+        }
+        <p class="ip-muted">@(AuthReference.Count > 0 ? "Integration mechanism (optional) — " : "")The mechanism only — never a key, connection string or secret.</p>
         <label class="ip-field">Producer authentication
             <select class="form-control" data-testid="ip-edit-producer-auth" @bind="_model.ProducerAuthentication">
                 @foreach (var a in Enum.GetValues<IntegrationAuthMechanism>()) { <option value="@a">@IntegrationConfigurationRules.AuthLabel(a)</option> }
@@ -224,10 +268,32 @@
     </fieldset>
     </ReviewDisclosure>
 
-    <ReviewDisclosure Text="E. Contract" CollapseText="E. Contract" Hint="@(_model.ContractRelationship == ContractRelationshipState.NotConfigured && string.IsNullOrWhiteSpace(_model.ProducerContractReference) && string.IsNullOrWhiteSpace(_model.ConsumerContractReference) ? "Not configured" : "Configured")"
+    <ReviewDisclosure Text="E. Contract" CollapseText="E. Contract" Hint="@IntegrationTemplatePresentation.SectionHint(_model.ContractRelationship != ContractRelationshipState.NotConfigured || !string.IsNullOrWhiteSpace(_model.ProducerContractReference) || !string.IsNullOrWhiteSpace(_model.ConsumerContractReference), ContractReference.Count > 0, optional: false)"
                       TestId="ip-edit-section-contract" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
         <legend class="ip-sr">E. Contract</legend>
+        @if (ContractReference.Count > 0)
+        {
+            <section class="ip-reference" aria-labelledby="ip-contract-reference-heading" data-testid="ip-edit-contract-reference">
+                <h5 id="ip-contract-reference-heading">Submission metadata</h5>
+                @ReferenceFacts(ContractReference, "ip-edit-contract-fact")
+                <p class="ip-muted">Source: @TestPackReferenceLabel · the application's declared submission. It does not prove which schema the receiving side validates against.</p>
+            </section>
+        }
+        @if (SchemaState != IntegrationTemplatePresentation.SchemaEvidenceState.NotApplicable && CurrentTemplate is { SchemaName: { } schemaName, EvidenceSource: { } schemaSource })
+        {
+            var schemaFiles = SchemaFiles;
+            <section class="ip-reference" aria-labelledby="ip-contract-schema-heading" data-testid="ip-edit-contract-schema" data-state="@SchemaState">
+                <h5 id="ip-contract-schema-heading">Schema evidence</h5>
+                <dl class="ip-template-facts">
+                    <div><dt>Schema</dt><dd class="ip-wrap ip-mono">@schemaName</dd></div>
+                    <div><dt>Status</dt><dd data-testid="ip-edit-contract-schema-state">@IntegrationTemplatePresentation.SchemaLabel(SchemaState)</dd></div>
+                    @if (schemaFiles.Count == 1 && SchemaState is IntegrationTemplatePresentation.SchemaEvidenceState.Available or IntegrationTemplatePresentation.SchemaEvidenceState.Bound) { <div><dt>Candidate</dt><dd class="ip-wrap ip-mono" data-testid="ip-edit-contract-schema-file">@schemaFiles[0]</dd></div> }
+                    else if (schemaFiles.Count > 1) { <div><dt>Candidates</dt><dd data-testid="ip-edit-contract-schema-count">@schemaFiles.Count matching schema files</dd></div> }
+                </dl>
+                <p class="ip-muted">Source: @schemaSource.Role.Label Source Analysis · an exact name match in the source, never chosen for you and not proof of the active downstream schema.</p>
+            </section>
+        }
         <label class="ip-field">Contract relationship
             <select class="form-control" data-testid="ip-edit-contract" @bind="_model.ContractRelationship">
                 @foreach (var c in Enum.GetValues<ContractRelationshipState>()) { <option value="@c">@ContractLabel(c)</option> }
@@ -238,10 +304,12 @@
     </fieldset>
     </ReviewDisclosure>
 
-    <ReviewDisclosure Text="F. Operations" CollapseText="F. Operations" Hint="@(new[] { _model.HealthUrl, _model.WorkerUrl, _model.MonitoringUrl, _model.RunbookUrl }.All(string.IsNullOrWhiteSpace) ? "Not configured" : "Configured")"
+    @* Operations and ownership are optional links and an accountable owner: never inferred, so an empty one is "not set", not missing setup. *@
+    <ReviewDisclosure Text="F. Operations" CollapseText="F. Operations" Hint="@IntegrationTemplatePresentation.SectionHint(!new[] { _model.HealthUrl, _model.WorkerUrl, _model.MonitoringUrl, _model.RunbookUrl }.All(string.IsNullOrWhiteSpace), false, optional: true)"
                       TestId="ip-edit-section-operations" Class="disclosure-inline" Expanded="@(Show("urls") && UrlErrors().Any())">
     <fieldset class="ip-fieldset">
         <legend class="ip-sr">F. Operations</legend>
+        <p class="ip-muted">Optional operational links for this integration.</p>
         <label class="ip-field">Health URL <input class="form-control ip-mono" @bind="_model.HealthUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Worker URL <input class="form-control ip-mono" @bind="_model.WorkerUrl" @onblur='() => Touch("urls")' /></label>
         <label class="ip-field">Monitoring URL <input class="form-control ip-mono" @bind="_model.MonitoringUrl" @onblur='() => Touch("urls")' /></label>
@@ -250,10 +318,11 @@
     </fieldset>
     </ReviewDisclosure>
 
-    <ReviewDisclosure Text="G. Ownership" CollapseText="G. Ownership" Hint="@(string.IsNullOrWhiteSpace(_model.TechnicalOwner) ? "Not configured" : "Configured")"
+    <ReviewDisclosure Text="G. Ownership" CollapseText="G. Ownership" Hint="@IntegrationTemplatePresentation.SectionHint(!string.IsNullOrWhiteSpace(_model.TechnicalOwner), false, optional: true)"
                       TestId="ip-edit-section-ownership" Class="disclosure-inline">
     <fieldset class="ip-fieldset">
         <legend class="ip-sr">G. Ownership</legend>
+        <p class="ip-muted">The accountable team or system owner, when it is known. Producer and consumer are set in C. Flow.</p>
         <label class="ip-field">Technical owner <input class="form-control" @bind="_model.TechnicalOwner" /></label>
     </fieldset>
     </ReviewDisclosure>
@@ -288,7 +357,29 @@
     private string KindText
     {
         get => _model.Kind?.ToString() ?? "";
-        set => _model.Kind = Enum.TryParse<IntegrationKind>(value, out var kind) ? kind : null;
+        set { _model.Kind = Enum.TryParse<IntegrationKind>(value, out var kind) ? kind : null; ApplyKindDefaults(); }
+    }
+
+    /// <summary>The platform defaults a new integration started with (messaging platform and its auth mechanisms) belong to messaging types:
+    /// a new HTTP/API integration drops them while they are untouched, and gets them back if the type returns to messaging.</summary>
+    private bool _platformDefaultsDropped;
+    private void ApplyKindDefaults()
+    {
+        if (!IsNew || Platforms.FirstOrDefault() is not { } platform) return;
+        if (IsHttpApi && _model.PlatformId == platform.Id)
+        {
+            _model.PlatformId = null;
+            if (_model.ProducerAuthentication == platform.ProducerAuthentication) _model.ProducerAuthentication = IntegrationAuthMechanism.NotConfigured;
+            if (_model.ConsumerAuthentication == platform.DefaultConsumerAuthentication) _model.ConsumerAuthentication = IntegrationAuthMechanism.NotConfigured;
+            _platformDefaultsDropped = true;
+        }
+        else if (!IsHttpApi && _model.Kind is not null && _platformDefaultsDropped && _model.PlatformId is null)
+        {
+            _model.PlatformId = platform.Id;
+            if (_model.ProducerAuthentication == IntegrationAuthMechanism.NotConfigured) _model.ProducerAuthentication = platform.ProducerAuthentication;
+            if (_model.ConsumerAuthentication == IntegrationAuthMechanism.NotConfigured) _model.ConsumerAuthentication = platform.DefaultConsumerAuthentication;
+            _platformDefaultsDropped = false;
+        }
     }
     [Parameter] public IntegrationDefinition? Original { get; set; }
     [Parameter] public IReadOnlyList<IntegrationPlatform> Platforms { get; set; } = [];
@@ -303,8 +394,25 @@
     private string OriginText => Original?.TemplateKey is { } key
         ? $"Created from template: {OriginalTemplate?.DisplayName ?? key}. Choosing a template here never overwrites saved values without asking."
         : "Custom integration. Choosing a template here never overwrites saved values without asking.";
-    private TestPackSourceStatus? EvidenceStatus => (_applied ?? OriginalTemplate)?.EvidenceSource;
+    private IntegrationTemplateView? CurrentTemplate => _applied ?? OriginalTemplate;
+    private TestPackSourceStatus? EvidenceStatus => CurrentTemplate?.EvidenceSource;
     private TemplateEvidenceState EvidenceState => IntegrationTemplatePresentation.Evidence(EvidenceStatus, Binding);
+    private IReadOnlyList<TestPackReferenceFact> AuthReference => CurrentTemplate?.AuthenticationReference ?? [];
+    private IReadOnlyList<TestPackReferenceFact> ContractReference => CurrentTemplate?.ContractReference ?? [];
+    private const string TestPackReferenceLabel = "Test Pack reference";
+    private IntegrationTemplatePresentation.SchemaEvidenceState SchemaState => IntegrationTemplatePresentation.SchemaEvidence(CurrentTemplate, EvidenceState, Binding?.SnapshotId);
+    /// <summary>The distinct schema files in scope: the bound snapshot's when bound, else every matching snapshot's.</summary>
+    private IReadOnlyList<string> SchemaFiles => (CurrentTemplate?.SchemaCandidates ?? [])
+        .Where(c => Binding is null || c.SnapshotId == Binding.SnapshotId).Select(c => c.File).Distinct(StringComparer.Ordinal).ToList();
+
+    private static string Short(string fingerprint) => fingerprint.Length > 8 ? $"sha256 {fingerprint[..8]}…" : fingerprint;
+
+    private static RenderFragment ReferenceFacts(IReadOnlyList<TestPackReferenceFact> facts, string testId) => __builder =>
+    {
+        <dl class="ip-template-facts">
+            @foreach (var fact in facts) { <div data-testid="@testId" data-label="@fact.Label"><dt>@fact.Label</dt><dd class="ip-wrap">@fact.Value</dd></div> }
+        </dl>
+    };
 
     private bool IsNew => Original is null;
     private Model _model = new();
@@ -379,6 +487,7 @@
             _provenance[field] = IntegrationTemplatePresentation.Value(template, field)?.Provenance ?? "Template";
         }
         _applied = template;
+        ApplyKindDefaults();
         if (_evidenceChoice is { } chosen && template.EvidenceSource?.Candidates.Any(c => c.SnapshotId == chosen) != true) _evidenceChoice = null;
         if (_attempted) Revalidate();
     }

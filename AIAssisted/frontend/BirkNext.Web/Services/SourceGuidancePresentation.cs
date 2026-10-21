@@ -21,17 +21,10 @@ public static class SourceGuidancePresentation
 
     // ── Logical sources (test pack source roles) ──
 
-    public static string SourceStateLabel(TestPackSourceState state) => state switch
-    {
-        TestPackSourceState.Bound => "Bound",
-        TestPackSourceState.AvailableNotBound => "Available, not bound",
-        TestPackSourceState.ReviewRequired => "Review required",
-        TestPackSourceState.Available => "Available",
-        TestPackSourceState.NotProvided => "Not provided (optional)",
-        TestPackSourceState.ReferenceAvailable => "Test Pack reference · Available",
-        TestPackSourceState.ReferenceUnavailable => "Test Pack reference · Unavailable",
-        _ => "Missing",
-    };
+    /// <summary>The shared source-state wording (<see cref="ProjectImport.SourceSetupPresentation.StateLabel(TestPackSourceState)"/>) — one phrase per state on every page.</summary>
+    public static string SourceStateLabel(TestPackSourceState state) => ProjectImport.SourceSetupPresentation.StateLabel(state);
+
+    public static string SourceStateLabel(TestPackSourceStatus status) => ProjectImport.SourceSetupPresentation.StateLabel(status);
 
     public static string SourceStateTone(TestPackSourceState state) => state switch
     {
@@ -41,8 +34,8 @@ public static class SourceGuidancePresentation
         _ => "attention",
     };
 
-    /// <summary>"MU bound", "M2LB available, not bound", "Altinn … missing".</summary>
-    public static string SourceShort(TestPackSourceStatus status) => $"{status.Role.Label} {SourceStateLabel(status.State).ToLowerInvariant()}";
+    /// <summary>"MU bound", "M2LB available · needs binding", "Altinn … missing".</summary>
+    public static string SourceShort(TestPackSourceStatus status) => $"{status.Role.Label} {SourceStateLabel(status).ToLowerInvariant()}";
 
     /// <summary>Where a source's next action is done.</summary>
     public static string? ActionHref(string? target) => target switch

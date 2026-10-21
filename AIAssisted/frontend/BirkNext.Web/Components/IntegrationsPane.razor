@@ -329,7 +329,9 @@
                                 <li class="ip-suggestion" data-testid="ip-suggestion" data-strength="@strength" data-candidate="@c.Id">
                                     <div class="ip-suggestion-main">
                                         <strong>@(c.SourceEntity ?? SourceIntegrationsPresentation.ChannelShort(c.ChannelName))</strong>
+                                        <span class="ip-cell-sub" data-testid="ip-suggestion-kind">@IntegrationsOverviewPresentation.SuggestionKind(c)</span>
                                         <span class="ip-cell-sub">@SourceIntegrationLabels.Transport(c.Transport) → @(c.ConsumerCandidate ?? "consumer not found in source") · <span class="ip-mono" title="@c.ChannelName">@SourceIntegrationsPresentation.ChannelShort(c.ChannelName)</span></span>
+                                        <span class="ip-cell-sub ip-muted ip-wrap" data-testid="ip-suggestion-origin">@IntegrationsOverviewPresentation.DetectedIn(c, _sources?.Discovery?.ArchiveName)</span>
                                     </div>
                                     <span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(strength)" data-testid="ip-suggestion-strength">@IntegrationsOverviewPresentation.Label(strength)</span>
                                     @if (configured) { <span class="ip-muted" data-testid="ip-suggestion-configured">Already configured</span> }
@@ -852,8 +854,10 @@
         }
     }
 
-    private void BeginAdd() { _saveError = null; _bindingOutcome = null; _editing = new EditState(null); }
-    private void BeginEdit(IntegrationDefinition definition) { _saveError = null; _bindingOutcome = null; _editing = new EditState(definition); }
+    // The form re-reads the templates when it opens: their evidence state is what the source store holds now. A snapshot imported after
+    // this page loaded (another tab, Import Project in between) must never show as "Missing" from a list read earlier.
+    private async Task BeginAdd() { _saveError = null; _bindingOutcome = null; await LoadTemplatesAsync(); _editing = new EditState(null); }
+    private async Task BeginEdit(IntegrationDefinition definition) { _saveError = null; _bindingOutcome = null; await LoadTemplatesAsync(); _editing = new EditState(definition); }
     private void CancelEdit() { _focusAddTrigger = _editing?.Original is null; _editing = null; _saveError = null; }
 
     /// <summary>

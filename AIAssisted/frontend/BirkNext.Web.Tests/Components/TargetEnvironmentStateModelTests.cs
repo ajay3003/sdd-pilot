@@ -13,9 +13,10 @@ using Component = BirkNext.Web.Components.FrontendAnalysisSettings;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// The Target Environment state model without a global manual verification: Detection (reachability), Configuration, Execution trust (backend
-/// only), Runtime evidence. Detect settings never grants trust or runtime verification; a recorded manual sign-in check — Passed or Failed,
-/// fresh or persisted from an older version — never changes trust, readiness or what a review may run. Generic, for any environment type.
+/// The Target Environment state model without a global manual verification: Environment state, Configuration, Detection (reachability),
+/// Runtime evidence. Whether active execution is allowed is not environment health: it is never in this row (it stays the backend's gate,
+/// shown where something executes). Detect settings never grants runtime verification; a recorded manual sign-in check — Passed or Failed,
+/// fresh or persisted from an older version — never changes readiness or what a review may run. Generic, for any environment type.
 /// </summary>
 public sealed class TargetEnvironmentStateModelTests : BunitContext
 {
@@ -43,7 +44,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
     {
         var cut = Render<Component>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("App QA")).Click();
-        cut.WaitForAssertion(() => Chip(cut, "trust").Should().Be("Not trusted"));
+        cut.WaitForAssertion(() => Chip(cut, "configuration").Should().Be("Configured"));
         return cut;
     }
 
@@ -66,10 +67,10 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
 
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Reachable"));
-        Chip(cut, "trust").Should().Be("Not trusted", "only backend trust configuration grants trust");
         Chip(cut, "runtime").Should().Be("Not verified", "detection is not runtime verification");
         cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty();
-        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Execution trust", "Runtime evidence");
+        cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("active execution is an execution gate, not environment health");
+        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Runtime evidence");
     }
 
     [Fact]
@@ -86,7 +87,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Unreachable"));
         cut.Markup.Should().NotContain("Mark verification").And.NotContain("sign-in check completed");
         cut.FindAll("[data-testid=detection-auth-limitation]").Should().BeEmpty("nothing about sign-in was learned");
-        Chip(cut, "trust").Should().Be("Not trusted");
+        cut.Markup.Should().NotContain("Execution trust").And.NotContain("Not trusted");
     }
 
     [Theory]
@@ -102,7 +103,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
 
         cut.WaitForAssertion(() => Chip(cut, "detection").Should().Be("Reachable"));
-        Chip(cut, "trust").Should().Be("Not trusted", "a recorded Passed never bypasses execution trust");
+        cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("execution permission is not an environment state");
         Chip(cut, "runtime").Should().Be("Not verified");
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Target detection complete", "a recorded Failed never blocks detection readiness either");
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Authentication").Click();

@@ -120,7 +120,7 @@ public static class TestPackSources
             {
                 Bound = authoritative.Contains(snapshot.Id), ImportId = snapshot.ProjectImport?.ImportId,
                 Technologies = role.RequiresInfrastructureAsCode ? InfrastructureFormats(snapshot) : [],
-                MatchedOn = MatchedOn(role, snapshot),
+                MatchedOn = MatchedOn(role, snapshot), AnalysisStatus = SourceAnalysis.ReviewSourceEvidenceProvider.SourceStatus(snapshot.Status),
             }).ToArray();
     }
 

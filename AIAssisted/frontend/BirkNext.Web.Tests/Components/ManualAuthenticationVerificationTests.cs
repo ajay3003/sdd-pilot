@@ -104,7 +104,6 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         cut.WaitForAssertion(() => Assert.NotNull(profile.ManualVerification));
         var recordedAt = profile.ManualVerification!.VerifiedAt;
         var state = cut.Find("[data-testid=te-state]").TextContent;
-        var trust = cut.Find("[data-testid=te-state-trust]").TextContent;
 
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Target Application").Click();
         Click(cut, "Detect settings");
@@ -115,7 +114,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Assert.DoesNotContain("recorded manually", result);
         Assert.DoesNotContain("Not verified", result);
         Assert.Equal(state, cut.Find("[data-testid=te-state]").TextContent);
-        Assert.Equal(trust, cut.Find("[data-testid=te-state-trust]").TextContent);
+        Assert.Empty(cut.FindAll("[data-testid=te-state-trust]"));
 
         AuthenticationTab(cut);
         Assert.Equal("Completed (recorded manually)", CheckStatus(cut));

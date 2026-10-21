@@ -107,6 +107,14 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             RequirementKey = ReportIntake, SystemName = "Altinn → Meldingsutveksleren (MU)", Producer = "Altinn", Consumer = "Meldingsutveksleren (MU)",
             SourceSystem = "Altinn", DestinationSystem = "Meldingsutveksleren (MU)",
             EndpointOrTopic = "https://buf-meldings-utveksler.azurewebsites.net/api/altinn/webhook", EvidenceSourceRoleKey = MuSource,
+            // The Altinn app reference describes how the report is submitted to the app (scheme, token providers, data type, task); the schema
+            // named by the form data type is looked up in MU's own source, which is evidence of what MU holds — not proof of what MM validates.
+            Reference = new(AltinnAppSourceRole)
+            {
+                AuthenticationFacts = ["Authentication scheme", "Security scheme name", "Token providers"],
+                ContractFacts = ["Form data type", "Content type", "Process task", "Task name"],
+                SchemaFactKey = BirkNext.SourceDomains.SourceConfigurationKeys.ApplicationFormDataType,
+            },
         },
         new("skolenaervaer-education-cdc", "Skolenærvær – BiRK CDC → SkoleAdapter", "Debezium captures BiRK education changes and publishes them on Event Hub; SkoleAdapter consumes them.", IntegrationKind.EventHub)
         {

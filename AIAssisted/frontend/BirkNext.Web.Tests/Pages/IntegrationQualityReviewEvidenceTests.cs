@@ -73,6 +73,16 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
         stages.Children.Should().NotContain(child => child.TagName == "LI", "the steps are not browser-numbered list items");
     }
 
+    [Theory]
+    [InlineData(0, "Source evidence: Missing")]
+    [InlineData(1, "Source evidence: Available · needs binding")]
+    public void TheBindingStage_SaysAvailableWhenStoredSnapshotsExist_AndMissingOnlyWhenThereIsNothingToBind(int snapshots, string expected)
+    {
+        _api.Readiness = _api.Readiness! with { SourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(i => new IqrSourceSnapshot { Archive = new($"repo-{i}.zip", new string('a', 64), 1) })] };
+        var cut = Render<IntegrationQualityReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-stage][data-stage=binding] [data-testid=iqr-stage-status]").TextContent.Should().Be(expected));
+    }
+
     [Fact]
     public void PreRunListsEachEvidenceSourceWithItsOwnState()
     {

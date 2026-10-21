@@ -45,6 +45,11 @@
                 <div><dt>Workspace</dt><dd data-testid="snt-workspace">@(Workspace.ProjectName is { } project ? project : "No Sample Project selected · source evidence comes from Integration Quality Review bindings")</dd></div>
                 <div><dt>Target Environment</dt><dd data-testid="snt-target">@(_profile is null ? "Not selected · execution not ready" : string.IsNullOrWhiteSpace(_profile.Name) ? _profile.Id : _profile.Name)</dd></div>
                 <div><dt>Source evidence</dt><dd data-testid="snt-source">@_sourceSummary @if (_profile is not null) { <a href="integration-quality-review?view=evidence" class="snt-inline-link">Open evidence</a> }</dd></div>
+                @if (_profile is not null && _pack is not null)
+                {
+                    <div><dt>Active execution</dt><dd data-testid="snt-active-execution">@TestPackPresentation.ActiveExecution(_pack)
+                        @if (!_pack.EnvironmentTrusted) { <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link" data-testid="snt-execution-settings">Target Environment safety</a> }</dd></div>
+                }
             </dl>
 
             @if (_guidance is { } guidance && (guidance.Sources.Count > 0 || guidance.Suggestions.Count > 0))
@@ -59,7 +64,7 @@
                                 var href = SourceGuidancePresentation.ActionHref(source.NextActionTarget);
                                 <li class="snt-source-card" data-testid="snt-source-card" data-role="@source.Role.Key" data-state="@source.State">
                                     <div class="snt-source-card-head"><strong>@source.Role.Label</strong>
-                                        <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-state">@SourceGuidancePresentation.SourceStateLabel(source.State)</span></div>
+                                        <span class="snt-pill snt-pill-@SourceGuidancePresentation.SourceStateTone(source.State)" data-testid="snt-source-state">@SourceGuidancePresentation.SourceStateLabel(source)</span></div>
                                     <p class="snt-source-line" data-testid="snt-source-archive">@(source.Role.Provider == TestPackSourceProvider.TestPackReference
                                         ? source.State == TestPackSourceState.ReferenceAvailable ? $"Built-in {source.Reference?.Kind ?? "reference"} reference · no separate import required" : "Reference could not be loaded"
                                         : source.BoundArchives.Count > 0 ? $"Source: {string.Join(", ", source.BoundArchives)}"
@@ -485,12 +490,30 @@
     };
 
     /// <summary>Rapportmottak's provider-specific header: TT02 submission readiness and the hand-offs to its owners.</summary>
+    /// <summary>Source, reference, runtime and active-execution states side by side — separate dimensions, never one "Ready".</summary>
+    private RenderFragment ReadinessDimensions(string journeyId) => __builder =>
+    {
+        <div class="snt-dimensions" data-testid="snt-readiness-dimensions" data-journey="@journeyId">
+            @foreach (var dimension in TestPackPresentation.Dimensions(_guidance, journeyId, _pack))
+            {
+                <span data-testid="snt-readiness-dimension" data-key="@dimension.Key"><span class="snt-dimension-label">@dimension.Label</span>
+                    <span class="snt-status"><span class="visually-hidden">@dimension.Label: </span><span class="snt-pill snt-pill-@dimension.Tone">@dimension.Value</span></span></span>
+            }
+        </div>
+        @if (_pack is { EnvironmentTrusted: false })
+        {
+            <p class="snt-muted" data-testid="snt-execution-note">Active execution is this target environment's execution policy, not its health; source evidence and reference metadata never change it.
+                <a href="@TestPackPresentation.ExecutionSettingsHref" class="snt-inline-link">Target Environment safety</a></p>
+        }
+    };
+
     private RenderFragment RapportmottakHeader(IntegrationJourneyView view) => __builder =>
     {
         var decision = SkoleNaervaerReadinessPresentation.Decision(SkoleNaervaerReadinessPresentation.NeedsAttention(view.Prerequisites));
         @* The decision's internal code (A–F, a root-cause order) is not a formal classification, so only its label is shown. *@
         <p class="snt-decision" data-testid="snt-tt02-decision" data-code="@decision.Code"><span class="snt-dimension-label">TT02 submission readiness</span> <strong>@decision.Label</strong>
             @if (decision.Code == "A") { <span class="snt-muted"> — a first real submission still needs your explicit confirmation in the run.</span> }</p>
+        @ReadinessDimensions(view.Journey.JourneyId)
         <div class="snt-actions" data-testid="snt-rapport-actions">
             <button type="button" class="btn-primary" data-testid="snt-open-run" @onclick="() => OpenRapportmottakAsync(null)">Open Rapportmottak run</button>
             <a class="btn-secondary" href="/integration-quality-review?view=extensions" data-testid="snt-configure-altinn">Configure Altinn</a>

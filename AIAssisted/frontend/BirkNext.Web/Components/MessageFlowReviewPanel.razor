@@ -206,6 +206,7 @@
                     else
                     {
                         <span data-testid="mfr-source-unbound">No source evidence is bound to the report-intake integration. Bind it in Integration Quality Review → Evidence; it is not selected here.</span>
+                        @if (RequiredImportedSources.Count > 0) { <span data-testid="mfr-source-states">@string.Join(" · ", RequiredImportedSources.Select(SourceGuidancePresentation.SourceShort))</span> }
                         <a class="mfr-link" href="integration-quality-review?view=evidence" data-testid="mfr-source-bind">Open Evidence</a>
                     }
                 </div>
@@ -280,6 +281,9 @@
     /// <summary>The canonical binding of the report-intake integration (Integration Quality Review → Evidence), or null.</summary>
     private IntegrationEvidenceBinding? _binding;
     private TestPackSourceGuidance? _guidance;
+    /// <summary>The pack's required imported sources with their shared state ("MU available · needs binding"), shown while nothing is bound.</summary>
+    private IReadOnlyList<TestPackSourceStatus> RequiredImportedSources => (_guidance?.Sources ?? [])
+        .Where(source => source.Role.Provider == TestPackSourceProvider.ImportedSource && source.Role.Requirement == TestPackSourceRequirement.Required).ToList();
 
     /// <summary>The bound source's value for a form field (by the requirement's consumer field), as a hint: a value, a conflict, or nothing.</summary>
     private BirkNext.SourceDomains.SourceConfigurationResolution? Hint(string field)

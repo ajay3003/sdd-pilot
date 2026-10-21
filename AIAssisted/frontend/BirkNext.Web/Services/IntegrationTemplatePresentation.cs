@@ -86,12 +86,13 @@ public static class IntegrationTemplatePresentation
     public static IReadOnlyList<TestPackSourceCandidate> Choices(TestPackSourceStatus status) =>
         status.Candidates.GroupBy(c => c.SnapshotId).Select(g => g.First()).ToList();
 
+    /// <summary>The same wording as every other page (<see cref="SourceSetupPresentation"/>): an unbound match is "Available · needs binding",
+    /// several matches are "Review required", and only no match at all is "Missing".</summary>
     public static string Label(TemplateEvidenceState state) => state switch
     {
         TemplateEvidenceState.NotRequired => "Not required",
-        TemplateEvidenceState.Available => "Available",
-        TemplateEvidenceState.NeedsBinding => "Needs binding",
-        TemplateEvidenceState.Ambiguous => "Ambiguous",
+        TemplateEvidenceState.Available or TemplateEvidenceState.NeedsBinding => SourceSetupPresentation.AvailableNeedsBinding,
+        TemplateEvidenceState.Ambiguous => "Review required",
         TemplateEvidenceState.Bound => "Bound",
         _ => "Missing",
     };
@@ -99,11 +100,56 @@ public static class IntegrationTemplatePresentation
     public static string Meaning(TemplateEvidenceState state) => state switch
     {
         TemplateEvidenceState.NotRequired => "This integration does not require source evidence.",
-        TemplateEvidenceState.Available => "One matching imported snapshot exists. It is not bound to this integration.",
+        TemplateEvidenceState.Available => "One matching Source Analysis snapshot exists. It becomes this integration's evidence only when you choose it.",
         TemplateEvidenceState.NeedsBinding => "Matching source exists, but this integration still needs its own explicit binding.",
-        TemplateEvidenceState.Ambiguous => "Multiple matching sources found. Choose one — the newest is never picked for you.",
+        TemplateEvidenceState.Ambiguous => "Several matching snapshots found. Choose one — the newest is never picked for you.",
         TemplateEvidenceState.Bound => "This integration already has canonical source evidence. It is changed only in IQR Evidence.",
         _ => "No matching imported source found.",
+    };
+
+    /// <summary>The template's Test Pack reference as a compact state ("Reference available"), null when the template uses none.</summary>
+    public static string? ReferenceLabel(IntegrationTemplateView? template) => template?.ReferenceSource?.State switch
+    {
+        null => null,
+        TestPackSourceState.ReferenceAvailable => "Reference available",
+        _ => "Reference unavailable",
+    };
+
+    /// <summary>
+    /// A section's state in the form: what the person configured, else known reference metadata, else whether the section is something to set
+    /// at all. Reference metadata never reads as "Configured" or "Verified"; an optional section never reads as missing setup.
+    /// </summary>
+    public static string SectionHint(bool configured, bool referenceAvailable, bool optional) =>
+        configured ? referenceAvailable ? "Configured · reference available" : "Configured"
+        : referenceAvailable ? "Reference available"
+        : optional ? "Optional · not set" : "Not configured";
+
+    /// <summary>Where the schema the reference names stands in the evidence source. The reference only names it; the source holds it.</summary>
+    public enum SchemaEvidenceState { NotApplicable, NoSource, NotFound, Available, Ambiguous, Bound }
+
+    /// <summary>
+    /// The schema named by the reference in the evidence source: follows the source's own state (no source → nothing to look in; several
+    /// sources → choose the source first) and then the exact-name matches inside it (one → its candidate; several → review). Never chosen.
+    /// </summary>
+    public static SchemaEvidenceState SchemaEvidence(IntegrationTemplateView? template, TemplateEvidenceState evidence, Guid? boundSnapshot)
+    {
+        if (template?.SchemaName is null || template.EvidenceSource is null) return SchemaEvidenceState.NotApplicable;
+        if (evidence == TemplateEvidenceState.Missing) return SchemaEvidenceState.NoSource;
+        if (evidence == TemplateEvidenceState.Ambiguous) return SchemaEvidenceState.Ambiguous;
+        var inScope = boundSnapshot is { } bound ? template.SchemaCandidates.Where(c => c.SnapshotId == bound).ToList() : template.SchemaCandidates.ToList();
+        var files = inScope.Select(c => c.File).Distinct(StringComparer.Ordinal).Count();
+        return files == 0 ? SchemaEvidenceState.NotFound : files > 1 ? SchemaEvidenceState.Ambiguous
+            : evidence == TemplateEvidenceState.Bound ? SchemaEvidenceState.Bound : SchemaEvidenceState.Available;
+    }
+
+    public static string SchemaLabel(SchemaEvidenceState state) => state switch
+    {
+        SchemaEvidenceState.NoSource => "No matching source",
+        SchemaEvidenceState.NotFound => "Not found in the matching source",
+        SchemaEvidenceState.Available => SourceSetupPresentation.AvailableNeedsBinding,
+        SchemaEvidenceState.Ambiguous => "Review required",
+        SchemaEvidenceState.Bound => "In bound source",
+        _ => "Not applicable",
     };
 
     /// <summary>Pill tone (the label always carries the meaning; colour is never the only signal).</summary>

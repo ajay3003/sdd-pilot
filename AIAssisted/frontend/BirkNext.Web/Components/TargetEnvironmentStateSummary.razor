@@ -1,16 +1,13 @@
 @using BirkNext.Web.Models
-@using BirkNext.Web.Services
-@inject IServiceProvider Services
 
 @* The Target Environment's separate state dimensions, never one badge: environment state (active or not), configuration (a target is set),
-   detection (reachability as Detect settings established it), execution trust (the backend's trusted-environment configuration — never a
-   browser setting, never a detection or sign-in result) and runtime evidence (an authenticated context observed now). There is no global
-   "verified" state: a manual sign-in check is an authentication fact on the Authentication tab. *@
+   detection (reachability as Detect settings established it) and runtime evidence (an authenticated context observed now). There is no global
+   "verified" state: a manual sign-in check is an authentication fact on the Authentication tab. Whether active execution is allowed is not
+   environment health: the backend's trusted-environment gate is shown only where something can execute (journey runs, active tests). *@
 <dl class="tes" aria-label="Target Environment state" data-testid="te-state">
     <div data-dimension="environment"><dt>Environment state</dt><dd><span class="tes-pill tes-@(IsActive ? "ok" : "muted")" data-testid="te-state-environment">@(IsActive ? "Active" : "Not active")</span></dd></div>
     <div data-dimension="configuration"><dt>Configuration</dt><dd><span class="tes-pill tes-@(Configured ? "ok" : "attention")" data-testid="te-state-configuration">@(Configured ? "Configured" : "Not configured")</span></dd></div>
     <div data-dimension="detection"><dt>Detection</dt><dd><span class="tes-pill tes-@DetectionTone" data-testid="te-state-detection">@Detection</span></dd></div>
-    <div data-dimension="trust"><dt>Execution trust</dt><dd><span class="tes-pill tes-@(_trusted == true ? "ok" : _trusted == false ? "attention" : "muted")" data-testid="te-state-trust" title="@_trustDetail">@(_trusted switch { true => "Trusted", false => "Not trusted", _ => "Not known" })</span></dd></div>
     <div data-dimension="runtime"><dt>Runtime evidence</dt><dd><span class="tes-pill tes-@(RuntimeObserved ? "ok" : "muted")" data-testid="te-state-runtime">@(RuntimeObserved ? "Observed" : "Not verified")</span></dd></div>
 </dl>
 
@@ -25,22 +22,4 @@
     private bool Configured => !string.IsNullOrWhiteSpace(Profile.TargetUrl);
     private string DetectionTone => Detection.StartsWith("Reachable", StringComparison.Ordinal) ? "ok"
         : Detection.StartsWith("Unreachable", StringComparison.Ordinal) || Detection == "Needs re-check" ? "attention" : "muted";
-
-    private bool? _trusted;
-    private string? _trustDetail, _loadedFor;
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (_loadedFor == Profile.Id) return;
-        _loadedFor = Profile.Id;
-        _trusted = null;
-        _trustDetail = "The trusted-environment state comes from the backend configuration.";
-        if (Services.GetService<IIntegrationJourneysApiService>() is not { } journeys || string.IsNullOrWhiteSpace(Profile.Id)) return;
-        try
-        {
-            if (journeys.PacksAsync(Profile.Id) is not { } read) return;
-            if ((await read)?.Value?.FirstOrDefault() is { } pack) { _trusted = pack.EnvironmentTrusted; _trustDetail = pack.EnvironmentDetail; }
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
-    }
 }

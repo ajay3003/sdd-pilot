@@ -41,10 +41,27 @@ public static class IntegrationTemplates
         var journeys = requirement is null ? [] : pack.Journeys.Where(journey => journey.Integrations.Any(item => item.Key == requirement.Key)).Select(journey => journey.DisplayName).Distinct().ToArray();
         var configured = requirement is null ? [] : context.Catalog.Integrations.Where(integration => pack.Matches(requirement, integration)).Select(integration => integration.DisplayName).ToArray();
         var role = TestPackSources.Role(pack, template.EvidenceSourceRoleKey);
+        var evidence = role is null ? null : TestPackSources.Status(pack, context, role) with { NearMisses = TestPackSources.NearMisses(role, context) };
+        // The reference is read through the same loader every consumer uses (TestPackReferences), so its facts are the reference tier of the
+        // shared configuration resolution — shown here as known metadata, never saved on the integration and never run configuration.
+        var referenceRole = TestPackSources.Role(pack, template.Reference?.RoleKey);
+        var reference = referenceRole is null ? null : TestPackSources.Status(pack, context, referenceRole);
+        var facts = reference is { State: TestPackSourceState.ReferenceAvailable, Reference: { } loaded } ? loaded.Facts : [];
+        IReadOnlyList<TestPackReferenceFact> Pick(IReadOnlyList<string>? labels) =>
+            [.. (labels ?? []).Select(label => facts.FirstOrDefault(fact => string.Equals(fact.Label, label, StringComparison.Ordinal))).OfType<TestPackReferenceFact>()];
+        var schemaName = template.Reference?.SchemaFactKey is { } schemaKey ? facts.FirstOrDefault(fact => fact.SemanticKey == schemaKey)?.Value : null;
         return new IntegrationTemplateView(template.Key, template.DisplayName, template.Description, template.Kind, pack.PackId, pack.DisplayName)
         {
-            Values = values, NeedsConfiguration = needs, Journeys = journeys, AlreadyConfigured = configured,
-            EvidenceSource = role is null ? null : TestPackSources.Status(pack, context, role) with { NearMisses = TestPackSources.NearMisses(role, context) },
+            Values = values, NeedsConfiguration = needs, Journeys = journeys, AlreadyConfigured = configured, EvidenceSource = evidence,
+            ReferenceSource = reference, AuthenticationReference = Pick(template.Reference?.AuthenticationFacts), ContractReference = Pick(template.Reference?.ContractFacts),
+            SchemaName = schemaName, SchemaCandidates = schemaName is null || evidence is null ? [] : Schemas(context, evidence, schemaName),
         };
     }
+
+    /// <summary>XML schemas named exactly <paramref name="name"/> (case-insensitive) in each snapshot recognized as the evidence source — what the
+    /// source contains, in the candidates' order. Never a fuzzy match, never chosen automatically.</summary>
+    private static IReadOnlyList<IntegrationTemplateSchemaCandidate> Schemas(JourneyPackContext context, TestPackSourceStatus evidence, string name) =>
+        [.. evidence.Candidates.SelectMany(candidate => (context.SourceSnapshots.FirstOrDefault(snapshot => snapshot.Id == candidate.SnapshotId)?.EvidenceDomains?.Contracts.Contracts ?? [])
+            .Where(contract => contract.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema && string.Equals(contract.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Select(contract => new IntegrationTemplateSchemaCandidate(candidate.SnapshotId, candidate.ArchiveFileName, contract.Name, contract.File) { Version = contract.Version }))];
 }

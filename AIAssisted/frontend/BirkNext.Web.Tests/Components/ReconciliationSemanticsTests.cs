@@ -121,22 +121,22 @@ public sealed class ReconciliationSemanticsTests : BunitContext
     }
 
     [Fact]
-    public void Target_environment_state_shows_separate_dimensions_without_a_global_verification_and_trust_from_the_backend()
+    public void Target_environment_state_shows_separate_dimensions_without_a_global_verification_or_an_execution_permission()
     {
         var journeys = new Mock<IIntegrationJourneysApiService>();
-        journeys.Setup(x => x.PacksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(new ActiveEventApiResult<IReadOnlyList<IntegrationJourneyPackView>>(
-            [new IntegrationJourneyPackView { EnvironmentTrusted = false, EnvironmentDetail = "Not enrolled in TargetEnvironments:Trusted." }], null, HttpStatusCode.OK));
         Services.AddSingleton(journeys.Object);
         var cut = Render<TargetEnvironmentStateSummary>(p => p.Add(x => x.Profile, new FrontendAnalysisProfile { Id = "dev", TargetUrl = "https://example.invalid" })
             .Add(x => x.IsActive, true).Add(x => x.Detection, "Reachable"));
 
-        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Execution trust", "Runtime evidence");
+        cut.FindAll("[data-testid=te-state] dt").Select(dt => dt.TextContent).Should().Equal("Environment state", "Configuration", "Detection", "Runtime evidence");
         cut.Find("[data-testid=te-state-environment]").TextContent.Should().Be("Active");
         cut.Find("[data-testid=te-state-configuration]").TextContent.Should().Be("Configured");
         cut.Find("[data-testid=te-state-detection]").TextContent.Should().Be("Reachable");
         cut.Find("[data-testid=te-state-runtime]").TextContent.Should().Be("Not verified", "detection is not runtime verification");
         cut.FindAll("[data-testid=te-state-verification]").Should().BeEmpty("there is no global target verification state");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=te-state-trust]").TextContent.Should().Be("Not trusted", "reachable, active and configured do not make an environment trusted"));
+        cut.FindAll("[data-testid=te-state-trust]").Should().BeEmpty("active execution is an execution-specific gate, never environment health");
+        cut.Markup.Should().NotContain("Not trusted").And.NotContain("Execution trust");
+        journeys.Verify(x => x.PacksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never, "the generic row reads no execution gate");
     }
 
     // ── Genericity ──────────────────────────────────────────────────────────────────────────────────────────────────────

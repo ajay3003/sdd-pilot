@@ -324,7 +324,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open();
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-source-card]").Should().HaveCount(3));
         var cards = page.FindAll("[data-testid=snt-source-card]");
-        cards.Select(card => card.QuerySelector("[data-testid=snt-source-state]")!.TextContent).Should().Equal("Bound", "Available, not bound", "Missing");
+        cards.Select(card => card.QuerySelector("[data-testid=snt-source-state]")!.TextContent).Should().Equal("Bound", "Available · needs binding", "Missing");
         cards[0].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Source: Tiltak 2 - Sikkert digitalt økosystem (1).zip");
         cards[0].QuerySelector("[data-testid=snt-source-action]").Should().BeNull("a bound source needs no action");
         cards[1].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Available: M2LB (2).zip");
@@ -332,8 +332,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         cards[2].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Expected: OpenAPI / Swagger document");
         cards[2].QuerySelector("[data-testid=snt-source-action]")!.GetAttribute("href").Should().Be("/source-analysis");
         page.Find("[data-testid=snt-journey][data-journey=rapportmottak] [data-testid=snt-journey-sources]").TextContent
-            .Should().Be("MU (Meldingsutveksleren) bound · M2LB available, not bound · Altinn Skolenærvær application missing");
-        page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("M2LB available, not bound");
+            .Should().Be("MU (Meldingsutveksleren) bound · M2LB available · needs binding · Altinn Skolenærvær application missing");
+        page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("M2LB available · needs binding");
         page.Find("[data-testid=snt-workspace]").TextContent.Should().Contain("source evidence comes from Integration Quality Review bindings");
         page.Markup.Should().NotContain("skolenaervaer.json", "the BirkNext OpenAPI fixture is never a manual source");
     }
@@ -417,6 +417,32 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
             Journeys = [.. pack.Journeys.Select(view => view.Journey.JourneyId != "rapportmottak" ? view
                 : view with { Prerequisites = [.. BirkNext.Web.Tests.Services.SkoleNaervaerReadinessPresentationTests.Rows(unresolved)] })],
         };
+    }
+
+    [Fact]
+    public void Rapportmottak_shows_source_reference_runtime_and_active_execution_as_separate_dimensions()
+    {
+        WithTarget();
+        WithRapportmottakRows("client-secret");
+        _journeys.Pack = _journeys.Pack with { EnvironmentTrusted = false, EnvironmentDetail = "Not enrolled for execution." };
+        _journeys.Guidance = new TestPackSourceGuidance("skolenaervaer", [])
+        {
+            Sources =
+            [
+                new(new TestPackSourceRole("mu", "MU (Meldingsutveksleren)", "") { Journeys = ["rapportmottak"] }, TestPackSourceState.AvailableNotBound)
+                    { AvailableArchives = ["Tiltak 2.zip"], Candidates = [new(Guid.NewGuid(), "Tiltak 2.zip", new string('a', 64), DateTimeOffset.UnixEpoch)] },
+                new(new TestPackSourceRole("altinn-app", "Altinn application/API", "") { Journeys = ["rapportmottak"], Provider = TestPackSourceProvider.TestPackReference },
+                    TestPackSourceState.ReferenceAvailable),
+            ],
+        };
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-readiness-dimension]").Should().HaveCount(4));
+        page.FindAll("[data-testid=snt-readiness-dimension]").Select(d => d.TextContent.Replace("\n", " ").Split(':').Last().Trim()).Should().Equal(
+            "Available · needs binding", "Available", "Not verified", "Not allowed");
+        page.Find("[data-testid=snt-readiness-dimensions]").TextContent.Should().Contain("MU (Meldingsutveksleren) source").And.Contain("Altinn application/API reference")
+            .And.Contain("Runtime").And.Contain("Active execution").And.NotContain("Missing");
+        page.Find("[data-testid=snt-execution-note]").QuerySelector("a")!.GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
     }
 
     [Fact]

@@ -136,11 +136,17 @@ public static class SourceSetupPresentation
         _ => "Required by the pack's journeys.",
     };
 
-    /// <summary>State wording that never reads as a failure for an optional source and never says "missing" when the source exists.</summary>
+    /// <summary>The wording of an available source that is not yet the canonical evidence where it is needed (one phrase on every page).</summary>
+    public const string AvailableNeedsBinding = "Available · needs binding";
+
+    /// <summary>
+    /// The one wording of a logical source's state, shared by Import Project, Add integration, IQR and the test pack pages: never reads as a
+    /// failure for an optional source and never says "missing" when a matching snapshot exists (unbound is not missing).
+    /// </summary>
     public static string StateLabel(TestPackSourceState state) => state switch
     {
         TestPackSourceState.Bound => "Bound",
-        TestPackSourceState.AvailableNotBound => "Available, not bound",
+        TestPackSourceState.AvailableNotBound => AvailableNeedsBinding,
         TestPackSourceState.Available => "Available · no binding needed",
         TestPackSourceState.ReviewRequired => "Review required",
         TestPackSourceState.NotProvided => "Not provided",
@@ -148,6 +154,11 @@ public static class SourceSetupPresentation
         TestPackSourceState.ReferenceUnavailable => "Test Pack reference · Unavailable",
         _ => "Missing",
     };
+
+    /// <summary><see cref="StateLabel(TestPackSourceState)"/> that also tells "several matching snapshots, choose one" from "the bound snapshot
+    /// is not this source" — both are ReviewRequired.</summary>
+    public static string StateLabel(TestPackSourceStatus status) => status.State == TestPackSourceState.ReviewRequired && !IsAmbiguous(status)
+        ? "Review binding" : StateLabel(status.State);
 
     public static string StateTone(TestPackSourceState state) => state switch
     {

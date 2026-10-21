@@ -48,6 +48,8 @@ public sealed class IntegrationJourneyPanelTests : BunitContext
         rows.Select(row => row.GetAttribute("data-readiness")).Should().Equal("Partial", "NotReady", "NotConfigured");
         rows[1].TextContent.Should().Contain("Not source verified").And.Contain("Not verified (no run)");
         cut.Find("[data-testid=ijp-trust]").GetAttribute("data-trusted").Should().Be("true");
+        cut.Find("[data-testid=ijp-trust]").TextContent.Should().Contain("Active execution").And.Contain("Allowed").And.NotContain("Trusted environment");
+        cut.FindAll("[data-testid=ijp-trust-settings]").Should().BeEmpty("nothing to change when execution is allowed");
     }
 
     [Fact]

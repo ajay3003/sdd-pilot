@@ -104,7 +104,8 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         cut.FindAll("[data-testid=ip-prov]").Single(p => p.GetAttribute("data-field") == "EndpointOrTopic").TextContent.Should().Be("Source: Template · Development");
         cut.FindAll("[data-testid=ip-edit-consumer-group], [data-testid=ip-edit-delete-expectation], [data-testid=ip-edit-source]").Should().BeEmpty("HTTP/API has no event-stream fields");
         cut.Find("[data-testid=ip-edit-template-journeys]").TextContent.Should().Be("Rapportmottak");
-        Value(cut, "ip-edit-producer-auth").Should().Be(platformAuth, "a template never sets authentication; the platform default stays");
+        Value(cut, "ip-edit-producer-auth").Should().Be(platformAuth, "a template never sets authentication");
+        cut.FindAll("[data-testid=ip-edit-platform]").Should().BeEmpty("a messaging platform does not apply to HTTP/API — never a confusing \"None\"");
     }
 
     [Fact]
@@ -163,22 +164,27 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         _templates = [Intake(new TestPackSourceStatus(Mu, TestPackSourceState.AvailableNotBound) { Candidates = [Candidate(SnapshotA, "Tiltak 2 - Sikkert digitalt økosystem (1).zip", 'a')] })];
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
-        cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Available", "available is not bound");
+        cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Available · needs binding", "available is not bound, and unbound is not missing");
+        cut.Find("[data-testid=ip-edit-template-evidence-state]").TextContent.Should().Be("Available · needs binding", "the template summary says the same");
+        cut.FindAll("[data-testid=ip-edit-evidence-import]").Should().BeEmpty("a compatible stored snapshot exists, so importing is not the recovery action");
         cut.Find("[data-testid=ip-edit-evidence-candidate]").TextContent.Should().Contain("Tiltak 2 - Sikkert digitalt økosystem (1).zip");
         cut.Find("[data-testid=ip-edit-evidence-open]").GetAttribute("href").Should().Be($"source-analysis?snapshot={SnapshotA:D}");
         cut.FindAll("[data-testid=ip-edit-evidence-effect]").Should().BeEmpty();
 
         cut.Find("[data-testid=ip-edit-evidence-use]").Click();
         cut.Find("[data-testid=ip-edit-evidence-use]").GetAttribute("aria-pressed").Should().Be("true");
-        cut.Find("[data-testid=ip-edit-evidence-effect]").TextContent.Should().Contain("will become the canonical source evidence for this integration when it is saved");
+        var confirm = cut.Find("[data-testid=ip-edit-evidence-confirm]").TextContent;
+        confirm.Should().Contain("Pack – report intake").And.Contain("Tiltak 2 - Sikkert digitalt økosystem (1).zip").And.Contain("MU (Meldingsutveksleren)")
+            .And.Contain("Use this Source Analysis snapshot as canonical evidence for this integration.");
+        _api.BindCalls.Should().BeEmpty("choosing is not binding: the binding is made after the integration is saved");
         cut.Find("[data-testid=ip-edit-save]").Click();
 
         cut.WaitForAssertion(() => _api.BindCalls.Should().ContainSingle());
         var created = _api.Saved.Single();
         (created.Origin, created.TemplateKey, created.Kind, created.EndpointOrTopic).Should().Be((IntegrationRecordOrigin.Template, "pack-report-intake", IntegrationKind.HttpApi, Webhook));
         created.Consumer.MappingState.Should().Be(ConsumerMappingState.NeedsConfirmation, "a template never confirms a mapping");
-        var platform = _api.Catalog.Platforms.First();
-        (created.ProducerAuthentication, created.ConsumerAuthentication).Should().Be((platform.ProducerAuthentication, platform.DefaultConsumerAuthentication), "authentication comes from the platform, never the template");
+        (created.ProducerAuthentication, created.ConsumerAuthentication, created.PlatformId).Should().Be((IntegrationAuthMechanism.NotConfigured, IntegrationAuthMechanism.NotConfigured, (string?)null),
+            "an HTTP/API integration does not inherit the messaging platform or its mechanisms, and a template never sets authentication");
         _api.BindCalls.Single().Should().Be((created.Id, (Guid?)SnapshotA));
         cut.Find("[data-testid=ip-binding-outcome]").GetAttribute("data-failed").Should().Be("false");
     }
@@ -201,8 +207,10 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         _templates = [Intake(new TestPackSourceStatus(Mu, TestPackSourceState.ReviewRequired) { Candidates = [Candidate(SnapshotB, "mu-new.zip", 'b'), Candidate(SnapshotA, "mu-old.zip", 'a')] })];
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
-        cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Ambiguous");
-        cut.Find("[data-testid=ip-edit-evidence-choices] legend").TextContent.Should().Be("Choose source");
+        cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Review required");
+        cut.Find("[data-testid=ip-edit-evidence-count]").TextContent.Should().Be("2 matching MU (Meldingsutveksleren) snapshots");
+        cut.Find("[data-testid=ip-edit-evidence-choices] legend").TextContent.Should().Be("Choose evidence");
+        cut.FindAll("[data-testid=ip-edit-evidence-import]").Should().BeEmpty();
         cut.Find("[data-testid=ip-edit-evidence-none-choice]").HasAttribute("checked").Should().BeTrue("no snapshot is preselected");
         cut.FindAll("[data-testid=ip-edit-evidence-option] input").Should().OnlyContain(i => !i.HasAttribute("checked"));
 
@@ -269,6 +277,130 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         var cut = OpenAdd(Open());
         cut.FindAll("[data-testid=ip-edit-template]").Should().BeEmpty();
         cut.Find("[data-testid=ip-edit-name]").Should().NotBeNull();
+    }
+
+    // ── Evidence read when the form opens; reference metadata; schema evidence ─────────────────────────────────────────────────────
+
+    private static readonly TestPackSourceRole App = new("app", "Portal application/API", "The portal's API description") { Provider = TestPackSourceProvider.TestPackReference };
+
+    private static IntegrationTemplateView Referenced(TestPackSourceStatus? evidence, params IntegrationTemplateSchemaCandidate[] schemas) => Intake(evidence) with
+    {
+        ReferenceSource = new TestPackSourceStatus(App, TestPackSourceState.ReferenceAvailable) { Reference = new("OpenAPI", "Portal app") },
+        AuthenticationReference = [new("Authentication scheme", "Bearer JWT"), new("Security scheme name", "PortalToken"), new("Token providers", "provider-a, provider-b")],
+        ContractReference = [new("Form data type", "portal_report_v2"), new("Content type", "application/xml"), new("Process task", "Task_1"), new("Task name", "Fill in")],
+        SchemaName = "portal_report_v2", SchemaCandidates = schemas,
+    };
+
+    private static TestPackSourceStatus OneSource() => new(Mu, TestPackSourceState.AvailableNotBound) { Candidates = [Candidate(SnapshotA, "Archive with another name.zip", 'a') with { AnalysisStatus = "Partial" }] };
+
+    private static void Expand(IRenderedComponent<IntegrationsPane> cut, string section) => cut.Find($"[data-testid=ip-edit-section-{section}] .disclosure-toggle").Click();
+    private static string Hint(IRenderedComponent<IntegrationsPane> cut, string section) => cut.Find($"[data-testid=ip-edit-section-{section}] .disclosure-hint").TextContent;
+
+    [Fact]
+    public void ASnapshotImportedAfterThePageLoaded_IsAvailable_WhenTheFormOpens_NeverAStaleMissing()
+    {
+        var cut = Open();
+        _templates = [Intake(OneSource())]; // imported elsewhere after the Integrations page read its templates
+        OpenAdd(cut);
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+
+        cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Available · needs binding");
+        cut.Find("[data-testid=ip-edit-evidence-candidate]").TextContent.Should().Be("Archive with another name.zip", "the archive name is provenance; content matched it");
+        _journeys.Verify(j => j.IntegrationTemplatesAsync("dev", It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
+        _api.BindCalls.Should().BeEmpty("opening the form and choosing a template never bind");
+    }
+
+    [Fact]
+    public void SourceDetails_AreProgressive_AndNameTheLogicalSourceArchiveAndAnalysis()
+    {
+        _templates = [Intake(OneSource())];
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+        cut.Find("[data-testid=ip-edit-evidence-details] .disclosure-body").HasAttribute("hidden").Should().BeTrue("fingerprints and match details stay out of the main form");
+        cut.Find("[data-testid=ip-edit-evidence-details] .disclosure-toggle").Click();
+        var details = cut.Find("[data-testid=ip-edit-evidence-detail-list]").TextContent;
+        details.Should().Contain("MU (Meldingsutveksleren)").And.Contain("Archive with another name.zip").And.Contain("sha256 aaaaaaaa…");
+        cut.Find("[data-testid=ip-edit-evidence-analysis]").TextContent.Should().Be("Partial");
+    }
+
+    [Fact]
+    public void Authentication_ShowsReferenceMetadata_ApartFromRunConfiguration_AndClaimsNoVerification()
+    {
+        _templates = [Referenced(OneSource())];
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+        cut.Find("[data-testid=ip-edit-template-reference]").TextContent.Should().Be("Reference available");
+        Hint(cut, "authentication").Should().Be("Reference available", "known metadata is never \"Configured\" or \"Verified\"");
+
+        Expand(cut, "authentication");
+        cut.FindAll("[data-testid=ip-edit-auth-fact]").Select(f => f.TextContent).Should().Equal(
+            "Authentication schemeBearer JWT", "Security scheme namePortalToken", "Token providersprovider-a, provider-b");
+        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().Contain("Source: Test Pack reference").And.Contain("not verified at runtime");
+        cut.Find("[data-testid=ip-edit-auth-run-client]").TextContent.Should().Be("Not configured here");
+        cut.Find("[data-testid=ip-edit-auth-run-reporter]").TextContent.Should().Be("Not configured here");
+        cut.Find("[data-testid=ip-edit-auth-run-authorization]").TextContent.Should().Be("Not verified");
+        cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().NotContain("Runtime verified").And.NotContain("Configured ·");
+        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().NotContain("Not configured", "reference metadata and run configuration are separate blocks");
+    }
+
+    [Fact]
+    public void Contract_ShowsSubmissionMetadata_AndSchemaEvidenceSeparately_NeverContractVerified()
+    {
+        _templates = [Referenced(OneSource(), new IntegrationTemplateSchemaCandidate(SnapshotA, "Archive with another name.zip", "portal_report_v2", "Schemas/portal_report_v2.xsd"))];
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+        Hint(cut, "contract").Should().Be("Reference available");
+
+        Expand(cut, "contract");
+        cut.FindAll("[data-testid=ip-edit-contract-fact]").Select(f => f.GetAttribute("data-label")).Should().Equal("Form data type", "Content type", "Process task", "Task name");
+        cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().Contain("application/xml").And.Contain("Task_1").And.Contain("Fill in")
+            .And.Contain("does not prove which schema the receiving side validates against");
+        cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be("Available · needs binding");
+        cut.Find("[data-testid=ip-edit-contract-schema-file]").TextContent.Should().Be("Schemas/portal_report_v2.xsd");
+        cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().NotContain("verified");
+        cut.Find("[data-testid=ip-edit-contract-schema]").TextContent.Should().NotContain("verified", "an exact name match in the source is not proof of the active schema");
+        cut.Find("[data-testid=ip-edit-contract]").GetAttribute("value").Should().Be(nameof(ContractRelationshipState.NotConfigured), "reference metadata never sets the contract relationship");
+    }
+
+    [Theory]
+    [InlineData(0, false, "Not found in the matching source")]
+    [InlineData(2, false, "Review required")]
+    [InlineData(1, true, "No matching source")]
+    public void SchemaEvidence_IsNeverChosen_AndFollowsTheSourceState(int files, bool noSource, string expected)
+    {
+        var schemas = Enumerable.Range(0, files).Select(i => new IntegrationTemplateSchemaCandidate(SnapshotA, "mu.zip", "portal_report_v2", $"Schemas/v{i}/portal_report_v2.xsd")).ToArray();
+        _templates = [Referenced(noSource ? Missing() : OneSource(), schemas)];
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+        Expand(cut, "contract");
+        cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be(expected);
+        cut.FindAll("[data-testid=ip-edit-contract-schema-file]").Should().BeEmpty("a schema is shown as the candidate only when exactly one matches");
+    }
+
+    [Fact]
+    public void Saving_StoresOnlyIntegrationOwnedValues_NeverReferenceFacts()
+    {
+        _templates = [Referenced(OneSource())];
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
+        cut.Find("[data-testid=ip-edit-save]").Click();
+        cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
+        var saved = _api.Saved.Single();
+        System.Text.Json.JsonSerializer.Serialize(saved).Should().NotContain("Bearer JWT").And.NotContain("PortalToken").And.NotContain("portal_report_v2").And.NotContain("Task_1");
+        (saved.ContractRelationship, saved.ProducerContractReference, saved.ConsumerContractReference).Should().Be((ContractRelationshipState.NotConfigured, (string?)null, (string?)null));
+        _api.BindCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AMessagingType_KeepsItsPlatform_AndHttpApiNeverShowsIt()
+    {
+        var cut = OpenAdd(Open());
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(IntegrationKind.EventHub));
+        cut.Find("[data-testid=ip-edit-platform]").GetAttribute("value").Should().Be(_api.Catalog.Platforms.First().Id, "event streams sit on the environment's messaging platform");
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(IntegrationKind.HttpApi));
+        cut.FindAll("[data-testid=ip-edit-platform]").Should().BeEmpty();
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(IntegrationKind.EventHub));
+        cut.Find("[data-testid=ip-edit-platform]").GetAttribute("value").Should().Be(_api.Catalog.Platforms.First().Id, "returning to messaging restores the untouched default");
     }
 
     // ── One generic Add integration trigger per page state ────────────────────────────────────────────────────────────────────────

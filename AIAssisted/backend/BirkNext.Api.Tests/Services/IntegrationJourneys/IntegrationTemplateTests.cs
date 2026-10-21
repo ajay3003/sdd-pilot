@@ -111,6 +111,107 @@ public sealed class IntegrationTemplateTests
         harness.Bindings.Items.Should().BeEmpty("reading templates never creates a binding (SetAsync would throw)");
     }
 
+    private static IqrSourceSnapshot WithSchemas(IqrSourceSnapshot snapshot, params string[] schemaNames) => snapshot with
+    {
+        EvidenceDomains = new BirkNext.SourceDomains.SourceEvidenceDomainsSnapshot
+        {
+            Contracts = new BirkNext.SourceDomains.ContractEvidence
+            {
+                Domain = BirkNext.SourceDomains.SourceEvidenceDomain.Contracts,
+                Contracts = [.. schemaNames.Select(name => new BirkNext.SourceDomains.SourceContract
+                    { Id = name, Name = name, Type = BirkNext.SourceDomains.SourceContractType.XmlSchema, File = $"TestData/xsd/{name}.xsd", Version = "2.0.0" })],
+            },
+        },
+    };
+
+    [Fact]
+    public async Task ReportIntake_ReadsTheTestPackReference_ForAuthenticationAndContract_AsKnownMetadataOnly()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var intake = Template(await ReadAsync(harness, "Development"), "skolenaervaer-report-intake");
+
+        intake.ReferenceSource!.State.Should().Be(TestPackSourceState.ReferenceAvailable);
+        intake.AuthenticationReference.Select(fact => (fact.Label, fact.Value)).Should().Equal(
+            ("Authentication scheme", "Bearer JWT"), ("Security scheme name", "AltinnToken"), ("Token providers", "maskinporten, id-porten"));
+        intake.ContractReference.Select(fact => (fact.Label, fact.Value)).Should().Equal(("Form data type", "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn"),
+            ("Content type", "application/xml"), ("Process task", "Task_1"), ("Task name", "Utfylling"));
+        intake.SchemaName.Should().Be("bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn");
+        intake.Values.Keys.Should().BeEquivalentTo(["DisplayName", "SystemName", "Producer", "Consumer", "SourceSystem", "DestinationSystem", "EndpointOrTopic"],
+            "reference facts are shown beside the form, never prefilled into the integration record");
+        intake.AuthenticationReference.Concat(intake.ContractReference).Should().NotContain(fact => fact.Value.Contains("secret", StringComparison.OrdinalIgnoreCase)
+            || fact.Value.StartsWith("Bearer ey", StringComparison.Ordinal) || fact.Value.Contains("sig=", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SourceMatching_IsByContent_AcrossAllStoredSnapshots_AndUnboundIsNeverMissing()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        // An old import with a provenance name that says nothing about MU, from no current project: recognized by its projects.
+        var old = Repo("Tiltak 2 - Sikkert digitalt økosystem.zip", 'a', "Buf.Meldingsutveksler.Service") with { AnalyzedAt = DateTimeOffset.UtcNow.AddDays(-30), Status = SourceAnalysisStatus.Partial };
+        harness.Sources.Snapshots.Add(old);
+        harness.Sources.Snapshots.Add(Repo("MU.zip", 'c', "Unrelated.Service"));
+        var evidence = Template(await ReadAsync(harness), "skolenaervaer-report-intake").EvidenceSource!;
+
+        evidence.State.Should().Be(TestPackSourceState.AvailableNotBound, "unbound is available, not missing — and a file named MU.zip without MU content does not count");
+        evidence.Candidates.Select(c => c.ArchiveFileName).Should().Equal("Tiltak 2 - Sikkert digitalt økosystem.zip");
+        evidence.Candidates.Single().AnalysisStatus.Should().Be("Partial");
+        evidence.NearMisses.Select(m => m.ArchiveFileName).Should().Equal("MU.zip");
+    }
+
+    [Fact]
+    public async Task ACanonicalBinding_IsBound_AndTheTemplateNeverChangesIt()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var mu = Repo("mu.zip", 'a', "Buf.Meldingsutveksler.Service");
+        harness.Sources.Snapshots.Add(mu);
+        harness.Sources.Snapshots.Add(Repo("mu-newer.zip", 'b', "Buf.Meldingsutveksler.Api") with { AnalyzedAt = DateTimeOffset.UtcNow.AddDays(1) });
+        harness.Active.Catalog.Extra.Add(new IntegrationDefinition
+        {
+            Id = "dev:http:intake", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "Report intake", Kind = IntegrationKind.HttpApi, Enabled = true,
+            Producer = "Altinn", Consumer = new IntegrationConsumer { DisplayName = "MU" },
+        });
+        harness.Bindings.Items.Add(IntegrationEvidenceBinding.For(ActiveEventTestHarness.Env, "dev:http:intake", mu, DateTimeOffset.UtcNow));
+        var before = harness.Bindings.Items.ToArray();
+
+        var evidence = Template(await ReadAsync(harness), "skolenaervaer-report-intake").EvidenceSource!;
+        evidence.State.Should().Be(TestPackSourceState.Bound);
+        evidence.Candidates.First().Should().Match<TestPackSourceCandidate>(c => c.Bound && c.ArchiveFileName == "mu.zip", "the bound snapshot leads, never the newest");
+        harness.Bindings.Items.Should().Equal(before, "reading a template never creates or replaces a binding");
+    }
+
+    [Fact]
+    public async Task SchemaCandidates_AreExactNameMatches_InSnapshotsRecognizedAsTheEvidenceSource_Only()
+    {
+        const string name = "bufdir_barnevern_tiltak_skolenaervaer_v2_0_0_altinn";
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Sources.Snapshots.Add(WithSchemas(Repo("mu.zip", 'a', "Buf.Meldingsutveksler.Service"), name, "bufdir.barnevern.tiltak.skolenaervaer.v2.0.0", name + "_old"));
+        harness.Sources.Snapshots.Add(WithSchemas(Repo("other.zip", 'b', "Other.Service"), name));
+
+        var intake = Template(await ReadAsync(harness), "skolenaervaer-report-intake");
+        intake.SchemaCandidates.Should().ContainSingle().Which.Should().Be(
+            new IntegrationTemplateSchemaCandidate(intake.EvidenceSource!.Candidates.Single().SnapshotId, "mu.zip", name, $"TestData/xsd/{name}.xsd") { Version = "2.0.0" });
+
+        await using var empty = new IntegrationJourneyHarness();
+        Template(await ReadAsync(empty), "skolenaervaer-report-intake").SchemaCandidates.Should().BeEmpty("no evidence source, nothing to look in");
+    }
+
+    [Fact]
+    public async Task SourceAvailabilityBindingsAndTemplates_NeverChangeActiveExecution()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        var service = harness.Service(Pack(harness));
+        var before = (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single();
+
+        var mu = Repo("mu.zip", 'a', "Buf.Meldingsutveksler.Service");
+        harness.Sources.Snapshots.Add(mu);
+        await service.IntegrationTemplatesAsync(ActiveEventTestHarness.Env, "Development", default);
+        harness.Bindings.Items.Add(IntegrationEvidenceBinding.For(ActiveEventTestHarness.Env, "dev:http:intake", mu, DateTimeOffset.UtcNow));
+        var after = (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single();
+
+        (after.EnvironmentTrusted, after.EnvironmentDetail).Should().Be((before.EnvironmentTrusted, before.EnvironmentDetail),
+            "the trusted-environment gate is backend configuration only: imports, references, templates and bindings never grant execution");
+    }
+
     [Fact]
     public async Task AnExistingRecordThatFulfilsTheRequirement_IsReportedAsAlreadyConfigured()
     {

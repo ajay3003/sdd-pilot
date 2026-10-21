@@ -167,7 +167,8 @@
                 </div>
                 <div role="listitem" class="iqr-stage" data-testid="iqr-stage" data-stage="binding">
                     <h3 class="iqr-stage-title" id="iqr-source-summary-heading"><span class="iqr-stage-number" aria-hidden="true">2</span> Bind source evidence
-                        <span class="iqr-pill iqr-pill-@(bound.Count == 0 ? "muted" : bound.Count < enabled.Count ? "attention" : "ready")" data-testid="iqr-stage-status">Source evidence: @(enabled.Count == 0 ? "Not applicable" : bound.Count == 0 ? "Missing" : bound.Count < enabled.Count ? "Partial" : "Bound")</span></h3>
+                        @* Stored snapshots that nothing binds yet are available, not missing: Missing only when there is nothing to bind. *@
+                        <span class="iqr-pill iqr-pill-@(bound.Count == 0 ? "muted" : bound.Count < enabled.Count ? "attention" : "ready")" data-testid="iqr-stage-status">Source evidence: @(enabled.Count == 0 ? "Not applicable" : bound.Count == 0 ? snapshots.Count == 0 ? "Missing" : BirkNext.Web.Services.ProjectImport.SourceSetupPresentation.AvailableNeedsBinding : bound.Count < enabled.Count ? "Partial" : "Bound")</span></h3>
                     <p data-testid="iqr-source-summary">@SourceSummary(snapshots.Count, bound.Count)</p>
                     <p class="iqr-muted">One immutable Source Analysis snapshot per integration. This binding is the canonical source evidence: test packs and providers read it instead of choosing a snapshot of their own, and a newer snapshot never replaces it until you bind it. Choosing contacts nothing.</p>
                     <div data-testid="iqr-source-evidence">
