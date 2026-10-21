@@ -164,8 +164,8 @@ public sealed class ApiSafeFuzzingTests
         Assert.Contains(reports, c => c is { Parameter: "since", MutationType: ApiFuzzMutationType.InvalidDate });
         Assert.Contains(list, c => c is { Parameter: "name", MutationType: ApiFuzzMutationType.StringTooLong } && c.Query.Single(q => q.Key == "name").Value.Length == 21);
         // The mutated case still carries every other REQUIRED input with a synthetic valid value.
-        Assert.All(list.Where(c => c.Parameter != "status"), c => Assert.Contains(new KeyValuePair<string, string>("status", "Active"), c.Query));
-        Assert.All(list.Where(c => c.Parameter != "X-Tenant"), c => Assert.Contains(new KeyValuePair<string, string>("X-Tenant", "north"), c.Headers));
+        Assert.All(list.Where(c => c.Parameter != "status"), c => Assert.Contains(new ApiFuzzPair("status", "Active"), c.Query));
+        Assert.All(list.Where(c => c.Parameter != "X-Tenant"), c => Assert.Contains(new ApiFuzzPair("X-Tenant", "north"), c.Headers));
         // Credentials are never a fuzz parameter.
         Assert.DoesNotContain(result.Cases, c => c.Parameter == "Authorization" || c.Headers.Any(h => h.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)));
         // Contract level has no robustness cases.

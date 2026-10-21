@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using BirkNext.Standards;
 
@@ -349,8 +350,8 @@ public sealed record ApiFuzzCase
 
     // Request material, synthetic and bounded. Re-validated by the backend guard before anything is sent.
     public string Path { get; init; } = "/";
-    public List<KeyValuePair<string, string>> Query { get; init; } = [];
-    public List<KeyValuePair<string, string>> Headers { get; init; } = [];
+    public List<ApiFuzzPair> Query { get; init; } = [];
+    public List<ApiFuzzPair> Headers { get; init; } = [];
     public string? GraphQlQuery { get; init; }
     /// <summary>The query is deliberately not parseable (malformed-syntax case).</summary>
     public bool ExpectSyntaxError { get; init; }
@@ -485,3 +486,10 @@ public static class ApiFuzzingWording
     public const string BodyScope =
         "Request-body cases run only for operations explicitly opted in in Target Environment API review safety settings, on a server-registered trusted non-production target; state-changing operations additionally need a registered cleanup strategy. DELETE and GraphQL mutations are never fuzzed.";
 }
+
+/// <summary>
+/// One query parameter or header of a fuzz case. Same JSON shape as the KeyValuePair it replaces (<c>{"key":"a","value":"b"}</c>), but an
+/// application type: a trimmed (Release) Blazor WebAssembly build strips the constructor parameter names of framework KeyValuePair, and
+/// System.Text.Json then refused the whole API review history (it holds fuzzing runs) with NotSupportedException — silently, at load.
+/// </summary>
+public sealed record ApiFuzzPair(string Key, string Value);

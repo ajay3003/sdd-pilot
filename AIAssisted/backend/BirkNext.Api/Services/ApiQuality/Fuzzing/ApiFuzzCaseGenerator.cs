@@ -131,8 +131,8 @@ public static class ApiFuzzCaseGenerator
             _ => ApiFuzzParameterLocation.Query,
         };
         var path = op.Path;
-        var query = new List<KeyValuePair<string, string>>();
-        var headers = new List<KeyValuePair<string, string>>();
+        var query = new List<ApiFuzzPair>();
+        var headers = new List<ApiFuzzPair>();
         foreach (var p in all)
         {
             var isMutated = p.Name == mutated.Name && p.Location == mutated.Location;

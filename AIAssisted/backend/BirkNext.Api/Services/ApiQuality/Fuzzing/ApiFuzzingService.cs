@@ -275,7 +275,7 @@ public sealed class ApiFuzzingService(HttpClient publicClient, IAuthenticatedRev
         var path = basePath.Length > 0 && !c.Path.StartsWith(basePath + "/", StringComparison.OrdinalIgnoreCase) && !string.Equals(c.Path, basePath, StringComparison.OrdinalIgnoreCase)
             ? basePath + c.Path : c.Path;
         var query = c.Query.Count == 0 ? "" : "?" + string.Join("&", c.Query.Select(q => $"{Uri.EscapeDataString(q.Key)}={Uri.EscapeDataString(q.Value)}"));
-        return new ApiSafeRequest(c.Method, $"{target.Origin}{path}{query}", c.Headers);
+        return new ApiSafeRequest(c.Method, $"{target.Origin}{path}{query}", c.Headers.Select(h => new KeyValuePair<string, string>(h.Key, h.Value)).ToList());
     }
 
     private async Task<ApiFuzzResponse> SendAsync(ApiSafeRequest request, TargetContext context, ApiFuzzingSettings settings, CancellationToken ct)
