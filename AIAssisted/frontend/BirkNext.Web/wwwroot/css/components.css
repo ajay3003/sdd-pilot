@@ -159,6 +159,13 @@
     border-color: var(--clr-border-hover);
 }
 
+/* Compact, left-aligned empty state for an expected state inside a working view (a library XSD, no comparison version, no test cases):
+   headline, one explanation, the next actions and an optional technical note. */
+.empty-state-compact { display: grid; gap: 0.35rem; padding: 0.85rem 1rem; text-align: left; }
+.empty-state-compact p { color: var(--clr-text-body); }
+.empty-state-compact .empty-state-actions { justify-content: flex-start; margin-top: 0.25rem; }
+.empty-state-compact .empty-state-note { font-size: 0.78rem; color: var(--clr-text-subtle); }
+
 .empty-state p {
     font-size: 0.875rem;
     color: var(--clr-text-subtle);
@@ -1431,5 +1438,6 @@
     text-align: left;
     cursor: pointer;
 }
+a.export-menu-item { box-sizing: border-box; text-decoration: none; overflow-wrap: anywhere; }
 .export-menu-item:hover { background: var(--clr-surface); }
 .export-menu-item:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: -2px; }

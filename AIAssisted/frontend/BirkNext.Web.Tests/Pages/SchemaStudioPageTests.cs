@@ -3,6 +3,7 @@ using BirkNext.Integrations;
 using BirkNext.Web.Services;
 using BirkNext.Web.Services.SchemaStudio;
 using Bunit;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
 using System.Text;
@@ -209,12 +210,19 @@ public sealed class SchemaStudioPageTests : BunitContext
         Services.AddSingleton(service);
         var page = Render<SchemaStudio>();
 
-        page.Find("button.ss-action").Click();
+        page.FindAll("button").Single(b => b.TextContent == "Create new XSD").Click();
         page.FindAll("button").Single(b => b.TextContent.Contains("Create schema and open Designer", StringComparison.Ordinal)).Click();
         Assert.Contains("Schema Designer", page.Markup);
-        page.Find("input[aria-label='Child element name']").Change("RecordId");
-        page.FindAll("button").Single(b => b.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
-        page.FindAll("button").Single(b => b.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
+        page.Find("[data-testid=ss-designer-steps]").TextContent.Should().Contain("Edit a working draft").And.Contain("Preview and validate it").And.Contain("Save a new immutable version");
+        page.Find("[data-testid=ss-designer-name]").Change("RecordId");
+        page.Find("[data-testid=ss-designer-add]").Click();
+        page.Find("[data-testid=ss-designer-save]").HasAttribute("disabled").Should().BeTrue("a new version is saved only after the draft previews as valid");
+        Assert.Single(service.Packages);
+        page.Find("[data-testid=ss-designer-preview]").Click();
+        page.Find("[data-testid=ss-designer-save]").HasAttribute("disabled").Should().BeFalse();
+        page.Find("[data-testid=ss-designer-save]").ClassList.Should().Contain("btn-primary", "once valid, saving is the one primary action");
+        page.Find("[data-testid=ss-designer-preview]").ClassList.Should().Contain("btn-secondary");
+        page.Find("[data-testid=ss-designer-save]").Click();
 
         Assert.Equal(2, service.Packages.Count);
         Assert.Contains(service.Packages[0].Files[0].Declarations.SelectMany(d => d.Children), e => e.Name == "RecordId");
@@ -256,8 +264,9 @@ public sealed class SchemaStudioPageTests : BunitContext
         var page = Render<SchemaStudio>();
 
         OpenView(page, "Designer");
-        page.FindAll("button").Single(b => b.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
-        page.FindAll("button").Single(b => b.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
+        page.Find("[data-testid=ss-designer-add]").Click();
+        page.Find("[data-testid=ss-designer-preview]").Click();
+        page.Find("[data-testid=ss-designer-save]").Click();
 
         Assert.Equal(2, service.Packages.Count);
         Assert.Equal("Valid", service.Packages[0].Validation);
@@ -277,15 +286,15 @@ public sealed class SchemaStudioPageTests : BunitContext
         var page = Render<SchemaStudio>();
 
         OpenView(page, "Designer");
-        page.Find("input[aria-label='Child element name']").Change("Status");
-        page.Find("select[aria-label='Minimum occurrences']").Change("1");
-        page.Find("select[aria-label='Maximum occurrences']").Change("2");
-        page.Find("input[aria-label='Enumeration values']").Change("Ready, Done");
-        page.FindAll("button").Single(button => button.TextContent.Contains("Add child element", StringComparison.Ordinal)).Click();
-        page.FindAll("button").Single(button => button.TextContent.Contains("Preview and validate draft", StringComparison.Ordinal)).Click();
+        page.Find("[data-testid=ss-designer-name]").Change("Status");
+        page.Find("[data-testid=ss-designer-min]").Change("1");
+        page.Find("[data-testid=ss-designer-max]").Change("2");
+        page.Find("[data-testid=ss-designer-enumeration]").Change("Ready, Done");
+        page.Find("[data-testid=ss-designer-add]").Click();
+        page.Find("[data-testid=ss-designer-preview]").Click();
 
         Assert.Contains("Draft compilation: Valid", page.Markup);
-        page.FindAll("button").Single(button => button.TextContent.Contains("Validate and save new version", StringComparison.Ordinal)).Click();
+        page.Find("[data-testid=ss-designer-save]").Click();
         var saved = service.Packages.OrderByDescending(package => package.ImportedAt).First();
         var member = Assert.Single(Assert.Single(saved.EffectiveSchema).Children);
         Assert.Equal("1", member.MinOccurs);
@@ -316,7 +325,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         var input = (AngleSharp.Html.Dom.IHtmlTextAreaElement)firstPage.Find("textarea[aria-label='Edit XSD source']");
         const string edited = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"ChangedRoot\" type=\"xs:string\"/></xs:schema>";
         input.Change(edited);
-        firstPage.FindAll("button").Single(button => button.TextContent.Contains("Save working draft", StringComparison.Ordinal)).Click();
+        firstPage.Find("[data-testid=ss-designer-keep]").Click();
         Assert.Contains("Saved draft for draft.xsd", firstPage.Markup);
         Assert.Equal(edited, drafts.Find(package, "draft.xsd")?.Text);
 
@@ -347,6 +356,9 @@ public sealed class SchemaStudioPageTests : BunitContext
 
         var firstPage = Render<SchemaStudio>();
         OpenView(firstPage, "Generated Tests");
+        firstPage.FindAll("[data-testid=ss-xml-editor]").Should().BeEmpty("the XML editor opens on request, not by default");
+        firstPage.FindAll("[data-testid=ss-xml-save-note]").Should().BeEmpty("the save boundary note appears only once XML exists");
+        firstPage.Find("[data-testid=ss-xml-paste]").Click();
         var xmlInput = firstPage.Find("textarea[aria-label='XML instance to validate']");
         xmlInput.Change("<Root>synthetic value</Root>");
         await firstPage.FindAll("button").Single(button => button.TextContent == "Save XML artifact").ClickAsync();

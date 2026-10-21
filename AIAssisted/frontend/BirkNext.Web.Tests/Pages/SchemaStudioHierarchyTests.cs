@@ -58,16 +58,23 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
 
         markup.IndexOf("data-testid=\"ss-package-header\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"ss-saved-analyses\"", StringComparison.Ordinal));
         page.FindAll("[data-testid=ss-source-setup], [data-testid=ss-import-setup]").Should().BeEmpty("source and import open on request while a package is active");
-        page.Find("[data-testid=ss-saved-analyses]").TagName.Should().Be("DETAILS");
-        page.Find("[data-testid=ss-saved-analyses]").HasAttribute("open").Should().BeFalse();
-        page.Find("[data-testid=ss-provenance]").HasAttribute("open").Should().BeFalse("snapshot, fingerprints and paths stay behind Source provenance");
+        page.Find("[data-testid=ss-saved-analyses-toggle]").TextContent.Should().Contain("Saved analyses (0)", "a compact disclosure with its count");
+        page.Find("[data-testid=ss-saved-analyses-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.Find("[data-testid=ss-provenance-toggle]").GetAttribute("aria-expanded").Should().Be("false", "snapshot, fingerprints and paths stay behind Source provenance");
         page.FindAll("h2").Count(h => h.TextContent.Contains("report", StringComparison.Ordinal)).Should().Be(1, "one current-package identity");
         markup.Should().NotContain("Schema packages and versions");
         page.FindAll("[data-testid=ss-package-switcher]").Should().BeEmpty("one package needs no package list");
         page.Find("[data-testid=ss-validity]").TextContent.Should().Be("Valid");
-        page.Find("[data-testid=ss-validity-scope]").TextContent.Should().Be("XSD validation only");
-        page.Find("[data-testid=ss-package-actions]").QuerySelectorAll(".ss-action").Select(a => a.TextContent).Should().Equal(["Save analysis"], "one primary action");
-        page.Find("[data-testid=ss-export]").QuerySelectorAll("a").Select(a => a.GetAttribute("data-testid")).Should().Equal("ss-export-xsd", "ss-export-zip");
+        page.Find("[data-testid=ss-validity-headline]").TextContent.Should().Be("Schema valid");
+        page.Find("[data-testid=ss-validity-scope]").TextContent.Should().Be(SchemaStudioPresentation.ValidityScope, "the scope says the integration is not verified");
+        page.Find("[data-testid=ss-source-kind]").TextContent.Should().Be("Source: imported XSD files", "the archive and identifiers are provenance, not the primary line");
+        var actions = page.Find("[data-testid=ss-package-actions]");
+        actions.QuerySelectorAll(".btn-primary").Select(a => a.TextContent).Should().Equal(["Save analysis"], "one primary action");
+        actions.QuerySelectorAll(":scope > .btn-secondary").Select(a => a.TextContent).Should().Equal("Change source", "Import another package");
+        page.Find("[data-testid=ss-more-toggle]").TextContent.Should().Contain("More");
+        page.Find("[data-testid=ss-more-toggle]").GetAttribute("aria-expanded").Should().Be("false", "export and removal never compete with Save");
+        page.Find("[data-testid=ss-more]").QuerySelectorAll("a").Select(a => a.GetAttribute("data-testid")).Should().Equal("ss-more-export-xsd", "ss-more-export-zip");
+        page.Find("[data-testid=ss-more-remove]").TextContent.Should().Be("Remove from session");
 
         page.Find("[data-testid=ss-change-source]").Click();
         page.Find("[data-testid=ss-source-setup] h2").TextContent.Should().Be("Change source");
@@ -117,12 +124,20 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
         Studio(("lib.xsd", Library));
         var page = Render<SchemaStudio>();
         page.Find("[data-testid=ss-validity]").TextContent.Should().Be("Valid", "no root element never makes an XSD invalid");
-        page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("None declared");
-        page.Find("[data-testid=ss-root-xsd]").TextContent.Should().Be("Not applicable · no root element declared");
+        page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("None");
+        page.Find("[data-testid=ss-root-xsd]").TextContent.Should().StartWith("Not defined");
+        page.Find("[data-testid=ss-overview-definitions]").TextContent.Should().StartWith("2");
+        page.Find("[data-testid=ss-overview-dependencies]").TextContent.Should().StartWith("None");
+        var meaning = page.Find("[data-testid=ss-meaning]");
+        meaning.TextContent.Should().Contain(SchemaStudioPresentation.LibraryHeadline).And.Contain("not a complete message");
+        meaning.QuerySelector("strong")!.TextContent.Should().Be(SchemaStudioPresentation.LibraryHeadline, "plain language first");
+        meaning.QuerySelector(".ss-tech-term")!.TextContent.Should().Contain("no global root element", "the technical phrase is secondary");
+        page.FindAll("[data-testid=ss-shortcut-tests]").Should().BeEmpty("no Run generated tests card when there is nothing to run");
+        page.Find("[data-testid=ss-shortcut-fields]").TextContent.Should().Contain("Review reusable types");
 
         OpenView(page, "Forretning");
         var empty = page.Find("[data-testid=sr-no-root]").TextContent;
-        empty.Should().Contain("No global root element is declared in this XSD").And.Contain("2 global declarations available").And.Contain("does not make the XSD invalid");
+        empty.Should().Contain(SchemaStudioPresentation.LibraryStructureHeadline).And.Contain("2 reusable schema definitions").And.Contain("no global root element is declared");
         page.FindAll("[data-testid=ss-structure-mode]").Should().BeEmpty("there is no structure to switch");
         page.Find("[data-testid=sr-no-root-declarations]").Click();
         Current(page).Should().Be("Schema Tree");
@@ -134,13 +149,23 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
         page.Find("[data-testid=ss-types]").TextContent.Should().Contain("CodeType");
 
         OpenView(page, "Effective Schema");
-        page.Find("[data-testid=ss-effective-no-root]").TextContent.Should().Contain("No global root element is declared");
+        page.Find("[data-testid=ss-effective-no-root]").TextContent.Should().Contain("No complete message structure").And.Contain("reusable definitions only");
+        page.FindAll("[data-testid=ss-effective-toolbar]").Should().BeEmpty("no structure filters or expand controls without a structure");
+
+        OpenView(page, "Felt og regler");
+        page.Find("[data-testid=sr-no-root]").TextContent.Should().Contain(SchemaStudioPresentation.LibraryStructureHeadline, "one shared library explanation");
+
+        OpenView(page, "Generated Tests");
+        page.Find("[data-testid=ss-tests-empty]").TextContent.Should().Contain("No generated test cases are available").And.Contain("reusable schema library");
+        page.FindAll("[data-testid=ss-run-tests]").Should().BeEmpty("no run action with zero cases");
+        page.Find("[data-testid=ss-xml-generate]").HasAttribute("disabled").Should().BeTrue("a minimum example needs a top-level message element");
+        page.FindAll("[data-testid=ss-xml-editor]").Should().BeEmpty("the XML editor opens on request");
 
         OpenView(page, "Schema dependencies");
-        page.Find("[data-testid=ss-dependencies-single]").TextContent.Should().Contain("No cross-file dependency graph is needed");
+        page.Find("[data-testid=ss-dependencies-single]").TextContent.Should().Contain("no dependency graph to show");
         page.FindAll("[data-testid=ss-linked-xsds]").Should().BeEmpty("a single XSD gets a compact summary, not an empty graph");
         OpenView(page, "References");
-        page.Find("[data-testid=ss-references-empty]").TextContent.Should().Contain("No cross-file references");
+        page.Find("[data-testid=ss-references-empty]").TextContent.Should().Contain("Cross-file references: none").And.Contain("one XSD file");
     }
 
     [Fact]

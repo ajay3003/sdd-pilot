@@ -1,28 +1,28 @@
 @using BirkNext.Schemas
 @using BirkNext.Web.Services.SchemaStudio
 @using P = BirkNext.Web.Services.SchemaStudio.SchemaReadablePresentation
+@using S = BirkNext.Web.Services.SchemaStudio.SchemaStudioPresentation
 
-@* Deterministic readable views of the shared effective schema. Facts only; documentation verbatim; no inferred business rules. *@
+@* Deterministic readable views of the shared effective schema. Facts only; the schema's own documentation verbatim (in its source language);
+   no inferred business rules. UI copy is English; technical XSD terms are secondary detail. *@
 <section class="sr-view" aria-labelledby="@TitleId">
     @if (View == "Schema dependencies")
     {
         <h3 id="@TitleId">Schema dependencies</h3>
-        <p class="sr-note">Avhengigheter løses bare innenfor denne pakken. Eksterne plasseringer hentes aldri, og ingenting gjettes.</p>
-        <div class="sr-table-wrap" tabindex="0" aria-label="Schema dependencies (scrollable)">
-            <table class="sr-table">
-                <thead><tr><th scope="col">Schema</th><th scope="col">Namespace</th><th scope="col">Versjon</th><th scope="col">Fingerprint</th><th scope="col">Kilde</th><th scope="col">Status</th></tr></thead>
+        <p class="sr-note">Dependencies resolve only within this package. Remote schema locations are never fetched, and nothing is guessed.</p>
+        <div class="sr-table-wrap" tabindex="0" role="region" aria-label="Schema dependencies (scrollable)">
+            <table class="sr-table sr-table-compact" data-testid="sr-dependencies">
+                <thead><tr><th scope="col">Schema file</th><th scope="col">Namespace</th><th scope="col">Version</th><th scope="col">Dependency status</th></tr></thead>
                 <tbody>
                     @foreach (var file in Package.Files)
                     {
                         var incoming = Package.Files.SelectMany(f => f.Links.Where(l => string.Equals(l.ResolvedFile, file.Name, StringComparison.OrdinalIgnoreCase)).Select(l => (From: f.Name, Link: l))).ToList();
                         <tr data-testid="sr-dependency-file">
-                            <td><button type="button" class="sr-link" @onclick="() => OnFileSelected.InvokeAsync(file.Name)" aria-label="Open @file.Name as raw XSD">@file.Name</button>
-                                @if (incoming.Count > 0) { <small class="sr-sub">@string.Join("; ", incoming.Select(i => $"{P.KindLabel(i.Link.Kind)} fra {i.From}"))</small> }</td>
-                            <td>@(file.TargetNamespace ?? "—")</td>
-                            <td>@(file.Version ?? "Ikke oppgitt")</td>
-                            <td><code>@file.Fingerprint[..12]</code></td>
-                            <td>@SourceLabel</td>
-                            <td>@(incoming.Any(i => i.Link.EffectiveStatus == SchemaDependencyStatus.Circular) ? P.DependencyStatusLabel(SchemaDependencyStatus.Circular) : "Løst")</td>
+                            <td><button type="button" class="sr-link" title="@file.Name" @onclick="() => OnFileSelected.InvokeAsync(file.Name)" aria-label="Open @file.Name as raw XSD">@S.FileName(file.Name)</button>
+                                @if (incoming.Count > 0) { <small class="sr-sub">@string.Join("; ", incoming.Select(i => $"{P.KindLabel(i.Link.Kind)} from {S.FileName(i.From)}"))</small> }</td>
+                            <td class="sr-namespace">@(file.TargetNamespace ?? "No target namespace")</td>
+                            <td>@(file.Version ?? "Not stated")</td>
+                            <td data-testid="sr-dependency-status">@FileStatus(file, incoming)</td>
                         </tr>
                     }
                     @foreach (var file in Package.Files)
@@ -30,11 +30,9 @@
                         @foreach (var link in file.Links.Where(l => l.EffectiveStatus is not (SchemaDependencyStatus.Resolved or SchemaDependencyStatus.Circular)))
                         {
                             <tr class="sr-problem" data-testid="sr-dependency-problem">
-                                <td>@(link.Location ?? "(ingen schemaLocation)")<small class="sr-sub">@P.KindLabel(link.Kind) fra @file.Name</small></td>
-                                <td>@(link.Namespace ?? "—")</td>
+                                <td><span title="@link.Location">@(link.Location is null ? "(no schemaLocation)" : S.FileName(link.Location))</span><small class="sr-sub">@P.KindLabel(link.Kind) from @S.FileName(file.Name)</small></td>
+                                <td class="sr-namespace">@(link.Namespace ?? "—")</td>
                                 <td>—</td>
-                                <td>—</td>
-                                <td>@file.Name</td>
                                 <td><strong>@P.DependencyStatusLabel(link.EffectiveStatus)</strong>@if (link.Reason is { } reason) { <small class="sr-sub">@reason</small> }</td>
                             </tr>
                         }
@@ -42,32 +40,29 @@
                 </tbody>
             </table>
         </div>
+        <ReviewDisclosure Text="View provenance" CollapseText="Hide provenance" TestId="sr-dependency-provenance" Class="disclosure-small">
+            <dl class="sr-facts">
+                <div><dt>Source</dt><dd>@SourceLabel</dd></div>
+                @foreach (var file in Package.Files)
+                {
+                    <div><dt>@S.FileName(file.Name)</dt><dd><span class="sr-mono">@file.Name</span><small class="sr-sub">Fingerprint <code>@file.Fingerprint[..Math.Min(12, file.Fingerprint.Length)]</code></small></dd></div>
+                }
+            </dl>
+        </ReviewDisclosure>
         @if (Package.UnresolvedReferences is { Count: > 0 } unresolved)
         {
-            <h4>Uløste referanser</h4>
-            <p class="sr-note">Disse typene eller elementene er ikke deklarert i pakken. Medlemmer som arves fra dem vises ikke i den lesbare modellen.</p>
+            <h4>Unresolved references</h4>
+            <p class="sr-note">These types or elements are not declared in the package. Members inherited from them are not shown in the readable model.</p>
             <ul class="sr-list" data-testid="sr-unresolved-references">
-                @foreach (var reference in unresolved.Take(100)) { <li><code>@reference.QualifiedName</code> <small>(@reference.Kind brukt i @reference.UsedIn@(reference.Path is { Length: > 1 } path ? " · " + path : ""))</small></li> }
+                @foreach (var reference in unresolved.Take(100)) { <li><code>@reference.QualifiedName</code> <small>(@reference.Kind used in @reference.UsedIn@(reference.Path is { Length: > 1 } path ? " · " + path : ""))</small></li> }
             </ul>
         }
     }
     else if (Package.EffectiveSchema.Count == 0)
     {
-        @* A library/shared-type XSD has no global root element: there is no message to draw, so say so and point to what it does declare. *@
+        @* A library XSD has no global root element: there is no message to draw, so explain it in normal words and point to what it does declare. *@
         <h3 id="@TitleId">@Title</h3>
-        <div class="sr-no-root" data-testid="sr-no-root">
-            <p><strong>No global root element is declared in this XSD.</strong></p>
-            <p>This package defines reusable schema declarations and types (@Declarations global declaration@(Declarations == 1 ? "" : "s") available). Start from its declarations, types or references.</p>
-            @if (OnNavigate.HasDelegate)
-            {
-                <div class="sr-no-root-actions">
-                    <button type="button" class="sr-tool" data-testid="sr-no-root-declarations" @onclick='() => OnNavigate.InvokeAsync("Schema Tree")'>View declarations</button>
-                    <button type="button" class="sr-tool" data-testid="sr-no-root-types" @onclick='() => OnNavigate.InvokeAsync("Types")'>View types</button>
-                    <button type="button" class="sr-tool" data-testid="sr-no-root-references" @onclick='() => OnNavigate.InvokeAsync("References")'>View references</button>
-                </div>
-            }
-            <p class="sr-note">No root element does not make the XSD invalid; it is a library of reusable declarations.</p>
-        </div>
+        <SchemaLibraryEmptyState Package="Package" OnNavigate="OnNavigate" TestId="sr-no-root" Actions="@SchemaLibraryEmptyState.Definitions("sr-no-root")" />
     }
     else
     {
@@ -75,26 +70,26 @@
             <h3 id="@TitleId">@Title</h3>
             @if (Package.EffectiveSchema.Count > 1)
             {
-                <label class="sr-root">Rotelement
-                    <select @bind="_rootName" aria-label="Rotelement">
-                        <option value="">Velg rotelement</option>
-                        @foreach (var candidate in Package.EffectiveSchema) { <option value="@candidate.Name">@candidate.Name (@candidate.DeclaredIn)</option> }
+                <label class="sr-root">Top-level element
+                    <select @bind="_rootName" aria-label="Top-level element">
+                        <option value="">Choose a top-level element</option>
+                        @foreach (var candidate in Package.EffectiveSchema) { <option value="@candidate.Name">@candidate.Name (@S.FileName(candidate.DeclaredIn))</option> }
                     </select>
                 </label>
             }
         </div>
         @if (Root is not { } root)
         {
-            <p class="sr-note" role="status">Pakken har @Package.EffectiveSchema.Count globale rotelementer. Velg hvilket rotelement som skal vises; Schema Studio gjetter ikke hvilket som er meldingen.</p>
+            <p class="sr-note" role="status">The package has @Package.EffectiveSchema.Count top-level elements. Choose which one to show; Schema Studio does not guess which one is the message.</p>
         }
         else
         {
             var fields = P.Fields(root, out var truncated);
-            @if (truncated) { <p class="sr-warning" role="status">Visningen er begrenset til @P.MaxFields felt. Resten er utelatt her; se Effective Schema eller Rå XSD.</p> }
+            @if (truncated) { <p class="sr-warning" role="status">The view is limited to @P.MaxFields fields. The rest are omitted here; see Effective structure or Raw XSD.</p> }
             @switch (View)
             {
                 case "Forretning":
-                    <p class="sr-note">Meldingsstrukturen slik schemaet definerer den, uten XSD-syntaks. Beskrivelser er schemaets egen dokumentasjon.</p>
+                    <p class="sr-note">The message hierarchy as the schema defines it, without XSD syntax. Descriptions are the schema's own documentation.</p>
                     @TreeToolbar
                     <article class="sr-business" data-testid="sr-business" @key="_treeGeneration">
                         <h4>@root.Name</h4>
@@ -103,10 +98,10 @@
                     </article>
                     break;
                 case "Felt og regler":
-                    <p class="sr-note">Bare regler som står i XSD-en vises. Forretningsregler som rekkefølge mellom datoer, summer eller at ett felt utelukker et annet er ikke XSD-regler og vises ikke.</p>
-                    <div class="sr-table-wrap" tabindex="0" aria-label="Felt og regler (scrollable)">
+                    <p class="sr-note">Only rules stated in the XSD are shown. Business rules such as date order, sums or one field excluding another are not XSD rules and are not shown.</p>
+                    <div class="sr-table-wrap" tabindex="0" role="region" aria-label="Fields and rules (scrollable)">
                         <table class="sr-table" data-testid="sr-fields">
-                            <thead><tr><th scope="col" class="sr-col-field">Felt</th><th scope="col" class="sr-col-compact">Forekomst</th><th scope="col" class="sr-col-compact">Type</th><th scope="col" class="sr-col-rules">Regler</th><th scope="col" class="sr-col-doc">Dokumentasjon</th><th scope="col" class="sr-col-source">Kilde</th></tr></thead>
+                            <thead><tr><th scope="col" class="sr-col-field">Field</th><th scope="col" class="sr-col-compact">Occurrence</th><th scope="col" class="sr-col-compact">Type</th><th scope="col" class="sr-col-rules">Rules</th><th scope="col" class="sr-col-doc">Documentation</th><th scope="col" class="sr-col-source">Source</th></tr></thead>
                             <tbody>
                                 @foreach (var field in fields)
                                 {
@@ -116,7 +111,7 @@
                                         <td>@P.CardinalityLabel(member)<small class="sr-sub sr-mono">@P.ExactCardinality(member)</small></td>
                                         <td>@P.TypeLabel(member)<small class="sr-sub sr-mono">@P.RawType(member)</small></td>
                                         <td>@RulesCell(member)</td>
-                                        <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">Fra typen:</small> }<span class="sr-doc">@doc.Text</span> } else { <span class="sr-muted">—</span> }</td>
+                                        <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">From the type:</small> }<span class="sr-doc">@doc.Text</span> } else { <span class="sr-muted">—</span> }</td>
                                         <td class="sr-col-source">@SourceCell(member.DeclaredIn, member.NamespaceUri, member.InheritedFrom, member.TypeDeclaredIn)</td>
                                     </tr>
                                     @foreach (var attr in member.Attributes ?? [])
@@ -136,10 +131,10 @@
                     </div>
                     break;
                 default:
-                    <p class="sr-note">Effektiv struktur med typer, forekomst og opprinnelse. Arvede felt vises der de faktisk forekommer.</p>
+                    <p class="sr-note">The resolved structure with types, occurrence and origin. Inherited fields are shown where they actually occur.</p>
                     @TreeToolbar
                     <ul class="sr-tree" data-testid="sr-structure" @key="_treeGeneration">
-                        <li><span class="sr-name">@root.Name</span> <small>rotelement · @(root.Type ?? "inline") · definert i @root.DeclaredIn</small>@StructureTree((root, 0))</li>
+                        <li><span class="sr-name">@root.Name</span> <small>top-level element · @(root.Type ?? "inline") · declared in @S.FileName(root.DeclaredIn)</small>@StructureTree((root, 0))</li>
                     </ul>
                     break;
             }
@@ -149,16 +144,15 @@
 
 @code {
     [Parameter, EditorRequired] public SchemaPackage Package { get; set; } = default!;
-    /// <summary>"Forretning", "Felt og regler", "Struktur" or "Schema dependencies".</summary>
+    /// <summary>"Forretning", "Felt og regler", "Struktur" or "Schema dependencies" (view identifiers; the labels a person reads are English).</summary>
     [Parameter, EditorRequired] public string View { get; set; } = "Forretning";
     [Parameter] public EventCallback<string> OnFileSelected { get; set; }
-    /// <summary>Opens another Schema Studio view by its identifier (used by the no-root explanation).</summary>
+    /// <summary>Opens another Schema Studio view by its identifier (used by the library explanation).</summary>
     [Parameter] public EventCallback<string> OnNavigate { get; set; }
 
     /// <summary>The heading a person reads: "Struktur" is Business structure with types and origin.</summary>
     private string Title => View == SchemaStudioNavigation.TechnicalStructureAlias ? "Business structure" : SchemaStudioNavigation.Label(View);
     private string TitleId => "sr-title-" + new string(View.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
-    private int Declarations => Package.Files.Sum(file => file.Declarations.Count);
 
     private string _rootName = "";
     private string? _packageId;
@@ -173,37 +167,42 @@
 
     private static string FilterLabel(SchemaTreeFilterKind filter) => filter switch
     {
-        SchemaTreeFilterKind.Mandatory => "Bare obligatoriske",
-        SchemaTreeFilterKind.Optional => "Bare valgfrie",
-        SchemaTreeFilterKind.WithDocumentation => "Med dokumentasjon",
-        SchemaTreeFilterKind.WithConstraints => "Med regler",
-        _ => "Alle felt",
+        SchemaTreeFilterKind.Mandatory => "Required fields only",
+        SchemaTreeFilterKind.Optional => "Optional fields only",
+        SchemaTreeFilterKind.WithDocumentation => "With documentation",
+        SchemaTreeFilterKind.WithConstraints => "With rules",
+        _ => "All fields",
     };
+
+    /// <summary>A file's dependency status in words: a file nothing imports and that imports nothing has no dependencies at all.</summary>
+    private static string FileStatus(SchemaFile file, IReadOnlyList<(string From, SchemaLink Link)> incoming) =>
+        incoming.Any(i => i.Link.EffectiveStatus == SchemaDependencyStatus.Circular) ? P.DependencyStatusLabel(SchemaDependencyStatus.Circular)
+        : file.Links.Count == 0 && incoming.Count == 0 ? "No imports/includes"
+        : file.Links.All(l => l.EffectiveStatus == SchemaDependencyStatus.Resolved) ? P.DependencyStatusLabel(SchemaDependencyStatus.Resolved)
+        : "Has unresolved dependencies";
 
     private RenderFragment TreeToolbar => __builder =>
     {
         <div class="sr-toolbar" data-testid="sr-tree-toolbar">
-            <button type="button" class="sr-tool" data-testid="sr-expand-all" @onclick="() => SetExpanded(true)">Utvid alle</button>
-            <button type="button" class="sr-tool" data-testid="sr-collapse-all" @onclick="() => SetExpanded(false)">Skjul alle</button>
-            <label>Vis <select @bind="_filter" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-filter">
+            <button type="button" class="btn-secondary sr-compact" data-testid="sr-expand-all" @onclick="() => SetExpanded(true)">Expand all</button>
+            <button type="button" class="btn-secondary sr-compact" data-testid="sr-collapse-all" @onclick="() => SetExpanded(false)">Collapse all</button>
+            <label>Show <select @bind="_filter" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-filter">
                 @foreach (var option in Enum.GetValues<SchemaTreeFilterKind>()) { <option value="@option">@FilterLabel(option)</option> }
             </select></label>
-            <label>Søk i felt <input type="search" @bind="_treeSearch" @bind:event="oninput" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-search" /></label>
+            <label>Search fields <input type="search" @bind="_treeSearch" @bind:event="oninput" @bind:after="() => SetExpanded(null)" data-testid="sr-tree-search" /></label>
         </div>
     };
 
-    /// <summary>The file a value is declared in, compact; namespace and inheritance in a disclosure so long provenance never crowds the table.</summary>
+    /// <summary>The file a value is declared in, as a short name; namespace and inheritance in a disclosure so long provenance never crowds the table.</summary>
     private static RenderFragment SourceCell(string declaredIn, string? namespaceUri, string? inheritedFrom, string? typeDeclaredIn) => __builder =>
     {
-        <span class="sr-file" title="@declaredIn">@SchemaText.Breakable(declaredIn)</span>
-        @if (!string.IsNullOrEmpty(namespaceUri) || inheritedFrom is not null || (typeDeclaredIn is not null && typeDeclaredIn != declaredIn))
-        {
-            <details class="sr-source-details"><summary>Detaljer<span class="visually-hidden"> om kilde</span></summary>
-                @if (!string.IsNullOrEmpty(namespaceUri)) { <small class="sr-sub">Namespace: @namespaceUri</small> }
-                @if (inheritedFrom is not null) { <small class="sr-sub">arvet fra @inheritedFrom</small> }
-                @if (typeDeclaredIn is not null && typeDeclaredIn != declaredIn) { <small class="sr-sub">type fra @typeDeclaredIn</small> }
-            </details>
-        }
+        <span class="sr-file" title="@declaredIn">@S.FileName(declaredIn)</span>
+        <details class="sr-source-details"><summary>Provenance<span class="visually-hidden"> of the source</span></summary>
+            <small class="sr-sub">Declared in @declaredIn</small>
+            @if (!string.IsNullOrEmpty(namespaceUri)) { <small class="sr-sub">Namespace: @namespaceUri</small> }
+            @if (inheritedFrom is not null) { <small class="sr-sub">Inherited from @inheritedFrom</small> }
+            @if (typeDeclaredIn is not null && typeDeclaredIn != declaredIn) { <small class="sr-sub">Type from @typeDeclaredIn</small> }
+        </details>
     };
 
     protected override void OnParametersSet()
@@ -216,7 +215,7 @@
     private EffectiveMember? Root => Package.EffectiveSchema.FirstOrDefault(root => root.Name == _rootName);
 
     private string SourceLabel => Package.Provenance is { SourceSnapshotId: { } snapshot } provenance
-        ? $"Source Analysis-snapshot {snapshot.ToString("D")[..8]} ({provenance.SourceArchiveName})" : "Lokal import";
+        ? $"Source Analysis snapshot {snapshot.ToString("D")[..8]} ({provenance.SourceArchiveName})" : "Local import";
 
     private RenderFragment<(EffectiveMember Member, string Path, int Depth)> BusinessTree => context =>
         @<ul class="sr-business-list">
@@ -226,7 +225,7 @@
                     @if (child.Children.Count > 0)
                     {
                         <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
-                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child) · @child.Children.Count felt</small></summary>
+                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child) · @S.Count(child.Children.Count, "field", "fields")</small></summary>
                             @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
                             @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1))
                         </details>
@@ -249,7 +248,7 @@
                     {
                         <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
                             <summary><span class="sr-name">@child.Name</span> <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)</small></summary>
-                            <small class="sr-sub">definert i @child.DeclaredIn@(child.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type i {typeFile}" : "")@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
+                            <small class="sr-sub">declared in @S.FileName(child.DeclaredIn)@(child.InheritedFrom is { } inherited ? $" · inherited from {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type in {S.FileName(typeFile)}" : "")@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
                             @StructureTree((child, context.Depth + 1))
                         </details>
                     }
@@ -257,7 +256,7 @@
                     {
                         <span class="sr-name">@child.Name</span>
                         <small>@P.TypeLabel(child) (@P.RawType(child)) · @P.ExactCardinality(child)@(P.CompositorLabel(child.Compositor) is { Length: > 0 } compositor ? " · " + compositor : "")</small>
-                        <small class="sr-sub">definert i @child.DeclaredIn@(child.InheritedFrom is { } inherited ? $" · arvet fra {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type i {typeFile}" : "")</small>
+                        <small class="sr-sub">declared in @S.FileName(child.DeclaredIn)@(child.InheritedFrom is { } inherited ? $" · inherited from {inherited}" : "")@(child.TypeDeclaredIn is { } typeFile ? $" · type in {S.FileName(typeFile)}" : "")</small>
                     }
                 </li>
             }
@@ -270,7 +269,7 @@
             @{ var values = P.AllowedValues(facets); var rules = P.Rules(facets); }
             @if (values.Count > 0)
             {
-                <div><span class="sr-label">Tillatte verdier:</span>
+                <div><span class="sr-label">Allowed values:</span>
                     <ul class="sr-values">@foreach (var value in values) { <li><code>@value.Value</code>@if (value.Documentation is { } meaning) { <span> — @P.Normalize(meaning)</span> }</li> }</ul>
                 </div>
             }

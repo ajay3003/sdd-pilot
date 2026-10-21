@@ -134,14 +134,24 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     }
 
     [Fact]
-    public void WideViewsWidenThePageAndReadingViewsKeepTheReadingWidth()
+    public void EveryView_RendersInTheSameStableShell_WithoutAViewSpecificWidth()
     {
         ImportOrder(out _);
         var page = Render<SchemaStudio>();
+        var shell = page.Find("main").ClassName;
 
-        Assert.DoesNotContain("ss-page-wide", page.Find("main").ClassName);
-        OpenView(page, "Generated Tests");
-        Assert.Contains("ss-page-wide", page.Find("main").ClassName);
+        foreach (var view in SchemaStudioNavigation.AllViews)
+        {
+            OpenView(page, view);
+            Assert.Equal(shell, page.Find("main").ClassName);
+            Assert.Single(page.FindAll("[data-testid=ss-workspace]"));
+            Assert.Single(page.FindAll("[data-testid=ss-view-content]"));
+        }
+        // Wide content scrolls locally: every table sits in a labelled scroll region, never directly in the shell.
+        OpenView(page, "Types");
+        Assert.All(page.FindAll("table"), table => Assert.Contains("ss-table-wrap", table.ParentElement!.ClassName));
+        OpenView(page, "Raw XSD");
+        Assert.Contains("ss-code-scroll", page.Find("[data-testid=ss-raw]").ClassName);
     }
 
     [Fact]
@@ -224,10 +234,14 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
 
         Assert.Contains($"Showing first {Math.Min(100, package.GeneratedTests.Count)} of {package.GeneratedTests.Count}", page.Find("[data-testid=ss-candidates-shown]").TextContent);
         Assert.True(page.Find("[data-testid=ss-generated-tests]").QuerySelectorAll("tbody tr").Length <= 100);
+        Assert.Equal(package.GeneratedTests.Count.ToString(), page.Find("[data-testid=ss-test-count]").TextContent);
+        Assert.Contains("do not test business logic", page.Find("[data-testid=ss-test-scope]").TextContent);
 
-        page.FindAll("button").Single(b => b.TextContent.StartsWith("Run generated tests", StringComparison.Ordinal)).Click();
+        page.Find("[data-testid=ss-run-tests]").Click();
         var results = page.Find("[data-testid=ss-test-results]");
-        Assert.Equal(["Path", "Expected", "Derived case", "Validator", "Result", "Details"], results.QuerySelectorAll("th").Select(th => th.TextContent));
+        Assert.Equal(["Path", "Expected", "Derived case", "Validator", "Result", "Diagnostic"], results.QuerySelectorAll("th").Select(th => th.TextContent));
+        var summary = page.Find("[data-testid=ss-test-summary]").QuerySelectorAll("dt").Select(dt => dt.TextContent);
+        Assert.Equal(["Pass", "Fail", "Not evaluated"], summary);
         var invalidRow = results.QuerySelectorAll("tbody tr").First(tr => tr.Children[1].TextContent == "Invalid");
         Assert.Contains(invalidRow.Children[3].TextContent, new[] { "Accepted", "Rejected", "Not evaluated" });
         Assert.DoesNotContain(results.QuerySelectorAll("tbody tr"), tr => tr.Children[3].TextContent is "Valid" or "Invalid");
@@ -338,16 +352,23 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
 
         OpenView(page, "Constraints");
+        // Summary first: the total and the per-category counts come before the (collapsed) table.
         var all = page.Find("[data-testid=ss-constraints]").QuerySelectorAll("tbody tr").Length;
+        Assert.Equal($"{all} rules detected", page.Find("[data-testid=ss-constraint-total]").TextContent);
+        Assert.Equal(all, page.FindAll("[data-testid=ss-rule-category] dd").Sum(dd => int.Parse(dd.TextContent)));
+        Assert.Equal("false", page.Find("[data-testid=ss-constraint-list-toggle]").GetAttribute("aria-expanded"));
+        Assert.True(page.Markup.IndexOf("ss-constraint-summary", StringComparison.Ordinal) < page.Markup.IndexOf("data-testid=\"ss-constraints\"", StringComparison.Ordinal));
         page.Find("[data-testid=ss-constraint-filter]").Change("Enumeration");
         var enumerations = page.Find("[data-testid=ss-constraints]").QuerySelectorAll("tbody tr");
         Assert.InRange(enumerations.Length, 1, all - 1);
-        Assert.All(enumerations, tr => Assert.Contains("enumeration", tr.TextContent));
+        // Plain-language rule name first; the exact XSD facet stays available.
+        Assert.All(enumerations, tr => { Assert.StartsWith("Allowed value", tr.Children[1].TextContent); Assert.Contains("enumeration", tr.Children[1].TextContent); });
+        Assert.All(enumerations, tr => Assert.DoesNotContain("/", tr.Children[3].TextContent));
 
         OpenView(page, "References");
-        Assert.Equal("No cross-file references. This package contains one XSD file.", page.Find("[data-testid=ss-references-empty]").TextContent);
+        Assert.Contains("one XSD file, so there are no references between schema files", page.Find("[data-testid=ss-references-empty]").TextContent);
         OpenView(page, "Namespaces");
-        Assert.Equal("No schemas in this package import it.", page.Find("[data-testid=ss-imported-by]").TextContent);
+        Assert.Equal("None in this package", page.Find("[data-testid=ss-imported-by]").TextContent);
     }
 
     [Fact]
@@ -381,8 +402,15 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
         OpenView(page, "Designer");
 
-        Assert.Equal(["File", "Element", "Occurrence", "Constraints"], page.Find("[data-testid=ss-designer-form]").QuerySelectorAll("legend").Select(l => l.TextContent));
+        Assert.Equal(["Field", "Occurrence", "Rules"], page.Find("[data-testid=ss-designer-form]").QuerySelectorAll("legend").Select(l => l.TextContent));
         Assert.Contains("never changed", page.Find("[data-testid=ss-source-safety]").TextContent);
+        Assert.Equal("The imported source is never changed.", page.Find("[data-testid=ss-designer-immutable]").TextContent);
+        // Plain-language occurrence first; the exact XML attributes stay as technical detail.
+        var form = page.Find("[data-testid=ss-designer-form]").TextContent;
+        Assert.Contains("Required?", form); Assert.Contains("Repeat", form); Assert.Contains("minOccurs / maxOccurs", form);
+        Assert.Equal(["Once", "Up to 2 times", "Unlimited"], page.Find("[data-testid=ss-designer-max]").QuerySelectorAll("option").Select(o => o.TextContent));
+        // The draft is secondary: collapsed until requested.
+        Assert.Equal("false", page.Find("[data-testid=ss-draft-editor-toggle]").GetAttribute("aria-expanded"));
     }
 
     // ---- Generation Profile ----
@@ -396,7 +424,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         OpenView(page, "Generation Profile");
 
         Assert.Equal("Profile", page.Find("[data-testid=ss-profile-section] > legend").TextContent);
-        Assert.Equal("Rule editor", page.Find("[data-testid=ss-rule-section] > legend").TextContent);
+        Assert.Equal("Field rules", page.Find("[data-testid=ss-rule-section] > legend").TextContent);
         Assert.Equal("Generate XML", page.Find("[data-testid=ss-generate-section] > legend").TextContent);
         Assert.Equal("New profile random seed", page.Find("[data-testid=ss-seed-label]").FirstChild!.TextContent.Trim());
     }

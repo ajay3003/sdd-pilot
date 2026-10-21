@@ -48,21 +48,21 @@ public static class SchemaStudioNavigation
     /// <summary>One line saying what a view shows, so views that look alike (business structure vs schema tree, dependencies vs references) are told apart.</summary>
     public static string Purpose(string view) => view switch
     {
-        "Overview" => "Package summary and where to start.",
-        "Forretning" => "The message hierarchy as the schema defines it, with the schema's own documentation — optionally with types and origin.",
-        "Felt og regler" => "Every field with occurrence, type, XSD rules (allowed values, patterns, lengths) and documentation.",
-        "Schema Tree" => "Schema declarations grouped by file: global elements and types as written in each XSD.",
-        "Types" => "Global simple and complex types with their base, facets and how often they are used.",
-        "Constraints" => "Every XSD constraint by path: enumerations, patterns, lengths, numeric bounds and occurrence.",
-        "Namespaces" => "Target namespaces, the files that declare them and which files import them.",
-        "Schema dependencies" => "File-level dependencies: imports and includes between XSD files and their resolution.",
-        "References" => "Cross-file declaration references: type use, inheritance and element references between files.",
-        "Effective Schema" => "The resolved structure with inherited and referenced members, keeping where each was declared.",
-        "Raw XSD" => "The imported XSD exactly as received (read-only source evidence).",
-        "Designer" => "Edit a working draft; saving creates a new immutable version, the imported source is never changed.",
-        "Compare" => "Declaration-level differences between this package and another imported version.",
-        "Generated Tests" => "Valid and invalid cases derived from XSD declarations, run locally against this package. Schema-derived only — not integration tests.",
-        "Generation Profile" => "Rules for generating synthetic XML: profile, per-element rules and XML generation.",
+        "Overview" => "The package in plain language and where to start.",
+        "Forretning" => "The message hierarchy as a tester reads it, with the schema's own documentation — optionally with types and origin.",
+        "Felt og regler" => "Every field: whether it is required, its type, its rules (allowed values, patterns, lengths) and documentation.",
+        "Schema Tree" => "Every reusable definition, grouped by file, with its meaning in plain language and technical details on request.",
+        "Types" => "Reusable types: what kind of value each one is, its base and its rules.",
+        "Constraints" => "Every schema rule: required, optional or repeated fields, lengths, patterns, allowed values and numeric bounds.",
+        "Namespaces" => "XML namespaces, the files that declare them and which files import them.",
+        "Schema dependencies" => "Imports and includes between XSD files, and whether they resolve.",
+        "References" => "Where one XSD file uses a definition declared in another.",
+        "Effective Schema" => "The complete resolved message structure, including inherited fields, with where each field is declared.",
+        "Raw XSD" => "The imported XSD exactly as received (read-only, for technical inspection).",
+        "Designer" => "Edit a working draft and save it as a new version; the imported source is never changed.",
+        "Compare" => "What changed between this package and another imported version.",
+        "Generated Tests" => "Valid and invalid cases derived from the schema rules, run locally. Schema rules only — not integration tests.",
+        "Generation Profile" => "How synthetic XML values are generated: profile, per-field rules and XML generation.",
         _ => "",
     };
 
@@ -85,8 +85,4 @@ public static class SchemaStudioNavigation
     /// <summary>True for the former "Struktur" view's name or slug: Business structure opens with types and origin shown.</summary>
     public static bool IsTechnicalStructure(string? value) =>
         string.Equals(value?.Trim(), TechnicalStructureAlias, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Views whose content is wide (tables, editors, graphs) and get the full content width; text views keep a readable width.</summary>
-    public static bool IsWide(string view) => view is "Felt og regler" or "Types" or "Constraints" or "References" or "Schema dependencies"
-        or "Raw XSD" or "Designer" or "Generated Tests" or "Effective Schema" or "Generation Profile";
 }

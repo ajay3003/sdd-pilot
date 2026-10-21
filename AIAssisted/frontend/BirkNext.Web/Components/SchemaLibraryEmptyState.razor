@@ -1,0 +1,34 @@
+@using BirkNext.Web.Services.SchemaStudio
+@* The one explanation of a library XSD (no top-level message element), shared by Business structure, Fields and rules, Effective structure,
+   Generated tests and Generation profile so the wording never drifts. Plain language first; the technical fact ("no global root element") is
+   secondary. Actions open other Schema Studio views by identifier. Shared BirkNext empty-state styling (components.css .empty-state). *@
+<div class="empty-state empty-state-dashed empty-state-compact" data-testid="@TestId">
+    <p><strong>@Headline</strong></p>
+    <p>@(Explanation ?? SchemaStudioPresentation.LibraryExplanation(Package))</p>
+    @if (Actions.Count > 0 && OnNavigate.HasDelegate)
+    {
+        <div class="empty-state-actions">
+            @foreach (var action in Actions)
+            {
+                <button type="button" class="btn-secondary" data-testid="@action.TestId" @onclick="() => OnNavigate.InvokeAsync(action.View)">@action.Label</button>
+            }
+        </div>
+    }
+    <p class="empty-state-note">@SchemaStudioPresentation.LibraryTechnical</p>
+</div>
+@code {
+    /// <summary>One action of the empty state: a visible label, the Schema Studio view it opens and its test id.</summary>
+    public sealed record Action(string Label, string View, string? TestId = null);
+
+    [Parameter, EditorRequired] public SchemaPackage Package { get; set; } = default!;
+    [Parameter] public string Headline { get; set; } = SchemaStudioPresentation.LibraryStructureHeadline;
+    /// <summary>Overrides the default "It contains N reusable schema definitions …" sentence.</summary>
+    [Parameter] public string? Explanation { get; set; }
+    [Parameter] public IReadOnlyList<Action> Actions { get; set; } = [];
+    [Parameter] public EventCallback<string> OnNavigate { get; set; }
+    [Parameter] public string? TestId { get; set; }
+
+    /// <summary>The standard "start from what the library declares" actions.</summary>
+    public static IReadOnlyList<Action> Definitions(string prefix) =>
+        [new("View reusable definitions", "Schema Tree", $"{prefix}-declarations"), new("View types", "Types", $"{prefix}-types"), new("View references", "References", $"{prefix}-references")];
+}
