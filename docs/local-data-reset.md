@@ -130,6 +130,7 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
 | Endpoint discovery, API review history, integration target hints (`birknext:endpoint-discovery`, `birknext:api-review`, `birknext:integration-target-registry`) | Yes (memory and key) | Per project target |
 | Extraction session (`birknext:extraction:session`), standalone editors (`ce-standalone-constitution`, `pe-standalone-plan`, `te-standalone-tasks`, `dme-standalone-datamodel`) | Yes | Project documents |
 | Diagram layouts (`architecture-layout:*`, `database-layout:*`) | Yes | Keyed by source snapshot |
+| Frontend Quality Review run history (`birknext:fqr-history:*`) | Yes | Last 10 runs per Target Environment, this browser only |
 | BirkNext-owned authenticated browser session, Browser Companion following | Yes | Project targets |
 | Feature visibility, sidebar section state, theme | No | UI preferences |
 | Sample Project catalog | No | Installation content. A sample can be loaded again |

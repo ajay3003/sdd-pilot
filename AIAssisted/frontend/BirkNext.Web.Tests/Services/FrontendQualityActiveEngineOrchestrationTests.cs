@@ -197,9 +197,12 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
 
         fixture.Performance.Calls.Should().Be(0, "a disabled required engine is never silently run");
         var coverage = result.QualityReport!.Coverage!;
-        coverage.RequiredTotal.Should().Be(2);
+        // A disabled engine is not a missing assessment: it leaves the denominator. A REQUIRED engine that is disabled is an invalid
+        // configuration, so the review is still Blocked — by an explicit configuration blocker that names it.
+        coverage.RequiredTotal.Should().Be(1);
         coverage.RequiredAssessed.Should().Be(1);
         result.QualityReport.ReleaseDisposition.Should().Be(FrontendQualityReleaseDisposition.Blocked);
+        result.QualityReport.ReleaseBlockers.Should().ContainSingle(b => b.Type == FrontendQualityBlockerType.Configuration && b.Entity == "Passive Performance");
         result.ActiveEngines!.RequiredButDisabled.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.PassivePerformance);
     }
 

@@ -201,7 +201,7 @@ public sealed class BrowserCompanionQualityTests : BunitContext
         outcome.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected);
         outcome.SanitizedFailureReason.Should().Contain("Browser Companion not connected");
         outcome.AccessKind.Should().Be(FrontendQualityEngineAccessKind.BrowserCompanion);
-        FrontendQualityEngineOutcomePresentation.StateLabel(outcome).Should().Be("Blocked");
+        FrontendQualityEngineOutcomePresentation.StateLabel(outcome).Should().Be("Not assessed");
         FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason).Should().Be("Browser Companion not connected");
         result.SkippedEngines.Should().Contain("Browser Quality");
         result.QualityReport.Coverage!.RequiredCoverageState.Should().Be(FrontendQualityRequiredCoverageState.AllRequiredAssessed, "the optional engine never blocks the required HTTP engines");

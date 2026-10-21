@@ -274,15 +274,19 @@ public static class FrontendQualityResultPresentation
         // header) counts once, where it is owned; the other domain keeps its source observations and lists it as related.
         var categoryIssues = issues.Count(issue => issue.Category == category && issue.IsActionable);
 
+        // "No evidence" is a RESULT: an engine of this domain ran and explicitly recorded nothing usable. An engine that never ran is
+        // Not assessed — never "No evidence", which would claim an assessment happened.
+        var ranWithoutEvidence = assessed.Count > 0 && categoryFindings == 0 && !hasWcagEvidence
+            && assessed.All(o => o.EvidenceCount == 0 && (o.FindingCount ?? 0) == 0);
         var state =
-            assessed.Count > 0 || hasWcagEvidence
+            ranWithoutEvidence ? FrontendQualityDomainResultState.NoEvidence
+            : assessed.Count > 0 || hasWcagEvidence
                 ? assessed.Count < active.Count ? FrontendQualityDomainResultState.CompletedWithLimitedEvidence
                                                 : FrontendQualityDomainResultState.Completed
             // No engine of this domain completed, yet findings for it exist. They came from evidence this run collected,
             // so the domain was reviewed — with less than its own engines would have given it.
             : categoryFindings > 0 ? FrontendQualityDomainResultState.CompletedWithLimitedEvidence
             : errored.Count > 0 ? FrontendQualityDomainResultState.FailedToRun
-            : active.Count > 0 ? FrontendQualityDomainResultState.NoEvidence
             : FrontendQualityDomainResultState.NotAssessed;
 
         var carries = FrontendQualityDomainResultStates.CarriesFindings(state);
@@ -324,7 +328,7 @@ public static class FrontendQualityResultPresentation
         // "No evidence" reads as a data failure and, for Security, as a claim that nothing was found anywhere. What is
         // actually missing is this domain's own engine; findings that belong to other domains are unaffected.
         if (state == FrontendQualityDomainResultState.NoEvidence)
-            return "No dedicated assessment evidence for this domain.";
+            return "The assessment ran but produced no usable evidence for this domain.";
 
         if (state == FrontendQualityDomainResultState.FailedToRun)
             return "An evidence source for this domain did not complete, so the domain was not reviewed.";

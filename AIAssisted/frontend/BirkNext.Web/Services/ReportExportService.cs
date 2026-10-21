@@ -488,7 +488,33 @@ public sealed class ReportExportService : IReportExportService
         sb.Append($"<p><strong>Critical/high logical issues:</strong> {actionable.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; "
             + $"<strong>Logical issues:</strong> {view.LogicalIssueCount} &nbsp; <strong>Source findings:</strong> {view.SourceFindingCount} &nbsp; "
             + $"<strong>Derived indicators:</strong> {view.DerivedIndicatorCount} &nbsp; <strong>Informational observations:</strong> {view.InformationalIssueCount}</p>\n");
-        sb.Append("<p>Logical issues are grouped actionable problems; source findings are individual engine observations and may map to the same logical issue.</p>\n</section>\n");
+        sb.Append("<p>Logical issues are grouped actionable problems; source findings are individual engine observations and may map to the same logical issue.</p>\n");
+        // The exact causal chain, by blocker type — the same blockers and wording as the Summary view.
+        if (report.ReleaseBlockers.Count > 0)
+        {
+            sb.Append($"<p><strong>Primary blocker:</strong> {Esc(FrontendQualityPostRunPresentation.PrimaryBlocker(report) ?? "")}</p>\n");
+            foreach (var group in FrontendQualityPostRunPresentation.BlockersByType(report))
+            {
+                sb.Append($"<h3>{Esc(FrontendQualityDecisionSupportService.BlockerTypeLabel(group.Key))}</h3>\n<ul>\n");
+                foreach (var blocker in group)
+                    sb.Append($"<li><strong>{Esc(blocker.Entity)}</strong> — {Esc(blocker.Reason)}{(blocker.Rule is { Length: > 0 } rule ? $" (Rule: {Esc(rule)})" : "")}</li>\n");
+                sb.Append("</ul>\n");
+            }
+        }
+        if (FrontendQualityPostRunPresentation.ShowSeverityNote(report, actionable))
+            sb.Append($"<p>{Esc(FrontendQualityDecisionSupportService.SeverityNotBlocking)}</p>\n");
+        if (view.Completeness is { } completeness)
+            sb.Append($"<p><strong>Required coverage:</strong> {Esc(FrontendQualityPostRunPresentation.CoverageCount(completeness.RequiredAssessed, completeness.RequiredTotal))} — {Esc(FrontendQualityPostRunPresentation.RequiredMeaning(completeness))} &nbsp; "
+                + $"<strong>Optional coverage:</strong> {Esc(FrontendQualityPostRunPresentation.CoverageCount(completeness.OptionalAssessed, completeness.OptionalTotal))} — {Esc(FrontendQualityPostRunPresentation.OptionalMeaning(completeness))}</p>\n");
+        if (report.ExecutionPlan is not null && FrontendQualityPostRunPresentation.EngineRows(report) is { Count: > 0 } rows)
+        {
+            sb.Append("<table>\n<thead><tr><th>Engine</th><th>Policy</th><th>Surface</th><th>Prerequisite</th><th>Result</th><th>Release impact</th></tr></thead>\n<tbody>\n");
+            foreach (var row in rows)
+                sb.Append($"<tr><td>{Esc(row.Engine)}</td><td>{Esc(row.Policy)}</td><td>{Esc(row.Surface)}</td><td>{Esc(row.Prerequisite)}{(row.Provider is { Length: > 0 } provider ? $" (via {Esc(provider)})" : "")}</td>"
+                    + $"<td>{Esc(row.Result)}{(row.Reason is { Length: > 0 } reason ? $" — {Esc(reason)}" : "")}</td><td>{Esc(row.ReleaseImpactLabel)}</td></tr>\n");
+            sb.Append("</tbody>\n</table>\n");
+        }
+        sb.Append("</section>\n");
 
         if (report.TargetAccess is { } access)
         {

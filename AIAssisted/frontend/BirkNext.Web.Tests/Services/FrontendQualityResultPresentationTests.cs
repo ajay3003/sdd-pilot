@@ -184,10 +184,22 @@ public sealed class FrontendQualityResultPresentationTests
 
         var security = FrontendQualityResultPresentation.Build(Report(outcomes)).Domain(FrontendQualityCategory.Security);
 
-        security.State.Should().Be(FrontendQualityDomainResultState.NoEvidence);
+        // The engines never ran: Not assessed. "No evidence" would claim an assessment happened.
+        security.State.Should().Be(FrontendQualityDomainResultState.NotAssessed);
         security.FindingCount.Should().BeNull("a domain nothing assessed has an unknown number of issues");
-        security.Summary.Should().Be("No dedicated assessment evidence for this domain.");
+        security.Summary.Should().Be("Not assessed in this run.");
         security.Summary.Should().NotContain("0");
+    }
+
+    [Fact]
+    public void NoEvidence_IsReservedForAnEngineThatRanAndRecordedNothing()
+    {
+        var outcomes = DefaultOutcomes().Select(o => o with { ExecutionState = FrontendQualityEngineExecutionState.Assessed, EvidenceCount = 0, FindingCount = 0 });
+        var report = Report(outcomes, []);
+        var security = FrontendQualityResultPresentation.Build(report, null).Domains.Single(d => d.Category == FrontendQualityCategory.Security);
+        security.State.Should().Be(FrontendQualityDomainResultState.NoEvidence);
+        security.Summary.Should().Be("The assessment ran but produced no usable evidence for this domain.");
+        FrontendQualityDomainResultStates.Label(security.State).Should().Be("No evidence");
     }
 
     [Fact]

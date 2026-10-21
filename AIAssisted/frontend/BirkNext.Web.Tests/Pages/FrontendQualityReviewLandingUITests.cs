@@ -582,7 +582,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         var page = Render<FrontendQualityReview>();
         await page.InvokeAsync(() => RunButton(page).Click());
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-result-summary]"));
-        await page.InvokeAsync(() => page.FindAll("button").Single(b => b.TextContent.Trim() == "Export HTML").Click());
+        // One Export menu; HTML is one of its formats.
+        await page.InvokeAsync(() => page.Find("[data-testid=fqr-export-toggle]").Click());
+        await page.InvokeAsync(() => page.Find("[data-testid=fqr-export-html]").Click());
 
         export.Verify(e => e.ExportFrontendQualityReview(It.Is<FrontendQualityReviewReport>(r => r.TargetUrl == Url), It.IsAny<string>()), Times.Once);
         JSInterop.VerifyInvoke("downloadHtmlFile");

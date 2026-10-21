@@ -194,16 +194,18 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         VisibleText(page.Find("[data-testid=fqr-result-summary]")).Should().NotContain("13 findings");
     }
 
-    // 3. The single completeness word is gone; the dimensions that can differ are shown apart.
+    // 3, §50. The single completeness word is gone; coverage states its count AND whether it blocks, never left to inference.
     [Fact]
     public void CompletenessIsShownOnItsFourDimensions_NeverAsOneWord()
     {
         var page = Result(RealisticReport());
 
         var completeness = page.Find("[data-testid=fqr-completeness]");
-        completeness.QuerySelector("[data-testid=fqr-completeness-execution]")!.TextContent.Should().Contain("Completed");
-        completeness.QuerySelector("[data-testid=fqr-completeness-required]")!.TextContent.Should().Contain("Complete");
-        completeness.QuerySelector("[data-testid=fqr-completeness-optional]")!.TextContent.Should().Contain("Partial");
+        page.Find("[data-testid=fqr-completeness-execution]").TextContent.Should().Contain("Completed");
+        completeness.QuerySelector("[data-testid=fqr-completeness-required]")!.TextContent.Should().Contain("2 of 2 completed");
+        completeness.QuerySelector("[data-testid=fqr-completeness-required-meaning]")!.TextContent.Trim().Should().Be("Satisfied");
+        completeness.QuerySelector("[data-testid=fqr-completeness-optional]")!.TextContent.Should().Contain("2 of 3 completed");
+        completeness.QuerySelector("[data-testid=fqr-completeness-optional-meaning]")!.TextContent.Trim().Should().Be("Non-blocking");
         completeness.QuerySelector("[data-testid=fqr-completeness-manual]")!.TextContent.Should().Contain("Required");
 
         page.Markup.Should().NotContain("Assessment Completeness");
@@ -212,7 +214,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
     // ── §32, §34, §75. What is visible by default ─────────────────────────────────────────────────────────────────
 
-    // 32. The result leads with a few issues, not with every observation.
+    // 32. The result leads with a few issues, not with every observation; the full list is its own view.
     [Fact]
     public void KeyIssuesAreVisibleAndTheFullListIsNot()
     {
@@ -220,63 +222,61 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
         page.Find("[data-testid=fqr-key-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]")
             .Should().NotBeEmpty().And.HaveCountLessThanOrEqualTo(5);
-        Collapsed(page, "fqr-all-logical-issues").Should().BeTrue();
+        page.Find("[data-testid=fqr-tabpanel-summary]").HasAttribute("hidden").Should().BeFalse();
+        page.Find("[data-testid=fqr-tabpanel-issues]").HasAttribute("hidden").Should().BeTrue("every issue is one view away");
     }
 
-    // 34, 75. Every domain's source findings are one click away, not on screen.
+    // §65, §67, §68. A domain card is status, counts, one reason and ONE action — its issues are not repeated inline.
     [Fact]
-    public void DomainSourceFindingsAreCollapsedByDefault()
+    public void DomainCardsCarryOneActionAndNoInlineFindings()
     {
         var page = Result(RealisticReport());
+        var domains = page.Find("[data-testid=fqr-domain-results]");
 
-        foreach (var category in new[]
-        {
-            FrontendQualityCategory.Performance, FrontendQualityCategory.Security,
-            FrontendQualityCategory.Standards, FrontendQualityCategory.BlazorWasm,
-        })
-        {
-            var toggle = page.FindAll($"[data-testid=fqr-domain-details-{category}-toggle]");
-            if (toggle.Count == 0) continue;   // a domain with nothing to show has no disclosure
-            toggle[0].GetAttribute("aria-expanded").Should().Be("false", $"{category} findings open on request");
-            page.Find($"[data-testid=fqr-domain-details-{category}-body]").HasAttribute("hidden").Should().BeTrue();
-        }
+        domains.QuerySelectorAll("[data-testid=fqr-domain-finding-list], [data-testid=fqr-logical-issue]").Should().BeEmpty();
+        var performance = domains.QuerySelectorAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Performance");
+        performance.QuerySelectorAll("button").Should().ContainSingle()
+            .Which.TextContent.Trim().Should().Be("Review performance issues");
 
-        // The label says what opening it shows, and how much of it there is.
-        page.Find($"[data-testid=fqr-domain-details-{FrontendQualityCategory.Performance}-toggle]")
-            .TextContent.Should().Contain("source finding");
+        // The action opens Issues filtered to that domain.
+        page.Find("[data-testid=fqr-domain-review-issues][data-category=Performance]").Click();
+        page.Find("[data-testid=fqr-tabpanel-issues]").HasAttribute("hidden").Should().BeFalse();
+        page.Find("[data-testid=fqr-issue-filter-domain]").GetAttribute("value").Should().Be("Performance");
+        page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]")
+            .Should().OnlyContain(i => i.TextContent.Contains("Repeated authenticated API call"));
     }
 
-    // 30, 41, 44, 75, 76. Raw evidence, the engine matrix, the scores and the diagnostics are all kept and all closed.
+    // 30, 41, 44, 75, 76. Raw evidence, the engine diagnostics, the scores and the technical details are all kept and all closed.
     [Fact]
     public void EveryDiagnosticSurfaceIsRetainedAndCollapsed()
     {
         var page = Result(RealisticReport());
 
-        foreach (var id in new[]
-        {
-            "fqr-all-logical-issues", "fqr-all-findings", "fqr-engine-coverage",
-            "fqr-result-technical", "fqr-engine-scores", "fqr-result-diagnostics",
-        })
+        foreach (var id in new[] { "fqr-engine-coverage", "fqr-cookie-security", "fqr-result-diagnostics" })
         {
             page.FindAll($"[data-testid={id}-toggle]").Should().ContainSingle($"{id} is still available");
             Collapsed(page, id).Should().BeTrue($"{id} opens on request");
         }
 
-        // 39. The scores are not part of the result a reader sees first.
-        VisibleText(page.Find("[data-testid=fqr-result-details]")).Should().NotContain("Legacy static review score");
+        // §48. Engine scores sit inside Technical details, never in the primary review.
+        page.Find("[data-testid=fqr-result-diagnostics-body] [data-testid=fqr-engine-scores]").Should().NotBeNull();
+        VisibleText(page.Find(".fqr-page")).Should().NotContain("Legacy static review score");
     }
 
-    // 46. The order follows what the reader needs, from the decision to the diagnostics.
+    // §25. Five result-level views; only the Summary is visible after a run, the evidence view ends with the diagnostics.
     [Fact]
-    public void ReviewDetailsOpensWithIssuesAndEndsWithDiagnostics()
+    public void ResultViewsAreSummaryIssuesCoverageEvidenceHistory()
     {
         var page = Result(RealisticReport());
 
-        page.Find("[data-testid=fqr-result-details]")
+        page.FindAll("[data-testid=fqr-result-tabs] [role=tab]").Select(t => t.TextContent.Trim())
+            .Should().Equal("Summary", "Issues (3)", "Coverage", "Evidence", "History");
+        page.FindAll("[role=tabpanel]:not([hidden])").Select(p => p.Id).Should().Equal("fqr-tabpanel-summary");
+
+        page.Find("[data-testid=fqr-detailed-evidence]")
             .QuerySelectorAll(":scope > .disclosure > .disclosure-toggle .disclosure-text")
             .Select(t => t.TextContent.Trim())
-            .Should().Equal("Review items", "Source findings", "Cookie security", "Engine coverage",
-                "Target access at review start", "Engine scores", "Technical details");
+            .Should().Equal("Cookie security", "Technical details");
     }
 
     // ── §14, §48, §80. Recommendations ────────────────────────────────────────────────────────────────────────────
@@ -376,13 +376,13 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
             visible.Should().NotContain(route, "per-page occurrences live behind the issue that groups them");
         visible.Should().NotContain("Large CSS payload", "derived indicators are not part of the default reading");
 
-        // What IS on screen: the decision, the scale, the domains and the work.
-        visible.Should().Contain("Release decision").And.Contain("Logical issues")
-            .And.Contain("Recommendations").And.Contain("Contrast (Minimum)");
+        // What IS on screen: the decision, the scale, the coverage meaning and the work.
+        visible.Should().Contain("Release decision").And.Contain("Logical issues").And.Contain("Required coverage")
+            .And.Contain("Recommended actions").And.Contain("Contrast (Minimum)");
 
-        // The whole report is still reachable — it is collapsed, not removed.
-        page.Find("[data-testid=fqr-all-findings-toggle]").Click();
-        page.Find("[data-testid=fqr-all-findings-body]").TextContent
+        // The whole report is still reachable — one view away, not removed.
+        page.Find("[data-testid=fqr-tab-evidence]").Click();
+        VisibleText(page.Find("[data-testid=fqr-all-findings]"))
             .Should().Contain("/admin/general-roles").And.Contain("Large CSS payload");
     }
 
@@ -426,16 +426,20 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
     // ── Post-run cleanup: counts, derived indicators, compact key issues, contribution, overlap ────────────────────
 
-    // §59 / §8 A derived domain's button names indicators, never source findings.
+    // §33, §71. QA Readiness is a derived assessment, not another engine domain, and names indicators, never source findings.
     [Fact]
     public void QaReadinessOffersIndicatorsNotSourceFindings()
     {
         var page = Result(RealisticReport());
-        var readiness = page.FindAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Readiness");
+        page.Find("[data-testid=fqr-domain-results] .fqr-domain-grid").QuerySelectorAll("[data-testid=fqr-domain-result]")
+            .Should().NotContain(d => d.GetAttribute("data-category") == "Readiness");
 
+        var derived = page.Find("[data-testid=fqr-derived-assessment]");
+        derived.QuerySelector("h3")!.TextContent.Should().Be("Derived assessment");
+        derived.TextContent.Should().Contain("No dedicated engine ran");
+        var readiness = derived.QuerySelector("[data-testid=fqr-domain-result][data-category=Readiness]")!;
         readiness.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("3 indicators");
-        var toggle = readiness.QuerySelector(".disclosure-toggle")!.TextContent;
-        toggle.Should().Contain("View 3 indicators").And.NotContain("source finding");
+        readiness.TextContent.Should().NotContain("source finding");
     }
 
     // §60 / §7 Source findings and derived indicators counted apart; the total only as "recorded".
@@ -449,33 +453,36 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
         page.Find("[data-testid=fqr-metric-source]").TextContent.Trim().Should().Be(source.ToString());
         page.Find("[data-testid=fqr-metric-derived]").TextContent.Trim().Should().Be(derived.ToString());
-        var hint = page.Find("[data-testid=fqr-all-findings] .disclosure-hint").TextContent.Trim();
-        hint.Should().Be($"{source} source findings · {derived} derived indicators · {source + derived} recorded");
+        var hint = page.Find("[data-testid=fqr-result-details] .fqr-section-note").TextContent.Trim();
+        hint.Should().StartWith($"{source} source findings · {derived} derived indicators · {source + derived} recorded");
         hint.Should().NotContain($"{source + derived} source findings").And.NotContain("observations from every engine");
     }
 
-    // §61 / §49 Review items name each kind; the logical-issue metric stays the actionable count.
+    // §61 / §49 Each kind under its own name: the Issues view counts actionable issues, derived indicators are counted in Evidence.
     [Fact]
     public void ReviewItemsCountEachKindByItsOwnName()
     {
         var report = RealisticReport();
         var page = Result(report);
-        var actionable = FrontendQualityResultPresentation.Build(report).LogicalIssueCount;
+        var view = FrontendQualityResultPresentation.Build(report);
 
-        page.Find("[data-testid=fqr-metric-logical]").TextContent.Trim().Should().Be(actionable.ToString());
-        page.Find("[data-testid=fqr-all-logical-issues-toggle]").TextContent.Should().Contain("Review items");
-        var hint = page.Find("[data-testid=fqr-all-logical-issues] .disclosure-hint").TextContent.Trim();
-        hint.Should().StartWith($"{actionable} actionable logical issue").And.Contain("derived indicator");
+        page.Find("[data-testid=fqr-metric-logical]").TextContent.Trim().Should().Be(view.LogicalIssueCount.ToString());
+        page.Find("[data-testid=fqr-tab-issues]").TextContent.Trim().Should().Be($"Issues ({view.LogicalIssueCount})");
+        page.Find("#fqr-issues-heading").TextContent.Trim().Should().Be($"Logical issues ({view.LogicalIssueCount})");
+        page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-issue-derived]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-review-items-derived]").TextContent.Trim().Should().Be($"Derived indicators ({view.DerivedIndicatorCount})");
     }
 
-    // §5 The metric note says the two critical/high counts measure different things.
+    // §5 The metric note says why the logical-issue and source-finding counts differ.
     [Fact]
     public void MetricsExplainWhyLogicalAndSourceCountsDiffer()
     {
         var page = Result(RealisticReport());
         page.Find("[data-testid=fqr-result-metrics-note]").TextContent.Should().Contain("may map to the same logical issue")
             .And.Contain("not expected to match");
-        page.Find("[data-testid=fqr-metric-critical-high]").ParentElement!.QuerySelector("dt")!.TextContent.Should().Be("Critical/high source findings");
+        // §26 The critical/high count is of logical issues, beside the logical-issue count it belongs to.
+        page.Find("[data-testid=fqr-metric-critical-high-issues]").ParentElement!.QuerySelector("dt")!.TextContent.Should().Be("Critical/high issues");
+        page.Find("[data-testid=fqr-metric-critical-high-issues]").TextContent.Trim().Should().Be("2", "contrast and the missing CSP");
     }
 
     // §62 / §10 Key issue cards are compact; details render only on request, without raw evidence.
@@ -497,8 +504,8 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
         var details = page.Find("[data-testid=fqr-key-issues] [data-testid=fqr-issue-details]");
         details.TextContent.Should().Contain("Primary domain").And.Contain("Observed by").And.Contain("Affected pages").And.Contain("/admin/operations");
-        page.Find("[data-testid=fqr-key-issues] [data-testid=fqr-issue-details-toggle][aria-expanded=true]").TextContent.Should().Be("Hide issue details");
-        details.QuerySelectorAll("[data-testid=fqr-issue-source-list] code").Should().BeEmpty("sanitized raw evidence stays in Review details");
+        page.Find("[data-testid=fqr-key-issues] [data-testid=fqr-issue-details-toggle][aria-expanded=true]").TextContent.Should().Be("Hide evidence");
+        details.QuerySelectorAll("[data-testid=fqr-issue-source-list] code").Should().BeEmpty("sanitized raw evidence stays in the Evidence view");
     }
 
     // §63 / §14 CSP: one logical issue owned by Security; Standards says where its source finding went.
@@ -550,13 +557,14 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
             .Be("1 criterion has automated failure evidence. Manual assessment is still required.");
     }
 
-    // §67 Every Review details disclosure starts collapsed.
+    // §67 Every evidence disclosure starts collapsed.
     [Fact]
     public void ReviewDetailsStartCollapsed()
     {
         var page = Result(RealisticReport());
-        page.Find("[data-testid=fqr-result-details]").QuerySelectorAll(":scope > .disclosure > .disclosure-toggle")
-            .Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
+        var toggles = page.Find("[data-testid=fqr-tabpanel-evidence]").QuerySelectorAll(".disclosure > .disclosure-toggle");
+        toggles.Should().NotBeEmpty();
+        toggles.Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
     }
 
     // §73 The export uses the page's count model and the four completeness dimensions.

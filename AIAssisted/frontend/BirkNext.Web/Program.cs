@@ -203,6 +203,8 @@ builder.Services.AddHttpClient<ICriticalE2EApiService, CriticalE2EApiService>(cl
     client.Timeout = TimeSpan.FromMinutes(10);
 });
 builder.Services.AddScoped<IBrowserQualityEvidenceSource, BrowserQualityEvidenceSource>();
+builder.Services.AddScoped<IBrowserCompanionAccessibilitySource, BrowserCompanionAccessibilitySource>();
+builder.Services.AddScoped<FrontendQualityReviewHistory>();
 builder.Services.AddScoped<IPerformanceQualityEvidenceSource, PerformanceQualityEvidenceSource>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {

@@ -1,0 +1,67 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* Engine coverage as the execution plan decided it and as each engine ended: policy, the surface it ran on, its prerequisite in generic
+   capability terms, the provider that satisfied it, the result and what that means for the release. Rows are a table on wide screens and
+   stacked label/value cards on narrow ones (components: .fqr-coverage-table), so no horizontal scroll is needed to read why a review is
+   blocked. *@
+<div class="fqr-coverage-table-wrap" data-testid="fqr-engine-coverage-table">
+    @if (Rows.Count == 0)
+    {
+        <p class="fqr-muted">No engine was enabled for this review.</p>
+    }
+    else
+    {
+        <table class="fqr-coverage-table">
+            <caption class="visually-hidden">Engine coverage for this run</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Engine</th>
+                    <th scope="col">Policy</th>
+                    <th scope="col">Surface</th>
+                    <th scope="col">Prerequisite</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">Release impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Rows)
+                {
+                    <tr data-testid="fqr-engine-coverage-row" data-engine="@row.Engine" data-impact="@row.ReleaseImpact">
+                        <th scope="row" data-label="Engine">@row.Engine</th>
+                        <td data-label="Policy">@row.Policy</td>
+                        <td data-label="Surface">@row.Surface</td>
+                        <td data-label="Prerequisite">
+                            @row.Prerequisite
+                            @if (row.Provider is { Length: > 0 } provider)
+                            {
+                                <span class="fqr-muted fqr-coverage-provider" data-testid="fqr-engine-coverage-provider">via @provider</span>
+                            }
+                        </td>
+                        <td data-label="Result">
+                            <span data-testid="fqr-engine-coverage-result">@row.Result</span>
+                            @if (row.Reason is { Length: > 0 } reason)
+                            {
+                                <span class="fqr-muted fqr-coverage-reason" data-testid="fqr-engine-coverage-reason">@reason</span>
+                            }
+                        </td>
+                        <td data-label="Release impact">
+                            <span class="fqr-pill fqr-pill-@Tone(row.ReleaseImpact)" data-testid="fqr-engine-coverage-impact">@row.ReleaseImpactLabel</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityEngineCoverageRow> Rows { get; set; } = [];
+
+    private static string Tone(FrontendQualityReleaseImpact impact) => impact switch
+    {
+        FrontendQualityReleaseImpact.Blocking => "attention",
+        FrontendQualityReleaseImpact.Satisfied => "ready",
+        _ => "muted",
+    };
+}

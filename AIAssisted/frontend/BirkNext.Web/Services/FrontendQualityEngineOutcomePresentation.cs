@@ -165,11 +165,14 @@ public static class FrontendQualityEngineOutcomePresentation
         FrontendQualityEngineExecutionState.Cancelled => "Cancelled",
         FrontendQualityEngineExecutionState.Disabled => "Disabled",
         FrontendQualityEngineExecutionState.NotApplicable when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.NotSelected => "Not selected",
-        FrontendQualityEngineExecutionState.NotApplicable => "Unsupported",
+        // Not applicable (the scope excludes it) is not Unsupported (the method cannot provide it) and not Not assessed (it could, but did not).
+        FrontendQualityEngineExecutionState.NotApplicable when IsUnsupported(outcome.OutcomeReason) => "Unsupported",
+        FrontendQualityEngineExecutionState.NotApplicable => "Not applicable",
         _ when IsUnsupported(outcome.OutcomeReason) => "Unsupported",
         _ when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.TimedOut => "Timed out",
         _ when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.EngineError => "Failed",
-        _ => "Blocked",
+        // An engine that did not complete is Not assessed. "Blocked" belongs to the release decision, which names its own causes.
+        _ => "Not assessed",
     };
 
     /// <summary>CSS modifier for the state badge.</summary>
@@ -180,7 +183,7 @@ public static class FrontendQualityEngineOutcomePresentation
         "Timed out" => "timedout",
         "Failed" => "failed",
         "Cancelled" => "cancelled",
-        "Disabled" or "Not selected" => "inactive",
+        "Disabled" or "Not selected" or "Not applicable" => "inactive",
         "Unsupported" => "unsupported",
         _ => "blocked",
     };

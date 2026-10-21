@@ -161,7 +161,7 @@ public sealed class FrontendQualityResultSemanticsTests
             .Single(d => d.Category == FrontendQualityCategory.Security);
 
         security.FindingCount.Should().BeNull("nothing established a number");
-        security.Summary.Should().Contain("No dedicated assessment evidence");
+        security.Summary.Should().Contain("Not assessed in this run");
         security.Summary.Should().NotContain("nothing can be concluded");
     }
 }

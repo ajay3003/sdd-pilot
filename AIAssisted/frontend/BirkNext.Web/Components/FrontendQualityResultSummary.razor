@@ -1,39 +1,54 @@
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 
-@* The whole decision surface of a finished review: how it ended, what that means for a release, what it ran against,
-   and how much there is to act on. The state is a text label, never colour alone, and it is the RESULT of the run —
-   pre-run readiness answered whether the review could start, which is a different question and is not repeated here.
-
-   The release decision used to sit at the bottom of Review details, below the engine matrix. It is the thing a reader
-   comes here to find out, so it is stated next to the result rather than after the diagnostics. *@
+@* The decision surface of a finished review: how it ended, the release decision with its EXACT blockers by type, the counts there are to
+   act on, and what required and optional coverage mean for the release, stated rather than left to inference. Run facts (target, URL,
+   timestamps) are one disclosure away; they describe the run, they are not the result. The state is always a text label, never colour. *@
 <section class="fqr-card fqr-result-summary" aria-labelledby="fqr-result-heading" data-testid="fqr-result-summary">
     <div class="fqr-result-head">
-        <div>
-            <h2 id="fqr-result-heading">Review result</h2>
-            <p class="fqr-result-state" data-testid="fqr-result-state">
-                <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
-                @* A requirement no engine can discharge, stated beside the result rather than inside it. *@
-                @if (Result.Completeness is { ManualAssessment: FrontendQualityManualAssessmentState.Required })
-                {
-                    <span class="fqr-pill fqr-pill-info" data-testid="fqr-result-manual">Manual assessment required</span>
-                }
-            </p>
-            <p class="fqr-result-summary-text" data-testid="fqr-result-summary-text">@Result.Summary</p>
-        </div>
-        <button type="button" class="btn-primary fqr-result-rerun" data-testid="fqr-run-again" @onclick="RunAgain">Run again</button>
+        <h2 id="fqr-result-heading">Review result</h2>
+        <p class="fqr-result-state" data-testid="fqr-result-state">
+            <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
+            @if (Result.Completeness is { ManualAssessment: FrontendQualityManualAssessmentState.Required })
+            {
+                <span class="fqr-pill fqr-pill-info" data-testid="fqr-result-manual">Manual assessment required</span>
+            }
+        </p>
     </div>
+    <p class="fqr-result-summary-text" data-testid="fqr-result-summary-text">@Result.Summary</p>
 
-    @* ── The release decision, where the decision is made ──────────────────────────────────────────────────────── *@
+    @* ── The release decision and, when blocked, exactly why — grouped by blocker type ─────────────────────────────────────────── *@
     @if (Result.Release is { } release)
     {
-        <div class="fqr-release fqr-release-@release.Tone" role="status" data-testid="fqr-release"
-             data-disposition="@release.Disposition">
+        <div class="fqr-release fqr-release-@release.Tone" role="status" data-testid="fqr-release" data-disposition="@release.Disposition">
             <div class="fqr-release-head">
                 <span class="fqr-release-label">Release decision</span>
                 <strong class="fqr-release-value" data-testid="fqr-release-label">@release.Label</strong>
             </div>
             <p class="fqr-release-statement" data-testid="fqr-release-statement">@release.Statement</p>
-            @if (release.Reasons.Count > 0)
+            @if (Report is not null && Report.ReleaseBlockers.Count > 0)
+            {
+                <p class="fqr-release-primary" data-testid="fqr-release-primary"><strong>Primary blocker:</strong> @FrontendQualityPostRunPresentation.PrimaryBlocker(Report)</p>
+                <div class="fqr-blockers" data-testid="fqr-release-blockers">
+                    @foreach (var group in FrontendQualityPostRunPresentation.BlockersByType(Report))
+                    {
+                        <h3 class="fqr-blockers-type" data-testid="fqr-blocker-type" data-type="@group.Key">@FrontendQualityDecisionSupportService.BlockerTypeLabel(group.Key)@(group.Count() == 1 ? "" : $"s ({group.Count()})")</h3>
+                        <ul class="fqr-blockers-list">
+                            @foreach (var blocker in group)
+                            {
+                                <li data-testid="fqr-blocker">
+                                    <strong>@blocker.Entity</strong> — @blocker.Reason
+                                    @if (blocker.Rule is { Length: > 0 } rule)
+                                    {
+                                        <span class="fqr-muted fqr-blocker-rule">Rule: @rule</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+            else if (release.Reasons.Count > 0)
             {
                 <ul class="fqr-release-reasons" data-testid="fqr-release-reasons">
                     @foreach (var reason in release.Reasons)
@@ -42,87 +57,96 @@
                     }
                 </ul>
             }
+            @if (Report is not null && FrontendQualityPostRunPresentation.ShowSeverityNote(Report, Result.ActionableIssues))
+            {
+                <p class="fqr-release-severity-note" data-testid="fqr-release-severity-note">@FrontendQualityDecisionSupportService.SeverityNotBlocking</p>
+            }
         </div>
     }
 
-    @* ── What there is to act on. Three different things, never one number. ────────────────────────────────────── *@
+    @* ── What there is to act on. Different things, never one number. ──────────────────────────────────────────────────────────── *@
     <dl class="fqr-result-metrics" data-testid="fqr-result-metrics">
-        @* What there is to FIX. Deduplicated, so one defect seen on five routes is one item here. *@
         <div title="Distinct actionable problems, grouped from source findings."><dt>Logical issues</dt><dd data-testid="fqr-metric-logical">@Result.LogicalIssueCount</dd></div>
-        @* What the review SAW. Always larger, and never a count of problems. *@
+        <div title="Logical issues with Critical or High severity."><dt>Critical/high issues</dt><dd data-testid="fqr-metric-critical-high-issues">@CriticalHighIssues</dd></div>
         <div title="Individual engine observations. Several can belong to the same logical issue."><dt>Source findings</dt><dd data-testid="fqr-metric-source">@Result.SourceFindingCount</dd></div>
-        <div title="Source findings with Critical or High severity. Counted per observation, so it can exceed the critical/high logical issues in the release decision.">
-            <dt>Critical/high source findings</dt>
-            <dd data-testid="fqr-metric-critical-high">@Result.CriticalHighSourceCount</dd>
-        </div>
         @if (Result.DerivedIndicatorCount > 0)
         {
-            @* Conclusions drawn from the observations above; listed apart so they are never added to them. *@
             <div><dt>Derived indicators</dt><dd data-testid="fqr-metric-derived">@Result.DerivedIndicatorCount</dd></div>
         }
-        @if (Result.InformationalIssueCount > 0)
-        {
-            <div><dt>Informational observations</dt><dd data-testid="fqr-metric-informational">@Result.InformationalIssueCount</dd></div>
-        }
     </dl>
-
-    @* The counts measure different things on purpose; one sentence stops a reader expecting them to match. *@
     <p class="fqr-result-metrics-note" data-testid="fqr-result-metrics-note">
         Logical issues are grouped actionable problems. Source findings are individual engine observations and may map to the same logical issue, so the counts are not expected to match.
     </p>
-    <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
-        <div>
-            <dt>Target</dt>
-            <dd data-testid="fqr-result-environment">@Result.Environment <span class="fqr-pill fqr-pill-muted">@Result.EnvironmentType</span></dd>
-        </div>
-        <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-result-url">@Result.Url</dd></div>
-        @* Shown only when the report carries one; no timestamp is invented for a report that has none. *@
-        @if (Result.CompletedAt is { } completed)
-        {
-            <div><dt>Completed</dt><dd data-testid="fqr-result-completed">@completed.ToString("u")</dd></div>
-        }
-        @if (Result.ProfileLabel is { Length: > 0 } profile)
-        {
-            <div>
-                <dt>Accessibility profile</dt>
-                <dd data-testid="fqr-result-profile">
-                    @profile
-                    @if (Result.CriteriaInScope is { } criteria)
-                    {
-                        <span class="fqr-result-profile-scope" data-testid="fqr-result-profile-scope">@criteria criteria in selected profile</span>
-                    }
-                </dd>
-            </div>
-        }
-    </dl>
 
-    @* ── Completeness, on the dimensions that can actually differ ──────────────────────────────────────────────── *@
+    @* ── Coverage and its release meaning, side by side ─────────────────────────────────────────────────────────────────────────── *@
     @if (Result.Completeness is { } completeness)
     {
         <dl class="fqr-completeness" data-testid="fqr-completeness">
-            <div><dt>Execution</dt><dd data-testid="fqr-completeness-execution">@completeness.ExecutionLabel</dd></div>
             <div>
                 <dt>Required coverage</dt>
-                <dd data-testid="fqr-completeness-required">@completeness.RequiredCoverageLabel
-                    <span class="fqr-muted">(@completeness.RequiredAssessed of @completeness.RequiredTotal)</span>
+                <dd data-testid="fqr-completeness-required">
+                    @FrontendQualityPostRunPresentation.CoverageCount(completeness.RequiredAssessed, completeness.RequiredTotal)
+                    <span class="fqr-pill fqr-pill-@(FrontendQualityPostRunPresentation.RequiredBlocking(completeness) ? "attention" : "muted")"
+                          data-testid="fqr-completeness-required-meaning">@FrontendQualityPostRunPresentation.RequiredMeaning(completeness)</span>
                 </dd>
             </div>
             <div>
                 <dt>Optional coverage</dt>
-                <dd data-testid="fqr-completeness-optional">@completeness.OptionalCoverageLabel
-                    @if (completeness.OptionalTotal > 0)
-                    {
-                        @* Razor drops the whitespace before @if, so the space is inside the span: "None(0 of 3)" otherwise. *@
-                        <span class="fqr-muted"> (@completeness.OptionalAssessed of @completeness.OptionalTotal)</span>
-                    }
+                <dd data-testid="fqr-completeness-optional">
+                    @FrontendQualityPostRunPresentation.CoverageCount(completeness.OptionalAssessed, completeness.OptionalTotal)
+                    <span class="fqr-pill fqr-pill-muted" data-testid="fqr-completeness-optional-meaning">@FrontendQualityPostRunPresentation.OptionalMeaning(completeness)</span>
                 </dd>
             </div>
+            @if (Report is not null && FrontendQualityPostRunPresentation.SurfaceStatuses(Report) is { Count: > 0 } surfaces)
+            {
+                @foreach (var surface in surfaces)
+                {
+                    <div data-testid="fqr-surface-status" data-surface="@surface.Surface">
+                        <dt>@surface.Label surface</dt>
+                        <dd>@surface.Status@if (surface.Detail is { Length: > 0 } detail) {<span class="fqr-muted"> — @detail</span>}</dd>
+                    </div>
+                }
+            }
             <div><dt>Manual assessment</dt><dd data-testid="fqr-completeness-manual">@completeness.ManualAssessmentLabel</dd></div>
         </dl>
     }
+
+    <ReviewDisclosure Text="View run details" CollapseText="Hide run details" Class="disclosure-inline disclosure-small" TestId="fqr-run-details">
+        <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
+            <div>
+                <dt>Target</dt>
+                <dd data-testid="fqr-result-environment">@Result.Environment <span class="fqr-pill fqr-pill-muted">@Result.EnvironmentType</span></dd>
+            </div>
+            <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-result-url">@Result.Url</dd></div>
+            @if (Result.CompletedAt is { } completed)
+            {
+                <div><dt>Completed</dt><dd data-testid="fqr-result-completed">@completed.ToString("u")</dd></div>
+            }
+            @if (Result.Completeness is { } execution)
+            {
+                <div><dt>Execution</dt><dd data-testid="fqr-completeness-execution">@execution.ExecutionLabel</dd></div>
+            }
+            @if (Result.ProfileLabel is { Length: > 0 } profile)
+            {
+                <div>
+                    <dt>Accessibility profile</dt>
+                    <dd data-testid="fqr-result-profile">
+                        @profile
+                        @if (Result.CriteriaInScope is { } criteria)
+                        {
+                            <span class="fqr-result-profile-scope" data-testid="fqr-result-profile-scope">@criteria criteria in selected profile</span>
+                        }
+                    </dd>
+                </div>
+            }
+        </dl>
+    </ReviewDisclosure>
 </section>
 
 @code {
     [Parameter, EditorRequired] public FrontendQualityResultView Result { get; set; } = default!;
-    [Parameter] public EventCallback RunAgain { get; set; }
+    /// <summary>The stored report the result was projected from; supplies the exact blockers and the per-surface coverage.</summary>
+    [Parameter] public FrontendQualityReviewReport? Report { get; set; }
+
+    private int CriticalHighIssues => Result.ActionableIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
 }

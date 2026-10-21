@@ -80,6 +80,19 @@ public class FrontendQualityEngineReadinessDto
 
     [JsonPropertyName("checkedAtUtc")]
     public DateTime CheckedAtUtc { get; set; }
+
+    /// <summary>Runtime prerequisites reported separately (Lighthouse: Node runtime and Chromium/CDP target). Absent from older backends.</summary>
+    [JsonPropertyName("runtimeComponents")]
+    public List<FrontendQualityRuntimeComponentDto>? RuntimeComponents { get; set; }
+}
+
+/// <summary>One runtime prerequisite. Available null = not determined by this check.</summary>
+public sealed class FrontendQualityRuntimeComponentDto
+{
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("available")] public bool? Available { get; set; }
+    [JsonPropertyName("provider")] public string Provider { get; set; } = "";
+    [JsonPropertyName("detail")] public string? Detail { get; set; }
 }
 
 /// <summary>Complete capability model for one engine: all five layers + effective availability.</summary>
@@ -134,6 +147,10 @@ public class FrontendQualityEngineReadinessReportDto
 
     [JsonPropertyName("checkedAtUtc")]
     public DateTime CheckedAtUtc { get; set; }
+
+    /// <summary>Runtime prerequisites reported separately (Lighthouse: Node runtime and Chromium/CDP target). Absent from older backends.</summary>
+    [JsonPropertyName("runtimeComponents")]
+    public List<FrontendQualityRuntimeComponentDto>? RuntimeComponents { get; set; }
 }
 
 /// <summary>Execution snapshot captured at Quality Review run start.</summary>

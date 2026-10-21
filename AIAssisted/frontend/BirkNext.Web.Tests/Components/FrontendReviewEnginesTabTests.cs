@@ -98,7 +98,7 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
 
         var lighthouse = cut.FindAll("[data-testid=engine-row]").Single(r => r.GetAttribute("data-engine-id") == "Lighthouse");
         lighthouse.QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim().Should().Be("Enabled");
-        lighthouse.QuerySelector("[data-testid=engine-requires]")!.TextContent.Trim().Should().Be("Node + Chrome");
+        lighthouse.QuerySelector("[data-testid=engine-requires]")!.TextContent.Trim().Should().Be("Node runtime + Chromium/CDP target");
 
         // The page says in words that Enabled is not a capability claim.
         cut.Find("[data-testid=engines-capability-note]").TextContent

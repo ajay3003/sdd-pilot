@@ -68,15 +68,16 @@ public static class FrontendReviewEnginePresentation
 
     /// <summary>
     /// The runtime prerequisite each engine needs, derived from the same access requirements the orchestrator and
-    /// readiness layers use. This is a static requirement, never a live availability claim.
+    /// readiness layers use. This is a static requirement, never a live availability claim; the planner resolves the provider
+    /// (Playwright, an authenticated browser, a live Browser Companion page, a Chromium/CDP target) at review time.
     /// </summary>
     public static string Requires(FrontendQualityEngineId id) => id switch
     {
         FrontendQualityEngineId.StaticSecurity => "Public HTTP",
         FrontendQualityEngineId.PassivePerformance => "Public HTTP",
         FrontendQualityEngineId.PassiveSecurity => "Container runtime (ZAP)",
-        FrontendQualityEngineId.Accessibility => "Browser DOM (Playwright + axe)",
-        FrontendQualityEngineId.Lighthouse => "Node + Chrome",
+        FrontendQualityEngineId.Accessibility => FrontendQualityExecutionPlanner.BrowserDomLabel + " (provider resolved at review time)",
+        FrontendQualityEngineId.Lighthouse => FrontendQualityExecutionPlanner.LighthouseLabel,
         FrontendQualityEngineId.BrowserRuntime => "Browser DOM (Playwright)",
         FrontendQualityEngineId.BrowserQuality => "Browser Companion pairing",
         FrontendQualityEngineId.PerformanceQuality => "Browser Companion and/or Local HTTPS proxy evidence",
@@ -89,7 +90,7 @@ public static class FrontendReviewEnginePresentation
         FrontendQualityEngineId.StaticSecurity => "Anonymous HTTP security review",
         FrontendQualityEngineId.PassivePerformance => "Anonymous HTTP asset and WASM analysis",
         FrontendQualityEngineId.PassiveSecurity => "OWASP ZAP passive scan",
-        FrontendQualityEngineId.Accessibility => "axe-core in a BirkNext browser",
+        FrontendQualityEngineId.Accessibility => "axe-core in a Browser DOM",
         FrontendQualityEngineId.Lighthouse => "Google Lighthouse lab run",
         FrontendQualityEngineId.BrowserRuntime => "BirkNext Playwright browser",
         FrontendQualityEngineId.BrowserQuality => "Browser Companion evidence assessment",

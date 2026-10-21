@@ -166,8 +166,8 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
 
         var page = Result(report);
         page.Find("[data-testid=fqr-metric-derived]").TextContent.Trim().Should().Be("4");
-        Hint(page, "fqr-all-findings").Should().Contain("4 derived indicators");
-        Hint(page, "fqr-all-logical-issues").Should().Contain("4 derived indicators").And.NotContain("3 derived");
+        page.Find("[data-testid=fqr-result-details] .fqr-section-note").TextContent.Should().Contain("4 derived indicators");
+        page.Find("[data-testid=fqr-review-items-derived]").TextContent.Should().Be("Derived indicators (4)");
         // The domains split the same four: three in QA Readiness, one filed under Performance.
         view.Domain(FrontendQualityCategory.Readiness).FindingCount.Should().Be(3);
         view.Domain(FrontendQualityCategory.Performance).DerivedIndicatorCount.Should().Be(1);
@@ -201,11 +201,13 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
         var report = Report();
         var view = FrontendQualityResultPresentation.Build(report);
         var page = Result(report);
-        Open(page, "fqr-all-logical-issues");
 
-        page.Find("[data-testid=fqr-review-items-actionable]").TextContent.Should().Be($"Actionable logical issues ({view.LogicalIssueCount})");
-        page.Find("[data-testid=fqr-review-items-informational]").TextContent.Should().Be("Informational observations (2)");
-        page.Find("[data-testid=fqr-review-items-derived]").TextContent.Should().Be("Derived indicators (4)");
+        // Issues lists actionable logical issues only; derived indicators and informational observations are in Evidence.
+        page.Find("#fqr-issues-heading").TextContent.Should().Be($"Logical issues ({view.LogicalIssueCount})");
+        page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-issue-derived], [data-testid=fqr-issue-informational]").Should().BeEmpty();
+        var other = page.Find("[data-testid=fqr-tabpanel-evidence] [data-testid=fqr-other-items]");
+        other.QuerySelector("[data-testid=fqr-review-items-informational]")!.TextContent.Should().Be("Informational observations (2)");
+        other.QuerySelector("[data-testid=fqr-review-items-derived]")!.TextContent.Should().Be("Derived indicators (4)");
         var derivedCards = page.FindAll("[data-testid=fqr-issue-derived]");
         derivedCards.Should().HaveCount(view.DerivedIssues.Count);
         // A derived card never counts its records as source findings, and is never also labelled Informational.
@@ -295,8 +297,7 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
     public void EveryReviewDetailsSectionStartsCollapsed_AndRawEvidenceIsNestedAndNotBuilt()
     {
         var page = Result(Report());
-        foreach (var id in new[] { "fqr-all-logical-issues", "fqr-all-findings", "fqr-engine-coverage", "fqr-result-technical",
-                     "fqr-engine-scores", "fqr-result-diagnostics" })
+        foreach (var id in new[] { "fqr-engine-coverage", "fqr-cookie-security", "fqr-result-diagnostics" })
         {
             page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("false", id);
             page.Find($"[data-testid={id}-body]").HasAttribute("hidden").Should().BeTrue(id);
@@ -371,8 +372,7 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
     {
         var report = Report();
         var page = Result(report);
-        Open(page, "fqr-result-technical");
-        var auth = page.Find("[data-testid=fqr-access-auth]");
+        var auth = page.Find("[data-testid=fqr-tabpanel-coverage] [data-testid=fqr-result-technical] [data-testid=fqr-access-auth]");
         auth.PreviousElementSibling!.TextContent.Should().Be("Authentication configured");
         auth.TextContent.Should().Be("Microsoft Entra ID");
         page.Find("[data-testid=fqr-access-scope]").TextContent.Should().Be("Public only");
@@ -392,6 +392,11 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
             report.Findings.Add(Finding($"extra-{i}", $"Extra issue {i}", FrontendQualityCategory.Performance, FrontendQualitySeverity.Low));
         report.LogicalIssues.Clear();
         report.LogicalIssues.AddRange(FrontendQualityLogicalIssueGrouper.Group(report.Findings));
-        Result(report).Find("[data-testid=fqr-key-issues-more]").TextContent.Should().Contain("in Review items below");
+        var page = Result(report);
+        var view = FrontendQualityResultPresentation.Build(report);
+        var more = page.Find("[data-testid=fqr-key-issues-more]");
+        more.TextContent.Trim().Should().Be($"View all {view.LogicalIssueCount} issues");
+        more.Click();
+        page.Find("[data-testid=fqr-tabpanel-issues]").HasAttribute("hidden").Should().BeFalse("the link opens the Issues view it names");
     }
 }

@@ -37,6 +37,13 @@
                         {
                             <span class="fqr-pill fqr-pill-info" data-testid="fqr-issue-informational">Informational</span>
                         }
+                        @* Release impact in words: only the configured release policy blocks, never severity alone. *@
+                        @if (ImpactOf is not null && issue.IsActionable)
+                        {
+                            var impact = ImpactOf(issue);
+                            <span class="fqr-pill fqr-pill-@(impact == FrontendQualityReleaseImpact.Blocking ? "attention" : "muted")" data-testid="fqr-issue-impact"
+                                  data-impact="@impact">@FrontendQualityPostRunPresentation.IssueImpactLabel(impact)</span>
+                        }
                     </div>
 
                     @* How much of it there is. Places and observations, never presented as a number of problems. *@
@@ -55,7 +62,7 @@
                         var open = _open.Contains(issue.LogicalId);
                         <button type="button" class="btn-secondary fa-btn-sm fqr-issue-details-toggle" data-testid="fqr-issue-details-toggle"
                                 aria-expanded="@(open ? "true" : "false")" aria-controls="@($"fqr-issue-details-{issue.LogicalId}")"
-                                @onclick="() => Toggle(issue.LogicalId)">@(open ? "Hide issue details" : "View issue details")</button>
+                                @onclick="() => Toggle(issue.LogicalId)">@(open ? "Hide evidence" : "View evidence")</button>
                         @if (open)
                         {
                             <div class="fqr-issue-details" id="@($"fqr-issue-details-{issue.LogicalId}")" data-testid="fqr-issue-details">
@@ -100,7 +107,7 @@
                         </ReviewDisclosure>
                     }
 
-                    <ReviewDisclosure Text="@($"Source evidence ({issue.SourceFindingCount})")" CollapseText="Hide source evidence"
+                    <ReviewDisclosure Text="@($"View evidence ({issue.SourceFindingCount} source finding{(issue.SourceFindingCount == 1 ? "" : "s")})")" CollapseText="Hide evidence"
                                       Class="disclosure-inline disclosure-small" TestId="@($"fqr-issue-evidence-{issue.LogicalId}")">
                         <p class="fqr-issue-provenance" data-testid="fqr-issue-provenance">
                             <strong>Observed by:</strong> @string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel))
@@ -139,6 +146,8 @@
     [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityLogicalIssue> Issues { get; set; } = [];
     /// <summary>Summary cards with one details toggle — the Key logical issues surface. The full list keeps every disclosure.</summary>
     [Parameter] public bool Compact { get; set; }
+    /// <summary>The release impact of each actionable issue, from the stored report's blockers. Omitted: no impact is shown.</summary>
+    [Parameter] public Func<FrontendQualityLogicalIssue, FrontendQualityReleaseImpact>? ImpactOf { get; set; }
 
     private readonly HashSet<string> _open = new(StringComparer.Ordinal);
     private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }

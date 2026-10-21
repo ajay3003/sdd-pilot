@@ -60,7 +60,8 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     BrowserQualityReviewResult? BrowserQualityReport = null,
     string? BrowserQualityError = null,
     PerformanceQualityReviewResult? PerformanceQualityReport = null,
-    string? PerformanceQualityError = null)
+    string? PerformanceQualityError = null,
+    FrontendQualityRuntimeFacts? LighthouseRuntime = null)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
     public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
@@ -94,6 +95,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendAuthenticatedApiSurfaceService? _apiSurface;
     private readonly IBrowserQualityEvidenceSource? _browserQuality;
     private readonly IPerformanceQualityEvidenceSource? _performanceQuality;
+    private readonly IBrowserCompanionAccessibilitySource? _companionAccessibility;
     internal IAuthenticatedReviewOrchestrationObserver AuthenticatedObserver { get; set; } = NoOpAuthenticatedReviewOrchestrationObserver.Instance;
 
     public FrontendQualityReviewOrchestrator(
@@ -110,8 +112,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendQualityTargetAccessResolver? accessResolver = null,
         IFrontendAuthenticatedApiSurfaceService? apiSurface = null,
         IBrowserQualityEvidenceSource? browserQuality = null,
-        IPerformanceQualityEvidenceSource? performanceQuality = null)
+        IPerformanceQualityEvidenceSource? performanceQuality = null,
+        IBrowserCompanionAccessibilitySource? companionAccessibility = null)
     {
+        _companionAccessibility = companionAccessibility;
         _apiSurface = apiSurface;
         _browserQuality = browserQuality;
         _performanceQuality = performanceQuality;
@@ -134,16 +138,46 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         FrontendQualityEngineExecutionSnapshot? snapshot = null,
         CancellationToken cancellationToken = default)
     {
+        // The plan comes first: saved engine configuration + review scope + each engine's own prerequisite + resolved capabilities.
+        // Scope selects SURFACES; it never picks one access mode for every engine.
+        var planScope = context.ReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication);
+        // The active engine set is captured once, at start: settings edited during the run apply to the next review only.
+        var startActive = FrontendQualityActiveEngines.Resolve(context);
+        var access = await ResolveAccessAsync(context, cancellationToken);
+        var companionLive = await SafeCompanionLiveAsync(context, cancellationToken);
+        var plan = FrontendQualityExecutionPlanner.Plan(startActive, planScope,
+            FrontendQualityCapabilityResolver.Resolve(context, access, companionLive?.Live, companionLive?.ApprovedOrigins));
+
         if (context.ReviewScope is not { } scope)
-            return await RunCoreAsync(targetUrl, context, snapshot, cancellationToken);
+        {
+            var single = await RunCoreAsync(targetUrl, context, snapshot, cancellationToken, plan: plan,
+                companionAccessibility: CompanionAccessibilityPlanned(plan, null));
+            return single.QualityReport is { } singleReport
+                ? single with { QualityReport = Finalize(singleReport, [(null, singleReport.EngineOutcomes)], single.LighthouseRuntime, context,
+                    singleReport.TargetAccess ?? access, companionLive, plan, singleReport.ActiveEngines ?? single.ActiveEngines ?? startActive) }
+                : single;
+        }
 
         var passes = new List<FrontendQualityCoveragePass>();
-        var access = await ResolveAccessAsync(context, cancellationToken);
         FrontendQualityReviewOrchestrationResult? last = null;
+        FrontendQualityRuntimeFacts? lighthouseRuntime = null;
         foreach (var mode in scope == FrontendReviewAccessScope.PublicAndAuthenticated
             ? new[] { FrontendReviewAccessScope.PublicOnly, FrontendReviewAccessScope.AuthenticatedOnly }
             : new[] { scope })
         {
+            var surface = mode == FrontendReviewAccessScope.PublicOnly ? FrontendQualityReviewSurface.Public : FrontendQualityReviewSurface.Authenticated;
+            // An engine takes part in this pass when the plan runs it on THIS surface, or when this surface completes it (primary) and the
+            // pass must record exactly why it cannot run. A secondary surface that cannot run is skipped, never failed: an engine whose
+            // configured prerequisite is Public HTTP is not marked Blocked on the authenticated surface because no authenticated HTTP context exists.
+            var passEngines = plan.Engines
+                .Where(e => e.For(surface) is { } planned
+                            && (planned.Decision == FrontendQualityPlanDecision.Run
+                                || planned.Primary && planned.Decision is FrontendQualityPlanDecision.NotAssessed or FrontendQualityPlanDecision.Unsupported)
+                            || e.For(FrontendQualityReviewSurface.CompanionPage)?.Decision == FrontendQualityPlanDecision.Run
+                               && (e.Prerequisite is not FrontendQualityExecutionPlanner.BrowserDomLabel || CompanionAccessibilityPlanned(plan, surface)))
+                .Select(e => e.EngineId).ToHashSet();
+            if (passes.Count > 0)
+                passEngines.RemoveWhere(id => id is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality);
             var passContext = context.ForReviewScope(mode);
             var passSnapshot = mode == FrontendReviewAccessScope.PublicOnly && snapshot is not null
                 ? new FrontendQualityEngineExecutionSnapshot
@@ -153,7 +187,9 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                     AuthModeSupported = snapshot.AuthModeSupported, CapturedAtUtc = snapshot.CapturedAtUtc
                 } : snapshot;
             last = await RunCoreAsync(targetUrl, passContext, passSnapshot, cancellationToken,
-                includeCompanion: passes.Count == 0);
+                includeCompanion: passes.Count == 0, plan: plan, passEngines: passEngines,
+                companionAccessibility: CompanionAccessibilityPlanned(plan, surface));
+            lighthouseRuntime ??= last.LighthouseRuntime;
             if (last.QualityReport is { } report)
             {
                 foreach (var finding in report.Findings)
@@ -163,42 +199,80 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
         var reports = passes.Select(p => p.Report).ToList();
         if (last?.QualityReport is not { } finalReport) return last!;
-        // One aggregate row per engine, with each mode's original outcomes retained in CoveragePasses.
-        var outcomes = reports.SelectMany(r => r.EngineOutcomes)
-            .GroupBy(o => o.EngineId).Select(g => g.Where(o => o.Enabled && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled)
-                .OrderBy(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed ? 1 : 0).FirstOrDefault() ?? g.First()).ToList();
         var findings = reports.SelectMany(r => r.Findings).ToList();
         var limitations = reports.SelectMany(r => r.Limitations).Distinct().ToList();
         var incomplete = passes.Any(p => PassIncomplete(p));
         if (incomplete) limitations.Add("One or more selected coverage modes could not be assessed. Review completed with limitations.");
-        var issues = FrontendQualityLogicalIssueGrouper.Group(findings);
-        var manualItems = FrontendQualityDecisionSupportService.BuildManualReviewItems(issues, outcomes);
-        var coverage = FrontendQualityCoverage.Evaluate(outcomes);
-        var disposition = FrontendQualityDecisionSupportService.EvaluateReleaseDisposition(coverage, outcomes, issues, manualItems, context.ReleasePolicy);
-        if (incomplete && disposition == FrontendQualityReleaseDisposition.NoAutomatedBlockDetected)
-            disposition = FrontendQualityReleaseDisposition.ReviewRequired;
-        finalReport = reports[0];
+        finalReport = reports[0] with
+        {
+            CoveragePasses = passes, Findings = findings, Limitations = limitations,
+            AuthenticatedApiSurface = reports.Select(r => r.AuthenticatedApiSurface).FirstOrDefault(s => s is not null),
+            OverallScore = reports.Count == 1 ? reports[0].OverallScore : null,
+        };
+        var merged = Finalize(finalReport, passes.Select(p => ((FrontendReviewAccessScope?)p.Mode, (IReadOnlyList<FrontendQualityEngineOutcome>)p.Report.EngineOutcomes)).ToList(),
+            lighthouseRuntime, context, access with { ReviewScope = scope }, companionLive, plan, startActive);
+        if (incomplete && merged.ReleaseDisposition == FrontendQualityReleaseDisposition.NoAutomatedBlockDetected)
+            merged = merged with { ReleaseDisposition = FrontendQualityReleaseDisposition.ReviewRequired };
         return last with
         {
             PreflightBlocked = reports.All(r => !r.EngineOutcomes.Any(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)),
-            QualityReport = finalReport with
-            {
-                TargetAccess = access with { ReviewScope = scope }, CoveragePasses = passes,
-                Findings = findings, EngineOutcomes = outcomes, Limitations = limitations,
-                ActiveEngines = FrontendQualityActiveEngines.Resolve(context),
-                AuthenticatedApiSurface = reports.Select(r => r.AuthenticatedApiSurface).FirstOrDefault(s => s is not null),
-                LogicalIssues = issues, ManualReviewItems = manualItems, Coverage = coverage,
-                ReleaseDisposition = disposition,
-                OverallScore = reports.Count == 1 ? finalReport.OverallScore : null
-            }
+            QualityReport = merged,
         };
+    }
+
+    /// <summary>
+    /// One aggregate row per engine and the review's coverage, blockers and disposition, computed from what each pass actually did.
+    /// An engine that completed on any surface is reported from that completion; a pass that did not run it never overrides it.
+    /// The plan is re-resolved with the runtime facts learned during the run, so its reasons describe this run.
+    /// </summary>
+    private static FrontendQualityReviewReport Finalize(
+        FrontendQualityReviewReport report,
+        IReadOnlyList<(FrontendReviewAccessScope? Mode, IReadOnlyList<FrontendQualityEngineOutcome> Outcomes)> passes,
+        FrontendQualityRuntimeFacts? lighthouseRuntime,
+        FrontendAnalysisContext context,
+        FrontendQualityTargetAccessContext access,
+        BrowserCompanionLiveState? companionLive,
+        FrontendQualityExecutionPlan plan,
+        FrontendQualityActiveEngineSnapshot active)
+    {
+        if (lighthouseRuntime is not null)
+            plan = FrontendQualityExecutionPlanner.Plan(active, plan.Scope,
+                FrontendQualityCapabilityResolver.Resolve(context, access, companionLive?.Live, companionLive?.ApprovedOrigins, lighthouseRuntime));
+        var outcomes = FrontendQualitySurfaceResults.Merge(plan, passes);
+        var coverage = FrontendQualityCoverage.Evaluate(outcomes, plan);
+        var issues = FrontendQualityLogicalIssueGrouper.Group(report.Findings);
+        var manualItems = FrontendQualityDecisionSupportService.BuildManualReviewItems(issues, outcomes);
+        var blockers = FrontendQualityDecisionSupportService.ReleaseBlockers(coverage, outcomes, issues, context.ReleasePolicy, active, plan);
+        var disposition = FrontendQualityDecisionSupportService.EvaluateReleaseDisposition(coverage, outcomes, issues, manualItems, context.ReleasePolicy, blockers);
+        return report with
+        {
+            TargetAccess = access, EngineOutcomes = outcomes, ActiveEngines = active, LogicalIssues = issues, ManualReviewItems = manualItems,
+            Coverage = coverage, ReleaseDisposition = disposition, ReleaseBlockers = blockers, ExecutionPlan = plan,
+        };
+    }
+
+    /// <summary>Accessibility uses the live Browser Companion page only where the plan says so and only for a surface whose own DOM is unavailable.</summary>
+    private static bool CompanionAccessibilityPlanned(FrontendQualityExecutionPlan plan, FrontendQualityReviewSurface? surface)
+    {
+        var accessibility = plan.For(FrontendQualityEngineId.Accessibility);
+        if (accessibility?.For(FrontendQualityReviewSurface.CompanionPage)?.Decision != FrontendQualityPlanDecision.Run) return false;
+        if (surface is { } s) return accessibility.For(s)?.Decision is not FrontendQualityPlanDecision.Run;
+        return accessibility.Surfaces.Where(x => x.Surface != FrontendQualityReviewSurface.CompanionPage).All(x => x.Decision != FrontendQualityPlanDecision.Run);
+    }
+
+    private async Task<BrowserCompanionLiveState?> SafeCompanionLiveAsync(FrontendAnalysisContext context, CancellationToken cancellationToken)
+    {
+        if (_companionAccessibility is null || !context.FeatureToggles.EnableAccessibilityEngine) return null;
+        try { return await _companionAccessibility.LiveAsync(context, cancellationToken); }
+        catch { return null; }
     }
 
     private static bool PassIncomplete(FrontendQualityCoveragePass pass) => FrontendQualityReviewScopes.PassStatus(pass) != "Completed";
 
     private async Task<FrontendQualityReviewOrchestrationResult> RunCoreAsync(
         string targetUrl, FrontendAnalysisContext context,
-        FrontendQualityEngineExecutionSnapshot? snapshot, CancellationToken cancellationToken, bool includeCompanion = true)
+        FrontendQualityEngineExecutionSnapshot? snapshot, CancellationToken cancellationToken, bool includeCompanion = true,
+        FrontendQualityExecutionPlan? plan = null, IReadOnlySet<FrontendQualityEngineId>? passEngines = null, bool companionAccessibility = false)
     {
         // ── Active engine set (saved configuration only) ───────────────────────────────────────────────
         // Which engines participate is decided BEFORE any capability, readiness or network work: Enabled (profile
@@ -208,7 +282,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         if (context.ReviewScope is not null)
             active = active with { Engines = active.Engines.Select(e => e with
             {
-                Selected = e.Selected && (e.EngineId is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality
+                Selected = e.Selected && (passEngines?.Contains(e.EngineId) ?? true) && (e.EngineId is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality
                     ? includeCompanion
                     : context.ReviewScope != FrontendReviewAccessScope.AuthenticatedOnly
                         || e.Access.SupportsAuthenticatedBrowserSession || e.Access.SupportsProxyAuthenticatedContext)
@@ -222,6 +296,15 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         // precise reason instead of issuing a request and waiting for a timeout.
         var access = await ResolveAccessAsync(context, cancellationToken);
         var decisions = FrontendQualityTargetAccess.DecideAll(access);
+        // The live Browser Companion page provides the Browser DOM this surface's own provider cannot. The plan decided it; nothing here guesses.
+        if (companionAccessibility && _companionAccessibility is not null && active.IsActive(FrontendQualityEngineId.Accessibility)
+            && !decisions[FrontendQualityEngineId.Accessibility].IsReady)
+            decisions = new Dictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>(decisions)
+            {
+                [FrontendQualityEngineId.Accessibility] = new(FrontendQualityEngineId.Accessibility, FrontendQualityEngineAccessKind.BrowserCompanion,
+                    BrowserCompanionAccessibility.AccessLabel, FrontendQualityEngineAccessState.Ready, FrontendQualityEngineOutcomeReason.None,
+                    FrontendQualityExecutionPlanner.CompanionPageNote),
+            };
         // Authenticated DOM engines only run under an authoritative snapshot captured by the UI after sign-in; a defaulted
         // snapshot never grants authenticated execution. Public-HTTP engines are unaffected by this rule.
         var authoritativeSnapshot = snapshot is not null && snapshot.AuthMode == ReviewAuthenticationModeDto.Authenticated;
@@ -439,11 +522,23 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             }
         }
 
+        var accessibilityViaCompanion = decisions[FrontendQualityEngineId.Accessibility] is { IsReady: true, AccessKind: FrontendQualityEngineAccessKind.BrowserCompanion };
         var accessibilityEligible = active.IsActive(FrontendQualityEngineId.Accessibility)
             && IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility) && _accessibility is not null
-            && decisions[FrontendQualityEngineId.Accessibility].IsReady;
+            && decisions[FrontendQualityEngineId.Accessibility].IsReady && !accessibilityViaCompanion;
         var accessibilityShortCircuited = result.OutcomeReasons.ContainsKey(FrontendQualityEngineId.Accessibility);
-        if (accessibilityEligible && !accessibilityShortCircuited)
+        if (accessibilityViaCompanion && active.IsActive(FrontendQualityEngineId.Accessibility) && !accessibilityShortCircuited)
+        {
+            // axe already ran inside the live page (Companion content script). Read-only: no request to the page, no backend browser.
+            var live = await _companionAccessibility!.CollectLiveAsync(context, cancellationToken);
+            if (live.Result is { } companionReport) result = result with { AccessibilityReport = companionReport };
+            else
+            {
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"], AccessibilityError = live.Reason };
+                result.OutcomeReasons[FrontendQualityEngineId.Accessibility] = FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence;
+            }
+        }
+        else if (accessibilityEligible && !accessibilityShortCircuited)
         {
             // Pre-execution Layer 3 readiness revalidation (5-second timeout)
             var accessibilityReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.Accessibility, cancellationToken);
@@ -487,8 +582,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             && decisions[FrontendQualityEngineId.Lighthouse].IsReady;
         if (lighthouseEligible)
         {
-            // Pre-execution Layer 3 readiness revalidation (5-second timeout)
-            var lighthouseReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.Lighthouse, cancellationToken);
+            // Pre-execution Layer 3 readiness revalidation (5-second timeout). Node runtime and Chromium/CDP target are kept apart.
+            var lighthouseReadiness = await RevalidateEngineReadinessDetailedAsync(FrontendQualityEngineIdDto.Lighthouse, cancellationToken);
+            var lighthouseReady = lighthouseReadiness?.IsAvailable ?? false;
+            result = result with { LighthouseRuntime = FrontendQualityRuntime.From(lighthouseReadiness) };
             if (!lighthouseReady)
             {
                 result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
@@ -602,6 +699,25 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,
             snapshot, result.OutcomeReasons, _browserQuality is not null, _performanceQuality is not null);
         outcomes = FrontendQualityEngineOutcomeNormalizer.ApplyAccessDecisions(outcomes, decisions);
+        if (FrontendQualityRuntime.LighthouseReason(result.LighthouseRuntime) is { } lighthouseReason)
+            outcomes = outcomes.Select(o => o.EngineId == FrontendQualityEngineId.Lighthouse && o.ExecutionState != FrontendQualityEngineExecutionState.Assessed
+                ? o with { SanitizedFailureReason = lighthouseReason, ReadinessReason = lighthouseReason } : o).ToList();
+        // Engines the plan did not put in this pass took no part in it: recorded as not selected for the pass, never as a failure.
+        if (passEngines is not null)
+            outcomes = outcomes.Select(o => o.Enabled && !passEngines.Contains(o.EngineId) && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled
+                ? o with
+                {
+                    ExecutionState = FrontendQualityEngineExecutionState.NotApplicable, OutcomeReason = FrontendQualityEngineOutcomeReason.NotSelected,
+                    SanitizedFailureReason = null, ReadinessReason = null, RequiredAction = null, ActionHref = null,
+                }
+                : o).ToList();
+        if (result.AccessibilityReport is { ExecutionMode: AccessibilityExecutionModeDto.BrowserCompanionLivePage })
+            outcomes = outcomes.Select(o => o.EngineId == FrontendQualityEngineId.Accessibility
+                ? o with { AccessKind = FrontendQualityEngineAccessKind.BrowserCompanion, AccessLabel = BrowserCompanionAccessibility.AccessLabel, BrowserName = o.BrowserName ?? result.AccessibilityReport.BrowserName }
+                : o).ToList();
+        else if (result.AccessibilityError is { } companionReason && decisions[FrontendQualityEngineId.Accessibility].AccessKind == FrontendQualityEngineAccessKind.BrowserCompanion)
+            outcomes = outcomes.Select(o => o.EngineId == FrontendQualityEngineId.Accessibility && o.ExecutionState != FrontendQualityEngineExecutionState.Assessed
+                ? o with { ExecutionState = FrontendQualityEngineExecutionState.Unavailable, SanitizedFailureReason = companionReason } : o).ToList();
         if (context.ReviewScope == FrontendReviewAccessScope.AuthenticatedOnly)
             outcomes = outcomes.Select(o => o.EngineId is FrontendQualityEngineId.StaticSecurity or FrontendQualityEngineId.PassivePerformance
                 && active.IsActive(o.EngineId)
@@ -1128,7 +1244,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         return snapshot;
     }
 
-    private async Task<bool> RevalidateEngineReadinessAsync(
+    private async Task<bool> RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto engineId, CancellationToken cancellationToken) =>
+        (await RevalidateEngineReadinessDetailedAsync(engineId, cancellationToken))?.IsAvailable ?? false;
+
+    private async Task<FrontendQualityEngineReadinessReportDto?> RevalidateEngineReadinessDetailedAsync(
         FrontendQualityEngineIdDto engineId,
         CancellationToken cancellationToken)
     {
@@ -1136,7 +1255,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         // Layer 3 enforcement cannot be bypassed by missing infrastructure.
         // NOTE: Test infrastructure should provide a working service; if null, fail closed.
         if (_engineStatusService is null)
-            return false;
+            return null;
 
         try
         {
@@ -1148,17 +1267,17 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             var readiness = await _engineStatusService.RevalidateEngineReadinessAsync(engineId, cts.Token);
 
             // Null response = unavailable
-            return readiness?.IsAvailable ?? false;
+            return readiness;
         }
         catch (OperationCanceledException)
         {
             // Timeout: Layer 3 check failed → engine unavailable
-            return false;
+            return null;
         }
         catch (Exception)
         {
             // Service/provider error: Layer 3 check failed → engine unavailable
-            return false;
+            return null;
         }
     }
 

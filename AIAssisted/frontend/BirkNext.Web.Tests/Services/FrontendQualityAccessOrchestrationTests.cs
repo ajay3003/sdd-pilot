@@ -175,7 +175,7 @@ public sealed class FrontendQualityAccessOrchestrationTests
         outcome.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.TargetUnreachable);
         outcome.ExecutionState.Should().Be(FrontendQualityEngineExecutionState.Unavailable);
         outcome.SanitizedFailureReason.Should().Be($"Target returned HTTP {status}.");
-        FrontendQualityEngineOutcomePresentation.StateLabel(outcome).Should().Be("Blocked");
+        FrontendQualityEngineOutcomePresentation.StateLabel(outcome).Should().Be("Not assessed");
         FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason).Should().Be("Target unreachable");
     }
 

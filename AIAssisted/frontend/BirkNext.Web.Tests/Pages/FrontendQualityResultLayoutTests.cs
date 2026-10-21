@@ -125,10 +125,9 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
     {
         var page = Result();
 
-        // 47. Result, then what to act on, then the domains, then the work, then everything else collapsed.
-        // "All findings" is no longer a top-level section: it is one disclosure inside Review details.
+        // 47, §25. Result and what to act on first (Summary), then Issues, Coverage and Evidence — one view each, in tab order.
         Order(page).Should().Equal(
-            "fqr-result-summary", "fqr-key-issues", "fqr-domain-results", "fqr-recommendation-themes", "fqr-result-details");
+            "fqr-result-summary", "fqr-key-issues", "fqr-recommendation-themes", "fqr-domain-results", "fqr-result-details");
         page.Find("#fqr-result-heading").TextContent.Should().Be("Review result");
         page.Find("[data-testid=fqr-result-state]").TextContent.Should().Contain("Completed with manual review required");
         page.Find("[data-testid=fqr-run-again]").TextContent.Trim().Should().Be("Run again");
@@ -192,20 +191,21 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
     // ── §46. Diagnostics below the result ─────────────────────────────────────────────────────────────────────────
 
-    // 20, 22, 24, 25.
+    // 20, 22, 24, 25, §35. Engine diagnostics and target access live in Coverage, below the engine coverage table.
     [Fact]
-    public void EngineInventoryAndCoverageLiveInsideReviewDetails()
+    public void EngineInventoryAndCoverageLiveInCoverage()
     {
         var page = Result();
 
-        var details = page.Find("[data-testid=fqr-result-details]");
-        details.QuerySelector("[data-testid=fqr-result-technical]").Should().NotBeNull("engine activation and target access at review start");
-        details.QuerySelector("[data-testid=fqr-coverage-label]").Should().NotBeNull("coverage is supporting context");
+        var coverage = page.Find("[data-testid=fqr-tabpanel-coverage]");
+        coverage.QuerySelector("[data-testid=fqr-result-technical]").Should().NotBeNull("target access at review start");
+        coverage.QuerySelector("[data-testid=fqr-engine-coverage-table]").Should().NotBeNull();
+        coverage.QuerySelector("[data-testid=fqr-engine-coverage-body] [data-testid=fqr-coverage-label]").Should().NotBeNull("raw engine diagnostics are behind View engine diagnostics");
         // 24. Enabled (configuration) and the execution state stay separate columns.
-        details.QuerySelectorAll("[data-testid=fqr-enabled]").Should().NotBeEmpty();
-        details.QuerySelectorAll("[data-testid=fqr-state]").Should().NotBeEmpty();
-        // 20. None of it sits above the results.
-        page.Find("[data-testid=fqr-domain-results]").QuerySelector("[data-testid=fqr-coverage-label]").Should().BeNull();
+        coverage.QuerySelectorAll("[data-testid=fqr-enabled]").Should().NotBeEmpty();
+        coverage.QuerySelectorAll("[data-testid=fqr-state]").Should().NotBeEmpty();
+        // 20. None of it sits in the Summary.
+        page.Find("[data-testid=fqr-tabpanel-summary]").QuerySelector("[data-testid=fqr-coverage-label]").Should().BeNull();
     }
 
     // 21, 23. Pairing diagnostics and the pre-run check inventory belong to the decision page, not the result page.
@@ -265,7 +265,7 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         // A domain with neither an engine nor a finding still establishes no number.
         var blazor = Domain(page, FrontendQualityCategory.BlazorWasm);
         blazor.QuerySelector("[data-testid=fqr-domain-result-count]").Should().BeNull("nothing established a number");
-        blazor.TextContent.Should().Contain("No dedicated assessment evidence");
+        blazor.TextContent.Should().Contain("Not assessed in this run", "an engine that never ran is Not assessed, never \"No evidence\"");
     }
 
     // 29. An execution failure is reported as one.
@@ -302,24 +302,24 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         page.Find("[data-testid=wcag-toggle-criteria]").GetAttribute("aria-expanded").Should().Be("false");
         page.FindAll("[data-testid=wcag-criterion-row]").Should().BeEmpty();
 
-        // 34. Per-domain findings and the engine matrix open on request.
-        page.Find("[data-testid=fqr-domain-details-Performance-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        page.Find("[data-testid=fqr-result-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        // 34. The engine matrix opens on request; domain findings are not repeated on the cards at all.
+        page.Find("[data-testid=fqr-engine-coverage-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.FindAll("[data-testid=fqr-domain-finding-list]").Should().BeEmpty();
     }
 
-    // 33. Expanding a domain reveals that domain's findings, and only those.
+    // 33, §68. A domain's one action shows that domain's issues, and only those.
     [Fact]
-    public void ExpandingADomainRevealsItsOwnFindings()
+    public void ReviewingADomainShowsItsOwnIssuesOnly()
     {
         var page = Result();
 
-        page.Find("[data-testid=fqr-domain-details-Security-toggle]").Click();
+        page.Find("[data-testid=fqr-domain-review-issues][data-category=Security]").Click();
 
-        var body = page.Find("[data-testid=fqr-domain-details-Security-body]");
-        body.HasAttribute("hidden").Should().BeFalse();
-        body.QuerySelectorAll("[data-testid=fqr-domain-finding]").Should().ContainSingle()
+        var issues = page.Find("[data-testid=fqr-tabpanel-issues]");
+        issues.HasAttribute("hidden").Should().BeFalse();
+        issues.QuerySelectorAll("[data-testid=fqr-logical-issue]").Should().ContainSingle()
             .Which.TextContent.Should().Contain("Missing Content-Security-Policy").And.Contain("High");
-        body.TextContent.Should().NotContain("Uncompressed bundle", "that finding belongs to Performance");
+        issues.QuerySelector("[data-testid=fqr-all-logical-issues]")!.TextContent.Should().NotContain("Uncompressed bundle", "that issue belongs to Performance");
     }
 
     // ── §6, §33. The profile the result was produced under ────────────────────────────────────────────────────────

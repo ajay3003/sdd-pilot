@@ -90,6 +90,10 @@ public sealed class FrontendQualityCategoryScore
 public sealed record FrontendQualityReviewReport
 {
     [JsonPropertyName("coveragePasses")] public List<FrontendQualityCoveragePass> CoveragePasses { get; init; } = [];
+    /// <summary>The engine execution plan this review ran (scope, capabilities with providers, one plan per engine).</summary>
+    [JsonPropertyName("executionPlan")] public FrontendQualityExecutionPlan? ExecutionPlan { get; init; }
+    /// <summary>Every exact cause of a Blocked decision: coverage, issue policy and configuration blockers, never one vague sentence.</summary>
+    [JsonPropertyName("releaseBlockers")] public List<FrontendQualityReleaseBlocker> ReleaseBlockers { get; init; } = [];
     public WcagAssessment? Wcag { get; init; }
     [JsonPropertyName("targetEnvironment")] public FrontendReviewTargetIdentity? TargetEnvironment { get; init; }
     private List<string> _legacyAssessedEngines = [];
@@ -202,7 +206,7 @@ public sealed record LighthouseResultDto(
     [property: JsonPropertyName("limitations")] List<string>? Limitations = null,
     [property: JsonPropertyName("engineError")] string? EngineError = null);
 
-public enum AccessibilityExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage }
+public enum AccessibilityExecutionModeDto { AnonymousOwnedBrowser, AuthenticatedSessionPage, BrowserCompanionLivePage }
 public enum AccessibilityExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired }
 public enum AccessibilityOutcomeReasonDto { None, AuthenticationRequired, AuthenticationExpired, AuthenticationCancelled, UnexpectedOrigin }
 public enum AccessibilityFindingKindDto { Violation, NeedsManualReview }

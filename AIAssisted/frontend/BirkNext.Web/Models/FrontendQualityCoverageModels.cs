@@ -76,6 +76,8 @@ public enum FrontendQualityEngineOutcomeReason
     BrowserCompanionNoEvidence,
     /// <summary>Neither Browser Companion nor Local HTTPS proxy evidence exists for any page of this Target Environment (BirkNext Performance Quality).</summary>
     PerformanceEvidenceUnavailable,
+    /// <summary>The engine has no mode for any surface of the selected review scope (for example Lighthouse in an Authenticated-only review).</summary>
+    NotApplicableToScope,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -185,6 +187,10 @@ public sealed record FrontendQualityEngineOutcome
     /// <summary>Contextual next step for a blocked/unsupported engine (never an automatic action).</summary>
     [JsonPropertyName("requiredAction")] public string? RequiredAction { get; init; }
     [JsonPropertyName("actionHref")] public string? ActionHref { get; init; }
+    /// <summary>What happened on each surface the plan considered (Public, Authenticated, Browser Companion page).</summary>
+    [JsonPropertyName("surfaces")] public List<FrontendQualitySurfaceResult> Surfaces { get; init; } = [];
+    /// <summary>The provider that supplied the engine's prerequisite ("Playwright (headless Chromium…)", "Browser Companion", …).</summary>
+    [JsonPropertyName("provider")] public string? Provider { get; init; }
 
     public static FrontendQualityEngineOutcome CreateWithSanitizedFailure(
         FrontendQualityEngineId engineId,
@@ -218,9 +224,39 @@ public sealed class FrontendQualityCoverage
     /// <summary>Engines excluded from the denominators because they were disabled or not selected for this review.</summary>
     [JsonPropertyName("inactiveCount")] public int InactiveCount { get; init; }
 
+    /// <summary>
+    /// Coverage from the execution plan: the denominators hold only engines that are enabled, selected and applicable to the review scope,
+    /// and an engine counts as completed when it completed on a surface that completes it (its configured prerequisite's surface). A
+    /// required engine that is disabled is a configuration blocker, reported as such, not a missing assessment.
+    /// </summary>
+    public static FrontendQualityCoverage Evaluate(IReadOnlyCollection<FrontendQualityEngineOutcome> outcomes, FrontendQualityExecutionPlan plan)
+    {
+        bool Completed(FrontendQualityEnginePlan engine) => outcomes.FirstOrDefault(o => o.EngineId == engine.EngineId) is { } o
+            && (o.Surfaces.Count > 0 ? o.Surfaces.Any(s => s.Completed && s.Primary) : o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+        var applicable = plan.Engines.Where(e => e.Applicable).ToList();
+        var required = applicable.Where(e => e.Policy == FrontendQualityEngineRequirement.Required).ToList();
+        var optional = applicable.Where(e => e.Policy == FrontendQualityEngineRequirement.Optional).ToList();
+        var requiredDone = required.Count(Completed);
+        var anyAssessed = outcomes.Any(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+        return new FrontendQualityCoverage
+        {
+            RequiredCoverageState = required.Count == 0
+                ? anyAssessed ? FrontendQualityRequiredCoverageState.AllRequiredAssessed : FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment
+                : requiredDone == required.Count ? FrontendQualityRequiredCoverageState.AllRequiredAssessed
+                : requiredDone > 0 ? FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed
+                : FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment,
+            RequiredTotal = required.Count,
+            RequiredAssessed = requiredDone,
+            OptionalTotal = optional.Count,
+            OptionalAssessed = optional.Count(Completed),
+            InactiveCount = plan.Engines.Count(e => !e.Applicable),
+        };
+    }
+
     public static FrontendQualityCoverage Evaluate(IReadOnlyCollection<FrontendQualityEngineOutcome> outcomes)
     {
-        var required = outcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required).ToList();
+        var required = outcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required
+            && o.OutcomeReason != FrontendQualityEngineOutcomeReason.NotApplicableToScope).ToList();
         var assessed = required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         var optionalActive = outcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Optional && !IsInactive(o)).ToList();
         return new FrontendQualityCoverage
@@ -243,7 +279,7 @@ public sealed class FrontendQualityCoverage
         !outcome.Enabled ||
         outcome.ExecutionState == FrontendQualityEngineExecutionState.Disabled ||
         outcome.OutcomeReason is FrontendQualityEngineOutcomeReason.NotSelected or FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
-            or FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment;
+            or FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment or FrontendQualityEngineOutcomeReason.NotApplicableToScope;
 
     public AssessmentCompleteness ToLegacyCompleteness() => RequiredCoverageState switch
     {

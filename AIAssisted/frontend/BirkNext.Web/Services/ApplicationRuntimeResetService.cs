@@ -23,7 +23,7 @@ public sealed class ApplicationRuntimeResetService
     ];
 
     /// <summary>Project-state localStorage key prefixes (diagram layouts keyed by source snapshot).</summary>
-    public static readonly IReadOnlyList<string> ProjectStoragePrefixes = ["architecture-layout:", "database-layout:"];
+    public static readonly IReadOnlyList<string> ProjectStoragePrefixes = ["architecture-layout:", "database-layout:", "birknext:fqr-history:"];
 
     private readonly IWorkspaceSessionService _workspace;
     private readonly IWorkspaceStateManager _stateManager;
@@ -89,6 +89,7 @@ public sealed class ApplicationRuntimeResetService
         // Per-environment stores: in memory first, then their localStorage keys.
         Get<IEndpointDiscoveryService>()?.ResetForLocalDataReset();
         Get<IApiReviewHistoryService>()?.ResetForLocalDataReset();
+        Get<FrontendQualityReviewHistory>()?.ResetForLocalDataReset();
         Get<IIntegrationTargetRegistryService>()?.ResetForLocalDataReset();
         await Step("Browser Companion", async () => { if (Get<BrowserCompanionRuntime>() is { } companion) await companion.FollowAsync(null); });
         // The backend stopped the project-bound proxy session; the observer forgets it, so the next page re-probes the certificate for the

@@ -633,7 +633,8 @@
 }
 
 .fqr-severity-critical {
-    color: var(--clr-danger, #b91c1c);
+    /* #b91c1c on the danger background is 5.9:1; the --clr-danger token is 4.4:1 at this size. */
+    color: #b91c1c;
     background: var(--clr-danger-bg, #fee2e2);
 }
 
@@ -725,7 +726,8 @@
 
 .fqr-findings-toolbar {
     display: grid;
-    grid-template-columns: minmax(16rem, 1fr) 12rem 12rem auto;
+    /* Fluid columns: the Issues toolbar has a search and three filters; fixed tracks overflowed the page at 768px. */
+    grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
     gap: 0.65rem;
     margin-bottom: 0.75rem;
     align-items: center;
@@ -734,6 +736,9 @@
 .fqr-search,
 .fqr-select {
     min-height: 2.35rem;
+    /* A select's intrinsic width is its longest option; without these it stretched the toolbar and the page at 390px. */
+    min-width: 0;
+    width: 100%;
 }
 
 .fqr-table-wrap {
@@ -1403,3 +1408,119 @@
     color: var(--clr-text-muted);
     white-space: nowrap;
 }
+
+/* ── Post-run views: Summary · Issues · Coverage · Evidence · History ──────────────────────────────────────────── */
+::deep .fqr-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem;
+    margin: 1rem 0 0;
+    border-bottom: 1px solid var(--clr-border);
+}
+
+::deep .fqr-tab {
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: .55rem .9rem;
+    font: inherit;
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--clr-text-muted);
+    cursor: pointer;
+}
+
+::deep .fqr-tab:hover { color: var(--clr-text-heading); }
+::deep .fqr-tab:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: -2px; border-radius: var(--radius-sm); }
+::deep .fqr-tab-active { color: var(--clr-primary); border-bottom-color: var(--clr-primary); }
+::deep .fqr-tabpanel { display: grid; gap: 1rem; margin-top: 1rem; min-width: 0; }
+::deep .fqr-tabpanel > * { min-width: 0; }
+::deep .fqr-tabpanel[hidden] { display: none; }
+::deep .fqr-tabpanel:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: 2px; }
+
+::deep .fqr-result-primary,
+::deep .fqr-release-primary { margin: .45rem 0 0; font-size: .9rem; }
+::deep .fqr-blockers { margin: .35rem 0 0; }
+::deep .fqr-blockers-type { margin: .5rem 0 .15rem; font-size: .8rem; font-weight: 700; color: var(--clr-text-heading); }
+::deep .fqr-blockers-list { margin: 0; padding-left: 1.1rem; font-size: .86rem; overflow-wrap: anywhere; }
+::deep .fqr-blockers-list li { margin: .15rem 0; }
+::deep .fqr-blocker-rule { display: block; font-size: .8rem; }
+::deep .fqr-release-severity-note { margin: .45rem 0 0; font-size: .84rem; color: var(--clr-text-muted); }
+/* On the tinted release background the subtle token falls below 4.5:1; muted text stays readable. */
+::deep .fqr-release .fqr-release-label,
+::deep .fqr-release .fqr-muted { color: var(--clr-text-muted); }
+
+::deep .fqr-action-list { margin: 0; padding-left: 1.3rem; display: grid; gap: .3rem; font-size: .9rem; }
+::deep .fqr-action-title { font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-summary-nav { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+::deep .fqr-surface-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr)); gap: .5rem 1rem; margin: .5rem 0 0; }
+::deep .fqr-surface-list > div { padding: .5rem .65rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); }
+::deep .fqr-surface-list dt { font-size: .75rem; color: var(--clr-text-subtle); }
+::deep .fqr-surface-list dd { margin: .15rem 0 0; font-size: .9rem; overflow-wrap: anywhere; }
+
+::deep .fqr-domain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: .75rem; align-items: start; }
+::deep .fqr-derived-assessment { margin-top: 1rem; }
+::deep .fqr-derived-assessment h3 { margin: 0; font-size: .95rem; }
+
+/* Engine coverage: a table on wide screens, stacked label/value rows on narrow ones (no horizontal scroll needed). */
+::deep .fqr-coverage-table-wrap { position: relative; max-width: 100%; }
+::deep .fqr-coverage-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+::deep .fqr-coverage-table th,
+::deep .fqr-coverage-table td { padding: .5rem .6rem; border-bottom: 1px solid var(--clr-border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+::deep .fqr-coverage-table thead th { font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted); background: var(--clr-surface); }
+::deep .fqr-coverage-provider,
+::deep .fqr-coverage-reason { display: block; font-size: .8rem; }
+
+::deep .fqr-source-findings-table .fqr-finding-desc { display: block; margin-top: .2rem; font-size: .82rem; color: var(--clr-text-muted); }
+
+::deep .fqr-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+::deep .fqr-history-run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem 1rem;
+    padding: .55rem .75rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    font-size: .88rem;
+}
+::deep .fqr-history-current { border-left: 3px solid var(--clr-primary); }
+::deep .fqr-history-time { font-weight: 600; color: var(--clr-text-heading); }
+
+@media (max-width: 820px) {
+    ::deep .fqr-tab { padding: .5rem .6rem; font-size: .85rem; }
+    ::deep .fqr-coverage-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    ::deep .fqr-coverage-table,
+    ::deep .fqr-coverage-table tbody,
+    ::deep .fqr-coverage-table tr,
+    ::deep .fqr-coverage-table th,
+    ::deep .fqr-coverage-table td { display: block; width: 100%; }
+    ::deep .fqr-coverage-table tr { padding: .4rem 0; border-bottom: 1px solid var(--clr-border); }
+    ::deep .fqr-coverage-table th,
+    ::deep .fqr-coverage-table td { border-bottom: 0; padding: .2rem .4rem; }
+    ::deep .fqr-coverage-table td::before { content: attr(data-label); display: block; font-size: .72rem; color: var(--clr-text-subtle); }
+    ::deep .fqr-source-findings-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    ::deep .fqr-source-findings-table,
+    ::deep .fqr-source-findings-table tbody,
+    ::deep .fqr-source-findings-table tr,
+    ::deep .fqr-source-findings-table td { display: block; width: 100%; }
+    ::deep .fqr-source-findings-table tr { padding: .4rem 0; border-bottom: 1px solid var(--clr-border); }
+    ::deep .fqr-source-findings-table td { border-bottom: 0; padding: .2rem .4rem; }
+    ::deep .fqr-source-findings-table td::before { content: attr(data-label); display: block; font-size: .72rem; color: var(--clr-text-subtle); }
+}
+
+@media print {
+    ::deep .fqr-tabs,
+    ::deep #fqr-tabpanel-history { display: none !important; }
+    ::deep .fqr-tabpanel[hidden]:not(#fqr-tabpanel-history) { display: grid !important; }
+}
+
+/* Issue cards in the full list: grid items shrink to the viewport and long tokens (file names, header names) wrap inside the card. */
+::deep .fqr-logical-issues,
+::deep .fqr-issue-list > li,
+::deep .fqr-recommendation-list > li { min-width: 0; }
+::deep .fqr-issue,
+::deep .fqr-recommendation { overflow-wrap: anywhere; }
+::deep .fqr-issue-head > * { min-width: 0; }
