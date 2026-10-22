@@ -141,6 +141,12 @@
             @RenderSnapshot(snap)
         }
     }
+    <section class="sd-panel" aria-labelledby="az-quality-h" data-testid="az-quality">
+        <h2 id="az-quality-h">Runtime quality evidence</h2>
+        <ReviewDisclosure Text="Show recorded quality evidence" CollapseText="Hide recorded quality evidence" TestId="az-quality-disclosure" Class="disclosure-inline" @bind-Expanded="_qualityExpanded">
+            @if (_qualityExpanded) { <BirkNext.Web.Components.QualityEvidenceSummary ProfileId="@_qualityProfileId" /> }
+        </ReviewDisclosure>
+    </section>
     <section class="sd-panel" aria-labelledby="az-delivery-h" data-testid="az-delivery">
         <h2 id="az-delivery-h">Delivery path (pipeline source)</h2>
         <ReviewDisclosure Text="Show delivery evidence ladder" CollapseText="Hide delivery evidence ladder" TestId="az-delivery-disclosure" Class="disclosure-inline" @bind-Expanded="_deliveryExpanded">
@@ -154,7 +160,10 @@
 </div>
 
 @code {
-    private bool _deliveryExpanded;
+    private bool _deliveryExpanded, _qualityExpanded;
+    /// <summary>The active Target Environment whose recorded FQR/AQR evidence is shown (read from the reviews' own history, never re-run).</summary>
+    private string _qualityProfileId => (ServiceProvider.GetService(typeof(BirkNext.Web.Services.IFrontendAnalysisSettingsService)) as BirkNext.Web.Services.IFrontendAnalysisSettingsService)?.Settings.ActiveProfileId ?? "";
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
     private static readonly string[] Environments = ["dev", "test", "qa", "staging", "prod"];
     private static readonly (string Key, string Label)[] Tabs =
         [("overview", "Overview"), ("resources", "Resources"), ("topology", "Topology"), ("access", "Access"), ("observations", "Observations"), ("declared", "Declared vs observed"), ("suggestions", "Target Environment suggestions")];

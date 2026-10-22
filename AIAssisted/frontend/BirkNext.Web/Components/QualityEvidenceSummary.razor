@@ -1,0 +1,64 @@
+@using BirkNext.ApiReview
+@using BirkNext.QualityEvidence
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.JSInterop
+
+@* Shared quality evidence of the recorded reviews (FQR / AQR history) — read, never re-run: evidence by kind and provider, current vs
+   historical for the active target, and logical security findings deduplicated across both reviews (one HSTS issue, many sources).
+   Observations only: verdicts stay in each review; declared security and full authorization correctness are other evidence. *@
+<div class="sd-source-contracts" data-testid="quality-evidence">
+    @if (_items.Count == 0)
+    {
+        <p class="sd-muted" data-testid="quality-evidence-none">No recorded quality evidence for this Target Environment yet.</p>
+    }
+    else
+    {
+        <dl class="sd-summary" data-testid="quality-evidence-kinds">
+            @foreach (var g in _items.GroupBy(i => i.Kind).OrderBy(g => g.Key)) { <div data-testid="quality-evidence-kind"><dt>@QualityEvidencePresentation.Label(g.Key)</dt><dd>@g.Count()</dd></div> }
+        </dl>
+        <p class="sd-muted" data-testid="quality-evidence-providers">From @string.Join(", ", _items.Select(i => QualityEvidenceProviders.All.FirstOrDefault(p => p.Key == i.Provider)?.Name ?? i.Provider).Distinct()) · @_items.Select(i => i.ExecutionId).Distinct().Count() recorded execution(s)</p>
+        @if (Current is { } current)
+        {
+            var historical = _items.Count(i => QualityEvidenceQueries.Currency(i, current, DateTimeOffset.UtcNow, TimeSpan.FromDays(30)) != QualityEvidenceCurrency.Current);
+            <p data-testid="quality-evidence-currency">@(_items.Count - historical) current · @historical historical (another target, access mode, authentication context or older than 30 days — shown as history, never as current)</p>
+        }
+    }
+    @if (_logical.Count > 0)
+    {
+        <h4>Security controls across reviews</h4>
+        <ul class="sd-list" data-testid="quality-evidence-logical">
+            @foreach (var f in _logical) { <li data-testid="quality-evidence-logical-finding"><strong>@f.Control</strong> missing on @string.Join(", ", f.Surfaces.Take(3))@(f.Surfaces.Count > 3 ? " …" : "") <span class="sd-context">one logical issue · @string.Join(" + ", f.Sources)</span></li> }
+        </ul>
+    }
+    <p class="sd-muted">Observed evidence only. Header presence is not full security, enforcement of one anonymous request is not authorization correctness, and passive timing is not a load test.</p>
+</div>
+@code {
+    /// <summary>The Target Environment (profile id) whose recorded reviews are read.</summary>
+    [Parameter] public string ProfileId { get; set; } = "";
+    /// <summary>The report on screen, used in place of the stored latest one.</summary>
+    [Parameter] public ApiReviewReport? ApiReport { get; set; }
+    [Parameter] public FrontendQualityReviewReport? FrontendReport { get; set; }
+    [Parameter] public QualityEvidenceContext? Current { get; set; }
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    private IReadOnlyList<QualityEvidenceItem> _items = [];
+    private IReadOnlyList<QualityLogicalFinding> _logical = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var api = ApiReport;
+        var frontend = FrontendReport;
+        try
+        {
+            if (api is null && ServiceProvider.GetService(typeof(IApiReviewHistoryService)) is IApiReviewHistoryService apiHistory && ProfileId.Length > 0)
+            { await apiHistory.LoadAsync(JS); api = apiHistory.For(ProfileId).LastReport; }
+            if (frontend is null && ServiceProvider.GetService(typeof(FrontendQualityReviewHistory)) is FrontendQualityReviewHistory frontendHistory && ProfileId.Length > 0)
+            { await frontendHistory.LoadAsync(ProfileId); frontend = frontendHistory.For(ProfileId).OrderByDescending(e => e.CompletedAt).FirstOrDefault()?.Report; }
+        }
+        catch (Exception e) when (e is JSException or InvalidOperationException or System.Text.Json.JsonException) { }
+        _items = [.. (api is null ? [] : QualityEvidenceQueries.FromApiReview(api, $"aqr:{api.GeneratedAt:O}")),
+            .. (frontend is null ? [] : QualityEvidencePresentation.FromFrontendReview(frontend, ProfileId, $"fqr:{frontend.GeneratedAt:O}"))];
+        _logical = QualityEvidenceQueries.Deduplicate(QualityEvidencePresentation.SecurityObservations(frontend, api));
+    }
+}

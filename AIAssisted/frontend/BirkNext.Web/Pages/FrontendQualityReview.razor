@@ -711,6 +711,11 @@
                     <CookieSecuritySection Assessment="report.CookieSecurity" ProfileId="@_context?.ActiveProfile.Id" Expectations="@_context?.SecuritySettings.RuntimeSecurity?.Cookies" />
                 </ReviewDisclosure>
 
+                <ReviewDisclosure Text="Shared quality evidence" CollapseText="Hide shared quality evidence" Hint="Evidence by kind · security controls deduplicated with API Quality Review"
+                                  TestId="fqr-quality-evidence" Class="fqr-detail-disclosure" @bind-Expanded="_qualityEvidenceExpanded">
+                    @if (_qualityEvidenceExpanded) { <QualityEvidenceSummary ProfileId="@(_context?.ActiveProfile.Id ?? "")" FrontendReport="report" /> }
+                </ReviewDisclosure>
+
                 <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details"
                                   Hint="Execution, scope, limitations, engine scores and raw evidence" TestId="fqr-result-diagnostics" Class="fqr-detail-disclosure">
                     <div class="fqr-technical" data-testid="fqr-technical">
@@ -924,7 +929,7 @@
     private string RunButtonText => _running ? "Analysing..."
         : _engineStatusPending ? EngineStatusPendingText
         : "Run Frontend Quality Review";
-    private bool _deliveryExpanded;
+    private bool _deliveryExpanded, _qualityEvidenceExpanded;
     private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
         || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending;
     /// <summary>Human-readable reason shown next to a disabled Run button. Mirrors <see cref="RunDisabled"/>; never a technical code.</summary>

@@ -514,7 +514,7 @@
                                     <tr data-testid="aqr-service-row" data-target-id="@t.Target.TargetId">
                                         <td>
                                             <button type="button" class="aqr-row-toggle" aria-expanded="@(expanded ? "true" : "false")" aria-controls="@detailId" data-testid="aqr-service-toggle" @onclick="() => ToggleService(t.Target.TargetId)">
-                                                <span aria-hidden="true">@(expanded ? "▾" : "▸")</span> <strong>@ApiReviewPresentation.DisplayName(t.Target)</strong>
+                                                <span aria-hidden="true">@(expanded ? "▾" : "▸")</span> <strong>@(ApiReviewPresentation.DisplayName(t.Target) is { Length: > 0 } serviceName ? serviceName : t.Target.Url)</strong>
                                             </button>
                                         </td>
                                         <td>@(t.Target.ApiType == ApiReviewTargetType.Rest ? "REST" : "GraphQL")</td>
@@ -653,6 +653,9 @@
                 <section class="aqr-section aqr-details" data-testid="aqr-result-details" aria-labelledby="aqr-result-details-heading">
                     <h2 id="aqr-result-details-heading" class="aqr-visually-hidden" tabindex="-1" @ref="_reviewDetailsHeading">Technical &amp; execution details</h2>
                     <ReviewDisclosure Text="Technical &amp; execution details" CollapseText="Hide technical &amp; execution details" Hint="Read-only policy, authentication, API targets, technical limitations" TestId="aqr-technical" Class="aqr-diagnostics">
+                        <ReviewDisclosure Text="Shared quality evidence" CollapseText="Hide shared quality evidence" Hint="API, security and performance evidence from the same requests" TestId="aqr-quality-evidence" Class="aqr-detail-disclosure" @bind-Expanded="_qualityEvidenceExpanded">
+                            @if (_qualityEvidenceExpanded) { <QualityEvidenceSummary ProfileId="@(_context?.ActiveProfile.Id ?? "")" ApiReport="report" /> }
+                        </ReviewDisclosure>
                         <ReviewDisclosure Text="@ApiReviewPresentation.ReadOnlyTitle" CollapseText="Hide read-only review" Hint="No write operations executed" TestId="aqr-readonly" Class="aqr-detail-disclosure">
                             <p data-testid="aqr-readonly-summary">@ApiReviewPresentation.ReadOnlySummary</p>
                             @if (report.Coverage.UnsafeOperationsNotExecuted > 0)
@@ -863,7 +866,7 @@
         summary.Coverage.Count == 0 ? "No coverage recorded" : string.Join(" · ", summary.Coverage.Take(2).Select(r => $"{r.Label}: {r.Value}"));
 
     /// <summary>The two contract states plus the baseline count, in the order the expanded rows repeat them.</summary>
-    private bool _sourceContractsExpanded, _deliveryExpanded;
+    private bool _sourceContractsExpanded, _deliveryExpanded, _qualityEvidenceExpanded;
     private static string ContractHint(ApiReviewContractPanelModel contracts) => string.Join(" · ",
         contracts.Rows.Where(r => r.State != ApiReviewContractState.NotApplicable)
             .Select(r => $"{r.Label}: {ApiReviewContractStates.HeaderSummary(r.State)}")

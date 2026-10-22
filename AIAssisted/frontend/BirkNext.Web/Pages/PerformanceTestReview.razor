@@ -956,6 +956,19 @@
                     { <div><dt>@label</dt><dd><span class="visually-hidden">@label latency: </span>@PerformanceTestRules.Format(value, PerformanceMetric.LatencyMeanMs)</dd></div> }
                 </dl>
             }
+            var shared = BirkNext.QualityEvidence.QualityEvidenceQueries.FromLoadTest(r);
+            @if (shared.Count > 0)
+            {
+                <ReviewDisclosure Text="Shared performance evidence" CollapseText="Hide shared performance evidence" Hint="Metric · threshold · assessment kept apart" TestId="pt-shared-evidence" Class="disclosure-inline">
+                    <ul class="sd-list" data-testid="pt-shared-metrics">
+                        @foreach (var a in shared)
+                        {
+                            <li data-testid="pt-shared-metric"><strong>@a.Metric.Name</strong> @(a.Metric.Value is { } v ? $"{v:0.##} {a.Metric.Unit}" : "not measured") <span class="sd-context">@a.Metric.Measurement · @a.Metric.Samples sample(s) · threshold: @(a.Threshold is { } t ? $"{t.Name} {t.Warning:0.##} ({t.Source})" : "none") · assessment: @a.State</span></li>
+                        }
+                    </ul>
+                    <p class="sd-muted">A load-test metric belongs to its scenario, load profile and environment; passive single-request timings from API or frontend reviews are different evidence.</p>
+                </ReviewDisclosure>
+            }
             <h3>Thresholds</h3>
             @if (r.ThresholdResults.Count == 0) { <p class="sd-muted" data-testid="pt-no-thresholds">No thresholds: metrics are measured, not assessed. Quality: Not assessed (no score).</p> }
             else
