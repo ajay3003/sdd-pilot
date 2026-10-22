@@ -74,7 +74,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         markup.IndexOf("data-testid=\"tc-detected\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tc-registry\"", StringComparison.Ordinal));
         cut.Find("[data-testid=tc-registry]").HasAttribute("open").Should().BeFalse("the product reference is secondary and collapsed by default");
         cut.FindAll(".tc-category").Should().OnlyContain(c => !c.HasAttribute("open"), "categories start collapsed");
-        cut.Find("#tc-reference-h").TextContent.Should().Be("BirkNext support reference");
+        cut.Find("#tc-reference-h").TextContent.Should().Be("BirkNext capability reference");
         cut.Find("#tc-project-h").TextContent.Should().Be("Project coverage");
     }
 
@@ -85,9 +85,12 @@ public sealed class TechnologyCoverageUxTests : BunitContext
 
         cut.Find("[data-testid=tc-detected]").QuerySelectorAll("tbody tr[data-testid^=tc-tech-]").Should().HaveCount(4);
         cut.FindAll("[data-testid=tc-tech-lang\\.java]").Should().BeEmpty("the global catalog does not leak into the project list");
+        cut.FindAll("[data-testid^=tc-ref-]").Select(r => r.GetAttribute("data-testid"))
+            .Should().BeEquivalentTo(["tc-ref-lang.csharp", "tc-ref-lang.python", "tc-ref-integration.servicebus", "tc-ref-pipeline.azuredevops"], "the reference starts on this project's technologies");
+        cut.Find("[data-testid=tc-reference-project-only]").Change(false);
         cut.FindAll("[data-testid^=tc-ref-]").Should().HaveCount(TechnologySupportRegistry.Technologies.Count, "the full reference is complete");
         cut.Find("[data-testid=tc-detected]").QuerySelectorAll("thead th").Select(th => th.TextContent)
-            .Should().Equal("Technology", "Detected", "Overall support", "Main limitation", "Next action");
+            .Should().Equal("Technology", "Evidence", "BirkNext support", "What works", "Main limitation", "Next action");
     }
 
     [Fact]
@@ -164,7 +167,8 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         var panel = cut.Find("[data-testid=tc-unanalyzed]");
         panel.HasAttribute("open").Should().BeTrue();
         var python = cut.Find("[data-testid=tc-unanalyzed-lang\\.python]").TextContent;
-        python.Should().Contain("tools/seed.py").And.Contain("tools/report.py").And.Contain("Source analysis is not available in BirkNext for Python");
+        python.Should().Contain("tools/seed.py").And.Contain("tools/report.py").And.Contain("Unsupported language: Source Analysis has no Python analyzer");
+        cut.Find("[data-testid=tc-unanalyzed-note]").TextContent.Should().Contain("The files themselves are not invalid");
         python.Should().Contain("+2 more file(s) not listed");
     }
 
@@ -198,6 +202,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     {
         var cut = RenderLoaded(OrderService());
 
+        cut.Find("[data-testid=tc-reference-project-only]").Change(false);
         cut.Find("[data-testid=tc-reference-search]").Input("kafka");
         cut.FindAll("[data-testid^=tc-ref-]").Select(r => r.GetAttribute("data-testid")).Should().Equal("tc-ref-integration.kafka");
         cut.FindAll(".tc-category").Should().ContainSingle().Which.HasAttribute("open").Should().BeTrue("a filtered category opens to show its match");
@@ -222,7 +227,9 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         var row = cut.Find("[data-testid=tc-review-security-classification-review]");
         row.GetAttribute("data-status").Should().Be("NotApplicable");
         row.QuerySelector("[data-testid=tc-review-action]").Should().BeNull("domain extensions are never one click away from the coverage page");
-        cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None (generic project)");
+        cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None");
+        cut.Find("[data-testid=tc-project-type]").TextContent.Should().Be("Generic project");
+        row.TextContent.Should().Contain("Optional: Apply the M2LB integration template only if this is an M2LB environment.");
     }
 
     [Fact]
@@ -244,5 +251,93 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         TechnologyCoverageGuidance.ReviewAction(ReviewCatalog.Find("frontend-quality-review")!, new ReviewApplicability { Status = ApplicabilityStatus.NotApplicable }).Should().BeNull();
         TechnologyCoverageGuidance.ReviewAction(ReviewCatalog.Find("source-analysis")!, new ReviewApplicability { Status = ApplicabilityStatus.Unsupported }).Should().BeNull();
         TechnologyCoverageGuidance.MainLimitation(TechnologySupportRegistry.Find("integration.kafka")).Should().NotContain("No broker", "only the first sentence is on the row");
+    }
+
+    [Fact]
+    public void FileCountsExplainTheDenominator_WithoutInventingABreakdown()
+    {
+        var cut = RenderLoaded(OrderService());
+
+        cut.Find("[data-testid=tc-analyzed]").TextContent.Should().Be("30");
+        cut.Find("[data-testid=tc-unsupported-files]").TextContent.Should().Be("4");
+        cut.Find("[data-testid=tc-outside-scope]").TextContent.Should().Be("6", "40 in archive − 30 analyzed − 4 recognized not analyzed");
+        cut.Find("[data-testid=tc-total]").TextContent.Should().Be("40");
+        cut.Find("[data-testid=tc-file-note]").TextContent.Should().Contain("does not break them down further");
+        TechnologyCoverageGuidance.OutsideSourceScope(new SourceTechnologyCoverage { TotalFiles = 5, AnalyzedFiles = 4, UnsupportedSourceFiles = 3 }).Should().Be(0, "never negative");
+    }
+
+    [Fact]
+    public void ReviewsShowApplicabilityReadinessAndCoverageSeparately()
+    {
+        var cut = RenderLoaded(OrderService());
+
+        cut.Find("[data-testid=tc-reviews] thead").TextContent.Should().Contain("Applicability").And.Contain("Readiness").And.Contain("Coverage");
+        var api = cut.Find("[data-testid=tc-review-api-quality-review]");
+        api.QuerySelector("[data-testid=tc-review-applicability]")!.TextContent.Should().Be("Applicable");
+        api.QuerySelector("[data-testid=tc-review-readiness]")!.TextContent.Should().Be("Needs configuration");
+        api.QuerySelector("[data-testid=tc-review-coverage]")!.TextContent.Should().Be("Not assessed");
+        var frontend = cut.Find("[data-testid=tc-review-frontend-quality-review]");
+        frontend.QuerySelector("[data-testid=tc-review-applicability]")!.TextContent.Should().Be("Not applicable");
+        frontend.QuerySelector("[data-testid=tc-review-readiness] .sd-pill")!.ClassName.Should().Contain("sd-pill-muted");
+
+        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.PartiallyApplicable).Should().Be(new ReviewDimensions("Applicable", "Ready", "Partial"));
+        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.Unsupported).Readiness.Should().Be("Not supported by BirkNext");
+        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.NotEnoughEvidence).Applicability.Should().Be("Not determined");
+    }
+
+    [Fact]
+    public void AttentionSeparatesSetupFromLimitations_AndNotApplicableIsNeutral()
+    {
+        var cut = RenderLoaded(OrderService());
+        var state = Services.GetRequiredService<ProjectApplicabilityState>();
+        var evaluated = ReviewCatalog.All.Select(r => state.For(r.ReviewId)).ToList();
+        var counts = TechnologyCoverageGuidance.ReadinessCounts(evaluated);
+
+        cut.Find("[data-testid=tc-readiness]").TextContent.Should().Contain($"Need setup{counts.NeedSetup}").And.Contain($"Not applicable{counts.NotApplicable}");
+        var markup = cut.Markup;
+        markup.IndexOf("tc-attention-setup", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("tc-attention-limitations", StringComparison.Ordinal));
+        cut.Find("[data-testid=tc-attention]").TextContent.Should().NotContain("not applicable", "not applicable is never an attention item");
+        cut.Find("[data-testid=tc-attention-not-applicable]").TextContent.Should().Contain("This is not a problem");
+        cut.Find("[data-testid=tc-attention-limitations] + ul [data-testid=tc-attention-unanalyzed]").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DetectedTechnologiesSeparateSourceEvidenceFromSupport_AndNeverDeadEnd()
+    {
+        var cut = RenderLoaded(OrderService());
+
+        cut.Find("[data-testid=tc-tech-lang\\.csharp] [data-testid=tc-evidence]").TextContent.Should().StartWith("Detected in source");
+        cut.Find("[data-testid=tc-tech-integration\\.servicebus] [data-testid=tc-evidence]").TextContent.Should().StartWith("Inferred from source");
+        cut.Find("[data-testid=tc-tech-lang\\.python] [data-testid=tc-what-works]").TextContent.Should().Be("Detection only");
+        cut.Find("[data-testid=tc-tech-lang\\.python] [data-testid=tc-no-action]").TextContent.Should().Be("No Source Analysis action available");
+        cut.Markup.Should().NotContain("No BirkNext action");
+        cut.FindAll("[data-testid=tc-reference-providers-cell]").Should().BeEmpty("implementation details are hidden by default");
+        cut.Find("[data-testid=tc-reference-show-providers]").Change(true);
+        cut.FindAll("[data-testid=tc-reference-providers-cell]").Should().NotBeEmpty();
+        cut.FindAll(".tc-cell-na").Should().OnlyContain(c => c.TextContent == TechnologyCoverageGuidance.CapabilityLabel(SupportLevel.NotApplicable));
+    }
+
+    [Fact]
+    public void EveryPartialTechnologySaysWhatWorksAndWhatIsLimited()
+    {
+        foreach (var t in TechnologySupportRegistry.Technologies.Where(t => t.Overall == SupportLevel.Partial))
+        {
+            TechnologyCoverageGuidance.WhatWorks(t).Should().NotBe("Detection only", t.TechnologyId);
+            TechnologyCoverageGuidance.MainLimitation(t).Should().NotBeNullOrWhiteSpace(t.TechnologyId).And.NotBe("—", t.TechnologyId)
+                .And.NotStartWith("Source configuration is analyzed", "the row shows a limitation, not a capability");
+        }
+    }
+
+    [Fact]
+    public void ContractTechnologiesOpenWhereTheyAreReviewed()
+    {
+        var snapshot = Guid.Parse("6f1c2d3e-0000-4000-8000-000000000001");
+        DetectedTechnology Tech(string id) => new(id, id, TechnologyArea.Contract, DetectionConfidence.Confirmed, 1, ["x"]);
+
+        TechnologyCoverageGuidance.TechnologyAction(Tech("contract.xsd"), TechnologySupportRegistry.Find("contract.xsd"), snapshot)!.Href.Should().Be("schema-studio");
+        TechnologyCoverageGuidance.TechnologyAction(Tech("contract.openapi"), TechnologySupportRegistry.Find("contract.openapi"), snapshot)!.Href
+            .Should().Be($"source-analysis?area=quality-evidence&view=contracts&snapshot={snapshot:D}");
+        TechnologyCoverageGuidance.TechnologyAction(Tech("contract.openapi"), TechnologySupportRegistry.Find("contract.openapi"))!.Href
+            .Should().Be("source-analysis?area=quality-evidence&view=contracts");
     }
 }

@@ -102,7 +102,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         cut.FindAll(".sd-pill-attention").Should().BeEmpty("unsupported is a tool limitation, never the failure tone");
         cut.Find("[data-testid=tc-review-source-analysis]").GetAttribute("data-status").Should().Be("Unsupported");
         cut.Find("[data-testid=tc-review-dependency-review]").TextContent.Should().Contain("SBOM");
-        cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None (generic project)");
+        cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None");
     }
 
     [Fact]

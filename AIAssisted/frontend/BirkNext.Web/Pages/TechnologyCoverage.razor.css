@@ -25,7 +25,7 @@
 
 /* Tables: words wrap at word boundaries only ("anywhere" collapses columns to single characters when they are measured). */
 .tc-page th, .tc-page td { overflow-wrap: break-word; word-break: normal; }
-.tc-stack { min-width: 44rem; }
+.tc-stack { min-width: 56rem; }
 .tc-split { display: grid; gap: .1rem; margin: .3rem 0 0; font-size: .82rem; }
 .tc-split div { display: flex; gap: .4rem; flex-wrap: wrap; }
 .tc-split dt { font-weight: 600; }
@@ -56,3 +56,24 @@
     .tc-stack td, .tc-stack th { border: 0 !important; padding: .15rem .2rem !important; }
     .tc-stack td[data-label]::before { content: attr(data-label); display: block; font-size: .74rem; color: #4b5563; font-weight: 600; }
 }
+
+/* Project coverage: the analyzed count leads; the other counts explain the archive denominator. Metadata stays secondary. */
+.tc-coverage-grid { display: grid; gap: .8rem 1.2rem; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+.tc-source-coverage { border: 1px solid #d5dbe5; border-radius: .5rem; padding: .6rem .9rem; min-width: 0; }
+.tc-source-coverage h3 { margin: 0 0 .3rem; }
+.tc-file-counts { display: grid; gap: .25rem; margin: 0; }
+.tc-file-counts div { display: flex; justify-content: space-between; gap: .8rem; border-bottom: 1px dashed #e5e7eb; padding: .1rem 0; }
+.tc-file-counts dt { color: #374151; min-width: 0; }
+.tc-file-counts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tc-file-counts .tc-file-primary dt, .tc-file-counts .tc-file-primary dd { font-size: 1.08rem; font-weight: 700; color: #111827; }
+.tc-summary-secondary { margin: 0; }
+.tc-readiness { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: 0; font-size: .92rem; }
+.tc-readiness div { display: flex; gap: .35rem; }
+.tc-readiness dt { color: #4b5563; font-weight: 400; }
+.tc-readiness dd { margin: 0; font-weight: 700; }
+.tc-readiness .tc-neutral dd { font-weight: 400; }
+.tc-attention-group { margin: .5rem 0 0; font-size: .95rem; }
+.tc-reference-options { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin: .4rem 0; }
+.tc-check { display: inline-flex; gap: .35rem; align-items: center; font-size: .9rem; }
+.tc-cell-na { color: #4b5563; }
+@media (max-width: 900px) { .tc-coverage-grid { grid-template-columns: minmax(0, 1fr); } }

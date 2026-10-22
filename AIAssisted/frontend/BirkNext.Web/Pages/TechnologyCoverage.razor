@@ -14,7 +14,7 @@
    product-wide support reference is a separate, collapsed section. *@
 <div class="sd-workspace tc-page" data-testid="tc-page">
     <h1 class="tc-title">Technology &amp; Analysis Coverage</h1>
-    <p class="sd-muted" data-testid="tc-intro">Which technologies this project uses, how much of each BirkNext can analyze, and which reviews apply. A technology BirkNext does not support is a tool limitation — it is shown here, never scored as a project problem.</p>
+    <p class="sd-muted" data-testid="tc-intro">What this project contains, which reviews apply and can run now, and how much BirkNext can analyze. Project coverage comes first; the general BirkNext capability reference is at the end. A technology BirkNext does not support is a tool limitation — never scored as a project problem.</p>
 
     @if (!State.Loaded)
     {
@@ -41,14 +41,29 @@
             <h2 id="tc-project-h">Project coverage</h2>
             <p class="sd-muted">What was found in this project's source snapshot and which BirkNext reviews apply to it.</p>
 
-            <dl class="sd-summary tc-summary" data-testid="tc-summary">
-                <div><dt>Source snapshot</dt><dd class="tc-small" data-testid="tc-snapshot" title="@coverage?.SourceArchive">@(coverage?.SourceArchive ?? "None")</dd></div>
-                <div><dt>Files in archive</dt><dd data-testid="tc-total">@(source?.TotalFiles.ToString() ?? "—")</dd></div>
-                <div><dt>Files analyzed</dt><dd data-testid="tc-analyzed">@(source?.AnalyzedFiles.ToString() ?? "—")</dd></div>
-                <div><dt>Source files not analyzed</dt><dd data-testid="tc-unsupported-files">@(source?.UnsupportedSourceFiles.ToString() ?? "—")</dd></div>
-                <div><dt>Technologies detected</dt><dd data-testid="tc-technologies">@(source?.Technologies.Count.ToString() ?? "—")</dd></div>
-                <div><dt>Domain extensions</dt><dd class="tc-small" data-testid="tc-extensions">@(coverage?.DomainExtensions is { Count: > 0 } ext ? string.Join(", ", ext) : "None (generic project)")</dd></div>
-            </dl>
+            <div class="tc-coverage-grid">
+                <section class="tc-source-coverage" aria-labelledby="tc-source-coverage-h" data-testid="tc-source-coverage">
+                    <h3 id="tc-source-coverage-h">Source coverage</h3>
+                    @if (source is not null)
+                    {
+                        <dl class="tc-file-counts" data-testid="tc-summary">
+                            <div class="tc-file-primary"><dt>Analyzed as source</dt><dd data-testid="tc-analyzed">@source.AnalyzedFiles</dd></div>
+                            <div><dt>Recognized source files not analyzed</dt><dd data-testid="tc-unsupported-files">@source.UnsupportedSourceFiles</dd></div>
+                            <div><dt>Other files outside source-analysis scope</dt><dd data-testid="tc-outside-scope">@G.OutsideSourceScope(source)</dd></div>
+                            <div><dt>Files in archive</dt><dd data-testid="tc-total">@source.TotalFiles</dd></div>
+                        </dl>
+                        <p class="sd-muted" data-testid="tc-file-note">Other files are documents, images, binaries and formats Source Analysis does not read; this snapshot does not break them down further. Build output and dependency folders (bin, obj, node_modules, …) are not counted.</p>
+                    }
+                    else { <p class="sd-muted" data-testid="tc-total">No source snapshot analyzed yet.</p> }
+                </section>
+                <dl class="sd-summary tc-summary-secondary" data-testid="tc-project-facts">
+                    <div><dt>Technologies detected</dt><dd data-testid="tc-technologies">@(source?.Technologies.Count.ToString() ?? "—")</dd></div>
+                    <div><dt>Project type</dt><dd class="tc-small" data-testid="tc-project-type">@(coverage?.DomainExtensions is { Count: > 0 } ? "Domain project" : "Generic project")</dd></div>
+                    <div><dt>Domain extensions</dt><dd class="tc-small" data-testid="tc-extensions">@(coverage?.DomainExtensions is { Count: > 0 } ext ? string.Join(", ", ext) : "None")</dd></div>
+                    <div><dt>Source snapshot</dt><dd class="tc-small" data-testid="tc-snapshot" title="@coverage?.SourceArchive">@(coverage?.SourceArchive ?? "None")</dd></div>
+                </dl>
+            </div>
+            <p class="sd-muted" data-testid="tc-source-principle">Source technology comes from the current source snapshot. Runtime reviews may also depend on the selected Target Environment.</p>
             @if (coverage?.SourceSnapshotId is { } snapshotId)
             {
                 <details class="tc-provenance" data-testid="tc-provenance"><summary>Snapshot provenance</summary>
@@ -58,19 +73,37 @@
                 </details>
             }
 
-            @{ var attention = G.Attention(ReviewCatalog.All.Select(r => State.For(r.ReviewId)), source);
+            @{ var evaluated = ReviewCatalog.All.Select(r => State.For(r.ReviewId)).ToList();
+               var groups = G.AttentionGroups(evaluated, source);
+               var counts = G.ReadinessCounts(evaluated);
                var actions = ReviewCatalog.All.Where(r => State.For(r.ReviewId)?.Status is ApplicabilityStatus.NeedsConfiguration or ApplicabilityStatus.NeedsRefresh or ApplicabilityStatus.NotEnoughEvidence)
                    .Select(r => G.ReviewAction(r, State.For(r.ReviewId))).OfType<CoverageAction>().DistinctBy(a => a.Href).ToList(); }
+            <dl class="tc-readiness" data-testid="tc-readiness">
+                <div><dt>Ready reviews</dt><dd>@counts.Ready</dd></div>
+                <div><dt>Need setup</dt><dd>@counts.NeedSetup</dd></div>
+                <div><dt>Partial coverage</dt><dd>@counts.Partial</dd></div>
+                <div class="tc-neutral"><dt>Not applicable</dt><dd>@counts.NotApplicable</dd></div>
+            </dl>
             <section class="tc-attention" aria-labelledby="tc-attention-h" data-testid="tc-attention">
                 <h3 id="tc-attention-h">What needs attention</h3>
-                @if (attention.Count == 0)
+                @if (groups.SetupRequired.Count == 0 && groups.CoverageLimitations.Count == 0)
                 {
                     <p class="sd-muted" data-testid="tc-attention-none">Nothing needs attention: every applicable review has what it needs.</p>
                 }
-                else
+                @if (groups.SetupRequired.Count > 0)
                 {
+                    <h4 class="tc-attention-group" data-testid="tc-attention-setup">Setup required</h4>
+                    <ul class="tc-attention-list">@foreach (var item in groups.SetupRequired) { <li data-testid="tc-attention-@item.Key">@item.Text</li> }</ul>
+                    @if (actions.Count > 0)
+                    {
+                        <div class="tc-actions" data-testid="tc-attention-actions">@foreach (var action in actions) { <a class="tc-action" href="@action.Href">@action.Label</a> }</div>
+                    }
+                }
+                @if (groups.CoverageLimitations.Count > 0)
+                {
+                    <h4 class="tc-attention-group" data-testid="tc-attention-limitations">Coverage limitations</h4>
                     <ul class="tc-attention-list">
-                        @foreach (var item in attention)
+                        @foreach (var item in groups.CoverageLimitations)
                         {
                             <li data-testid="tc-attention-@item.Key" class="@(item.Neutral ? "tc-neutral" : "")">
                                 @item.Text
@@ -78,19 +111,19 @@
                             </li>
                         }
                     </ul>
-                    @if (actions.Count > 0)
-                    {
-                        <div class="tc-actions" data-testid="tc-attention-actions">@foreach (var action in actions) { <a class="tc-action" href="@action.Href">@action.Label</a> }</div>
-                    }
                 }
             </section>
+            @if (groups.NotApplicable.Count > 0)
+            {
+                <p class="sd-muted tc-neutral" data-testid="tc-attention-not-applicable">Not applicable: @groups.NotApplicable[0].Text. This is not a problem — the review simply does not fit this project.</p>
+            }
 
             <section aria-labelledby="tc-reviews-h">
                 <h3 id="tc-reviews-h">Reviews for this project</h3>
-                <p class="sd-muted">Only applicable reviews contribute to quality. Not applicable, unsupported and not-enough-evidence reviews are coverage gaps, not low quality.</p>
+                <p class="sd-muted">Applicability says whether a review fits this project; readiness says whether it can run now; coverage says how much of the project it can assess. Not applicable, unsupported and not-enough-evidence reviews are coverage gaps, not low quality.</p>
                 <div class="sd-scroll tc-stack-wrap" tabindex="0" role="region" aria-label="Review applicability">
                     <table class="tc-stack" data-testid="tc-reviews">
-                        <thead><tr><th scope="col">Review</th><th scope="col">Status</th><th scope="col">Why</th><th scope="col">Next action</th></tr></thead>
+                        <thead><tr><th scope="col">Review</th><th scope="col">Applicability</th><th scope="col">Readiness</th><th scope="col">Coverage</th><th scope="col">Why</th><th scope="col">Next action</th></tr></thead>
                         <tbody>
                             @foreach (var review in ReviewCatalog.All)
                             {
@@ -98,7 +131,10 @@
                                 var next = G.ReviewAction(review, a);
                                 <tr data-testid="tc-review-@review.ReviewId" data-status="@a?.Status">
                                     <th scope="row"><a href="@review.Route">@review.DisplayName</a><span class="sd-context">@review.Purpose</span></th>
-                                    <td data-label="Status">@if (a is not null) { <span class="sd-pill sd-pill-@P.Tone(a.Status)">@ScoreSemantics.Label(a.Status)</span> }</td>
+                                    @{ var dims = a is null ? null : G.Dimensions(a.Status); }
+                                    <td data-label="Applicability" data-testid="tc-review-applicability">@if (dims is not null) { <span class="sd-pill sd-pill-@(dims.Applicability == "Applicable" ? "complete" : "muted")">@dims.Applicability</span> }</td>
+                                    <td data-label="Readiness" data-testid="tc-review-readiness">@if (dims is not null) { <span class="sd-pill sd-pill-@(dims.Readiness == "Ready" ? "complete" : dims.Readiness == "—" || dims.Readiness.StartsWith("Not supported") ? "muted" : "partial")" title="@ScoreSemantics.Label(a!.Status)">@dims.Readiness</span> }</td>
+                                    <td data-label="Coverage" data-testid="tc-review-coverage">@if (dims is not null) { @(dims.Coverage) }</td>
                                     <td data-label="Why">@a?.Reason
                                         @if (review.ReviewId == "source-analysis" && source is not null && G.SourceAnalysisSplit(source) is { } split && (split.Analyzed.Count > 0 || split.DetectionOnly.Count > 0))
                                         {
@@ -110,7 +146,7 @@
                                     </td>
                                     <td data-label="Next action">
                                         @if (next is not null) { <a class="tc-action" href="@next.Href" data-testid="tc-review-action">@next.Label<span class="visually-hidden"> for @review.DisplayName</span></a> }
-                                        else if (!string.IsNullOrWhiteSpace(a?.Action)) { <span class="sd-muted">@a!.Action</span> }
+                                        else if (!string.IsNullOrWhiteSpace(a?.Action)) { <span class="sd-muted">@(a!.Status == ApplicabilityStatus.NotApplicable && !a.Action.StartsWith("Optional", StringComparison.Ordinal) ? "Optional: " + a.Action : a.Action)</span> }
                                         else { <span class="sd-muted">—</span> }
                                     </td>
                                 </tr>
@@ -128,7 +164,7 @@
                 }
                 else
                 {
-                    <p class="sd-muted">Only technologies found in this project. Detection is not analysis: <strong>Detection only</strong> means BirkNext recognises the technology but cannot analyze it — a BirkNext limitation, not a project problem.</p>
+                    <p class="sd-muted">What BirkNext found in this project's source. <strong>Evidence</strong> says how it was found in source (not that it was verified at runtime); <strong>BirkNext support</strong> says how much BirkNext can do with it. Detection only is a BirkNext limitation, not a project problem.</p>
                     <div class="tc-filters" data-testid="tc-detected-filters">
                         <label>Search technologies <input type="search" @bind="_techSearch" @bind:event="oninput" data-testid="tc-detected-search" /></label>
                         <label>Support <select @bind="_techState" data-testid="tc-detected-state"><option value="">All</option><option value="Supported">Supported</option><option value="Partial">Partial</option><option value="None">Detection only</option></select></label>
@@ -138,13 +174,13 @@
                     <p class="sd-muted" role="status" data-testid="tc-detected-count">Showing @shown.Count of @source.Technologies.Count detected technologies.</p>
                     <div class="sd-scroll tc-stack-wrap" tabindex="0" role="region" aria-label="Detected technologies">
                         <table class="tc-stack" data-testid="tc-detected">
-                            <thead><tr><th scope="col">Technology</th><th scope="col">Detected</th><th scope="col">Overall support</th><th scope="col">Main limitation</th><th scope="col">Next action</th></tr></thead>
+                            <thead><tr><th scope="col">Technology</th><th scope="col">Evidence</th><th scope="col">BirkNext support</th><th scope="col">What works</th><th scope="col">Main limitation</th><th scope="col">Next action</th></tr></thead>
                             <tbody>
                                 @foreach (var t in shown)
                                 {
                                     var descriptor = TechnologySupportRegistry.Find(t.TechnologyId);
                                     var overall = descriptor?.Overall ?? SupportLevel.Unsupported;
-                                    var action = G.TechnologyAction(t, descriptor);
+                                    var action = G.TechnologyAction(t, descriptor, coverage?.SourceSnapshotId);
                                     var open = _openTech.Contains(t.TechnologyId);
                                     <tr data-testid="tc-tech-@t.TechnologyId" data-overall="@descriptor?.Overall">
                                         <th scope="row">
@@ -152,12 +188,13 @@
                                             else { @t.DisplayName }
                                             <span class="sd-context">@P.Area(t.Area)</span>
                                         </th>
-                                        <td data-label="Detected">@P.Confidence(t.Confidence)<span class="sd-context">@t.Files file(s)</span></td>
-                                        <td data-label="Overall support"><span class="sd-pill sd-pill-@P.Tone(overall)" data-testid="tc-overall">@G.ProjectSupport(overall)</span></td>
+                                        <td data-label="Evidence" data-testid="tc-evidence">@G.Evidence(t.Confidence)<span class="sd-context">@t.Files file(s)</span></td>
+                                        <td data-label="BirkNext support"><span class="sd-pill sd-pill-@P.Tone(overall)" data-testid="tc-overall">@G.ProjectSupport(overall)</span></td>
+                                        <td data-label="What works" class="tc-limit" data-testid="tc-what-works">@G.WhatWorks(descriptor)</td>
                                         <td data-label="Main limitation" class="tc-limit">@G.MainLimitation(descriptor)</td>
                                         <td data-label="Next action">
                                             @if (action is not null) { <a class="tc-action" href="@action.Href">@action.Label<span class="visually-hidden"> for @t.DisplayName</span></a><br /> }
-                                            else { <span class="sd-muted">No BirkNext action</span><br /> }
+                                            else { <span class="sd-muted" data-testid="tc-no-action">@G.NoActionText(t, descriptor)</span><br /> }
                                             <button type="button" class="tc-link" aria-expanded="@(open ? "true" : "false")" aria-controls="tc-details-@Id(t.TechnologyId)" data-testid="tc-details-toggle"
                                                     @onclick="() => Toggle(t.TechnologyId)">@(open ? "Hide support details" : "View support details")<span class="visually-hidden"> for @t.DisplayName</span></button>
                                         </td>
@@ -165,7 +202,7 @@
                                     @if (open)
                                     {
                                         <tr class="tc-details-row" id="tc-details-@Id(t.TechnologyId)" data-testid="tc-details-@t.TechnologyId">
-                                            <td colspan="5">
+                                            <td colspan="6">
                                                 <dl class="tc-dimensions">
                                                     @foreach (var (dimension, level) in descriptor?.Dimensions ?? [])
                                                     {
@@ -174,7 +211,7 @@
                                                 </dl>
                                                 <p class="tc-detail-text"><strong>Limitations:</strong> @(descriptor?.Limitations ?? "Unknown technology.")</p>
                                                 <p class="tc-detail-text"><strong>Evidence (file names):</strong> @string.Join(", ", t.Evidence)@(t.Files > t.Evidence.Count ? $" (+{t.Files - t.Evidence.Count} more)" : "")</p>
-                                                <p class="tc-detail-text"><strong>Providers:</strong> @(descriptor is { ProviderIds.Count: > 0 } ? string.Join(", ", descriptor.ProviderIds) : "None") · <span class="sd-context">@t.TechnologyId</span></p>
+                                                <details class="tc-detail-text" data-testid="tc-implementation-details"><summary>Technical details</summary><p>Providers: @(descriptor is { ProviderIds.Count: > 0 } ? string.Join(", ", descriptor.ProviderIds) : "None") · <span class="sd-context">@t.TechnologyId</span></p></details>
                                                 <p class="sd-muted tc-detail-text">Runtime observation is separate from source analysis: a technology declared in source is not a verified runtime resource.</p>
                                             </td>
                                         </tr>
@@ -188,7 +225,7 @@
                         var list = G.Unanalyzed(source);
                         <details class="tc-unanalyzed" id="tc-unanalyzed" data-testid="tc-unanalyzed" open="@_showUnanalyzed">
                             <summary>View files not analyzed (@source.UnsupportedSourceFiles)</summary>
-                            <p class="sd-muted">BirkNext detects these languages but has no source analyzer for them. The files are counted, not judged: this is a tool limitation, not a project finding.</p>
+                            <p class="sd-muted" data-testid="tc-unanalyzed-note">BirkNext could not analyze these source files with the current analyzers. The files themselves are not invalid: this is a tool limitation, not a project finding.</p>
                             <div class="sd-scroll tc-stack-wrap" tabindex="0" role="region" aria-label="Source files not analyzed">
                                 <table class="tc-stack">
                                     <thead><tr><th scope="col">Files</th><th scope="col">Detected technology</th><th scope="col">Reason</th><th scope="col">Available BirkNext capability</th></tr></thead>
@@ -198,7 +235,7 @@
                                             <tr data-testid="tc-unanalyzed-@u.Technology.TechnologyId">
                                                 <td data-label="Files"><ul class="tc-files">@foreach (var file in u.Technology.Evidence) { <li><code>@file</code></li> }</ul>@if (u.Technology.Files > u.Technology.Evidence.Count) { <span class="sd-context">+@(u.Technology.Files - u.Technology.Evidence.Count) more file(s) not listed</span> }</td>
                                                 <td data-label="Detected technology">@u.Technology.DisplayName</td>
-                                                <td data-label="Reason">Source analysis is not available in BirkNext for @u.Technology.DisplayName.</td>
+                                                <td data-label="Reason">Unsupported language: Source Analysis has no @u.Technology.DisplayName analyzer.</td>
                                                 <td data-label="Available BirkNext capability">@(u.AvailableCapabilities.Count > 0 ? string.Join(", ", u.AvailableCapabilities) : "Detection only")</td>
                                             </tr>
                                         }
@@ -212,10 +249,14 @@
         </section>
 
         <section class="tc-section tc-reference" aria-labelledby="tc-reference-h">
-            <h2 id="tc-reference-h">BirkNext support reference</h2>
-            <p class="sd-muted">What BirkNext can support in general, for every technology it knows — product capability, not findings about this project.</p>
+            <h2 id="tc-reference-h">BirkNext capability reference</h2>
+            <p class="sd-muted">What BirkNext can do in general, for every technology it knows — product capability, not findings about this project, and not a sign that the project uses a technology. A supported technology can still need setup before a review can run for this project.</p>
             <details data-testid="tc-registry">
-                <summary>Show full support matrix (@TechnologySupportRegistry.Technologies.Count technologies)</summary>
+                <summary>Browse capability reference (@TechnologySupportRegistry.Technologies.Count known technologies)</summary>
+                <div class="tc-reference-options">
+                    @if (source is { Technologies.Count: > 0 }) { <label class="tc-check"><input type="checkbox" @bind="_projectOnly" data-testid="tc-reference-project-only" /> Project technologies only</label> }
+                    <label class="tc-check"><input type="checkbox" @bind="_showProviders" data-testid="tc-reference-show-providers" /> Show implementation details (providers)</label>
+                </div>
                 <div class="tc-filters" data-testid="tc-reference-filters">
                     <label>Search technologies <input type="search" @bind="_refSearch" @bind:event="oninput" data-testid="tc-reference-search" /></label>
                     <label>Category <select @bind="_refArea" data-testid="tc-reference-area"><option value="">All</option>@foreach (var area in Enum.GetValues<TechnologyArea>()) { <option value="@area">@P.Area(area)</option> }</select></label>
@@ -225,13 +266,13 @@
                 @{ var filtering = !string.IsNullOrWhiteSpace(_refSearch) || _refArea.Length > 0 || _refCapability.Length > 0 || _refState.Length > 0; }
                 @foreach (var area in Enum.GetValues<TechnologyArea>())
                 {
-                    var rows = TechnologySupportRegistry.Matrix(area).Where(t => G.MatchesReference(t, _refSearch, AreaFilter, CapabilityFilter, _refState)).ToList();
+                    var rows = TechnologySupportRegistry.Matrix(area).Where(t => G.MatchesReference(t, _refSearch, AreaFilter, CapabilityFilter, _refState) && InProjectScope(t, source)).ToList();
                     if (rows.Count == 0) continue;
                     <details class="tc-category" data-testid="tc-category-@area" open="@filtering" @key="(area, filtering)">
                         <summary>@P.Area(area) <span class="sd-context">@rows.Count technolog@(rows.Count == 1 ? "y" : "ies")</span></summary>
                         <div class="sd-scroll" tabindex="0" role="region" aria-label="@P.Area(area) support">
                             <table class="tc-matrix">
-                                <thead><tr><th scope="col">Technology</th>@foreach (var d in Enum.GetValues<SupportDimension>()) { <th scope="col">@TechnologySupportRegistry.Label(d)</th> }<th scope="col">Providers</th></tr></thead>
+                                <thead><tr><th scope="col">Technology</th>@foreach (var d in Enum.GetValues<SupportDimension>()) { <th scope="col">@TechnologySupportRegistry.Label(d)</th> }@if (_showProviders) { <th scope="col">Providers</th> }</tr></thead>
                                 <tbody>
                                     @foreach (var t in rows)
                                     {
@@ -240,9 +281,9 @@
                                             @foreach (var d in Enum.GetValues<SupportDimension>())
                                             {
                                                 var level = t.Level(d);
-                                                <td>@(level == SupportLevel.NotApplicable ? "—" : G.CapabilityLabel(level))</td>
+                                                <td class="@(level == SupportLevel.NotApplicable ? "tc-cell-na" : "")">@G.CapabilityLabel(level)</td>
                                             }
-                                            <td class="tc-limit">@(t.ProviderIds.Count == 0 ? "None" : string.Join(", ", t.ProviderIds))</td>
+                                            @if (_showProviders) { <td class="tc-limit" data-testid="tc-reference-providers-cell">@(t.ProviderIds.Count == 0 ? "None" : string.Join(", ", t.ProviderIds))</td> }
                                         </tr>
                                     }
                                 </tbody>
@@ -250,7 +291,7 @@
                         </div>
                     </details>
                 }
-                @if (filtering && !TechnologySupportRegistry.Technologies.Any(t => G.MatchesReference(t, _refSearch, AreaFilter, CapabilityFilter, _refState)))
+                @if ((filtering || ProjectOnlyActive(source)) && !TechnologySupportRegistry.Technologies.Any(t => G.MatchesReference(t, _refSearch, AreaFilter, CapabilityFilter, _refState) && InProjectScope(t, source)))
                 {
                     <p class="sd-empty" role="status" data-testid="tc-reference-empty">No technology matches these filters.</p>
                 }
@@ -263,6 +304,11 @@
     private string _techSearch = "", _techState = "", _techArea = "";
     private string _refSearch = "", _refArea = "", _refCapability = "", _refState = "";
     private bool _showUnanalyzed;
+    /// <summary>The capability reference starts on this project's technologies; turning it off shows every known technology.</summary>
+    private bool _projectOnly = true, _showProviders;
+    private bool ProjectOnlyActive(SourceTechnologyCoverage? source) => _projectOnly && source is { Technologies.Count: > 0 };
+    private bool InProjectScope(TechnologySupportDescriptor t, SourceTechnologyCoverage? source) =>
+        !ProjectOnlyActive(source) || source!.Technologies.Any(d => d.TechnologyId == t.TechnologyId);
     private readonly HashSet<string> _openTech = new(StringComparer.Ordinal);
 
     private TechnologyArea? AreaFilter => Enum.TryParse<TechnologyArea>(_refArea, out var a) ? a : null;
