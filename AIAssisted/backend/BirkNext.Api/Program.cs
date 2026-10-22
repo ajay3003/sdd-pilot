@@ -650,7 +650,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IAdvisoryP
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All, MaxConnectionsPerServer = 4 });
 builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDependencyAutomationSource, BirkNext.Api.Services.DependencyReview.AzureDevOpsRenovateAutomationSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
-builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedDependencySource, BirkNext.Api.Services.DependencyReview.BootManifestDeployedSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedDependencySource, BirkNext.Api.Services.DependencyReview.BlazorDeploymentEvidenceSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyHealthService, BirkNext.Api.Services.DependencyReview.DependencyHealthService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();

@@ -33,6 +33,40 @@
 
     @switch (_section)
     {
+        case HealthResultSection.Summary when Mode == DependencyEvidenceModes.Deployed:
+            var counts = P.Deployment(Run);
+            <div class="dh-summary-groups" data-testid="dh-summary">
+                <section class="dh-summary-group" aria-labelledby="dh-sum-deploy" data-testid="dh-summary-deployment">
+                    <h3 id="dh-sum-deploy">Deployment comparison</h3>
+                    <dl class="dh-facts">
+                        <div><dt>Target</dt><dd>@(Run.Deployed?.Environment ?? Run.Deployed?.SourceName ?? "Not recorded")</dd></div>
+                        <div><dt>Inventory</dt><dd>@Run.Inventory.Name · @Run.Inventory.Dependencies.Count dependencies</dd></div>
+                        <div><dt>Deployment evidence</dt><dd>@(Run.Deployed?.Capture is { } capture ? P.CaptureLabel(capture.Overall) : "Captured")</dd></div>
+                        <div><dt>Capture methods used</dt><dd>@(Run.Deployed?.Capture?.Strategies.Where(x => x.Outcome is CaptureStrategyOutcome.Captured or CaptureStrategyOutcome.Partial).Select(x => x.Name).ToList() is { Count: > 0 } used ? string.Join(", ", used) : "Not recorded")</dd></div>
+                    </dl>
+                </section>
+                @if (counts is not null)
+                {
+                    <section class="dh-summary-group" aria-labelledby="dh-sum-diff" data-testid="dh-summary-differences">
+                        <h3 id="dh-sum-diff">Comparison</h3>
+                        <dl class="dh-facts">
+                            <div><dt>Observed artifacts</dt><dd>@counts.Observed</dd></div>
+                            <div><dt>Matched</dt><dd>@counts.Matched</dd></div>
+                            <div><dt>Expected not observed</dt><dd>@counts.ExpectedNotObserved</dd></div>
+                            <div><dt>Unexpected</dt><dd>@counts.Unexpected</dd></div>
+                            <div><dt>Unresolved mapping</dt><dd>@counts.Unresolved</dd></div>
+                            <div><dt>Integrity differences</dt><dd>@counts.IntegrityDifferences</dd></div>
+                        </dl>
+                        @if (Run.Deployed?.Capture?.Complete != true) { <p class="dh-muted" data-testid="dh-partial-comparison">Partial comparison: the deployment evidence covers loaded resources only, so "expected not observed" is not a definite absence.</p> }
+                    </section>
+                }
+                <section class="dh-summary-group dh-summary-context" aria-labelledby="dh-sum-deploy-note">
+                    <h3 id="dh-sum-deploy-note">What this does not show</h3>
+                    <p class="dh-muted">Package versions are not available from deployment evidence, and deployed is not runtime-loaded. Vulnerability state comes from advisory evidence, never from artifacts.</p>
+                </section>
+            </div>
+            break;
+
         case HealthResultSection.Summary:
             var s = Run.Summary;
             var updates = s.PatchBehind + s.MinorBehind + s.MajorBehind;
@@ -126,8 +160,47 @@
                 <h3 id="dh-diff-heading">Differences</h3>
                 <p class="dh-muted">Expected inventory compared with deployed evidence. A version is compared only where the deployed evidence states it; absence is never assumed.</p>
                 @if (Run.Comparisons.Count == 0) { <p class="dh-muted" data-testid="dh-differences-none">No comparison in this run (no deployed evidence was selected).</p> }
+                @if (Run.Comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.ExpectedVsDeployed) is { } deployment)
+                {
+                    <ul class="dh-difference-groups" data-testid="dh-difference-groups">
+                        @foreach (var group in deployment.Entries.GroupBy(x => P.DifferenceGroup(x.State)).OrderBy(g => g.Key == "Needs review" ? 0 : g.Key == "Observations" ? 1 : 2))
+                        {
+                            <li data-group="@group.Key"><strong>@group.Key</strong> · @string.Join(" · ", group.GroupBy(x => x.State).Select(g => $"{g.Count()} {DependencyHealthLabels.Comparison(g.Key).ToLowerInvariant()}"))</li>
+                        }
+                    </ul>
+                    <p class="dh-muted">Unresolved mapping is not a defect: it means no authoritative metadata links a package to an artifact.</p>
+                }
                 @Comparisons
             </section>
+            break;
+
+        case HealthResultSection.Dependencies when Mode == DependencyEvidenceModes.Deployed && Run.Deployed is { } deployedEvidence:
+            <h3 id="dh-artifacts-heading">Deployed artifacts</h3>
+            <div class="dh-filter" role="group" aria-label="Filter deployed artifacts">
+                @foreach (var filter in new[] { "All", "Matched", "Unexpected", "Unresolved", "Integrity difference" })
+                {
+                    <button type="button" class="dh-filter-chip @(_artifactFilter == filter ? "active" : "")" aria-pressed="@(_artifactFilter == filter ? "true" : "false")" data-testid="dh-artifact-filter" data-filter="@filter" @onclick="() => _artifactFilter = filter">@filter</button>
+                }
+            </div>
+            <div class="dh-table-wrap dh-table-scroll" tabindex="0" role="region" aria-labelledby="dh-artifacts-heading">
+                <table class="dh-table" data-testid="dh-artifacts">
+                    <thead><tr><th scope="col">Artifact</th><th scope="col">Type</th><th scope="col">Observed from</th><th scope="col">Integrity</th><th scope="col">Mapped inventory item</th><th scope="col">Comparison state</th><th scope="col">Evidence age</th></tr></thead>
+                    <tbody>
+                        @foreach (var artifact in deployedEvidence.Dependencies.Where(a => ArtifactMatches(a)).Take(_limit))
+                        {
+                            var entry = P.ArtifactEntry(Run, artifact);
+                            <tr data-testid="dh-artifact" data-artifact="@artifact.PackageName" data-state="@entry?.State">
+                                <td class="dh-mono">@artifact.PackageName</td><td>@artifact.PackageManager</td><td>@(artifact.ObservedBy.Count == 0 ? "Not recorded" : string.Join(", ", artifact.ObservedBy))</td>
+                                <td>@(artifact.Hashes.Count == 0 ? "Not available" : entry?.Hash == HashComparison.Mismatch ? "Integrity difference" : entry?.Hash == HashComparison.Matched ? "Integrity match" : "Available")</td>
+                                <td>@(entry?.State is ComparisonState.Matched ? artifact.PackageName : entry?.State is ComparisonState.MappingUnresolved ? $"Mapping unresolved ({entry.PackageName})" : "Not mapped")</td>
+                                <td>@(entry is null ? "Not compared" : DependencyHealthLabels.Comparison(entry.State))</td>
+                                <td class="dh-nowrap">@P.Utc(deployedEvidence.CapturedAt)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="dh-muted">Package version: not available from deployment evidence. An artifact is mapped to an inventory item only through authoritative metadata, never by name.</p>
             break;
 
         case HealthResultSection.Dependencies:
@@ -349,6 +422,20 @@
                     <div><dt>Deployed evidence</dt><dd>@(deployed?.RightName ?? "Not selected")</dd></div>
                     <div><dt>Environment</dt><dd>@(Run.Inventory.Environment ?? "Not recorded")</dd></div>
                 </dl>
+                @if (Run.Deployed?.Capture is { } report)
+                {
+                    <dl class="dh-facts" data-testid="dh-target-capture">
+                        <div><dt>Framework</dt><dd>@report.Framework@(report.RuntimeLayout is { } layout ? " · " + layout : "")</dd></div>
+                        <div><dt>Capture capability</dt><dd>@report.Capability</dd></div>
+                        <div><dt>Captured</dt><dd>@P.Utc(report.CapturedAt)</dd></div>
+                    </dl>
+                    <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Capture methods">
+                        <table class="dh-table" data-testid="dh-target-strategies">
+                            <thead><tr><th scope="col">Method</th><th scope="col">Result</th><th scope="col">Artifacts</th><th scope="col">Detail</th></tr></thead>
+                            <tbody>@foreach (var strategy in report.Strategies) { <tr><th scope="row">@strategy.Name</th><td>@strategy.Outcome</td><td>@strategy.Artifacts</td><td>@strategy.Detail</td></tr> }</tbody>
+                        </table>
+                    </div>
+                }
                 <p class="dh-muted">The deployed evidence and the target it was read from are stored with the evidence; this result never re-reads the target.</p>
             </section>
             break;
@@ -396,6 +483,17 @@
     }
 
     private void SetFilter(HealthFilter filter) { _filter = filter; _limit = PageSize; }
+
+    private string _artifactFilter = "All";
+
+    private bool ArtifactMatches(InventoryDependency artifact) => _artifactFilter switch
+    {
+        "Matched" => P.ArtifactEntry(Run, artifact)?.State == ComparisonState.Matched,
+        "Unexpected" => P.ArtifactEntry(Run, artifact)?.State is ComparisonState.ObservedNotExpected or ComparisonState.AdditionalInDeployment,
+        "Unresolved" => P.ArtifactEntry(Run, artifact)?.State is ComparisonState.MappingUnresolved or ComparisonState.NotComparable,
+        "Integrity difference" => P.ArtifactEntry(Run, artifact)?.State == ComparisonState.IntegrityDifference,
+        _ => true,
+    };
 
     private void Toggle(string key) => _selected = _selected == key ? null : key;
 

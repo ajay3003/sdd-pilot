@@ -101,12 +101,12 @@ public sealed class DependencyHealthService(
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Options.LookupTimeoutSeconds));
-        var (inventory, error) = await deployedSource.CaptureAsync(request.TargetUrl, request.Environment, timeout.Token);
-        if (inventory is null) return new InventoryImportResult(null, null, DependencyEvidenceRedaction.Redact(error));
+        var (inventory, report) = await deployedSource.CaptureAsync(request, timeout.Token);
+        if (inventory is null) return new InventoryImportResult(null, null, DependencyEvidenceRedaction.Redact(report.Summary)) { Capture = report };
         await StoreAsync(inventory, ct);
-        logger.LogInformation("Deployed dependency evidence captured: {Items} assembl(ies).", inventory.Dependencies.Count);
+        logger.LogInformation("Deployed evidence captured: {Items} artifact(s), {Overall}.", inventory.Dependencies.Count, report.Overall);
         var all = await AllInventoriesAsync(ct);
-        return new InventoryImportResult(null, InventorySources.Summarize(inventory, all, Options.InventoryStaleAfterDays, DateTimeOffset.UtcNow), null);
+        return new InventoryImportResult(null, InventorySources.Summarize(inventory, all, Options.InventoryStaleAfterDays, DateTimeOffset.UtcNow), null) { Capture = report };
     }
 
     // ── Health runs ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ public sealed class DependencyHealthService(
         var summary = Summarize(items) with { Declarations = inventory.Dependencies.Count };
         var run = new DependencyHealthRun
         {
-            RunId = Guid.NewGuid(), CompletedAt = DateTimeOffset.UtcNow, RefreshOf = refreshOf, Request = request, Inventory = inventory, Freshness = freshness, FreshnessDetail = freshnessDetail,
+            RunId = Guid.NewGuid(), CompletedAt = DateTimeOffset.UtcNow, RefreshOf = refreshOf, Request = request, Inventory = inventory, Deployed = deployed, Freshness = freshness, FreshnessDetail = freshnessDetail,
             Label = string.IsNullOrWhiteSpace(request.Label) ? inventory.Name : request.Label.Trim(), Items = items, Summary = summary, Comparisons = comparisons, Automation = automationEvidence,
             PolicySource = policySource,
             Sources = Sources(inventory, items, provider, advisoryNames.Count, policySource, automationEvidence, deployed, advisoryByPackage),
@@ -444,6 +444,10 @@ public sealed class DependencyHealthService(
         var deployment = comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.ExpectedVsDeployed);
         categories.Add(deployment is null
             ? new("Deployment comparison", ReviewCategoryState.NotAssessed, "Not assessed — no deployed evidence selected.")
+            : deployment.Entries.Any(e => e.State is ComparisonState.MappingUnresolved or ComparisonState.NotObservedInEvidence or ComparisonState.ObservedNotExpected or ComparisonState.IntegrityDifference)
+                ? new("Deployment comparison", Count(deployment, ComparisonState.IntegrityDifference) > 0 ? ReviewCategoryState.NeedsReview : !deployment.Limitations.Any(l => l.StartsWith("Partial comparison", StringComparison.Ordinal)) ? ReviewCategoryState.Ready : ReviewCategoryState.Partial,
+                    $"{deployment.Unchanged} matched · {Count(deployment, ComparisonState.MissingInDeployment) + Count(deployment, ComparisonState.NotObservedInEvidence)} expected not observed · {Count(deployment, ComparisonState.ObservedNotExpected)} unexpected · "
+                    + $"{Count(deployment, ComparisonState.MappingUnresolved)} mapping unresolved · {Count(deployment, ComparisonState.IntegrityDifference)} integrity difference(s) (vs {deployment.RightName}){(!deployment.Limitations.Any(l => l.StartsWith("Partial comparison", StringComparison.Ordinal)) ? "" : "; partial comparison")}.")
             : new("Deployment comparison", deployment.Entries.All(e => e.State == ComparisonState.NotComparable) && deployment.Unchanged == 0 ? ReviewCategoryState.Partial : ReviewCategoryState.Ready,
                 $"{deployment.Unchanged} matched · {Count(deployment, ComparisonState.DifferentVersion)} different version · {Count(deployment, ComparisonState.MissingInDeployment)} missing · {Count(deployment, ComparisonState.AdditionalInDeployment)} additional · {Count(deployment, ComparisonState.NotComparable)} not comparable (vs {deployment.RightName})."));
         if (comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.SourceVsSbom) is { } cross)
@@ -482,6 +486,10 @@ public sealed class DependencyHealthService(
             foreach (var conflict in comparison.Entries.Where(e => e.State == ComparisonState.EvidenceConflict))
                 list.Add(new HealthObservation { Id = $"conflict:{conflict.PackageName}", Category = CheckCategory.Inventory, Kind = ObservationKind.EvidenceConflict, Severity = DependencyFindingSeverity.NeedsReview,
                     PackageName = conflict.PackageName, Title = $"Evidence conflict: {conflict.PackageName}", Detail = conflict.Detail, Evidence = [$"{comparison.LeftName}: {conflict.LeftValue}", $"{comparison.RightName}: {conflict.RightValue}"] });
+        foreach (var comparison in comparisons.Where(c => c.Kind == ComparisonKind.ExpectedVsDeployed))
+            foreach (var difference in comparison.Entries.Where(e => e.State == ComparisonState.IntegrityDifference))
+                list.Add(new HealthObservation { Id = $"integrity:{difference.PackageName}", Category = CheckCategory.Deployment, Kind = ObservationKind.Finding, Severity = DependencyFindingSeverity.NeedsReview,
+                    PackageName = difference.PackageName, Title = $"Integrity difference: {difference.PackageName}", Detail = difference.Detail, Evidence = [comparison.LeftName, comparison.RightName] });
         foreach (var item in items.Where(i => i.License.Policy == LicensePolicyState.Denied))
             list.Add(new HealthObservation { Id = $"license-denied:{item.Key}", Category = CheckCategory.License, Kind = ObservationKind.Finding, Severity = DependencyFindingSeverity.Warning,
                 PackageName = item.Dependency.PackageName, Title = $"{item.Dependency.PackageName}: license on the configured deny list", Detail = item.License.Detail });

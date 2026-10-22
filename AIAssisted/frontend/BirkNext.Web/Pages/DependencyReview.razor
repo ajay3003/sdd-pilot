@@ -248,44 +248,84 @@
 
         <section class="dr-card dr-source" id="dr-panel-Deployed" aria-labelledby="dh-deployed-heading" data-testid="dh-deployed-card" hidden="@(_mode != DependencyReviewMode.Deployed)">
             <h3 id="dh-deployed-heading" tabindex="-1" @ref="_deployedHeading">Deployed evidence</h3>
-            <p class="dr-muted">Compare a known inventory with what a Target Environment serves, or use a deployed-artifact SBOM from Review SBOM. Deployed artifact evidence is not package-version evidence unless it states versions.</p>
-            <label class="dr-field">Target Environment
-                <select @ref="_targetSelect" class="form-control" data-testid="dh-deployed-target" value="@(_targetId ?? "")" @onchange="e => _targetId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" disabled="@_busy">
-                    <option value="">@(Targets.Count == 0 ? "No Target Environment with a URL" : "Select target")</option>
-                    @foreach (var target in Targets) { <option value="@target.Id">@target.Name — @target.TargetUrl</option> }
-                </select>
-            </label>
-            @if (SelectedTarget is { } t)
-            {
-                <dl class="dr-inventory-summary" data-testid="dh-target-summary">
-                    <div><dt>Target</dt><dd>@t.Name</dd></div>
-                    <div><dt>URL</dt><dd class="dr-mono" data-testid="dh-target-url">@t.TargetUrl</dd></div>
-                    <div><dt>Environment</dt><dd data-testid="dh-target-environment">@t.EnvironmentType</dd></div>
-                    <div><dt>Evidence method</dt><dd>Blazor boot manifest — assembly files and integrity hashes, not package versions</dd></div>
-                </dl>
-            }
-            <ReviewDisclosure Text="Advanced: use manual target URL" CollapseText="Hide manual target URL" TestId="dh-deployed-manual" Class="disclosure-inline">
-                <p class="dr-muted">Only when the target is not a Target Environment. A selected Target Environment takes precedence.</p>
-                <div class="dr-option-grid">
-                    <label class="dr-field">Target URL<input class="form-control" type="url" data-testid="dh-deployed-url" @bind="_targetUrl" @bind:event="oninput" placeholder="https://…" /></label>
-                    <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-deployed-env" @bind="_targetEnvironment" placeholder="e.g. qa" /></label>
-                </div>
-            </ReviewDisclosure>
-            @if (_inventories.Any(i => i.Stage == InventoryStage.Deployed))
-            {
-                <label class="dr-field">Deployed evidence to compare
-                    <select class="form-control" data-testid="dh-deployed" value="@(_deployedId?.ToString() ?? "")" @onchange="e => _deployedId = ParseId(e)" disabled="@_busy">
-                        <option value="">Not selected</option>
-                        @foreach (var inventory in _inventories.Where(i => i.Stage == InventoryStage.Deployed && i.Id != _inventoryId)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
-                    </select>
-                </label>
-            }
-            <label class="dr-field">Known inventory (expected)
-                <select class="form-control" data-testid="dh-deployed-known" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickKnownInventory" disabled="@_busy">
-                    <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
-                    @foreach (var inventory in _inventories.Where(i => i.Stage != InventoryStage.Deployed)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
-                </select>
-            </label>
+            <p class="dr-muted">Compare a known inventory (what we expect) with deployment evidence (what we observe in a Target Environment). Deployed artifacts are files, not package versions.</p>
+            <ol class="dr-deployed-steps">
+                <li>
+                    <label class="dr-field">Known inventory — what we expect
+                        <select class="form-control" data-testid="dh-deployed-known" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickKnownInventory" disabled="@_busy">
+                            <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
+                            @foreach (var inventory in _inventories.Where(i => i.Stage != InventoryStage.Deployed)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+                        </select>
+                    </label>
+                </li>
+                <li>
+                    <label class="dr-field">Target Environment
+                        <select @ref="_targetSelect" class="form-control" data-testid="dh-deployed-target" value="@(_targetId ?? "")" @onchange="e => _targetId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" disabled="@_busy">
+                            <option value="">@(Targets.Count == 0 ? "No Target Environment with a URL" : "Select target")</option>
+                            @foreach (var target in Targets) { <option value="@target.Id">@target.Name — @target.TargetUrl</option> }
+                        </select>
+                    </label>
+                    @if (SelectedTarget is { } t)
+                    {
+                        <dl class="dr-inventory-summary" data-testid="dh-target-summary">
+                            <div><dt>Target</dt><dd>@t.Name</dd></div>
+                            <div><dt>URL</dt><dd class="dr-mono" data-testid="dh-target-url">@t.TargetUrl</dd></div>
+                            <div><dt>Environment</dt><dd data-testid="dh-target-environment">@t.EnvironmentType</dd></div>
+                        </dl>
+                    }
+                    <ReviewDisclosure Text="Advanced: use another deployment URL" CollapseText="Hide other deployment URL" TestId="dh-deployed-manual" Class="disclosure-inline">
+                        <p class="dr-muted">Overrides the deployment capture target for this review, only when the deployment is not a Target Environment. A selected Target Environment takes precedence. BirkNext derives the framework paths itself.</p>
+                        <div class="dr-option-grid">
+                            <label class="dr-field">Deployment URL<input class="form-control" type="url" data-testid="dh-deployed-url" @bind="_targetUrl" @bind:event="oninput" placeholder="https://…" /></label>
+                            <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-deployed-env" @bind="_targetEnvironment" placeholder="e.g. qa" /></label>
+                        </div>
+                    </ReviewDisclosure>
+                </li>
+                <li>
+                    <section class="dr-capture" aria-labelledby="dh-capture-heading" data-testid="dh-capture">
+                        <h4 id="dh-capture-heading">Deployment capture — what we observe</h4>
+                        @if (_capture is { } report)
+                        {
+                            <p class="dr-capture-lead" data-testid="dh-capture-summary"><span class="dr-badge dr-badge-@(report.Overall == CaptureOverall.Captured ? "info" : report.Overall == CaptureOverall.Partial ? "attention" : "muted")">@CaptureOverallLabel(report.Overall)</span> @report.Summary</p>
+                            <dl class="dr-facts" data-testid="dh-capture-facts">
+                                <div><dt>Framework</dt><dd>@report.Framework@(report.RuntimeLayout is { } layout ? " · " + layout : "")</dd></div>
+                                <div><dt>Capture capability</dt><dd data-testid="dh-capture-capability">@CapabilityLabel(report.Capability)</dd></div>
+                                <div><dt>Capture methods used</dt><dd>@UsedMethods(report)</dd></div>
+                                <div><dt>Observed artifacts</dt><dd>@(_inventories.FirstOrDefault(i => i.Id == _deployedId)?.Dependencies.ToString() ?? "0")</dd></div>
+                                <div><dt>Integrity metadata</dt><dd>@(report.Complete ? "Available where the deployment metadata states it" : report.Overall == CaptureOverall.Partial ? "Not available (browser evidence has no integrity values)" : "Not available")</dd></div>
+                                <div><dt>Package versions</dt><dd>Not available from this evidence</dd></div>
+                            </dl>
+                            <ReviewDisclosure Text="View capture details" CollapseText="Hide capture details" TestId="dh-capture-details" Class="disclosure-inline" Hint="@(report.Strategies.Count + " methods")">
+                                <div class="dr-table-wrap" tabindex="0" role="region" aria-label="Capture methods">
+                                    <table class="dr-table" data-testid="dh-capture-strategies">
+                                        <thead><tr><th scope="col">Method</th><th scope="col">Result</th><th scope="col">Artifacts</th><th scope="col">Detail</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var strategy in report.Strategies)
+                                            {
+                                                <tr data-testid="dh-capture-strategy" data-strategy="@strategy.Strategy" data-outcome="@strategy.Outcome"><th scope="row">@strategy.Name</th><td>@StrategyLabel(strategy.Outcome)</td><td>@strategy.Artifacts</td>
+                                                    <td>@strategy.Detail@if (strategy.Technical is { } technical) { <br /><span class="dr-muted dr-mono">@technical</span> }</td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </ReviewDisclosure>
+                        }
+                        else
+                        {
+                            <p class="dr-muted" data-testid="dh-capture-method">BirkNext reads deployment evidence with read-only requests and no credentials: Blazor runtime metadata, the classic Blazor boot manifest, an application asset manifest, and Browser runtime evidence the Browser Companion already observed. <strong>Can prove:</strong> deployed artifacts and their integrity metadata where available. <strong>Does not prove:</strong> NuGet package versions or runtime loading.</p>
+                        }
+                    </section>
+                    @if (_inventories.Any(i => i.Stage == InventoryStage.Deployed))
+                    {
+                        <label class="dr-field">Deployment evidence to compare
+                            <select class="form-control" data-testid="dh-deployed" value="@(_deployedId?.ToString() ?? "")" @onchange="e => _deployedId = ParseId(e)" disabled="@_busy">
+                                <option value="">Not selected</option>
+                                @foreach (var inventory in _inventories.Where(i => i.Stage == InventoryStage.Deployed && i.Id != _inventoryId)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+                            </select>
+                        </label>
+                    }
+                </li>
+            </ol>
         </section>
     </section>
 
@@ -304,6 +344,12 @@
         }
         else
         {
+            @if (_mode == DependencyReviewMode.Deployed)
+            {
+                <dl class="dr-ready-facts" data-testid="dh-deployed-facts">
+                    @foreach (var (label, value) in DependencyReviewReadiness.DeployedFacts(ReadinessSelections)) { <div><dt>@label</dt><dd>@value</dd></div> }
+                </dl>
+            }
             <div class="dr-next" data-testid="dr-next" data-action="@next.Action">
                 <p class="dr-next-label">@(_mode == DependencyReviewMode.None ? "Next step" : "Blocker")</p>
                 <p class="dr-next-text" data-testid="dr-next-text">@next.Label</p>
@@ -1158,7 +1204,7 @@
             case DependencyReviewNextAction.ChooseSourceSnapshot: Choose(DependencyReviewMode.Source, () => _selector?.SelectElement); break;
             case DependencyReviewNextAction.ResolveSourceScope: Choose(DependencyReviewMode.Source, () => _selector?.SelectElement); break;
             case DependencyReviewNextAction.OpenSourceAnalysis: Navigation.NavigateTo("source-analysis"); break;
-            case DependencyReviewNextAction.ChooseInventory: Choose(_mode == DependencyReviewMode.Deployed ? DependencyReviewMode.Deployed : DependencyReviewMode.Inventory, () => _inventorySelect); break;
+            case DependencyReviewNextAction.ChooseInventory: Choose(_mode == DependencyReviewMode.Deployed ? DependencyReviewMode.Deployed : DependencyReviewMode.Inventory, () => _mode == DependencyReviewMode.Deployed ? _deployedHeading : _inventorySelect); break;
             case DependencyReviewNextAction.UploadSbom: Choose(DependencyReviewMode.Sbom, () => _sbomInput?.Element); break;
             case DependencyReviewNextAction.ChooseTarget: Choose(DependencyReviewMode.Deployed, () => _targetSelect); break;
             case DependencyReviewNextAction.CaptureDeployed: await CaptureDeployedAsync(); break;
@@ -1372,6 +1418,37 @@
     /// <summary>The inventory created from the current SBOM after it validated; null until then (an invalid SBOM never creates one).</summary>
     private Guid? _sbomInventoryId;
     private SbomCandidateScan? _sbomScan;
+    /// <summary>The report of the latest deployment capture (each method's outcome), shown whether or not evidence was captured.</summary>
+    private DeploymentCaptureReport? _capture;
+
+    private static string UsedMethods(DeploymentCaptureReport report) =>
+        report.Strategies.Where(s => s.Outcome is CaptureStrategyOutcome.Captured or CaptureStrategyOutcome.Partial).Select(s => s.Name).ToList() is { Count: > 0 } used ? string.Join(", ", used) : "None";
+
+    private static string CaptureOverallLabel(CaptureOverall overall) => overall switch
+    {
+        CaptureOverall.Captured => "Captured",
+        CaptureOverall.Partial => "Captured with limitations",
+        CaptureOverall.Failed => "Not captured · target not readable",
+        _ => "Not captured",
+    };
+
+    private static string CapabilityLabel(CaptureCapability capability) => capability switch
+    {
+        CaptureCapability.Supported => "Supported",
+        CaptureCapability.Partial => "Partial — some deployment evidence available",
+        CaptureCapability.Unsupported => "Unavailable with currently supported methods",
+        _ => "Unknown — the target could not be checked",
+    };
+
+    private static string StrategyLabel(CaptureStrategyOutcome outcome) => outcome switch
+    {
+        CaptureStrategyOutcome.NotDetected => "Not detected",
+        CaptureStrategyOutcome.AuthenticationRequired => "Failed · authentication required",
+        CaptureStrategyOutcome.NotAttempted => "Not attempted",
+        CaptureStrategyOutcome.NotAvailable => "Not available",
+        CaptureStrategyOutcome.Partial => "Captured (partial)",
+        _ => outcome.ToString(),
+    };
     private SbomRole _sbomRole = SbomRole.BuildArtifact;
     private string? _sbomEnvironment;
     private string? _sbomName;
@@ -1497,11 +1574,18 @@
         _healthStatus = "Reading deployed metadata (read-only GET)…";
         try
         {
-            var capture = await Api.CaptureDeployedAsync(new DeployedCaptureRequest { TargetUrl = url, Environment = SelectedTarget?.EnvironmentType.ToString() ?? _targetEnvironment });
-            if (capture.Inventory is null) { _healthError = capture.Error ?? "No deployed evidence was captured."; _healthStatus = null; return; }
+            var capture = await Api.CaptureDeployedAsync(new DeployedCaptureRequest { TargetUrl = url, Environment = SelectedTarget?.EnvironmentType.ToString() ?? _targetEnvironment, ProfileId = SelectedTarget?.Id });
+            _capture = capture.Capture;
+            if (capture.Inventory is null)
+            {
+                // Not captured is a result with a per-method breakdown, not a red error; only a missing report is an error.
+                if (capture.Capture is null) _healthError = capture.Error ?? "No deployment evidence was captured.";
+                _healthStatus = capture.Capture?.Summary;
+                return;
+            }
             await LoadHealthListsAsync();
             _deployedId = capture.Inventory.Id;
-            _healthStatus = $"Captured {capture.Inventory.Dependencies} deployed assembl{(capture.Inventory.Dependencies == 1 ? "y" : "ies")} (versions not proven). Selected as the deployed evidence to compare.";
+            _healthStatus = (capture.Capture?.Summary ?? $"Captured {capture.Inventory.Dependencies} deployed artifacts.") + " Versions are not proven. Selected as the deployment evidence to compare.";
         }
         catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthError = BackendRequestClassifier.FromException("Capturing deployed evidence", ex).UserMessage; _healthStatus = null; }
         finally { _busy = false; }

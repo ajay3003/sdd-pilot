@@ -76,7 +76,8 @@ public sealed class DependencyHealthTests
 
     private sealed class FakeDeployed(DependencyInventorySnapshot? inventory, string? error = null) : IDeployedDependencySource
     {
-        public Task<(DependencyInventorySnapshot?, string?)> CaptureAsync(string targetUrl, string? environment, CancellationToken ct) => Task.FromResult((inventory, error));
+        public Task<DeployedCaptureOutcome> CaptureAsync(DeployedCaptureRequest request, CancellationToken ct) =>
+            Task.FromResult(new DeployedCaptureOutcome(inventory, new DeploymentCaptureReport { Summary = error ?? "Deployment evidence captured.", Overall = inventory is null ? CaptureOverall.NotCaptured : CaptureOverall.Captured }));
     }
 
     private sealed class RouteHandler(Func<HttpRequestMessage, HttpResponseMessage> route) : HttpMessageHandler
@@ -792,20 +793,24 @@ public sealed class DependencyHealthTests
     {
         var boot = """{"mainAssemblyName":"M2LB.Web","resources":{"assembly":{"MudBlazor.wasm":"sha256-abc","M2LB.Web.wasm":"sha256-def"}}}""";
         var handler = new RouteHandler(r => r.RequestUri!.AbsolutePath.EndsWith("blazor.boot.json") ? JsonResponse(boot) : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html><base href=\"/\" /></html>") });
-        var (deployed, error) = await new BootManifestDeployedSource(new HttpClient(handler)).CaptureAsync("https://qa.example.test", "qa", default);
+        var (deployed, report) = await BlazorDeploymentEvidenceTests.Source(handler).CaptureAsync(new DeployedCaptureRequest { TargetUrl = "https://qa.example.test", Environment = "qa" }, default);
 
-        error.Should().BeNull();
+        report.Overall.Should().Be(CaptureOverall.Captured);
         deployed!.Dependencies.Should().OnlyContain(d => d.Version == null && d.Stage == InventoryStage.Deployed && d.RuntimeObserved == null);
-        deployed.Dependencies.Single(d => d.PackageName == "MudBlazor").Hashes.Single().Value.Should().Be("abc");
+        deployed.Dependencies.Single(d => d.PackageName == "MudBlazor.wasm").Hashes.Single().Value.Should().Be("abc");
         handler.Requests.Should().OnlyContain(r => r.Method == HttpMethod.Get);
 
         var expected = new DependencyInventorySnapshot { Id = Guid.NewGuid(), Name = "source", Dependencies = [
             new InventoryDependency { PackageName = "MudBlazor", Version = "7.0.0", PackageManager = "nuget" }, new InventoryDependency { PackageName = "Serilog", Version = "3.1.1", PackageManager = "nuget" }] };
         var comparison = InventoryComparer.ExpectedVsDeployed(expected, deployed);
-        comparison.Entries.Should().OnlyContain(e => e.State == ComparisonState.NotComparable, "no versions and no proof of absence");
-        comparison.Entries.Single(e => e.PackageName == "Serilog").Detail.Should().Contain("does not prove absence");
-        (await new BootManifestDeployedSource(new HttpClient(new RouteHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)))).CaptureAsync("https://qa.example.test", null, default))
-            .Error.Should().Contain("dotnet.js");
+        comparison.Entries.Single(e => e.PackageName == "MudBlazor").Should().Match<ComparisonEntry>(e => e.State == ComparisonState.MappingUnresolved && e.Detail.Contains("not available from deployment evidence"),
+            "a same-named artifact is never mapped to a package without authoritative metadata");
+        comparison.Entries.Single(e => e.PackageName == "Serilog").Should().Match<ComparisonEntry>(e => e.State == ComparisonState.NotObservedInEvidence && e.Detail.Contains("absence is not concluded"));
+        comparison.Entries.Single(e => e.PackageName == "M2LB.Web.wasm").State.Should().Be(ComparisonState.ObservedNotExpected);
+        comparison.Entries.Should().NotContain(e => e.State == ComparisonState.MissingInDeployment);
+        var (none, notCaptured) = await BlazorDeploymentEvidenceTests.Source(new RouteHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound))).CaptureAsync(new DeployedCaptureRequest { TargetUrl = "https://qa.example.test" }, default);
+        none.Should().BeNull();
+        notCaptured.Strategies.Single(s => s.Strategy == "classic-boot-manifest").Outcome.Should().Be(CaptureStrategyOutcome.NotDetected, "a 404 is a strategy result");
     }
 
     [Fact]

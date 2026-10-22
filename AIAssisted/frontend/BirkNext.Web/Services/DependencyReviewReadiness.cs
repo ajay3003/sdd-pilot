@@ -135,6 +135,15 @@ public static class DependencyReviewReadiness
         };
     }
 
+    /// <summary>The compact Deployed evidence state shown before the blocker: target, known inventory, deployment evidence, comparison.</summary>
+    public static IReadOnlyList<(string Label, string Value)> DeployedFacts(ReadinessInput input) =>
+    [
+        ("Target", input.DeploymentTarget ?? (input.CanCaptureDeployed ? "Deployment URL" : "Not selected")),
+        ("Known inventory", input.Inventory?.Name ?? "Not selected"),
+        ("Deployment evidence", input.Deployed is { } d ? $"Captured · {d.Name}" : "Not captured"),
+        ("Comparison", input.Inventory is not null && input.Deployed is not null ? "Ready" : "Not ready"),
+    ];
+
     public const string ReadinessMeaning = "Readiness shows whether the inputs required for the selected review mode are available. It is not a dependency-health result.";
 
     public static string ModeName(DependencyReviewMode mode) => Modes.FirstOrDefault(m => m.Mode == mode)?.Title ?? "Not selected";
@@ -228,13 +237,16 @@ public static class DependencyReviewReadiness
                 : input.SbomReviewed && input.Inventory is not null
                     ? new(true, DependencyReviewNextAction.RunHealthReview, "Run SBOM dependency health review", $"{input.PendingSbom} was validated and an inventory was created from it.", "info")
                     : new(false, DependencyReviewNextAction.ReviewSbom, "Validate SBOM", $"{input.PendingSbom} is validated first; only a valid document becomes an inventory."),
-        DependencyReviewMode.Deployed => input.Deployed is null
-            ? input.CanCaptureDeployed
-                ? new(false, DependencyReviewNextAction.CaptureDeployed, "Capture deployed evidence", $"Reads the deployed metadata of {input.DeploymentTarget ?? "the target"} with a read-only GET.")
-                : new(false, DependencyReviewNextAction.ChooseTarget, "Choose Target Environment", "Deployment comparison needs deployed evidence from a Target Environment.")
-            : input.Inventory is { } known
-                ? new(true, DependencyReviewNextAction.RunHealthReview, "Run dependency health review", $"Compares {known.Name} with {input.Deployed.Name}.", "info")
-                : new(false, DependencyReviewNextAction.ChooseInventory, "Choose the inventory to compare", "Deployed evidence is captured; the comparison also needs a known inventory."),
+        // Deployment comparison: known inventory (what we expect) + deployment evidence (what we observe). One blocker at a time, in that order.
+        DependencyReviewMode.Deployed => input.Inventory is null
+            ? new(false, DependencyReviewNextAction.ChooseInventory, input.Deployed is null ? "Choose inventory" : "Choose the inventory to compare",
+                input.Deployed is null ? "A deployment comparison compares a known inventory (what we expect) with deployment evidence (what we observe)."
+                    : "Deployment evidence is captured and kept; the comparison also needs a known inventory.")
+            : input.Deployed is null
+                ? input.CanCaptureDeployed
+                    ? new(false, DependencyReviewNextAction.CaptureDeployed, "Capture deployment evidence", $"Reads deployment evidence of {input.DeploymentTarget ?? "the target"} with read-only requests; no credentials are sent.")
+                    : new(false, DependencyReviewNextAction.ChooseTarget, "Choose Target Environment", "Deployment comparison needs deployment evidence from a Target Environment.")
+                : new(true, DependencyReviewNextAction.RunHealthReview, "Run deployment comparison", $"Compares {input.Inventory.Name} with {input.Deployed.Name}.", "info"),
         _ => new(false, DependencyReviewNextAction.ChooseReviewSource, "Choose a review source", "Choose a review source above. Each source checks different things; nothing has been reviewed yet."),
     };
 }

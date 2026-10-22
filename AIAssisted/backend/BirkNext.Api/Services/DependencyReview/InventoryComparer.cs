@@ -69,9 +69,12 @@ public static class InventoryComparer
         };
     }
 
-    /// <summary>Expected inventory vs deployed evidence. Version states only where the deployed evidence carries versions.</summary>
+    /// <summary>Expected inventory vs deployed evidence. Version states only where the deployed evidence carries versions; deployed artifact
+    /// files without versions are compared by <see cref="ExpectedVsArtifacts"/> (no name-only package mapping, no absence from partial capture).</summary>
     public static InventoryComparison ExpectedVsDeployed(DependencyInventorySnapshot expected, DependencyInventorySnapshot deployed)
     {
+        if (deployed.Dependencies.Count > 0 && deployed.Dependencies.All(d => d.Version is null) && deployed.Dependencies.All(d => d.PackageManager is "assembly" or "runtime artifact"))
+            return ExpectedVsArtifacts(expected, deployed);
         var left = Index(expected);
         var right = deployed.Dependencies.GroupBy(d => d.PackageName.ToLowerInvariant()).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         var versioned = deployed.Dependencies.Any(d => d.Version is not null);
@@ -120,6 +123,92 @@ public static class InventoryComparer
             Limitations = versioned ? ["Deployed evidence is taken as stated by its source; runtime loading is not assessed."]
                 : ["The deployed evidence carries no versions: presence is shown, versions are Not comparable, and absence is not concluded.", .. deployed.Limitations],
         };
+    }
+
+    private static bool IsArtifact(InventoryDependency d) => d.PackageManager is "assembly" or "runtime artifact";
+
+    /// <summary>
+    /// Expected inventory vs deployed artifact files. A package and an artifact with the same name are not the same thing: without an
+    /// authoritative package-to-artifact mapping the pair is "Mapping unresolved" (package version not available from deployment evidence).
+    /// Artifact-to-artifact (e.g. a previous capture or build output) compares integrity. An expected item missing from the evidence is "Not
+    /// observed in captured evidence" — absence is concluded only for an artifact inventory against a complete capture.
+    /// </summary>
+    public static InventoryComparison ExpectedVsArtifacts(DependencyInventorySnapshot expected, DependencyInventorySnapshot deployed)
+    {
+        var complete = deployed.Capture?.Complete == true;
+        var observed = deployed.Dependencies.GroupBy(d => d.PackageName, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var expectedArtifacts = expected.Dependencies.Count > 0 && expected.Dependencies.All(IsArtifact);
+        var entries = new List<ComparisonEntry>();
+        var matched = 0;
+        var mapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, items) in Index(expected))
+        {
+            var first = items[0];
+            // A package is only ever paired with an artifact of the same file stem, and that pairing stays "Mapping unresolved".
+            if (!observed.TryGetValue(first.PackageName, out var artifact) && !expectedArtifacts)
+                artifact = deployed.Dependencies.FirstOrDefault(d => string.Equals(System.IO.Path.GetFileNameWithoutExtension(d.PackageName), first.PackageName, StringComparison.OrdinalIgnoreCase));
+            if (artifact is null)
+            {
+                entries.Add(new ComparisonEntry
+                {
+                    PackageName = first.PackageName, PackageManager = first.PackageManager, LeftValue = Versions(items),
+                    State = expectedArtifacts && complete ? ComparisonState.MissingInDeployment : ComparisonState.NotObservedInEvidence,
+                    Detail = expectedArtifacts && complete ? $"Expected but not observed: {deployed.Name} enumerates the deployed artifacts and this one is not among them."
+                        : $"Not observed in captured evidence ({(complete ? "no authoritative package-to-artifact mapping" : "the capture covers loaded resources only")}); absence is not concluded.",
+                });
+                continue;
+            }
+            mapped.Add(artifact.PackageName);
+            if (expectedArtifacts)
+            {
+                var hash = Hashes(first, artifact);
+                var integrity = Integrity(first, artifact);
+                if (integrity == HashComparison.Matched || integrity == HashComparison.NotAvailable) matched++;
+                entries.Add(new ComparisonEntry
+                {
+                    PackageName = first.PackageName, PackageManager = first.PackageManager, Hash = integrity == HashComparison.NotAvailable ? hash : integrity,
+                    State = integrity == HashComparison.Mismatch ? ComparisonState.IntegrityDifference : ComparisonState.Matched,
+                    Detail = integrity switch
+                    {
+                        HashComparison.Mismatch => "Integrity difference: the same artifact has a different integrity value. Needs review — a difference alone is not a compromise.",
+                        HashComparison.Matched => "Observed and matched: integrity match.",
+                        _ => "Observed and matched by artifact name; integrity not available on both sides.",
+                    },
+                });
+                continue;
+            }
+            entries.Add(new ComparisonEntry
+            {
+                PackageName = first.PackageName, PackageManager = first.PackageManager, State = ComparisonState.MappingUnresolved, LeftValue = Versions(items), RightValue = artifact.PackageName,
+                Detail = $"Artifact {artifact.PackageName} was observed, but no authoritative mapping links it to package {first.PackageName}: the package version is not available from deployment evidence.",
+            });
+        }
+        foreach (var extra in deployed.Dependencies.Where(d => !mapped.Contains(d.PackageName)).DistinctBy(d => d.PackageName, StringComparer.OrdinalIgnoreCase))
+            entries.Add(new ComparisonEntry
+            {
+                PackageName = extra.PackageName, PackageManager = extra.PackageManager, State = ComparisonState.ObservedNotExpected,
+                Detail = $"Observed in {deployed.Name}, not mapped to {expected.Name}. Not an unauthorized artifact by itself.",
+            });
+        return new InventoryComparison
+        {
+            Kind = ComparisonKind.ExpectedVsDeployed, LeftInventoryId = expected.Id, LeftName = expected.Name, RightInventoryId = deployed.Id, RightName = deployed.Name,
+            Entries = Order(entries.Where(e => e.State != ComparisonState.Matched).Concat(entries.Where(e => e.State == ComparisonState.Matched)).ToList()), Unchanged = matched,
+            Limitations =
+            [
+                complete ? "The deployed evidence enumerates the deployed artifact set; package versions are still not available from it." : "Partial comparison: the deployed evidence covers loaded resources only, so absence is not concluded.",
+                "Artifact files are not package identities: same-named packages and artifacts are not mapped without authoritative metadata.",
+                .. deployed.Limitations,
+            ],
+        };
+    }
+
+    /// <summary>Integrity comparison of two artifacts, whatever capture strategy labelled each SHA-256 value.</summary>
+    private static HashComparison Integrity(InventoryDependency a, InventoryDependency b)
+    {
+        var left = a.Hashes.Where(h => h.Algorithm.StartsWith("SHA-256", StringComparison.OrdinalIgnoreCase)).Select(h => h.Value).ToHashSet(StringComparer.Ordinal);
+        var right = b.Hashes.Where(h => h.Algorithm.StartsWith("SHA-256", StringComparison.OrdinalIgnoreCase)).Select(h => h.Value).ToHashSet(StringComparer.Ordinal);
+        if (left.Count == 0 || right.Count == 0) return HashComparison.NotAvailable;
+        return left.Overlaps(right) ? HashComparison.Matched : HashComparison.Mismatch;
     }
 
     /// <summary>Previous inventory (baseline) vs current: neutral change categories only.</summary>

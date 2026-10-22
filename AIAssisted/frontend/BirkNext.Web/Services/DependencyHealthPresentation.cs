@@ -238,6 +238,38 @@ public static class DependencyHealthPresentation
         _ => section.ToString(),
     };
 
+    /// <summary>Deployment comparison counts from the expected ↔ deployed comparison (null when the run has none).</summary>
+    public sealed record DeploymentCounts(int Observed, int Matched, int ExpectedNotObserved, int Unexpected, int Unresolved, int IntegrityDifferences, int DifferentVersion);
+
+    public static DeploymentCounts? Deployment(DependencyHealthRun run) =>
+        run.Comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.ExpectedVsDeployed) is not { } c ? null : new(
+            run.Deployed?.Dependencies.Count ?? c.Entries.Count(e => e.State is not (ComparisonState.MissingInDeployment or ComparisonState.NotObservedInEvidence)),
+            c.Unchanged, c.Entries.Count(e => e.State is ComparisonState.MissingInDeployment or ComparisonState.NotObservedInEvidence),
+            c.Entries.Count(e => e.State is ComparisonState.ObservedNotExpected or ComparisonState.AdditionalInDeployment),
+            c.Entries.Count(e => e.State is ComparisonState.MappingUnresolved or ComparisonState.NotComparable),
+            c.Entries.Count(e => e.State == ComparisonState.IntegrityDifference), c.Entries.Count(e => e.State == ComparisonState.DifferentVersion));
+
+    /// <summary>Differences grouped by meaning: needs review (integrity/version differences), observations, unresolved mapping.</summary>
+    public static string DifferenceGroup(ComparisonState state) => state switch
+    {
+        ComparisonState.IntegrityDifference or ComparisonState.DifferentVersion or ComparisonState.EvidenceConflict => "Needs review",
+        ComparisonState.MappingUnresolved or ComparisonState.NotComparable => "Unresolved mapping",
+        _ => "Observations",
+    };
+
+    /// <summary>The comparison state of one deployed artifact, read from the expected ↔ deployed comparison.</summary>
+    public static ComparisonEntry? ArtifactEntry(DependencyHealthRun run, InventoryDependency artifact) =>
+        run.Comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.ExpectedVsDeployed)?.Entries.FirstOrDefault(e => string.Equals(e.PackageName, artifact.PackageName, StringComparison.OrdinalIgnoreCase)
+            || e.State == ComparisonState.MappingUnresolved && string.Equals(e.RightValue, artifact.PackageName, StringComparison.OrdinalIgnoreCase));
+
+    public static string CaptureLabel(BirkNext.Dependencies.CaptureOverall overall) => overall switch
+    {
+        BirkNext.Dependencies.CaptureOverall.Captured => "Captured",
+        BirkNext.Dependencies.CaptureOverall.Partial => "Captured with limitations",
+        BirkNext.Dependencies.CaptureOverall.Failed => "Not captured · target not readable",
+        _ => "Not captured",
+    };
+
     public static string Headline(DependencyHealthRun run) =>
         $"Dependency health · {run.Summary.Dependencies} dependencies from {run.Inventory.Name} · {run.Summary.AffectedDependencies} affected by a matched advisory · "
         + $"{run.Observations.Count(o => o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict)} finding(s) · {run.Observations.Count(o => o.Kind == ObservationKind.Limitation)} limitation(s)";

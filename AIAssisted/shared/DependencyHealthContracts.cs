@@ -50,6 +50,8 @@ public sealed record InventoryDependency
     public string? Repository { get; init; }
     /// <summary>License identifiers/expressions exactly as the inventory source states them (empty = the source declares none).</summary>
     public List<string> Licenses { get; init; } = [];
+    /// <summary>Deployed artifacts only: which capture strategies observed it ("Classic Blazor boot manifest", "Browser runtime evidence" …).</summary>
+    public List<string> ObservedBy { get; init; } = [];
     /// <summary>True when the inventory source has a license field at all (an SBOM does, a source manifest does not).</summary>
     public bool LicenseFieldPresent { get; init; }
     public string? Purl { get; init; }
@@ -87,6 +89,8 @@ public sealed record DependencyInventorySnapshot
     public List<InventoryDependency> Dependencies { get; init; } = [];
     /// <summary>What this inventory cannot tell (e.g. declared only; versions not proven by a boot manifest).</summary>
     public List<string> Limitations { get; init; } = [];
+    /// <summary>For deployed evidence: the capture strategies and their outcomes (stored with the evidence, never re-run when a result is opened).</summary>
+    public DeploymentCaptureReport? Capture { get; init; }
 }
 
 public sealed record InventorySummary
@@ -129,12 +133,65 @@ public sealed record SbomValidation
     public List<string> NotAssessed { get; init; } = [];
 }
 
-public sealed record InventoryImportResult(SbomValidation? Validation, InventorySummary? Inventory, string? Error);
+public sealed record InventoryImportResult(SbomValidation? Validation, InventorySummary? Inventory, string? Error)
+{
+    /// <summary>For a deployed-evidence capture: what each capture strategy found, captured or not (never only the first error).</summary>
+    public DeploymentCaptureReport? Capture { get; init; }
+}
 
 public sealed record DeployedCaptureRequest
 {
     public string TargetUrl { get; init; } = "";
     public string? Environment { get; init; }
+    /// <summary>The Target Environment whose Browser Companion evidence may be reused (read from BirkNext's own store; no request to the target).</summary>
+    public string? ProfileId { get; init; }
+}
+
+// ── Deployment capture: one Blazor deployment-evidence capability, several read-only strategies ─────────────────────────────
+
+/// <summary>What one strategy found. NotDetected = it ran and found nothing usable (e.g. HTTP 404); Failed = it could not run (network,
+/// timeout, malformed response); AuthenticationRequired = the target refused it (401/403); Detected = the runtime is present but this
+/// strategy exposes no artifact list; NotAvailable = no evidence of this kind exists in BirkNext.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CaptureStrategyOutcome { Captured, Partial, Detected, NotDetected, Failed, AuthenticationRequired, NotAttempted, NotAvailable }
+
+/// <summary>Whether BirkNext can capture deployment evidence for this target — separate from what a capture produced.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CaptureCapability { Supported, Partial, Unsupported, Unknown }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CaptureOverall { Captured, Partial, NotCaptured, Failed }
+
+public sealed record CaptureStrategyResult
+{
+    /// <summary>Stable key: classic-boot-manifest, modern-runtime, browser-runtime, service-worker-assets, build-artifact.</summary>
+    public string Strategy { get; init; } = "";
+    /// <summary>User-facing method name ("Blazor runtime metadata", "Classic Blazor boot manifest" …).</summary>
+    public string Name { get; init; } = "";
+    public CaptureStrategyOutcome Outcome { get; init; }
+    public string Detail { get; init; } = "";
+    public int Artifacts { get; init; }
+    /// <summary>True when the strategy enumerates the deployed artifact set (a manifest), false when it saw only a subset (loaded resources).</summary>
+    public bool Complete { get; init; }
+    public DateTimeOffset? ObservedAt { get; init; }
+    /// <summary>Technical detail for "Capture details": URL and HTTP status, parser, never credentials.</summary>
+    public string? Technical { get; init; }
+}
+
+public sealed record DeploymentCaptureReport
+{
+    /// <summary>"Blazor WebAssembly" when positively detected, otherwise "Not detected".</summary>
+    public string Framework { get; init; } = "Not detected";
+    /// <summary>"Classic boot manifest", "Modern Blazor runtime" … when positively detected.</summary>
+    public string? RuntimeLayout { get; init; }
+    public CaptureCapability Capability { get; init; } = CaptureCapability.Unknown;
+    public CaptureOverall Overall { get; init; } = CaptureOverall.NotCaptured;
+    public List<CaptureStrategyResult> Strategies { get; init; } = [];
+    /// <summary>One line leading the result ("Deployment evidence captured", "… not captured: no supported strategy produced evidence").</summary>
+    public string Summary { get; init; } = "";
+    /// <summary>True when at least one strategy enumerated the deployed artifact set, so absence can be meaningful.</summary>
+    public bool Complete { get; init; }
+    public DateTimeOffset CapturedAt { get; init; }
 }
 
 // ── Registry ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -251,6 +308,14 @@ public enum ComparisonState
     DeclaredAndPresent, EvidenceConflict, DeclaredNotInSbom, PresentNotDeclaredDirectly,
     // Expected ↔ deployed
     Matched, DifferentVersion, MissingInDeployment, AdditionalInDeployment,
+    /// <summary>An artifact with the expected item's name was observed, but no authoritative package-to-artifact mapping exists.</summary>
+    MappingUnresolved,
+    /// <summary>Expected, not in the captured evidence — which does not prove absence (partial capture or no authoritative mapping).</summary>
+    NotObservedInEvidence,
+    /// <summary>Observed in deployment evidence, not mapped to the expected inventory (never "unauthorized").</summary>
+    ObservedNotExpected,
+    /// <summary>The same artifact on both sides with different integrity hashes — needs review, never "compromised" by itself.</summary>
+    IntegrityDifference,
     // Baseline drift
     Added, Removed, VersionChanged, LicenseChanged, SourceChanged, MetadataChanged,
     NotComparable,
@@ -433,6 +498,8 @@ public sealed record DependencyHealthRun
     public DependencyHealthRequest Request { get; init; } = new();
     /// <summary>Full copy of the reviewed inventory, so the run stays interpretable if the inventory is later removed.</summary>
     public DependencyInventorySnapshot Inventory { get; init; } = new();
+    /// <summary>For a deployment comparison: full copy of the deployed evidence it compared against (artifacts and capture report), as recorded.</summary>
+    public DependencyInventorySnapshot? Deployed { get; init; }
     public InventoryFreshness Freshness { get; init; }
     public string FreshnessDetail { get; init; } = "";
     public List<EvidenceSourceStatus> Sources { get; init; } = [];
@@ -578,6 +645,10 @@ public static class DependencyHealthLabels
         ComparisonState.SourceChanged => "Source/registry changed",
         ComparisonState.MetadataChanged => "Metadata changed",
         ComparisonState.NotComparable => "Not comparable",
+        ComparisonState.MappingUnresolved => "Mapping unresolved",
+        ComparisonState.NotObservedInEvidence => "Not observed in captured evidence",
+        ComparisonState.ObservedNotExpected => "Observed but not mapped to expected inventory",
+        ComparisonState.IntegrityDifference => "Integrity difference",
         _ => state.ToString(),
     };
 

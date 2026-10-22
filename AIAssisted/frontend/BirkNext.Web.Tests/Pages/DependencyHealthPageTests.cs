@@ -345,11 +345,14 @@ public sealed class DependencyHealthPageTests : BunitContext
         var cut = Render<DependencyReview>();
         cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
 
-        cut.Find("[data-testid='dh-deployed-url']").Input("https://qa.example.test");
-        cut.Find("[data-testid='dr-next-action']").Click();
-        cut.Find("[data-testid='dh-status']").TextContent.Should().Contain("40 deployed assemblies").And.Contain("versions not proven");
+        Next(cut).Should().Be("Choose inventory", "the known inventory comes first");
         cut.Find("[data-testid='dh-deployed-known']").Change(Build.Id.ToString());
+        cut.Find("[data-testid='dh-deployed-url']").Input("https://qa.example.test");
+        Next(cut).Should().Be("Capture deployment evidence");
+        cut.Find("[data-testid='dr-next-action']").Click();
+        cut.Find("[data-testid='dh-status']").TextContent.Should().Contain("40 deployed artifacts").And.Contain("Versions are not proven");
         cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready to run");
+        Next(cut).Should().Be("Run deployment comparison");
         cut.Find("[data-testid='dr-next-action']").Click();
 
         _api.LastCapture!.TargetUrl.Should().Be("https://qa.example.test");
@@ -548,8 +551,9 @@ public sealed class DependencyHealthPageTests : BunitContext
         var cut = Render<DependencyReview>();
         cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
 
+        cut.Find("[data-testid='dh-deployed-known']").Change(Build.Id.ToString());
         cut.Find("[data-testid='dr-next-action']").GetAttribute("data-action").Should().Be(nameof(DependencyReviewNextAction.ChooseTarget), "no capture is offered without a target");
-        cut.Find("[data-testid='dr-next-reason']").TextContent.Should().Contain("needs deployed evidence from a Target Environment");
+        cut.Find("[data-testid='dr-next-reason']").TextContent.Should().Contain("needs deployment evidence from a Target Environment");
         cut.FindAll("[data-testid='dh-deployed-target'] option").Select(o => o.TextContent).Should().Equal("Select target", "Dev — https://m2lbdev.example.test/");
         cut.Find("[data-testid='dh-deployed-manual-toggle']").GetAttribute("aria-expanded").Should().Be("false", "the manual URL is an advanced fallback");
 
@@ -557,12 +561,13 @@ public sealed class DependencyHealthPageTests : BunitContext
 
         cut.Find("[data-testid='dh-target-url']").TextContent.Should().Be("https://m2lbdev.example.test/");
         cut.Find("[data-testid='dh-target-environment']").TextContent.Should().Be("Development");
-        cut.Find("[data-testid='dh-target-summary']").TextContent.Should().Contain("not package versions");
+        cut.Find("[data-testid='dh-capture-method']").TextContent.Should().Contain("Does not prove:").And.Contain("NuGet package versions");
         cut.Find("[data-testid='dr-ready-row'][data-row='deployment']").TextContent.Should().Contain("Waiting for deployed evidence capture");
         cut.Find("[data-testid='dr-next-action']").Click();
 
-        _api.LastCapture.Should().BeEquivalentTo(new DeployedCaptureRequest { TargetUrl = "https://m2lbdev.example.test/", Environment = "Development" });
-        cut.Find("[data-testid='dr-ready-row'][data-row='deployment']").TextContent.Should().Contain("Waiting for inventory").And.Contain(deployed.Name);
+        _api.LastCapture.Should().BeEquivalentTo(new DeployedCaptureRequest { TargetUrl = "https://m2lbdev.example.test/", Environment = "Development", ProfileId = "dev" },
+            "the Target Environment owns URL and environment; its id only selects Browser Companion evidence BirkNext already holds");
+        cut.Find("[data-testid='dr-ready-row'][data-row='deployment']").TextContent.Should().Contain("Ready").And.Contain(deployed.Name);
     }
 
     [Fact]
@@ -732,21 +737,22 @@ public sealed class DependencyHealthPageTests : BunitContext
         var cut = Render<DependencyReview>();
         cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
 
-        Next(cut).Should().Be("Choose Target Environment");
+        Next(cut).Should().Be("Choose inventory");
+        cut.Find("[data-testid='dh-deployed-facts']").TextContent.Should().Contain("Known inventoryNot selected").And.Contain("Deployment evidenceNot captured").And.Contain("ComparisonNot ready");
         States(cut)["deployment"].Should().Be("Not assessed");
-        States(cut)["target"].Should().Be("Not selected");
         cut.Find("[data-testid='dr-ready-row'][data-row='deployment'] .dr-badge").ClassList.Should().Contain("dr-badge-muted");
 
         cut.Find("[data-testid='dh-deployed-target']").Change("dev");
-        Next(cut).Should().Be("Capture deployed evidence");
-        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready", "a target is not deployed evidence yet");
+        Next(cut).Should().Be("Choose inventory", "deployment evidence alone is not a comparison");
         States(cut)["target"].Should().Be("Selected");
+        cut.Find("[data-testid='dh-deployed-known']").Change(Build.Id.ToString());
+        Next(cut).Should().Be("Capture deployment evidence");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready", "a target is not deployment evidence yet");
 
         cut.Find("[data-testid='dr-next-action']").Click();
-        _api.LastCapture.Should().BeEquivalentTo(new DeployedCaptureRequest { TargetUrl = "https://m2lbdev.example.test/", Environment = "Development" });
-        Next(cut).Should().Be("Choose the inventory to compare", "deployed evidence alone is not a comparison");
-        States(cut)["deployment"].Should().Be("Waiting for inventory");
-        _api.LastRequest.Should().BeNull();
+        _api.LastCapture!.TargetUrl.Should().Be("https://m2lbdev.example.test/");
+        Next(cut).Should().Be("Run deployment comparison");
+        _api.LastRequest.Should().BeNull("capturing evidence runs no comparison");
     }
 
     [Fact]
@@ -783,13 +789,15 @@ public sealed class DependencyHealthPageTests : BunitContext
             new ReadinessInput { Mode = DependencyReviewMode.Inventory }, new ReadinessInput { Mode = DependencyReviewMode.Inventory, Inventory = Build },
             new ReadinessInput { Mode = DependencyReviewMode.Sbom }, new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json", SbomInvalid = true },
             new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json" }, new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json", SbomReviewed = true, Inventory = Build },
-            new ReadinessInput { Mode = DependencyReviewMode.Deployed }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, DeploymentTarget = "Dev", CanCaptureDeployed = true },
+            new ReadinessInput { Mode = DependencyReviewMode.Deployed }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, Inventory = Build },
+            new ReadinessInput { Mode = DependencyReviewMode.Deployed, Inventory = Build, DeploymentTarget = "Dev", CanCaptureDeployed = true },
             new ReadinessInput { Mode = DependencyReviewMode.Deployed, Deployed = OldSource }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, Deployed = OldSource, Inventory = Build },
         };
         var steps = inputs.Select(DependencyReviewReadiness.NextStep).ToList();
         steps.Select(s => s.Action.ToString()).Should().Equal("ChooseReviewSource", "OpenSourceAnalysis", "RunSourceReview", "ChooseInventory", "RunHealthReview",
-            "UploadSbom", "UploadSbom", "ReviewSbom", "RunHealthReview", "ChooseTarget", "CaptureDeployed", "ChooseInventory", "RunHealthReview");
-        steps.Select(s => s.Ready).Should().Equal(false, false, true, false, true, false, false, false, true, false, false, false, true);
+            "UploadSbom", "UploadSbom", "ReviewSbom", "RunHealthReview", "ChooseInventory", "ChooseTarget", "CaptureDeployed", "ChooseInventory", "RunHealthReview");
+        steps.Select(s => s.Ready).Should().Equal(false, false, true, false, true, false, false, false, true, false, false, false, false, true);
+        steps[^1].Label.Should().Be("Run deployment comparison");
         foreach (var step in steps)
             new[] { step.Label, step.Reason, step.Status }.Should().NotContain(t => ResultWords.Any(w => t.Contains(w, StringComparison.OrdinalIgnoreCase)));
         steps.Where(s => !s.Ready).Select(s => s.Tone).Should().OnlyContain(t => t == "muted" || t == "attention");

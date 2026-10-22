@@ -37,11 +37,17 @@ public sealed class DependencyReviewEvidenceModeTests : BunitContext
         public Task<IReadOnlyList<InventorySummary>> InventoriesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<InventorySummary>>(Inventories.ToList());
         public Task<InventoryImportResult> ImportInventoryAsync(string fileName, Stream content, SbomRole role, string? environment, string? name, CancellationToken ct = default)
         { Imports++; return Task.FromResult(new InventoryImportResult(null, null, "not used")); }
-        public Task<InventoryImportResult> CaptureDeployedAsync(DeployedCaptureRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public InventoryImportResult? Capture { get; set; }
+        public Task<InventoryImportResult> CaptureDeployedAsync(DeployedCaptureRequest request, CancellationToken ct = default)
+        {
+            if (Capture?.Inventory is { } inventory) Inventories.Insert(0, inventory);
+            return Task.FromResult(Capture ?? throw new NotSupportedException());
+        }
+        public Func<DependencyHealthRequest, DependencyHealthRun>? Build { get; set; }
         public Task<(DependencyHealthRun? Run, string? Error)> RunHealthAsync(DependencyHealthRequest request, CancellationToken ct = default)
         {
             LastRequest = request;
-            var run = HealthRun(request);
+            var run = (Build ?? HealthRun)(request);
             Stored[run.RunId] = run;
             HealthRuns.Insert(0, new DependencyHealthRunSummary(run.RunId, run.CompletedAt, run.Label, run.Inventory.Name, 1, 0, null, request.EvidenceMode));
             return Task.FromResult<(DependencyHealthRun?, string?)>((run, null));
@@ -74,7 +80,11 @@ public sealed class DependencyReviewEvidenceModeTests : BunitContext
         _api.Inventories.Add(Common);
         Services.AddSingleton<IDependencyReviewApiService>(_api);
         Services.AddSingleton<IReportExportService, ReportExportService>();
-        Services.AddSingleton(Moq.Mock.Of<IFrontendAnalysisSettingsService>());
+        var targets = new Moq.Mock<IFrontendAnalysisSettingsService>();
+        targets.SetupGet(t => t.IsLoaded).Returns(true);
+        targets.SetupGet(t => t.Settings).Returns(new BirkNext.Web.Models.FrontendAnalysisSettings { Profiles =
+            [new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "dev", Name = "Development", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" }] });
+        Services.AddSingleton(targets.Object);
         SourceScopeFixture.Register(this);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
@@ -138,6 +148,99 @@ public sealed class DependencyReviewEvidenceModeTests : BunitContext
 
         cut.Find("[data-testid='dr-mode'][aria-pressed='true']").GetAttribute("data-mode").Should().Be(nameof(DependencyReviewMode.Inventory));
         cut.Find("[data-testid='dh-identity']").TextContent.Should().Contain("Evidence: Existing inventory").And.Contain("Previous source review");
+    }
+
+    private static DeploymentCaptureReport Report(CaptureOverall overall, params (string Key, string Name, CaptureStrategyOutcome Outcome, int Artifacts)[] strategies) => new()
+    {
+        Framework = "Blazor WebAssembly", RuntimeLayout = "Modern Blazor runtime", Overall = overall, Complete = overall == CaptureOverall.Captured,
+        Capability = overall == CaptureOverall.Captured ? CaptureCapability.Supported : CaptureCapability.Partial,
+        Summary = overall == CaptureOverall.NotCaptured ? "Deployment evidence not captured: no supported capture strategy produced deployment evidence (3 attempted)." : "Deployment evidence captured with limitations: 2 runtime artifacts observed.",
+        Strategies = [.. strategies.Select(s => new CaptureStrategyResult { Strategy = s.Key, Name = s.Name, Outcome = s.Outcome, Artifacts = s.Artifacts, Detail = s.Outcome == CaptureStrategyOutcome.NotDetected ? "Not detected · HTTP 404." : "detail", Technical = "GET https://m2lbdev.example.test/_framework/blazor.boot.json → HTTP 404" })],
+    };
+
+    private IRenderedComponent<DependencyReview> ReadyToCapture()
+    {
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
+        cut.Find("[data-testid='dh-deployed-known']").Change(Common.Id.ToString());
+        cut.Find("[data-testid='dh-deployed-target']").Change("dev");
+        cut.Find("[data-testid='dr-next-action']").TextContent.Should().Be("Capture deployment evidence");
+        return cut;
+    }
+
+    [Fact]
+    public void NotCapturedDeployment_IsAResultWithAMethodBreakdown_NotARedBootManifestError()
+    {
+        _api.Capture = new InventoryImportResult(null, null, "Deployment evidence not captured") { Capture = Report(CaptureOverall.NotCaptured,
+            ("classic-boot-manifest", "Classic Blazor boot manifest", CaptureStrategyOutcome.NotDetected, 0), ("modern-runtime", "Blazor runtime metadata", CaptureStrategyOutcome.Detected, 0),
+            ("browser-runtime", "Browser runtime evidence", CaptureStrategyOutcome.NotAvailable, 0)) };
+        var cut = ReadyToCapture();
+
+        cut.Find("[data-testid='dr-next-action']").Click();
+
+        cut.FindAll("[data-testid='dh-error']").Should().BeEmpty("a 404 from one method is not a terminal red error");
+        cut.Find("[data-testid='dh-capture-summary']").TextContent.Should().StartWith("Not captured").And.Contain("no supported capture strategy produced deployment evidence");
+        cut.Find("[data-testid='dh-capture-capability']").TextContent.Should().StartWith("Partial");
+        cut.Find("[data-testid='dh-capture-details-body']").HasAttribute("hidden").Should().BeTrue("technical strategy details are secondary");
+        cut.Find("[data-testid='dh-capture-details-toggle']").Click();
+        cut.Find("[data-testid='dh-capture-strategy'][data-strategy='classic-boot-manifest']").TextContent.Should().Contain("Not detected").And.Contain("HTTP 404");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready");
+        cut.Find("[data-testid='dh-deployed-facts']").TextContent.Should().Contain("Deployment evidenceNot captured");
+    }
+
+    [Fact]
+    public void PartialCapture_LeadsWithLimitations_AndComparisonCanContinue()
+    {
+        var deployed = Common with { Id = Guid.NewGuid(), Name = "m2lbdev.example.test (Development) · deployed artifacts", SourceType = InventorySourceType.Deployment, Stage = InventoryStage.Deployed, Dependencies = 2 };
+        _api.Capture = new InventoryImportResult(null, deployed, null) { Capture = Report(CaptureOverall.Partial, ("browser-runtime", "Browser runtime evidence", CaptureStrategyOutcome.Partial, 2)) };
+        var cut = ReadyToCapture();
+
+        cut.Find("[data-testid='dr-next-action']").Click();
+
+        cut.Find("[data-testid='dh-capture-summary']").TextContent.Should().StartWith("Captured with limitations");
+        cut.Find("[data-testid='dh-capture-facts']").TextContent.Should().Contain("Capture methods usedBrowser runtime evidence").And.Contain("Package versionsNot available from this evidence")
+            .And.Contain("Not available (browser evidence has no integrity values)");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready to run");
+        cut.Find("[data-testid='dr-next-action']").TextContent.Should().Be("Run deployment comparison");
+    }
+
+    [Fact]
+    public void DeploymentComparisonResult_ShowsCounts_ArtifactsAndTarget_WithoutPackageVersions()
+    {
+        var deployedSnapshot = new DependencyInventorySnapshot
+        {
+            Id = Guid.NewGuid(), Name = "deployed", Environment = "Development", SourceType = InventorySourceType.Deployment, Stage = InventoryStage.Deployed, CapturedAt = DateTimeOffset.Parse("2026-10-22T09:00:00Z"),
+            Capture = Report(CaptureOverall.Partial, ("browser-runtime", "Browser runtime evidence", CaptureStrategyOutcome.Partial, 2)),
+            Dependencies = [new InventoryDependency { PackageName = "WolverineFx.wasm", PackageManager = "assembly", ObservedBy = ["Browser runtime evidence"] }, new InventoryDependency { PackageName = "dotnet.native.wasm", PackageManager = "runtime artifact", ObservedBy = ["Browser runtime evidence"] }],
+        };
+        var deployed = Common with { Id = deployedSnapshot.Id, Name = "deployed", SourceType = InventorySourceType.Deployment, Stage = InventoryStage.Deployed };
+        _api.Capture = new InventoryImportResult(null, deployed, null) { Capture = deployedSnapshot.Capture };
+        _api.Build = r => HealthRun(r) with
+        {
+            Deployed = deployedSnapshot,
+            Comparisons = [new InventoryComparison { Kind = ComparisonKind.ExpectedVsDeployed, LeftName = Common.Name, RightName = "deployed", Unchanged = 0, Entries =
+            [
+                new ComparisonEntry { PackageName = "WolverineFx.wasm", State = ComparisonState.MappingUnresolved, Detail = "no authoritative mapping" },
+                new ComparisonEntry { PackageName = "dotnet.native.wasm", State = ComparisonState.ObservedNotExpected, Detail = "not mapped" },
+                new ComparisonEntry { PackageName = "Polly", State = ComparisonState.NotObservedInEvidence, Detail = "absence is not concluded" },
+            ] }],
+        };
+        var cut = ReadyToCapture();
+        cut.Find("[data-testid='dr-next-action']").Click();
+        cut.Find("[data-testid='dr-next-action']").Click();
+        cut.WaitForElement("[data-testid='dh-result']");
+
+        cut.Find("[data-testid='dh-summary-differences']").TextContent.Should().Contain("Observed artifacts2").And.Contain("Expected not observed1").And.Contain("Unexpected1").And.Contain("Unresolved mapping1");
+        cut.Find("[data-testid='dh-partial-comparison']").TextContent.Should().Contain("not a definite absence");
+        cut.FindAll("[data-testid='dh-section']").Single(s => s.GetAttribute("data-section") == "dependencies").TextContent.Should().Be("Deployed artifacts");
+        cut.FindAll("[data-testid='dh-section']").Single(s => s.GetAttribute("data-section") == "dependencies").Click();
+        var wolverine = cut.Find("[data-testid='dh-artifact'][data-artifact='WolverineFx.wasm']").TextContent;
+        wolverine.Should().Contain("Mapping unresolved").And.Contain("Browser runtime evidence").And.NotContain("6.51");
+        cut.Find("[data-testid='dh-result']").TextContent.Should().Contain("Package version: not available from deployment evidence");
+        cut.FindAll("[data-testid='dh-section']").Single(s => s.GetAttribute("data-section") == "differences").Click();
+        cut.Find("[data-testid='dh-difference-groups']").TextContent.Should().Contain("Unresolved mapping").And.Contain("Observations");
+        cut.FindAll("[data-testid='dh-section']").Single(s => s.GetAttribute("data-section") == "target").Click();
+        cut.Find("[data-testid='dh-target-capture']").TextContent.Should().Contain("Blazor WebAssembly");
     }
 
     [Fact]
