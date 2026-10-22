@@ -25,7 +25,7 @@ public sealed class FrontendQualityAccessibilityCoverageTests
             EngineRequirements = profile.EngineRequirements, ReviewEngineSelection = profile.ReviewEngineSelection };
     }
 
-    /// <param name="accessibilityAvailable">Whether the dedicated engine's runtime is available (Lighthouse and Passive Security never are here).</param>
+    /// <param name="accessibilityAvailable">Whether the dedicated engine's runtime is available (Lighthouse and Passive Web Security never are here).</param>
     private static (FrontendAnalysisContext Context, IReadOnlyList<FrontendQualityCapabilityRow> Rows) Setup(
         bool accessibilityAvailable, BrowserCompanionState companion, bool accessibilityEnabled = true)
     {
@@ -58,7 +58,7 @@ public sealed class FrontendQualityAccessibilityCoverageTests
 
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         // Limited means automation still runs (through Browser Quality), so it is "available but limited", never absent.
-        readiness.Message.Should().Be("Automated accessibility coverage is available but limited. Lighthouse and Passive Security are currently unavailable. All required capabilities are available, so the review can run.");
+        readiness.Message.Should().Be("Automated accessibility coverage is available but limited. Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run.");
         readiness.Details.Should().Contain("Automated accessibility coverage: Available but limited").And.NotContain("Accessibility: Unavailable");
         readiness.Details.Should().Contain(FrontendQualityLandingPresentation.ManualAccessibilityDetail);
 

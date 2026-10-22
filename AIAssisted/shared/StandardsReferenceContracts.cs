@@ -38,7 +38,7 @@ public static class StandardsReferenceMappings
     {
         ["std-csp-missing"] = [SecurityMisconfigurationFrontend],
         ["std-hsts-missing"] = [SecurityMisconfigurationFrontend],
-        // Static Security's own X-Content-Type-Options finding (scanner rule id; no derived "std-" finding exists for it).
+        // HTTP Security's own X-Content-Type-Options finding (scanner rule id; no derived "std-" finding exists for it).
         ["HDR-MISSING-X-CONTENT-TYPE-OPTIONS"] = [SecurityMisconfigurationFrontend],
     };
 

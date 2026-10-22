@@ -409,7 +409,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
 
     // ── Check: Security headers ────────────────────────────────────────────
 
-    /// <summary>Static Security's historical header policy: used only when the request carries no Target Environment expectations.</summary>
+    /// <summary>HTTP Security's historical header policy: used only when the request carries no Target Environment expectations.</summary>
     internal static readonly string[] DefaultExpectedHeaders = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Strict-Transport-Security", "Permissions-Policy"];
 
     private static readonly Dictionary<string, (WasmSecuritySeverity Severity, string Impact)> HeaderImpact = new(StringComparer.OrdinalIgnoreCase)

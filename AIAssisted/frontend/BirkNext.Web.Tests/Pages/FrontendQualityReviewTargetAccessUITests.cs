@@ -174,7 +174,7 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         var component = Render<FrontendQualityDecisionSupport>(p => p.Add(x => x.Report, report));
 
         component.Find("[data-testid='fqr-required-assessed']").TextContent.Trim().Should().Be("1 of 2");
-        component.Find("[data-testid='fqr-coverage-summary']").TextContent.Should().Contain("1 of 2 required engines completed.").And.Contain("Static Security:").And.Contain("Not assessed").And.Contain("HTTP 401");
+        component.Find("[data-testid='fqr-coverage-summary']").TextContent.Should().Contain("1 of 2 required engines completed.").And.Contain("HTTP Security:").And.Contain("Not assessed").And.Contain("HTTP 401");
         var securityRow = component.Find("tr[data-engine-id='StaticSecurity']");
         securityRow.QuerySelector("[data-testid='fqr-assessment']")!.TextContent.Should().Be("Not assessed");
         securityRow.QuerySelector("[data-testid='fqr-access']")!.TextContent.Should().Be("Public HTTP (frontend shell)");

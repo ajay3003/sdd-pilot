@@ -42,7 +42,7 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
     public async Task Orchestrate_PassiveSecurityDisabled_CallCountZero()
     {
         var passive=new SpyPassiveSecurity(); var result=await OrchestrationTestHelpers.CreateOrchestrator(new SpySecurityScanner(),new SpyPerformanceService(),new FakePreflightService(),new MockQualityService(),passiveSecurity:passive).RunAsync("https://example.com",PassiveContext(false));
-        passive.CallCount.Should().Be(0); result.SkippedEngines.Should().Contain("Passive Security");
+        passive.CallCount.Should().Be(0); result.SkippedEngines.Should().Contain("Passive Web Security");
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class FrontendQualityReviewOrchestratorExecutionTest
             .RunAsync("https://example.com",PassiveContext(true));
         result.SecurityReport.Should().NotBeNull(); result.PerformanceReport.Should().NotBeNull(); result.BrowserRuntimeReport.Should().NotBeNull();
         result.AccessibilityReport.Should().NotBeNull(); result.LighthouseReport.Should().NotBeNull(); result.PassiveSecurityReport!.ExecutionStatus.Should().Be(PassiveSecurityExecutionStatusDto.EngineError);
-        result.QualityReport!.Completeness.Should().Be(AssessmentCompleteness.Partial); result.QualityReport.FailedEngines.Should().Contain("Passive Security");
+        result.QualityReport!.Completeness.Should().Be(AssessmentCompleteness.Partial); result.QualityReport.FailedEngines.Should().Contain("Passive Web Security");
         result.QualityReport.PassiveSecurityReport.Should().NotBeNull(); result.QualityReport.SecurityScore.Should().BeNull("ZAP alert counts are never converted into a score");
     }
     private sealed class SpySecurityScanner : ISecurityScanner

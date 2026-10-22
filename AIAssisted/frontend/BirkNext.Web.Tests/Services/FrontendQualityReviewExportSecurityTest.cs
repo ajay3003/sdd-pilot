@@ -20,7 +20,7 @@ public sealed class FrontendQualityReviewExportSecurityTest
             [new("10021","10021-1","Missing X-Content-Type-Options","Low","Medium","description","https://example.com/?access_token=SECRET-ZAP-TOKEN-12345",null,"Bearer SECRET-ZAP-TOKEN-12345","Add nosniff",[],"693","15",1,"ZAP Passive")],
             ["Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing."],null,"Configured target only",null);
         var html=new ReportExportService().ExportFrontendQualityReview(new FrontendQualityReviewReport { TargetUrl="https://example.com",GeneratedAt=DateTime.UtcNow,PassiveSecurityReport=passive },null);
-        html.Should().Contain("Passive Security Assessment").And.Contain("Passive only").And.Contain("2.16.1").And.Contain("10021").And.Contain("Active scanning, spidering and authenticated penetration testing were not performed.");
+        html.Should().Contain("Passive Web Security Assessment").And.Contain("Passive only").And.Contain("2.16.1").And.Contain("10021").And.Contain("Active scanning, spidering and authenticated penetration testing were not performed.");
         html.Should().NotContain("SECRET-ZAP-TOKEN-12345");
     }
 

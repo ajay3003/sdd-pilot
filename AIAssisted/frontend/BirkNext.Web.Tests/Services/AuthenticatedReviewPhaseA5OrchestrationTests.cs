@@ -12,7 +12,7 @@ public sealed class AuthenticatedReviewPhaseA5OrchestrationTests
     public async Task MissingAuthoritativeSnapshot_BlocksAuthenticatedEnginesButNotPublicHttpEngines()
     {
         // Without an authoritative (UI-captured, authenticated) snapshot the authenticated browser engines never run.
-        // The public-HTTP engines (Static Security, Passive Performance) do not depend on the authenticated session:
+        // The public-HTTP engines (HTTP Security, HTTP Performance) do not depend on the authenticated session:
         // they analyse the public frontend shell and are executed instead of being blocked wholesale.
         var fixture = new Fixture();
 

@@ -5,7 +5,7 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Resolved thresholds of BirkNext Performance Quality with provenance (Default / Target Environment / Policy). Web Vitals and
+/// Resolved thresholds of Browser Performance Quality with provenance (Default / Target Environment / Policy). Web Vitals and
 /// startup thresholds come from the Target Environment's saved settings; a value equal to the documented default is labelled
 /// Default, a Strict preset is labelled Policy, anything else Target Environment.
 /// </summary>
@@ -24,7 +24,7 @@ public sealed record PerformanceThresholdSet(
 }
 
 /// <summary>
-/// BirkNext Performance Quality — deterministic, pure evaluation of one page's recorded evidence (Browser Companion page/runtime/resource/
+/// Browser Performance Quality — deterministic, pure evaluation of one page's recorded evidence (Browser Companion page/runtime/resource/
 /// Blazor summaries + Local HTTPS proxy API samples) into metrics, findings, coverage, API summary, timeline and generation comparison.
 /// No I/O, so every rule is unit-testable with synthetic evidence. It never fabricates a metric: what was not observed is Not measured.
 /// Correlation between browser and proxy evidence is worded "correlated"/"observed", never "caused by".

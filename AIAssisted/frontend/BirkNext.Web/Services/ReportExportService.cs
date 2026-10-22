@@ -295,13 +295,13 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("<dl style=\"display:grid;grid-template-columns:120px 1fr;gap:0.5rem;font-size:.85rem;margin-left:1rem\">\n");
 
             if (report.AssessedEngines.Count > 0)
-                sb.Append($"<dt><strong>Assessed:</strong></dt><dd>{Esc(string.Join(", ", report.AssessedEngines))}</dd>\n");
+                sb.Append($"<dt><strong>Assessed:</strong></dt><dd>{Esc(string.Join(", ", report.AssessedEngines.Select(FrontendQualityActiveEngines.CurrentLabel)))}</dd>\n");
 
             if (report.FailedEngines.Count > 0)
                 sb.Append($"<dt><strong>Failed:</strong></dt><dd>{Esc(string.Join(", ", report.FailedEngines))}</dd>\n");
 
             if (report.SkippedEngines.Count > 0)
-                sb.Append($"<dt><strong>Skipped/Disabled:</strong></dt><dd>{Esc(string.Join(", ", report.SkippedEngines))}</dd>\n");
+                sb.Append($"<dt><strong>Skipped/Disabled:</strong></dt><dd>{Esc(string.Join(", ", report.SkippedEngines.Select(FrontendQualityActiveEngines.CurrentLabel)))}</dd>\n");
 
             sb.Append("</dl>\n");
         }
@@ -361,7 +361,7 @@ public sealed class ReportExportService : IReportExportService
 
         if (report.PassiveSecurityReport is { } passive)
         {
-            sb.Append("<section class=\"block\">\n<h2>Passive Security Assessment</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Passive Web Security Assessment</h2>\n");
             var status = passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed ? "Assessed" : "Engine Error / Not Assessed";
             sb.Append($"<p><strong>Engine status:</strong> {Esc(status)} &nbsp; <strong>Mode:</strong> Passive only &nbsp; <strong>ZAP version:</strong> {Esc(passive.ZapVersion ?? "Unavailable")}</p>\n");
             sb.Append($"<p><strong>Configured scope:</strong> {Esc(SanitizePassive(passive.ScopeSummary))} &nbsp; <strong>Duration:</strong> {Esc(passive.DurationMs.HasValue ? $"{passive.DurationMs.Value} ms" : "Unavailable")}</p>\n");
@@ -669,13 +669,13 @@ public sealed class ReportExportService : IReportExportService
     }
 
     /// <summary>
-    /// BirkNext Performance Quality export: coverage, per-page phase/metrics/status/threshold (with source), findings, API and Blazor
+    /// Browser Performance Quality export: coverage, per-page phase/metrics/status/threshold (with source), findings, API and Blazor
     /// summaries and missing evidence. Only sanitized values (metrics, counts, operation names, query-stripped URLs) — never a token,
     /// cookie, header value, body or query value.
     /// </summary>
     private static void AppendPerformanceQuality(StringBuilder sb, PerformanceQualityReviewResult result, LighthouseResultDto? lighthouse)
     {
-        sb.Append("<section class=\"block\">\n<h2>BirkNext Performance Quality</h2>\n");
+        sb.Append("<section class=\"block\">\n<h2>Browser Performance Quality</h2>\n");
         sb.Append("<p>Native engine: browser metrics from the Browser Companion in the user's managed Edge (field, PerformanceObserver); API/network metrics from the Local HTTPS proxy. Independent of Lighthouse, Playwright and CDP. Initial load and SPA navigation are reported separately.</p>\n");
         sb.Append($"<p><strong>Assessment:</strong> {Esc(result.Coverage.OverallLabel)} &nbsp; <strong>Pages with evidence:</strong> {result.PagesWithEvidence} &nbsp; <strong>Findings:</strong> {result.Findings.Count()}</p>\n");
         sb.Append(Table(["Evidence category", "Coverage"],

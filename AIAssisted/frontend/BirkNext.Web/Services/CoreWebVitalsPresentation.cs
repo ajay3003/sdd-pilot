@@ -16,7 +16,7 @@ public sealed record CoreWebVitalsRow(string Abbreviation, string Name, string M
 public static class CoreWebVitalsPresentation
 {
     public const string OwnerNote =
-        "These thresholds are used by Frontend Quality Review — the BirkNext Performance Quality engine (LCP, INP, CLS) and the Browser Quality engine (LCP, CLS) — when Core Web Vitals evidence is available. They are configuration values, not current measurements.";
+        "These thresholds are used by Frontend Quality Review — the Browser Performance Quality engine (LCP, INP, CLS) and the Browser Quality engine (LCP, CLS) — when Core Web Vitals evidence is available. They are configuration values, not current measurements.";
 
     /// <summary>Browser Quality applies the same boundaries but reports only some bands (BrowserQualityRules).</summary>
     public const string BrowserQualityNote =

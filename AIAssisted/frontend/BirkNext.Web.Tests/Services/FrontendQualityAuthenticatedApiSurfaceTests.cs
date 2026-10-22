@@ -10,7 +10,7 @@ namespace BirkNext.Web.Tests.Services;
 /// <summary>
 /// The Frontend Quality Review consumes the Local HTTPS proxy's authenticated API context through the gateway-backed API-surface
 /// probes: one shared probe set per review, only for a proxy environment with active HTTP engines, findings owned by Static
-/// Security (API security headers / CORS / rejected credential) and Passive Performance (authenticated latency), honest
+/// Security (API security headers / CORS / rejected credential) and HTTP Performance (authenticated latency), honest
 /// "not checked" reporting when the context is missing, and never a credential in the report.
 /// </summary>
 public sealed class FrontendQualityAuthenticatedApiSurfaceTests : BunitContext
@@ -85,7 +85,7 @@ public sealed class FrontendQualityAuthenticatedApiSurfaceTests : BunitContext
     {
         var slowAndRejected = Check("Health", 401, 3000);
 
-        FrontendQualityAuthenticatedApiSurfaceFindings.Build(Surface(slowAndRejected), new(), securityActive: false, performanceActive: true).Should().BeEmpty("rejected credentials belong to Static Security, which is inactive; a rejected call has no latency finding");
+        FrontendQualityAuthenticatedApiSurfaceFindings.Build(Surface(slowAndRejected), new(), securityActive: false, performanceActive: true).Should().BeEmpty("rejected credentials belong to HTTP Security, which is inactive; a rejected call has no latency finding");
         FrontendQualityAuthenticatedApiSurfaceFindings.Build(Surface(slowAndRejected), new(), securityActive: true, performanceActive: false).Should().ContainSingle();
     }
 
@@ -244,7 +244,7 @@ public sealed class FrontendQualityAuthenticatedApiSurfaceTests : BunitContext
     private static FrontendQualityReviewReport ReportWith(FrontendAuthenticatedApiSurfaceResult surface) => new()
     {
         TargetUrl = Target, GeneratedAt = DateTime.UtcNow, ReleaseDisposition = FrontendQualityReleaseDisposition.NoAutomatedBlockDetected,
-        EngineOutcomes = [new FrontendQualityEngineOutcome { EngineId = FrontendQualityEngineId.StaticSecurity, DisplayName = "Static Security", Enabled = true, Requirement = FrontendQualityEngineRequirement.Required, ExecutionState = FrontendQualityEngineExecutionState.Assessed, FindingCount = 0 }],
+        EngineOutcomes = [new FrontendQualityEngineOutcome { EngineId = FrontendQualityEngineId.StaticSecurity, DisplayName = "HTTP Security", Enabled = true, Requirement = FrontendQualityEngineRequirement.Required, ExecutionState = FrontendQualityEngineExecutionState.Assessed, FindingCount = 0 }],
         AuthenticatedApiSurface = surface,
     };
 

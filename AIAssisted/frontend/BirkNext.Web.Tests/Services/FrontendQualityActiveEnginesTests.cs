@@ -40,8 +40,8 @@ public sealed class FrontendQualityActiveEnginesTests
             FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance,
             FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse]);
         snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.PassiveSecurity, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality);
-        snapshot.Get(FrontendQualityEngineId.PassiveSecurity)!.Enabled.Should().BeFalse("Passive Security (ZAP) needs server enablement, a trusted target and a container image; it is opt-in");
-        snapshot.Get(FrontendQualityEngineId.PerformanceQuality)!.Enabled.Should().BeFalse("BirkNext Performance Quality is opt-in until Companion/proxy evidence exists");
+        snapshot.Get(FrontendQualityEngineId.PassiveSecurity)!.Enabled.Should().BeFalse("Passive Web Security (ZAP) needs server enablement, a trusted target and a container image; it is opt-in");
+        snapshot.Get(FrontendQualityEngineId.PerformanceQuality)!.Enabled.Should().BeFalse("Browser Performance Quality is opt-in until Companion/proxy evidence exists");
         snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Enabled.Should().BeFalse("Browser Runtime is opt-in");
         snapshot.Get(FrontendQualityEngineId.BrowserQuality)!.Enabled.Should().BeFalse("Browser Quality (Browser Companion) is opt-in until the extension is paired");
         snapshot.RequiredButDisabled.Should().BeEmpty();
@@ -73,7 +73,7 @@ public sealed class FrontendQualityActiveEnginesTests
 
         snapshot.IsActive(FrontendQualityEngineId.BrowserRuntime).Should().BeFalse();
         snapshot.IsActive(FrontendQualityEngineId.Lighthouse).Should().BeFalse();
-        snapshot.ActiveCount.Should().Be(3);   // Static Security, Passive Performance, Accessibility (Passive Security is opt-in)
+        snapshot.ActiveCount.Should().Be(3);   // HTTP Security, HTTP Performance, Accessibility (Passive Web Security is opt-in)
     }
 
     [Fact]
@@ -137,7 +137,7 @@ public sealed class FrontendQualityActiveEnginesTests
         var after = FrontendQualityActiveEngines.Resolve(Context(restored.Profiles[0]));
 
         after.Engines.Select(e => (e.EngineId, e.Enabled, e.Selected, e.Policy)).Should().Equal(before.Engines.Select(e => (e.EngineId, e.Enabled, e.Selected, e.Policy)));
-        after.ActiveCount.Should().Be(3, "Static Security, Accessibility and Lighthouse remain enabled; Passive Performance was turned off; Passive Security is opt-in");
+        after.ActiveCount.Should().Be(3, "HTTP Security, Accessibility and Lighthouse remain enabled; HTTP Performance was turned off; Passive Web Security is opt-in");
     }
 
     [Fact]

@@ -117,14 +117,34 @@ public static class FrontendQualityActiveEngines
 
     public static string DisplayName(FrontendQualityEngineId id) => id switch
     {
-        FrontendQualityEngineId.StaticSecurity => "Static Security",
-        FrontendQualityEngineId.PassivePerformance => "Passive Performance",
+        FrontendQualityEngineId.StaticSecurity => "HTTP Security",
+        FrontendQualityEngineId.PassivePerformance => "HTTP Performance",
         FrontendQualityEngineId.BrowserRuntime => "Browser Runtime",
         FrontendQualityEngineId.Accessibility => "Accessibility",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
-        FrontendQualityEngineId.PassiveSecurity => "Passive Security",
+        FrontendQualityEngineId.PassiveSecurity => "Passive Web Security",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality",
-        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality",
+        FrontendQualityEngineId.PerformanceQuality => "Browser Performance Quality",
         _ => id.ToString(),
     };
+
+    /// <summary>
+    /// Labels stored by earlier reviews (outcome display names and the legacy assessed/skipped lists) mapped to today's names, so history
+    /// reads in current vocabulary without rewriting stored reports. Persisted engine ids never changed; only their display names did.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, FrontendQualityEngineId> LegacyLabels = new Dictionary<string, FrontendQualityEngineId>(StringComparer.Ordinal)
+    {
+        ["Static Security"] = FrontendQualityEngineId.StaticSecurity,
+        ["Security"] = FrontendQualityEngineId.StaticSecurity,
+        ["Passive Performance"] = FrontendQualityEngineId.PassivePerformance,
+        ["Performance"] = FrontendQualityEngineId.PassivePerformance,
+        ["Passive Security"] = FrontendQualityEngineId.PassiveSecurity,
+        ["Passive Security (ZAP)"] = FrontendQualityEngineId.PassiveSecurity,
+        ["BirkNext Performance Quality"] = FrontendQualityEngineId.PerformanceQuality,
+        ["BrowserRuntime"] = FrontendQualityEngineId.BrowserRuntime,
+    };
+
+    /// <summary>Today's display name for a label stored by any earlier review; unknown labels are returned unchanged.</summary>
+    public static string CurrentLabel(string label) =>
+        LegacyLabels.TryGetValue(label, out var id) ? DisplayName(id) : label;
 }

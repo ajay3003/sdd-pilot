@@ -7,7 +7,7 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// Scope-aware execution end to end. Reported situation: Public + authenticated scope, Static Security and Passive Performance Required with a
+/// Scope-aware execution end to end. Reported situation: Public + authenticated scope, HTTP Security and HTTP Performance Required with a
 /// Public HTTP prerequisite, Accessibility and Lighthouse Optional, Local HTTPS proxy method with no authenticated context. The public pass
 /// completes the required engines; the authenticated pass must never override that completion (it used to: the merge picked the pass that
 /// did NOT assess, so required coverage read 0 of 2 and the review was Blocked). Mocked engines only; no target is contacted.
@@ -106,9 +106,9 @@ public sealed class FrontendQualityScopePlanningOrchestrationTests
         lighthouse.ExecutionState.Should().Be(FrontendQualityEngineExecutionState.NotApplicable);
         FrontendQualityEngineOutcomePresentation.StateLabel(lighthouse).Should().Be("Not applicable");
         result.QualityReport!.Coverage!.OptionalTotal.Should().Be(1, "Lighthouse is not applicable to an authenticated-only review and leaves the denominator");
-        var blocker = result.QualityReport.ReleaseBlockers.Should().Contain(b => b.Type == FrontendQualityBlockerType.Coverage && b.Entity.StartsWith("Static Security")).Which;
+        var blocker = result.QualityReport.ReleaseBlockers.Should().Contain(b => b.Type == FrontendQualityBlockerType.Coverage && b.Entity.StartsWith("HTTP Security")).Which;
         blocker.Reason.Should().NotBeNullOrWhiteSpace();
-        blocker.Entity.Should().Be("Static Security (Authenticated)");
+        blocker.Entity.Should().Be("HTTP Security (Authenticated)");
         result.QualityReport.ReleaseDisposition.Should().Be(FrontendQualityReleaseDisposition.Blocked);
         result.QualityReport.EngineOutcomes.Where(o => o.EngineId is FrontendQualityEngineId.StaticSecurity)
             .SelectMany(o => o.Surfaces).Should().NotContain(s => s.Surface == FrontendQualityReviewSurface.Public && s.Completed, "no false public claim");
@@ -284,7 +284,7 @@ public sealed class FrontendQualityScopePlanningOrchestrationTests
         {
             TargetUrl = targetUrl,
             Findings = [new FrontendQualityFinding { Id = "csp-missing", Title = "Content-Security-Policy header missing", Severity = FrontendQualitySeverity.Critical,
-                Category = FrontendQualityCategory.Security, EngineId = FrontendQualityEngineId.StaticSecurity, SourceRuleId = "SEC-CSP", Recommendation = "Configure a restrictive CSP.", SourceSystem = "Static Security" }],
+                Category = FrontendQualityCategory.Security, EngineId = FrontendQualityEngineId.StaticSecurity, SourceRuleId = "SEC-CSP", Recommendation = "Configure a restrictive CSP.", SourceSystem = "HTTP Security" }],
         };
     }
 

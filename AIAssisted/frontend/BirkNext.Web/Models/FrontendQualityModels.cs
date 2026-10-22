@@ -123,7 +123,7 @@ public sealed record FrontendQualityReviewReport
     [JsonPropertyName("limitations")]        public List<string>                     Limitations        { get; init; } = [];
     [JsonPropertyName("isBlazorWasm")]       public bool                             IsBlazorWasm       { get; init; }
     [JsonPropertyName("errorMessage")]       public string?                          ErrorMessage       { get; init; }
-    /// <summary>Static Security cookie metadata of the frontend document (names and attributes, never values). Not scored; null on older reports.</summary>
+    /// <summary>HTTP Security cookie metadata of the frontend document (names and attributes, never values). Not scored; null on older reports.</summary>
     [JsonPropertyName("cookieSecurity")]     public BirkNext.RuntimeSecurity.CookieSecurityAssessment? CookieSecurity { get; init; }
     [JsonPropertyName("coverage")]           public FrontendQualityCoverage? Coverage
     {
@@ -165,7 +165,7 @@ public sealed record FrontendQualityReviewReport
     [JsonPropertyName("lighthouseReport")]    public LighthouseResultDto?              LighthouseReport { get; init; }
     [JsonPropertyName("passiveSecurityReport")] public PassiveSecurityResultDto?       PassiveSecurityReport { get; init; }
     [JsonPropertyName("browserRuntimeReport")] public BrowserRuntimeResultDto?          BrowserRuntimeReport { get; init; }
-    /// <summary>BirkNext Performance Quality result (per-page metrics, findings, coverage, API summaries, timeline); null when the engine did not run.</summary>
+    /// <summary>Browser Performance Quality result (per-page metrics, findings, coverage, API summaries, timeline); null when the engine did not run.</summary>
     [JsonPropertyName("performanceQualityReport")] public PerformanceQualityReviewResult? PerformanceQualityReport { get; init; }
 }
 

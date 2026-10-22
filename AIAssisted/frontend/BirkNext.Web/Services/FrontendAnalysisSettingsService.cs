@@ -213,7 +213,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             Performance     = GetDefaultThresholds(),
             CoreWebVitals   = GetDefaultCoreWebVitals(),
             Security        = GetDefaultSecuritySettings(),
-            Features        = GetDefaultFeatureToggles()
+            Features        = GetDefaultFeatureToggles(),
+            EngineRequirements = FrontendQualityEngineRequirementSettings.Recommended()
         };
         // A brand-new environment starts on the environment-type default method (Local HTTPS proxy for DEV/QA/Test/RC, CDP otherwise).
         // This is an explicit choice on a new profile, not a migration: the persisted-model default stays ManagedEdgeCdp so legacy JSON
@@ -305,7 +306,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         MaxFrameworkSizeBytes           = 3L  * 1024 * 1024,
         MaxApplicationAssemblySizeBytes = 2L  * 1024 * 1024,
         MaxIndividualAssetSizeBytes     = 1L  * 1024 * 1024,
-        // BirkNext Performance Quality (strict preset)
+        // Browser Performance Quality (strict preset)
         ApiResponseWarningMs            = 300,
         ApiResponsePoorMs               = 800,
         PageStabilizationGoodMs         = 1500,
@@ -332,7 +333,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             new BirkNext.SecurityExpectations.SecurityExpectationProvenance(BirkNext.SecurityExpectations.SecurityExpectationField.SecurityHeader, h,
                 BirkNext.SecurityExpectations.SecurityExpectationOrigin.Default)).ToList()
     };
-    public FrontendAnalysisFeatureToggles GetDefaultFeatureToggles()   => new();
+    /// <summary>Recommended engine selection for a new Target Environment. Existing profiles keep their saved choices.</summary>
+    public FrontendAnalysisFeatureToggles GetDefaultFeatureToggles()   => FrontendAnalysisFeatureToggles.Recommended();
 
     // ── Restore actions ───────────────────────────────────────────────────────
 
@@ -348,8 +350,13 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     public void RestoreDefaultSecurityExpectations(string profileId)
         => GetProfileOrThrow(profileId).Security = GetDefaultSecuritySettings();
 
+    /// <summary>Restore recommended defaults: the recommended engine selection AND coverage policy for this one Target Environment.</summary>
     public void RestoreDefaultFeatureToggles(string profileId)
-        => GetProfileOrThrow(profileId).Features = GetDefaultFeatureToggles();
+    {
+        var profile = GetProfileOrThrow(profileId);
+        profile.Features = GetDefaultFeatureToggles();
+        profile.EngineRequirements = FrontendQualityEngineRequirementSettings.Recommended();
+    }
 
     public void ResetProfile(string profileId)
     {
@@ -543,7 +550,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             Performance     = new FrontendPerformanceThresholds(),
             CoreWebVitals   = new CoreWebVitalsThresholds(),
             Security        = new FrontendSecuritySettings(),
-            Features        = new FrontendAnalysisFeatureToggles(),
+            Features        = FrontendAnalysisFeatureToggles.Recommended(),
             Authentication  = new FrontendAuthenticationSettings { AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.DefaultMethodFor(env.ToString()) }
         };
 }

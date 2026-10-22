@@ -366,8 +366,8 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
     {
         var rows = new List<FrontendQualityCapabilityRow>
         {
-            new(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Ready, null, null, Enabled: true),
-            new(FrontendQualityEngineId.PassivePerformance, "Passive Performance", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Disabled, null, null, Enabled: false),
+            new(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Ready, null, null, Enabled: true),
+            new(FrontendQualityEngineId.PassivePerformance, "HTTP Performance", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Disabled, null, null, Enabled: false),
             new(FrontendQualityEngineId.Lighthouse, "Lighthouse", FrontendQualityEngineRequirement.Optional, FrontendQualityCapabilityState.Unavailable, null, null, Enabled: true),
             new(FrontendQualityEngineId.BrowserQuality, "Browser Quality", FrontendQualityEngineRequirement.Optional, FrontendQualityCapabilityState.NotConfigured, null, null, Enabled: true),
         };
@@ -379,7 +379,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         summary.AvailableNowCount.Should().Be(1, "enabled is not available");
         summary.RequiredButDisabledCount.Should().Be(1);
         summary.NeedsPairingCount.Should().Be(1);
-        summary.DisabledCount.Should().Be(1, "Passive Performance is switched off");
+        summary.DisabledCount.Should().Be(1, "HTTP Performance is switched off");
         // 16, 27. Three axes on the collapsed row — configuration, capability, and what is switched off — plus the
         // Required engine somebody switched off, which is a configuration inconsistency worth seeing without expanding.
         summary.Collapsed.Should().Be("1 required ready · 1 optional unavailable · 1 optional not configured · 1 required disabled");
@@ -401,7 +401,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         Toggle(page, "fqr-capabilities-disclosure").Click();
 
         var warning = Body(page, "fqr-capabilities-disclosure").QuerySelector("[data-testid=fqr-capabilities-required-disabled]")!;
-        warning.TextContent.Should().Contain("Static Security");
+        warning.TextContent.Should().Contain("HTTP Security");
         warning.QuerySelector("[data-testid=fqr-required-disabled-edit]")!.GetAttribute("href")
             .Should().Be(FrontendQualityLandingPresentation.FrontendReviewEnginesHref);
     }
@@ -629,7 +629,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
             .Should().OnlyContain(s => s == "Included" || s == "Limited" || s == "Partial evidence" || s == "Not included");
 
         var dimensions = page.Find("[data-testid=fqr-dimensions]").TextContent;
-        foreach (var engine in new[] { "Static Security", "Passive Security", "Passive Performance", "Lighthouse", "Browser Runtime", "Browser Quality", "Performance Quality" })
+        foreach (var engine in new[] { "HTTP Security", "Passive Web Security", "HTTP Performance", "Lighthouse", "Browser Runtime", "Browser Quality", "Performance Quality" })
             dimensions.Should().NotContain(engine);
     }
 
@@ -654,7 +654,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.WaitForAssertion(() =>
             page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited"));
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Passive Performance is included. Lighthouse is unavailable.");
+            .Should().Be("HTTP Performance is included. Lighthouse is unavailable.");
     }
 
     // 40, 41. Accessibility stays scoped by the selected profile, which is shown on both the card and the domain.

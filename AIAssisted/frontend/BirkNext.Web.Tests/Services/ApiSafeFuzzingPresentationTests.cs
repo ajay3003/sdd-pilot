@@ -8,7 +8,7 @@ namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
 /// Labels and exports of safe fuzzing and the security foundation: the client mirror of the backend environment policy, honest outcome
-/// wording (4xx is handled validation), no secrets in exports, Passive Security never shown as a usable switch when the server cannot run
+/// wording (4xx is handled validation), no secrets in exports, Passive Web Security never shown as a usable switch when the server cannot run
 /// it, and API review safety fields labelled by who actually reads them.
 /// </summary>
 public sealed class ApiSafeFuzzingPresentationTests
@@ -114,7 +114,7 @@ public sealed class ApiSafeFuzzingPresentationTests
         {
             EngineId = FrontendQualityEngineIdDto.PassiveSecurity, Layer1Allowed = l1, Layer2Enabled = l2, Reasons = [.. reasons],
         };
-        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, false)).Should().Be("Passive Security is disabled in System Settings.");
+        FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, false)).Should().Be("Passive Web Security is disabled in System Settings.");
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(false, true)).Should().Contain("Installation policy does not allow");
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true, FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted)).Should().Contain("not registered for passive scanning");
         FrontendReviewEnginePresentation.ServerUnavailableReason(FrontendQualityEngineId.PassiveSecurity, Status(true, true, FrontendQualityEngineUnavailableReasonDto.ProductionBlocked)).Should().Contain("blocked for Production");
@@ -130,7 +130,7 @@ public sealed class ApiSafeFuzzingPresentationTests
     [Fact]
     public void SecurityExpectationFields_SayWhoReadsThem()
     {
-        SecurityExpectationUsage.Consumers(SecurityExpectationField.SecurityHeader).Should().Contain("FQR Static Security").And.Contain("API Quality Review").And.Contain("presence only");
+        SecurityExpectationUsage.Consumers(SecurityExpectationField.SecurityHeader).Should().Contain("FQR HTTP Security").And.Contain("API Quality Review").And.Contain("presence only");
         SecurityExpectationUsage.Consumers(SecurityExpectationField.TenantId).Should().Be(SecurityExpectationUsage.ConfigurationReviewOnly);
         SecurityExpectationUsage.Consumers(SecurityExpectationField.RedirectUrl).Should().Be(SecurityExpectationUsage.ConfigurationReviewOnly);
         SecurityExpectationUsage.Consumers(SecurityExpectationField.ClientId).Should().Be(SecurityExpectationUsage.ConfigurationReviewOnly);

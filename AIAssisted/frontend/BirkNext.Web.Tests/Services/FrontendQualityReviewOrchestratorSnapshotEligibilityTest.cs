@@ -163,7 +163,7 @@ public sealed class FrontendQualityReviewOrchestratorSnapshotEligibilityTest
         var result = await orchestrator.RunAsync("https://example.com", BaseContext(), snapshot);
 
         passive.CallCount.Should().Be(0);
-        result.SkippedEngines.Should().Contain("Passive Security");
+        result.SkippedEngines.Should().Contain("Passive Web Security");
     }
 
     [Fact]

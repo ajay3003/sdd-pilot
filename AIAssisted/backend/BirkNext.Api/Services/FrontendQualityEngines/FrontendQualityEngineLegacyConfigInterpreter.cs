@@ -74,7 +74,7 @@ public sealed class FrontendQualityEngineLegacyConfigInterpreter
 
         var legacyEnabled = hasLegacy && GetLegacyEnabledValue(engineId);
 
-        // Passive Security is a container capability. It never inherits
+        // Passive Web Security is a container capability. It never inherits
         // installation permission from the old per-engine enabled flag.
         // Missing or malformed installation policy must remain unavailable.
         var allowed = engineId == FrontendQualityEngineId.PassiveSecurity

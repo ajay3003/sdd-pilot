@@ -45,7 +45,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         Services.AddScoped<ApplicationRuntimeResetService>();
         Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
         Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
-        // The Frontend Engine Capabilities pane hosts the browser automation diagnostic card.
+        // The Frontend Testing Capabilities pane hosts the browser automation diagnostic card.
         Services.AddSingleton(Moq.Mock.Of<IBrowserAutomationDiagnosticApiService>());
         Services.AddSingleton<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>();
     }
@@ -310,7 +310,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     [InlineData("Feature Visibility", true)]
     [InlineData("Platform", false)]
     [InlineData("Target Environments", false)]
-    [InlineData("Frontend Engine Capabilities", true)]
+    [InlineData("Frontend Testing Capabilities", true)]
     [InlineData("AI", false)]
     [InlineData("Environment Diagnostics", false)]
     [InlineData("System Diagnostics", false)]
@@ -330,7 +330,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 
     [Theory]
     [InlineData("Feature Visibility", 0)]
-    [InlineData("Frontend Engine Capabilities", 4)]
+    [InlineData("Frontend Testing Capabilities", 4)]
     public void ParentEdit_StaysOnPaneAndActivatesExpectedControls(string pane, int fqeToggleCount)
     {
         var cut = Render<SystemSettings>();
@@ -413,8 +413,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     private IRenderedComponent<SystemSettings> EnterFqeEditMode()
     {
         var cut = Render<SystemSettings>();
-        cut.WaitForAssertion(() => FindButton(cut, "Frontend Engine Capabilities").Should().NotBeNull());
-        FindButton(cut, "Frontend Engine Capabilities")!.Click();
+        cut.WaitForAssertion(() => FindButton(cut, "Frontend Testing Capabilities").Should().NotBeNull());
+        FindButton(cut, "Frontend Testing Capabilities")!.Click();
         FindButton(cut, "Edit Settings")!.Click();
         cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]").Should().HaveCount(4);
         return cut;
@@ -530,7 +530,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
             { "engineId": 0, "displayName": "Browser Runtime", "layer1Allowed": true, "layer2Enabled": true, "layer3Readiness": { "engineId": 0, "isAvailable": true, "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": true, "available": true, "reasons": [0] },
             { "engineId": 1, "displayName": "Accessibility", "layer1Allowed": true, "layer2Enabled": false, "layer3Readiness": { "engineId": 1, "isAvailable": false, "statusReason": "disabled", "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": true, "available": false, "reasons": [2] },
             { "engineId": 2, "displayName": "Lighthouse", "layer1Allowed": true, "layer2Enabled": true, "layer3Readiness": { "engineId": 2, "isAvailable": true, "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": false, "available": true, "reasons": [0] },
-            { "engineId": 3, "displayName": "Passive Security", "layer1Allowed": false, "layer2Enabled": false, "layer3Readiness": { "engineId": 3, "isAvailable": false, "statusReason": "disabled", "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": false, "available": false, "reasons": [1,2] }
+            { "engineId": 3, "displayName": "Passive Web Security", "layer1Allowed": false, "layer2Enabled": false, "layer3Readiness": { "engineId": 3, "isAvailable": false, "statusReason": "disabled", "checkedAtUtc": "2026-07-03T12:34:56Z" }, "authModeSupported": false, "available": false, "reasons": [1,2] }
           ]
         }
         """;

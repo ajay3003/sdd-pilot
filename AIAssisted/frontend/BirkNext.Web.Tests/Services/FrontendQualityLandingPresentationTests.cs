@@ -22,7 +22,7 @@ public sealed class FrontendQualityLandingPresentationTests
         profile.Authentication.RequiresAuthentication = requiresAuth;
         profile.Authentication.AuthenticationType = requiresAuth ? FrontendAuthenticationType.MicrosoftEntraId : FrontendAuthenticationType.None;
         profile.Authentication.AuthenticatedTestingMethod = method;
-        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        // These scenarios model a saved profile with Passive Web Security (ZAP) selected; new profiles start with it off.
         profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
@@ -153,7 +153,7 @@ public sealed class FrontendQualityLandingPresentationTests
         var context = Context(requiresAuth: true, method: AuthenticatedTestingMethod.ManagedEdgeCdp);
         var access = FrontendQualityTargetAccess.Build(context, null, false, ManagedEdgeState.TargetTabNotInspectable, null);
         var rows = Capabilities(context, Status(Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)), access: access);
-        // Public-HTTP engines (Static Security, Passive Performance, Passive Security) stay available for a protected app because they
+        // Public-HTTP engines (HTTP Security, HTTP Performance, Passive Web Security) stay available for a protected app because they
         // review the public shell; the DOM engine is blocked by browser protection and Lighthouse has no authenticated mode.
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
@@ -169,7 +169,7 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var requiredBlocked = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context),
             rows.Select(r => r.EngineId == FrontendQualityEngineId.StaticSecurity ? r with { State = FrontendQualityCapabilityState.Unavailable } : r).ToList(), false);
-        requiredBlocked.Message.Should().Be("Automated accessibility coverage is unavailable. Static Security is currently unavailable. Lighthouse is not supported for this target. Required coverage will stay incomplete: Static Security.");
+        requiredBlocked.Message.Should().Be("Automated accessibility coverage is unavailable. HTTP Security is currently unavailable. Lighthouse is not supported for this target. Required coverage will stay incomplete: HTTP Security.");
     }
 
     [Fact]
@@ -230,7 +230,7 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var passive = Row(rows, FrontendQualityEngineId.PassiveSecurity);
         passive.State.Should().Be(FrontendQualityCapabilityState.Unavailable);
-        passive.Summary.Should().Be("The Passive Security engine is not available in this environment.");
+        passive.Summary.Should().Be("The Passive Web Security engine is not available in this environment.");
         passive.TechnicalReason.Should().Be("Container runtime is unavailable.");
     }
 
@@ -369,13 +369,13 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var performance = cards.Single(c => c.Category == FrontendQualityCategory.Performance);
         performance.State.Should().Be(FrontendQualityDimensionState.Limited);
-        performance.Limitation.Should().Be("Passive Performance is included. Lighthouse is unavailable.");
+        performance.Limitation.Should().Be("HTTP Performance is included. Lighthouse is unavailable.");
         // 5, 12, 36. Limited, and the baseline that still runs is named FIRST — the old line led with what was
         // missing, which beside the word "Limited" read as "security cannot be reviewed".
         var security = cards.Single(c => c.Category == FrontendQualityCategory.Security);
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().StartWith("Static Security is included.");
-        security.Limitation.Should().Contain("Passive Security is unavailable");
+        security.Limitation.Should().StartWith("HTTP Security is included.");
+        security.Limitation.Should().Contain("Passive Web Security is unavailable");
         security.Limitation.Should().NotContainAny("cannot be reviewed", "Unavailable.", "Failed");
 
         // 6, 13, 37. Included with a separate manual-assessment requirement, phrased so it is not a fault of automation.
@@ -607,7 +607,7 @@ public sealed class FrontendQualityLandingPresentationTests
             Capabilities(optional, Status(Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity, ready: false, reason: "Container runtime unavailable."))), false);
         optionalReadiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         optionalReadiness.CanRun.Should().BeTrue("optional depth is not a prerequisite");
-        optionalReadiness.Message.Should().StartWith("Passive Security is currently unavailable.");
+        optionalReadiness.Message.Should().StartWith("Passive Web Security is currently unavailable.");
 
         // 6. A missing PREREQUISITE is what blocks, and it keeps the existing blocked semantics.
         var noUrl = Context(url: "");

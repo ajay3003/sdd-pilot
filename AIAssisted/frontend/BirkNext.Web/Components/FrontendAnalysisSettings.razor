@@ -1046,7 +1046,7 @@
                             </div>
                         </div>
                         <div class="fa-threshold-group" data-testid="fa-performance-quality-thresholds">
-                            <div class="fa-threshold-group-title">BirkNext Performance Quality</div>
+                            <div class="fa-threshold-group-title">Browser Performance Quality</div>
                             <p class="fa-threshold-hint fa-threshold-group-hint" data-testid="fa-threshold-owner-performance-quality">Proxy/browser-observed traffic only; not used by API Quality Review.</p>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">API Response Warning</label>
@@ -1130,7 +1130,7 @@
                             <div class="fa-threshold-display-row"><span>Individual Asset</span><strong>@ToMB(perf.MaxIndividualAssetSizeBytes) MB</strong></div>
                         </div>
                         <div class="fa-threshold-card" data-testid="fa-performance-quality-thresholds-display">
-                            <div class="fa-threshold-card-title">BirkNext Performance Quality</div>
+                            <div class="fa-threshold-card-title">Browser Performance Quality</div>
                             <div class="fa-threshold-display-row"><span>API Response Warning / Poor <small class="fa-threshold-hint">proxy/browser-observed</small></span><strong>@perf.ApiResponseWarningMs / @perf.ApiResponsePoorMs ms</strong></div>
                             <div class="fa-threshold-display-row"><span>Page Stabilization Good / Poor</span><strong>@perf.PageStabilizationGoodMs / @perf.PageStabilizationPoorMs ms</strong></div>
                             <div class="fa-threshold-display-row"><span>JavaScript Transfer</span><strong>@ToMB(perf.MaxJsTransferBytes) MB</strong></div>
@@ -1252,6 +1252,9 @@
                         <span class="fa-card-status fa-card-status-muted">Saved per Target Environment</span>
                     </div>
 
+                    <p class="fa-engines-scope" data-testid="engines-intro">@FrontendReviewEnginePresentation.Intro</p>
+                    <p class="fa-engines-summary" role="status" data-testid="engines-summary">@FrontendReviewEnginePresentation.Summary(engineRows)</p>
+
                     @* The scope of this tab is exactly one review page; the other two read none of these. *@
                     <p class="fa-engines-scope" data-testid="engines-scope-note">@FrontendReviewEnginePresentation.ScopeNote</p>
 
@@ -1264,20 +1267,20 @@
 
                     @* Each column has one owner: saved state and coverage policy belong to this target; capability belongs to FQR. *@
                     <dl class="fa-engines-help" data-testid="engines-help">
-                        <div><dt>Saved state</dt><dd id="engines-help-saved" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.SavedStateHelp</dd></div>
-                        <div><dt>Coverage policy</dt><dd id="engines-help-policy" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.CoveragePolicyHelp</dd></div>
-                        <div><dt>Capability</dt><dd id="engines-help-capability" data-testid="engines-capability-help">@FrontendReviewEnginePresentation.CapabilityHelp</dd></div>
+                        <div><dt>Enabled</dt><dd id="engines-help-saved" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.SavedStateHelp</dd></div>
+                        <div><dt>Coverage</dt><dd id="engines-help-policy" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.CoveragePolicyHelp</dd></div>
+                        <div><dt>Availability</dt><dd id="engines-help-capability" data-testid="engines-capability-help">@FrontendReviewEnginePresentation.CapabilityHelp</dd></div>
                     </dl>
 
                     <div class="fa-engines-tablewrap" tabindex="0" role="region" aria-label="Frontend Quality Review engines">
                         <table class="fa-engines-table" data-testid="frontend-review-engines-table">
                             <thead>
                                 <tr>
-                                    <th scope="col">Engine</th>
-                                    <th scope="col" aria-describedby="engines-help-saved">Saved state</th>
-                                    <th scope="col" aria-describedby="engines-help-policy">Coverage policy</th>
-                                    <th scope="col">Prerequisites</th>
-                                    <th scope="col" aria-describedby="engines-help-capability">Capability</th>
+                                    <th scope="col">Review engine</th>
+                                    <th scope="col" aria-describedby="engines-help-saved">Enabled</th>
+                                    <th scope="col" aria-describedby="engines-help-policy">Coverage</th>
+                                    <th scope="col">Requires</th>
+                                    <th scope="col" aria-describedby="engines-help-capability">Availability</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1288,7 +1291,7 @@
                                             <span class="fa-engine-name">@row.DisplayName</span>
                                             <span class="fa-engine-clarification">@row.Clarification</span>
                                         </th>
-                                        <td data-label="Saved state">
+                                        <td data-label="Enabled">
                                             @if (_isEditMode && _editProfile is not null)
                                             {
                                                 <label class="fa-check-row">
@@ -1305,10 +1308,10 @@
                                                 <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
                                             }
                                         </td>
-                                        <td data-label="Coverage policy"><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span>
+                                        <td data-label="Coverage"><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span>
                                             <span class="fa-engine-policy-help" data-testid="engine-policy-help">@FrontendReviewEnginePresentation.PolicyHelp(row.Policy)</span></td>
-                                        <td data-label="Prerequisites"><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
-                                        <td data-label="Capability">
+                                        <td data-label="Requires"><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
+                                        <td data-label="Availability">
                                             @if (FrontendReviewEnginePresentation.ServerUnavailableReason(row.EngineId, _passiveSecurityServerStatus) is { } serverReason)
                                             {
                                                 <span class="fa-engine-capability fa-engine-unavailable" data-testid="engine-server-unavailable">@serverReason</span>
@@ -1327,7 +1330,7 @@
                     @* This tab is what the target wants; FQR says what can run and what ran; system capability details own the tooling. *@
                     <div class="fa-engines-links" data-testid="engines-links">
                         <a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review</a>
-                        <a class="fa-engines-link" href="@FrontendQualityTargetAccess.FrontendEngineCapabilitiesHref" data-testid="engines-open-capabilities">View system capability details</a>
+                        <a class="fa-engines-link" href="@FrontendQualityTargetAccess.FrontendEngineCapabilitiesHref" data-testid="engines-open-capabilities">View Frontend Testing Capabilities</a>
                     </div>
 
                     @if (!_isEditMode)
@@ -1949,7 +1952,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             await LoadPassiveSecurityServerStatusAsync(engineProfile);
     }
 
-    // Passive Security (ZAP) server layers for the engines tab: configuration only (no readiness probe is requested).
+    // Passive Web Security (ZAP) server layers for the engines tab: configuration only (no readiness probe is requested).
     private FrontendQualityEngineStatusDto? _passiveSecurityServerStatus;
     private string? _passiveSecurityStatusProfileId;
 

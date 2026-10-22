@@ -6,7 +6,7 @@ using Microsoft.JSInterop;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Supplies the BirkNext Performance Quality engine with evidence: the Browser Companion status (page/runtime/resource/Blazor metrics from
+/// Supplies the Browser Performance Quality engine with evidence: the Browser Companion status (page/runtime/resource/Blazor metrics from
 /// the user's own managed Edge) and the Local HTTPS proxy status (API/network samples), both already folded into the page-oriented Endpoint
 /// Discovery store per page identity and generation. No Playwright, no CDP, no Lighthouse, no token: the engine only reads recorded evidence.
 /// Evaluation is deterministic (<see cref="PerformanceQualityRules"/>); coverage is reported per layer, so missing evidence is never a pass.
@@ -55,7 +55,7 @@ public sealed class PerformanceQualityEvidenceSource(BrowserCompanionRuntime com
 
         var limitations = new List<string>
         {
-            "BirkNext Performance Quality observes pages the user visited manually in the paired browser; it does not crawl and issues no request to the target.",
+            "Browser Performance Quality observes pages the user visited manually in the paired browser; it does not crawl and issues no request to the target.",
             "Browser metrics are field measurements from the user's browser (PerformanceObserver); they are not Lighthouse lab scores and use different observation windows.",
             "LCP/CLS/Navigation Timing are measured for the initial document load only; SPA navigations report BirkNext Page Stabilization Time instead. Reload the target page for a fresh initial-load measurement.",
             "INP is published only from real Event Timing interactions above the sample minimum; otherwise it is reported as not measured.",

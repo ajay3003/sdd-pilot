@@ -117,7 +117,7 @@ public sealed class FrontendQualityEngineSettingsAcceptanceTests
         var status = new FrontendQualityEngineStatusDto
         {
             EngineId = FrontendQualityEngineIdDto.PassiveSecurity,
-            DisplayName = "Passive Security",
+            DisplayName = "Passive Web Security",
             Layer1Allowed = true,
             Layer2Enabled = true,
             Layer3Readiness = new FrontendQualityEngineReadinessDto
@@ -244,7 +244,7 @@ public sealed class FrontendQualityEngineSettingsAcceptanceTests
         var anonStatus = new FrontendQualityEngineStatusDto
         {
             EngineId = FrontendQualityEngineIdDto.PassiveSecurity,
-            DisplayName = "Passive Security",
+            DisplayName = "Passive Web Security",
             Layer1Allowed = true,
             Layer2Enabled = true,
             Layer3Readiness = new FrontendQualityEngineReadinessDto
@@ -262,7 +262,7 @@ public sealed class FrontendQualityEngineSettingsAcceptanceTests
         var authStatus = new FrontendQualityEngineStatusDto
         {
             EngineId = FrontendQualityEngineIdDto.PassiveSecurity,
-            DisplayName = "Passive Security",
+            DisplayName = "Passive Web Security",
             Layer1Allowed = true,
             Layer2Enabled = true,
             Layer3Readiness = new FrontendQualityEngineReadinessDto
@@ -284,7 +284,7 @@ public sealed class FrontendQualityEngineSettingsAcceptanceTests
         authStatus.Reasons.Should().Contain(FrontendQualityEngineUnavailableReasonDto.AuthenticationModeUnsupported);
 
         // PROOF: product not hidden — it's available, just in anonymous-only mode
-        anonStatus.DisplayName.Should().Be("Passive Security");
+        anonStatus.DisplayName.Should().Be("Passive Web Security");
         anonStatus.EngineId.Should().Be(FrontendQualityEngineIdDto.PassiveSecurity);
     }
 

@@ -190,7 +190,7 @@ public static class RuntimeSecuritySettingsUsage
 {
     public const string ApiDocumentationExposure = "API Quality Review → Runtime security: API documentation exposure";
     public const string Cors = "API Quality Review → Runtime security: CORS (allowed-origin and foreign-origin preflights)";
-    public const string Cookies = "Frontend Quality Review → Static Security: cookie security (frontend document Set-Cookie and Local HTTPS proxy observed cookies)";
+    public const string Cookies = "Frontend Quality Review → HTTP Security: cookie security (frontend document Set-Cookie and Local HTTPS proxy observed cookies)";
     public const string AuthorizationScenarios = "API Quality Review → Authorization checks (trusted non-production targets only)";
     public const string BodyFuzzOperations = "API Quality Review → Safe fuzzing: request-body cases (trusted non-production targets only)";
 }
@@ -742,16 +742,16 @@ public static class SecurityCapabilityMatrix
 {
     public static readonly IReadOnlyList<SecurityCapability> Entries =
     [
-        new("Security headers", "Runnable", "FQR Static Security, AQR"),
+        new("Security headers", "Runnable", "FQR HTTP Security, AQR"),
         new("CORS", "Runnable with bounded configured-origin and synthetic foreign-origin preflights", "AQR"),
-        new("Cookies", "Runnable metadata inspection (no values)", "FQR Static Security, Local HTTPS proxy observation"),
+        new("Cookies", "Runnable metadata inspection (no values)", "FQR HTTP Security, Local HTTPS proxy observation"),
         new("Swagger/OpenAPI exposure", "Runnable", "AQR"),
         new("Authentication enforcement", "Runnable", "AQR"),
         new("Role-based authorization", "Runnable with explicit scenarios and available test identities", "AQR → Authorization scenarios"),
         new("Query/path/header fuzzing", "Runnable", "AQR → Safe fuzzing"),
         new("Body fuzzing", "Runnable only on explicitly opted-in operations of trusted non-production targets", "AQR → Safe fuzzing"),
         new("GraphQL mutation fuzzing", "Not implemented", "—"),
-        new("ZAP", "Optional dependency", "FQR Passive Security"),
+        new("ZAP", "Optional dependency", "FQR Passive Web Security"),
         new("Full penetration test", "Not implemented", "—"),
     ];
 }

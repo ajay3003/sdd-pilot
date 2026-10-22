@@ -124,7 +124,7 @@ public sealed class TargetEnvironmentStateModelTests : BunitContext
             Method = AuthenticatedTestingMethod.LocalHttpsProxy, AuthenticatedApiAvailable = true, ManualVerificationStatus = status,
         };
         var scope = FrontendQualityReviewScopes.Resolve(context, access,
-            [new(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]);
+            [new(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]);
         FrontendQualityReviewScopes.LimitationSentence(scope).Should().BeNull();
     }
 

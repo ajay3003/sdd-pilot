@@ -27,7 +27,7 @@
             <ul>
                 @foreach (var outcome in RequiredNotAssessed)
                 {
-                    <li data-engine-id="@outcome.EngineId"><strong>@outcome.DisplayName:</strong> @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @(outcome.SanitizedFailureReason ?? FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason))</li>
+                    <li data-engine-id="@outcome.EngineId"><strong>@FrontendQualityActiveEngines.DisplayName(outcome.EngineId):</strong> @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @(outcome.SanitizedFailureReason ?? FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason))</li>
                 }
             </ul>
         </div>
@@ -39,7 +39,7 @@
                 @foreach (var outcome in Report.EngineOutcomes.Where(item => _showInactive || !FrontendQualityCoverage.IsInactive(item)).OrderBy(item => item.EngineId))
                 {
                     <tr data-engine-id="@outcome.EngineId" data-engine-state="@FrontendQualityEngineOutcomePresentation.StateClass(outcome)" data-engine-active="@((!FrontendQualityCoverage.IsInactive(outcome)).ToString().ToLowerInvariant())">
-                        <td><strong>@outcome.DisplayName</strong></td>
+                        <td><strong>@FrontendQualityActiveEngines.DisplayName(outcome.EngineId)</strong></td>
                         <td>@outcome.Requirement</td>
                         <td data-testid="fqr-enabled">@(outcome.Enabled ? "Yes" : "No")</td>
                         <td data-testid="fqr-assessment">@FrontendQualityEngineOutcomePresentation.AssessmentLabel(outcome)</td>
@@ -120,7 +120,7 @@
 <section class="fqr-section" aria-label="Engine scope statements">
     <SectionHeader Title="Engine scope statements" />
     <p><strong>Accessibility:</strong> Automated accessibility checks can identify selected rendered-DOM issues. Manual accessibility testing remains required; automated results do not establish WCAG conformance.</p>
-    <p><strong>Passive Security / ZAP:</strong> Passive checks only. No active scan, spider, fuzzing, or penetration-test claim.</p>
+    <p><strong>Passive Web Security / ZAP:</strong> Passive checks only. No active scan, spider, fuzzing, or penetration-test claim.</p>
     <p><strong>Lighthouse:</strong> Synthetic lab performance only. It is not production field data and does not provide field INP.</p>
 </section>
 

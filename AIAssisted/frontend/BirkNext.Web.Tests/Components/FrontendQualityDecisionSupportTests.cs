@@ -105,7 +105,7 @@ public sealed class FrontendQualityLogicalIssuesViewTests : BunitContext
 
         cut.FindAll("[data-logical-id='headers:csp:missing']").Should().ContainSingle();
         cut.FindAll("[data-logical-id='headers:csp:missing'] [data-source-finding-id]").Should().HaveCount(2);
-        cut.Markup.Should().Contain("Static Security").And.Contain("Passive Security / ZAP");
+        cut.Markup.Should().Contain("HTTP Security").And.Contain("Passive Web Security / ZAP");
         System.Text.Json.JsonSerializer.Serialize(report.Findings).Should().Be(before, "grouping never edits the source findings");
     }
 

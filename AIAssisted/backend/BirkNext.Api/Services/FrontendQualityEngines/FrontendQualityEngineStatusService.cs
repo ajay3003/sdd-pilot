@@ -19,7 +19,7 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
         { FrontendQualityEngineId.BrowserRuntime, "Browser Runtime" },
         { FrontendQualityEngineId.Accessibility, "Accessibility" },
         { FrontendQualityEngineId.Lighthouse, "Lighthouse" },
-        { FrontendQualityEngineId.PassiveSecurity, "Passive Security" },
+        { FrontendQualityEngineId.PassiveSecurity, "Passive Web Security" },
     };
 
     public FrontendQualityEngineStatusService(
@@ -102,7 +102,7 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
         if (!authSupported)
             reasons.Add(FrontendQualityEngineUnavailableReason.AuthenticationModeUnsupported);
 
-        // Passive Security only scans a server-registered trusted profile. Without one, every run is skipped, so the engine is not
+        // Passive Web Security only scans a server-registered trusted profile. Without one, every run is skipped, so the engine is not
         // available for this target — whatever the runtime readiness says.
         var targetTrusted = true;
         if (engineId == FrontendQualityEngineId.PassiveSecurity && query.Selection?.Target is { } target && _passiveSecurityAuthorizer is not null)

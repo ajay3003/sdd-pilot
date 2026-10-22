@@ -37,9 +37,18 @@ public static class FrontendReviewEnginePresentation
     public const string ScopeNote =
         "These settings apply to Frontend Quality Review only. API Quality Review and Integration Quality Review use their own review configuration.";
 
+    /// <summary>The page intro: the engines belong to BirkNext's review system; the target only chooses which of them it is eligible for.</summary>
+    public const string Intro =
+        "Review engines are part of BirkNext's review system, not of the target. This tab only decides which engines Frontend Quality Review may use for this Target Environment. It checks no availability, runs nothing and contacts no target.";
+
+    /// <summary>One line: how many engines are enabled, how coverage is split, and where availability is decided.</summary>
+    public static string Summary(IReadOnlyCollection<FrontendReviewEngineRow> rows) =>
+        $"{rows.Count(r => r.Enabled)} enabled · {rows.Count(r => r.Policy == FrontendQualityEngineRequirement.Required)} required · " +
+        $"{rows.Count(r => r.Policy == FrontendQualityEngineRequirement.Optional)} optional · availability checked at review time";
+
     /// <summary>Help for the Saved state column: persisted per-target selection — never availability.</summary>
     public const string SavedStateHelp =
-        "Controls whether the engine is selected for this target. Enabled is saved target configuration, not proof that the engine is available.";
+        "Enabled means eligible for Frontend Quality Review on this target. It does not mean the engine is available, will run, or is required.";
 
     /// <summary>Help for the Coverage policy column. Required is about assessment, never about passing, and never locks the engine on.</summary>
     public const string CoveragePolicyHelp =
@@ -47,16 +56,16 @@ public static class FrontendReviewEnginePresentation
 
     /// <summary>Help for the Capability column: this page owns no capability; it is evaluated by Frontend Quality Review.</summary>
     public const string CapabilityHelp =
-        "Actual availability is checked by Frontend Quality Review at review time. This page runs no capability checks.";
+        "Frontend Quality Review checks availability at review time and is the authority on what runs. This page runs no capability checks.";
 
     /// <summary>The Capability cell of every row: ownership, not a state. Live capability is never computed or cached here.</summary>
-    public const string CapabilityCell = "Checked in FQR";
+    public const string CapabilityCell = "Checked at review time";
 
     /// <summary>What the restore action does: it resets only the Enabled/Disabled selection of this target (never coverage policy).</summary>
-    public const string RestoreLabel = "Restore default engine selection";
+    public const string RestoreLabel = "Restore recommended defaults";
 
     public const string RestoreConfirmation =
-        "This restores the default Enabled/Disabled selection for this Target Environment. Coverage policy, other Target Environments, system capabilities, installed tools and Frontend Quality Review history are not changed.";
+        "This enables all eight engines and restores the recommended coverage (HTTP Security and HTTP Performance required, the rest optional) for this Target Environment only. Other Target Environments, system capabilities, installed tools and Frontend Quality Review history are not changed.";
 
     /// <summary>Short per-row meaning of the coverage policy value.</summary>
     public static string PolicyHelp(FrontendQualityEngineRequirement policy) => policy == FrontendQualityEngineRequirement.Required
@@ -89,7 +98,7 @@ public static class FrontendReviewEnginePresentation
     {
         FrontendQualityEngineId.StaticSecurity => "Anonymous HTTP security review",
         FrontendQualityEngineId.PassivePerformance => "Anonymous HTTP asset and WASM analysis",
-        FrontendQualityEngineId.PassiveSecurity => "OWASP ZAP passive scan",
+        FrontendQualityEngineId.PassiveSecurity => "OWASP ZAP passive scan; enabling it never starts an active scan",
         FrontendQualityEngineId.Accessibility => "axe-core in a Browser DOM",
         FrontendQualityEngineId.Lighthouse => "Google Lighthouse lab run",
         FrontendQualityEngineId.BrowserRuntime => "BirkNext Playwright browser",
@@ -117,14 +126,14 @@ public static class FrontendReviewEnginePresentation
     }
 
     /// <summary>
-    /// Why Passive Security (ZAP) cannot run for this target according to the server's configuration layers (no readiness probe), or null
+    /// Why Passive Web Security (ZAP) cannot run for this target according to the server's configuration layers (no readiness probe), or null
     /// when the server allows it. An unavailable engine is never presented as a usable switch: it can be switched off, not on.
     /// </summary>
     public static string? ServerUnavailableReason(FrontendQualityEngineId id, FrontendQualityEngineStatusDto? status) =>
         id != FrontendQualityEngineId.PassiveSecurity || status is null ? null
         : !status.Layer1Allowed ? "Installation policy does not allow container security engines."
-        : !status.Layer2Enabled ? "Passive Security is disabled in System Settings."
-        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.ProductionBlocked) ? "Passive Security is blocked for Production targets."
+        : !status.Layer2Enabled ? "Passive Web Security is disabled in System Settings."
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.ProductionBlocked) ? "Passive Web Security is blocked for Production targets."
         : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted) ? "This target is not registered for passive scanning by the server."
         : status.Layer3Readiness?.IsAvailable == false ? status.Layer3Readiness.StatusReason ?? "The ZAP runtime is unavailable on the server."
         : null;

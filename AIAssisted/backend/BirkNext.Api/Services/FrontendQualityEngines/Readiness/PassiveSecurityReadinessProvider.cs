@@ -34,7 +34,7 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
             var result = await _service.CheckReadinessAsync(linked.Token);
 
             if (!result.Available)
-                _logger.LogWarning("Passive Security readiness unavailable ({State}): {Diagnostic}", result.State, result.Error);
+                _logger.LogWarning("Passive Web Security readiness unavailable ({State}): {Diagnostic}", result.State, result.Error);
 
             return new(
                 EngineId,
@@ -45,14 +45,14 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("Passive Security readiness check timed out");
-            return new(EngineId, false, "Passive Security readiness check timed out.", DateTime.UtcNow,
+            _logger.LogWarning("Passive Web Security readiness check timed out");
+            return new(EngineId, false, "Passive Web Security readiness check timed out.", DateTime.UtcNow,
                 FrontendQualityEngineReadinessReason.CheckTimedOut);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Passive Security readiness check failed");
-            return new(EngineId, false, "Passive Security readiness check failed.", DateTime.UtcNow,
+            _logger.LogWarning(ex, "Passive Web Security readiness check failed");
+            return new(EngineId, false, "Passive Web Security readiness check failed.", DateTime.UtcNow,
                 FrontendQualityEngineReadinessReason.ProviderError);
         }
     }
@@ -71,10 +71,10 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
     {
         PassiveSecurityReadinessState.Ready => null,
         PassiveSecurityReadinessState.InstallationPolicyBlocked => "Installation policy does not allow container security engines.",
-        PassiveSecurityReadinessState.Disabled => "Passive Security is disabled in System Settings.",
+        PassiveSecurityReadinessState.Disabled => "Passive Web Security is disabled in System Settings.",
         PassiveSecurityReadinessState.ContainerRuntimeUnavailable => "Container runtime is unavailable.",
-        PassiveSecurityReadinessState.ZapImageUnavailable => "Passive Security runtime image is unavailable.",
-        PassiveSecurityReadinessState.ZapLaunchFailed => "Passive Security runtime could not be started.",
-        _ => "Passive Security runtime is unavailable."
+        PassiveSecurityReadinessState.ZapImageUnavailable => "Passive Web Security runtime image is unavailable.",
+        PassiveSecurityReadinessState.ZapLaunchFailed => "Passive Web Security runtime could not be started.",
+        _ => "Passive Web Security runtime is unavailable."
     };
 }

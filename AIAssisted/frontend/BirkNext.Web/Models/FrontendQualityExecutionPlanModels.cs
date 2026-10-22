@@ -24,7 +24,7 @@ public enum FrontendQualityCapabilityKind
     NodeRuntime,
     /// <summary>A Chromium-family browser reachable over the DevTools protocol. Compatibility is the protocol, never the product name.</summary>
     CdpTarget,
-    /// <summary>A container runtime (OWASP ZAP for Passive Security).</summary>
+    /// <summary>A container runtime (OWASP ZAP for Passive Web Security).</summary>
     ContainerRuntime,
     /// <summary>Evidence recorded by the Browser Companion or the Local HTTPS proxy; the consuming engine decides whether it is enough.</summary>
     RecordedBrowserEvidence,

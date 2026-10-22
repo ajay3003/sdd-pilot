@@ -83,7 +83,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         var assessed = report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage) && fetch is null;
         var state = fetch?.State ?? BasicState(enabled, assessed, error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
         var failure = fetch?.Failure ?? error ?? report?.ErrorMessage;
-        return Base(FrontendQualityEngineId.StaticSecurity, "Static Security", enabled,
+        return Base(FrontendQualityEngineId.StaticSecurity, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.StaticSecurity), enabled,
             policy.GetRequirement(FrontendQualityEngineId.StaticSecurity), state,
             report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
             evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
@@ -100,7 +100,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         var assessed = report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage) && fetch is null;
         var state = fetch?.State ?? BasicState(enabled, assessed, error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
         var failure = fetch?.Failure ?? error ?? report?.ErrorMessage;
-        return Base(FrontendQualityEngineId.PassivePerformance, "Passive Performance", enabled,
+        return Base(FrontendQualityEngineId.PassivePerformance, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PassivePerformance), enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassivePerformance), state,
             report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
             evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
@@ -112,7 +112,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
     public sealed record TargetFetchClassification(FrontendQualityEngineExecutionState State, FrontendQualityEngineOutcomeReason Reason, string Failure);
 
     /// <summary>
-    /// Static Security only assessed the target when the SPA document itself was fetched. A report whose HTML asset failed carries
+    /// HTTP Security only assessed the target when the SPA document itself was fetched. A report whose HTML asset failed carries
     /// zero findings because nothing was analysed, not because the target is clean, so it must not count as assessed.
     /// </summary>
     public static TargetFetchClassification? ClassifyStaticSecurityFetch(WasmSecurityReviewReport? report)
@@ -125,7 +125,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         return UnreachableFetch();
     }
 
-    /// <summary>Passive Performance only assessed the target when the index document was fetched successfully.</summary>
+    /// <summary>HTTP Performance only assessed the target when the index document was fetched successfully.</summary>
     public static TargetFetchClassification? ClassifyPassivePerformanceFetch(WasmPerformanceReviewReport? report)
     {
         var index = report?.Assets.FirstOrDefault(a => a.Type == AssetType.Index);
@@ -201,7 +201,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
-        return Base(FrontendQualityEngineId.BrowserRuntime, "Browser Runtime", enabled,
+        return Base(FrontendQualityEngineId.BrowserRuntime, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.BrowserRuntime), enabled,
             policy.GetRequirement(FrontendQualityEngineId.BrowserRuntime), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl, report?.BrowserName, report?.BrowserVersion,
             findings: report?.Findings?.Count, evidence: report?.Findings?.Sum(f => f.Evidence?.Count ?? 0),
@@ -229,7 +229,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 _ when cancelled => FrontendQualityEngineExecutionState.Cancelled,
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
-        return Base(FrontendQualityEngineId.Accessibility, "Accessibility", enabled,
+        return Base(FrontendQualityEngineId.Accessibility, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.Accessibility), enabled,
             policy.GetRequirement(FrontendQualityEngineId.Accessibility), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl, report?.BrowserName, report?.BrowserVersion,
             findings: report?.Findings?.Count, evidence: report?.Findings?.Sum(f => f.Selectors.Count + f.FailureSummaries.Count),
@@ -267,7 +267,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         };
         var failure = state == FrontendQualityEngineExecutionState.Assessed ? null : error ?? report?.CompanionMessage ?? BrowserQualityEvidenceSource.NotConnectedMessage;
         var limitations = report?.Limitations ?? ["Requires the BirkNext Browser Companion paired to this Target Environment."];
-        return Base(FrontendQualityEngineId.BrowserQuality, "Browser Quality", enabled,
+        return Base(FrontendQualityEngineId.BrowserQuality, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.BrowserQuality), enabled,
             policy.GetRequirement(FrontendQualityEngineId.BrowserQuality), state, targetUrl, null, report?.BrowserName, null,
             findings: report?.Findings.Count, evidence: report?.PagesWithEvidence, failure: failure,
             completed: report?.EvaluatedAt.UtcDateTime, limitations: limitations, toolName: "BirkNext Browser Companion",
@@ -277,7 +277,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
     }
 
     /// <summary>
-    /// BirkNext Performance Quality: assessed when at least one page of the environment has browser (Companion) or network (proxy)
+    /// Browser Performance Quality: assessed when at least one page of the environment has browser (Companion) or network (proxy)
     /// performance evidence; the per-layer coverage (Complete / Partial) travels in the limitations, so a partial assessment is never
     /// presented as a complete performance review. No evidence at all is an explicit "not assessed" with its reason, never "no findings".
     /// </summary>
@@ -304,7 +304,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         var limitations = report is null ? ["Requires Browser Companion and/or Local HTTPS proxy evidence recorded for pages of this Target Environment."]
             : new List<string> { $"Assessment coverage: {report.Coverage.OverallLabel} — browser {Cov(report.Coverage.Browser)}, runtime {Cov(report.Coverage.Runtime)}, resources {Cov(report.Coverage.Resources)}, API {Cov(report.Coverage.Api)}, Blazor {Cov(report.Coverage.Blazor)}." }
                 .Concat(report.Coverage.Reasons).Concat(report.Limitations).Distinct().ToList();
-        return Base(FrontendQualityEngineId.PerformanceQuality, "BirkNext Performance Quality", enabled,
+        return Base(FrontendQualityEngineId.PerformanceQuality, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PerformanceQuality), enabled,
             policy.GetRequirement(FrontendQualityEngineId.PerformanceQuality), state, targetUrl, null, report?.BrowserName, null,
             findings: report?.Assessed == true ? report.Findings.Count() : null, evidence: report?.Assessed == true ? report.PagesWithEvidence : null, failure: failure,
             completed: report?.EvaluatedAt.UtcDateTime, limitations: limitations, toolName: PerformanceQualitySources.EngineName,
@@ -335,7 +335,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         var reason = report?.ExecutionStatus == LighthouseExecutionStatusDto.AuthenticationRequired
             ? FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported
             : FrontendQualityEngineOutcomeReason.None;
-        return Base(FrontendQualityEngineId.Lighthouse, "Lighthouse", enabled,
+        return Base(FrontendQualityEngineId.Lighthouse, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.Lighthouse), enabled,
             policy.GetRequirement(FrontendQualityEngineId.Lighthouse), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl, report?.BrowserName, report?.BrowserVersion,
             findings: report?.Audits?.Count, evidence: report?.Metrics?.Count,
@@ -367,7 +367,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 _ => FrontendQualityEngineExecutionState.Unavailable,
             };
         var reason = PassiveSecurityReasonFromSource(sourceReason, report?.ExecutionStatus);
-        return Base(FrontendQualityEngineId.PassiveSecurity, "Passive Security", enabled,
+        return Base(FrontendQualityEngineId.PassiveSecurity, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PassiveSecurity), enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassiveSecurity), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl,
             findings: report?.Findings?.Count, evidence: report?.Findings?.Count(f => !string.IsNullOrWhiteSpace(f.Evidence)),
@@ -612,14 +612,14 @@ public static class FrontendQualityEngineOutcomeNormalizer
 
     private static string DisplayName(FrontendQualityEngineId id) => id switch
     {
-        FrontendQualityEngineId.StaticSecurity => "Static Security",
-        FrontendQualityEngineId.PassivePerformance => "Passive Performance",
+        FrontendQualityEngineId.StaticSecurity => "HTTP Security",
+        FrontendQualityEngineId.PassivePerformance => "HTTP Performance",
         FrontendQualityEngineId.BrowserRuntime => "Browser Runtime",
         FrontendQualityEngineId.Accessibility => "Accessibility",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
-        FrontendQualityEngineId.PassiveSecurity => "Passive Security",
+        FrontendQualityEngineId.PassiveSecurity => "Passive Web Security",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality",
-        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality",
+        FrontendQualityEngineId.PerformanceQuality => "Browser Performance Quality",
         _ => id.ToString(),
     };
 

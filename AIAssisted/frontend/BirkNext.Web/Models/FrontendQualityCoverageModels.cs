@@ -13,7 +13,7 @@ public enum FrontendQualityEngineId
     PassiveSecurity,
     /// <summary>BirkNext Browser Quality: native DOM/accessibility/performance/runtime/Blazor checks from the paired Browser Companion (no CDP, no Playwright).</summary>
     BrowserQuality,
-    /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor WASM performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse.</summary>
+    /// <summary>Browser Performance Quality: native page/runtime/resource/API/Blazor WASM performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse.</summary>
     PerformanceQuality,
 }
 
@@ -74,7 +74,7 @@ public enum FrontendQualityEngineOutcomeReason
     BrowserCompanionNotConnected,
     /// <summary>The Browser Companion is connected but no page of this Target Environment has evidence yet.</summary>
     BrowserCompanionNoEvidence,
-    /// <summary>Neither Browser Companion nor Local HTTPS proxy evidence exists for any page of this Target Environment (BirkNext Performance Quality).</summary>
+    /// <summary>Neither Browser Companion nor Local HTTPS proxy evidence exists for any page of this Target Environment (Browser Performance Quality).</summary>
     PerformanceEvidenceUnavailable,
     /// <summary>The engine has no mode for any surface of the selected review scope (for example Lighthouse in an Authenticated-only review).</summary>
     NotApplicableToScope,
@@ -310,7 +310,7 @@ public static class FrontendQualityEngineCompatibility
         Func<FrontendQualityEngineOutcome, bool> predicate) => outcomes
         .Where(predicate)
         .OrderBy(o => o.EngineId)
-        .Select(o => o.DisplayName)
+        .Select(o => FrontendQualityActiveEngines.DisplayName(o.EngineId))
         .Distinct(StringComparer.Ordinal)
         .ToList();
 }

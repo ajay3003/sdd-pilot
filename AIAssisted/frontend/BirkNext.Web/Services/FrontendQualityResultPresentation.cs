@@ -403,14 +403,10 @@ public static class FrontendQualityResultPresentation
     };
 
     /// <summary>
-    /// The engine's own display name, or a readable rendering of its id when the outcome carries none. "BrowserRuntime"
-    /// is an identifier; a sentence a person reads says "Browser Runtime".
+    /// The engine's current display name, from its persisted id. Stored display names are history and may use an earlier name;
+    /// "BrowserRuntime" is an identifier, a sentence a person reads says "Browser Runtime".
     /// </summary>
-    private static string Name(FrontendQualityEngineOutcome outcome) =>
-        string.IsNullOrWhiteSpace(outcome.DisplayName) ? Spaced(outcome.EngineId.ToString()) : outcome.DisplayName;
-
-    private static string Spaced(string identifier) =>
-        string.Concat(identifier.Select((ch, i) => i > 0 && char.IsUpper(ch) ? " " + ch : ch.ToString()));
+    private static string Name(FrontendQualityEngineOutcome outcome) => FrontendQualityActiveEngines.DisplayName(outcome.EngineId);
 
     private static string Names(IReadOnlyList<FrontendQualityEngineOutcome> outcomes)
     {

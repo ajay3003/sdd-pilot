@@ -171,7 +171,7 @@ public sealed class FrontendQualityResultPresentationTests
         blazor.State.Should().NotBe(FrontendQualityDomainResultState.FailedToRun);
         // 20, 72. The engine that did not contribute is NAMED. "1 evidence source did not contribute to this domain"
         // was true and sent the reader to the engine matrix to work out which one.
-        blazor.Limitation.Should().Be("BrowserRuntime did not contribute to this domain.", "the outcome's own display name is used verbatim");
+        blazor.Limitation.Should().Be("Browser Runtime did not contribute to this domain.", "the current name comes from the persisted engine id, not the stored display name");
         blazor.Limitation.Should().NotContain("1 evidence source");
         blazor.Limitation.Should().NotContainAny("Browser Companion", "pairing", "Browser Quality");
     }

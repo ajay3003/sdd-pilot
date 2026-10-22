@@ -51,7 +51,7 @@ public sealed class FrontendQualityEngineSettingsTests : TestContext
         cut.FindAll(".dev-diag-section").Should().HaveCount(4);
         cut.FindAll(".settings-table").Should().HaveCount(4);
         cut.FindAll(".settings-badge").Should().HaveCountGreaterThanOrEqualTo(16);
-        cut.FindAll("button").Count(button => button.TextContent.Trim() == "Refresh status").Should().Be(1);
+        cut.FindAll("button").Count(button => button.TextContent.Trim() == "Refresh local capabilities").Should().Be(1);
         cut.FindAll(".fqe-effective").Should().BeEmpty();
         cut.FindAll(".fqe-card").Should().BeEmpty();
     }

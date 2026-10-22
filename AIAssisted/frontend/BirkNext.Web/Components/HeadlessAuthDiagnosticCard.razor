@@ -14,7 +14,7 @@
         <div><dt>Browser automation</dt><dd data-testid="had-prerequisite">@(_report?.BrowserAutomation ?? (_proof is null ? "Not checked" : _proof.Available ? "Available" : "Blocked / not demonstrated"))</dd></div>
         <div><dt>Headless authentication</dt><dd class="had-readiness" data-testid="had-readiness">@(_cancelled ? "Cancelled" : _report is null ? "Not tested" : _report.Status == HeadlessRunStatus.Cancelled ? "Cancelled" : Readiness(_report.Readiness))</dd></div>
     </dl>
-    <p>First run <strong>Browser Automation Diagnostic</strong> in System Settings → Frontend Engine Capabilities for this target. Its successful result is required and remains valid for 30 minutes. Browser control and unattended authentication are separate findings.</p>
+    <p>First run <strong>Browser Automation Diagnostic</strong> in System Settings → Frontend Testing Capabilities for this target. Its successful result is required and remains valid for 30 minutes. Browser control and unattended authentication are separate findings.</p>
     @if (!Eligible)
     {
         <p role="status" data-testid="had-guard">Headless authentication diagnostics are limited to explicitly non-production Target Environments with a target URL.</p>

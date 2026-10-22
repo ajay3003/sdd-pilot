@@ -8,7 +8,7 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// BirkNext Performance Quality rules: deterministic fixtures for Web Vitals, INP honesty, initial-load vs SPA phases, long tasks,
+/// Browser Performance Quality rules: deterministic fixtures for Web Vitals, INP honesty, initial-load vs SPA phases, long tasks,
 /// resources (classification, totals, largest/slowest, duplicates vs cache, failures, cache quality), API metrics (latency, counts,
 /// duplicates, statuses, minimum-sample percentiles, polling heuristic, bursts, sequential patterns), Blazor WASM startup, page
 /// stabilization bounds, threshold provenance, coverage (partial / not assessed), comparison, timeline and secret hygiene.

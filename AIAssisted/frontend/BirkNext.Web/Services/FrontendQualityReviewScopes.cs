@@ -12,7 +12,7 @@ namespace BirkNext.Web.Services;
 /// <item>FQR owns its persisted access selection. Legacy profiles and historical reports without an explicit scope retain
 /// their original derivation from RequiresAuthentication; scope selection never edits that authentication setting.</item>
 /// <item>Sign-in not required → every orchestrated engine reviews the public frontend anonymously: Public only.</item>
-/// <item>Sign-in required → Static Security, Passive Performance and Passive Security review the public frontend shell
+/// <item>Sign-in required → HTTP Security, HTTP Performance and Passive Web Security review the public frontend shell
 /// (document and assets); Accessibility and Browser Runtime review the signed-in application through the authenticated
 /// browser session (Managed Edge) when one exists; Lighthouse has no authenticated mode. One run therefore covers public
 /// AND authenticated paths. Explicit dual-scope reviews execute browser engines separately for each supported path.</item>

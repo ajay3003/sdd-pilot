@@ -5,7 +5,7 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// System Settings → Frontend Engine Capabilities is the admin/diagnostic answer to "what can this installation run?".
+/// System Settings → Frontend Testing Capabilities is the admin/diagnostic answer to "what can this installation run?".
 /// Target Environment → Frontend Review Engines answers "what does this profile want?", and Frontend Quality Review
 /// answers "what is available for this review, and what ran?". This surface must never read as a second profile editor.
 /// </summary>
@@ -16,8 +16,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
     private IRenderedComponent<SystemSettings> OpenCapabilities()
     {
         var cut = Render<SystemSettings>();
-        cut.WaitForAssertion(() => FindButton(cut, "Frontend Engine Capabilities").Should().NotBeNull());
-        FindButton(cut, "Frontend Engine Capabilities")!.Click();
+        cut.WaitForAssertion(() => FindButton(cut, "Frontend Testing Capabilities").Should().NotBeNull());
+        FindButton(cut, "Frontend Testing Capabilities")!.Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=fec-intro]").Should().NotBeEmpty());
         return cut;
     }
@@ -29,9 +29,9 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
     {
         var cut = OpenCapabilities();
 
-        FindButton(cut, "Frontend Engine Capabilities").Should().NotBeNull("the navigation item is renamed");
+        FindButton(cut, "Frontend Testing Capabilities").Should().NotBeNull("the navigation item is renamed");
         cut.FindAll(".settings-card-title").Select(t => t.TextContent.Trim())
-            .Should().Contain("Frontend Engine Capabilities");
+            .Should().Contain("Frontend Testing Capabilities");
 
         // The old name must not linger anywhere on the rendered page.
         cut.Markup.Should().NotContain("Frontend Quality Engines");
@@ -45,8 +45,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         var cut = OpenCapabilities();
 
         var intro = cut.Find("[data-testid=fec-intro]").TextContent;
-        intro.Should().Contain("what this BirkNext installation can run");
-        intro.Should().Contain("Installation policy and runtime readiness");
+        intro.Should().Contain("testing capabilities this BirkNext installation provides");
+        intro.Should().Contain("does not say whether a target is ready");
         intro.Should().Contain("configured separately under Frontend Review Engines");
     }
 
@@ -107,7 +107,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
     {
         var cut = OpenCapabilities();
 
-        // The fixture has Passive Security blocked by deployment policy and disabled in System Settings.
+        // The fixture has Passive Web Security blocked by deployment policy and disabled in System Settings.
         var reasons = cut.FindAll(".fqe-reasons");
         reasons.Should().NotBeEmpty("an unavailable engine explains itself here");
         var text = string.Join(" ", reasons.Select(r => r.TextContent));
@@ -127,7 +127,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         // Allowed but not runtime-ready.
         Card("Accessibility").Should().Contain("Allowed").And.Contain("Unavailable");
         // Not allowed by installation policy.
-        Card("Passive Security (ZAP)").Should().Contain("Not allowed").And.Contain("Unavailable");
+        Card("Passive Web Security (ZAP)").Should().Contain("Not allowed").And.Contain("Unavailable");
         // Authenticated-review support is its own axis.
         Card("Lighthouse").Should().Contain("Not supported");
     }
@@ -153,7 +153,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         var cut = OpenCapabilities();
 
         var card = cut.FindAll(".settings-card-full-width")
-            .Single(c => c.QuerySelector(".settings-card-title")?.TextContent.Trim() == "Frontend Engine Capabilities");
+            .Single(c => c.QuerySelector(".settings-card-title")?.TextContent.Trim() == "Frontend Testing Capabilities");
 
         card.TextContent.Should().NotContain("API Quality Review");
         card.TextContent.Should().NotContain("Integration Quality Review");

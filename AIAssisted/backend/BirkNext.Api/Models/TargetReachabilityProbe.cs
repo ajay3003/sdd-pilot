@@ -5,7 +5,7 @@ namespace BirkNext.Api.Models;
 
 /// <summary>
 /// Request for a server-side reachability probe of a configured frontend target. The probe runs from the BirkNext backend
-/// (the same network path the Static Security and Passive Performance engines use), so browser CORS policy and in-browser
+/// (the same network path the HTTP Security and HTTP Performance engines use), so browser CORS policy and in-browser
 /// protection never influence the result. Do NOT send credentials, tokens, cookies or authorization headers here.
 /// </summary>
 public sealed class TargetReachabilityRequest

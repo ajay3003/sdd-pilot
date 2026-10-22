@@ -18,7 +18,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
     private static FrontendAnalysisContext Context(Action<FrontendAnalysisFeatureToggles>? toggles = null)
     {
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = Url };
-        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        // These scenarios model a saved profile with Passive Web Security (ZAP) selected; new profiles start with it off.
         profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
@@ -91,7 +91,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
 
         performance.State.Should().Be(FrontendQualityDimensionState.Limited);
         performance.State.Should().NotBe(FrontendQualityDimensionState.NotIncluded);
-        performance.Limitation.Should().Be("Passive Performance is included. Lighthouse is unavailable.", "the limitation names the contributor that is missing");
+        performance.Limitation.Should().Be("HTTP Performance is included. Lighthouse is unavailable.", "the limitation names the contributor that is missing");
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
 
         Card(cards, FrontendQualityCategory.Performance).State.Should().NotBe(FrontendQualityDimensionState.NotIncluded);
         // The limitation names the contributor that is missing; the technical reason stays in Review capabilities.
-        Card(cards, FrontendQualityCategory.Performance).Limitation.Should().Be("Passive Performance is included. Lighthouse is unavailable.");
+        Card(cards, FrontendQualityCategory.Performance).Limitation.Should().Be("HTTP Performance is included. Lighthouse is unavailable.");
     }
 
     // ── 10–12. Security ────────────────────────────────────────────────────
@@ -125,13 +125,13 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
 
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
         // 5, 36. The baseline that still runs is named first; the missing optional engine follows as the reason the
-        // coverage is reduced. Leading with "Passive Security evidence is unavailable" beside the word Limited read
+        // coverage is reduced. Leading with "Passive Web Security evidence is unavailable" beside the word Limited read
         // as "security cannot be reviewed", which is the opposite of what the state means.
         security.Limitation.Should().Be(
-            "Static Security is included. Passive Security is unavailable.");
+            "HTTP Security is included. Passive Web Security is unavailable.");
         security.Limitation.Should().NotContainAny("cannot be reviewed", "Failed", "not reviewed");
         // The exact engine diagnostic is not duplicated onto the card.
-        security.Limitation.Should().NotContain("Passive Security engine").And.NotContain("Blocked by deployment policy");
+        security.Limitation.Should().NotContain("Passive Web Security engine").And.NotContain("Blocked by deployment policy");
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         // …while the domain card says only what it means for the review.
         FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == FrontendQualityCategory.Security)
             .Limitation.Should().Be(
-                "Static Security is included. Passive Security is unavailable.");
+                "HTTP Security is included. Passive Web Security is unavailable.");
     }
 
     // ── 13–20. Accessibility ───────────────────────────────────────────────
@@ -287,11 +287,11 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         // "Optional browser evidence is unavailable" while four pages of browser evidence existed and Lighthouse was
         // the engine that could not start. The engine is named once, in the limitation; the technical reason and the
         // engine inventory still belong to Review capabilities.
-        foreach (var available in new[] { "Browser Quality", "BirkNext Performance Quality" })
+        foreach (var available in new[] { "Browser Quality", "Browser Performance Quality" })
             section.Should().NotContain(available, "only a contributor that is actually missing is named");
 
         // Still short, and no card lists more than its own missing contributors. Two sentences are allowed where the
-        // first one states what IS reviewed: "Static Security is included." has to come before the limitation,
+        // first one states what IS reviewed: "HTTP Security is included." has to come before the limitation,
         // or a Limited domain reads as an absent one. It is never more than that.
         var limitations = cut.FindAll("[data-testid=fqr-dimension-limitation]").Select(l => l.TextContent.Trim()).ToList();
         limitations.Should().OnlyContain(l => l.Length <= 140, "a card, not a paragraph");

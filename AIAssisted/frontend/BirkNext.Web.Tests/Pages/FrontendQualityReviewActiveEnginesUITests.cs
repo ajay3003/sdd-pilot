@@ -99,7 +99,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         // 6. The blocked state is stated once, by the readiness panel, and the engine list carries the inconsistency.
         page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Contain("No review engines are enabled");
         page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
-        page.Find("[data-testid=fqr-capabilities-required-disabled]").TextContent.Should().Contain("Static Security").And.Contain("Passive Performance");
+        page.Find("[data-testid=fqr-capabilities-required-disabled]").TextContent.Should().Contain("HTTP Security").And.Contain("HTTP Performance");
         RunButton(page).HasAttribute("disabled").Should().BeTrue();
         page.Markup.Should().Contain("No review engines are enabled.");
         status.Verify(s => s.GetStatusAsync(It.IsAny<ReviewAuthenticationModeDto>(), It.IsAny<ReviewEngineSelectionDto>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -175,7 +175,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness-pending]").TextContent.Should().Contain("Checking runtime readiness of 2 active engines"));
         calls.Should().HaveCount(2);
         calls[0].Should().BeEmpty("first call fetches Layer 1–2 only");
-        calls[1].Should().BeEquivalentTo([FrontendQualityEngineIdDto.Accessibility, FrontendQualityEngineIdDto.Lighthouse], "readiness is probed only for active backend engines (Passive Security is opt-in)");
+        calls[1].Should().BeEquivalentTo([FrontendQualityEngineIdDto.Accessibility, FrontendQualityEngineIdDto.Lighthouse], "readiness is probed only for active backend engines (Passive Web Security is opt-in)");
         // 19, 32, 53. The per-engine diagnostic cards survive — under Technical details, not in the engine list.
         page.Find("[data-testid=fqr-technical-disclosure-body]").QuerySelectorAll(".fqr-engine-card")
             .Select(c => c.GetAttribute("data-engine-id")).Should().BeEquivalentTo(["Accessibility", "Lighthouse"]);

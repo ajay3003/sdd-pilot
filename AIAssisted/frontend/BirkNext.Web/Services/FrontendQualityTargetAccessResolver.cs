@@ -162,7 +162,7 @@ public static class FrontendQualityTargetAccess
         if (engine.EngineId == FrontendQualityEngineId.BrowserQuality)
             return Ready(engine, FrontendQualityEngineAccessKind.BrowserCompanion, BrowserCompanionLabel,
                 "Evidence is collected by the BirkNext Browser Companion extension in your normal managed Edge; no CDP, Playwright or token handoff.");
-        // BirkNext Performance Quality reads recorded page evidence from both passive sources; it never contacts the target, so it is
+        // Browser Performance Quality reads recorded page evidence from both passive sources; it never contacts the target, so it is
         // always Ready here and reports its own coverage (browser vs API) as Complete / Partial / Not assessed per evidence category.
         if (engine.EngineId == FrontendQualityEngineId.PerformanceQuality)
             return Ready(engine, FrontendQualityEngineAccessKind.BrowserCompanion, PerformanceQualityLabel,

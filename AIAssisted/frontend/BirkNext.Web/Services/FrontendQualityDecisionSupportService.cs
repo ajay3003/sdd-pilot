@@ -159,14 +159,14 @@ public static class FrontendQualityDecisionSupportService
 
     public static string SourceLabel(FrontendQualityEngineId id) => id switch
     {
-        FrontendQualityEngineId.StaticSecurity => "Static Security",
-        FrontendQualityEngineId.PassivePerformance => "Passive Performance",
+        FrontendQualityEngineId.StaticSecurity => "HTTP Security",
+        FrontendQualityEngineId.PassivePerformance => "HTTP Performance",
         FrontendQualityEngineId.BrowserRuntime => "Browser Runtime",
         FrontendQualityEngineId.Accessibility => "Accessibility / axe-core",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
-        FrontendQualityEngineId.PassiveSecurity => "Passive Security / ZAP",
+        FrontendQualityEngineId.PassiveSecurity => "Passive Web Security / ZAP",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality / Browser Companion",
-        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality / Browser Companion + Local HTTPS Proxy",
+        FrontendQualityEngineId.PerformanceQuality => "Browser Performance Quality / Browser Companion + Local HTTPS Proxy",
         _ => id.ToString(),
     };
 

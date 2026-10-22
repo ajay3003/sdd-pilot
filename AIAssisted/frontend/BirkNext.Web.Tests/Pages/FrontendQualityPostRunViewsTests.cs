@@ -12,7 +12,7 @@ namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
 /// The five post-run views — Summary, Issues, Coverage, Evidence, History — over a Public + authenticated run whose authenticated surface
-/// could not be assessed: Static Security and Passive Performance (Required, Public HTTP) completed on the public surface, Accessibility
+/// could not be assessed: HTTP Security and HTTP Performance (Required, Public HTTP) completed on the public surface, Accessibility
 /// (Optional, Browser DOM) was Not assessed, and the release decision follows only from the exact blockers the report carries.
 /// </summary>
 public sealed class FrontendQualityPostRunViewsTests : BunitContext
@@ -65,7 +65,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
     private const string DomNotAvailable = "Browser DOM unavailable for this run.";
 
-    /// <param name="requiredCompleted">False: Static Security did not complete on the public surface — a genuine coverage blocker.</param>
+    /// <param name="requiredCompleted">False: HTTP Security did not complete on the public surface — a genuine coverage blocker.</param>
     /// <param name="policyBlocksCsp">The Target Environment release policy names the CSP issue as release-blocking.</param>
     /// <param name="accessibilityPlannedToRun">A public DOM was resolved, so Accessibility was planned to run on Public — and then did not complete.</param>
     private static FrontendQualityReviewReport Report(bool requiredCompleted = true, bool policyBlocksCsp = false, DateTime? completedAt = null,
@@ -86,10 +86,10 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
             Scope = FrontendReviewAccessScope.PublicAndAuthenticated,
             Engines =
             [
-                Plan(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, publicHttp,
+                Plan(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, publicHttp,
                     Surface(FrontendQualityReviewSurface.Public, FrontendQualityPlanDecision.Run, publicHttp, true),
                     Surface(FrontendQualityReviewSurface.Authenticated, FrontendQualityPlanDecision.NotAssessed, publicHttp, false, "No authenticated context.")),
-                Plan(FrontendQualityEngineId.PassivePerformance, "Passive Performance", FrontendQualityEngineRequirement.Required, publicHttp,
+                Plan(FrontendQualityEngineId.PassivePerformance, "HTTP Performance", FrontendQualityEngineRequirement.Required, publicHttp,
                     Surface(FrontendQualityReviewSurface.Public, FrontendQualityPlanDecision.Run, publicHttp, true)),
                 Plan(FrontendQualityEngineId.Accessibility, "Accessibility", FrontendQualityEngineRequirement.Optional, "Browser DOM",
                     Surface(FrontendQualityReviewSurface.Public, accessibilityPlannedToRun ? FrontendQualityPlanDecision.Run : FrontendQualityPlanDecision.NotAssessed,
@@ -99,11 +99,11 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         var outcomes = new List<FrontendQualityEngineOutcome>
         {
-            Outcome(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required,
+            Outcome(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required,
                 requiredCompleted ? FrontendQualityEngineExecutionState.Assessed : FrontendQualityEngineExecutionState.Unavailable,
                 new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Public, requiredCompleted ? "Completed" : "Not assessed", requiredCompleted, "Backend HTTP",
                     requiredCompleted ? "" : "Target unreachable over public HTTP.", true)),
-            Outcome(FrontendQualityEngineId.PassivePerformance, "Passive Performance", FrontendQualityEngineRequirement.Required, FrontendQualityEngineExecutionState.Assessed,
+            Outcome(FrontendQualityEngineId.PassivePerformance, "HTTP Performance", FrontendQualityEngineRequirement.Required, FrontendQualityEngineExecutionState.Assessed,
                 new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Public, "Completed", true, "Backend HTTP", "", true)),
             Outcome(FrontendQualityEngineId.Accessibility, "Accessibility", FrontendQualityEngineRequirement.Optional, FrontendQualityEngineExecutionState.Unavailable,
                 new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Public, "Not assessed", false, null, DomNotAvailable, true)),
@@ -112,7 +112,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         var blockers = new List<FrontendQualityReleaseBlocker>();
         if (!requiredCompleted)
-            blockers.Add(new(FrontendQualityBlockerType.Coverage, "Static Security (Public)", "Target unreachable over public HTTP.", "Required engines must complete."));
+            blockers.Add(new(FrontendQualityBlockerType.Coverage, "HTTP Security (Public)", "Target unreachable over public HTTP.", "Required engines must complete."));
         if (policyBlocksCsp)
             blockers.Add(new(FrontendQualityBlockerType.IssuePolicy, csp.CanonicalTitle, "High logical issue matched the release policy.", FrontendQualityDecisionSupportService.IssuePolicyRule));
 
@@ -199,7 +199,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         release.QuerySelector("[data-testid=fqr-release-primary]")!.TextContent.Should().Contain("Required coverage incomplete");
         release.QuerySelectorAll("[data-testid=fqr-blocker-type]").Select(t => t.TextContent.Trim()).Should().Equal("Coverage blocker");
         release.QuerySelector("[data-testid=fqr-blocker]")!.TextContent.Should()
-            .Contain("Static Security (Public)").And.Contain("Target unreachable over public HTTP.").And.Contain("Required engines must complete.");
+            .Contain("HTTP Security (Public)").And.Contain("Target unreachable over public HTTP.").And.Contain("Required engines must complete.");
         page.Find("[data-testid=fqr-completeness-required-meaning]").TextContent.Trim().Should().Be("Blocking");
         // Critical/high issues exist but the policy names none of them: severity is said not to block on its own.
         release.QuerySelector("[data-testid=fqr-release-severity-note]")!.TextContent.Should().Be(FrontendQualityDecisionSupportService.SeverityNotBlocking);
@@ -234,7 +234,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         var page = Result(Report());
         var rows = page.FindAll("[data-testid=fqr-engine-coverage-row]");
 
-        rows.Select(r => r.GetAttribute("data-engine")).Should().Equal("Static Security", "Passive Performance", "Accessibility");
+        rows.Select(r => r.GetAttribute("data-engine")).Should().Equal("HTTP Security", "HTTP Performance", "Accessibility");
         string Cell(IElement row, string label) => row.QuerySelector($"[data-label='{label}']")!.TextContent.Trim();
 
         var staticSecurity = rows[0];
@@ -350,7 +350,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         html.Should().Contain("<strong>Primary blocker:</strong> Required coverage incomplete")
             .And.Contain("<h3>Coverage blocker</h3>")
-            .And.Contain("<strong>Static Security (Public)</strong> — Target unreachable over public HTTP.")
+            .And.Contain("<strong>HTTP Security (Public)</strong> — Target unreachable over public HTTP.")
             .And.Contain("1 of 2 completed — Blocking").And.Contain("0 of 1 completed — Non-blocking")
             .And.Contain("<th>Release impact</th>")
             .And.Contain(FrontendQualityDecisionSupportService.SeverityNotBlocking);
@@ -373,13 +373,13 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         var plan = report.ExecutionPlan!;
         var authOnly = new FrontendQualityReviewReport
         {
-            TargetUrl = Url, EngineOutcomes = [Outcome(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required,
+            TargetUrl = Url, EngineOutcomes = [Outcome(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required,
                 FrontendQualityEngineExecutionState.Unavailable,
                 new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Authenticated, "Not assessed", false, null, "", true))],
             ExecutionPlan = plan with
             {
                 Scope = FrontendReviewAccessScope.AuthenticatedOnly,
-                Engines = [Plan(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, "Public HTTP",
+                Engines = [Plan(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, "Public HTTP",
                     Surface(FrontendQualityReviewSurface.Authenticated, FrontendQualityPlanDecision.NotAssessed, "Authenticated HTTP/API context", true, "No authenticated context."))],
             },
         };
@@ -395,7 +395,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
             TargetUrl = Url, ExecutionPlan = plan,
             EngineOutcomes = [new FrontendQualityEngineOutcome
             {
-                EngineId = FrontendQualityEngineId.StaticSecurity, DisplayName = "Static Security", Enabled = true,
+                EngineId = FrontendQualityEngineId.StaticSecurity, DisplayName = "HTTP Security", Enabled = true,
                 Requirement = FrontendQualityEngineRequirement.Required, ExecutionState = FrontendQualityEngineExecutionState.Unavailable,
                 OutcomeReason = FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
                 Surfaces = [new FrontendQualitySurfaceResult(FrontendQualityReviewSurface.Public, "Not assessed", false, null, "", true)],
@@ -436,7 +436,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         page.Find("[data-testid=fqr-history-opened]").TextContent.Should().Contain("Previous run").And.Contain("not recomputed");
         page.Find("[data-testid=fqr-tab-summary]").GetAttribute("aria-selected").Should().Be("true");
         page.Find("[data-testid=fqr-release-label]").TextContent.Trim().Should().Be("Blocked");
-        page.Find("[data-testid=fqr-blocker]").TextContent.Should().Contain("Static Security (Public)");
+        page.Find("[data-testid=fqr-blocker]").TextContent.Should().Contain("HTTP Security (Public)");
 
         page.Find("[data-testid=fqr-history-return]").Click();
         page.Find("[data-testid=fqr-release-label]").TextContent.Trim().Should().Be("No automated block detected");

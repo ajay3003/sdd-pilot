@@ -104,7 +104,7 @@ public sealed class FrontendQualityAccessOrchestrationTests
 
         var result = await fixture.Orchestrator.RunAsync(Target, fixture.Context, fixture.AuthenticatedSnapshot());
 
-        fixture.Security.Calls.Should().Be(1, "Static Security needs public HTTP to the frontend shell only");
+        fixture.Security.Calls.Should().Be(1, "HTTP Security needs public HTTP to the frontend shell only");
         fixture.Performance.Calls.Should().Be(1);
         fixture.Runtime.Calls.Should().Be(0, "the proxy never provides an authenticated DOM");
         result.PreflightBlocked.Should().BeFalse();

@@ -9,7 +9,7 @@ namespace BirkNext.Web.Tests.Services;
 /// <summary>
 /// The engine execution planner: saved engine configuration + review scope + each engine's own generic prerequisite + resolved capabilities
 /// → one plan per engine (surface, provider, decision, reason, release impact). Pure; no UI. Fixture = the reported Target Environment:
-/// Static Security and Passive Performance Required (Public HTTP), Accessibility and Lighthouse Optional, the rest disabled.
+/// HTTP Security and HTTP Performance Required (Public HTTP), Accessibility and Lighthouse Optional, the rest disabled.
 /// </summary>
 public sealed class FrontendQualityExecutionPlannerTests
 {

@@ -119,11 +119,11 @@ public static class SecurityExpectationUsage
 
     public static string Consumers(SecurityExpectationField field) => field switch
     {
-        SecurityExpectationField.Authority => "FQR Static Security (MSAL authority in deployed configuration) · Configuration Review",
-        SecurityExpectationField.BackendDomain => "FQR Static Security (direct backend exposure) · Configuration Review",
-        SecurityExpectationField.CdnHost => "FQR Static Security (known safe hosts) · Configuration Review",
+        SecurityExpectationField.Authority => "FQR HTTP Security (MSAL authority in deployed configuration) · Configuration Review",
+        SecurityExpectationField.BackendDomain => "FQR HTTP Security (direct backend exposure) · Configuration Review",
+        SecurityExpectationField.CdnHost => "FQR HTTP Security (known safe hosts) · Configuration Review",
         SecurityExpectationField.RestHost or SecurityExpectationField.GraphQlHost => "Local HTTPS proxy scope (which hosts may carry the test credential) · Configuration Review",
-        SecurityExpectationField.SecurityHeader => "FQR Static Security (frontend document) and API Quality Review (transport headers on API responses) — presence only · Configuration Review",
+        SecurityExpectationField.SecurityHeader => "FQR HTTP Security (frontend document) and API Quality Review (transport headers on API responses) — presence only · Configuration Review",
         _ => ConfigurationReviewOnly,
     };
 

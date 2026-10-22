@@ -14,7 +14,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// BirkNext Performance Quality as an FQR engine and as a persisted, page-oriented analysis: outcome semantics (assessed / partial /
+/// Browser Performance Quality as an FQR engine and as a persisted, page-oriented analysis: outcome semantics (assessed / partial /
 /// not assessed / disabled), refresh of exactly one page's generation, persistence round trip without live state, Target Environment
 /// isolation, companion-only and proxy-only modes through the evidence source, export content and secret hygiene, and the UI components.
 /// </summary>
@@ -65,7 +65,7 @@ public sealed class PerformanceQualityEngineTests : BunitContext
         snapshot.Get(FrontendQualityEngineId.PerformanceQuality)!.Should().Match<FrontendQualityEngineActivation>(a => !a.Enabled && a.Policy == FrontendQualityEngineRequirement.Optional);
         new FrontendAnalysisFeatureToggles().EnablePerformanceQualityEngine.Should().BeFalse();
         FrontendQualityActiveEngines.Resolve(Context()).IsActive(FrontendQualityEngineId.PerformanceQuality).Should().BeTrue();
-        FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PerformanceQuality).Should().Be("BirkNext Performance Quality");
+        FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PerformanceQuality).Should().Be("Browser Performance Quality");
         var access = FrontendQualityEngineAccessRegistry.For(FrontendQualityEngineId.PerformanceQuality);
         access.Should().Match<FrontendQualityEngineAccessRequirements>(a => !a.RequiresBrowserRuntime && !a.RequiresBrowserDom && !a.RequiresTargetReachability && !a.RequiresPublicHttp, "no Playwright, CDP or target request");
     }
@@ -88,9 +88,9 @@ public sealed class PerformanceQualityEngineTests : BunitContext
         var outcome = report.EngineOutcomes.Single(o => o.EngineId == FrontendQualityEngineId.PerformanceQuality);
         outcome.ExecutionState.Should().Be(FrontendQualityEngineExecutionState.Assessed);
         outcome.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.None);
-        outcome.ToolName.Should().Be("BirkNext Performance Quality");
+        outcome.ToolName.Should().Be("Browser Performance Quality");
         outcome.Limitations.Should().Contain(l => l.StartsWith("Assessment coverage: Complete assessment"));
-        report.AssessedEngines.Should().Contain("BirkNext Performance Quality");
+        report.AssessedEngines.Should().Contain("Browser Performance Quality");
         report.PerformanceQualityReport.Should().NotBeNull();
         var findings = report.Findings.Where(f => f.EngineId == FrontendQualityEngineId.PerformanceQuality).ToList();
         findings.Should().Contain(f => f.SourceRuleId == "perf-lcp" && f.Category == FrontendQualityCategory.Performance && f.Description.Contains("[Initial load]") && f.Description.Contains("threshold: good ≤ 2.5 s"));
@@ -110,8 +110,8 @@ public sealed class PerformanceQualityEngineTests : BunitContext
         outcome.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.PerformanceEvidenceUnavailable);
         outcome.SanitizedFailureReason.Should().Contain("No performance evidence collected");
         outcome.FindingCount.Should().BeNull("no assessment → no zero-finding claim");
-        result.QualityReport.AssessedEngines.Should().NotContain("BirkNext Performance Quality");
-        result.SkippedEngines.Should().Contain("BirkNext Performance Quality");
+        result.QualityReport.AssessedEngines.Should().NotContain("Browser Performance Quality");
+        result.SkippedEngines.Should().Contain("Browser Performance Quality");
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public sealed class PerformanceQualityEngineTests : BunitContext
 
         var html = new ReportExportService().ExportFrontendQualityReview(report, "BirkNext");
 
-        html.Should().Contain("BirkNext Performance Quality").And.Contain("Initial load").And.Contain("Largest Contentful Paint").And.Contain("Poor")
+        html.Should().Contain("Browser Performance Quality").And.Contain("Initial load").And.Contain("Largest Contentful Paint").And.Contain("Poor")
             .And.Contain("Target Environment").And.Contain("Default").And.Contain("GetChildren").And.Contain("Slow GraphQL operation").And.Contain("Blazor WASM:")
             .And.Contain("Missing evidence:").And.Contain("Browser performance: not assessed").And.Contain("limitation text").And.Contain("Thresholds");
         html.Should().NotContainAny("Bearer", "Authorization", "Cookie", "access_token", "?token=");

@@ -29,10 +29,10 @@ public sealed class FrontendQualityResultCompletenessTests
         Outcome(FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineRequirement.Required),
         Outcome(FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineRequirement.Required),
         Outcome(FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineRequirement.Optional, displayName: "Browser Quality"),
-        Outcome(FrontendQualityEngineId.PerformanceQuality, FrontendQualityEngineRequirement.Optional, displayName: "BirkNext Performance Quality"),
+        Outcome(FrontendQualityEngineId.PerformanceQuality, FrontendQualityEngineRequirement.Optional, displayName: "Browser Performance Quality"),
         Outcome(FrontendQualityEngineId.Accessibility, FrontendQualityEngineRequirement.Optional, FrontendQualityEngineExecutionState.Unavailable, "Accessibility"),
         Outcome(FrontendQualityEngineId.Lighthouse, FrontendQualityEngineRequirement.Optional, FrontendQualityEngineExecutionState.Unavailable, "Lighthouse"),
-        Outcome(FrontendQualityEngineId.PassiveSecurity, FrontendQualityEngineRequirement.Optional, FrontendQualityEngineExecutionState.Unavailable, "Passive Security"),
+        Outcome(FrontendQualityEngineId.PassiveSecurity, FrontendQualityEngineRequirement.Optional, FrontendQualityEngineExecutionState.Unavailable, "Passive Web Security"),
     ];
 
     private static FrontendQualityReviewReport Report(
@@ -181,7 +181,7 @@ public sealed class FrontendQualityResultCompletenessTests
         performance.Limitation.Should().NotContain("1 evidence source");
 
         var security = result.Domain(FrontendQualityCategory.Security);
-        security.Limitation.Should().Contain("Passive Security");
+        security.Limitation.Should().Contain("Passive Web Security");
         security.Limitation.Should().NotContain("evidence source did not contribute", "the source is known, so it is named");
     }
 

@@ -324,8 +324,8 @@ public sealed class FrontendPerformanceThresholds
     [JsonPropertyName("maxApplicationAssemblySizeBytes")] public long                  MaxApplicationAssemblySizeBytes { get; set; } = 3L * 1024 * 1024;
     [JsonPropertyName("maxIndividualAssetSizeBytes")]     public long                  MaxIndividualAssetSizeBytes     { get; set; } = 2L * 1024 * 1024;
 
-    // ── BirkNext Performance Quality (native engine) thresholds. Documented defaults; a Target Environment may override each one. ──
-    /// <summary>Proxy-observed API response time above which a call is "needs improvement" (warning). BirkNext Performance Quality only;
+    // ── Browser Performance Quality (native engine) thresholds. Documented defaults; a Target Environment may override each one. ──
+    /// <summary>Proxy-observed API response time above which a call is "needs improvement" (warning). Browser Performance Quality only;
     /// API Quality Review uses <see cref="MaxSingleRequestLatencyMs"/>, never this pair.</summary>
     [JsonPropertyName("apiResponseWarningMs")]            public int                   ApiResponseWarningMs            { get; set; } = 500;
     /// <summary>Proxy-observed API response time above which a call is "poor".</summary>
@@ -382,14 +382,31 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = true;
     [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = true;
     /// <summary>
-    /// Passive Security (OWASP ZAP) is opt-in: it needs server enablement, a server-registered trusted target and a local container image, none
+    /// Passive Web Security (OWASP ZAP) is opt-in: it needs server enablement, a server-registered trusted target and a local container image, none
     /// of which a default installation has. A new Target Environment therefore starts with it off; saved profiles keep their value.
     /// </summary>
     [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = false;
     /// <summary>BirkNext Browser Quality (Browser Companion): experimental native engine that needs the paired extension, so it is opt-in per Target Environment (like Browser Runtime). Release policy Optional.</summary>
     [JsonPropertyName("enableBrowserQualityEngine")]  public bool EnableBrowserQualityEngine  { get; set; } = false;
-    /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse; opt-in per Target Environment. Release policy Optional.</summary>
+    /// <summary>Browser Performance Quality: native page/runtime/resource/API/Blazor performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse; opt-in per Target Environment. Release policy Optional.</summary>
     [JsonPropertyName("enablePerformanceQualityEngine")] public bool EnablePerformanceQualityEngine { get; set; } = false;
+
+    /// <summary>
+    /// The recommended selection for a NEW Target Environment (create, first-run seed, Restore recommended defaults): every review engine
+    /// enabled. Enabled only makes an engine eligible; Frontend Quality Review still decides at review time whether it is available and runs.
+    /// The property defaults above are deliberately unchanged, so a saved or legacy profile is never switched on by this.
+    /// </summary>
+    public static FrontendAnalysisFeatureToggles Recommended() => new()
+    {
+        EnableSecurityEngine = true,
+        EnablePerformanceEngine = true,
+        EnableBrowserRuntimeEngine = true,
+        EnableAccessibilityEngine = true,
+        EnableLighthouseEngine = true,
+        EnablePassiveSecurityEngine = true,
+        EnableBrowserQualityEngine = true,
+        EnablePerformanceQualityEngine = true,
+    };
 }
 
 /// <summary>Explicit coverage policy; enabled state and tool availability never alter these values.</summary>
@@ -403,6 +420,9 @@ public sealed class FrontendQualityEngineRequirementSettings
     [JsonPropertyName("passiveSecurity")] public FrontendQualityEngineRequirement PassiveSecurity { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("browserQuality")] public FrontendQualityEngineRequirement BrowserQuality { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("performanceQuality")] public FrontendQualityEngineRequirement PerformanceQuality { get; set; } = FrontendQualityEngineRequirement.Optional;
+
+    /// <summary>Recommended coverage policy: only HTTP Security and HTTP Performance are Required; the other six are Optional.</summary>
+    public static FrontendQualityEngineRequirementSettings Recommended() => new();
 
     public FrontendQualityEngineRequirementPolicy ToPolicy() => new(new Dictionary<FrontendQualityEngineId, FrontendQualityEngineRequirement>
     {

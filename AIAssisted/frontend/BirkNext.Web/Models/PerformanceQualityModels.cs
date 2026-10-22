@@ -345,7 +345,9 @@ public static class PerformanceQualitySources
     public const string Proxy = "Local HTTPS Proxy";
     public const string Correlated = "Browser Companion + Local HTTPS Proxy";
     public const string Derived = "BirkNext";
-    public const string EngineName = "BirkNext Performance Quality";
+    public const string EngineName = "Browser Performance Quality";
+    /// <summary>The source name stored by reviews before the engine was renamed; still recognised when grouping history.</summary>
+    public const string LegacyEngineName = "BirkNext Performance Quality";
 }
 
 public static class PerformanceFormat

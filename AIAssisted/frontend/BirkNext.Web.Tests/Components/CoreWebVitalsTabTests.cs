@@ -71,7 +71,7 @@ public sealed class CoreWebVitalsTabTests : BunitContext
     public void TheOwnerAndConfigurationNatureAreStated_AndNothingLooksMeasured()
     {
         var cut = Open();
-        cut.Find("[data-testid=cwv-owner-note]").TextContent.Should().Contain("Frontend Quality Review").And.Contain("BirkNext Performance Quality")
+        cut.Find("[data-testid=cwv-owner-note]").TextContent.Should().Contain("Frontend Quality Review").And.Contain("Browser Performance Quality")
             .And.Contain("Browser Quality").And.Contain("configuration values, not current measurements");
         cut.Find("[data-testid=cwv-browser-quality-note]").TextContent.Should().Contain("Not measured — never zero");
         var tab = cut.Find("[data-testid=cwv-table]").TextContent;

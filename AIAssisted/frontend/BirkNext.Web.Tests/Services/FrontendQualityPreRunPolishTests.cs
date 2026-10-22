@@ -6,9 +6,9 @@ using FluentAssertions;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// Final pre-run copy and the evidence source behind Ready. The reference state: Static Security and Passive Performance
-/// required and available; Accessibility, Browser Quality and BirkNext Performance Quality ready; Lighthouse and
-/// Passive Security unavailable; Browser Runtime disabled.
+/// Final pre-run copy and the evidence source behind Ready. The reference state: HTTP Security and HTTP Performance
+/// required and available; Accessibility, Browser Quality and Browser Performance Quality ready; Lighthouse and
+/// Passive Web Security unavailable; Browser Runtime disabled.
 /// </summary>
 public sealed class FrontendQualityPreRunPolishTests
 {
@@ -86,10 +86,10 @@ public sealed class FrontendQualityPreRunPolishTests
     public void PerformanceNamesBrowserCompanionEvidenceOnlyWhenThoseEnginesAreReady()
     {
         Card(Rows(), FrontendQualityCategory.Performance).Limitation
-            .Should().Be("Passive Performance and Browser Companion evidence are included. Lighthouse is unavailable.");
+            .Should().Be("HTTP Performance and Browser Companion evidence are included. Lighthouse is unavailable.");
         // Not paired, nothing recorded: the engines are merely enabled inputs, so nothing is claimed for them.
         Card(Rows(BrowserCompanionState.NotPaired), FrontendQualityCategory.Performance).Limitation
-            .Should().StartWith("Passive Performance is included.");
+            .Should().StartWith("HTTP Performance is included.");
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class FrontendQualityPreRunPolishTests
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), Rows(), false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         readiness.Title.Should().Be("Review can run with limitations");
-        readiness.Message.Should().Be("Lighthouse and Passive Security are currently unavailable. All required capabilities are available, so the review can run.");
+        readiness.Message.Should().Be("Lighthouse and Passive Web Security are currently unavailable. All required capabilities are available, so the review can run.");
     }
 
     [Fact]
@@ -118,8 +118,8 @@ public sealed class FrontendQualityPreRunPolishTests
     }
 
     [Theory]
-    [InlineData(FrontendQualityCategory.Performance, "Passive Performance and Browser Companion evidence are included. Lighthouse is unavailable.")]
-    [InlineData(FrontendQualityCategory.Security, "Static Security is included. Passive Security is unavailable.")]
+    [InlineData(FrontendQualityCategory.Performance, "HTTP Performance and Browser Companion evidence are included. Lighthouse is unavailable.")]
+    [InlineData(FrontendQualityCategory.Security, "HTTP Security is included. Passive Web Security is unavailable.")]
     public void LimitedDomainsNameWhatRunsThenWhatIsUnavailable(FrontendQualityCategory category, string expected)
     {
         var card = Card(Rows(), category);

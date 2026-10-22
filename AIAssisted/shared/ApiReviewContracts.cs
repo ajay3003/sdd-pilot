@@ -137,7 +137,7 @@ public sealed record ApiReviewEnvironmentSnapshot
 ///
 /// Threshold ownership (Target Environment → Performance Thresholds): per-request response time uses <b>Single Request Latency</b>
 /// (the generic per-request API threshold, also used for FQR's own gateway requests); REST payload uses <b>REST Payload</b>; GraphQL
-/// payload uses <b>GraphQL Payload</b>. "API Response Warning / Poor" belongs to BirkNext Performance Quality (proxy-observed traffic)
+/// payload uses <b>GraphQL Payload</b>. "API Response Warning / Poor" belongs to Browser Performance Quality (proxy-observed traffic)
 /// and is not read here. Sizes: 1 KB = 1024 bytes, as the settings store them.
 /// </summary>
 public sealed record ApiReviewPolicy

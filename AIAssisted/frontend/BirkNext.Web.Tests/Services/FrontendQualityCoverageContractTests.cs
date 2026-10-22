@@ -112,9 +112,9 @@ public sealed class FrontendQualityCoverageContractTests
             ],
         };
 
-        report.AssessedEngines.Should().Equal("Static Security");
+        report.AssessedEngines.Should().Equal("HTTP Security");
         report.FailedEngines.Should().Equal("Lighthouse");
-        report.SkippedEngines.Should().Equal("Accessibility", "Passive Security");
+        report.SkippedEngines.Should().Equal("Accessibility", "Passive Web Security");
         report.Completeness.Should().Be(AssessmentCompleteness.Partial);
         report.EngineOutcomes.Single(o => o.EngineId == FrontendQualityEngineId.Accessibility)
             .ExecutionState.Should().Be(FrontendQualityEngineExecutionState.Unavailable);
@@ -190,10 +190,10 @@ public sealed class FrontendQualityCoverageContractTests
             EngineId = id,
             DisplayName = id switch
             {
-                FrontendQualityEngineId.StaticSecurity => "Static Security",
-                FrontendQualityEngineId.PassivePerformance => "Passive Performance",
+                FrontendQualityEngineId.StaticSecurity => "HTTP Security",
+                FrontendQualityEngineId.PassivePerformance => "HTTP Performance",
                 FrontendQualityEngineId.BrowserRuntime => "Browser Runtime",
-                FrontendQualityEngineId.PassiveSecurity => "Passive Security",
+                FrontendQualityEngineId.PassiveSecurity => "Passive Web Security",
                 _ => id.ToString(),
             },
             Enabled = state != FrontendQualityEngineExecutionState.Disabled,

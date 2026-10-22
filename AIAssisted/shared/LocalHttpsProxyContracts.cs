@@ -409,7 +409,7 @@ public sealed record ObservedNetworkEndpoint
     /// <summary>Path of the correlating page (query stripped). Null when it cannot be safely correlated → Shared / background traffic.</summary>
     public string? PagePath { get; init; }
 
-    // ── Performance metadata (BirkNext Performance Quality). Timing/status/size only — never a header value, body or query. ──
+    // ── Performance metadata (Browser Performance Quality). Timing/status/size only — never a header value, body or query. ──
     /// <summary>Proxy-observed duration of the most recent exchange: request head received → last response byte relayed.</summary>
     public double? LastDurationMs { get; init; }
     public double? MinDurationMs { get; init; }

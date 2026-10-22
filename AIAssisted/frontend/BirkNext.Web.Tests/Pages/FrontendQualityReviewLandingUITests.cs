@@ -29,7 +29,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         profile.Authentication.RequiresAuthentication = requiresAuth;
         profile.Authentication.AuthenticationType = requiresAuth ? FrontendAuthenticationType.MicrosoftEntraId : FrontendAuthenticationType.None;
         profile.Authentication.AuthenticatedTestingMethod = method;
-        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        // These scenarios model a saved profile with Passive Web Security (ZAP) selected; new profiles start with it off.
         profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
@@ -426,11 +426,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         // The domain reports the impact in evidence words; the engine name stays in Review capabilities above.
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited");
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Passive Performance is included. Lighthouse is unavailable.");
+            .Should().Be("HTTP Performance is included. Lighthouse is unavailable.");
         // The domain card names what is missing. It still carries no engine inventory: engines that are available
         // are never listed there.
-        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().Contain("Passive Performance is included. Lighthouse is unavailable.")
-            .And.NotContain("Static Security").And.NotContain("Browser Quality");
+        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().Contain("HTTP Performance is included. Lighthouse is unavailable.")
+            .And.NotContain("HTTP Security").And.NotContain("Browser Quality");
     }
 
     // 10. Passive security deployment limitation is presented correctly (technical reason collapsed).
@@ -448,7 +448,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => Capability(page, FrontendQualityEngineId.PassiveSecurity).QuerySelector("[data-testid=fqr-capability-state]")!.TextContent.Should().Be("Unavailable"));
         var row = Capability(page, FrontendQualityEngineId.PassiveSecurity);
-        row.QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Be("The Passive Security engine is not available in this environment.");
+        row.QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Be("The Passive Web Security engine is not available in this environment.");
         var toggle = row.QuerySelector("[data-testid='fqr-capability-technical-PassiveSecurity-toggle']")!;
         toggle.GetAttribute("aria-expanded").Should().Be("false");
         toggle.TextContent.Should().Contain("Technical reason");

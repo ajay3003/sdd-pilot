@@ -9,7 +9,7 @@
    disclosure, each one labelled with what it actually measures.
 
    A score is also a claim about a target the engine looked at. The values survive on the report from an earlier
-   computation, so a blocked engine still carried one: Static Security showed a number beside its own "not assessed".
+   computation, so a blocked engine still carried one: HTTP Security showed a number beside its own "not assessed".
    An engine that never ran reports "Not assessed" rather than a stale number or a zero. *@
 <div class="fqr-engine-scores" data-testid="fqr-engine-score-list">
     <p class="fqr-section-note" data-testid="fqr-engine-scores-note">
@@ -42,10 +42,10 @@
             "Static and passive legacy scope only; not every enabled engine contributes to it"),
         new("security", "Static security score",
             Score(Report.SecurityScore, FrontendQualityEngineId.StaticSecurity),
-            "Static Security source"),
+            "HTTP Security source"),
         new("performance", "Passive performance score",
             Score(Report.PerformanceScore, FrontendQualityEngineId.PassivePerformance),
-            "Passive Performance source"),
+            "HTTP Performance source"),
         new("lighthouse", "Lighthouse performance score",
             Score(Report.LighthouseReport?.PerformanceScore, FrontendQualityEngineId.Lighthouse),
             "Synthetic lab measurement; not production field data"),

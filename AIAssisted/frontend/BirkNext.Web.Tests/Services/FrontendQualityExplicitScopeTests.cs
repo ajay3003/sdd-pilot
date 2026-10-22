@@ -25,7 +25,7 @@ public sealed class FrontendQualityExplicitScopeTests
             ManualVerificationStatus = ManualAuthenticationVerificationStatus.Required
         };
         var scope = FrontendQualityReviewScopes.Resolve(context, access,
-            [new(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]);
+            [new(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]);
         FrontendQualityReviewScopes.AuthenticatedAccessLabel(scope).Should().Be(label);
         FrontendQualityReviewScopes.ScopeSummary(scope).Should().Be(FrontendQualityReviewScopes.Label(selected));
         FrontendQualityReviewScopes.VerificationLabel(access).Should().Be("Not recorded");

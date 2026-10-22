@@ -60,7 +60,7 @@ public sealed class PageAnalysis
     [JsonPropertyName("browserEvidence")] public BrowserPageEvidence? BrowserEvidence { get; set; }
 
     /// <summary>
-    /// Compact, threshold-independent performance numbers per analysis generation (BirkNext Performance Quality regression history):
+    /// Compact, threshold-independent performance numbers per analysis generation (Browser Performance Quality regression history):
     /// the current generation's entry is replaced as evidence arrives; older generations stay for Current vs Previous comparison.
     /// Bounded; raw metrics only, never a URL, header, body or credential.
     /// </summary>

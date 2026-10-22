@@ -647,12 +647,79 @@ else if (_settings is not null)
             {
                 @* Admin/diagnostic surface: what this INSTALLATION can run. Per-Target-Environment activation is a
                    different concern and is configured under Frontend Review Engines, never here. *@
-                <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Frontend Engine Capabilities</div>
-                    <p class="settings-card-note" data-testid="fec-intro">
-                        Shows what this BirkNext installation can run. Installation policy and runtime readiness determine whether an engine
-                        is actually available. Per-Target-Environment engine activation is configured separately under Frontend Review Engines.
-                    </p>
+                var ftc = BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Build(_fqeStatusLoading ? null : _fqeStatusReport);
+                <div class="settings-card settings-card-full-width" data-testid="ftc">
+                    <div class="settings-card-title">@BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Title</div>
+                    <p class="settings-card-note" data-testid="fec-intro">@BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Intro</p>
+
+                    <div class="ftc-toolbar">
+                        <p class="ftc-summary" role="status" data-testid="ftc-summary">
+                            @(_fqeStatusLoading ? "Checking local capabilities…" : BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Summary(ftc))
+                        </p>
+                        @* Local status only: no remote target is contacted and no review is started. *@
+                        <SecondaryButton OnClick="HandleFqeRefresh" Disabled="@_fqeStatusLoading" data-testid="ftc-refresh">Refresh local capabilities</SecondaryButton>
+                    </div>
+
+                    @if (!_fqeStatusLoading && BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.NeedsSetup(ftc) is { Count: > 0 } setup)
+                    {
+                        <section class="ftc-setup" aria-labelledby="ftc-setup-heading" data-testid="ftc-needs-setup">
+                            <h3 id="ftc-setup-heading" class="ftc-heading">What needs setup</h3>
+                            <ul>
+                                @foreach (var item in setup)
+                                {
+                                    <li><strong>@item.Name</strong> · @BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.StateLabel(item.State) · @item.Reason@(item.NextAction is { Length: > 0 } next ? $" Next: {next}." : "")</li>
+                                }
+                            </ul>
+                        </section>
+                    }
+
+                    @foreach (var group in BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Groups)
+                    {
+                        var items = ftc.Where(c => c.Group == group).ToList();
+                        if (items.Count == 0) continue;
+                        <section class="ftc-group" aria-label="@group" data-testid="ftc-group" data-group="@group">
+                            <h3 class="ftc-heading">@group</h3>
+                            @foreach (var item in items)
+                            {
+                                <article class="ftc-item ftc-tone-@BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Tone(item.State)" data-testid="ftc-capability" data-capability="@item.Id">
+                                    <div class="ftc-item-head">
+                                        <h4 class="ftc-item-name">@item.Name</h4>
+                                        <span class="ftc-state" data-testid="ftc-state">@BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.StateLabel(item.State)</span>
+                                    </div>
+                                    <p class="ftc-item-text">@item.Description</p>
+                                    <dl class="ftc-facts">
+                                        <div><dt>Used by</dt><dd data-testid="ftc-used-by">@string.Join(", ", item.UsedBy)</dd></div>
+                                        <div><dt>Why</dt><dd data-testid="ftc-reason">@item.Reason</dd></div>
+                                    </dl>
+                                    @if (item.NextAction is { Length: > 0 } next)
+                                    {
+                                        @if (BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.ActionHref(item) is { } href)
+                                        {
+                                            <a class="ftc-action" href="@href" data-testid="ftc-action">@next</a>
+                                        }
+                                        else
+                                        {
+                                            <p class="ftc-action" data-testid="ftc-action">Next: @next</p>
+                                        }
+                                    }
+                                </article>
+                            }
+                        </section>
+                    }
+
+                    <details class="ftc-reading" data-testid="ftc-how-to-read">
+                        <summary>How to read this page</summary>
+                        <dl class="settings-layers">
+                            @foreach (var (term, meaning) in BirkNext.Web.Services.FrontendTestingCapabilitiesPresentation.Reading)
+                            {
+                                <div><dt>@term</dt><dd>@meaning</dd></div>
+                            }
+                        </dl>
+                    </details>
+
+                    @* Providers, engine ids and the per-layer matrix are diagnostics. Open while editing, because the installation switches live here. *@
+                    <details class="ftc-technical" data-testid="ftc-technical" open="@_isEditMode">
+                    <summary>Technical details</summary>
                     <dl class="settings-layers" data-testid="fec-layers">
                         <div><dt>Installation policy</dt><dd>Whether this deployment permits the engine at all.</dd></div>
                         <div><dt>Deployment setting</dt><dd>Whether the engine is switched on for this installation. Editable here.</dd></div>
@@ -667,6 +734,7 @@ else if (_settings is not null)
                     @if (_editableSettings?.FrontendQualityEngines is not null)
                     {
                         <FrontendQualityEngineSettings
+                            ShowRefresh="false"
                             IsEditMode="@_isEditMode"
                             EditedPreferences="@_editFqe"
                             AnonymousStatus="@_fqeStatusReport"
@@ -680,6 +748,7 @@ else if (_settings is not null)
                     {
                         <p class="settings-card-note">Frontend engine capability information is not available.</p>
                     }
+                    </details>
                 </div>
 
                 @* An engine/runtime diagnostic, so it belongs with the engine capabilities rather than on a review
@@ -3228,7 +3297,7 @@ else if (_settings is not null)
     private static readonly HashSet<string> RemovedRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
         "/qa-auditor", "/constitution-compliance", "/standards-compliance",
-        // The standalone WASM Security Review page was retired; its scanner runs as Frontend Quality Review → Static Security.
+        // The standalone WASM Security Review page was retired; its scanner runs as Frontend Quality Review → HTTP Security.
         "/wasm-security-review",
         "/qa-readiness", "/delivery-readiness",
         "qa-auditor", "constitution-compliance", "standards-compliance",

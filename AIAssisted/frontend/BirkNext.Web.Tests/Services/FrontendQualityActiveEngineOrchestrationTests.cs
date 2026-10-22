@@ -83,7 +83,7 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
         coverage.RequiredAssessed.Should().Be(2);
         coverage.RequiredTotal.Should().Be(2);
         coverage.OptionalTotal.Should().Be(0);
-        coverage.InactiveCount.Should().Be(6, "four disabled backend engines plus the opt-in Browser Quality and BirkNext Performance Quality engines");
+        coverage.InactiveCount.Should().Be(6, "four disabled backend engines plus the opt-in Browser Quality and Browser Performance Quality engines");
         result.QualityReport.ReleaseDisposition.Should().Be(FrontendQualityReleaseDisposition.NoAutomatedBlockDetected);
         result.QualityReport.ActiveEngines.Should().BeSameAs(result.ActiveEngines);
         foreach (var id in new[] { FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.PassiveSecurity })
@@ -202,7 +202,7 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
         coverage.RequiredTotal.Should().Be(1);
         coverage.RequiredAssessed.Should().Be(1);
         result.QualityReport.ReleaseDisposition.Should().Be(FrontendQualityReleaseDisposition.Blocked);
-        result.QualityReport.ReleaseBlockers.Should().ContainSingle(b => b.Type == FrontendQualityBlockerType.Configuration && b.Entity == "Passive Performance");
+        result.QualityReport.ReleaseBlockers.Should().ContainSingle(b => b.Type == FrontendQualityBlockerType.Configuration && b.Entity == "HTTP Performance");
         result.ActiveEngines!.RequiredButDisabled.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.PassivePerformance);
     }
 

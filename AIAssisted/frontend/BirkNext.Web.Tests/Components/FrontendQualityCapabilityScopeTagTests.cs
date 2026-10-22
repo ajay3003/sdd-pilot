@@ -23,7 +23,7 @@ public sealed class FrontendQualityCapabilityScopeTagTests : BunitContext
             FrontendQualityAccessPathState.Available, FrontendQualityAccessPathState.Unavailable, "", false,
             FrontendReviewAccessScope.PublicOnly,
             [
-                new(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineAccessPath.Public, true),
+                new(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineAccessPath.Public, true),
                 new(FrontendQualityEngineId.Accessibility, "Accessibility", FrontendQualityEngineAccessPath.Authenticated, false),
                 new(FrontendQualityEngineId.BrowserQuality, "Browser Quality", FrontendQualityEngineAccessPath.CompanionEvidence, true),
             ]);
@@ -40,7 +40,7 @@ public sealed class FrontendQualityCapabilityScopeTagTests : BunitContext
     public void WithoutAScopeNoTagIsInvented()
     {
         var cut = Render<FrontendQualityCapabilityList>(p => p.Add(c => c.Rows,
-            [new FrontendQualityCapabilityRow(FrontendQualityEngineId.StaticSecurity, "Static Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]));
+            [new FrontendQualityCapabilityRow(FrontendQualityEngineId.StaticSecurity, "HTTP Security", FrontendQualityEngineRequirement.Required, FrontendQualityCapabilityState.Enabled, null, null)]));
         cut.FindAll("[data-testid=fqr-capability-scope]").Should().BeEmpty();
     }
 }

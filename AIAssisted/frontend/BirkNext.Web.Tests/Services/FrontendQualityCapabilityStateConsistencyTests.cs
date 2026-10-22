@@ -23,14 +23,14 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
     /// <summary>The engine set from the live M2LB DEV state: two required available, and the optional spread.</summary>
     private static List<FrontendQualityCapabilityRow> LiveEngines() =>
     [
-        Row(FrontendQualityEngineId.StaticSecurity, FrontendQualityCapabilityState.Enabled, FrontendQualityEngineRequirement.Required, "Static Security"),
-        Row(FrontendQualityEngineId.PassivePerformance, FrontendQualityCapabilityState.Enabled, FrontendQualityEngineRequirement.Required, "Passive Performance"),
+        Row(FrontendQualityEngineId.StaticSecurity, FrontendQualityCapabilityState.Enabled, FrontendQualityEngineRequirement.Required, "HTTP Security"),
+        Row(FrontendQualityEngineId.PassivePerformance, FrontendQualityCapabilityState.Enabled, FrontendQualityEngineRequirement.Required, "HTTP Performance"),
         Row(FrontendQualityEngineId.BrowserRuntime, FrontendQualityCapabilityState.Disabled, name: "Browser Runtime"),
         Row(FrontendQualityEngineId.Accessibility, FrontendQualityCapabilityState.Ready, name: "Accessibility"),
         Row(FrontendQualityEngineId.Lighthouse, FrontendQualityCapabilityState.Unavailable, name: "Lighthouse"),
-        Row(FrontendQualityEngineId.PassiveSecurity, FrontendQualityCapabilityState.Unavailable, name: "Passive Security"),
+        Row(FrontendQualityEngineId.PassiveSecurity, FrontendQualityCapabilityState.Unavailable, name: "Passive Web Security"),
         Row(FrontendQualityEngineId.BrowserQuality, FrontendQualityCapabilityState.Ready, name: "Browser Quality"),
-        Row(FrontendQualityEngineId.PerformanceQuality, FrontendQualityCapabilityState.Ready, name: "BirkNext Performance Quality"),
+        Row(FrontendQualityEngineId.PerformanceQuality, FrontendQualityCapabilityState.Ready, name: "Browser Performance Quality"),
     ];
 
     // ── §48. Disabled is not unavailable ────────────────────────────────────
@@ -83,7 +83,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         rows.Should().HaveCount(8);
         rows.Count(r => r.Enabled).Should().Be(7);
         rows.Count(r => r.IsAvailable).Should().Be(5, "two required plus Accessibility, Browser Quality and Performance Quality");
-        rows.Count(r => r.IsActive && !r.IsAvailable).Should().Be(2, "Lighthouse and Passive Security");
+        rows.Count(r => r.IsActive && !r.IsAvailable).Should().Be(2, "Lighthouse and Passive Web Security");
         rows.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State)).Should().Be(1, "Browser Runtime");
 
         // The collapsed row, the expanded headline and the active-engine summary all read from this one model.
@@ -109,7 +109,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
 
         // Enabled + unavailable is the only thing that counts as unavailable.
         var unavailable = rows.Count(r => r.IsActive && !r.IsAvailable);
-        unavailable.Should().Be(2, "Lighthouse and Passive Security — not Browser Runtime");
+        unavailable.Should().Be(2, "Lighthouse and Passive Web Security — not Browser Runtime");
         (summary.EnabledCount - summary.AvailableNowCount).Should().Be(unavailable);
 
         summary.Collapsed.Should().NotContain("2 unavailable");
@@ -124,7 +124,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         var unavailable = rows.Where(r => r.IsActive && !r.IsAvailable).ToList();
 
         unavailable.Should().HaveCount(2);
-        unavailable.Select(r => r.DisplayName).Should().BeEquivalentTo(["Lighthouse", "Passive Security"]);
+        unavailable.Select(r => r.DisplayName).Should().BeEquivalentTo(["Lighthouse", "Passive Web Security"]);
         unavailable.Should().NotContain(r => r.DisplayName == "Browser Runtime", "it is disabled, not unavailable");
     }
 
@@ -164,7 +164,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
             .Single(d => d.Category == FrontendQualityCategory.Security);
 
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().Contain("Passive Security");
+        security.Limitation.Should().Contain("Passive Web Security");
     }
 
     // 20, 21, 22.

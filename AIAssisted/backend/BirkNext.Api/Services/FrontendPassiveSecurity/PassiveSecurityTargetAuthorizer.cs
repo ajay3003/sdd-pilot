@@ -17,10 +17,10 @@ public sealed class PassiveSecurityTargetAuthorizer(BrowserTargetValidator valid
             return new(false, "Target-environment profile is not registered by the server", "Untrusted");
         if (!AllowedEnvironmentTypes.Contains(environmentType))
             return new(false, environmentType.Equals("Production", StringComparison.OrdinalIgnoreCase)
-                ? "Passive Security is blocked for Production targets."
-                : "Passive Security requires a server-registered non-production environment type.", "Untrusted");
+                ? "Passive Web Security is blocked for Production targets."
+                : "Passive Web Security requires a server-registered non-production environment type.", "Untrusted");
         if (!HasSafeTargetShape(configured) || !Uri.TryCreate(request.TargetUrl, UriKind.Absolute, out var target) || !HasSafeTargetShape(target))
-            return new(false, "Passive Security target must be an absolute HTTP(S) URL without credentials or fragment.", "Untrusted");
+            return new(false, "Passive Web Security target must be an absolute HTTP(S) URL without credentials or fragment.", "Untrusted");
         if (!string.Equals(target.Host, configured.Host, StringComparison.OrdinalIgnoreCase) || target.Port != configured.Port || target.Scheme != configured.Scheme)
             return new(false, "Target URL does not belong to the configured trusted profile origin", "Untrusted");
         var validation = validator.ValidateTarget(request.TargetUrl, environmentType);

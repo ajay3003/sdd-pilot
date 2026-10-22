@@ -107,7 +107,7 @@ public enum SecurityHeaderOutcome
 public sealed record SecurityHeaderEvaluation(string Header, bool Expected, bool Present, string? ObservedValue, SecurityHeaderOutcome Result, SecurityHeaderScope Scope, string Note);
 
 /// <summary>
-/// One evaluator for the Target Environment's <c>ExpectedSecurityHeaders</c>, shared by FQR Static Security and API Quality Review so
+/// One evaluator for the Target Environment's <c>ExpectedSecurityHeaders</c>, shared by FQR HTTP Security and API Quality Review so
 /// both read the same policy. Presence only: the expectation model stores header names, not values, so no value policy is invented.
 /// When a review carries no expectation list (older clients), the engine's own historical defaults apply — reported as such.
 /// </summary>
@@ -155,7 +155,7 @@ public static class SecurityHeaderExpectations
             else if (!isExpected)
                 result.Add(Row(present ? SecurityHeaderOutcome.Observed : SecurityHeaderOutcome.NotAssessed, present ? "Observed; not required by the Target Environment." : "Not required by the Target Environment."));
             else if (apiResponse && scope == SecurityHeaderScope.Document)
-                result.Add(Row(SecurityHeaderOutcome.NotApplicable, present ? "Observed. Document-level header: required for the frontend document (FQR Static Security), not assessed on API responses." : "Document-level header: required for the frontend document (FQR Static Security), not assessed on API responses."));
+                result.Add(Row(SecurityHeaderOutcome.NotApplicable, present ? "Observed. Document-level header: required for the frontend document (FQR HTTP Security), not assessed on API responses." : "Document-level header: required for the frontend document (FQR HTTP Security), not assessed on API responses."));
             else
                 result.Add(Row(present ? SecurityHeaderOutcome.Pass : SecurityHeaderOutcome.Missing, present ? "Present as expected (presence only; no value policy is stored)." : "Required by the Target Environment and absent."));
         }

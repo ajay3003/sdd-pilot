@@ -28,7 +28,7 @@ public sealed class ReviewEngineSelectionDto
     [JsonPropertyName("readinessEngines")]
     public List<FrontendQualityEngineIdDto>? ReadinessEngines { get; set; }
 
-    /// <summary>The Target Environment of the review. Passive Security is unavailable for a target the server has not registered as trusted.</summary>
+    /// <summary>The Target Environment of the review. Passive Web Security is unavailable for a target the server has not registered as trusted.</summary>
     [JsonPropertyName("target")]
     public ReviewEngineTargetDto? Target { get; set; }
 }
@@ -61,7 +61,7 @@ public enum FrontendQualityEngineUnavailableReasonDto
     AuthenticationModeUnsupported = 6,
     /// <summary>The engine is not active for this review (disabled or deselected in the saved configuration); readiness was not probed.</summary>
     NotActiveForReview = 7,
-    /// <summary>Passive Security: the target is not a server-registered trusted profile, so every scan would be skipped.</summary>
+    /// <summary>Passive Web Security: the target is not a server-registered trusted profile, so every scan would be skipped.</summary>
     TargetNotTrusted = 8,
     ProductionBlocked = 9,
 }

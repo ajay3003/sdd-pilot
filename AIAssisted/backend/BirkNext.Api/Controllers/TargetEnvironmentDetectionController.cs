@@ -68,8 +68,8 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
     }
 
     /// <summary>
-    /// Server-side reachability probe for review preflight. Runs on the backend network path (the same one the Static Security
-    /// and Passive Performance engines use) so browser CORS policy or in-browser protection cannot turn a reachable target into a
+    /// Server-side reachability probe for review preflight. Runs on the backend network path (the same one the HTTP Security
+    /// and HTTP Performance engines use) so browser CORS policy or in-browser protection cannot turn a reachable target into a
     /// generic timeout. Returns the real HTTP status, sign-in redirect, network failure or timeout. No configuration discovery.
     /// </summary>
     [HttpPost("reachability")]

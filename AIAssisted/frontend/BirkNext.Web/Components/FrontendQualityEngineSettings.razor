@@ -1,9 +1,12 @@
 @using BirkNext.Web.Models
 
 <div class="frontend-quality-engine-settings">
-    <div class="fqe-toolbar">
-        <SecondaryButton OnClick="OnRefreshRequested" Disabled="@IsLoadingStatus">Refresh status</SecondaryButton>
-    </div>
+    @if (ShowRefresh)
+    {
+        <div class="fqe-toolbar">
+            <SecondaryButton OnClick="OnRefreshRequested" Disabled="@IsLoadingStatus">Refresh local capabilities</SecondaryButton>
+        </div>
+    }
 
     @if (IsLoadingStatus)
     {
@@ -86,6 +89,8 @@
 
 @code {
     [Parameter] public bool IsEditMode { get; set; }
+    /// <summary>False when the host page owns the one refresh action.</summary>
+    [Parameter] public bool ShowRefresh { get; set; } = true;
     [Parameter] public IReadOnlyDictionary<string, bool>? EditedPreferences { get; set; }
     [Parameter] public EventCallback<(string EngineKey, bool Value)> OnToggle { get; set; }
     [Parameter] public FrontendQualityEngineStatusReportDto? AnonymousStatus { get; set; }
@@ -101,7 +106,7 @@
         new(FrontendQualityEngineIdDto.BrowserRuntime, "Browser Runtime", "BrowserRuntime"),
         new(FrontendQualityEngineIdDto.Accessibility, "Accessibility", "Accessibility"),
         new(FrontendQualityEngineIdDto.Lighthouse, "Lighthouse", "Lighthouse"),
-        new(FrontendQualityEngineIdDto.PassiveSecurity, "Passive Security (ZAP)", "PassiveSecurity"),
+        new(FrontendQualityEngineIdDto.PassiveSecurity, "Passive Web Security (ZAP)", "PassiveSecurity"),
     ];
 
     private static string GetReasonText(FrontendQualityEngineUnavailableReasonDto reason) => reason switch

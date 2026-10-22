@@ -8,7 +8,7 @@ namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
 /// Regression (found by the runtime-security browser smoke): the orchestrator rebuilds the FQR report field by field after each engine
-/// (accessibility, passive security …), and a field missing from one copy silently disappears. Static Security cookie metadata must reach
+/// (accessibility, passive security …), and a field missing from one copy silently disappears. HTTP Security cookie metadata must reach
 /// the final report whichever engines ran after it.
 /// </summary>
 public sealed class FrontendQualityCookieSecurityPropagationTests

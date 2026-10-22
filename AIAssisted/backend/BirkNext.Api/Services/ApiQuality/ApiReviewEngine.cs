@@ -403,7 +403,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     /// Transport and disclosure posture of the primary response. Security headers follow the Target Environment's expected headers
     /// (<see cref="ApiReviewPolicy.ExpectedSecurityHeaders"/>): an expected transport header that is absent is a finding, a header the
     /// environment does not require is only observed, and document-level headers (CSP, X-Frame-Options, Referrer-Policy,
-    /// Permissions-Policy) are recorded but evaluated on the frontend document by FQR Static Security, not on API responses.
+    /// Permissions-Policy) are recorded but evaluated on the frontend document by FQR HTTP Security, not on API responses.
     /// </summary>
     private List<ApiReviewCheck> SecurityChecks(ApiReviewTarget target, ApiReviewRunRequest request, Exec primary, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings,
         out List<SecurityHeaderEvaluation> headerEvaluations)

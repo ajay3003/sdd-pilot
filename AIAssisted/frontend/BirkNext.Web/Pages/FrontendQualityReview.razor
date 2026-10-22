@@ -743,11 +743,11 @@
                                     <div><dt>Manual assessment</dt><dd>@completeness.ManualAssessmentLabel</dd></div>
                                     @if (report.AssessedEngines.Count > 0)
                                     {
-                                        <div><dt>Assessed engines</dt><dd>@string.Join(", ", report.AssessedEngines)</dd></div>
+                                        <div><dt>Assessed engines</dt><dd>@string.Join(", ", report.AssessedEngines.Select(FrontendQualityActiveEngines.CurrentLabel))</dd></div>
                                     }
                                     @if (report.SkippedEngines.Count > 0)
                                     {
-                                        <div><dt>Skipped engines</dt><dd>@string.Join(", ", report.SkippedEngines)</dd></div>
+                                        <div><dt>Skipped engines</dt><dd>@string.Join(", ", report.SkippedEngines.Select(FrontendQualityActiveEngines.CurrentLabel))</dd></div>
                                     }
                                     @if (report.FailedEngines.Count > 0)
                                     {
@@ -771,7 +771,7 @@
                                                 <ul class="fqr-pass-engines">
                                                     @foreach (var outcome in pass.Report.EngineOutcomes.Where(o => o.Enabled && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled))
                                                     {
-                                                        <li>@outcome.DisplayName: @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @outcome.AccessLabel</li>
+                                                        <li>@FrontendQualityActiveEngines.DisplayName(outcome.EngineId): @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @outcome.AccessLabel</li>
                                                     }
                                                 </ul>
                                             </dd>
@@ -1126,7 +1126,7 @@
 
         await ResolveAuthenticatedCapabilities();
         // Expensive Layer 3 readiness is fetched for the ACTIVE backend engines only and never blocks the first render.
-        // With no active backend engine (e.g. only Static Security + Passive Performance) nothing is fetched at all.
+        // With no active backend engine (e.g. only HTTP Security + HTTP Performance) nothing is fetched at all.
         StartEngineStatusFetch();
         if (_report is null && _companionRuntime is not null && _context.ActiveTargetError is null)
         {
@@ -1397,7 +1397,7 @@
             ReadinessScore = qualityReport.ReadinessScore,
             Findings = qualityReport.Findings,
             // Defect: this field-by-field copy silently dropped four results the view below renders, so the WCAG
-            // coverage, the BirkNext Performance Quality section, the redirect note and the engine error message
+            // coverage, the Browser Performance Quality section, the redirect note and the engine error message
             // could never appear after a run. They are part of the orchestrator's report and belong here.
             Wcag = qualityReport.Wcag,
             PerformanceQualityReport = qualityReport.PerformanceQualityReport,

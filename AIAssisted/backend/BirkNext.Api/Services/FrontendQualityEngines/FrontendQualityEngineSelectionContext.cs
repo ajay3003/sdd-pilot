@@ -11,7 +11,7 @@ public sealed record FrontendQualityEngineSelectionContext(
     FrontendQualityEngineTargetContext? Target = null);
 
 /// <summary>
-/// The Target Environment the review is about. Passive Security only runs against a target registered by the server
+/// The Target Environment the review is about. Passive Web Security only runs against a target registered by the server
 /// (FrontendPassiveSecurity:TrustedProfiles), so status reports an untrusted target as unavailable instead of Ready.
 /// </summary>
 public sealed record FrontendQualityEngineTargetContext(string ProfileId, string TargetUrl, string? EnvironmentType);

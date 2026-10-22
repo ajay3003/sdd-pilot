@@ -36,7 +36,7 @@ public sealed class FrontendZapPassiveReviewService(
             Error: "Installation policy does not allow container security engines.");
         if (!_enabled) return new(PassiveSecurityReadinessState.Disabled, false, Image: Image, Error: "Passive security engine is disabled.");
         if (_containerRuntime is not ("podman" or "docker") || (_containerNetwork is not null && !ContainerRuntime.ContainerArgumentRules.IsNetwork(_containerNetwork)))
-            return new(PassiveSecurityReadinessState.ConfigurationInvalid, false, Image: Image, Error: "Passive Security container configuration is invalid.");
+            return new(PassiveSecurityReadinessState.ConfigurationInvalid, false, Image: Image, Error: "Passive Web Security container configuration is invalid.");
         var docker = await runner.RunAsync(_containerRuntime, ["version", "--format", "{{.Server.Version}}"], 15000, ct);
         if (docker.ExitCode != 0)
         {
@@ -57,9 +57,9 @@ public sealed class FrontendZapPassiveReviewService(
         finally { await CleanupProbeAsync(probeContainer); }
         if (version.ExitCode != 0)
         {
-            logger.LogWarning("Passive Security runtime version probe failed.");
+            logger.LogWarning("Passive Web Security runtime version probe failed.");
             return new(PassiveSecurityReadinessState.ZapLaunchFailed, false, Image: Image, ImageDigest: inspect.Output.Trim(),
-                Error: "Passive Security runtime could not be started.");
+                Error: "Passive Web Security runtime could not be started.");
         }
         return new(PassiveSecurityReadinessState.Ready, true, ParseVersion(version.Output + version.Error), Image: Image,
             ImageDigest: inspect.Output.Trim(), Limitations: _resourceLimitations);

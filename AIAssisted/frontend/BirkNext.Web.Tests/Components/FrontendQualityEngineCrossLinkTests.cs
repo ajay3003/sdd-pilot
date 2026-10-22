@@ -24,7 +24,7 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
         {
             Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = Url,
         };
-        // These scenarios model a saved profile with Passive Security (ZAP) selected; new profiles start with it off.
+        // These scenarios model a saved profile with Passive Web Security (ZAP) selected; new profiles start with it off.
         profile.Features.EnablePassiveSecurityEngine = true;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
@@ -142,7 +142,7 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
 
         var warning = cut.Find("[data-testid=fqr-capabilities-required-disabled]");
         warning.TextContent.Should().Contain("Required engine disabled").And.Contain("coverage cannot complete");
-        warning.TextContent.Should().Contain("Static Security");
+        warning.TextContent.Should().Contain("HTTP Security");
         warning.GetAttribute("role").Should().Be("status", "the warning is announced, not colour-only");
         warning.QuerySelector("[data-testid=fqr-required-disabled-edit]")!.GetAttribute("href").Should().Be(EnginesHref);
 
@@ -207,8 +207,8 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
         cut.FindAll("[data-testid=fqr-capability] .fqr-capability-name").Select(n => n.TextContent.Trim())
             .Should().BeEquivalentTo(new[]
             {
-                "Static Security", "Passive Performance", "Browser Runtime", "Accessibility",
-                "Lighthouse", "Passive Security", "Browser Quality", "BirkNext Performance Quality",
+                "HTTP Security", "HTTP Performance", "Browser Runtime", "Accessibility",
+                "Lighthouse", "Passive Web Security", "Browser Quality", "Browser Performance Quality",
             });
     }
 
@@ -222,7 +222,7 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
         var cut = Render<FrontendQualityActiveEnginesPanel>(p => p.Add(c => c.Snapshot, snapshot));
 
         var warning = cut.Find("[data-testid=fqr-required-disabled]");
-        warning.TextContent.Should().Contain("Passive Performance");
+        warning.TextContent.Should().Contain("HTTP Performance");
         warning.QuerySelector("[data-testid=fqr-required-disabled-action]")!.GetAttribute("href").Should().Be(EnginesHref);
     }
 }

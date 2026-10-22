@@ -1006,7 +1006,7 @@
         var headerTargets = report.Targets.Where(t => t.SecurityHeaders.Count > 0).ToList();
         <section class="aqr-subsection" data-testid="aqr-security-headers" aria-labelledby="aqr-sec-headers-h">
             <h3 id="aqr-sec-headers-h">Headers</h3>
-            <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates saved response-header expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required header names come from the selected Target Environment's API review safety settings (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR Static Security.")</p>
+            <p class="aqr-muted" data-testid="aqr-header-expectations-note">@(report.Policy.ExpectedSecurityHeaders is null ? "This review predates saved response-header expectations; BirkNext's default API headers (HSTS, X-Content-Type-Options) were required." : "Required header names come from the selected Target Environment's API review safety settings (presence only; no header values are stored). Document-level headers are assessed on the frontend document by FQR HTTP Security.")</p>
             @if (headerTargets.Count == 0) { <p class="aqr-empty">No response headers were assessed.</p> }
             @foreach (var t in headerTargets)
             {

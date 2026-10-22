@@ -13,7 +13,7 @@ public sealed class FrontendQualityDecisionSupportExportTests
 
         html.IndexOf("Release disposition", StringComparison.Ordinal).Should().BeLessThan(html.IndexOf("Automated coverage", StringComparison.Ordinal));
         html.Should().Contain("Required assessed:").And.Contain("Optional assessed:")
-            .And.Contain("headers:csp:missing").And.Contain("Static Security").And.Contain("Passive Security / ZAP")
+            .And.Contain("headers:csp:missing").And.Contain("HTTP Security").And.Contain("Passive Web Security / ZAP")
             .And.Contain("static-csp").And.Contain("zap-csp")
             .And.Contain("Manual verification required").And.Contain("Browser Runtime")
             .And.Contain("Legacy static review score").And.NotContain("Overall Quality Score");

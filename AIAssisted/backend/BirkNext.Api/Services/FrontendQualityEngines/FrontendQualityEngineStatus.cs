@@ -11,7 +11,7 @@ public enum FrontendQualityEngineUnavailableReason
     AuthenticationModeUnsupported,
     /// <summary>Engine is not active for this review (disabled or deselected in the saved configuration); readiness was not probed.</summary>
     NotActiveForReview,
-    /// <summary>The target is not a server-registered trusted profile (Passive Security: FrontendPassiveSecurity:TrustedProfiles).</summary>
+    /// <summary>The target is not a server-registered trusted profile (Passive Web Security: FrontendPassiveSecurity:TrustedProfiles).</summary>
     TargetNotTrusted,
     ProductionBlocked,
 }

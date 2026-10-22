@@ -5,7 +5,7 @@ namespace BirkNext.Web.Services;
 
 /// <summary>
 /// Turns the sanitized authenticated API-surface probes (executed by the backend gateway with the Local HTTPS proxy credential)
-/// into review findings and limitations. Static Security owns the API security-header / CORS findings; Passive Performance owns
+/// into review findings and limitations. HTTP Security owns the API security-header / CORS findings; HTTP Performance owns
 /// the authenticated latency findings. Rejected credentials (401/403) are reported as findings, never hidden. Nothing here touches a token.
 /// </summary>
 public static class FrontendQualityAuthenticatedApiSurfaceFindings

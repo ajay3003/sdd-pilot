@@ -401,7 +401,7 @@ public static class EndpointDiscoveryMerge
 }
 
 /// <summary>
-/// Records the compact per-generation performance history of a page (BirkNext Performance Quality). Called whenever browser or proxy
+/// Records the compact per-generation performance history of a page (Browser Performance Quality). Called whenever browser or proxy
 /// evidence of the page changes; the current generation's entry is replaced, older generations are kept (bounded) for comparison.
 /// Threshold-independent raw numbers only.
 /// </summary>

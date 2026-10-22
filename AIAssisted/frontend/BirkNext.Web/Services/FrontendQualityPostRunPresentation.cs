@@ -149,7 +149,7 @@ public static class FrontendQualityPostRunPresentation
             return outcomes.Where(o => o.Enabled && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled)
                 .OrderBy(o => o.Requirement)
                 .Select(o => new FrontendQualityEngineCoverageRow(
-                    o.DisplayName, PolicyLabel(o.Requirement), "—", "—", o.Provider,
+                    FrontendQualityActiveEngines.DisplayName(o.EngineId), PolicyLabel(o.Requirement), "—", "—", o.Provider,
                     FrontendQualitySurfaceResults.ResultLabel(o), o.SanitizedFailureReason,
                     Impact(o.Requirement, o.ExecutionState == FrontendQualityEngineExecutionState.Assessed, applicable: !FrontendQualityCoverage.IsInactive(o))))
                 .ToList();
@@ -174,7 +174,7 @@ public static class FrontendQualityPostRunPresentation
                 // The prerequisite of the surface the engine ran (or was meant to run) on: "Authenticated HTTP/API context", not the public label.
                 var prerequisite = surfacePlan?.Prerequisite is { Length: > 0 } p ? p : engine.Prerequisite;
                 return new FrontendQualityEngineCoverageRow(
-                    engine.DisplayName,
+                    FrontendQualityActiveEngines.DisplayName(engine.EngineId),
                     PolicyLabel(engine.Policy),
                     surfaces.Count == 0 ? "—" : string.Join(", ", surfaces.Select(FrontendQualityExecutionPlanner.SurfaceLabel)),
                     prerequisite,

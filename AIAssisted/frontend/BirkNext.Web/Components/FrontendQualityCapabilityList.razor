@@ -5,7 +5,7 @@
      ROLE          Required / Optional  — the group this row sits in
      CONFIGURATION Enabled / Disabled   — what the Target Environment saved
      RUNTIME       Ready / Available / Unavailable / … — what is true right now
-   "Passive Security · Enabled · Unavailable" is a capability problem; "Browser Runtime · Disabled" is a decision. A
+   "Passive Web Security · Enabled · Unavailable" is a capability problem; "Browser Runtime · Disabled" is a decision. A
    disabled engine is therefore never labelled unavailable, and an unavailable one never reads as switched off.
 
    The per-review "Include" opt-out applies to enabled backend engines only — it never enables a disabled engine. The
@@ -29,7 +29,7 @@
         <ReviewDisclosure Text="How availability works" CollapseText="Hide how availability works"
                           TestId="fqr-availability-help" Class="fqr-availability-help">
             <p class="fqr-section-note">Available means no known access blocker; runtime checking may still be pending. Ready means runtime readiness was confirmed, or the evidence the engine reads is present.</p>
-            <p class="fqr-section-note">Browser Quality reads the live Browser Companion session, or pages already captured while the Companion is paired but not reporting. BirkNext Performance Quality reads recorded performance evidence and does not need a live session.</p>
+            <p class="fqr-section-note">Browser Quality reads the live Browser Companion session, or pages already captured while the Companion is paired but not reporting. Browser Performance Quality reads recorded performance evidence and does not need a live session.</p>
         </ReviewDisclosure>
     </div>
 

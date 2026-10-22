@@ -6,7 +6,7 @@ namespace BirkNext.Web.Services;
 public sealed record PerformanceLighthouseRow(string Metric, string BirkNext, string Lighthouse, string Difference, string Note);
 
 /// <summary>
-/// Validation/comparison view between BirkNext Performance Quality (field: PerformanceObserver in the user's signed-in managed Edge) and
+/// Validation/comparison view between Browser Performance Quality (field: PerformanceObserver in the user's signed-in managed Edge) and
 /// Lighthouse (lab: synthetic anonymous navigation). Only metrics with an equivalent definition are compared (LCP, CLS, FCP, TTFB, transfer);
 /// differences are expected because the observation windows, network, cache state and authentication differ. Never adjusts either side.
 /// </summary>

@@ -302,7 +302,7 @@ public static class FrontendQualityLandingPresentation
                 if (!record.Layer2Enabled)
                     return Build(FrontendQualityCapabilityState.DisabledInSystemSettings, "Disabled in System Settings.", null, "Open System Settings", SystemSettingsHref);
                 if (record.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted))
-                    return Build(FrontendQualityCapabilityState.Unavailable, "Not enabled for this target on the server: Passive Security (ZAP) only scans a target the BirkNext server has registered as trusted.",
+                    return Build(FrontendQualityCapabilityState.Unavailable, "Not enabled for this target on the server: Passive Web Security (ZAP) only scans a target the BirkNext server has registered as trusted.",
                         "The target is not registered in the server configuration (FrontendPassiveSecurity:TrustedProfiles), so every scan would be skipped.");
                 if (record.Layer3Readiness is { IsAvailable: false } readiness)
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.",
@@ -446,10 +446,10 @@ public static class FrontendQualityLandingPresentation
         FrontendQualityDimensionState.PartialEvidence =>
             "Baseline evidence is unavailable; the remaining checks still run.",
 
-        // Security names its own baseline, because "Passive Security evidence is unavailable" beside the word Limited
+        // Security names its own baseline, because "Passive Web Security evidence is unavailable" beside the word Limited
         // read as "security cannot be reviewed". The static security review is unaffected and says so first.
         FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Security && optionalMissing.Count > 0 =>
-            "Static Security is included. " + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
+            "HTTP Security is included. " + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
 
         FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Accessibility && optionalMissing.Count > 0 =>
             new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
@@ -507,13 +507,13 @@ public static class FrontendQualityLandingPresentation
     }
 
     /// <summary>
-    /// What Performance will read. Browser Quality / BirkNext Performance Quality are named only when Ready — the state that
+    /// What Performance will read. Browser Quality / Browser Performance Quality are named only when Ready — the state that
     /// mirrors the run's Assessed rule — so an engine that is merely available is never claimed as a contributor.
     /// </summary>
     private static string PerformanceIncluded(IReadOnlyList<FrontendQualityCapabilityRow>? optionalReady) =>
         optionalReady?.Any(c => c.EngineId is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality) == true
-            ? "Passive Performance and Browser Companion evidence are included. "
-            : "Passive Performance is included. ";
+            ? "HTTP Performance and Browser Companion evidence are included. "
+            : "HTTP Performance is included. ";
 
     /// <summary>"A", "A and B", "A, B and C". Used wherever capabilities are named in a sentence rather than counted.</summary>
     private static string Join(IEnumerable<string> names)
@@ -702,7 +702,7 @@ public static class FrontendQualityLandingPresentation
                         new("GraphQL traffic", Availability(capabilities?.AuthenticatedGraphQlQuery == true, "Observed", "Not observed"), capabilities?.AuthenticatedGraphQlQuery == true),
                         new("Authenticated DOM", "Not available with this method", false),
                     ],
-                    "Static Security and Passive Performance review the public frontend; Browser Runtime and Accessibility cannot assess the signed-in application with this method.");
+                    "HTTP Security and HTTP Performance review the public frontend; Browser Runtime and Accessibility cannot assess the signed-in application with this method.");
             }
             case AuthenticatedTestingMethod.ManualOnly:
             {
@@ -711,7 +711,7 @@ public static class FrontendQualityLandingPresentation
                     "This environment supports manual verification only. Automated engines that need authenticated access are not available here.",
                     [
                         "Verify access to the target application manually from the Target Environment page.",
-                        "Run the review: Static Security and Passive Performance still review the public frontend.",
+                        "Run the review: HTTP Security and HTTP Performance still review the public frontend.",
                     ],
                     [
                         new("Manual sign-in check", FrontendQualityTargetAccess.ManualVerificationLabel(manual), manual == ManualAuthenticationVerificationStatus.Passed),
@@ -738,7 +738,7 @@ public static class FrontendQualityLandingPresentation
                         new("Browser runtime", Availability(access?.AuthenticatedBrowserDomAvailable ?? connected), access?.AuthenticatedBrowserDomAvailable ?? connected),
                     ],
                     blocked ? FrontendQualityTargetAccess.EnterpriseBlockedReason
-                    : "Browser Runtime and Accessibility run in the authenticated session; Static Security and Passive Performance review the public frontend; Lighthouse and Passive Security have no authenticated mode.");
+                    : "Browser Runtime and Accessibility run in the authenticated session; HTTP Security and HTTP Performance review the public frontend; Lighthouse and Passive Web Security have no authenticated mode.");
             }
         }
     }
@@ -776,9 +776,9 @@ public static class FrontendQualityLandingPresentation
             new("Accessibility", context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
             // The saved selection only; whether ZAP can actually run (server enablement, trusted target, container image) is the capability row.
-            new("Passive Security (ZAP)", context.FeatureToggles.EnablePassiveSecurityEngine ? "Selected (optional; availability is checked on the server)" : "Not selected"),
+            new("Passive Web Security (ZAP)", context.FeatureToggles.EnablePassiveSecurityEngine ? "Selected (optional; availability is checked on the server)" : "Not selected"),
             new("Browser Quality", context.FeatureToggles.EnableBrowserQualityEngine ? "Enabled (Browser Companion, native checks)" : "Disabled"),
-            new("BirkNext Performance Quality", context.FeatureToggles.EnablePerformanceQualityEngine ? "Enabled (Browser Companion + Local HTTPS proxy evidence, native)" : "Disabled"),
+            new("Browser Performance Quality", context.FeatureToggles.EnablePerformanceQualityEngine ? "Enabled (Browser Companion + Local HTTPS proxy evidence, native)" : "Disabled"),
         ];
     }
 }

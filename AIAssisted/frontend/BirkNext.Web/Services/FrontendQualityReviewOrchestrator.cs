@@ -416,7 +416,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             }
         }
 
-        // ── Static Security — public HTTP engine; runs whenever its access decision is Ready ──────────────
+        // ── HTTP Security — public HTTP engine; runs whenever its access decision is Ready ──────────────
         if (context.ReviewScope != FrontendReviewAccessScope.AuthenticatedOnly && active.IsActive(FrontendQualityEngineId.StaticSecurity) && decisions[FrontendQualityEngineId.StaticSecurity].IsReady)
         {
             try
@@ -439,7 +439,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Security"] };
         }
 
-        // ── Passive Performance — public HTTP engine; runs whenever its access decision is Ready ───────────
+        // ── HTTP Performance — public HTTP engine; runs whenever its access decision is Ready ───────────
         if (context.ReviewScope != FrontendReviewAccessScope.AuthenticatedOnly && active.IsActive(FrontendQualityEngineId.PassivePerformance) && decisions[FrontendQualityEngineId.PassivePerformance].IsReady)
         {
             try
@@ -617,7 +617,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             var passiveSecurityReady = await RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto.PassiveSecurity, cancellationToken);
             if (!passiveSecurityReady)
             {
-                result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+                result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Web Security"] };
                 result.OutcomeReasons[FrontendQualityEngineId.PassiveSecurity] = FrontendQualityEngineOutcomeReason.ReadinessUnavailable;
             }
             else
@@ -632,7 +632,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
         else
         {
-            result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Web Security"] };
         }
 
         // ── BirkNext Browser Quality — evidence from the paired Browser Companion (user's managed Edge); no request to the target ──
@@ -655,7 +655,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Quality"] };
         }
 
-        // ── BirkNext Performance Quality — recorded Browser Companion + Local HTTPS proxy evidence per page; no request to the target ──
+        // ── Browser Performance Quality — recorded Browser Companion + Local HTTPS proxy evidence per page; no request to the target ──
         if (active.IsActive(FrontendQualityEngineId.PerformanceQuality) && _performanceQuality is not null && decisions[FrontendQualityEngineId.PerformanceQuality].IsReady)
         {
             try
@@ -663,16 +663,16 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 var performanceQuality = await _performanceQuality.CollectAsync(context, cancellationToken);
                 result = result with { PerformanceQualityReport = performanceQuality };
                 if (!performanceQuality.Assessed)
-                    result = result with { SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+                    result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Performance Quality"] };
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                result = result with { PerformanceQualityError = ex.Message, SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+                result = result with { PerformanceQualityError = ex.Message, SkippedEngines = [.. result.SkippedEngines, "Browser Performance Quality"] };
             }
         }
         else
         {
-            result = result with { SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Performance Quality"] };
         }
 
         var qualityReport = _quality.BuildReport(targetUrl, result.SecurityReport, result.PerformanceReport);
@@ -683,7 +683,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         var accessibilityAssessed = result.AccessibilityReport?.ExecutionStatus == AccessibilityExecutionStatusDto.Assessed;
         var lighthouseSkipped = result.LighthouseReport?.ExecutionStatus is LighthouseExecutionStatusDto.Skipped or LighthouseExecutionStatusDto.AuthenticationRequired;
         var passiveSkipped = result.PassiveSecurityReport?.ExecutionStatus is PassiveSecurityExecutionStatusDto.Skipped or PassiveSecurityExecutionStatusDto.AuthenticationRequired;
-        if (passiveSkipped && !result.SkippedEngines.Contains("Passive Security")) result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
+        if (passiveSkipped && !result.SkippedEngines.Contains("Passive Web Security")) result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Web Security"] };
         if (lighthouseSkipped && !result.SkippedEngines.Contains("Lighthouse"))
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         var enrichedReport = ApplyBrowserRuntime(qualityReport, result.BrowserRuntimeReport);
@@ -766,7 +766,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     {
         var message = $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}";
         var result = new FrontendQualityReviewOrchestrationResult(
-            SkippedEngines: ["Security", "Performance", "BrowserRuntime", "Accessibility", "Lighthouse", "Passive Security", "Browser Quality"],
+            SkippedEngines: ["HTTP Security", "HTTP Performance", "Browser Runtime", "Accessibility", "Lighthouse", "Passive Web Security", "Browser Quality"],
             PreflightBlocked: true,
             PreflightBlockReason: message,
             PreflightStatus: PreflightStatus.Ready,
@@ -915,7 +915,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     }
 
     /// <summary>
-    /// Adds the BirkNext Performance Quality findings (deterministic rule output over sanitized evidence) and its limitations, and attaches
+    /// Adds the Browser Performance Quality findings (deterministic rule output over sanitized evidence) and its limitations, and attaches
     /// the per-page result so the report can render metrics, coverage, API summaries, timeline and comparison.
     /// </summary>
     private static FrontendQualityReviewReport ApplyPerformanceQuality(FrontendQualityReviewReport report, PerformanceQualityReviewResult? performance)
@@ -946,7 +946,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             IsBlazorWasm = report.IsBlazorWasm || performance.Pages.Any(p => p.Blazor is { Detected: true }), ErrorMessage = report.ErrorMessage, CookieSecurity = report.CookieSecurity,
             Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes,
             Completeness = report.Completeness,
-            AssessedEngines = performance.Assessed ? report.AssessedEngines.Append("BirkNext Performance Quality").Distinct().ToList() : report.AssessedEngines,
+            AssessedEngines = performance.Assessed ? report.AssessedEngines.Append("Browser Performance Quality").Distinct().ToList() : report.AssessedEngines,
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
             PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
             RedirectOccurred = report.RedirectOccurred, TargetAccess = report.TargetAccess,
@@ -1188,7 +1188,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             ErrorMessage=report.ErrorMessage, Coverage=report.Coverage, ReleaseDisposition=report.ReleaseDisposition,
             EngineOutcomes=report.EngineOutcomes, Completeness=report.Completeness, PreflightStatus=report.PreflightStatus,
             PreflightMessage=report.PreflightMessage, RedirectOccurred=report.RedirectOccurred,
-            AssessedEngines=assessed ? report.AssessedEngines.Append("Passive Security").Distinct().ToList() : report.AssessedEngines,
+            AssessedEngines=assessed ? report.AssessedEngines.Append("Passive Web Security").Distinct().ToList() : report.AssessedEngines,
             FailedEngines=report.FailedEngines, SkippedEngines=report.SkippedEngines, AccessibilityReport=report.AccessibilityReport,
             LighthouseReport=report.LighthouseReport, PassiveSecurityReport=passive
             , BrowserRuntimeReport=report.BrowserRuntimeReport
@@ -1259,7 +1259,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
 
         try
         {
-            // Bounded readiness revalidation: 5 s, except Passive Security whose readiness starts the ZAP container (JVM) on the server
+            // Bounded readiness revalidation: 5 s, except Passive Web Security whose readiness starts the ZAP container (JVM) on the server
             // (server budget 75 s). With 5 s a working ZAP installation always timed out and was skipped as unavailable.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(engineId == FrontendQualityEngineIdDto.PassiveSecurity ? TimeSpan.FromSeconds(80) : TimeSpan.FromSeconds(5));
@@ -1305,7 +1305,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             AllowedAuthority = ctx.ActiveProfile.Authentication.ExpectedAuthority,
             AllowedClientIds = clientIds,
             KnownSafeDomains = knownSafe,
-            // Static Security evaluates exactly the headers this Target Environment expects (presence only).
+            // HTTP Security evaluates exactly the headers this Target Environment expects (presence only).
             ExpectedSecurityHeaders = [.. ctx.SecuritySettings.ExpectedSecurityHeaders],
             CookieExpectations = ctx.SecuritySettings.RuntimeSecurity?.Cookies,
         };

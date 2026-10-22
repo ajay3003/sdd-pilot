@@ -81,25 +81,46 @@ public sealed class FrontendAnalysisSettingsServiceTests
     }
 
     [Fact]
-    public void CreateProfile_EnablesCoreFeaturesByDefault()
+    public void CreateProfile_EnablesAllEightEnginesByDefault()
     {
         var p = _sut.CreateProfile("X", FrontendEnvironmentType.Local);
 
-        p.Features.EnableSecurityEngine.Should().BeTrue();
-        p.Features.EnablePerformanceEngine.Should().BeTrue();
-        p.Features.EnableAccessibilityEngine.Should().BeTrue();
-        p.Features.EnableLighthouseEngine.Should().BeTrue();
-        p.Features.EnablePassiveSecurityEngine.Should().BeFalse("Passive Security (ZAP) is opt-in: it cannot run on a default installation");
+        // Enabled = eligible for Frontend Quality Review; availability is decided at review time, so a new target starts with all eight.
+        FrontendReviewEnginePresentation.Rows(p.Features, p.EngineRequirements).Should().HaveCount(8).And.OnlyContain(r => r.Enabled);
     }
 
     [Fact]
-    public void CreateProfile_DisablesFutureFeaturesByDefault()
+    public void CreateProfile_RequiresOnlyTheTwoHttpEngines()
     {
         var p = _sut.CreateProfile("X", FrontendEnvironmentType.Local);
 
-        p.Features.EnableBrowserRuntimeEngine.Should().BeFalse();
-        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
-        p.Features.EnablePerformanceQualityEngine.Should().BeFalse();
+        FrontendReviewEnginePresentation.Rows(p.Features, p.EngineRequirements)
+            .Where(r => r.Policy == FrontendQualityEngineRequirement.Required).Select(r => r.DisplayName)
+            .Should().BeEquivalentTo("HTTP Security", "HTTP Performance");
+    }
+
+    [Fact]
+    public void LegacyProfileWithoutToggles_KeepsItsOwnDefaults_NeverSwitchedOnByTheRecommendation()
+    {
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisFeatureToggles>("{}")!;
+
+        legacy.EnablePassiveSecurityEngine.Should().BeFalse("only NEW targets get the recommended selection");
+        legacy.EnableBrowserRuntimeEngine.Should().BeFalse();
+        var saved = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisFeatureToggles>("""{"enableLighthouseEngine":false}""")!;
+        saved.EnableLighthouseEngine.Should().BeFalse("an explicit saved choice is never overwritten");
+    }
+
+    [Fact]
+    public void DuplicateProfile_CopiesTheEngineConfiguration()
+    {
+        var p = _sut.CreateProfile("Source", FrontendEnvironmentType.QA);
+        p.Features.EnableLighthouseEngine = false;
+        p.EngineRequirements.Accessibility = FrontendQualityEngineRequirement.Required;
+
+        var copy = _sut.DuplicateProfile(p.Id);
+
+        copy.Features.EnableLighthouseEngine.Should().BeFalse();
+        copy.EngineRequirements.Accessibility.Should().Be(FrontendQualityEngineRequirement.Required);
     }
 
     // ── Duplicate profile detection ───────────────────────────────────────────
@@ -502,16 +523,20 @@ public sealed class FrontendAnalysisSettingsServiceTests
     }
 
     [Fact]
-    public void RestoreDefaultFeatureToggles_LeaveFutureFeaturesDisabled()
+    public void RestoreRecommendedDefaults_EnablesAllEngines_AndRestoresRecommendedCoverage()
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.QA);
-        p.Features.EnableBrowserQualityEngine  = true;
-        p.Features.EnablePerformanceQualityEngine = true;
+        p.Features.EnableBrowserQualityEngine = false;
+        p.Features.EnableSecurityEngine = false;
+        p.EngineRequirements.Lighthouse = FrontendQualityEngineRequirement.Required;
+        p.EngineRequirements.StaticSecurity = FrontendQualityEngineRequirement.Optional;
 
         _sut.RestoreDefaultFeatureToggles(p.Id);
 
-        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
-        p.Features.EnablePerformanceQualityEngine.Should().BeFalse();
+        p.Features.EnableBrowserQualityEngine.Should().BeTrue();
+        p.Features.EnableSecurityEngine.Should().BeTrue();
+        p.EngineRequirements.Lighthouse.Should().Be(FrontendQualityEngineRequirement.Optional);
+        p.EngineRequirements.StaticSecurity.Should().Be(FrontendQualityEngineRequirement.Required);
     }
 
     // ── Reset Profile ─────────────────────────────────────────────────────────
@@ -546,12 +571,12 @@ public sealed class FrontendAnalysisSettingsServiceTests
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.QA);
         p.Features.EnableSecurityEngine = false;
-        p.Features.EnableBrowserQualityEngine = true;
+        p.Features.EnableBrowserQualityEngine = false;
 
         _sut.ResetProfile(p.Id);
 
         p.Features.EnableSecurityEngine.Should().BeTrue();
-        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
+        p.Features.EnableBrowserQualityEngine.Should().BeTrue("reset restores the recommended selection");
     }
 
     [Fact]
@@ -691,7 +716,7 @@ public sealed class FrontendAnalysisSettingsServiceTests
 
         var diag = _sut.GetDiagnostics();
 
-        diag.EnabledFeatures.Should().Contain("Static Security");
+        diag.EnabledFeatures.Should().Contain("HTTP Security");
         diag.EnabledFeatures.Should().Contain("Lighthouse");
     }
 
@@ -699,6 +724,8 @@ public sealed class FrontendAnalysisSettingsServiceTests
     public void GetDiagnostics_ListsDisabledFutureFeatures()
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.Local);
+        p.Features.EnableBrowserQualityEngine = false;
+        p.Features.EnableBrowserRuntimeEngine = false;
         _sut.SelectActiveProfile(p.Id);
 
         var diag = _sut.GetDiagnostics();

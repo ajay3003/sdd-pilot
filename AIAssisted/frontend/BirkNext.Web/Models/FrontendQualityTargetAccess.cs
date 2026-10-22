@@ -71,23 +71,23 @@ public sealed record FrontendQualityEngineAccessRequirements(
 /// <summary>
 /// Audited (2026-09-15) access requirements of every quality engine, derived from what each implementation actually does:
 /// <list type="bullet">
-/// <item>Static Security — backend <c>BlazorWasmSecurityReviewService</c>: anonymous GET of the SPA document plus framework/config text assets
+/// <item>HTTP Security — backend <c>BlazorWasmSecurityReviewService</c>: anonymous GET of the SPA document plus framework/config text assets
 /// on the frontend host. Public HTTP only; it never fetches an authenticated API and never needs a DOM.</item>
-/// <item>Passive Performance — backend <c>WasmAssetDiscoveryService</c>/<c>WasmApiAnalysisService</c>: anonymous GET/headers of the document,
+/// <item>HTTP Performance — backend <c>WasmAssetDiscoveryService</c>/<c>WasmApiAnalysisService</c>: anonymous GET/headers of the document,
 /// boot manifest and listed assets, plus public GraphQL/OpenAPI path probes on the frontend origin. Public HTTP only; runtime metrics
 /// (FCP/LCP/TTI) are explicitly out of scope, so no browser runtime.</item>
 /// <item>Browser Runtime — backend Playwright Chromium page navigation with console/network capture. Needs a browser runtime and, for a
 /// protected application, the review's authenticated browser session.</item>
 /// <item>Accessibility — axe-core over the rendered DOM in Playwright. Same session model as Browser Runtime.</item>
 /// <item>Lighthouse — anonymous synthetic navigation; no authenticated mode exists.</item>
-/// <item>Passive Security — OWASP ZAP passive scan of anonymous traffic; no authenticated mode exists.</item>
+/// <item>Passive Web Security — OWASP ZAP passive scan of anonymous traffic; no authenticated mode exists.</item>
 /// <item>Browser Quality — BirkNext-native checks computed from Browser Companion evidence collected in the user's normal managed Edge session
 /// (DOM, accessibility, performance, runtime, Blazor) and correlated with proxy network evidence per page. Needs neither public HTTP, CDP nor a
 /// review browser session: it works for public and protected applications alike because the browser is already signed in.</item>
 /// </list>
 /// The Local HTTPS proxy provides an authenticated <em>API</em> context only. The two HTTP engines consume it through the shared
 /// authenticated API-surface probes (approved REST GET / GraphQL query executed by the backend gateway; engines never see the token):
-/// Static Security assesses the API's security headers and CORS posture, Passive Performance the authenticated latency/status.
+/// HTTP Security assesses the API's security headers and CORS posture, HTTP Performance the authenticated latency/status.
 /// DOM/runtime engines cannot use it: a bearer for the API does not sign a browser into an MSAL-protected SPA.
 /// </summary>
 public static class FrontendQualityEngineAccessRegistry
@@ -96,7 +96,7 @@ public static class FrontendQualityEngineAccessRegistry
         new Dictionary<FrontendQualityEngineId, FrontendQualityEngineAccessRequirements>
         {
             // Both HTTP engines additionally consume the shared authenticated API-surface probes (approved REST GET / GraphQL query via
-            // the Local HTTPS proxy gateway): Static Security assesses API security headers/CORS, Passive Performance authenticated latency.
+            // the Local HTTPS proxy gateway): HTTP Security assesses API security headers/CORS, HTTP Performance authenticated latency.
             [FrontendQualityEngineId.StaticSecurity] = new(FrontendQualityEngineId.StaticSecurity,
                 RequiresTargetReachability: true, RequiresPublicHttp: true, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
@@ -126,7 +126,7 @@ public static class FrontendQualityEngineAccessRegistry
                 RequiresTargetReachability: false, RequiresPublicHttp: false, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
                 SupportsProxyAuthenticatedContext: false, SupportsCdp: true, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: true),
-            // BirkNext Performance Quality consumes Browser Companion evidence (page/runtime/resource/Blazor) and the proxy's already recorded
+            // Browser Performance Quality consumes Browser Companion evidence (page/runtime/resource/Blazor) and the proxy's already recorded
             // network observations (API latency/statuses/duplicates) per page. It issues no request itself and never uses the authenticated
             // API context (gateway probes), so SupportsProxyAuthenticatedContext stays false; either passive source yields a partial assessment.
             [FrontendQualityEngineId.PerformanceQuality] = new(FrontendQualityEngineId.PerformanceQuality,

@@ -41,7 +41,7 @@ public sealed class TargetReachabilityProbeDto
 
 /// <summary>
 /// Target reachability preflight for the Frontend Quality Review. The probe is executed by the BirkNext backend
-/// (<c>api/frontend-target/reachability</c>) on the same network path the Static Security and Passive Performance engines use.
+/// (<c>api/frontend-target/reachability</c>) on the same network path the HTTP Security and HTTP Performance engines use.
 /// It is deliberately NOT a browser-side fetch: a Blazor WebAssembly request to a cross-origin target is subject to CORS policy and
 /// in-browser protection, which turned reachable targets into "Network error" / generic timeout results.
 /// The timeout wording is used only when the backend probe actually timed out.
