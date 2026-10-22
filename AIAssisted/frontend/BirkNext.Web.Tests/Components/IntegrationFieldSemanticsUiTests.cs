@@ -166,6 +166,38 @@ public sealed class IntegrationFieldSemanticsUiTests : BunitContext
     }
 
     [Fact]
+    public void ContractRelationship_ShowsProducerDeclaration_Candidates_Differences_AndRuntimeValidationNotAssessed()
+    {
+        _api.Discoveries[WebhookId] = Discovery() with
+        {
+            Relationship = new BirkNext.ContractSchemaEvidence.ContractRelationshipAssessment(
+                new("Partner app reference", DataType: "Report", ContentType: "application/xml", Task: "Task_1"),
+                [
+                    new("xsd:Receiver/Schemas/report.v1.0.0.xsd", "report.v1.0.0", "Receiver/Schemas/report.v1.0.0.xsd", "1.0.0", Bound,
+                        [new("root", "Message root Report matches the declared data type", BirkNext.ContractSchemaEvidence.ContractMatchStrength.Strong)],
+                        BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.StrongCandidate, "Strong candidate · needs review"),
+                    new("xsd:Receiver/Schemas/report.v2.0.0.xsd", "report.v2.0.0", "Receiver/Schemas/report.v2.0.0.xsd", "2.0.0", Bound,
+                        [new("root", "Message root Report matches the declared data type", BirkNext.ContractSchemaEvidence.ContractMatchStrength.Strong)],
+                        BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.StrongCandidate, "Strong candidate · needs review"),
+                ],
+                BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.Ambiguous, "Ambiguous · needs selection",
+                "2 candidates are equally supported; none is chosen (never the newest by version or date).", ["Version difference: producer 2.0.0, consumer candidate report.v1.0.0 1.0.0 · review required"]),
+        };
+        var cut = Open();
+        OpenDetail(cut, WebhookId);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-contract-relationship]"));
+        var relationship = cut.Find("[data-testid=ip-contract-relationship]");
+        relationship.GetAttribute("data-state").Should().Be("Ambiguous");
+        relationship.TextContent.Should().Contain("Ambiguous · needs selection").And.Contain("none is chosen");
+        cut.Find("[data-testid=ip-contract-producer-declaration]").TextContent.Should().Contain("data type Report · application/xml · task Task_1").And.Contain("not the consumer schema");
+        cut.FindAll("[data-testid=ip-contract-relationship-candidate]").Should().HaveCount(2);
+        cut.Find("[data-testid=ip-contract-relationship-differences]").TextContent.Should().Contain("Version difference").And.NotContain("ncompatib");
+        cut.Find("[data-testid=ip-contract-runtime-validation]").TextContent.Should().Contain("Not assessed");
+        cut.FindAll("[data-testid=ip-contract-view-consumer]")[1].GetAttribute("href").Should().Be($"schema-studio?snapshot={Bound}&contract=Receiver%2FSchemas%2Freport.v2.0.0.xsd");
+        _api.Calls.Should().NotContain(c => c.StartsWith("contract-select") || c.StartsWith("save"), "reviewing a relationship selects, binds and saves nothing");
+    }
+
+    [Fact]
     public void ReviewingCandidates_ShowsEvidenceAndSupportingSchemas_AndUsingOneStoresIt()
     {
         var cut = Open();

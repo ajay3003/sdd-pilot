@@ -5,8 +5,9 @@ using BirkNext.TestData;
 
 namespace BirkNext.Api.Services.TestData;
 
-/// <summary>An XSD package found for a <see cref="TestDataSchemaReference"/>: the exact snapshot it came from and its retained XSD files.</summary>
-public sealed record TestDataSchemaPackage(Guid SnapshotId, IReadOnlyDictionary<string, string> Files, bool IsComplete);
+/// <summary>An XSD package found for a <see cref="TestDataSchemaReference"/>: the exact snapshot it came from and its retained XSD files.
+/// <see cref="DistinctVersions"/> &gt; 1: an unpinned reference matched several snapshots holding DIFFERENT content for the path — none is used.</summary>
+public sealed record TestDataSchemaPackage(Guid SnapshotId, IReadOnlyDictionary<string, string> Files, bool IsComplete, int DistinctVersions = 1);
 
 /// <summary>Where Test Data finds XSD packages. The default reads Source Analysis' retained schema artifacts; nothing is fetched.</summary>
 public interface ITestDataSchemaSource
@@ -15,8 +16,9 @@ public interface ITestDataSchemaSource
 }
 
 /// <summary>
-/// Resolves a schema reference against Source Analysis snapshots' XSD artifacts: the exact snapshot when an id is given, otherwise the newest
-/// snapshot whose artifact contains the schema path (the snapshot used is reported with the result).
+/// Resolves a schema reference against Source Analysis snapshots' XSD artifacts: the exact snapshot when an id is given; otherwise a snapshot
+/// whose artifact contains the schema path, but only when every such snapshot holds the same content for it. Different versions are never
+/// resolved by recency — the reference must pin a snapshot (the snapshot used is reported with the result).
 /// </summary>
 public sealed class SourceAnalysisTestDataSchemaSource(IqrSourceStore store) : ITestDataSchemaSource
 {
@@ -27,9 +29,13 @@ public sealed class SourceAnalysisTestDataSchemaSource(IqrSourceStore store) : I
     {
         if (reference.SourceSnapshotId is { } exact) return Read(await store.FindSchemaArtifactAsync(exact, ct), reference.SchemaPath);
         var (index, _) = await store.ListSchemaSnapshotIndexAsync(ct: ct);
+        var found = new List<TestDataSchemaPackage>();
         foreach (var snapshot in index.Where(s => s.HasSchemaArtifact).Take(MaxSnapshotsSearched))
-            if (Read(await store.FindSchemaArtifactAsync(snapshot.Id, ct), reference.SchemaPath) is { } package) return package;
-        return null;
+            if (Read(await store.FindSchemaArtifactAsync(snapshot.Id, ct), reference.SchemaPath) is { } package) found.Add(package);
+        if (found.Count == 0) return null;
+        var versions = found.Select(p => XmlSchemaPackageAnalyzer.Fingerprint(p.Files.First(f => string.Equals(f.Key, reference.SchemaPath, StringComparison.OrdinalIgnoreCase)).Value))
+            .Distinct(StringComparer.Ordinal).Count();
+        return found[0] with { DistinctVersions = versions };
     }
 
     private static TestDataSchemaPackage? Read(Models.SourceSchemaArtifactRecord? artifact, string path)
@@ -68,6 +74,10 @@ public static class TestDataSchemaValidator
                     ? $"Schema unavailable: snapshot {id:D} has no retained XSD '{reference.SchemaPath}'."
                     : $"Schema unavailable: no Source Analysis snapshot retains the XSD '{reference.SchemaPath}'.", []);
 
+        if (package.DistinctVersions > 1)
+            return new(TestDataSchemaStatus.SchemaUnavailable, label,
+                $"Schema needs selection: {package.DistinctVersions} Source Analysis snapshots retain different versions of '{reference.SchemaPath}'. Pin the snapshot on the schema reference — the newest is never chosen automatically.", []);
+
         IReadOnlyDictionary<string, string> closure;
         try { closure = XmlSchemaPackageAnalyzer.DependencyClosure(package.Files, reference.SchemaPath); }
         catch (InvalidDataException e)
@@ -79,8 +89,13 @@ public static class TestDataSchemaValidator
             return new(TestDataSchemaStatus.SchemaUnavailable, label,
                 $"Schema unavailable: the XSD in snapshot {package.SnapshotId:D} has fingerprint {fingerprint[..12]}, not the declared {expected[..Math.Min(12, expected.Length)]}.",
                 [], package.SnapshotId, fingerprint);
-        string? version = null;
-        try { version = XmlSchemaPackageAnalyzer.Analyze(closure).Files.FirstOrDefault(f => string.Equals(f.Name, reference.SchemaPath, StringComparison.OrdinalIgnoreCase))?.Version; }
+        string? version = null, rules = null;
+        try
+        {
+            var analysis = XmlSchemaPackageAnalyzer.Analyze(closure);
+            version = analysis.Files.FirstOrDefault(f => string.Equals(f.Name, reference.SchemaPath, StringComparison.OrdinalIgnoreCase))?.Version;
+            rules = ContractRules(reference.SchemaPath, package.SnapshotId, analysis);
+        }
         catch (Exception e) when (e is InvalidDataException or System.Xml.XmlException) { }
         var result = XmlSchemaPackageAnalyzer.ValidateXml(closure, asset.Value.Reveal(), reference.RootElement);
         var status = result.Status switch
@@ -100,7 +115,19 @@ public static class TestDataSchemaValidator
         };
         if (!package.IsComplete && status is not (TestDataSchemaStatus.Validated or TestDataSchemaStatus.Invalid))
             detail += " The snapshot retained only part of its XSD files.";
-        return new(status, label, detail, [.. result.Issues.Take(10)], package.SnapshotId, fingerprint, version);
+        return new(status, label, detail, [.. result.Issues.Take(10)], package.SnapshotId, fingerprint, version) { ContractRules = rules };
+    }
+
+    /// <summary>The schema's declared rules as normalized contract constraints (the shared contract evidence model) — what generated or
+    /// hand-made test data must respect. Derived from the contract; never a value, an identity or a secret.</summary>
+    public static string? ContractRules(string schemaPath, Guid snapshotId, XmlSchemaAnalysis analysis)
+    {
+        var contract = BirkNext.ContractSchemaEvidence.XmlSchemaContractProjection.FromPackage(schemaPath, analysis.Files, analysis.EffectiveSchema, analysis.Identity);
+        var fact = BirkNext.ContractSchemaEvidence.ContractEvidenceQueries.Fact(new(snapshotId, schemaPath, default, new BirkNext.SourceDomains.ContractEvidence { Contracts = [contract] }), contract);
+        var constraints = BirkNext.ContractSchemaEvidence.ContractEvidenceQueries.GetConstraints(fact);
+        if (constraints.Count == 0) return null;
+        static string Label(string kind) => kind switch { "Required" => "required field(s)", "Allowed values" => "allowed-value list(s)", "Pattern" => "pattern(s)", "Range" => "range rule(s)", _ => "length rule(s)" };
+        return $"Derived from contract {schemaPath}: {string.Join(" · ", constraints.GroupBy(c => c.Kind).Select(g => $"{g.Count()} {Label(g.Key)}"))}";
     }
 
     /// <summary>

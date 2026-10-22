@@ -1079,6 +1079,12 @@ public sealed class IntegrationReviewEngine(
                 producer is { Problem: { } pp } ? $"The stored producer contract no longer parses: {pp}" : consumer is { Problem: { } cp } ? $"The stored consumer contract no longer parses: {cp}"
                 : "Compatibility needs both a producer and a consumer contract; one-sided evidence is never called compatible.");
 
+        // Declared/stored contracts are design evidence. Whether exchanged payloads conform is runtime evidence this review does not collect.
+        if (producer is not null || consumer is not null)
+            yield return Check("contract-runtime-validation", IntegrationReviewDomain.Contract, id, "Runtime payload validation", IntegrationCheckStatus.NotAssessed,
+                "Payloads exchanged at runtime conform to the contract.", "",
+                "Contract availability, source contract evidence and structural comparison are not runtime validation; no exchanged payload was validated against the contract.");
+
         foreach (var (role, current) in new[] { (IntegrationContractRole.Producer, producer), (IntegrationContractRole.Consumer, consumer) })
         {
             if (current is null) continue;

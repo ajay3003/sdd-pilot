@@ -339,7 +339,7 @@
                     @if (_domain == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
                     else if (_domain == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
                     else if (_domain == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
-                    else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" SourceName="@selected.Archive.FileName" /> }
                 }
                 else { <p class="sa-card" data-testid="evidence-missing">@SourceEvidenceDomainsPresentation.HistoricalNote</p> }
             }

@@ -67,6 +67,15 @@ public static class IntegrationDetailPresentation
         _ => "muted",
     };
 
+    /// <summary>Relationship review tone: confirmed source usage or an explicit selection is informational (never "ready" — runtime is not
+    /// assessed); candidates and ambiguity need attention.</summary>
+    public static string Tone(BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState state) => state switch
+    {
+        BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.Confirmed or BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.Bound => "info",
+        BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.NotAssessed or BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.NoMatchingEvidence => "muted",
+        _ => "attention",
+    };
+
     public static string Tone(IntegrationContractCompatibilityState state) => state switch
     {
         IntegrationContractCompatibilityState.Compatible => "ready",

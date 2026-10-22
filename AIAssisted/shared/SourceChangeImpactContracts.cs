@@ -13,7 +13,10 @@ public sealed record ImpactSnapshotOption(Guid Id, string Repository, string Arc
 public sealed record ImpactSnapshotList(bool SourceAnalysisEnabled, List<ImpactSnapshotOption> Snapshots);
 public sealed record SourceChangeImpactRequest(string EnvironmentId, string ProjectId, Guid BaselineSnapshotId, Guid TargetSnapshotId,
     string? ProjectImportId = null, string? ProjectDisplayName = null, int MaxImpactDepth = 2);
-public sealed record ImpactChange(string Id, ImpactChangeDomain Domain, ImpactChangeKind Kind, string EntityType, string EntityKey, string Name, string Detail, List<string> SourceFiles, string? ContractChangeClass = null);
+/// <param name="ContractClassification">For a contract change: the shared contract comparison's cautious class ("Potential breaking change",
+/// "Non-breaking candidate", "Review required") — the same engine Schema Studio Compare uses; never a breakage verdict.</param>
+public sealed record ImpactChange(string Id, ImpactChangeDomain Domain, ImpactChangeKind Kind, string EntityType, string EntityKey, string Name, string Detail, List<string> SourceFiles,
+    string? ContractChangeClass = null, string? ContractClassification = null);
 public sealed record ImpactPathStep(string EntityType, string EntityId, string Label, string Relationship, string EvidenceState, string Basis);
 public sealed record TechnicalImpactItem(string Id, string EntityType, string EntityId, string DisplayName, ImpactChangeDomain Domain,
     TechnicalImpactLevel Level, string EvidenceState, string Reason, List<ImpactPathStep> Path, List<string> SourceChangeIds, List<string> SourceFiles)

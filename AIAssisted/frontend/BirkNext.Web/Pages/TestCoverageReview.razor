@@ -262,6 +262,14 @@
                                 }
                             </table>
                         </div>
+                        @if (r.Contracts.Count > 0)
+                        {
+                            <details class="tco-details" data-testid="tco-contracts">
+                                <summary>Contract coverage (@r.Contracts.Count(c => c.Links.Count > 0) of @r.Contracts.Count contracts referenced by tests)</summary>
+                                <p class="tco-muted">Which contract operations and message roots discovered tests name, from the source snapshot's stored contract evidence. A link means a test targets the contract — not that it ran or passed.</p>
+                                <ul class="tco-list">@foreach (var contract in r.Contracts) { <li data-testid="tco-contract"><strong>@contract.Name</strong> <span class="tco-muted">@contract.Format</span> — @contract.Text</li> }</ul>
+                            </details>
+                        }
                         break;
                     case "requirements":
                         <div class="tco-filters"><label class="tco-field tco-inline">Status <select @bind="_behaviorStatus" data-testid="tco-behavior-status"><option value="">All</option>@foreach (var st in r.Behaviors.Select(b => b.Status).Distinct().Order()) { <option value="@st">@st</option> }</select></label></div>

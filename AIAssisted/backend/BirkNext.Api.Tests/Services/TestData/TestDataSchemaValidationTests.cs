@@ -137,6 +137,25 @@ public sealed class TestDataSchemaValidationTests
         summary.Validation.Should().Be(TestDataValidation.Validated);
     }
 
+    [Fact]
+    public async Task SourceAnalysisSchemaSource_NeverPicksTheNewestOfDifferentVersions_ForAnUnpinnedReference()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var db = new AppDbContext(options);
+        var older = Guid.NewGuid();
+        Seed(db, older, DateTimeOffset.UtcNow.AddDays(-1), ("schemas/report.xsd", Xsd));
+        Seed(db, SnapshotId, DateTimeOffset.UtcNow, ("schemas/report.xsd", Xsd.Replace("version=\"2.0.0\"", "version=\"2.0.1\"")));
+        await db.SaveChangesAsync();
+        var source = new SourceAnalysisTestDataSchemaSource(new IqrSourceStore(db));
+
+        var package = await source.FindAsync(new("schemas/report.xsd"), default);
+        package!.DistinctVersions.Should().Be(2);
+        var check = TestDataSchemaValidator.Check(Xml("unpinned", Valid, schema: new("schemas/report.xsd")), package)!;
+        check.Status.Should().Be(TestDataSchemaStatus.SchemaUnavailable);
+        check.Detail.Should().Contain("needs selection").And.Contain("never chosen automatically");
+        (await source.FindAsync(new("schemas/report.xsd", older), default))!.DistinctVersions.Should().Be(1, "a pinned snapshot is exact");
+    }
+
     private static void Seed(AppDbContext db, Guid id, DateTimeOffset at, params (string Path, string Text)[] files)
     {
         var snapshot = new IqrSourceSnapshot { Id = id, IntegrationId = IqrSourceStore.SourceAnalysisOwner, Archive = new("schemas.zip", "fp-" + id.ToString("N")[..8], files.Length), AnalyzedAt = at };

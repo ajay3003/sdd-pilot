@@ -301,7 +301,14 @@ public sealed record TestCoverageReviewResult
     public List<ReviewPhase> Phases { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
     public bool Partial { get; init; }
+    /// <summary>Which contract operations / message roots discovered tests reference (shared contract evidence). Discovered tests, not executions.</summary>
+    public List<ContractCoverageItem> Contracts { get; init; } = [];
 }
+
+/// <summary>Test links of one source contract: <see cref="Covered"/> of <see cref="Elements"/> operations/message roots are named by a test or the
+/// contract file is named by test code. A link is evidence a test targets the contract — never that it ran or passed.</summary>
+public sealed record ContractCoverageItem(string ContractId, string Name, string Format, int Elements, int Covered,
+    List<BirkNext.ContractSchemaEvidence.ContractTestLink> Links, string Text);
 
 // ── Request / decisions / history ───────────────────────────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 @using BirkNext.SourceDomains
+@using BirkNext.ContractSchemaEvidence
 @using BirkNext.Web.Services
 
 @* Source Analysis → Contracts: source contracts and schemas of the selected snapshot (stored analysis). A source contract is a design artifact:
@@ -18,7 +19,27 @@
         var rows = SourceEvidenceDomainsPresentation.FilterContracts(K.Contracts, _type, _search).ToList();
         var filtering = _type.Length > 0 || _search.Length > 0;
         var review = SourceAnalysisReview.ContractsNeedingReview(K);
+        var source = new ContractEvidenceSource(Evidence.SourceSnapshotId, SourceName ?? "", Evidence.ExtractedAt, K);
+        var summary = ContractEvidenceQueries.Summary(source);
+        var facts = ContractEvidenceQueries.GetContracts(source).GroupBy(f => f.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var versionGroups = ContractEvidenceQueries.VersionGroups(facts.Values);
         <p class="sd-lead" data-testid="sd-contracts-lead">@SourceAnalysisReview.Plural(K.Contracts.Count, "contract", "contracts") detected</p>
+        <dl class="sd-summary" data-testid="sd-contracts-overview">
+            <div><dt>Contracts</dt><dd>@summary.Total</dd></div>
+            @foreach (var format in summary.Formats.Take(4)) { <div data-testid="sd-contracts-format"><dt>@format.Format</dt><dd>@format.Count</dd></div> }
+            <div><dt>Parsed</dt><dd data-testid="sd-contracts-parsed">@summary.Parsed</dd></div>
+            <div><dt>Partial</dt><dd data-testid="sd-contracts-partial">@summary.Partial</dd></div>
+            <div><dt>Failed</dt><dd data-testid="sd-contracts-failed">@summary.Failed</dd></div>
+            <div><dt>Needs review</dt><dd data-testid="sd-contracts-review-count">@summary.NeedsReview</dd></div>
+        </dl>
+        @if (versionGroups.Count > 0)
+        {
+            <section class="sd-panel" aria-labelledby="sd-contracts-versions-heading" data-testid="sd-contracts-versions">
+                <h3 id="sd-contracts-versions-heading">Several versions of the same contract</h3>
+                <p class="sd-muted">All versions are kept. Which one an integration uses is decided by evidence in that context — never because it is the newest.</p>
+                <ul class="sd-list">@foreach (var g in versionGroups) { <li data-testid="sd-contracts-version-group"><strong>@g.Members[0].Name</strong> · @g.Text<span class="sd-context">@string.Join(", ", g.Members.Select(m => m.Contract.File))</span></li> }</ul>
+            </section>
+        }
         <dl class="sd-summary" data-testid="sd-contracts-summary">
             <div><dt>Types</dt><dd data-testid="sd-contracts-types">@string.Join(" · ", K.Contracts.GroupBy(c => c.Type).OrderByDescending(g => g.Count()).Select(g => $"{SourceDomainText.Label(g.Key)} {g.Count()}"))</dd></div>
             <div><dt>Parsing method</dt><dd data-testid="sd-contracts-parsing">@string.Join(" · ", K.Contracts.GroupBy(c => SourceAnalysisReview.Parsing(c.ParseSupport)).OrderByDescending(g => g.Key == "Structured").ThenBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}"))</dd></div>
@@ -85,6 +106,11 @@
                             @if (open)
                             {
                                 <tr role="row" class="sd-detail-row" data-testid="sd-contract-detail"><td role="cell" colspan="@columns">
+                                    @{ var fact = facts[c.Id]; }
+                                    <p data-testid="sd-contract-meaning"><strong>@ContractEvidenceQueries.Label(fact.Usage)</strong> · @fact.EntryPoint.Text · @ContractEvidenceQueries.Label(fact.Parse)</p>
+                                    @if (fact.Versions.Count > 0) { <p data-testid="sd-contract-versions"><strong>Version:</strong> @string.Join("; ", fact.Versions.Select(v => $"{v.Value} ({v.Kind})"))</p> }
+                                    @if (fact.UnresolvedReferences.Count > 0) { <ul class="sd-list" data-testid="sd-contract-unresolved">@foreach (var u in fact.UnresolvedReferences) { <li>Unresolved reference: @u.Kind @(u.Location ?? u.Namespace) <span class="sd-context">in @u.Provenance.File · not fetched</span></li> }</ul> }
+                                    @if (c.Type == SourceContractType.XmlSchema) { <p><a class="sd-link" href="@($"schema-studio?snapshot={Evidence.SourceSnapshotId}&contract={Uri.EscapeDataString(c.File)}")" data-testid="sd-contract-open-studio">Open in Schema Studio<span class="visually-hidden"> — @c.Name</span></a> <span class="sd-context">same stored snapshot, not re-imported</span></p> }
                                     <p><strong>Source:</strong> <span class="sd-path">@SourceEvidenceDomainsPresentation.Location(c.File, c.Line)</span> · @c.Format · parsing method @SourceAnalysisReview.Parsing(c.ParseSupport)</p>
                                     <p><strong>Producer/owner basis:</strong> @(c.ProducerBasis ?? "Not stated in source") · ownership evidence @SourceDomainText.Label(c.EvidenceState)</p>
                                     @if (c.Operations.Count > 0) { <p><strong>Operations:</strong> @string.Join(", ", c.Operations.Take(60).Select(o => o.Name))@(c.Operations.Count > 60 ? $" … +{c.Operations.Count - 60}" : "")</p> }
@@ -140,6 +166,9 @@
                 </section>
             }
         </section>
+        <ReviewDisclosure Text="View contract documentation summary" CollapseText="Hide contract documentation summary" TestId="sd-contracts-doc" Class="disclosure-inline">
+            <pre class="sd-doc" data-testid="sd-contracts-doc-text">@ContractDocumentation.Markdown(source, [.. facts.Values])</pre>
+        </ReviewDisclosure>
         <SourceDomainChanges Slug="contracts" Label="Contract" Domain="SourceEvidenceDomain.Contracts" Current="Evidence" Previous="Previous" />
         <SourceDomainLimitations Slug="contracts" Result="K" Capabilities="Capabilities" />
     }
@@ -147,6 +176,8 @@
 @code {
     [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
     [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+    /// <summary>Archive name for provenance (optional).</summary>
+    [Parameter] public string? SourceName { get; set; }
     private ContractEvidence K => Evidence.Contracts;
     private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.Contracts);
     private string _type = "", _search = "";

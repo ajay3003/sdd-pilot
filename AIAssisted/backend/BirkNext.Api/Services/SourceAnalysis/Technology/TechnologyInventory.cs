@@ -155,7 +155,8 @@ public static class TechnologyInventory
             var id = contract.Type switch
             {
                 SourceContractType.OpenApi => "contract.openapi", SourceContractType.GraphQlSchema or SourceContractType.GraphQlOperations => "contract.graphql",
-                SourceContractType.AsyncApi => "contract.asyncapi", SourceContractType.XmlSchema => "contract.xsd", SourceContractType.Protobuf => "contract.protobuf", _ => null,
+                SourceContractType.AsyncApi => "contract.asyncapi", SourceContractType.XmlSchema => "contract.xsd", SourceContractType.Protobuf => "contract.protobuf",
+                SourceContractType.JsonSchema => "contract.jsonschema", _ => null,
             };
             if (id is not null) Add(id, DetectionConfidence.Confirmed, IqrSourceArchiveReader.SafeLabel(contract.Name));
         }

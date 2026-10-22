@@ -1,3 +1,5 @@
+using BirkNext.ContractSchemaEvidence;
+using BirkNext.SourceDomains;
 using BirkNext.Schemas;
 
 namespace BirkNext.Web.Services.SchemaStudio;
@@ -66,7 +68,19 @@ public static class SchemaStudioPresentation
     public const string TestScope = "These tests check schema rules locally. They do not test business logic, external integrations or runtime delivery.";
 
     /// <summary>A package without a global root element: it defines reusable types and fields, not a complete message.</summary>
-    public static bool IsLibrary(SchemaPackage package) => package.EffectiveSchema.Count == 0;
+    public static bool IsLibrary(SchemaPackage package) => EntryPoint(package).State == ContractEntryPointState.ReusableDefinitions;
+
+    /// <summary>The shared entry-point rule over the package's normalized contract evidence: one message root, several candidates that need
+    /// selection, or reusable definitions (not a broken schema).</summary>
+    public static ContractEntryPoint EntryPoint(SchemaPackage package) => ContractEvidenceQueries.EntryPoint(Contract(package));
+
+    /// <summary>"Message schema · Message entry point: Report" — usage and entry point from the shared contract evidence queries.</summary>
+    public static string ContractEvidence(SchemaPackage package)
+    {
+        var contract = Contract(package);
+        var entry = ContractEvidenceQueries.EntryPoint(contract);
+        return $"{ContractEvidenceQueries.Label(ContractEvidenceQueries.Usage(contract, entry))} · {entry.Text}";
+    }
 
     /// <summary>Global declarations ("reusable schema definitions") across the package.</summary>
     public static int Definitions(SchemaPackage package) => package.Files.Sum(file => file.Declarations.Count);
@@ -82,7 +96,7 @@ public static class SchemaStudioPresentation
     {
         0 => "None",
         1 => package.EffectiveSchema[0].Name,
-        var roots => $"{roots} top-level elements",
+        var roots => $"{roots} candidate message roots · needs selection",
     };
 
     /// <summary>Imports and includes between the package's files ("None" when the package has none).</summary>
@@ -271,13 +285,25 @@ public static class SchemaStudioPresentation
     };
 
     /// <summary>Counts change lines by kind; namespaces changed = target namespaces present in only one of the two versions.</summary>
-    public static SchemaChangeSummary Changes(IReadOnlyCollection<string> lines, SchemaPackage before, SchemaPackage after)
+    /// <summary>A package as normalized contract evidence (the shared XSD engine's projection) — the same shape Source Analysis stores.</summary>
+    public static SourceContract Contract(SchemaPackage package) =>
+        Projections.GetValue(package, p => XmlSchemaContractProjection.FromPackage(p.Name, p.Files, p.EffectiveSchema, p.Identity));
+
+    // Projected once per immutable package, never per render.
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<SchemaPackage, SourceContract> Projections = new();
+
+    /// <summary>Schema changes from the shared contract comparison engine — the one Impact Analysis and Source Analysis use.</summary>
+    public static IReadOnlyList<ContractChangeFact> CompareChanges(SchemaPackage before, SchemaPackage after) => ContractComparison.Compare(Contract(before), Contract(after));
+
+    public static string ChangeLine(ContractChangeFact change) => $"{change.Classification}: {change.Detail}";
+
+    public static SchemaChangeSummary Changes(IReadOnlyCollection<ContractChangeFact> changes, SchemaPackage before, SchemaPackage after)
     {
         static HashSet<string> Namespaces(SchemaPackage p) => [.. p.Files.Select(f => f.TargetNamespace ?? "")];
         var namespaces = Namespaces(before); namespaces.SymmetricExceptWith(Namespaces(after));
-        return new(lines.Count(l => l.Contains("declaration added", StringComparison.Ordinal)), lines.Count(l => l.Contains("declaration removed", StringComparison.Ordinal)),
-            lines.Count(l => l.Contains("constraints changed", StringComparison.Ordinal)), namespaces.Count,
-            lines.Count(l => l.StartsWith("Needs review", StringComparison.Ordinal) || l.StartsWith("Potentially breaking", StringComparison.Ordinal)));
+        return new(changes.Count(c => c.Kind == SourceEvidenceChangeKind.Added), changes.Count(c => c.Kind == SourceEvidenceChangeKind.Removed),
+            changes.Count(c => c.Class is ContractChangeClass.RestrictionChanged or ContractChangeClass.CardinalityChanged or ContractChangeClass.RequirednessChanged), namespaces.Count,
+            changes.Count(c => c.Classification is ContractComparison.PotentialBreaking or ContractComparison.ReviewRequired));
     }
 
     public static string Count(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";

@@ -654,6 +654,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedD
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyHealthService, BirkNext.Api.Services.DependencyReview.DependencyHealthService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.DependencyEvidenceProviderRegistry>();
+builder.Services.AddScoped<BirkNext.Api.Services.SchemaEvidence.ContractEvidenceService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

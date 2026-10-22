@@ -5,6 +5,7 @@ using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.CriticalE2E;
 using BirkNext.Integrations;
 using BirkNext.SourceArchitecture;
+using BirkNext.SourceDomains;
 using BirkNext.TestCoverage;
 using BirkNext.TestEvidence;
 
@@ -129,7 +130,26 @@ public static partial class TestCoverageReviewEngine
             Tests = tests, QaTests = qaTests, Components = componentCoverage, Journeys = journeys, Behaviors = behaviors, Overlaps = overlaps, Gaps = gaps, QaScope = scope,
             Phases = phases, Limitations = limitations.Distinct(StringComparer.Ordinal).ToList(),
             Partial = facts is null || facts.Truncated || inventory?.Status == SourceTestDiscoveryStatus.Partial || architecture is null,
+            Contracts = ContractCoverage(current, tests),
         };
+    }
+
+    /// <summary>Contract operations / message roots referenced by discovered tests, from the snapshot's stored contract evidence (never re-parsed).</summary>
+    private static List<ContractCoverageItem> ContractCoverage(IqrSourceSnapshot snapshot, List<CoverageTest> tests)
+    {
+        if (snapshot.EvidenceDomains?.Contracts is not { } evidence) return [];
+        var source = new BirkNext.ContractSchemaEvidence.ContractEvidenceSource(snapshot.Id, snapshot.Archive.FileName, snapshot.AnalyzedAt, evidence);
+        var references = tests.Select(t => new BirkNext.ContractSchemaEvidence.ContractTestReference(t.Name, t.FilePath)).ToList();
+        return [.. BirkNext.ContractSchemaEvidence.ContractEvidenceQueries.GetContracts(source)
+            .Where(f => f.Contract.Type is not (SourceContractType.GeneratedClient or SourceContractType.MessageContract or SourceContractType.GraphQlOperations))
+            .Select(f =>
+            {
+                var links = BirkNext.ContractSchemaEvidence.ContractTestCoverage.Map(f, references);
+                var elements = f.Contract.Operations.Count + f.EntryPoint.Roots.Count;
+                var covered = links.Where(l => l.Element != f.Name).Select(l => l.Element).Distinct(StringComparer.Ordinal).Count();
+                return new ContractCoverageItem(f.Id, f.Name, BirkNext.ContractSchemaEvidence.ContractEvidenceQueries.Label(f.Contract.Type), elements, covered, [.. links.Take(50)],
+                    links.Count == 0 ? "No discovered test references this contract" : $"{links.Count} test link(s) · {covered} of {elements} operation(s)/root(s) named by tests · discovered, not executed");
+            })];
     }
 
     // ── tests ─────────────────────────────────────────────────────────────────────────────────────────────────────

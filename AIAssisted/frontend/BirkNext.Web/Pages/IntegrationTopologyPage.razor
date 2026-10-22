@@ -392,6 +392,7 @@
             <strong>@ComponentName(view, connection.ProducerComponentId) → @ComponentName(view, connection.ConsumerComponentId)</strong>
             <span class="it-pill it-pill-@(connection.Status == TopologyStatus.Conflict ? "attention" : P.RelationshipTone(connection.Relationship))">@(connection.Status == TopologyStatus.Conflict ? "Conflict" : P.Relationship(connection.Relationship))</span>
             <span class="it-note">@P.Type(connection.Type) · @(connection.Address ?? connection.Protocol) · @P.Sources(connection.Provenance)@(connection.ContractReference is { } contract ? $" · contract {contract}" : "")</span>
+            @if (connection.ContractStatus is { } contractStatus) { <span class="it-note" data-testid="it-connection-contract">@contractStatus</span> }
             @foreach (var note in connection.Notes) { <span class="it-note it-warn">@note</span> }
         </span>;
 

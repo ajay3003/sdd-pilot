@@ -155,6 +155,7 @@
                         @{ var namespaces = SchemaStudioPresentation.Namespaces(package); }
                         <div><dt>Namespaces</dt><dd data-testid="ss-overview-namespaces">@namespaces.Count@if (namespaces.Count > 0) { <small class="ss-muted ss-overview-primary-ns" title="@namespaces[0]">Primary: @SchemaStudioPresentation.ShortNamespace(namespaces[0])</small> }<button type="button" class="ss-text-button" data-testid="ss-overview-view-namespaces" @onclick='() => _tab = "Namespaces"'>View namespaces</button></dd></div>
                         <div><dt>Schema dependencies</dt><dd data-testid="ss-overview-dependencies">@SchemaStudioPresentation.Dependencies(package)<small class="ss-muted ss-tech-term">@SchemaStudioPresentation.DependencyDetail(package)</small></dd></div>
+                        <div><dt>Contract evidence</dt><dd data-testid="ss-overview-contract">@SchemaStudioPresentation.ContractEvidence(package)<small class="ss-muted ss-tech-term">Shared contract evidence (the same model Source Analysis, Integrations and Impact Analysis read)</small></dd></div>
                         <div><dt>Reusable definitions</dt><dd data-testid="ss-overview-definitions">@SchemaStudioPresentation.Definitions(package)<small class="ss-muted ss-tech-term">Technical: global declarations</small></dd></div>
                     </dl>
                     <section class="ss-meaning" aria-labelledby="ss-meaning-title" data-testid="ss-meaning">
@@ -496,7 +497,7 @@
                         @if (!draftValid) { <p class="ss-muted" id="ss-designer-save-help">Save new version becomes available after the draft previews as valid.</p> }
                     </section>
                     @if (!string.IsNullOrWhiteSpace(_draftStatus)) { <p role="status">@_draftStatus</p> }
-                    @if (_draftPreview is { } draftPreview) { <p role="status" data-testid="ss-draft-result">Draft compilation: @draftPreview.Validation · @draftPreview.Files.Count file(s) · @draftPreview.References.Count relationship(s).</p>@if (draftPreview.Validation != "Valid") { <ul class="ss-warning">@foreach (var diagnostic in draftPreview.Diagnostics) { <li>@diagnostic</li> }</ul> } else { <h4>Preview changes</h4><ul>@foreach (var change in Compare(package, draftPreview)) { <li>@change</li> }</ul><p class="ss-muted">Linked references affected by the selected file edit are re-resolved before saving.</p> } }
+                    @if (_draftPreview is { } draftPreview) { <p role="status" data-testid="ss-draft-result">Draft compilation: @draftPreview.Validation · @draftPreview.Files.Count file(s) · @draftPreview.References.Count relationship(s).</p>@if (draftPreview.Validation != "Valid") { <ul class="ss-warning">@foreach (var diagnostic in draftPreview.Diagnostics) { <li>@diagnostic</li> }</ul> } else { <h4>Preview changes</h4><ul>@foreach (var change in SchemaStudioPresentation.CompareChanges(package, draftPreview)) { <li>@SchemaStudioPresentation.ChangeLine(change)</li> }</ul><p class="ss-muted">Linked references affected by the selected file edit are re-resolved before saving.</p> } }
                     break;
                 case "Compare":
                     var otherVersions = Studio.Packages.Where(p => p.Id != package.Id).ToList();
@@ -513,7 +514,7 @@
                         </select></label>
                         @if (CompareTarget(package) is { } prior)
                         {
-                            var changes = Compare(prior, package).ToList();
+                            var changes = SchemaStudioPresentation.CompareChanges(prior, package);
                             var changeSummary = SchemaStudioPresentation.Changes(changes, prior, package);
                             <h3 class="ss-section-title">Schema changes</h3>
                             <dl class="ss-stats ss-stats-compact" data-testid="ss-compare-summary">
@@ -528,7 +529,8 @@
                             {
                                 <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="ss-compare-details" Class="disclosure-small">
                                     <p class="ss-muted">Current <code title="@package.Fingerprint">@ShortFingerprint(package.Fingerprint)</code> compared with <code title="@prior.Fingerprint">@ShortFingerprint(prior.Fingerprint)</code>.</p>
-                                    <ul data-testid="ss-compare-changes">@foreach (var change in changes) { <li>@change</li> }</ul>
+                                    <p class="ss-muted" data-testid="ss-compare-engine">Classified by the shared contract comparison (also used by Impact Analysis): a potential breaking change is not a verdict; direction and context decide the effect.</p>
+                                    <ul data-testid="ss-compare-changes">@foreach (var change in changes) { <li data-classification="@change.Classification">@SchemaStudioPresentation.ChangeLine(change)</li> }</ul>
                                 </ReviewDisclosure>
                             }
                         }
@@ -768,6 +770,9 @@
     private static IReadOnlyList<string> Tabs => SchemaStudioNavigation.AllViews;
     /// <summary><c>?view=generated-tests</c> (or a view name) opens that view in its area.</summary>
     [SupplyParameterFromQuery(Name = "view")] public string? ViewParameter { get; set; }
+    /// <summary><c>?snapshot={id}&amp;contract={path}</c> opens that stored contract of that exact Source Analysis snapshot.</summary>
+    [SupplyParameterFromQuery(Name = "snapshot")] public string? SnapshotParameter { get; set; }
+    [SupplyParameterFromQuery(Name = "contract")] public string? ContractParameter { get; set; }
     private bool _viewParameterApplied;
     /// <summary>A deep-linked view requested before any package was open; the first package selection opens it instead of Overview.</summary>
     private string? _pendingView;
@@ -1126,7 +1131,17 @@
             _sourceSnapshotIndexTruncated = index?.IsTruncated ?? false;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
-        { _sourceError = "Source Analysis snapshots could not be loaded. Local XSD import remains available."; }
+        { _sourceError = "Source Analysis snapshots could not be loaded. Local XSD import remains available."; return; }
+        // Handoff from Source Analysis / Integrations: open the stored contract of that exact immutable snapshot (the same retained evidence,
+        // verified by fingerprint) — never another or newer snapshot.
+        if (Guid.TryParse(SnapshotParameter, out var handoff) && !string.IsNullOrWhiteSpace(ContractParameter))
+        {
+            _sourceSnapshotId = handoff.ToString();
+            await LoadSourceContracts();
+            if (_sourcePackage?.Files.FirstOrDefault(f => string.Equals(f.Path.Replace('\\', '/'), ContractParameter.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)) is { } file)
+            { _sourceContractPath = file.Path; OpenSourceContract(); }
+            else if (_sourcePackage is not null) _sourceError = $"{ContractParameter} is not among this snapshot's retained XSD files.";
+        }
     }
 
     private async Task LoadSourceContracts()
@@ -1744,12 +1759,4 @@
         foreach (var file in package.Files.Where(f => f.Text.Contains(term, StringComparison.OrdinalIgnoreCase)).Take(10)) yield return new(SchemaStudioPresentation.FileName(file.Name), file.Name, "Raw XSD", "raw");
     }
     private sealed record SearchHit(string Name, string File, string Tab, string Match);
-    private static IEnumerable<string> Compare(SchemaPackage old, SchemaPackage current)
-    {
-        var before = old.Files.SelectMany(f => f.Declarations.Select(d => (Key: f.Name + ":" + d.Kind + ":" + d.Name, d.Type, d.BaseType, Facets: string.Join(";", d.Facets.Select(x => x.Kind + "=" + x.Value))))).ToDictionary(x => x.Key);
-        var after = current.Files.SelectMany(f => f.Declarations.Select(d => (Key: f.Name + ":" + d.Kind + ":" + d.Name, d.Type, d.BaseType, Facets: string.Join(";", d.Facets.Select(x => x.Kind + "=" + x.Value))))).ToDictionary(x => x.Key);
-        foreach (var k in before.Keys.Except(after.Keys)) yield return $"Needs review: declaration removed — {k}";
-        foreach (var k in after.Keys.Except(before.Keys)) yield return $"Informational: declaration added — {k}";
-        foreach (var k in before.Keys.Intersect(after.Keys)) { if (before[k].Type != after[k].Type || before[k].BaseType != after[k].BaseType) yield return $"Potentially breaking: type/base changed — {k}"; if (before[k].Facets != after[k].Facets) yield return $"Needs review: constraints changed — {k}"; }
-    }
 }

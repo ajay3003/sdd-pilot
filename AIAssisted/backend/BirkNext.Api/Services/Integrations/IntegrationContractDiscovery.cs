@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using BirkNext.Api.Services.ContractEvolution;
+using BirkNext.ContractSchemaEvidence;
 using BirkNext.Integrations;
 using BirkNext.SourceArchitecture;
 using BirkNext.SourceDomains;
@@ -55,7 +56,29 @@ public static class IntegrationContractDiscoveryEngine
 
         var producer = Side(IntegrationContractRole.Producer, definition, all, side, referenceSide, facts, stored, binding, snapshot);
         var consumer = Side(IntegrationContractRole.Consumer, definition, all, side, referenceSide, facts, stored, binding, snapshot);
-        return Finish(definition, binding, side, basis, producer, consumer, limitations) with { SnapshotId = snapshot.Id, Archive = snapshot.Archive.FileName };
+        return Finish(definition, binding, side, basis, producer, consumer, limitations) with
+        {
+            SnapshotId = snapshot.Id, Archive = snapshot.Archive.FileName,
+            Relationship = evidence is null ? null : Relationship(facts, snapshot, evidence, consumer),
+        };
+    }
+
+    /// <summary>
+    /// The producer ↔ consumer contract relationship from shared contract evidence: the reference's declared data type / content type against
+    /// the consumer side's candidates. A name match alone stays a Candidate, several equally strong candidates are Ambiguous, an explicit
+    /// selection is Bound — and runtime validation is always a separate, not-assessed state.
+    /// </summary>
+    private static ContractRelationshipAssessment Relationship(IntegrationReviewEvidenceFacts? facts, IqrSourceSnapshot snapshot, ContractEvidence evidence, IntegrationContractSide consumer)
+    {
+        string? Fact(string label) => facts?.ContractReference.FirstOrDefault(f => f.Label.Contains(label, StringComparison.OrdinalIgnoreCase))?.Value;
+        var declaration = facts is null || facts.ContractReference.Count == 0 && facts.SchemaName is null ? null
+            : new ContractDeclaration(facts.ReferenceTitle ?? "Reference metadata", facts.SchemaName, Fact("data type") ?? facts.SchemaName, Fact("content type"),
+                Version: ContractEvidenceQueries.NameVersion(Fact("data type") ?? facts.SchemaName), Task: Fact("process task") ?? Fact("task"));
+        var source = new ContractEvidenceSource(snapshot.Id, snapshot.Archive.FileName, snapshot.AnalyzedAt, evidence);
+        var ids = consumer.Candidates.Select(c => c.ContractId).ToHashSet(StringComparer.Ordinal);
+        var candidates = evidence.Contracts.Where(c => ids.Contains(c.Id)).Select(c => ContractEvidenceQueries.Fact(source, c)).ToList();
+        var selected = consumer.Selected is { Stale: false, ContractId: { } id } ? id : null;
+        return ContractRelationships.Assess(declaration, candidates, selected);
     }
 
     private static IntegrationContractDiscovery Finish(IntegrationDefinition definition, IntegrationEvidenceBinding? binding, IntegrationSourceSide side, string basis,

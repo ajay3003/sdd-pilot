@@ -247,6 +247,36 @@ public sealed class SourceChangeImpactServiceTests
         impact.Reason.Should().StartWith("Potential version alignment impact").And.Contain("Compatibility is not assessed");
     }
 
+    [Fact]
+    public async Task A_removed_contract_field_classifies_with_the_shared_engine_and_reaches_mapped_consumers_and_tests_without_a_breakage_claim()
+    {
+        await using var db = Db();
+        const string Xsd = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:r" elementFormDefault="qualified">
+              <xs:element name="Report"><xs:complexType><xs:sequence><xs:element name="Id" type="xs:string" /><xs:element name="Hours" type="xs:decimal" /></xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        SourceEvidenceDomainsSnapshot Domains(string xsd) => new()
+        {
+            Contracts = new ContractEvidence { Contracts = [BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadXmlSchema("schemas/report.xsd", xsd)
+                with { CodeReferences = [new("tests/ReportSchemaTests.cs", 7, "Test code reference")] }] },
+            CrossDomain = new CrossDomainEvidence { Links = [new SourceEvidenceLink { Type = SourceEvidenceLinkType.ContractConsumedByComponent, FromId = "contract:xsd:schemas/report.xsd",
+                ToId = "arch:component:receiver", ToLabel = "Receiver", State = ArchitectureEvidenceState.Confirmed, Basis = "Validator reference" }] },
+        };
+        var before = Snapshot("v1", []) with { EvidenceDomains = Domains(Xsd) };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1),
+            EvidenceDomains = Domains(Xsd.Replace("""<xs:element name="Hours" type="xs:decimal" />""", "")) };
+        var report = await new SourceChangeImpactService(db, new SnapshotProvider([before, after])).AnalyzeAsync(Request(before, after), default);
+
+        var change = report!.Changes.Should().ContainSingle(c => c.Domain == ImpactChangeDomain.Contracts && c.Kind == ImpactChangeKind.Removed).Subject;
+        change.ContractClassification.Should().Be(BirkNext.ContractSchemaEvidence.ContractComparison.PotentialBreaking);
+        report.TechnicalImpacts.Should().Contain(i => i.EntityType == "Component" && i.DisplayName == "Receiver" && i.Reason.StartsWith("High-confidence impact"));
+        var test = report.TechnicalImpacts.Should().ContainSingle(i => i.EntityType == "Test").Subject;
+        test.Level.Should().Be(TechnicalImpactLevel.Potential);
+        test.Reason.Should().StartWith("Possible impact").And.Contain("not marked failed");
+        report.TechnicalImpacts.Should().NotContain(i => i.Reason.Contains("broken", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
     private static SourceChangeImpactRequest Request(IqrSourceSnapshot before, IqrSourceSnapshot after) => new("dev", "generic", before.Id, after.Id);
 

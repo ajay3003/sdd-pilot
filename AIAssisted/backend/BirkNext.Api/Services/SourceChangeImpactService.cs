@@ -268,7 +268,8 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                   SourceEvidenceDomain.Infrastructure => ImpactChangeDomain.Infrastructure, SourceEvidenceDomain.CiCd => ImpactChangeDomain.CiCd, _ => ImpactChangeDomain.Dependencies },
                 Enum.Parse<ImpactChangeKind>(c.Kind.ToString()), c.Area, c.Key, c.Name, c.Detail,
                 EvidenceFiles(after.EvidenceDomains, c.Domain, c.Key).Concat(EvidenceFiles(before.EvidenceDomains, c.Domain, c.Key)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
-                c.ContractChange == ContractChangeClass.None ? null : c.ContractChange.ToString())));
+                c.ContractChange == ContractChangeClass.None ? null : c.ContractChange.ToString(),
+                c.Domain == SourceEvidenceDomain.Contracts && c.Area != "Contract" ? BirkNext.ContractSchemaEvidence.ContractComparison.Classify(c.ContractChange, c.CompatibilityConcern) : null)));
         else limitations.Add("Infrastructure, configuration, CI/CD and contract comparisons unavailable for one or both selected snapshots.");
 
         if (before.DatabaseArchitecture is { } bd && after.DatabaseArchitecture is { } ad)
@@ -391,8 +392,19 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                 foreach (var link in evidence.CrossDomain.Links.Where(l => (l.Type is SourceEvidenceLinkType.ContractProducedByComponent or SourceEvidenceLinkType.ContractConsumedByComponent) && l.FromId == $"contract:{c.EntityKey.Split('|')[0]}" && l.ToId is not null))
                     Add("Component", link.ToId!.Replace("arch:component:", "", StringComparison.Ordinal), link.ToLabel, c.Domain, link.Type == SourceEvidenceLinkType.ContractConsumedByComponent ? TechnicalImpactLevel.Indirect :
                         link.State is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported ? TechnicalImpactLevel.Direct : TechnicalImpactLevel.Potential,
-                        link.State.ToString(), "Source Analysis links this contract to a producer or consumer component.", c, SourceDomainText.Label(link.Type), link.Basis,
+                        link.State.ToString(), $"{BirkNext.ContractSchemaEvidence.ContractRelationships.ImpactConfidence(link.State switch
+                        {
+                            ArchitectureEvidenceState.Confirmed => BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.Confirmed,
+                            ArchitectureEvidenceState.StronglySupported => BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.StrongCandidate,
+                            _ => BirkNext.ContractSchemaEvidence.ContractRelationshipReviewState.Candidate,
+                        })}: Source Analysis links this contract to a producer or consumer component. No breakage is claimed.", c, SourceDomainText.Label(link.Type), link.Basis,
                         arch?.Components.FirstOrDefault(x => $"arch:component:{x.Id}" == link.ToId)?.Evidence.Select(e => e.File));
+            // Tests whose code names the changed contract file may need updating — a potential impact on test evidence, never a failed test.
+            if (c.Domain == ImpactChangeDomain.Contracts && evidence is not null
+                && (after.EvidenceDomains ?? before.EvidenceDomains)?.Contracts.Contracts.FirstOrDefault(x => x.Id == c.EntityKey.Split('|')[0]) is { } changedContract)
+                foreach (var test in changedContract.CodeReferences.Where(r => r.Kind == "Test code reference").DistinctBy(r => r.File))
+                    Add("Test", $"test:{test.File}", System.IO.Path.GetFileNameWithoutExtension(test.File), c.Domain, TechnicalImpactLevel.Potential, "Inferred",
+                        "Possible impact: test code names the changed contract file; the test may need updating. It is not marked failed.", c, "Contract named by test code", $"{test.File}:{test.Line}", [test.File]);
             // Infrastructure automation (checks, scripts, their pipeline/hook use): the delivery process and the declarations the policy inspects may be
             // affected — never "the infrastructure changed" and never a runtime effect.
             if (c.Domain == ImpactChangeDomain.Infrastructure && evidence is not null && c.EntityType is "Validation check" or "Infrastructure script" or "Script invocation")

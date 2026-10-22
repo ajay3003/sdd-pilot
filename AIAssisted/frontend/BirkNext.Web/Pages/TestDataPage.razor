@@ -108,6 +108,7 @@
                                                     @if (asset.SchemaCheck is { } check)
                                                     {
                                                         <div class="td-wide"><dt>Schema detail</dt><dd data-testid="td-schema-detail">@check.Detail@if (check.Issues.Count > 0) { <ul class="td-schema-issues">@foreach (var issue in check.Issues) { <li>@issue</li> }</ul> }</dd></div>
+                                                        @if (check.ContractRules is { } contractRules) { <div class="td-wide"><dt>Contract rules</dt><dd data-testid="td-contract-rules">@contractRules@if (check.SourceSnapshotId is { } ruleSnapshot && asset.Schema is { } ruleSchema && ruleSchema.SchemaPath.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)) { <text> · </text><a href="@($"schema-studio?snapshot={ruleSnapshot}&contract={Uri.EscapeDataString(ruleSchema.SchemaPath)}")" data-testid="td-view-contract">View contract</a> }</dd></div> }
                                                     }
                                                 </dl>
                                                 <p class="td-note">Approval is independent: an approved negative fixture can be deliberately invalid, and revalidation never changes approval.</p>

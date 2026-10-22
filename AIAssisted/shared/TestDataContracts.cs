@@ -39,7 +39,11 @@ public enum TestDataSchemaStatus { Validated, Invalid, SchemaUnavailable, Depend
 
 /// <summary>Result of validating an XML asset with the shared XSD validator. Issues never contain values from the XML.</summary>
 public sealed record TestDataSchemaCheck(TestDataSchemaStatus Status, string Schema, string Detail, List<string> Issues,
-    Guid? SourceSnapshotId = null, string? SchemaFingerprint = null, string? SchemaVersion = null);
+    Guid? SourceSnapshotId = null, string? SchemaFingerprint = null, string? SchemaVersion = null)
+{
+    /// <summary>Declared rules from the shared contract evidence ("Derived from contract …: 12 required field(s) · 3 allowed-value list(s)").</summary>
+    public string? ContractRules { get; init; }
+}
 
 /// <summary>One asset as the browser sees it: alias and metadata. <see cref="DisplayValue"/> is set only for a non-sensitive scalar.</summary>
 public sealed record TestDataAssetSummary

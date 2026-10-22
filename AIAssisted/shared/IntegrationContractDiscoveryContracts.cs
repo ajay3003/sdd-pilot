@@ -107,6 +107,9 @@ public sealed record IntegrationContractDiscovery
     public string CompatibilityReason { get; init; } = "";
     public List<string> CompatibilityDifferences { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>Producer declaration ↔ consumer schema relationship from shared contract evidence (review state, match evidence, differences).
+    /// Its runtime validation is always separate and not assessed here.</summary>
+    public BirkNext.ContractSchemaEvidence.ContractRelationshipAssessment? Relationship { get; init; }
 
     public IntegrationContractSide Side(IntegrationContractRole role) => role == IntegrationContractRole.Producer ? Producer : Consumer;
 }

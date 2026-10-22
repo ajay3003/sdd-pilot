@@ -1078,6 +1078,30 @@
                     ? "Both contracts are stored. Availability is not compatibility: the contracts still have to be compared."
                     : "Needs a contract on both sides.");
             }
+            @if (discovery?.Relationship is { } relationship)
+            {
+                <div class="ip-contract-compat" data-testid="ip-contract-relationship" data-state="@relationship.State">
+                    <p><strong>Contract relationship</strong> <span class="ip-pill ip-pill-@IntegrationDetailPresentation.Tone(relationship.State)">@relationship.Label</span></p>
+                    <p class="ip-muted">@relationship.Reason</p>
+                    @if (relationship.Producer is { } declared)
+                    {
+                        <p class="ip-wrap" data-testid="ip-contract-producer-declaration"><strong>Producer contract</strong> @declared.Origin: @string.Join(" · ", new[] { declared.DataType is { } dt ? $"data type {dt}" : null, declared.ContentType, declared.Task is { } task ? $"task {task}" : null }.OfType<string>()) <span class="ip-muted">(reference metadata — not the consumer schema)</span></p>
+                    }
+                    @if (relationship.Candidates.Count > 0)
+                    {
+                        <ul class="ip-evidence-list" data-testid="ip-contract-relationship-candidates">
+                            @foreach (var candidate in relationship.Candidates)
+                            {
+                                <li class="ip-wrap" data-testid="ip-contract-relationship-candidate" data-state="@candidate.State"><strong>@candidate.Name</strong>@(candidate.Version is { } v ? $" {v}" : "") — @candidate.Label
+                                    <span class="ip-muted">@string.Join("; ", candidate.Matches.Select(m => m.Text))</span>
+                                    @if (candidate.File.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)) { <a class="ip-link" href="@($"schema-studio?snapshot={candidate.SnapshotId}&contract={Uri.EscapeDataString(candidate.File)}")" data-testid="ip-contract-view-consumer">View consumer contract<span class="visually-hidden"> @candidate.Name</span></a> }</li>
+                            }
+                        </ul>
+                    }
+                    @if (relationship.Differences.Count > 0) { <ul class="ip-evidence-list" data-testid="ip-contract-relationship-differences">@foreach (var difference in relationship.Differences) { <li class="ip-wrap">@difference</li> }</ul> }
+                    <p data-testid="ip-contract-runtime-validation"><strong>Runtime validation</strong> @relationship.RuntimeValidation</p>
+                </div>
+            }
             <div class="ip-contract-compat" data-testid="ip-contract-compatibility" data-state="@compatibility">
                 <p><strong>Compatibility</strong> <span class="ip-pill ip-pill-@IntegrationDetailPresentation.Tone(compatibility)">@IntegrationContractLabels.Compatibility(compatibility)</span></p>
                 <p class="ip-muted">@compatibilityReason</p>

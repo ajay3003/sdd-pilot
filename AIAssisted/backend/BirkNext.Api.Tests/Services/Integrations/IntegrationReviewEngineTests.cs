@@ -402,6 +402,7 @@ public sealed class IntegrationReviewEngineTests
         var result = await Run(Engine(), OnlyPerson(await DevCatalog()), Contracts(PersonId, ProducerSchema, ConsumerSchema));
         TopicCheck(result, "Person", "contract-availability").Status.Should().Be(IntegrationCheckStatus.Pass);
         TopicCheck(result, "Person", "contract-compatibility").Status.Should().Be(IntegrationCheckStatus.Pass);
+        TopicCheck(result, "Person", "contract-runtime-validation").Status.Should().Be(IntegrationCheckStatus.NotAssessed, "compatible contracts are not runtime validation");
         result.ContractSnapshot.Should().HaveCount(2);
     }
 
@@ -422,6 +423,7 @@ public sealed class IntegrationReviewEngineTests
         var result = await Run(Engine(), OnlyPerson(await DevCatalog()), Contracts(PersonId, ProducerSchema, null));
         TopicCheck(result, "Person", "contract-availability").Status.Should().Be(IntegrationCheckStatus.Observed);
         TopicCheck(result, "Person", "contract-compatibility").Status.Should().Be(IntegrationCheckStatus.NotAssessed);
+        TopicCheck(result, "Person", "contract-runtime-validation").Status.Should().Be(IntegrationCheckStatus.NotAssessed);
     }
 
     [Fact]

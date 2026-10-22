@@ -318,6 +318,9 @@
                 <ReviewDisclosure Text="Contract/schema details" CollapseText="Hide contract/schema details" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
                     <ApiReviewContractPanel Contracts="contracts" />
                 </ReviewDisclosure>
+                <ReviewDisclosure Text="Source contract evidence" CollapseText="Hide source contract evidence" Hint="Published contract in a Source Analysis snapshot · separate from runtime behaviour" TestId="aqr-source-contracts" Class="aqr-detail-disclosure" @bind-Expanded="_sourceContractsExpanded">
+                    @if (_sourceContractsExpanded) { <BirkNext.Web.Components.SourceDomains.SourceContractEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" /> }
+                </ReviewDisclosure>
                 @if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl))
                 {
                     var gqlTargets = _targets.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList();
@@ -857,6 +860,7 @@
         summary.Coverage.Count == 0 ? "No coverage recorded" : string.Join(" · ", summary.Coverage.Take(2).Select(r => $"{r.Label}: {r.Value}"));
 
     /// <summary>The two contract states plus the baseline count, in the order the expanded rows repeat them.</summary>
+    private bool _sourceContractsExpanded;
     private static string ContractHint(ApiReviewContractPanelModel contracts) => string.Join(" · ",
         contracts.Rows.Where(r => r.State != ApiReviewContractState.NotApplicable)
             .Select(r => $"{r.Label}: {ApiReviewContractStates.HeaderSummary(r.State)}")

@@ -1,0 +1,64 @@
+@using BirkNext.ContractSchemaEvidence
+@using BirkNext.Integrations
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Source contract evidence for a consumer page (API Quality Review): the contracts a Source Analysis snapshot stored, read through the shared
+   contract evidence queries — never re-parsed. The snapshot is chosen explicitly (no default, never the newest). A published contract in
+   source is separate evidence from the runtime behaviour the consumer page observes. *@
+<div class="sd-source-contracts" data-testid="source-contract-evidence">
+    <p class="sd-muted">@Note</p>
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="source-contract-error">@error</p> }
+    else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="source-contract-none">No Source Analysis snapshot is stored. Analyze the source in Source Analysis to compare its published contract with runtime behaviour.</p> }
+    else
+    {
+        <label class="sd-field">Source snapshot
+            <select data-testid="source-contract-snapshot" value="@_selected" @onchange="e => _selected = e.Value?.ToString() ?? string.Empty">
+                <option value="">Select a snapshot…</option>
+                @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
+            </select>
+        </label>
+        @if (_snapshots.FirstOrDefault(s => s.Id.ToString() == _selected) is { } snapshot)
+        {
+            @if (snapshot.EvidenceDomains?.Contracts is not { } evidence)
+            {
+                <p class="sd-muted" data-testid="source-contract-unavailable">Contract semantic evidence is unavailable in this analysis version. Analyze the archive again in Source Analysis; this snapshot is not changed.</p>
+            }
+            else
+            {
+                var facts = ContractEvidenceQueries.GetContracts(new ContractEvidenceSource(snapshot.Id, snapshot.Archive.FileName, snapshot.AnalyzedAt, evidence))
+                    .Where(f => Types.Contains(f.Contract.Type)).ToList();
+                @if (facts.Count == 0) { <p data-testid="source-contract-empty">No @string.Join(" or ", Types.Select(ContractEvidenceQueries.Label).Distinct()) contract in this snapshot.</p> }
+                else
+                {
+                    <ul class="sd-list" data-testid="source-contract-list">
+                        @foreach (var f in facts)
+                        {
+                            <li data-testid="source-contract"><strong>@f.Name</strong> · @ContractEvidenceQueries.Label(f.Contract.Type) · @ContractEvidenceQueries.Label(f.Parse)
+                                @if (f.Versions.Count > 0) { <span class="sd-context">@string.Join("; ", f.Versions.Select(v => $"{v.Value} — {v.Kind}"))</span> }
+                                <span class="sd-context">@f.EntryPoint.Text@(f.Contract.Operations.Count > 0 ? $": {string.Join(", ", f.Contract.Operations.Take(8).Select(o => o.Name))}{(f.Contract.Operations.Count > 8 ? " …" : "")}" : "") · @f.Contract.File</span></li>
+                        }
+                    </ul>
+                }
+                <p class="sd-muted" data-testid="source-contract-runtime">Published contract (declared in source) and runtime endpoint behaviour are separate evidence: a declared response or security scheme can correlate with a runtime observation but never proves it.</p>
+            }
+        }
+    }
+</div>
+@code {
+    [Parameter] public string EnvironmentId { get; set; } = "";
+    [Parameter] public IReadOnlyList<SourceContractType> Types { get; set; } = [SourceContractType.OpenApi, SourceContractType.GraphQlSchema];
+    [Parameter] public string Note { get; set; } = "The API contract as declared in a Source Analysis snapshot, from the shared contract evidence. Choose the snapshot that matches the deployed version — none is selected automatically.";
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
+    private string _selected = "";
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
+        try { _snapshots = await api.ListSourceSnapshotsAsync(EnvironmentId); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
+    }
+}

@@ -31,7 +31,7 @@ public sealed partial class TopologyBuilder
     private sealed class ConnectionState
     {
         public string From = ""; public string To = ""; public string? FromInterface; public string? ToInterface; public TopologyInterfaceType Type; public string Protocol = "";
-        public string? Address; public string? Contract; public List<(TopologyStatus Level, TopologyProvenance Provenance)> Evidence = []; public bool Conflict; public bool Review; public List<string> Notes = [];
+        public string? Address; public string? Contract; public string? ContractStatus; public List<(TopologyStatus Level, TopologyProvenance Provenance)> Evidence = []; public bool Conflict; public bool Review; public List<string> Notes = [];
         public List<TopologyEvidence> Typed = [];
     }
 
@@ -114,7 +114,8 @@ public sealed partial class TopologyBuilder
     }
 
     public string Connection(string fromKey, string toKey, TopologyInterfaceType type, string protocol, string? address, TopologyStatus level, TopologyProvenance provenance,
-        string? fromInterface = null, string? toInterface = null, string? contract = null, bool conflict = false, bool review = false, string? note = null, TopologyEvidence? evidence = null)
+        string? fromInterface = null, string? toInterface = null, string? contract = null, bool conflict = false, bool review = false, string? note = null, TopologyEvidence? evidence = null,
+        string? contractStatus = null)
     {
         var key = $"{fromKey}->{toKey}|{type}|{NormalizeAddress(type, address ?? "")}";
         if (!_connections.TryGetValue(key, out var state))
@@ -122,6 +123,7 @@ public sealed partial class TopologyBuilder
         state.FromInterface ??= fromInterface;
         state.ToInterface ??= toInterface;
         state.Contract ??= contract;
+        if (contract is not null) state.ContractStatus ??= contractStatus;
         state.Evidence.Add((level, provenance));
         state.Conflict |= conflict;
         state.Review |= review;
@@ -218,7 +220,7 @@ public sealed partial class TopologyBuilder
         Connections = [.. _connections.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => new TopologyConnection
         {
             Id = pair.Key, ProducerComponentId = pair.Value.From, ConsumerComponentId = pair.Value.To, ProducerInterfaceId = pair.Value.FromInterface, ConsumerInterfaceId = pair.Value.ToInterface,
-            Type = pair.Value.Type, Protocol = pair.Value.Protocol, Address = pair.Value.Address, ContractReference = pair.Value.Contract,
+            Type = pair.Value.Type, Protocol = pair.Value.Protocol, Address = pair.Value.Address, ContractReference = pair.Value.Contract, ContractStatus = pair.Value.ContractStatus,
             Status = Level(pair.Value.Evidence, pair.Value.Conflict, pair.Value.Review), Provenance = Distinct(pair.Value.Evidence), Notes = pair.Value.Notes,
             Evidence = [.. pair.Value.Typed], Relationship = Relationship(pair.Value.Typed), Unverified = Unverified(Relationship(pair.Value.Typed), pair.Value.Typed),
         })],

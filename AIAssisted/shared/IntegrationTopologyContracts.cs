@@ -73,6 +73,9 @@ public sealed record TopologyConnection
     public string Protocol { get; init; } = "";
     public string? Address { get; init; }
     public string? ContractReference { get; init; }
+    /// <summary>Edge annotation for <see cref="ContractReference"/>: where the contract statement comes from and how far the relationship is
+    /// reviewed ("Configured contract reference · relationship review required"). A contract annotates an existing connection — it never creates one.</summary>
+    public string? ContractStatus { get; init; }
     public TopologyStatus Status { get; init; }
     public List<TopologyProvenance> Provenance { get; init; } = [];
     public List<string> Notes { get; init; } = [];

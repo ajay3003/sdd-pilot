@@ -281,3 +281,8 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 .sd-script h4 { margin: 0 0 .25rem; font-size: .9rem; overflow-wrap: anywhere; }
 .sd-chip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: 0 .4rem .2rem 0; padding: .05rem .4rem; border: 1px solid #cbd5e1; border-radius: .35rem; font-size: .8rem; overflow-wrap: anywhere; }
 .sd-doc { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; background: #f8fafc; border: 1px solid #e2e8f0; padding: .5rem; border-radius: .35rem; max-width: 100%; }
+/* Shared contract evidence on consumer pages (API Quality Review → Source contract evidence). */
+.sd-source-contracts { min-width: 0; }
+.sd-source-contracts .sd-field { display: flex; flex-direction: column; gap: .25rem; max-width: 100%; margin: .25rem 0 .5rem; font-weight: 600; }
+.sd-source-contracts select { width: 100%; max-width: 100%; min-width: 0; font-weight: 400; }
+.sd-source-contracts li { overflow-wrap: anywhere; }

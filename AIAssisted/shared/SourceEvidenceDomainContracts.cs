@@ -625,11 +625,19 @@ public static class SourceEvidenceDiff
         {
             if (previous.Contracts.Contracts.FirstOrDefault(c => c.Id == contract.Id) is not { } before)
             { changes.Add(new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Added, "Contract", contract.Id, contract.Name, $"{contract.Type} · {contract.Operations.Count} operation(s)")); continue; }
-            changes.AddRange(ContractChanges(before, contract));
-            if (before.XmlSchema is { } previousXml && contract.XmlSchema is { } currentXml) changes.AddRange(XmlSchemaChanges(before, previousXml, contract, currentXml));
+            changes.AddRange(CompareContract(before, contract));
         }
         foreach (var removed in previous.Contracts.Contracts.Where(p => current.Contracts.Contracts.All(c => c.Id != p.Id)))
             changes.Add(new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Removed, "Contract", removed.Id, removed.Name, $"{removed.Type} · {removed.Operations.Count} operation(s)"));
+        return changes;
+    }
+
+    /// <summary>Every change of one contract between two versions (operations, types, fields and — for XML Schemas — namespace, version, elements,
+    /// cardinality, facets and dependencies). The single contract comparison used by Source Analysis, Impact Analysis and Schema Studio.</summary>
+    public static List<SourceEvidenceChange> CompareContract(SourceContract before, SourceContract after)
+    {
+        var changes = ContractChanges(before, after);
+        if (before.XmlSchema is { } previousXml && after.XmlSchema is { } currentXml) changes.AddRange(XmlSchemaChanges(before, previousXml, after, currentXml));
         return changes;
     }
 

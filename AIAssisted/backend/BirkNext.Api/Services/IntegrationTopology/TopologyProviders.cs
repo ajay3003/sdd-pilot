@@ -209,6 +209,9 @@ public sealed class IntegrationCatalogTopologyProvider : ITopologyProvider
             }
             if (from is not null && to is not null)
                 builder.Connection(from, to, type, protocol, address, TopologyStatus.Configured, provenance, fromInterface, toInterface, integration.ConsumerContractReference ?? integration.ProducerContractReference,
+                    contractStatus: integration.ContractRelationship == ContractRelationshipState.RelationshipVerified
+                        ? "Configured contract · relationship confirmed (runtime acceptance not verified)"
+                        : $"Configured contract reference · {IntegrationConfigurationRules.ContractLabel(integration.ContractRelationship).ToLowerInvariant()} · relationship review required",
                     evidence: new("configured-integration", TopologyEvidenceStrength.VeryStrong, "Configured integration",
                         $"Integration {integration.DisplayName} states producer {producer}, consumer {consumer} and endpoint {address}.", integration.Id));
         }
