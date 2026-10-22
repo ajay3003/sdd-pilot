@@ -269,3 +269,26 @@
 .ip-setup-summary { margin: .75rem 0; font-size: .875rem; }
 .ip-setup-summary ul { margin: .25rem 0 0; padding-left: 1.25rem; }
 .ip-setup-group h5 { margin: .75rem 0 .25rem; font-size: .875rem; }
+
+
+/* ── Add / edit integration: summary, review cards, save readiness ─────────────── */
+::deep .ip-editor-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .4rem .9rem; margin: 0; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); min-width: 0; }
+::deep .ip-editor-summary > div { min-width: 0; }
+::deep .ip-editor-summary dt { font-size: .75rem; font-weight: 600; color: var(--clr-text-subtle); }
+::deep .ip-editor-summary dd { margin: 0; overflow-wrap: anywhere; }
+::deep .ip-review { display: grid; gap: .6rem; padding-top: .25rem; min-width: 0; }
+::deep .ip-review h4, ::deep .ip-optional-heading, ::deep .ip-save-readiness h4 { margin: .25rem 0 0; font-size: .95rem; }
+::deep .ip-review-card { border: 1px solid var(--clr-border); border-left-width: 3px; border-radius: var(--radius-md); padding: .6rem .8rem; display: grid; gap: .4rem; min-width: 0; }
+::deep .ip-review-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem .75rem; }
+::deep .ip-review-head h5 { margin: 0; font-size: .9rem; }
+::deep .ip-review-card h6 { margin: .25rem 0 .15rem; font-size: .8125rem; }
+::deep .ip-contract-picker { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin: .25rem 0; min-width: 0; }
+::deep .ip-contract-picker > p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+::deep .ip-contract-picker .btn-secondary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+::deep .ip-prov-section { margin-left: .5rem; font-weight: 400; }
+::deep .ip-save-readiness { border-top: 1px solid var(--clr-border); padding-top: .6rem; display: grid; gap: .4rem; }
+::deep .ip-readiness-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .5rem 1rem; }
+::deep .ip-readiness-title { margin: 0; font-size: .75rem; font-weight: 600; color: var(--clr-text-subtle); text-transform: uppercase; letter-spacing: .02em; }
+::deep .ip-readiness-list { margin: .2rem 0 0; padding: 0; list-style: none; font-size: .8125rem; }
+::deep .ip-readiness-list li { margin: .1rem 0; }
+::deep .ip-small { font-size: .75rem; }

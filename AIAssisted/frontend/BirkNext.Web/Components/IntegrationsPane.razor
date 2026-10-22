@@ -47,6 +47,11 @@
             }
             <p class="ip-save-note" data-testid="ip-save-note">Changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
             <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
+            @if (_savedReview.Count > 0 && _editing is null)
+            {
+                @* Saving configuration is not verification: what is still open is named with the place it is reviewed. *@
+                <p class="ip-muted" data-testid="ip-saved-review">Configuration saved; not verified. <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-saved-review-link">Review integration evidence</a></p>
+            }
         </section>
         <ReviewDisclosure Text="How integration evidence works" CollapseText="Hide how integration evidence works" TestId="ip-how-evidence" Class="disclosure-inline disclosure-small">
             <ul class="ip-how-list" data-testid="ip-how-evidence-list">
@@ -683,6 +688,8 @@
     /// <summary>Platform whose Event Hub runtime sources were just saved (post-save summary).</summary>
     private string? _runtimeSaved;
     private EditState? _editing;
+    /// <summary>Review items the last saved integration left open (shown with the save result; nothing is resolved by saving).</summary>
+    private IReadOnlyList<string> _savedReview = [];
     private ElementReference _addTrigger;
     private bool _focusAddTrigger;
     /// <summary>The environment's Add-integration templates (read-only guidance; empty when unavailable — the manual form still works).</summary>
@@ -1202,7 +1209,7 @@
     }
 
     /// <summary>Every change is stored at once; the status line says what happened (Saving… / Saved / Save failed).</summary>
-    private async Task<bool> TrackAsync(string done, Func<Task> action)
+    private async Task<bool> TrackAsync(string done, Func<Task> action, bool complete = false)
     {
         _saveState = SaveState.Saving;
         _saveMessage = "Saving…";
@@ -1211,7 +1218,7 @@
         {
             await action();
             _saveState = SaveState.Saved;
-            _saveMessage = $"Saved. {done}";
+            _saveMessage = complete ? done : $"Saved. {done}";
             await LoadAsync(importLegacy: false);
             // Configured integrations and applied templates (domain extensions) change review applicability in the sidebar.
             if (ServiceProvider.GetService<ProjectApplicabilityState>() is { } applicability) _ = applicability.RefreshAsync();
@@ -1241,13 +1248,17 @@
         var definition = save.Definition;
         var isNew = _editing?.Original is null;
         IntegrationDefinition? stored = null;
-        var ok = await TrackAsync(isNew ? $"{definition.DisplayName} added." : $"{definition.DisplayName} updated.", async () =>
+        var savedMessage = save.ReviewRemaining.Count > 0
+            ? $"Integration saved · Review still needed: {save.ReviewRemaining.Count} ({string.Join(", ", save.ReviewRemaining)})."
+            : isNew ? $"{definition.DisplayName} added." : $"{definition.DisplayName} updated.";
+        var ok = await TrackAsync(savedMessage, async () =>
         {
             stored = isNew ? await Api.CreateAsync(Profile.Id, definition) : await Api.UpdateAsync(Profile.Id, definition);
-        });
+        }, complete: save.ReviewRemaining.Count > 0);
         if (!ok) { _saveError = "The integration could not be saved. Your edits are still in the form."; return; }
         _editing = null;
         _saveError = null;
+        _savedReview = save.ReviewRemaining;
         _focusAddTrigger = isNew;
         if (save.EvidenceSnapshotId is not { } snapshotId) return;
         var integrationId = stored?.Id is { Length: > 0 } id ? id : definition.Id;

@@ -8,7 +8,11 @@ namespace BirkNext.Web.Services;
 public enum TemplateEvidenceState { NotRequired, Missing, Available, NeedsBinding, Ambiguous, Bound }
 
 /// <summary>What the Add/Edit integration form saves: the record, and the evidence snapshot a person explicitly chose to bind (null: none).</summary>
-public sealed record IntegrationEditorSave(IntegrationDefinition Definition, Guid? EvidenceSnapshotId, string? EvidenceArchive);
+public sealed record IntegrationEditorSave(IntegrationDefinition Definition, Guid? EvidenceSnapshotId, string? EvidenceArchive)
+{
+    /// <summary>Review decisions still open when saved (consumer mapping, source evidence, contract relationship). Saving never resolves them.</summary>
+    public IReadOnlyList<string> ReviewRemaining { get; init; } = [];
+}
 
 /// <summary>How template values meet values already in the form. <see cref="WhereEmpty"/> is the safe default; nothing is replaced silently.</summary>
 public enum TemplateApplyMode { KeepMine, WhereEmpty, Replace }

@@ -101,7 +101,10 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         Value(cut, "ip-edit-consumer").Should().Be("MU");
         Value(cut, "ip-edit-topic").Should().Be(Webhook);
         cut.Find("[data-testid=ip-edit-enabled]").HasAttribute("checked").Should().BeTrue();
-        cut.FindAll("[data-testid=ip-prov]").Single(p => p.GetAttribute("data-field") == "EndpointOrTopic").TextContent.Should().Be("Source: Template · Development");
+        cut.FindAll("[data-testid=ip-prov]").Should().BeEmpty("provenance is stated once per section, never \"Source: Template\" under every field");
+        cut.FindAll("[data-testid=ip-section-prefill]").Select(p => p.TextContent).Should().Equal(["Prefilled from template", "Prefilled from template"], "configuration and connection were prefilled");
+        cut.Find("[data-testid=ip-edit-summary-name]").TextContent.Should().Be("Pack – report intake");
+        cut.Find("[data-testid=ip-edit-summary-config]").TextContent.Should().Be("Ready");
         cut.FindAll("[data-testid=ip-edit-consumer-group], [data-testid=ip-edit-delete-expectation], [data-testid=ip-edit-source]").Should().BeEmpty("HTTP/API has no event-stream fields");
         cut.Find("[data-testid=ip-edit-template-journeys]").TextContent.Should().Be("Rapportmottak");
         Value(cut, "ip-edit-producer-auth").Should().Be(platformAuth, "a template never sets authentication");
@@ -209,7 +212,10 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
         cut.Find("[data-testid=ip-edit-evidence-state]").TextContent.Should().Be("Review required");
         cut.Find("[data-testid=ip-edit-evidence-count]").TextContent.Should().Be("2 matching MU (Meldingsutveksleren) snapshots");
-        cut.Find("[data-testid=ip-edit-evidence-choices] legend").TextContent.Should().Be("Choose evidence");
+        cut.Find("[data-testid=ip-edit-evidence-choices] legend").TextContent.Should().Be("Choose source evidence");
+        cut.Find("[data-testid=ip-edit-evidence-no-recommendation]").TextContent.Should().Contain("choose one").And.Contain("None is preferred by its date");
+        cut.FindAll("[data-testid=ip-edit-evidence-recommended]").Should().BeEmpty("equal evidence means no recommendation — never the newest");
+        cut.Find("[data-testid=ip-edit-evidence-none-choice]").ParentElement!.TextContent.Trim().Should().Be("Save without source evidence");
         cut.FindAll("[data-testid=ip-edit-evidence-import]").Should().BeEmpty();
         cut.Find("[data-testid=ip-edit-evidence-none-choice]").HasAttribute("checked").Should().BeTrue("no snapshot is preselected");
         cut.FindAll("[data-testid=ip-edit-evidence-option] input").Should().OnlyContain(i => !i.HasAttribute("checked"));
@@ -330,17 +336,20 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
         cut.Find("[data-testid=ip-edit-template-reference]").TextContent.Should().Be("Reference available");
-        Hint(cut, "authentication").Should().Be("Reference available", "known metadata is never \"Configured\" or \"Verified\"");
+        cut.Find("[data-testid=ip-edit-auth-state]").TextContent.Should().Be("Authentication reference available", "known metadata is never \"Configured\" or \"Verified\"");
+        cut.Find("[data-testid=ip-edit-summary-reference]").TextContent.Should().Be("Authentication and submission contract references available");
 
-        Expand(cut, "authentication");
         cut.FindAll("[data-testid=ip-edit-auth-fact]").Select(f => f.TextContent).Should().Equal(
             "Authentication schemeBearer JWT", "Security scheme namePortalToken", "Token providersprovider-a, provider-b");
-        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().Contain("Source: Test Pack reference").And.Contain("not verified at runtime");
-        cut.Find("[data-testid=ip-edit-auth-run-client]").TextContent.Should().Be("Not configured here");
-        cut.Find("[data-testid=ip-edit-auth-run-reporter]").TextContent.Should().Be("Not configured here");
-        cut.Find("[data-testid=ip-edit-auth-run-authorization]").TextContent.Should().Be("Not verified");
-        cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().NotContain("Runtime verified").And.NotContain("Configured ·");
-        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().NotContain("Not configured", "reference metadata and run configuration are separate blocks");
+        cut.Find("[data-testid=ip-edit-auth-reference] h6").TextContent.Should().Be("Declared authentication");
+        cut.Find("[data-testid=ip-edit-auth-reference]").TextContent.Should().Contain("Source: Test Pack reference").And.Contain("does not prove runtime authentication or configure credentials");
+        cut.Find("[data-testid=ip-edit-auth-run-state]").TextContent.Should().StartWith("Configured elsewhere");
+        cut.Find("[data-testid=ip-edit-auth-run-link]").GetAttribute("href").Should().Be("/integration-quality-review?view=test-verify");
+        cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().Contain("No secrets are stored in this integration record");
+        cut.Find("[data-testid=ip-edit-auth-mechanism-summary]").TextContent.Should().Contain("Producer authenticationNot required for current configuration")
+            .And.Contain("Consumer authenticationNot required for current configuration");
+        cut.Find("[data-testid=ip-edit-section-authentication]").TextContent.Should().NotContain("Runtime verified").And.NotContain("Not configured", "an optional mechanism is never shown as missing setup");
+        cut.FindAll("[data-testid=ip-edit-section-authentication] input[type=password]").Should().BeEmpty();
     }
 
     [Fact]
@@ -349,17 +358,30 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         _templates = [Referenced(OneSource(), new IntegrationTemplateSchemaCandidate(SnapshotA, "Archive with another name.zip", "portal_report_v2", "Schemas/portal_report_v2.xsd"))];
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
-        Hint(cut, "contract").Should().Be("Reference available");
+        cut.Find("[data-testid=ip-edit-contract-state]").TextContent.Should().Be("Not confirmed");
 
-        Expand(cut, "contract");
         cut.FindAll("[data-testid=ip-edit-contract-fact]").Select(f => f.GetAttribute("data-label")).Should().Equal("Form data type", "Content type", "Process task", "Task name");
+        cut.Find("[data-testid=ip-edit-contract-reference] h6").TextContent.Should().Be("Declared submission contract");
         cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().Contain("application/xml").And.Contain("Task_1").And.Contain("Fill in")
-            .And.Contain("does not prove which schema the receiving side validates against");
-        cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be("Available · needs binding");
+            .And.Contain("does not prove which downstream schema the receiving side actively validates");
+        cut.Find("[data-testid=ip-edit-contract-schema-summary]").TextContent.Should().Be("Matching schema found in MU (Meldingsutveksleren) source");
+        cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be("Review required", "an exact name match is evidence to review, not a confirmed relationship");
         cut.Find("[data-testid=ip-edit-contract-schema-file]").TextContent.Should().Be("Schemas/portal_report_v2.xsd");
         cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().NotContain("verified");
         cut.Find("[data-testid=ip-edit-contract-schema]").TextContent.Should().NotContain("verified", "an exact name match in the source is not proof of the active schema");
-        cut.Find("[data-testid=ip-edit-contract]").GetAttribute("value").Should().Be(nameof(ContractRelationshipState.NotConfigured), "reference metadata never sets the contract relationship");
+        cut.FindAll("[data-testid=ip-edit-contract]").Should().BeEmpty("the relationship is a state with actions, never a field to type a state into");
+
+        // Known contracts are offered; nothing is selected for you, and confirming needs both sides and an explicit click.
+        cut.Find("[data-testid=ip-edit-producer-contract-value]").TextContent.Should().Be("Not selected");
+        cut.Find("[data-testid=ip-edit-contract-confirm]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=ip-edit-producer-contract-use]").Click();
+        cut.Find("[data-testid=ip-edit-consumer-contract-use]").Click();
+        cut.Find("[data-testid=ip-edit-contract-possible]").TextContent.Should().Contain("portal_report_v2 ↔ Schemas/portal_report_v2.xsd");
+        cut.Find("[data-testid=ip-edit-contract-state]").TextContent.Should().Be("Not confirmed", "selecting both contracts is not confirming their relationship");
+        cut.Find("[data-testid=ip-edit-contract-confirm]").Click();
+        cut.Find("[data-testid=ip-edit-contract-state]").TextContent.Should().Be("Relationship confirmed");
+        cut.Find("[data-testid=ip-edit-consumer-contract-clear]").Click();
+        cut.Find("[data-testid=ip-edit-contract-state]").TextContent.Should().Be("Not confirmed", "changing a contract withdraws the confirmation");
     }
 
     [Theory]
@@ -372,7 +394,6 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         _templates = [Referenced(noSource ? Missing() : OneSource(), schemas)];
         var cut = OpenAdd(Open());
         cut.Find("[data-testid=ip-edit-template-select]").Change("pack-report-intake");
-        Expand(cut, "contract");
         cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be(expected);
         cut.FindAll("[data-testid=ip-edit-contract-schema-file]").Should().BeEmpty("a schema is shown as the candidate only when exactly one matches");
     }

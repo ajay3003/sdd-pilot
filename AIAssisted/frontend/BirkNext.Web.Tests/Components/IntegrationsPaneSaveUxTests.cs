@@ -196,17 +196,20 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.HttpApi));
         cut.Find("[data-testid=ip-edit-topic]").Should().NotBeNull();
         cut.Markup.Should().Contain(">Endpoint <");
-        foreach (var section in new[] { "authentication", "contract", "operations", "ownership" })
+        foreach (var section in new[] { "operations", "ownership", "consumer-runtime" })
         {
             var toggle = cut.Find($"[data-testid=ip-edit-section-{section}] .disclosure-toggle");
             toggle.GetAttribute("aria-expanded").Should().Be("false", $"{section} is collapsed by default");
-        }
-        foreach (var section in new[] { "authentication", "contract" })
-            cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Not configured");
-        foreach (var section in new[] { "operations", "ownership" })
             cut.Find($"[data-testid=ip-edit-section-{section}]").TextContent.Should().Contain("Optional · not set").And.NotContain("Not configured",
                 "optional links and an owner that is never inferred are not missing setup");
-        cut.Find("[data-testid=ip-edit-advanced] .disclosure-toggle").GetAttribute("aria-expanded").Should().Be("false");
+        }
+        // Review decisions are cards with states and actions, not lettered form sections.
+        cut.FindAll("[data-testid=ip-edit-review] h5").Select(h => h.TextContent).Should().Equal("Consumer mapping", "Source evidence", "Authentication", "Contract");
+        cut.FindAll("legend").Select(l => l.TextContent.Trim()).Should().StartWith(["Integration configuration", "Connection"]);
+        cut.Markup.Should().NotContain("A. Integration").And.NotContain("D. Authentication");
+        cut.FindAll("[data-testid=ip-edit-advanced]").Should().BeEmpty("an HTTP/API integration has no advanced options, so Advanced is not rendered at all");
+        cut.Find("[data-testid=ip-edit-readiness] h4").TextContent.Should().Be("Not ready to save");
+        cut.Find("[data-testid=ip-edit-readiness-note]").TextContent.Should().Contain("Required before saving: Display name, Endpoint");
 
         cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.ServiceBus));
         cut.Markup.Should().Contain("Queue / topic");
@@ -237,7 +240,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.HttpApi));
         cut.FindAll("[data-testid=ip-edit-consumer-group]").Should().BeEmpty("an HTTP/API integration has no consumer group");
         cut.FindAll("[data-testid=ip-edit-delete-expectation]").Should().BeEmpty("delete/tombstone semantics belong to CDC event streams");
-        cut.Markup.Should().Contain("B. Endpoint").And.Contain("Container app (optional)").And.NotContain("e.g. BirkM2LB.dbo.Person");
+        cut.Markup.Should().Contain(">Connection").And.Contain("Container app (optional)").And.NotContain("e.g. BirkM2LB.dbo.Person");
         cut.Find("[data-testid=ip-edit-kind]").Change(nameof(BirkNext.Integrations.IntegrationKind.EventHub));
         cut.FindAll("[data-testid=ip-edit-consumer-group]").Should().ContainSingle("event streams keep their fields");
     }
