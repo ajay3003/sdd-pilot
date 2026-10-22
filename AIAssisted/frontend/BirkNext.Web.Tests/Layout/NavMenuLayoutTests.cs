@@ -126,7 +126,8 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.WaitForAssertion(() => Status(cut, "security-classification-review").Should().Be("Extension"));
         var badge = cut.Find("[data-testid=nav-applicability-security-classification-review]");
         badge.GetAttribute("title").Should().StartWith("Provided by a project-specific extension enabled for this project.");
-        cut.Find("a[href='security-classification-review'] .nav-label").TextContent.Should().Be("Security Classification");
+        cut.Find("a[href='security-classification-review'] .nav-label").TextContent.Should().Be("M01 – Gradert tilgang (Kode 6/7)");
+        cut.Find("a[href='security-classification-review'] .nav-label").ClassList.Should().Contain("nav-label-wrap", "the canonical name wraps instead of being cut off");
     }
 
     [Fact]

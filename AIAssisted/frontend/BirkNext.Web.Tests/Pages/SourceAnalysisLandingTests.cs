@@ -99,7 +99,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         nav.NavigateTo("source-analysis?returnTo=security-classification-review");
         var cut = Render<SourceAnalysis>();
         cut.Find("[data-testid=sa-return-link]").GetAttribute("href").Should().Be("security-classification-review");
-        cut.Find("[data-testid=sa-return-link]").TextContent.Should().Be("Back to Security Classification");
+        cut.Find("[data-testid=sa-return-link]").TextContent.Should().Be("Back to M01 – Gradert tilgang (Kode 6/7)");
 
         nav.NavigateTo("source-analysis?returnTo=https%3A%2F%2Fevil.example.test");
         Render<SourceAnalysis>().FindAll("[data-testid=sa-return]").Should().BeEmpty("an arbitrary URL is never followed");

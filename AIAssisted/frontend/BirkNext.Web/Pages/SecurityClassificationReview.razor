@@ -10,19 +10,19 @@
 @inject FeatureVisibilityService FeatureViz
 @inject IJSRuntime JS
 
-<PageTitle>Security Classification</PageTitle>
+<PageTitle>M01 – Gradert tilgang (Kode 6/7)</PageTitle>
 
-@* Security Classification / Gradert tilgang. Source evidence comes from Source Analysis snapshots chosen here (one primary plus explicitly
+@* M01 – Gradert tilgang (Kode 6/7) (internally: the shared Security Classification review). Source evidence comes from Source Analysis snapshots chosen here (one primary plus explicitly
    included related snapshots; nothing is uploaded on this page). Source evidence, the temporary runtime test context and live observations are
    shown separately: a guard that exists is not a guard that receives the level, UI hiding is not authorization, and a count match is not access
    control. Live checks are fixed GraphQL queries for configured synthetic test children in DEV/QA only; Production is refused; tokens are used
    for one run and never stored; no mutation and no search for real classified children. Selecting snapshots only reads Source Analysis. *@
 <div class="sc-page">
-    <PageHeader Title="Security Classification / Gradert tilgang"
-                Description="Does the security classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The detected pipeline is shown from the selected source.">
+    <PageHeader Title="M01 – Gradert tilgang (Kode 6/7)"
+                Description="This review covers M01 graded access and Kode 6 / Kode 7 classification, including classification propagation and authorization evidence: does the classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The same shared capability is also consumed by extensions such as Skolenærvær Testing.">
         @if (_result is not null) { <button type="button" class="btn-secondary" data-testid="sc-export" @onclick="ExportAsync">Export HTML</button> }
     </PageHeader>
-    <p class="sc-muted" role="note" data-testid="sc-domain-extension">Domain-specific extension: M2LB child security classification (BiRK → M2LB, Kode 6 / Kode 7). It is not a generic security review and does not apply to other projects; see Technology Coverage for the reviews that apply to yours.</p>
+    <p class="sc-muted" role="note" data-testid="sc-domain-extension">M01-specific review of graded access and Kode 6 / Kode 7 handling in M2LB (BiRK → M2LB). The underlying classification and authorization evidence is reusable by other domain extensions, including Skolenærvær. It is not a generic security review; see Technology Coverage for the reviews that apply to your project.</p>
 
     @if (_profile is null)
     {
@@ -48,7 +48,7 @@
         <section class="sc-card sc-source" aria-labelledby="sc-source-heading" data-testid="sc-source-evidence">
             <h2 id="sc-source-heading" tabindex="-1" @ref="_sourceHeading">Source evidence</h2>
             <p class="sc-muted">Security source analysis uses snapshots managed by Source Analysis — one primary snapshot plus any related source you include, each kept with its own fingerprint. Nothing is uploaded here, and choosing a snapshot only reads Source Analysis (no runtime, Azure, database or GraphQL call).</p>
-            <SourceEvidencePrerequisite State="_scope" Prefix="sc" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="Security Classification" LoadError="@_sourceError"
+            <SourceEvidencePrerequisite State="_scope" Prefix="sc" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="M01 – Gradert tilgang (Kode 6/7)" LoadError="@_sourceError"
                                         ReturnTo="security-classification-review" OtherSectionsNote="The runtime test context below stays configurable without source; source checks are not run without a snapshot.">
                 <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sc" Busy="_busy" MissingEvidenceLabel="no security source evidence" OnPrimaryChanged="PrimaryChangedAsync" />
                 <ReviewSourceScopePanel State="_scope" Prefix="sc" Busy="_busy" EvidenceLabel="Security source evidence" MissingEvidenceLabel="no security source evidence"
@@ -629,7 +629,7 @@
         }
         catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
         {
-            _overviewError = BackendRequestClassifier.FromException("Security Classification reviews", ex, "GET api/security-classification");
+            _overviewError = BackendRequestClassifier.FromException("M01 – Gradert tilgang (Kode 6/7) reviews", ex, "GET api/security-classification");
         }
     }
 

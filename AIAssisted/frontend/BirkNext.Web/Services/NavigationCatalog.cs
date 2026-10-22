@@ -23,7 +23,8 @@ public sealed record NavItem(
     string? Hint = null,
     string? ProviderWhenApplicable = null,
     string? FeatureId = null,
-    bool OptionalByDefault = false)
+    bool OptionalByDefault = false,
+    bool WrapLabel = false)
 {
     /// <summary>Tooltip for the row: the full label (it may be truncated) plus a short purpose where the label alone is ambiguous.</summary>
     public string Title => Hint is null ? Label : $"{Label}: {Hint}";
@@ -141,8 +142,8 @@ public static class NavigationCatalog
         // Project-specific domain extensions: shown with their applicability (N/A unless the extension is enabled).
         new("extensions", "Extensions",
         [
-            new("security-classification-review", "Security Classification", "nav-icon-constitution-compliance", Always, ReviewId: "security-classification-review",
-                Hint: "domain extension (M2LB child security classification), not a generic security review"),
+            new("security-classification-review", "M01 – Gradert tilgang (Kode 6/7)", "nav-icon-constitution-compliance", Always, ReviewId: "security-classification-review",
+                Hint: "M01 graded access and Kode 6 / Kode 7 classification in M2LB (formerly Security Classification); its shared evidence is also used by Skolenærvær. Not a generic security review", WrapLabel: true),
             new("extensions/skolenaervaer", "Skolenærvær Testing", "nav-icon-constitution-compliance", Always,
                 Hint: "domain view over the shared CDC and integration journey engines"),
         ]),

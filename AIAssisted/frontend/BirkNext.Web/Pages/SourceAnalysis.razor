@@ -376,7 +376,7 @@
     private static readonly Dictionary<string, string> ReturnTargets = new(StringComparer.Ordinal)
     {
         ["dependency-review"] = "Dependency Review",
-        ["security-classification-review"] = "Security Classification",
+        ["security-classification-review"] = "M01 – Gradert tilgang (Kode 6/7)",
         ["integration-quality-review"] = "Integration Quality Review",
     };
     private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;

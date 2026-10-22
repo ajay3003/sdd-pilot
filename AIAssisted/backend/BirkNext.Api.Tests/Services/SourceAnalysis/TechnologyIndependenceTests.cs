@@ -225,7 +225,9 @@ public sealed class TechnologyIndependenceTests : IDisposable
         ApplicabilityEvaluator.Evaluate("security-classification-review", Input(null)).Status.Should().Be(ApplicabilityStatus.NotApplicable);
         ApplicabilityEvaluator.Evaluate("security-classification-review", Input(null, b => b.Extensions.Add(DomainExtensionIds.M2lbChildSecurityClassification)))
             .Status.Should().Be(ApplicabilityStatus.Applicable);
-        ReviewCatalog.Find("security-classification-review")!.DisplayName.Should().Contain("M2LB extension");
+        var review = ReviewCatalog.Find("security-classification-review")!;
+        review.DisplayName.Should().Be("M01 – Gradert tilgang (Kode 6/7)", "named for its M01 domain, not as a generic security review");
+        review.Purpose.Should().Contain("M01 / M2LB").And.Contain("Not a generic security review");
         ReviewCatalog.All.Where(r => r.DomainExtensionId is null).Select(r => r.DisplayName + r.Purpose).Should()
             .NotContain(t => t.Contains("BirkId") || t.Contains("Kode 6") || t.Contains("BarnRegistreringId") || t.Contains("BiRK"), "generic reviews do not require M2LB concepts");
     }

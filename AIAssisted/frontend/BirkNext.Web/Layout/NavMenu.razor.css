@@ -53,6 +53,13 @@
     white-space: nowrap;
 }
 
+/* A canonical name that must not be shortened (e.g. "M01 – Gradert tilgang (Kode 6/7)") wraps instead of being cut off. */
+.nav-label.nav-label-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+}
+
 .nav-item ::deep a:hover {
     background-color: rgba(255, 255, 255, 0.07);
     color: #e2e8f0;

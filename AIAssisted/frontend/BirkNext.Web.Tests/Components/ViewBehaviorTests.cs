@@ -1764,7 +1764,7 @@ public class ViewBehaviorTests : BunitContext
 
         var text = cut.Markup;
         text.Should().Contain("Specification Explorer");
-        text.Should().Contain("Security Classification");
+        text.Should().Contain("M01 – Gradert tilgang (Kode 6/7)");
         text.Should().Contain("M2LB child-security-classification extension");
         text.Should().Contain("href=\"/source-analysis\"");
         text.Should().Contain("href=\"/performance-test-review\"");

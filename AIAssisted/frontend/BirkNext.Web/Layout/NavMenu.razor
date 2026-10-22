@@ -36,7 +36,7 @@
                     <div class="nav-item px-2">
                         <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
                             <span class="nav-icon @item.Icon" aria-hidden="true"></span>
-                            <span class="nav-label">@item.Label</span>
+                            <span class="nav-label@(item.WrapLabel ? " nav-label-wrap" : "")">@item.Label</span>
                             @if (status is not null)
                             {
                                 <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true"

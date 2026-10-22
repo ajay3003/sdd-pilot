@@ -241,7 +241,7 @@ public static class DocumentationCatalog
             ("test-coverage-review","Test Coverage & Overlap Review","/test-coverage-review","test-coverage-review","Quality & Testing",null,null),
             ("ai-generated-code-review","AI-Generated Code Review","/ai-generated-code-review","ai-generated-code-review","Quality & Testing",null,null),
             ("test-data","Test Data","/test-data","testing","Quality & Testing",null,null),
-            ("security-classification-review","Security Classification","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
+            ("security-classification-review","M01 – Gradert tilgang (Kode 6/7)","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),
             ("extensions/skolenaervaer","Skolenærvær Testing","/extensions/skolenaervaer","integration-journeys","Extensions",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
             ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)

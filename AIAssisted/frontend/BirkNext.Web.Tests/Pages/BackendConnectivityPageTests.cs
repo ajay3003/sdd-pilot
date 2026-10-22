@@ -175,7 +175,7 @@ public sealed class BackendConnectivityPageTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=sc-overview-error]"));
         cut.Find("[data-testid=sc-overview-error-connectivity]").TextContent.Should().Be("Backend reachable");
-        cut.Find("[data-testid=sc-overview-error-message]").TextContent.Should().Contain("Security Classification reviews").And.Contain("not found").And.Contain("HTTP 404");
+        cut.Find("[data-testid=sc-overview-error-message]").TextContent.Should().Contain("M01 – Gradert tilgang (Kode 6/7) reviews").And.Contain("not found").And.Contain("HTTP 404");
         // The source scope is a separate request and is still read: the page is degraded, not unavailable.
         _backend.Requests.Should().Contain(r => r.StartsWith("GET api/security-classification/source-scope"));
         cut.Find("[data-testid=sc-source-evidence]").Should().NotBeNull();

@@ -11,10 +11,10 @@ public sealed class SkoleNaervaerTestingNavigationTests
     {
         var rows = NavigationCatalog.Sections.SelectMany(section => section.Items.Select(item => (section.Id, Item: item))).ToList();
 
-        rows.Where(row => row.Item.Label is "Security Classification" or "Skolenærvær Testing")
+        rows.Where(row => row.Item.Label is "M01 – Gradert tilgang (Kode 6/7)" or "Skolenærvær Testing")
             .Select(row => (row.Id, row.Item.Label, row.Item.Route))
             .Should().ContainInOrder(
-                ("extensions", "Security Classification", "security-classification-review"),
+                ("extensions", "M01 – Gradert tilgang (Kode 6/7)", "security-classification-review"),
                 ("extensions", "Skolenærvær Testing", "extensions/skolenaervaer"));
         rows.Count(row => row.Item.Route == "extensions/skolenaervaer").Should().Be(1);
         rows.Where(row => row.Item.Route == "extensions/skolenaervaer").Single().Id.Should().Be("extensions");

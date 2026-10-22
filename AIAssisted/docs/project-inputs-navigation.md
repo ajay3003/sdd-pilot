@@ -75,7 +75,7 @@ Section IDs are stable, and order is deterministic:
 | Traceability (`traceability`) | Requirements Traceability, Implementation Review, Implementation Traceability, Spec Drift, Impact Analysis (+ legacy rows behind the legacy flag) |
 | Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
 | Quality & Testing (`quality-testing`) | Frontend, API, Integration Quality Review, Performance Test Review, Critical E2E Regression |
-| Extensions (`extensions`) | Security Classification (badge *Extension* when enabled, otherwise *N/A*) |
+| Extensions (`extensions`) | M01 – Gradert tilgang (Kode 6/7), formerly Security Classification (badge *Extension* when enabled, otherwise *N/A*) |
 | AI Review (`ai-review`) | AI Change Review (off by default) |
 | Admin (`admin`) | System Settings |
 

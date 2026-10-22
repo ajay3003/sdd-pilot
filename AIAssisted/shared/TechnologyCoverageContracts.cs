@@ -353,8 +353,8 @@ public static class ReviewCatalog
         new("pipeline-review", "Pipeline Review", "pipeline-review", [Capability.Pipeline], "Build and deployment pipeline structure."),
         new("azure-environment", "Azure Environment", "azure-environment", [Capability.CloudHosted], "Read-only Azure Resource Manager inventory."),
         new("critical-e2e-regression", "Critical E2E Regression", "critical-e2e-regression", [Capability.BrowserTarget], "Critical user journeys in a browser."),
-        new("security-classification-review", "Security Classification (M2LB extension)", "security-classification-review", [Capability.DomainExtension],
-            "Domain-specific: M2LB child classification rules. Not a generic security review.", DomainExtensionIds.M2lbChildSecurityClassification),
+        new("security-classification-review", "M01 – Gradert tilgang (Kode 6/7)", "security-classification-review", [Capability.DomainExtension],
+            "M01 / M2LB graded access (Kode 6 / Kode 7) over the shared Security Classification evidence. Not a generic security review.", DomainExtensionIds.M2lbChildSecurityClassification),
     ];
 
     public static ReviewDescriptor? Find(string reviewId) => All.FirstOrDefault(r => r.ReviewId == reviewId);
