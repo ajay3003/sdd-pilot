@@ -34,7 +34,7 @@ public sealed class SourceInfrastructureHintTests : BunitContext
             .ReturnsAsync(new SourceInfrastructureSuggestion
             {
                 Comparison = new() { Kind = kind, Candidates = [.. candidates], SourceFingerprint = "abcdef0123456789", AnalyzerVersion = 2, EnvironmentBasis = "explicit environment variable file" },
-                SnapshotId = Guid.NewGuid(), ArchiveName = "payments.zip", Fingerprint = "abcdef0123456789", SnapshotBasis = "newest snapshot with infrastructure evidence",
+                SnapshotId = Guid.NewGuid(), ArchiveName = "payments.zip", Fingerprint = "abcdef0123456789", SnapshotBasis = "only snapshot with infrastructure evidence",
             });
 
     [Fact]

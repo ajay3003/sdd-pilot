@@ -384,8 +384,12 @@ public sealed partial class CrossSourceTopologyProvider(IEnumerable<ITopologyPro
                 {
                     var key = TopologyBuilder.ResourceKey(token, name);
                     if (!builder.Has(key)) continue;
+                    // Infrastructure scripts never become topology nodes; source-side policy logic for this resource type only annotates the
+                    // declaration (it does not strengthen the hop and was never run).
+                    var checks = InfrastructureEvidenceQueries.FindChecksForResource(infrastructure, resource).Select(c => c.Name).ToList();
                     var evidence = new TopologyEvidence("iac-declares-resource", TopologyEvidenceStrength.Strong, InfrastructureSource,
-                        $"{resource.CategoryDetail} {name} is declared ({resource.File}:{resource.Line}).", snapshot.Archive.FileName);
+                        $"{resource.CategoryDetail} {name} is declared ({resource.File}:{resource.Line})."
+                        + (checks.Count > 0 ? $" Validated by source-side policy script logic ({string.Join(", ", checks)}); not executed." : ""), snapshot.Archive.FileName);
                     foreach (var other in builder.ComponentKeys.ToList())
                     {
                         foreach (var hop in builder.ConnectionKeys(other, key)) builder.Strengthen(hop, evidence);

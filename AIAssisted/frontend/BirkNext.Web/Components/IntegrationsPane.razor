@@ -65,7 +65,7 @@
 
         @if (_editing is { } editing)
         {
-            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" Templates="_templates" OnSave="SaveAsync" OnCancel="CancelEdit"
+            <IntegrationDefinitionEditor Original="editing.Original" Platforms="_catalog.Platforms" Templates="_templates" OnSave="SaveAsync" OnCancel="CancelEdit" EnvironmentId="@Profile.Id"
                                          Binding="@(editing.Original is { } edited ? _bindings.FirstOrDefault(b => b.IntegrationId == edited.Id) : null)" />
             @if (_saveError is { } saveError) { <p class="ip-banner ip-banner-error" role="alert" data-testid="ip-save-error">@saveError</p> }
         }
@@ -512,6 +512,12 @@
                         var matching = terraform.Values.Count(v => v.Comparison.State == SourceComparisonState.Matches);
                         <p data-testid="ip-terraform-status"><strong>Terraform:</strong> <span class="ip-mono">@terraform.ArchiveName</span> · @IntegrationsOverviewPresentation.TerraformSummary(matching, compared, reviews.Count)
                             <span class="ip-muted">Declared in source is not deployed; neither value is changed automatically.</span></p>
+                        @if (terraform.SupportingValidation.Count > 0)
+                        {
+                            <div data-testid="ip-terraform-validation"><strong>Supporting infrastructure validation in source:</strong>
+                                <ul class="ip-terraform-reviews">@foreach (var v in terraform.SupportingValidation) { <li>@v</li> }</ul>
+                                <span class="ip-muted">Review context only: a source check does not confirm a mapping and was not run here.</span></div>
+                        }
                         @if (reviews.Count > 0)
                         {
                             <ul class="ip-terraform-reviews" data-testid="ip-terraform-reviews">

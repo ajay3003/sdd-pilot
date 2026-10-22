@@ -61,7 +61,7 @@ public sealed class PipelineReviewTests
     public void Source_Analysis_CI_CD_evidence_v2_carries_the_structure_the_review_needs()
     {
         var cicd = Snapshot(Shop()).EvidenceDomains!.CiCd;
-        cicd.AnalyzerVersion.Should().Be(2);
+        cicd.AnalyzerVersion.Should().Be(3, "v3 adds repository script steps on top of the v2 structure");
         var build = cicd.Pipelines.Single(p => p.Name == "shop-build");
         build.Stages.Single(s => s.Name == "DeployQA").Should().Match<PipelineStage>(s => s.DependsOnDeclared && s.DependsOn.SequenceEqual(new[] { "DeployDev", "InfraQA" }) && s.Order == 4);
         build.JobDetails.Single(j => j.Name == "DependencyScan").Condition.Should().Be("eq(variables['Build.Reason'], 'Schedule')");

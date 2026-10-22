@@ -41,6 +41,11 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("discover-source-integrations");
         return Task.FromResult(SourceReport?.Invoke(Catalog));
     }
+    // Source Analysis infrastructure suggestions per kind (read-only). Null = no suggestion (the hint renders nothing).
+    public Func<BirkNext.SourceDomains.InfrastructureResourceKind, BirkNext.SourceDomains.SourceInfrastructureSuggestion?>? Suggestions { get; set; }
+    public Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) =>
+        Task.FromResult(Suggestions?.Invoke(kind));
+
     // Terraform comparison (read-only). Null = not loaded (the pane says nothing about Terraform).
     public Func<IntegrationCatalog, IntegrationTerraformComparison?>? Terraform { get; set; }
     public Task<IntegrationTerraformComparison?> TerraformComparisonAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)

@@ -67,6 +67,7 @@ public static class IqrSourceDomainsReview
                     observed.Add($"Declared in source {at}: {n.Items.Count} network declaration(s), {privateEndpoints} private endpoint(s)"
                         + (publicAccess.Count > 0 ? $"; public network access setting declared on {publicAccess.Count} resource(s) ({string.Join(", ", publicAccess.Select(x => x.Setting.Value).Distinct().Take(3))})" : ""));
                     missing.Add("Network reachability and private connectivity are not verified by source declarations");
+                    Automation(s, at, n.Items.Select(r => r.ResourceType), observed, missing);
                     break;
                 }
                 case IntegrationReviewDomain.Contract:
@@ -85,6 +86,7 @@ public static class IqrSourceDomainsReview
                     var links = SourceEvidenceQueries.Links(s, SourceEvidenceLinkType.ApplicationUsesInfrastructureResource, SourceEvidenceLinkType.ConfigurationReferencesInfrastructureResource).Items;
                     if (links.Count > 0) observed.Add($"Application/configuration ↔ messaging declarations: {links.Count(l => l.Resolved)} linked by exact name, {links.Count(l => !l.Resolved)} unresolved (may be managed elsewhere)");
                     missing.Add("Declared topics, queues and consumer groups do not prove a consumer reads or processes them");
+                    Automation(s, at, m.Items.Select(r => r.ResourceType), observed, missing);
                     break;
                 }
                 case IntegrationReviewDomain.Observability:
@@ -103,10 +105,30 @@ public static class IqrSourceDomainsReview
                     if (access.Count == 0 && settings.Count == 0) break;
                     observed.Add($"Security declarations in IaC {at}: {access.Count} access assignment(s), {settings.Count} security setting(s) on {settings.Select(x => x.Resource.Id).Distinct().Count()} resource(s)");
                     missing.Add("Declared role assignments are not effective permissions; runtime identity access is assessed separately");
+                    var accessIds = access.Select(a => a.ResourceId).ToHashSet(StringComparer.Ordinal);
+                    Automation(s, at, s.EvidenceDomains.Infrastructure.Resources.Where(r => accessIds.Contains(r.Id) || r.Category is InfrastructureCategory.Identity or InfrastructureCategory.AccessControl).Select(r => r.ResourceType), observed, missing);
                     break;
                 }
             }
         }
         return observed.Count == 0 ? ([], []) : (observed, [.. missing.Distinct(), RuntimeLimitation]);
+    }
+
+    public const string ValidationNotAssessed = "Validation execution: Not assessed — source logic exists, but no run evidence shows it ran or passed";
+
+    /// <summary>The source-side validation layer for a domain's declarations, kept apart from the declaration and runtime layers: which checks
+    /// in the repository inspect these resource types, and where they are configured to run. Never "validated" or "passed".</summary>
+    private static void Automation(IqrSourceSnapshot s, string at, IEnumerable<string> resourceTypes, List<string> observed, List<string> missing)
+    {
+        var infra = s.EvidenceDomains!.Infrastructure;
+        if (!infra.AutomationAnalyzed) return;
+        var checks = resourceTypes.Distinct(StringComparer.Ordinal).SelectMany(t => InfrastructureEvidenceQueries.FindChecksForResourceType(infra, t)).DistinctBy(c => c.Id).ToList();
+        if (checks.Count == 0) return;
+        var invocations = checks.SelectMany(c => c.Implementations).SelectMany(id => InfrastructureEvidenceQueries.Invocations(infra, id)).ToList();
+        var pipelines = invocations.Where(i => i.Source == "Pipeline").ToList();
+        observed.Add($"Source validation logic {at}: {string.Join(", ", checks.Select(c => c.Name))} — implemented in repository scripts; "
+            + (pipelines.Count > 0 ? $"referenced by pipeline {string.Join(", ", pipelines.Select(i => $"{i.Pipeline ?? i.Reference} ({InfrastructureAutomationText.Label(i.Blocking).ToLowerInvariant()})").Distinct())}"
+               : invocations.Count > 0 ? "run by a pre-commit hook (developer machines, not CI)" : "not referenced by a pipeline"));
+        missing.Add(ValidationNotAssessed);
     }
 }

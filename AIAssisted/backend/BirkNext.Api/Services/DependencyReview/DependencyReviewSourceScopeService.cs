@@ -34,12 +34,24 @@ public sealed class DependencyReviewSourceScopeService(IReviewSourceEvidenceProv
     public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => s.DependencyEvidence is not { } e
         ? new(false, NoEvidence)
         : new(true, e.Dependencies.Count == 0 && e.RenovateFiles.Count == 0 ? "No supported dependency declaration or Renovate configuration was found in this snapshot." : null,
-            $"{e.Dependencies.Count} declared dependencies · {e.RenovateFiles.Count} Renovate configuration file(s)" + PipelineChecks(s));
+            $"{e.Dependencies.Count} declared dependencies · {e.RenovateFiles.Count} Renovate configuration file(s)" + PipelineChecks(s) + IacAutomation(s));
 
     /// <summary>Dependency/security checks the snapshot's pipelines intend to run, read from Source Analysis CI/CD evidence (defined, not executed).
     /// Dependency Review keeps its own registry/security/license interpretation; this is context only.</summary>
     public static string PipelineChecks(IqrSourceSnapshot s) => SourceAnalysis.SourceEvidenceQueries.DependencyChecks(s) is { Available: true, Items.Count: > 0 } checks
         ? $" · {checks.Items.Count} pipeline dependency/security check(s) defined" : "";
+
+    /// <summary>IaC automation dependencies, kept apart from package health: Terraform providers pinned in lock files, modules, and the Python
+    /// imports and external tools infrastructure scripts reference. Static references only — nothing is installed, resolved or queried.</summary>
+    public static string IacAutomation(IqrSourceSnapshot s)
+    {
+        if (s.EvidenceDomains?.Infrastructure is not { } i || (i.LockedProviders.Count == 0 && i.Scripts.Count == 0)) return "";
+        var providers = i.LockedProviders.Select(p => p.Address).Distinct(StringComparer.Ordinal).Count();
+        var imports = i.Scripts.SelectMany(x => x.Imports).Distinct(StringComparer.Ordinal).Count();
+        var tools = i.Scripts.SelectMany(x => x.Commands).Where(c => c.ExternalTool).Select(c => c.Command).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        return $" · IaC automation dependencies (separate from package health): {providers} locked Terraform provider(s), {i.Modules.Count(m => !m.Local)} external module(s), "
+            + $"{imports} Python import(s), external tools {(tools.Count == 0 ? "none" : string.Join(", ", tools.Take(6)))}";
+    }
 
     public static List<ReviewSourceSnapshot> Describe(IReadOnlyList<IqrSourceSnapshot> snapshots) => ReviewSourceEvidenceProvider.Describe(snapshots, Evidence);
 

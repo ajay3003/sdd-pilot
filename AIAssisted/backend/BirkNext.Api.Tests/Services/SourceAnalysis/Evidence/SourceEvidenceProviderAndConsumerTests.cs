@@ -53,7 +53,7 @@ public sealed class SourceEvidenceProviderAndConsumerTests
 
         var (workspace, _) = IqrSourceArchiveReader.Read("x.zip", Zip(SourceEvidenceFixtures.Acme()));
         var input = BirkNext.Api.Services.SourceArchitecture.ArchitectureInput.From(Guid.NewGuid(), workspace!);
-        var registry = new SourceEvidenceAnalyzerRegistry([new InfrastructureAnalyzer(), new Fake(SourceEvidenceDomain.Contracts, 1)]);
+        var registry = new SourceEvidenceAnalyzerRegistry([new PipelineAnalyzer(), new InfrastructureAnalyzer(), new Fake(SourceEvidenceDomain.Contracts, 1)]);
         var result = SourceEvidenceAnalyzer.Analyze(Guid.NewGuid(), workspace!, input, DateTimeOffset.UtcNow, null, null, null, null, default, out _, registry);
         result.Contracts.Status.Should().Be(SourceDomainStatus.FailedAnalysis);
         result.Contracts.StatusReason.Should().NotContain(Sentinel, "exception text could quote source");

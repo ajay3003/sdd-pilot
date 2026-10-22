@@ -80,12 +80,16 @@ public static class IqrSourceArchiveReader
     public const int MaxDocuments = 2_000;
     public const long MaxDocumentBytes = BirkNext.Api.Services.SampleProjects.SampleProjectDocumentInventory.MaxDocumentBytes;
 
-    /// <summary>Files the evidence domains read beyond C#/project/JSON/YAML: IaC, schemas/contracts, properties/env files and pipeline scripts.</summary>
+    /// <summary>Files the evidence domains read beyond C#/project/JSON/YAML: IaC (including .terraform.lock.hcl), schemas/contracts,
+    /// properties/env files, pipeline scripts and Python/shell/PowerShell scripts (read statically by the infrastructure script provider,
+    /// which claims only infrastructure automation; never executed).</summary>
     public static bool IsEvidenceFile(string path)
     {
         var file = Path.GetFileName(path);
         var extension = Path.GetExtension(path).ToLowerInvariant();
         return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".xsd" or ".bpmn" or ".properties"
+                or ".py" or ".sh" or ".bash" or ".ps1"
+            || file.Equals(".terraform.lock.hcl", StringComparison.OrdinalIgnoreCase)
             || file.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase) || file.Equals(".env", StringComparison.OrdinalIgnoreCase)
             || file.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
     }

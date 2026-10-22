@@ -182,6 +182,7 @@ internal static class PipelineStoryWriter
         PipelineStepKind.DependencyScan => "scans dependencies",
         PipelineStepKind.StaticAnalysis => "runs static analysis",
         PipelineStepKind.Sbom => "generates an SBOM",
+        PipelineStepKind.LocalScript => "runs a repository script",
         _ when PipelineReviewBuilder.Category(kind) is { } c && PipelineReviewBuilder.IsTest(c) => $"runs {PipelineReviewText.Label(c).ToLowerInvariant()}",
         _ => "",
     };

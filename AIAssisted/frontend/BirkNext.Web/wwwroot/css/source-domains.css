@@ -275,3 +275,8 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 /* Toolbar selects shrink with the viewport: a long database/schema name never widens the page. */
 .arch-toolbar-core label, .db-toolbar-core label { max-width: 100%; min-width: 0; }
 .arch-toolbar-core select, .db-toolbar-core select { max-width: 100%; min-width: 0; flex: 1 1 auto; text-overflow: ellipsis; }
+
+/* Source Analysis → Infrastructure → Automation & checks (static script evidence). */
+.sd-script { border-top: 1px solid #e2e8f0; padding-top: .45rem; margin-top: .45rem; min-width: 0; }
+.sd-script h4 { margin: 0 0 .25rem; font-size: .9rem; overflow-wrap: anywhere; }
+.sd-chip { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem; margin: 0 .4rem .2rem 0; padding: .05rem .4rem; border: 1px solid #cbd5e1; border-radius: .35rem; font-size: .8rem; overflow-wrap: anywhere; }

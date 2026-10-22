@@ -167,14 +167,18 @@ public sealed class InfrastructureConsumerMigrationTests
     }
 
     [Fact]
-    public void Suggestions_use_the_exact_snapshot_or_the_newest_with_evidence_and_never_substitute()
+    public void Suggestions_use_the_exact_snapshot_or_the_only_one_with_evidence_never_the_newest_and_never_substitute()
     {
         var older = Snapshot() with { AnalyzedAt = DateTimeOffset.Parse("2026-10-01T00:00:00Z") };
         var newer = Snapshot() with { Id = Guid.NewGuid(), AnalyzedAt = DateTimeOffset.Parse("2026-10-02T00:00:00Z") };
-        var latest = SourceInfrastructureSuggestions.Suggest([newer, older], null, InfrastructureResourceKind.ConsumerGroup, "Consumer group", null, "payments-qa", "settlements");
-        latest.SnapshotId.Should().Be(newer.Id);
-        latest.SnapshotBasis.Should().Be("newest snapshot with infrastructure evidence");
-        latest.Comparison.Candidates.Single().Name.Should().Be("ledger-qa");
+        var only = SourceInfrastructureSuggestions.Suggest([newer], null, InfrastructureResourceKind.ConsumerGroup, "Consumer group", null, "payments-qa", "settlements");
+        only.SnapshotId.Should().Be(newer.Id);
+        only.SnapshotBasis.Should().Be("only snapshot with infrastructure evidence");
+        only.Comparison.Candidates.Single().Name.Should().Be("ledger-qa");
+        var ambiguous = SourceInfrastructureSuggestions.Suggest([newer, older], null, InfrastructureResourceKind.ConsumerGroup, "Consumer group", null, "payments-qa", "settlements");
+        ambiguous.SnapshotId.Should().BeNull("with several Terraform sources the newest is never picked automatically");
+        ambiguous.Comparison.State.Should().Be(SourceComparisonState.SourceUnavailable);
+        ambiguous.Comparison.Detail.Should().Contain("Choose one explicitly");
         var exact = SourceInfrastructureSuggestions.Suggest([newer, older], older.Id, InfrastructureResourceKind.ConsumerGroup, "Consumer group", null, "payments-qa", null);
         exact.SnapshotId.Should().Be(older.Id, "a review bound to snapshot A keeps A even when B is newer");
         var missing = SourceInfrastructureSuggestions.Suggest([newer], Guid.NewGuid(), InfrastructureResourceKind.ConsumerGroup, "Consumer group", null, null, null);

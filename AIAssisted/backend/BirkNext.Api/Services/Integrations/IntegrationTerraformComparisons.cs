@@ -20,6 +20,21 @@ public static class IntegrationTerraformComparisons
         {
             TerraformAvailable = true, SnapshotId = terraform.Id, ArchiveName = terraform.Archive.FileName, AnalyzedAt = terraform.AnalyzedAt,
             Values = IqrInfrastructureComparison.Compare(catalog, snapshots, environmentName),
+            SupportingValidation = SupportingValidation(terraform.EvidenceDomains!.Infrastructure),
         };
+    }
+
+    /// <summary>Checks in the source that inspect messaging, identity or access declarations — context for review, never mapping evidence.</summary>
+    internal static List<string> SupportingValidation(BirkNext.SourceDomains.InfrastructureEvidence infrastructure)
+    {
+        if (!infrastructure.AutomationAnalyzed) return [];
+        var types = BirkNext.SourceDomains.InfrastructureEvidenceQueries.Resources(infrastructure, BirkNext.SourceDomains.InfrastructureCategory.Messaging,
+            BirkNext.SourceDomains.InfrastructureCategory.Identity, BirkNext.SourceDomains.InfrastructureCategory.AccessControl).Select(r => r.ResourceType).ToHashSet(StringComparer.Ordinal);
+        return infrastructure.Checks.Where(c => c.Subjects.Any(types.Contains)).Select(c =>
+        {
+            var invocations = c.Implementations.SelectMany(id => BirkNext.SourceDomains.InfrastructureEvidenceQueries.Invocations(infrastructure, id)).ToList();
+            var where = invocations.Any(i => i.Source == "Pipeline") ? "referenced by a pipeline" : invocations.Count > 0 ? "pre-commit hook" : "not referenced by a pipeline";
+            return $"{c.Name} · {c.Scope} · {where} · execution not assessed";
+        }).ToList();
     }
 }

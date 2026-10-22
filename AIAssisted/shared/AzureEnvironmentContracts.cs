@@ -200,6 +200,9 @@ public sealed record DeclaredObservedItem
     public string? ObservedType { get; init; }
     public List<DeclaredObservedDifference> Differences { get; init; } = [];
     public string Reason { get; init; } = "";
+    /// <summary>Source-side checks whose logic inspects this resource type (Infrastructure analyzer v4): validation logic available in source —
+    /// a layer between "declared" and "observed", never "validated at runtime".</summary>
+    public List<string> SourceChecks { get; init; } = [];
 }
 
 public sealed record DeclaredObservedComparison

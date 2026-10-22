@@ -47,6 +47,32 @@ public static class SourceEvidenceQueries
     public static SourceEvidenceSlice<(InfrastructureResource Resource, InfrastructureSetting Setting)> SecuritySettings(IqrSourceSnapshot s) =>
         Slice(s, e => e.Infrastructure, e => e.Infrastructure.Resources.SelectMany(r => r.Settings.Where(x => x.Area is "Security" or "Networking" or "Identity").Select(x => (r, x))), SourceEvidenceDomain.Infrastructure);
 
+    /// <summary>Infrastructure automation scripts (static evidence; never executed). Empty with a limitation on snapshots analyzed before v4.</summary>
+    public static SourceEvidenceSlice<InfrastructureScript> InfrastructureScripts(IqrSourceSnapshot s, params InfrastructureScriptPurpose[] purposes) =>
+        Automation(Slice(s, e => e.Infrastructure, e => InfrastructureEvidenceQueries.Scripts(e.Infrastructure, purposes), SourceEvidenceDomain.Infrastructure), s);
+
+    /// <summary>Source-side infrastructure checks: implemented in source; executed/passed are never claimed.</summary>
+    public static SourceEvidenceSlice<InfrastructureValidationCheck> InfrastructureChecks(IqrSourceSnapshot s) =>
+        Automation(Slice(s, e => e.Infrastructure, e => e.Infrastructure.Checks, SourceEvidenceDomain.Infrastructure), s);
+
+    public static SourceEvidenceSlice<InfrastructureScriptInvocation> InfrastructureScriptInvocations(IqrSourceSnapshot s) =>
+        Automation(Slice(s, e => e.Infrastructure, e => e.Infrastructure.ScriptInvocations, SourceEvidenceDomain.Infrastructure), s);
+
+    public static SourceEvidenceSlice<InfrastructureGeneratedArtifact> GeneratedArtifactDefinitions(IqrSourceSnapshot s) =>
+        Automation(Slice(s, e => e.Infrastructure, e => e.Infrastructure.GeneratedArtifacts, SourceEvidenceDomain.Infrastructure), s);
+
+    public static SourceEvidenceSlice<InfrastructureRemoteState> RemoteStates(IqrSourceSnapshot s) =>
+        Slice(s, e => e.Infrastructure, e => e.Infrastructure.RemoteStates, SourceEvidenceDomain.Infrastructure);
+
+    /// <summary>Application component ↔ infrastructure resource correlations (cross-domain links, with their evidence state).</summary>
+    public static SourceEvidenceSlice<SourceEvidenceLink> ApplicationInfrastructureCorrelations(IqrSourceSnapshot s) =>
+        Links(s, SourceEvidenceLinkType.ApplicationUsesInfrastructureResource, SourceEvidenceLinkType.ApplicationUsesDatastore);
+
+    private static SourceEvidenceSlice<T> Automation<T>(SourceEvidenceSlice<T> slice, IqrSourceSnapshot s) =>
+        s.EvidenceDomains is { } e && !e.Infrastructure.AutomationAnalyzed && slice.Items.Count == 0
+            ? slice with { Limitations = [.. slice.Limitations, InfrastructureAutomationText.NotAvailableInVersion] }
+            : slice;
+
     // ── Configuration ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     public static SourceEvidenceSlice<ConfigurationEntry> Configuration(IqrSourceSnapshot s, SourceEnvironmentKind? environment = null, params ConfigurationCategory[] categories) =>
@@ -87,7 +113,8 @@ public static class SourceEvidenceQueries
 }
 
 /// <summary>Configured-vs-source suggestions for consumers' settings forms. The snapshot is the requested one exactly (never substituted), else
-/// the newest snapshot of the environment that has infrastructure evidence — stated in the result. Nothing here saves anything.</summary>
+/// the ONLY snapshot of the environment with infrastructure evidence. With several, none is picked (the newest is never chosen for being
+/// newest): the result asks for an explicit source. Nothing here saves anything.</summary>
 public static class SourceInfrastructureSuggestions
 {
     public static SourceInfrastructureSuggestion Suggest(IReadOnlyList<IqrSourceSnapshot> snapshots, Guid? snapshotId, InfrastructureResourceKind kind, string field, string? configured,
@@ -95,15 +122,17 @@ public static class SourceInfrastructureSuggestions
     {
         if (!sourceAnalysisEnabled)
             return new() { SourceAnalysisEnabled = false, Comparison = new() { Field = field, ConfiguredValue = configured, Kind = kind, State = SourceComparisonState.SourceUnavailable, Detail = ReviewSourceEvidenceProvider.Disabled } };
-        var snapshot = snapshotId is { } id ? snapshots.FirstOrDefault(s => s.Id == id)
-            : snapshots.Where(s => s.EvidenceDomains?.Infrastructure.Resources.Count > 0).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+        var withInfrastructure = snapshots.Where(s => s.EvidenceDomains?.Infrastructure.Resources.Count > 0).ToList();
+        var snapshot = snapshotId is { } id ? snapshots.FirstOrDefault(s => s.Id == id) : withInfrastructure.Count == 1 ? withInfrastructure[0] : null;
         var environment = SourceEnvironments.FromName(targetEnvironment)?.Kind;
         var comparison = SourceInfrastructureComparer.Compare(field, configured, snapshot?.EvidenceDomains?.Infrastructure, snapshot?.Id, kind, environment, parent);
         if (snapshot is null && snapshotId is not null) comparison = comparison with { Detail = "The selected source snapshot is unavailable; nothing is substituted." };
+        else if (snapshot is null && withInfrastructure.Count > 1)
+            comparison = comparison with { Detail = $"{withInfrastructure.Count} source snapshots have infrastructure evidence. Choose one explicitly — the newest is never picked for you." };
         return new()
         {
             Comparison = comparison, SnapshotId = snapshot?.Id, ArchiveName = snapshot?.Archive.FileName, Fingerprint = snapshot?.Archive.Sha256, AnalyzedAt = snapshot?.AnalyzedAt,
-            SnapshotBasis = snapshot is null ? null : snapshotId is null ? "newest snapshot with infrastructure evidence" : "selected snapshot",
+            SnapshotBasis = snapshot is null ? null : snapshotId is null ? "only snapshot with infrastructure evidence" : "selected snapshot",
         };
     }
 }

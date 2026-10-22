@@ -27,7 +27,9 @@ public enum DomainSupport { Supported, Partial, Unsupported }
 
 /// <summary>A file's role, decided from path AND content (a YAML file may be a pipeline, a Kubernetes manifest, OpenAPI, Helm values or configuration).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceFileRole { SourceCode, InfrastructureAsCode, Configuration, Pipeline, Contract, ProjectMetadata, Documentation, Generated, Test, ToolConfiguration, Unknown }
+public enum SourceFileRole { SourceCode, InfrastructureAsCode, Configuration, Pipeline, Contract, ProjectMetadata, Documentation, Generated, Test, ToolConfiguration, Unknown,
+    /// <summary>A Python, shell or PowerShell script (appended; read statically by the infrastructure script provider, never executed).</summary>
+    Script }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SourceEnvironmentKind { Default, Development, Local, Test, QA, Staging, Production, Custom }
@@ -107,6 +109,10 @@ public sealed record InfrastructureResource
     /// <summary>The declared name per environment when an environment file (tfvars/parameters) changes the variables the name is built from
     /// (analyzer v2+). Empty when the name does not vary or cannot be resolved per environment.</summary>
     public List<InfrastructureEnvironmentName> EnvironmentNames { get; init; } = [];
+    /// <summary>The count/for_each expression as written (analyzer v4+); instances are never expanded or invented.</summary>
+    public string? InstanceExpression { get; init; }
+    /// <summary>True when count/for_each makes the declaration conditional ("Conditional declaration", not definite existence).</summary>
+    public bool Conditional { get; init; }
 }
 
 /// <summary>A resource's name in one environment, statically resolved from that environment's variable file. Basis names the file.</summary>
@@ -190,6 +196,24 @@ public sealed record InfrastructureEvidence : SourceDomainResult
     public List<InfrastructureEndpointInjection> EndpointInjections { get; init; } = [];
     /// <summary>References that could not be resolved statically (unknown resource, computed address).</summary>
     public List<string> UnresolvedReferences { get; init; } = [];
+
+    // Analyzer v4: the provider family (Terraform, declarative manifests, infrastructure scripts) and what each contributed.
+    public List<InfrastructureProviderRun> ProviderRuns { get; init; } = [];
+    public List<InfrastructureRequiredVersion> RequiredVersions { get; init; } = [];
+    public List<InfrastructureLockedProvider> LockedProviders { get; init; } = [];
+    public List<InfrastructureRemoteState> RemoteStates { get; init; } = [];
+    public List<InfrastructureExcludedFile> ExcludedFiles { get; init; } = [];
+    /// <summary>Infrastructure automation scripts, statically analyzed (never executed).</summary>
+    public List<InfrastructureScript> Scripts { get; init; } = [];
+    /// <summary>Scripts read but not classified as infrastructure automation (first 50), and how many there were.</summary>
+    public List<InfrastructureOtherScript> OtherScripts { get; init; } = [];
+    public int OtherScriptCount { get; init; }
+    public List<InfrastructureValidationCheck> Checks { get; init; } = [];
+    public List<InfrastructureGeneratedArtifact> GeneratedArtifacts { get; init; } = [];
+    public List<InfrastructureScriptRelationship> ScriptRelationships { get; init; } = [];
+    public List<InfrastructureScriptInvocation> ScriptInvocations { get; init; } = [];
+    /// <summary>False on snapshots analyzed before the script provider existed (their scripts were never read — not "none found").</summary>
+    [JsonIgnore] public bool AutomationAnalyzed => AnalyzerVersion >= InfrastructureAutomationText.AutomationAnalyzerVersion;
 }
 
 // ── Configuration ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -265,7 +289,13 @@ public enum PipelineStepKind
     ContainerBuild, ContainerPush, Publish, InfrastructureDeploy, InfrastructurePlan, ApplicationDeploy, DatabaseMigration, SecretRetrieval, Template, Other,
     // Analyzer v2: finer validation kinds and delivery mechanics (appended; earlier values keep their meaning).
     SmokeTest, ApiTest, ContractTest, PerformanceTest, HealthCheck, ArtifactDownload, Rollback, ManualApproval,
+    // Analyzer v3: a repository script the step runs (python scripts/x.py, bash ./x.sh, Bash@3 filePath …).
+    LocalScript,
 }
+
+/// <summary>A repository script a pipeline step runs (analyzer v3): its safe relative path, the interpreter, whether the step tolerates its
+/// failure (|| echo, || true, continueOnError) and whether the path exists in the snapshot. The script text is never stored here.</summary>
+public sealed record PipelineScriptReference(string Path, string Interpreter, bool FailureTolerated, bool ResolvedInSnapshot);
 
 /// <summary>A trigger as written. Path filters show which source changes start the pipeline — not that it ran.</summary>
 public sealed record PipelineTrigger
@@ -368,6 +398,8 @@ public sealed record PipelineStep
     public List<PipelineArtifactUse> ArtifactsConsumed { get; init; } = [];
     /// <summary>Position among the steps of its job (0-based): steps of a job run in order.</summary>
     public int Order { get; init; }
+    /// <summary>Analyzer v3: the repository script a LocalScript step runs.</summary>
+    public PipelineScriptReference? Script { get; init; }
 }
 
 public sealed record PipelineDefinition
@@ -571,6 +603,20 @@ public static class SourceEvidenceDiff
         Diff(SourceEvidenceDomain.Infrastructure, "Resource", previous.Infrastructure.Resources, current.Infrastructure.Resources, r => r.Id, r => r.LogicalName,
             r => $"{r.ResourceType} · {r.DeclaredName ?? "(name not resolved)"} · {Settings(r)}");
         Diff(SourceEvidenceDomain.Infrastructure, "Module", previous.Infrastructure.Modules, current.Infrastructure.Modules, m => m.Id, m => m.Name, m => $"{m.Source} · {m.Version}");
+        Diff(SourceEvidenceDomain.Infrastructure, "Remote state", previous.Infrastructure.RemoteStates, current.Infrastructure.RemoteStates, r => r.Id, r => r.Name,
+            r => $"{r.SourceLayer ?? "(source layer not resolved)"} · outputs {string.Join(", ", r.ReferencedOutputs.Order(StringComparer.Ordinal))}");
+        // Automation is compared only when both snapshots had the script provider; otherwise every script would look "added".
+        if (previous.Infrastructure.AutomationAnalyzed && current.Infrastructure.AutomationAnalyzed)
+        {
+            Diff(SourceEvidenceDomain.Infrastructure, "Validation check", previous.Infrastructure.Checks, current.Infrastructure.Checks, c => c.Id, c => c.Name,
+                c => $"{InfrastructureAutomationText.Label(c.Type)} · {InfrastructureAutomationText.Label(c.Enforcement)} · scope {c.Scope} · rules {string.Join(" | ", c.Rules)}");
+            Diff(SourceEvidenceDomain.Infrastructure, "Infrastructure script", previous.Infrastructure.Scripts, current.Infrastructure.Scripts, s => s.Id, s => s.Path,
+                s => $"{InfrastructureAutomationText.Label(s.PrimaryPurpose)} · commands {string.Join(",", s.Commands.Select(c => c.Subcommand is null ? c.Command : $"{c.Command} {c.Subcommand}").Distinct().Order(StringComparer.Ordinal))} · outputs {string.Join(",", s.Outputs.Select(o => o.Path).Distinct().Order(StringComparer.Ordinal))} · concepts {string.Join(",", s.TerraformConcepts.Order(StringComparer.Ordinal))}");
+            Diff(SourceEvidenceDomain.Infrastructure, "Script invocation", previous.Infrastructure.ScriptInvocations, current.Infrastructure.ScriptInvocations, i => $"{i.Source}|{i.Reference}|{i.ScriptId}", i => i.ScriptId,
+                i => $"{i.Source} {i.Reference} · {InfrastructureAutomationText.Label(i.Blocking)}");
+            Diff(SourceEvidenceDomain.Infrastructure, "Generated artifact", previous.Infrastructure.GeneratedArtifacts, current.Infrastructure.GeneratedArtifacts, a => a.Id, a => a.Name,
+                a => $"{a.Kind} · {a.PathTemplate} · by {a.GeneratedBy}");
+        }
         Diff(SourceEvidenceDomain.Configuration, "Key", previous.Configuration.Entries, current.Configuration.Entries, e => $"{e.File}|{e.NormalizedKey}", e => e.Key,
             e => $"{e.ValueKind} · {(e.Sensitivity == ConfigurationSensitivity.None ? e.ValuePreviewSafe ?? "(value not shown)" : "(sensitive — value not shown)")}");
         Diff(SourceEvidenceDomain.CiCd, "Pipeline", previous.CiCd.Pipelines, current.CiCd.Pipelines, p => p.Id, p => p.Name,
@@ -755,6 +801,7 @@ public static class SourceDomainText
         PipelineStepKind.ApplicationDeploy => "Application deploy",
         PipelineStepKind.DatabaseMigration => "Database migration",
         PipelineStepKind.SecretRetrieval => "Secret retrieval",
+        PipelineStepKind.LocalScript => "Repository script",
         _ => kind.ToString(),
     };
 

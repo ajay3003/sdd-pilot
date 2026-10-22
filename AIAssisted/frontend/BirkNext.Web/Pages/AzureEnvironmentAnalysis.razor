@@ -547,7 +547,8 @@
                                     {
                                         <tr><th scope="row">@i.Name@if (i.NameBasis is { } basis) { <span class="sd-context">@basis</span> }</th>
                                             <td>@i.Kind</td>
-                                            <td>@(i.DeclaredFile is { } f ? $"{f}:{i.DeclaredLine}" : "—")@if (i.DeclaredType is { } t) { <span class="sd-context">@t</span> }</td>
+                                            <td>@(i.DeclaredFile is { } f ? $"{f}:{i.DeclaredLine}" : "—")@if (i.DeclaredType is { } t) { <span class="sd-context">@t</span> }
+                                                @if (i.SourceChecks.Count > 0) { <span class="sd-context" data-testid="az-declared-checks">Source validation logic available: @string.Join(", ", i.SourceChecks) · not executed</span> }</td>
                                             <td>@i.Reason
                                                 @if (i.Differences.Count > 0)
                                                 {

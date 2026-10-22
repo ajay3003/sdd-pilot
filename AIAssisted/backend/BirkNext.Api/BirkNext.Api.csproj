@@ -98,6 +98,7 @@
     <Compile Include="../../shared/XmlSchemaPackages.cs" Link="Models/XmlSchemaPackages.cs" />
     <Compile Include="../../shared/IntegrationTopologyContracts.cs" Link="Models/IntegrationTopologyContracts.cs" />
     <Compile Include="../../shared/SourceInfrastructureIdentityContracts.cs" Link="Models/SourceInfrastructureIdentityContracts.cs" />
+    <Compile Include="../../shared/InfrastructureAutomationContracts.cs" Link="Models/InfrastructureAutomationContracts.cs" />
     <Compile Include="../../shared/SourceEnvironmentValueContracts.cs" Link="Models/SourceEnvironmentValueContracts.cs" />
     <Compile Include="../../shared/ApplicabilityContracts.cs" Link="Models/ApplicabilityContracts.cs" />
     <Compile Include="../../shared/TechnologyCoverageContracts.cs" Link="Models/TechnologyCoverageContracts.cs" />

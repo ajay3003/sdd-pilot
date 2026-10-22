@@ -59,6 +59,7 @@
                             <div><dt>Environment configuration found</dt><dd data-testid="pi-current-environments">@string.Join(", ", withEnvironments.ConfigurationEnvironments) <span class="pi-muted">(source labels, not deployed environments)</span></dd></div>
                         }
                         @if (currentSnapshot is { InfrastructureFormats.Count: > 0 } withIac) { <div><dt>Infrastructure as Code</dt><dd>@string.Join(", ", withIac.InfrastructureFormats)</dd></div> }
+                        @if (currentSnapshot?.InfrastructureAutomation is { } automation) { <div><dt>Infrastructure automation</dt><dd data-testid="pi-current-automation">@automation</dd></div> }
                     </dl>
                 </details>
                 @if (_currentRetryMessage is { } retryMessage) { <p class="pi-warning" role="status" data-testid="pi-current-retry-message">@retryMessage</p> }

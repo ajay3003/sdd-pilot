@@ -129,6 +129,9 @@ public static class TechnologyInventory
         foreach (var file in workspace.EvidenceFiles ?? [])
             if (Path.GetExtension(file.Path).Equals(".tf", StringComparison.OrdinalIgnoreCase))
                 Add("iac.terraform", DetectionConfidence.Confirmed, IqrSourceArchiveReader.SafeLabel(file.Path));
+        foreach (var script in domains?.Infrastructure.Scripts ?? [])
+            Add(script.Language switch { InfrastructureScriptLanguage.Python => "iac.scripts.python", InfrastructureScriptLanguage.PowerShell => "iac.scripts.powershell", _ => "iac.scripts.shell" },
+                DetectionConfidence.Confirmed, IqrSourceArchiveReader.SafeLabel(script.Path));
         foreach (var p in domains?.CiCd.Pipelines ?? [])
             Add(p.Platform switch
             {

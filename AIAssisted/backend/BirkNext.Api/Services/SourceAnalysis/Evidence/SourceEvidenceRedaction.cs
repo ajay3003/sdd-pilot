@@ -128,6 +128,17 @@ internal static class SourceEvidenceRedaction
     /// <summary>A display-safe label (paths, names): redacted and character-restricted by the archive reader's rule.</summary>
     public static string Safe(string value) => IqrSourceArchiveReader.SafeLabel(value);
 
+    /// <summary>A display-safe sentence (rule messages, reasons, capability details): the same redaction as <see cref="Safe"/>, but prose punctuation
+    /// and symbols (≥ ~> … ' ( )) are kept; secret-shaped words are replaced.</summary>
+    public static string SafeText(string value)
+    {
+        var safe = LocalHttpsProxy.SensitiveDataRedactor.RedactText(DependencyReview.DependencyEvidenceRedaction.Redact(value));
+        safe = Regex.Replace(safe, @"(?i)(SECRET_SENTINEL\w*|(?:password|clientsecret|client_secret|accesskey|sharedaccesskey|token)[_=:][^/\s]+)", "[redacted]");
+        safe = string.Join(' ', safe.Split(' ').Select(w => SecretShaped(w.Trim('\'', '"', ',', '.', ')', '(')) || ConnectionShaped(w) ? "[redacted]" : w));
+        safe = Regex.Replace(safe, @"[^\p{L}\p{N}\p{P}\p{S} ]", "_");
+        return safe.Length > 300 ? safe[..300] : safe;
+    }
+
     /// <summary>A display-safe path/route/glob/version label: the same redaction, but keeps the characters such labels need (* ** {id} ~> @2 ^).
     /// Only for structural labels (trigger filters, API routes, task names, version constraints) — never for values.</summary>
     public static string SafePath(string value)

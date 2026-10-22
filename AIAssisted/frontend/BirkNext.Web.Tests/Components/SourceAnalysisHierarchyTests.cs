@@ -161,7 +161,7 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
     [InlineData("architecture", "Architecture views", 7, "Summary")]
     [InlineData("data", "Data views", 5, "Overview")]
     [InlineData("observability", "Observability views", 4, "Overview")]
-    [InlineData("infrastructure", "Infrastructure views", 11, "Overview")]
+    [InlineData("infrastructure", "Infrastructure views", 12, "Overview")]
     [InlineData("configuration", "Configuration views", 4, "Summary")]
     public void Every_area_uses_the_same_view_navigation_with_views_only(string area, string label, int views, string first)
     {

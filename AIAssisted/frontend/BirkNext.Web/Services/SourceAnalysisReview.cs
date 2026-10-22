@@ -187,7 +187,8 @@ public static class SourceAnalysisReview
             "CI/CD" => (CiCdReason(e.CiCd), Plural(e.CiCd.Pipelines.Count(p => !p.IsTemplate), "pipeline", "pipelines")),
             "Contracts" => (Heuristic(e.Contracts) > 0 ? HeuristicNeedsConfirmation(Heuristic(e.Contracts)) : result.StatusReason,
                 $"{Plural(e.Contracts.Contracts.Count, "contract", "contracts")} detected"),
-            _ => (result.StatusReason, Plural(e.Infrastructure.Resources.Count(r => r.Kind == "resource"), "resource", "resources")),
+            _ => (result.StatusReason, Plural(e.Infrastructure.Resources.Count(r => r.Kind == "resource"), "resource", "resources")
+                + (e.Infrastructure.Scripts.Count > 0 ? $" · {Plural(e.Infrastructure.Scripts.Count, "infrastructure script", "infrastructure scripts")} · {Plural(e.Infrastructure.Checks.Count, "source check", "source checks")}" : "")),
         };
         return new(key, domain, status, result.Status == SourceDomainStatus.Complete ? null : reason ?? "Some evidence could only be read partially", SourceAnalysisAreas.Quality, domain, detail);
     }

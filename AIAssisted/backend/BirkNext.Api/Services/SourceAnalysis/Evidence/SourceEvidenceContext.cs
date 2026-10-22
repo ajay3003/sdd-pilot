@@ -41,6 +41,9 @@ internal sealed class SourceEvidenceContext
     public string Fingerprint { get; init; } = "";
     public DateTimeOffset ExtractedAt { get; init; }
     public List<EvidenceFile> Files { get; init; } = [];
+    /// <summary>Every non-ignored path of the archive (names only): what exists, including files no analyzer reads (state files, checked-in
+    /// generated inventories). Never content.</summary>
+    public IReadOnlyList<string> AllPaths { get; init; } = [];
     public ArchitectureInput Input { get; init; } = new();
     public ArchitectureSnapshot? Architecture { get; init; }
     public DatabaseArchitectureSnapshot? Database { get; init; }
@@ -90,6 +93,14 @@ internal static class SourceFileClassifier
         var ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
         if (ext is ".tf" ) return (SourceFileRole.InfrastructureAsCode, "Terraform");
         if (ext is ".tfvars") return (SourceFileRole.InfrastructureAsCode, "Terraform variables");
+        if (name.Equals(".terraform.lock.hcl", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.InfrastructureAsCode, "Terraform lock file");
+        if (name.EndsWith(".tf.json", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.InfrastructureAsCode, "Terraform JSON");
+        if (name.EndsWith(".tfvars.json", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.InfrastructureAsCode, "Terraform JSON");
+        if (ext is ".hcl") return (SourceFileRole.ToolConfiguration, "HCL");
+        // Scripts are read statically by the infrastructure script provider; only infrastructure automation is claimed as such.
+        if (ext is ".py") return (TestPath.IsMatch(path) ? SourceFileRole.Test : SourceFileRole.Script, "Python");
+        if (ext is ".sh" or ".bash") return (SourceFileRole.Script, "Shell");
+        if (ext is ".ps1") return (SourceFileRole.Script, "PowerShell");
         if (ext is ".bicep" or ".bicepparam") return (SourceFileRole.InfrastructureAsCode, "Bicep");
         if (name.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.Pipeline, "Jenkins");
         if (ext is ".graphql" or ".graphqls" or ".gql") return (TestPath.IsMatch(path) ? SourceFileRole.Test : SourceFileRole.Contract, "GraphQL");

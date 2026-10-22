@@ -1,4 +1,6 @@
 @using BirkNext.Integrations
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Components.SourceDomains
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.ProjectImport
 
@@ -142,6 +144,12 @@
             @Provenance("EndpointOrTopic")
         </label>
         @if (Show("topic") && string.IsNullOrWhiteSpace(_model.EndpointOrTopic)) { <span class="ip-field-error" role="status">This field is required.</span> }
+        @* Safe infrastructure proposals from Source Analysis Terraform: "Use detected value" fills this draft only; nothing is saved until Save. *@
+        @if (!string.IsNullOrWhiteSpace(EnvironmentId) && TopicKind is { } topicKind)
+        {
+            <SourceInfrastructureHint EnvironmentId="@EnvironmentId" Kind="topicKind" Field="@EndpointLabel" Configured="@_model.EndpointOrTopic" TargetEnvironment="@EnvironmentId"
+                                      OnUse="c => UseDeclared(c, true)" TestId="ip-edit-topic-source" />
+        }
         @* Consumer groups, source tables and delete/tombstone semantics belong to event streams (CDC); an HTTP/API integration has none. *@
         @if (!IsHttpApi)
         {
@@ -149,6 +157,11 @@
                 <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Leave blank until confirmed" aria-describedby="ip-edit-consumer-group-help" />
             </label>
             <p class="ip-muted" id="ip-edit-consumer-group-help" data-testid="ip-edit-consumer-group-help">Consumer group is required for checkpoint/lag review. Leave blank if not confirmed — <code>$Default</code> is never assumed.</p>
+            @if (!string.IsNullOrWhiteSpace(EnvironmentId) && _model.Kind == IntegrationKind.EventHub)
+            {
+                <SourceInfrastructureHint EnvironmentId="@EnvironmentId" Kind="InfrastructureResourceKind.ConsumerGroup" Field="Consumer group" Configured="@_model.ConsumerGroup" TargetEnvironment="@EnvironmentId"
+                                          Parent="@_model.EndpointOrTopic" OnUse="c => UseDeclared(c, false)" TestId="ip-edit-consumer-group-source" />
+            }
         }
         <label class="ip-field">Producer <input class="form-control" data-testid="ip-edit-producer" @bind="_model.Producer" />@Provenance("Producer")</label>
         @if (!IsHttpApi) { <label class="ip-field">Source <input class="form-control ip-mono" data-testid="ip-edit-source" @bind="_model.SourceResource" placeholder="e.g. BirkM2LB.dbo.Person" />@Provenance("SourceResource")</label> }
@@ -479,6 +492,22 @@
 
 @code {
     private bool IsHttpApi => _model.Kind == IntegrationKind.HttpApi;
+
+    /// <summary>The environment whose Source Analysis Terraform may propose safe values (null: no proposals are shown).</summary>
+    [Parameter] public string? EnvironmentId { get; set; }
+
+    private InfrastructureResourceKind? TopicKind => _model.Kind switch
+    {
+        IntegrationKind.EventHub => InfrastructureResourceKind.EventHub,
+        IntegrationKind.ServiceBus => InfrastructureResourceKind.ServiceBusTopic,
+        _ => null,
+    };
+
+    /// <summary>"Use detected value" from a Terraform declaration: fills the draft only (the person still reviews and saves).</summary>
+    private void UseDeclared(SourceResourceCandidate candidate, bool topic)
+    {
+        if (topic) _model.EndpointOrTopic = candidate.Name; else _model.ConsumerGroup = candidate.Name;
+    }
     private string EndpointLabel => _model.Kind switch
     {
         IntegrationKind.HttpApi => "Endpoint",

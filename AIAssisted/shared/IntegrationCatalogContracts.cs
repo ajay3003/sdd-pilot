@@ -425,6 +425,9 @@ public sealed record IntegrationTerraformComparison
     public string? ArchiveName { get; init; }
     public DateTimeOffset? AnalyzedAt { get; init; }
     public List<BirkNext.SourceDomains.ConfiguredSourceComparison> Values { get; init; } = [];
+    /// <summary>Source-side infrastructure validation for the messaging/identity declarations ("RBAC naming validation · azurerm_role_assignment
+    /// declarations · pre-commit hook · execution not assessed"). Review context only: it never strengthens or confirms an integration mapping.</summary>
+    public List<string> SupportingValidation { get; init; } = [];
 }
 
 /// <summary>

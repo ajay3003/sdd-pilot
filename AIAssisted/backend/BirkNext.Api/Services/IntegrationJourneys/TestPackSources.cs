@@ -110,6 +110,13 @@ public static class TestPackSources
             ? [.. infrastructure.Formats.Concat(infrastructure.Resources.Select(resource => resource.Format)).Distinct().Order().Select(format => format.ToString())]
             : [];
 
+    /// <summary>Infrastructure automation scripts in the same source package, by language, with the source checks they implement (static evidence;
+    /// never "executed"). Not an Infrastructure as Code format: it never satisfies an IaC requirement.</summary>
+    public static string? InfrastructureAutomation(IqrSourceSnapshot snapshot) =>
+        snapshot.EvidenceDomains?.Infrastructure is { Scripts.Count: > 0 } infrastructure
+            ? $"{string.Join(", ", infrastructure.Scripts.Select(s => s.Language).Distinct().Order())} scripts · {infrastructure.Checks.Count} source check(s) · read statically, not executed"
+            : null;
+
     /// <summary>Every stored snapshot recognized as the role's source: the authoritative (bound) ones first, then newest first.</summary>
     public static IReadOnlyList<TestPackSourceCandidate> Candidates(IIntegrationJourneyPack pack, JourneyPackContext context, TestPackSourceRole role)
     {

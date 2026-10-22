@@ -166,7 +166,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
     public void TerraformAnalyzer_RecordsModuleDeploymentNamesAndEndpointInjections()
     {
         var infrastructure = InfrastructurePackage().Infrastructure;
-        infrastructure.AnalyzerVersion.Should().Be(3);
+        infrastructure.AnalyzerVersion.Should().Be(4, "v4 adds the provider family; v3 module deployment names and endpoint injections remain");
         infrastructure.Modules.Single(module => module.Name == "orders_api").DeploymentName.Should().Be("ca-orders-*-001", "the per-environment variable is a wildcard");
         infrastructure.EndpointInjections.Should().ContainSingle().Which.Should().Match<InfrastructureEndpointInjection>(item =>
             item.FromId.EndsWith("module.billing_worker") && item.Key == "OrdersApi:BaseUrl" && item.ToId.EndsWith("module.orders_api") && item.Attribute == "container_app_fqdn");

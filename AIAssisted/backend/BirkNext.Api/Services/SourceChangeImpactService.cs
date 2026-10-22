@@ -380,6 +380,11 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                         link.State is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported ? TechnicalImpactLevel.Direct : TechnicalImpactLevel.Potential,
                         link.State.ToString(), "Source Analysis links this contract to a producer or consumer component.", c, SourceDomainText.Label(link.Type), link.Basis,
                         arch?.Components.FirstOrDefault(x => $"arch:component:{x.Id}" == link.ToId)?.Evidence.Select(e => e.File));
+            // Infrastructure automation (checks, scripts, their pipeline/hook use): the delivery process and the declarations the policy inspects may be
+            // affected — never "the infrastructure changed" and never a runtime effect.
+            if (c.Domain == ImpactChangeDomain.Infrastructure && evidence is not null && c.EntityType is "Validation check" or "Infrastructure script" or "Script invocation")
+                foreach (var (type, id, name, reason, relation) in AutomationImpacts(evidence.Infrastructure, c))
+                    Add(type, id, name, c.Domain, TechnicalImpactLevel.Potential, "Inferred", reason, c, relation, "Source Analysis infrastructure automation evidence (static; not executed)");
             if (c.Domain is ImpactChangeDomain.Configuration or ImpactChangeDomain.Infrastructure && evidence is not null)
             {
                 var configId = c.Domain == ImpactChangeDomain.Configuration
@@ -500,10 +505,46 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         "External system" => snapshot.ExternalSystems.FirstOrDefault(x => x.Id == key)?.Evidence.Select(e => e.File) ?? [],
         _ => [],
     };
+    /// <summary>What a changed check, script or script invocation may affect: the pipelines/hooks that run it and the declarations its policy inspects.</summary>
+    private static IEnumerable<(string Type, string Id, string Name, string Reason, string Relation)> AutomationImpacts(InfrastructureEvidence infrastructure, ImpactChange c)
+    {
+        var scripts = c.EntityType switch
+        {
+            "Infrastructure script" => [c.EntityKey],
+            "Validation check" => infrastructure.Checks.FirstOrDefault(x => x.Id == c.EntityKey)?.Implementations ?? [],
+            _ => [c.EntityKey.Split('|').Last()],
+        };
+        foreach (var invocation in scripts.SelectMany(s => InfrastructureEvidenceQueries.Invocations(infrastructure, s)).DistinctBy(i => (i.Source, i.Reference)))
+            yield return (invocation.Source == "Pipeline" ? "Infrastructure pipeline validation" : "Pre-commit hook", $"{invocation.Source}:{invocation.Reference}",
+                invocation.Pipeline ?? invocation.Reference,
+                invocation.Source == "Pipeline"
+                    ? $"This pipeline runs the changed automation ({InfrastructureAutomationText.Label(invocation.Blocking).ToLowerInvariant()}); the infrastructure delivery process may behave differently. Not executed here."
+                    : "This pre-commit hook runs the changed automation on developer machines; commits of infrastructure source may be accepted or rejected differently.",
+                $"{invocation.Source} → script");
+        var checks = c.EntityType == "Validation check" ? infrastructure.Checks.Where(x => x.Id == c.EntityKey) : scripts.SelectMany(s => InfrastructureEvidenceQueries.ChecksImplementedBy(infrastructure, s));
+        foreach (var subject in checks.SelectMany(x => x.Subjects).Distinct(StringComparer.Ordinal))
+        {
+            var count = infrastructure.Resources.Count(r => r.Kind == "resource" && r.ResourceType == subject);
+            yield return ("Terraform delivery workflow", $"declarations:{subject}", count > 0 ? $"{count} {subject} declaration(s)" : subject,
+                "The validation policy for these declarations changed: Terraform changes may now pass or fail this check differently. The declared infrastructure itself did not change.",
+                "Check → declarations it inspects");
+        }
+    }
+
     private static IEnumerable<string> EvidenceFiles(SourceEvidenceDomainsSnapshot? evidence, SourceEvidenceDomain domain, string key)
     {
         if (evidence is null) return [];
-        if (domain == SourceEvidenceDomain.Infrastructure) return evidence.Infrastructure.Resources.FirstOrDefault(x => x.Id == key)?.File is { } f ? [f] : [];
+        if (domain == SourceEvidenceDomain.Infrastructure)
+        {
+            var i = evidence.Infrastructure;
+            if (i.Resources.FirstOrDefault(x => x.Id == key)?.File is { } resource) return [resource];
+            if (i.Scripts.FirstOrDefault(x => x.Id == key) is { } script) return [script.Path];
+            if (i.Checks.FirstOrDefault(x => x.Id == key) is { } check) return check.Implementations;
+            if (i.RemoteStates.FirstOrDefault(x => x.Id == key)?.File is { } remote) return [remote];
+            if (i.GeneratedArtifacts.FirstOrDefault(x => x.Id == key) is { } artifact) return [artifact.GeneratedBy];
+            if (i.ScriptInvocations.FirstOrDefault(x => $"{x.Source}|{x.Reference}|{x.ScriptId}" == key) is { } invocation) return [invocation.File, invocation.ScriptId];
+            return [];
+        }
         if (domain == SourceEvidenceDomain.Configuration) return evidence.Configuration.Entries.FirstOrDefault(x => $"{x.File}|{x.NormalizedKey}" == key)?.File is { } f ? [f] : [];
         if (domain == SourceEvidenceDomain.Contracts)
         {

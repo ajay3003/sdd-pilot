@@ -39,9 +39,12 @@ public static class PipelineReviewBuilder
         _ => null,
     };
 
-    /// <summary>A step's category after template parameters are substituted: an unclassified test is re-read from its (now literal) targets and name.</summary>
-    internal static ValidationCategory? Category(EStep s) =>
-        s.Step.Kind == PipelineStepKind.Test ? Category(BirkNext.Api.Services.SourceAnalysis.Evidence.PipelineAnalyzer.TestKind($"{string.Join(" ", s.Step.Targets)} {s.Step.Name}")) : Category(s.Step.Kind);
+    /// <summary>A step's category after template parameters are substituted: an unclassified test is re-read from its (now literal) targets and name.
+    /// A repository script step is an infrastructure check only when Source Analysis classified that script as infrastructure automation.</summary>
+    internal static ValidationCategory? Category(EStep s, IReadOnlySet<string>? infrastructureScripts = null) =>
+        s.Step.Kind == PipelineStepKind.Test ? Category(BirkNext.Api.Services.SourceAnalysis.Evidence.PipelineAnalyzer.TestKind($"{string.Join(" ", s.Step.Targets)} {s.Step.Name}"))
+        : s.Step.Kind == PipelineStepKind.LocalScript ? s.Step.Script is { } script && infrastructureScripts?.Contains(script.Path) == true ? ValidationCategory.InfrastructureCheck : null
+        : Category(s.Step.Kind);
 
     public static bool IsTest(ValidationCategory c) => c is ValidationCategory.Unit or ValidationCategory.Integration or ValidationCategory.Api or ValidationCategory.E2E
         or ValidationCategory.Frontend or ValidationCategory.Accessibility or ValidationCategory.Performance or ValidationCategory.Contract or ValidationCategory.Smoke or ValidationCategory.Test;
@@ -74,6 +77,9 @@ public static class PipelineReviewBuilder
         public required List<EffectivePipeline> Pipelines { get; init; }
         public required Dictionary<string, PipelineDefinition> Definitions { get; init; }
         public required PipelineMetadataSummary Metadata { get; init; }
+        private IReadOnlySet<string>? _infrastructureScripts;
+        /// <summary>Repository scripts Source Analysis classified as infrastructure automation (stored evidence; never re-read).</summary>
+        public IReadOnlySet<string> InfrastructureScripts => _infrastructureScripts ??= (Snapshot.EvidenceDomains?.Infrastructure.Scripts.Select(x => x.Id) ?? []).ToHashSet(StringComparer.Ordinal);
         public Dictionary<string, string> Names { get; } = new(StringComparer.Ordinal);
         public Dictionary<(string Pipeline, string Alias), (string? Target, ArchitectureEvidenceState State, string Basis)> Resources { get; } = [];
         public string Root { get; set; } = "";
@@ -213,7 +219,7 @@ public static class PipelineReviewBuilder
     private static bool StructureKnown(EffectivePipeline e) => e.Definition.Platform == PipelinePlatform.AzurePipelines;
 
     /// <summary>Validations before (with gate state), after, and not on the path of a point (job + position in it).</summary>
-    internal static (List<ValidationGate> Before, List<ValidationGate> After, List<ValidationGate> NotGating) Gates(EffectivePipeline e, string jobKey, double point)
+    internal static (List<ValidationGate> Before, List<ValidationGate> After, List<ValidationGate> NotGating) Gates(EffectivePipeline e, string jobKey, double point, IReadOnlySet<string>? infrastructureScripts = null)
     {
         var before = new List<ValidationGate>();
         var after = new List<ValidationGate>();
@@ -223,7 +229,7 @@ public static class PipelineReviewBuilder
         var deployTolerant = PipelineConditions.Tolerant(job?.Condition);
         foreach (var s in e.Steps)
         {
-            if (Category(s) is not { } category) continue;
+            if (Category(s, infrastructureScripts) is not { } category) continue;
             var sJob = e.Job(s.JobKey);
             ValidationGate Gate(GateState state) => new(category, state, Friendly(s.Step), e.Id, s.Stage, sJob?.Name, s.Step.Condition ?? sJob?.Condition, Ref(e, s));
             GateState BeforeState(bool blocking) => PipelineConditions.Restricts(s.Step.Condition) ? GateState.Conditional
@@ -253,7 +259,7 @@ public static class PipelineReviewBuilder
                 : steps.Where(s => s.Step.StrategyPhase is { } p && (p.StartsWith("deploy", StringComparison.Ordinal) || p.StartsWith("routeTraffic", StringComparison.Ordinal))).Select(s => s.Order).DefaultIfEmpty(-1).Min();
             var (envName, kind, basis, state) = Environment(e, job, deploySteps);
             var id = $"{e.Id}#{job.Key}";
-            var (before, after, _) = Gates(e, job.Key, point);
+            var (before, after, _) = Gates(e, job.Key, point, ctx.InfrastructureScripts);
             var unresolved = new List<string>();
             if (e.HiddenOnPath(job.Key) is { } hidden)
             {
@@ -386,7 +392,7 @@ public static class PipelineReviewBuilder
             var producer = ctx.Pipeline(a.ProducerPipeline!)!;
             if (producer.Steps.FirstOrDefault(s => s.Step.ArtifactsPublished.Count > 0 && s.Stage == a.ProducerStage) is not { } publish) continue;
             if (a.Source.StartsWith("current", StringComparison.Ordinal)) continue;
-            foreach (var g in Gates(producer, publish.JobKey, publish.Order).Before.Where(g => g.State is GateState.Gates or GateState.Conditional or GateState.SoftGate))
+            foreach (var g in Gates(producer, publish.JobKey, publish.Order, ctx.InfrastructureScripts).Before.Where(g => g.State is GateState.Gates or GateState.Conditional or GateState.SoftGate))
                 yield return g with { State = g.State == GateState.Gates ? GateState.Inherited : g.State, Label = $"{g.Label} (in `{ctx.Name(producer.Id)}`)" };
         }
     }
@@ -425,7 +431,7 @@ public static class PipelineReviewBuilder
         foreach (var e in ctx.Pipelines)
             foreach (var s in e.Steps)
             {
-                if (Category(s) is not { } category || category == ValidationCategory.Build) continue;
+                if (Category(s, ctx.InfrastructureScripts) is not { } category || category == ValidationCategory.Build) continue;
                 var job = e.Job(s.JobKey);
                 var gates = ctx.Deployments.Where(d => d.Before.Any(g => g.Evidence.Line == s.Step.Line && g.Evidence.File == s.File && g.State is GateState.Gates or GateState.Conditional or GateState.SoftGate or GateState.Inherited))
                     .Select(d => d.Id).ToList();
@@ -437,7 +443,7 @@ public static class PipelineReviewBuilder
                     Pipeline = e.Id, PipelineName = ctx.Name(e.Id), Category = category, Name = Friendly(s.Step), Tool = s.Step.Tool, Targets = s.Step.Targets, Stage = s.Stage, Job = job?.Name,
                     WhenItRuns = (triggers.Count == 0 ? "No trigger" : string.Join("; ", triggers)) + (condition is null ? "" : $" — only when `{condition}`"),
                     Condition = condition, ContinueOnError = s.Step.ContinueOnError || job?.ContinueOnError == true, Gates = gates, RunsAfter = after, Evidence = Ref(e, s),
-                });
+                }.WithInfrastructure(ctx.Snapshot.EvidenceDomains?.Infrastructure, s.Step));
             }
         return list;
     }

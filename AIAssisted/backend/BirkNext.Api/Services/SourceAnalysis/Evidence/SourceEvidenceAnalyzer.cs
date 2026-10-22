@@ -83,7 +83,7 @@ public static class SourceEvidenceAnalyzer
             .OrderBy(f => f.Path, StringComparer.Ordinal).ToList();
         var context = new SourceEvidenceContext
         {
-            SourceSnapshotId = sourceSnapshotId, Fingerprint = workspace.Archive.Sha256, ExtractedAt = at, Files = files, Input = input,
+            SourceSnapshotId = sourceSnapshotId, Fingerprint = workspace.Archive.Sha256, ExtractedAt = at, Files = files, Input = input, AllPaths = workspace.AllPaths ?? [],
             Architecture = architecture, Database = database, Observability = observability, IntegrationPath = integrationPath,
         };
         foreach (var analyzer in registry.Ordered)

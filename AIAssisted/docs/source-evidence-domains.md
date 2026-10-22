@@ -23,7 +23,7 @@ Contracts are in `shared/SourceEvidenceDomainContracts.cs`, namespace `BirkNext.
 
 | Domain | Reads | Support |
 |---|---|---|
-| Infrastructure | Terraform (HCL), tfvars, Bicep, ARM, Kubernetes, Helm | Terraform: Supported (static only). The others: Partial. Pulumi, CDK and CloudFormation: Unsupported. |
+| Infrastructure | A provider family (see *Infrastructure Source Evidence* below): Terraform (HCL, tfvars, lock files, remote state), declarative manifests (Bicep, ARM, Kubernetes, Helm) and infrastructure automation scripts (Python, shell, PowerShell) | Terraform: Supported (static only). Manifests: Partial. Python/shell scripts: Supported (static); PowerShell: Partial. Script execution: never performed. Pulumi, CDK, CloudFormation, .tf.json: Unsupported. |
 | Configuration | appsettings (reuses the files Architecture already parsed), launchSettings, Compose (reuses Architecture's parser), .env, .properties, YAML, Helm values. It also receives values other analyzers hand over in memory: tfvars, Bicep parameters, ConfigMaps and pipeline variables. | JSON: Supported. YAML: Partial. XML: Unsupported. |
 | CI/CD | Azure Pipelines, GitHub Actions, GitLab CI, Jenkins | Partial. A YAML subset reader is used, scripts are matched by command family, and templates are listed but not expanded. |
 | Contracts | OpenAPI (JSON goes through the existing `OpenApiExtractor`), GraphQL SDL and operations (through the existing Hot Chocolate parser), AsyncAPI, JSON Schema, protobuf, message contracts (reused from the integration-path analyzer), generated clients | Formats are mixed. Every contract carries its own `ParseSupport`. |
@@ -135,3 +135,39 @@ Guard tests (`SourceIngestionOwnershipTests`, plus the Terraform guard) fail the
 | Target Environment, Authentication, Endpoint/Browser Discovery | runtime/configured. URL-type classification is not a source environment. Event Hub settings hints use the shared suggestions. | RUNTIME-ONLY / CONFIGURED-STATE |
 | API QR, FQR, Critical E2E | no source calls and no prerequisite; trusted SDL/contract artifacts are separate inputs | RUNTIME-ONLY |
 | Dashboard, exports | read stored results | COMPLIANT |
+
+## Infrastructure Source Evidence (Infrastructure analyzer v4)
+
+```
+snapshot files ──► TerraformEvidenceProvider ─────────────┐
+               ├─► DeclarativeManifestEvidenceProvider ───┼─► InfrastructureEvidenceBuilder ─► InfrastructureEvidence (stored once)
+               └─► InfrastructureScriptEvidenceProvider ──┘        ▲
+                     reads CI/CD step script references ───────────┘   (Infrastructure DependsOn CI/CD; nothing is re-parsed)
+consumers ──► InfrastructureEvidenceQueries (shared, pure) / SourceEvidenceQueries slices (backend, with provenance)
+```
+
+- **Sibling providers** (`IInfrastructureSourceEvidenceProvider`): each claims the files it understands, reads them once per immutable snapshot and writes
+  normalized facts with provenance (file, line, Terraform address or script function) into one `InfrastructureEvidence`. `ProviderRuns` records what each
+  contributed. Bicep, Helm or Kubernetes-specific providers can join the family without a new consumer model.
+- **Terraform extras (v4):** `required_version`, `.terraform.lock.hcl` providers (versions and constraints, hashes dropped), `data "terraform_remote_state"`
+  with the source layer matched by directory name (`Strong source match` at most — the backend is never contacted; outputs read but not declared in the matched
+  layer are listed), count/for_each kept as written (`Conditional declaration`, never expanded), state and plan files listed as intentionally excluded.
+- **Infrastructure scripts:** read statically and **never executed, sourced, imported or evaluated** — Python by a tokenizer (imports, functions, entry
+  point, subprocess/os.system commands, file reads/writes/globs, environment variable names, CLI arguments, failure messages, exit statuses), shell by a
+  quote-aware command reader (heredocs with an embedded Python program are read as Python), PowerShell line by line. A script is infrastructure automation
+  only when its own content works on infrastructure source (resource types, Terraform files/blocks, terraform/az commands) or its pipeline/pre-commit
+  context does — never because of its language, file name or folder; other scripts are listed apart with the reason. Purpose (validation, policy, naming,
+  version, inventory, documentation, deployment, migration, reporting) comes from commands, file access, failure messages and outputs; enforcement from the
+  exit paths; validation rules are the script's own failure messages. Generated artifacts are definitions: a copy is reported only when the source package
+  contains one ("checked-in copy; not produced by this analysis").
+- **Checks** aggregate scripts that enforce the same policy (`Implementations`), count the matching declarations of the same snapshot and carry
+  `Check implemented in source` / `Not executed by analysis`. **Invocations** come from CI/CD `LocalScript` steps (pipeline analyzer v3: path, interpreter,
+  `|| …`/continueOnError tolerance) and `.pre-commit-config.yaml` local hooks (a commit gate on developer machines, not CI). Configured as a gate is never
+  "passed".
+- **States never upgraded:** Declared in Terraform ≠ detected in a script ≠ validation logic available ≠ referenced by pipeline ≠ configured in BirkNext ≠
+  confirmed mapping ≠ executed ≠ deployed ≠ observed ≠ healthy. `InfrastructureEvidenceLayers` keeps declared / source validation / pipeline configuration
+  apart and always reports execution and runtime as `Not assessed`.
+- **Configure-once:** script constants never become configuration values; Terraform values remain lower-tier proposals below explicit saved values.
+- **History:** snapshots analyzed before v4 never had their scripts read; consumers say "Infrastructure script evidence was not available in this analysis
+  version", and `SourceEvidenceDiff` compares automation only between two v4 snapshots.
+- **Several Terraform sources:** suggestions use the requested snapshot, or the only snapshot with infrastructure evidence — never the newest of several.

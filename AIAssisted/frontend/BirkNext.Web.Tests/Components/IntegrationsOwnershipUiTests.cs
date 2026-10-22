@@ -189,6 +189,23 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
     }
 
     [Fact]
+    public void Supporting_infrastructure_validation_is_review_context_and_never_confirms_a_mapping()
+    {
+        UseRichSource();
+        _api.Terraform = _ => new IntegrationTerraformComparison
+        {
+            TerraformAvailable = true, ArchiveName = "m2lb-infra.zip",
+            Values = [Compared("Event Hubs namespace", "evhns-m2lb-dev-nwe-001", SourceComparisonState.Matches, "evhns-m2lb-dev-nwe-001")],
+            SupportingValidation = ["RBAC naming validation · azurerm_role_assignment declarations · pre-commit hook · execution not assessed"],
+        };
+        var cut = Open();
+        var line = cut.Find("[data-testid=ip-terraform-validation]");
+        line.TextContent.Should().Contain("RBAC naming validation").And.Contain("execution not assessed").And.Contain("does not confirm a mapping");
+        cut.Markup.Should().NotContain("Validated by").And.NotContain("Passed");
+        _api.Created.Should().BeEmpty();
+    }
+
+    [Fact]
     public void WithTerraformThatAgrees_ThePlatformIsSupported_NotVerified()
     {
         _api.Terraform = _ => new IntegrationTerraformComparison { TerraformAvailable = true, ArchiveName = "infra.zip", Values = [Compared("Event Hubs namespace", "evhns-m2lb-dev-nwe-001", SourceComparisonState.Matches, "evhns-m2lb-dev-nwe-001")] };

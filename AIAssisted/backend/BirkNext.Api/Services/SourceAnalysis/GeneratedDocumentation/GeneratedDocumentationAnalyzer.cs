@@ -24,6 +24,25 @@ public static class GeneratedDocumentationAnalyzer
     private const int MaxKeysPerList = 200;
     private const int MaxCandidatesPerFamily = 150;
 
+    /// <summary>Documentation-generator scripts the Infrastructure evidence classified (terraform-docs helpers, Markdown writers) join the generator
+    /// workflows as "Script" generators — read statically, never run. They declare no output directories, so they never create expected outputs.</summary>
+    internal static List<GeneratorWorkflowEvidence> WithInfrastructureGenerators(List<GeneratorWorkflowEvidence> generators, IqrSourceSnapshot snapshot)
+    {
+        var infrastructure = snapshot.EvidenceDomains?.Infrastructure;
+        if (infrastructure is null) return generators;
+        var known = generators.Select(g => g.Path).ToHashSet(StringComparer.Ordinal);
+        return
+        [
+            .. generators,
+            .. infrastructure.Scripts.Where(s => s.Purposes.Contains(InfrastructureScriptPurpose.DocumentationGeneration) && !known.Contains(s.Path)).Select(s => new GeneratorWorkflowEvidence
+            {
+                Id = $"infrastructure-script:{s.Path}", Type = GeneratorType.Script, GeneratorName = s.Commands.Any(c => c.Command == "terraform-docs") ? "terraform-docs" : null, Path = s.Path, Role = "Script",
+                DeclaredOutputFiles = [.. InfrastructureEvidenceQueries.FindGeneratedArtifacts(infrastructure, s.Id).Select(a => a.Name)],
+                Basis = "Infrastructure script classified as documentation generation by Source Analysis (static evidence; not executed).",
+            }),
+        ];
+    }
+
     public static GeneratedDocumentationSnapshot Analyze(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default) =>
         Analyze(snapshot, workspace, null, [], ct);
 
@@ -49,7 +68,7 @@ public static class GeneratedDocumentationAnalyzer
             return new GeneratedDocumentationSnapshot
             {
                 SourceSnapshotId = snapshot.Id, SourceFingerprint = snapshot.Archive.Sha256, AnalyzerVersion = Version, AnalyzedAt = snapshot.AnalyzedAt,
-                Generators = detection.Generators, ArchiveTimestampsReliable = reliable, ArchiveTimestampBasis = timestampBasis,
+                Generators = WithInfrastructureGenerators(detection.Generators, snapshot), ArchiveTimestampsReliable = reliable, ArchiveTimestampBasis = timestampBasis,
                 AuthoredDocumentationFiles = detection.AuthoredDocuments, UnclassifiedDocumentationFiles = detection.UnclassifiedDocuments,
                 AnalysisMilliseconds = watch.ElapsedMilliseconds, Limitations = limitations,
             };
@@ -194,7 +213,7 @@ public static class GeneratedDocumentationAnalyzer
         return new GeneratedDocumentationSnapshot
         {
             SourceSnapshotId = snapshot.Id, SourceFingerprint = snapshot.Archive.Sha256, AnalyzerVersion = Version, AnalyzedAt = snapshot.AnalyzedAt,
-            Generators = detection.Generators, Documents = [.. evidenceById.Values.OrderBy(e => e.SafeRelativePath, StringComparer.Ordinal)], Modules = modules,
+            Generators = WithInfrastructureGenerators(detection.Generators, snapshot), Documents = [.. evidenceById.Values.OrderBy(e => e.SafeRelativePath, StringComparer.Ordinal)], Modules = modules,
             Drift = [.. drift.OrderBy(d => d.ModuleId, StringComparer.Ordinal).ThenBy(d => d.DriftType).ThenBy(d => d.Family, StringComparer.Ordinal).ThenBy(d => d.StructuredKey, StringComparer.Ordinal)],
             ArchiveTimestampsReliable = reliable, ArchiveTimestampBasis = timestampBasis,
             AuthoredDocumentationFiles = detection.AuthoredDocuments, UnclassifiedDocumentationFiles = detection.UnclassifiedDocuments,

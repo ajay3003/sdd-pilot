@@ -195,6 +195,7 @@ public static class TechnologyCoverageGuidance
     {
         if (descriptor is null || descriptor.Overall is SupportLevel.Unsupported or SupportLevel.NotApplicable) return null;
         if (technology.TechnologyId == "iac.terraform") return new("Open Infrastructure as Code", "source-analysis?area=quality-evidence&view=infrastructure");
+        if (technology.TechnologyId.StartsWith("iac.scripts.", StringComparison.Ordinal)) return new("Open infrastructure automation & checks", "source-analysis?area=quality-evidence&view=infrastructure");
         if (technology.TechnologyId == "contract.xsd") return new("Open Schema Studio", "schema-studio");
         if (technology.Area == TechnologyArea.Contract)
             return new("Open contracts in Source Analysis", "source-analysis?area=quality-evidence&view=contracts" + (snapshotId is { } id ? $"&snapshot={id:D}" : ""));

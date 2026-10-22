@@ -449,6 +449,9 @@ public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName
     public string? Repository { get; init; }
     public IReadOnlyList<string> BoundIntegrations { get; init; } = [];
     public IReadOnlyList<string> InfrastructureFormats { get; init; } = [];
+    /// <summary>Infrastructure automation in the same source package ("Python, Shell scripts · 6 source checks"), read statically — kept apart from
+    /// <see cref="InfrastructureFormats"/>, which is what an IaC requirement matches. Null when there is none.</summary>
+    public string? InfrastructureAutomation { get; init; }
     /// <summary>The configuration environments the snapshot declares (Development, QA, Local …). A source label, never a deployed environment.</summary>
     public IReadOnlyList<string> ConfigurationEnvironments { get; init; } = [];
 }

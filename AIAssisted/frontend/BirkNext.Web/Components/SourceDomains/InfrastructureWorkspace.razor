@@ -11,8 +11,10 @@
         @* Neutral and compact: no supported IaC in this source is not "no infrastructure". *@
         <h2 id="sd-infra-heading" tabindex="-1">Infrastructure <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="Not detected" HiddenPrefix="Analysis status: " TestId="sd-infra-status" /></h2>
         <div class="sd-neutral" data-testid="sd-infra-not-assessed">
-            <p><strong>Not detected in this source.</strong> This source does not contain supported Infrastructure as Code files. Infrastructure may exist in another source package or repository.</p>
-            <p class="sd-muted">Supported: Terraform · Bicep · ARM · Kubernetes · Helm (partial)</p>
+            <p><strong>Not detected in this source.</strong> This source does not contain supported Infrastructure as Code files or infrastructure automation scripts. Infrastructure may exist in another source package or repository.</p>
+            <p class="sd-muted">Supported: Terraform · Bicep · ARM · Kubernetes · Helm (partial) · infrastructure scripts (Python, shell, PowerShell; read statically, never run)</p>
+            @if (!I.AutomationAnalyzed) { <p class="sd-muted" data-testid="sd-infra-automation-version">@InfrastructureAutomationText.NotAvailableInVersion</p> }
+            else if (I.OtherScriptCount > 0) { <p class="sd-muted" data-testid="sd-infra-other-scripts-note">@I.OtherScriptCount script(s) were read; none is infrastructure automation.</p> }
             <a class="btn-secondary" href="technology-coverage" data-testid="sd-infra-coverage-link">Check infrastructure source coverage</a>
         </div>
     }
@@ -38,7 +40,25 @@
                     <div><dt>Environment references</dt><dd>@I.Environments.Count</dd></div>
                     <div><dt>Needs review</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
                 </dl>
-                <div class="sa-actions"><button type="button" class="btn-primary" data-testid="sd-infra-review" @onclick='() => _tab = "Resources"'>Review infrastructure</button></div>
+                <section class="sd-panel" aria-labelledby="sd-infra-automation-heading" data-testid="sd-infra-automation-summary">
+                    <h3 id="sd-infra-automation-heading">Infrastructure automation</h3>
+                    @if (!I.AutomationAnalyzed)
+                    {
+                        <p class="sd-muted" data-testid="sd-infra-automation-version">@InfrastructureAutomationText.NotAvailableInVersion Analyze the archive again to read its scripts.</p>
+                    }
+                    else
+                    {
+                        <dl class="sd-summary" data-testid="sd-infra-automation-overview">
+                            <div><dt>Infrastructure scripts</dt><dd>@I.Scripts.Count</dd></div>
+                            <div><dt>Source validation checks</dt><dd>@I.Checks.Count</dd></div>
+                            <div><dt>Generated artifact definitions</dt><dd>@I.GeneratedArtifacts.Count</dd></div>
+                            <div><dt>Remote-state dependencies</dt><dd>@I.RemoteStates.Count</dd></div>
+                        </dl>
+                        <p class="sd-muted">Scripts are read statically and never run: a check here is implemented in source, not executed or passed.</p>
+                    }
+                </section>
+                <div class="sa-actions"><button type="button" class="btn-primary" data-testid="sd-infra-review" @onclick='() => _tab = "Resources"'>Review infrastructure</button>
+                    @if (I.Scripts.Count > 0) { <button type="button" class="btn-secondary" data-testid="sd-infra-review-automation" @onclick='() => _tab = "Automation & checks"'>Review automation &amp; checks</button> }</div>
                 <section class="sd-panel" aria-labelledby="sd-infra-categories-heading" data-testid="sd-infra-categories">
                     <h3 id="sd-infra-categories-heading">Declared resources by kind</h3>
                     <p class="sd-muted">A declaration does not prove the resource exists.</p>
@@ -71,6 +91,25 @@
                         </table>
                     </div>
                     @if (I.Dependencies.Count > _dependencyLimit) { <button type="button" class="btn-secondary" data-testid="sd-infra-more-deps" @onclick="() => _dependencyLimit += 200">Show more (@(I.Dependencies.Count - _dependencyLimit) remaining)</button> }
+                    @if (I.RemoteStates.Count > 0)
+                    {
+                        <h4 id="sd-infra-layers-heading">Layer dependencies (remote state) <span class="sd-count">@I.RemoteStates.Count</span></h4>
+                        <p class="sd-muted">From data "terraform_remote_state". The source layer is matched by name only; the state backend is never contacted.</p>
+                        <div class="sd-scroll" tabindex="0" role="region" aria-labelledby="sd-infra-layers-heading">
+                            <table data-testid="sd-infra-remote-state-table">
+                                <thead><tr><th scope="col">Used by</th><th scope="col">Reads</th><th scope="col">Source layer</th><th scope="col">Outputs read</th><th scope="col">Location</th></tr></thead>
+                                <tbody>
+                                    @foreach (var r in I.RemoteStates)
+                                    {
+                                        <tr data-testid="sd-infra-remote-state" data-resolution="@r.Resolution"><th scope="row" class="sd-path">@r.UsedBy</th><td>@r.Name</td>
+                                            <td>@(r.SourceLayer ?? "Not resolved") <span class="sd-pill sd-pill-@(r.Resolution == "Strong source match" ? "muted" : "partial")" title="@r.ResolutionBasis">@r.Resolution</span></td>
+                                            <td>@(r.ReferencedOutputs.Count == 0 ? "—" : string.Join(", ", r.ReferencedOutputs))@if (r.OutputsNotDeclared.Count > 0) { <span class="sd-context" data-testid="sd-infra-remote-missing">Not declared in the source layer: @string.Join(", ", r.OutputsNotDeclared)</span> }</td>
+                                            <td class="sd-path">@SourceEvidenceDomainsPresentation.Location(r.File, r.Line)</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                     @if (I.UnresolvedReferences.Count > 0)
                     {
                         <ReviewDisclosure Text="@($"View unresolved references ({I.UnresolvedReferences.Count})")" CollapseText="Hide unresolved references" TestId="sd-infra-unresolved-detail" Class="disclosure-inline">
@@ -141,10 +180,29 @@
                         <ul class="sd-list">
                             @foreach (var p in I.Providers) { <li><strong>@p.Name</strong>@(p.Source is { } s ? $" · {s}" : "")@(p.Version is { } v ? $" · {v}" : "")@(p.HasCredentialSettings ? " · credential settings declared (values not read)" : "")</li> }
                             @foreach (var b in I.Backends) { <li>Backend <strong>@b.Type</strong> · settings: @string.Join(", ", b.SettingNames) (values not read)</li> }
+                            @foreach (var v in I.RequiredVersions.GroupBy(r => r.Constraint)) { <li data-testid="sd-infra-required-version">Terraform <strong>@v.Key</strong> · required in @v.Count() director@(v.Count() == 1 ? "y" : "ies")</li> }
+                            @foreach (var l in I.LockedProviders.GroupBy(l => (l.Address, l.Version))) { <li data-testid="sd-infra-locked-provider">Locked <strong>@l.Key.Address</strong> @l.Key.Version · @l.Count() lock file(s)@(l.First().Constraints is { } c ? $" · constraints {c}" : "")</li> }
                         </ul>
                     </section>
+                    @if (I.ProviderRuns.Count > 0)
+                    {
+                        <section class="sd-panel" aria-labelledby="sd-infra-runs-heading" data-testid="sd-infra-provider-runs">
+                            <h3 id="sd-infra-runs-heading">Evidence providers</h3>
+                            <ul class="sd-list">@foreach (var r in I.ProviderRuns) { <li data-testid="sd-infra-provider-run" data-provider="@r.Key"><strong>@r.Name</strong> v@(r.Version) · @SourceDomainText.Label(r.Status) · @r.Detail</li> }</ul>
+                        </section>
+                    }
+                    @if (I.ExcludedFiles.Count > 0)
+                    {
+                        <section class="sd-panel" aria-labelledby="sd-infra-excluded-heading" data-testid="sd-infra-excluded">
+                            <h3 id="sd-infra-excluded-heading">Intentionally not read <span class="sd-count">@I.ExcludedFiles.Count</span></h3>
+                            <ul class="sd-list">@foreach (var x in I.ExcludedFiles) { <li><span class="sd-path">@x.Path</span> — @x.Reason</li> }</ul>
+                        </section>
+                    }
                 </div>
                 <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
+                break;
+            case "Automation & checks":
+                @Automation()
                 break;
             case "Changes":
                 <SourceDomainChanges Slug="infra" Label="Infrastructure" Domain="SourceEvidenceDomain.Infrastructure" Current="Evidence" Previous="Previous" />
@@ -170,8 +228,119 @@
 
     private InfrastructureEvidence I => Evidence.Infrastructure;
     private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.Infrastructure);
-    private static readonly string[] Tabs = ["Overview", "Resources", "Dependencies", "Identity & RBAC", "Networking", "Messaging", "Datastores", "Observability", "Variables", "Evidence", "Changes"];
-    private static string Slug(string tab) => tab switch { "Identity & RBAC" => "identity", _ => tab.ToLowerInvariant() };
+    private static readonly string[] Tabs = ["Overview", "Resources", "Dependencies", "Identity & RBAC", "Networking", "Messaging", "Datastores", "Observability", "Variables", "Automation & checks", "Evidence", "Changes"];
+    private static string Slug(string tab) => tab switch { "Identity & RBAC" => "identity", "Automation & checks" => "automation", _ => tab.ToLowerInvariant() };
+    private string? _automationOpen;
+
+    /// <summary>Automation &amp; checks: source-side checks and other infrastructure automation, where each is configured to run, and the
+    /// execution evidence Source Analysis has — never more than "not executed by analysis".</summary>
+    private RenderFragment Automation() => __builder =>
+    {
+        var rows = InfrastructureAutomationPresentation.Rows(I).ToList();
+        <section class="sd-panel" aria-labelledby="sd-infra-auto-heading" data-testid="sd-infra-automation">
+            <h3 id="sd-infra-auto-heading">Automation &amp; checks <span class="sd-count">@rows.Count</span></h3>
+            <p class="sd-muted">Checks and automation implemented in this source. Scripts are read statically and never run: execution and results are not assessed here.</p>
+            @if (!I.AutomationAnalyzed)
+            {
+                <p class="sd-empty" data-testid="sd-infra-automation-version">@InfrastructureAutomationText.NotAvailableInVersion</p>
+            }
+            else if (rows.Count == 0)
+            {
+                <p class="sd-empty" data-testid="sd-infra-automation-empty">No infrastructure automation scripts in this source.</p>
+            }
+            else
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Automation and checks">
+                    <table data-testid="sd-infra-automation-table">
+                        <thead><tr><th scope="col">Check / automation</th><th scope="col">Type</th><th scope="col">Script</th><th scope="col">Scope</th><th scope="col">Pipeline usage</th><th scope="col">Execution evidence</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in rows)
+                            {
+                                var open = _automationOpen == row.Key;
+                                var detailId = $"sd-infra-auto-detail-{rows.IndexOf(row)}";
+                                <tr data-testid="sd-infra-automation-row" data-kind="@(row.Check is null ? "automation" : "check")">
+                                    <th scope="row">@row.Name
+                                        <button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="sd-infra-automation-toggle" @onclick="() => _automationOpen = open ? null : row.Key">@(open ? "Hide" : "View") details<span class="visually-hidden"> of @row.Name</span></button></th>
+                                    <td>@row.Type@if (row.Check is { } c) { <span class="sd-context">@InfrastructureAutomationText.Label(c.Enforcement)</span> }</td>
+                                    <td class="sd-path">@if (row.Scripts.Count == 1) { @row.Scripts[0].Path } else { <span>@row.Scripts.Count source implementations</span> }</td>
+                                    <td>@row.Scope@if (row.Check?.MatchingDeclarations is int n) { <span class="sd-context">@n matching declaration@(n == 1 ? "" : "s") in this source</span> }</td>
+                                    <td data-testid="sd-infra-automation-usage">@row.PipelineUsage</td>
+                                    <td data-testid="sd-infra-automation-execution"><span class="sd-pill sd-pill-muted">@row.ExecutionEvidence</span></td>
+                                </tr>
+                                @if (open)
+                                {
+                                    <tr class="sd-detail-row" id="@detailId" data-testid="sd-infra-automation-detail"><td colspan="6">@AutomationDetail(row)</td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+        @if (I.GeneratedArtifacts.Count > 0)
+        {
+            <section class="sd-panel" aria-labelledby="sd-infra-artifacts-heading" data-testid="sd-infra-artifacts">
+                <h3 id="sd-infra-artifacts-heading">Generated artifact definitions <span class="sd-count">@I.GeneratedArtifacts.Count</span></h3>
+                <p class="sd-muted">What scripts would write if run. A definition is not a generated file; a copy is listed only when this source package contains one.</p>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Generated artifact definitions">
+                    <table data-testid="sd-infra-artifact-table">
+                        <thead><tr><th scope="col">Artifact</th><th scope="col">Kind</th><th scope="col">Generated by</th><th scope="col">In this source</th></tr></thead>
+                        <tbody>@foreach (var a in I.GeneratedArtifacts) { <tr data-testid="sd-infra-artifact"><th scope="row">@a.Name <span class="sd-context sd-path">@a.PathTemplate</span></th><td>@a.Kind</td><td class="sd-path">@a.GeneratedBy</td><td>@a.PresenceNote</td></tr> }</tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        @if (I.OtherScriptCount > 0)
+        {
+            <ReviewDisclosure Text="@($"View other scripts ({I.OtherScriptCount})")" CollapseText="Hide other scripts" TestId="sd-infra-other-scripts" Class="disclosure-inline">
+                <p class="sd-muted">Read, but not infrastructure automation (a script's language or folder is never enough).</p>
+                <ul class="sd-list">@foreach (var o in I.OtherScripts) { <li><span class="sd-path">@o.Path</span> — @o.Reason</li> }</ul>
+            </ReviewDisclosure>
+        }
+    };
+
+    private RenderFragment AutomationDetail(InfrastructureAutomationPresentation.Row row) => __builder =>
+    {
+        if (row.Check is { } check)
+        {
+            <dl class="sd-facts" data-testid="sd-infra-check-facts">
+                <div><dt>Implementation</dt><dd>@check.ImplementationState</dd></div>
+                <div><dt>Behaviour on violation</dt><dd>@InfrastructureAutomationText.Label(check.Enforcement)</dd></div>
+                <div><dt>Execution</dt><dd>@check.ExecutionState</dd></div>
+                <div><dt>Rules (@check.RulesState)</dt><dd>@if (check.Rules.Count == 0) { <span>@(check.RulesState == "Not applicable" ? "Report: lists findings without failing" : "Complex dynamic logic could not be statically resolved")</span> } else { <ul class="sd-list" data-testid="sd-infra-check-rules">@foreach (var r in check.Rules) { <li>@r</li> }</ul> }</dd></div>
+            </dl>
+        }
+        foreach (var script in row.Scripts)
+        {
+            <section class="sd-script" data-testid="sd-infra-script" aria-label="@($"Script {script.Path}")">
+                <h4 class="sd-path">@script.Path <span class="sd-pill sd-pill-@InfrastructureAutomationPresentation.Tone(script.AnalysisState)">@InfrastructureAutomationText.Label(script.AnalysisState)</span></h4>
+                @if (script.AnalysisNote is { } note) { <p class="sd-muted">@note</p> }
+                <dl class="sd-facts">
+                    <div><dt>Language</dt><dd>@script.Language@(script.EmbeddedPrograms.Count > 0 ? $" · embedded {string.Join(", ", script.EmbeddedPrograms)}" : "")</dd></div>
+                    <div><dt>Why infrastructure</dt><dd>@InfrastructureAutomationPresentation.Relevance(script.Relevance): @string.Join("; ", script.RelevanceBasis)</dd></div>
+                    <div><dt>Purpose</dt><dd>@string.Join(", ", script.Purposes.Select(InfrastructureAutomationText.Label)) — @string.Join("; ", script.PurposeBasis)</dd></div>
+                    @if (script.EnforcementBasis is { } eb) { <div><dt>Exit behaviour</dt><dd>@InfrastructureAutomationText.Label(script.Enforcement) — @eb</dd></div> }
+                    @if (script.TerraformConcepts.Count > 0) { <div><dt>Terraform concepts</dt><dd>@string.Join(", ", script.TerraformConcepts)</dd></div> }
+                    @if (script.Inputs.Count > 0) { <div><dt>Reads</dt><dd class="sd-path">@string.Join(", ", script.Inputs.Select(i => i.Value))</dd></div> }
+                    @if (script.Outputs.Count > 0) { <div><dt>Writes</dt><dd class="sd-path">@string.Join(", ", script.Outputs.Select(o => o.Path))</dd></div> }
+                    @if (script.Commands.Any(c => c.ExternalTool)) { <div><dt>Commands it would run</dt><dd>@string.Join(", ", script.Commands.Where(c => c.ExternalTool).Select(c => c.Subcommand is null ? c.Command : $"{c.Command} {c.Subcommand}").Distinct()) <span class="sd-context">static references only</span></dd></div> }
+                    @if (script.EnvironmentVariables.Count > 0) { <div><dt>Environment variables</dt><dd>@foreach (var v in script.EnvironmentVariables) { <span class="sd-chip">@v.Name@if (v.Sensitive) { <span class="sd-pill sd-pill-muted">sensitive · value never read</span> }</span> }</dd></div> }
+                    @if (script.CliArguments.Count > 0) { <div><dt>Arguments</dt><dd>@string.Join(", ", script.CliArguments)</dd></div> }
+                    @if (script.Capabilities.Count > 0) { <div><dt>Could do if run</dt><dd>@string.Join("; ", script.Capabilities.Select(c => $"{c.Capability} ({c.Detail})"))</dd></div> }
+                    @if (script.LocalIncludes.Count > 0) { <div><dt>Includes</dt><dd class="sd-path">@string.Join(", ", script.LocalIncludes)</dd></div> }
+                </dl>
+                @{ var relations = I.ScriptRelationships.Where(r => r.ScriptId == script.Id).ToList(); }
+                @if (relations.Count > 0)
+                {
+                    <ul class="sd-list" data-testid="sd-infra-script-relations">@foreach (var r in relations) { <li>@r.Relation → <span class="sd-path">@r.Target</span>@(r.Matches is int m ? $" ({m} in this source)" : "")</li> }</ul>
+                }
+                @foreach (var i in InfrastructureEvidenceQueries.Invocations(I, script.Id))
+                {
+                    <p class="sd-muted" data-testid="sd-infra-script-invocation">@i.Source <strong>@(i.Pipeline ?? i.Reference)</strong>@(i.Step is { } s ? $" · {s}" : "") · @InfrastructureAutomationText.Label(i.Blocking) — @i.BlockingBasis@(i.Trigger is { } tr ? $" · {tr}" : "") · @i.ExecutionState</p>
+                }
+            </section>
+        }
+    };
     private string _tab = "Overview";
     private int _dependencyLimit = 200;
     private readonly Dictionary<string, (string Category, string Search)> _filters = [];
@@ -204,7 +373,8 @@
                             {
                                 var open = _open.Contains(r.Id);
                                 <tr data-testid="sd-infra-resource" data-category="@r.Category">
-                                    <th scope="row">@r.LogicalName<span class="sd-context">@r.CategoryDetail@(r.Kind == "data" ? " · data source" : "")@(r.ModulePath is { } m ? $" · module {m}" : "")@(r.Environment is { } env ? $" · {SourceDomainText.Label(env)}" : "")</span></th>
+                                    <th scope="row">@r.LogicalName<span class="sd-context">@r.CategoryDetail@(r.Kind == "data" ? " · data source" : "")@(r.ModulePath is { } m ? $" · module {m}" : "")@(r.Environment is { } env ? $" · {SourceDomainText.Label(env)}" : "")</span>
+                                        @if (r.Conditional) { <span class="sd-pill sd-pill-partial" data-testid="sd-infra-conditional" title="@r.InstanceExpression">Conditional declaration</span> }</th>
                                     <td class="sd-path">@r.ResourceType</td>
                                     <td>@(r.DeclaredName ?? "Not resolved")</td>
                                     <td class="sd-path">@SourceEvidenceDomainsPresentation.Location(r.File, r.Line)</td>

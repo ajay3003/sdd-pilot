@@ -12,12 +12,14 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
 {
     /// <summary>v2: job dependencies/conditions, step conditions/continueOnError/strategy phase/artifact publish+consume, pipeline and repository
-    /// resources, template uses with level and literal parameters, smoke/API/contract/performance tests, health checks, rollback, manual approval.</summary>
-    public const int Version = 2;
+    /// resources, template uses with level and literal parameters, smoke/API/contract/performance tests, health checks, rollback, manual approval.
+    /// v3: repository scripts a step runs (python scripts/x.py, bash ./x.sh, Bash@3/PythonScript@0/PowerShell@2/AzureCLI@2 file paths) as LocalScript
+    /// steps with the script path, interpreter, tolerated failure (|| …) and whether the path exists in the snapshot.</summary>
+    public const int Version = 3;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.CiCd, "CI/CD pipeline analyzer", Version, 1,
         ["Azure Pipelines", "GitHub Actions", "GitLab CI", "Jenkins"], [],
         ["Pipelines", "Triggers", "Stages", "Jobs", "Job and stage dependencies", "Conditions", "Steps by kind", "Artifacts published/consumed", "Pipeline and repository resources",
-         "Deployment environments", "Template uses", "Secret references (names)", "Dependency automation"]);
+         "Deployment environments", "Template uses", "Secret references (names)", "Dependency automation", "Repository scripts run by steps"]);
 
     public void Failed(SourceEvidenceContext context, string reason) => context.CiCd = context.Envelope(new PipelineEvidence
     { Status = SourceDomainStatus.FailedAnalysis, StatusReason = reason, Limitations = [SourceDomainText.SourceBoundary] }, SourceEvidenceDomain.CiCd, Version);
@@ -139,7 +141,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         }
         public SourceEnvironmentLabel FileEnvironment { get; set; } = SourceEnvironmentLabel.Default;
 
-        public void Step(string name, PipelineStepKind kind, string tool, string? stage, string? job, string? workingDirectory, string? environment, IEnumerable<string> targets, int line) =>
+        public void Step(string name, PipelineStepKind kind, string tool, string? stage, string? job, string? workingDirectory, string? environment, IEnumerable<string> targets, int line, PipelineScriptReference? script = null) =>
             Steps.Add(new PipelineStep
             {
                 Id = $"{SourceEvidenceRedaction.SafePath(File.Path)}#{Steps.Count + 1}", Name = SourceEvidenceRedaction.SafePath(name.Length > 120 ? name[..120] : name), Kind = kind,
@@ -147,8 +149,20 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 WorkingDirectory = workingDirectory is null ? null : SourceEvidenceRedaction.SafePath(workingDirectory), Environment = environment is null ? null : SourceEvidenceRedaction.SafePath(environment),
                 Targets = targets.Select(SourceEvidenceRedaction.SafePath).Where(t => t.Length > 0).Distinct().Take(8).ToList(), Line = line,
                 Condition = Meta.Condition, ContinueOnError = Meta.ContinueOnError, StrategyPhase = Meta.Phase, Order = Meta.Order,
-                ArtifactsPublished = [.. Meta.Published], ArtifactsConsumed = [.. Meta.Consumed],
+                ArtifactsPublished = [.. Meta.Published], ArtifactsConsumed = [.. Meta.Consumed], Script = script,
             });
+
+        private HashSet<string>? _paths;
+        /// <summary>A repository script a step runs, as a LocalScript step (path, interpreter, tolerated failure, resolved in the snapshot).</summary>
+        public void LocalScript(string raw, string? interpreter, bool failureTolerated, string name, string? stage, string? job, string? workingDirectory, string? environment, int line)
+        {
+            _paths ??= Context.Files.Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
+            var resolved = ScriptPathResolver.Resolve(raw, workingDirectory, _paths);
+            var shown = resolved ?? ScriptPathResolver.Clean(raw);
+            var language = interpreter ?? (raw.EndsWith(".py", StringComparison.OrdinalIgnoreCase) ? "python" : raw.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ? "pwsh" : "bash");
+            Step(name, PipelineStepKind.LocalScript, $"{language} script", stage, job, workingDirectory, environment, [shown], line,
+                new PipelineScriptReference(SourceEvidenceRedaction.SafePath(shown), SourceEvidenceRedaction.Safe(language), failureTolerated, resolved is not null));
+        }
 
         public void Variable(string name, string? raw, int line)
         {
@@ -415,6 +429,8 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                     b.Step(display ?? task, command is "ci" or "install" ? PipelineStepKind.Restore : (inputs?.Str("customCommand") ?? "").Contains("test", StringComparison.OrdinalIgnoreCase) ? PipelineStepKind.FrontendTest : PipelineStepKind.Build, "npm task", stage, job, wd, environment, [], step.Line);
                 else if (Tasks.TryGetValue(taskName, out var known))
                     b.Step(display ?? task, known.Kind, known.Tool, stage, job, wd, environment, inputs?.Str("csmFile") is { } f ? [f] : inputs?.Str("templateLocation") is { } l ? [l] : [], step.Line);
+                if ((inputs?.Str("filePath") ?? inputs?.Str("scriptPath") ?? inputs?.Str("ScriptPath")) is { } scriptFile && ScriptPathResolver.IsScript(scriptFile))
+                    b.LocalScript(scriptFile, taskName switch { "PythonScript" => "python", "PowerShell" or "AzurePowerShell" => "pwsh", _ => null }, b.Meta.ContinueOnError, display ?? task, stage, job, wd, environment, step.Line);
                 if (script is not null) Script(b, script, display ?? task, stage, job, wd, environment, step.Line);
                 else if (!Tasks.ContainsKey(taskName) && !taskName.StartsWith("Terraform", StringComparison.OrdinalIgnoreCase) && taskName is not ("DotNetCoreCLI" or "Docker" or "Npm"))
                     b.Step(display ?? task, PipelineStepKind.Other, task, stage, job, wd, environment, [], step.Line);
@@ -493,11 +509,24 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 b.Step(name, stepKind, tool, stage, job, workingDirectory, environment, targets.Where(t => !t.Contains("$(") && !t.Contains("${")), line);
             }
         }
+        // v3: repository scripts the statement runs (the script text itself is never stored).
+        foreach (Match m in LocalScriptRun.Matches(script))
+        {
+            found = true;
+            var after = Statement(script, m.Groups[2].Index);
+            var tolerated = after.Contains("||", StringComparison.Ordinal) && after.IndexOf("||", StringComparison.Ordinal) > after.IndexOf(m.Groups[2].Value, StringComparison.Ordinal);
+            var interpreter = m.Groups[1].Success ? Regex.Replace(m.Groups[1].Value.ToLowerInvariant(), @"(\.exe|3)$", "") : null;
+            b.LocalScript(m.Groups[2].Value, interpreter switch { "py" => "python", "sh" or "zsh" => "bash", "powershell" => "pwsh", var x => x }, tolerated || b.Meta.ContinueOnError, name, stage, job, workingDirectory, environment, line);
+        }
         if (Regex.IsMatch(script, @"\baz\s+login\b[^\n]*--federated-token|\bARM_USE_OIDC\b|\baddSpnToEnvironment\b", RegexOptions.IgnoreCase)) b.Federated = true;
         foreach (Match m in Regex.Matches(script, @"\$\(([A-Za-z0-9_.]*(?:secret|token|password|pat|apikey|accesskey)[A-Za-z0-9_.]*)\)", RegexOptions.IgnoreCase))
             if (!m.Groups[1].Value.StartsWith("System.", StringComparison.OrdinalIgnoreCase)) b.Secrets.Add($"secret variable: {SourceEvidenceRedaction.SafePath(m.Groups[1].Value)}");
         if (!found) b.Step(name, PipelineStepKind.Other, "script", stage, job, workingDirectory, environment, [], line);
     }
+
+    private static readonly Regex LocalScriptRun = new(
+        @"(?:^|[\s;&|(`])(?:(python3?|py|bash|sh|zsh|pwsh|powershell(?:\.exe)?)\s+(?:-{1,2}[A-Za-z][\w-]*\s+)*)?((?:\.{1,2}/|\$\(Build\.SourcesDirectory\)/|\$\(System\.DefaultWorkingDirectory\)/|\$\{\{\s*github\.workspace\s*\}\}/|\$\{?GITHUB_WORKSPACE\}?/|\$\{?CI_PROJECT_DIR\}?/)?[\w.\-/]+\.(?:py|sh|bash|ps1))(?=$|[\s;&|)""'`])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
 
     /// <summary>The command statement around a match (joined over "\" line continuations) — used only to read targets, never stored.</summary>
     private static string Statement(string script, int index)

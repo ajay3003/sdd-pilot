@@ -204,6 +204,26 @@ public sealed class SourceChangeImpactServiceTests
         report.RecommendedTests.Should().ContainSingle(x => x.TestId == test.Id && x.Reason.Contains("Covers impacted requirement", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task A_changed_infrastructure_check_affects_its_hook_and_the_declarations_it_inspects_never_the_infrastructure_itself()
+    {
+        await using var db = Db();
+        var repository = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.InfrastructureSourceEvidenceTests.Repository();
+        var beforeDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(repository);
+        var afterDomains = BirkNext.Api.Tests.Services.SourceAnalysis.Evidence.SourceEvidenceFixtures.Analyze(repository
+            .Select(f => f.Item1 == "scripts/check-role-names.py" ? (f.Item1, f.Item2.Replace("at least two segments", "at least three segments")) : f).ToArray());
+        var before = Snapshot("v1", []) with { EvidenceDomains = beforeDomains };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1), EvidenceDomains = afterDomains };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after]));
+        var report = await service.AnalyzeAsync(Request(before, after), default);
+        report!.Changes.Should().Contain(c => c.Domain == ImpactChangeDomain.Infrastructure && c.EntityType == "Validation check" && c.Kind == ImpactChangeKind.Changed
+            && c.SourceFiles.Contains("scripts/check-role-names.py"));
+        report.TechnicalImpacts.Should().Contain(i => i.EntityType == "Pre-commit hook" && i.Level == TechnicalImpactLevel.Potential);
+        report.TechnicalImpacts.Should().Contain(i => i.EntityType == "Terraform delivery workflow" && i.DisplayName == "2 azurerm_role_assignment declaration(s)"
+            && i.Reason.Contains("The declared infrastructure itself did not change"));
+        report.Changes.Should().NotContain(c => c.EntityType == "Resource", "a changed check is an automation change, not an infrastructure change");
+    }
+
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
     private static SourceChangeImpactRequest Request(IqrSourceSnapshot before, IqrSourceSnapshot after) => new("dev", "generic", before.Id, after.Id);
 

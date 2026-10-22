@@ -791,7 +791,11 @@
                         @foreach (var (t, gate) in shown)
                         {
                             var key = $"t:{t.Evidence.File}:{t.Evidence.Line}:{t.Category}";
-                            <tr data-testid="pr-test-row" data-gate="@gate"><th scope="row">@PipelineReviewText.Label(t.Category)@if (t.Category is ValidationCategory.Security or ValidationCategory.DependencyScan) { <span class="prv-subtype" data-testid="pr-test-subtype"> · @t.Name</span> }<span class="sd-context">@t.Name · <code>@t.Tool</code>@(t.Targets.Count > 0 ? $" · {string.Join(", ", t.Targets)}" : "")</span></th>
+                            <tr data-testid="pr-test-row" data-gate="@gate"><th scope="row">@PipelineReviewText.Label(t.Category)@if (t.Category is ValidationCategory.Security or ValidationCategory.DependencyScan) { <span class="prv-subtype" data-testid="pr-test-subtype"> · @t.Name</span> }<span class="sd-context">@t.Name · <code>@t.Tool</code>@(t.Targets.Count > 0 ? $" · {string.Join(", ", t.Targets)}" : "")</span>
+                                    @if (t.Script is { } script)
+                                    {
+                                        <span class="sd-context" data-testid="pr-test-infra">Runs <code>@script</code> · @t.ScriptPurpose@(t.InfrastructureChecks.Count > 0 ? $" · checks: {string.Join(", ", t.InfrastructureChecks)}" : "") · @t.ScriptGate · not executed by analysis</span>
+                                    }</th>
                                 <td>@t.PipelineName<span class="sd-context">@(t.Stage ?? t.Job)</span></td>
                                 <td><span class="sd-pill @(gate == TestGateSummary.GatesDeployment ? "sd-pill-complete" : gate is TestGateSummary.MayNotBlock or TestGateSummary.Conditional ? "sd-pill-partial" : "sd-pill-muted")">@G.Label(gate)</span>@if (t.ContinueOnError) { <span class="sd-pill sd-pill-partial">continueOnError</span> }</td>
                                 <td>@(t.Gates.Count == 0 ? t.RunsAfter.Count > 0 ? $"Runs after {string.Join(", ", t.RunsAfter.Select(id => EnvName(r, id)).Distinct())}" : "Does not gate a deployment" : string.Join(", ", t.Gates.Select(id => EnvName(r, id)).Distinct()))</td>

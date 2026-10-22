@@ -29,7 +29,9 @@ public enum PipelineFindingSeverity { High, Medium, Low, Info }
 
 /// <summary>What a validation step checks, by command/task/name evidence.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ValidationCategory { Build, Unit, Integration, Api, E2E, Frontend, Accessibility, Performance, Security, DependencyScan, StaticAnalysis, Contract, Smoke, HealthCheck, InfrastructurePlan, Test }
+public enum ValidationCategory { Build, Unit, Integration, Api, E2E, Frontend, Accessibility, Performance, Security, DependencyScan, StaticAnalysis, Contract, Smoke, HealthCheck, InfrastructurePlan, Test,
+    /// <summary>A repository infrastructure script (validation, policy, version report, inventory) a step runs — from Source Analysis infrastructure evidence (appended).</summary>
+    InfrastructureCheck }
 
 /// <summary>How a validation relates to a deployment.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -151,6 +153,12 @@ public sealed record ReviewedTest
     /// <summary>Deployments this test gates (directly, conditionally or softly) — deployment ids.</summary>
     public List<string> Gates { get; init; } = [];
     public List<string> RunsAfter { get; init; } = [];
+    /// <summary>For an InfrastructureCheck step: the repository script it runs, the script's purpose and behaviour on violation, the source checks it
+    /// implements and how the step treats its failure ("Configured as gate" / "Failure tolerated"). Configured is never "passed".</summary>
+    public string? Script { get; init; }
+    public string? ScriptPurpose { get; init; }
+    public List<string> InfrastructureChecks { get; init; } = [];
+    public string? ScriptGate { get; init; }
     public PipelineEvidenceRef Evidence { get; init; } = new();
 }
 
@@ -300,6 +308,7 @@ public static class PipelineReviewText
         ValidationCategory.Smoke => "Smoke tests",
         ValidationCategory.HealthCheck => "Health check",
         ValidationCategory.InfrastructurePlan => "Infrastructure plan/validate",
+        ValidationCategory.InfrastructureCheck => "Infrastructure checks",
         ValidationCategory.Build => "Build",
         _ => "Tests (unclassified)",
     };

@@ -51,6 +51,7 @@ public static class DeclaredObservedComparer
             var baseItem = new DeclaredObservedItem
             {
                 Kind = kind, Category = r.Category, Name = r.DeclaredName ?? r.LogicalName, DeclaredId = r.Id, DeclaredType = r.ResourceType, DeclaredFile = r.File, DeclaredLine = r.Line,
+                SourceChecks = [.. InfrastructureEvidenceQueries.FindChecksForResource(infrastructure!, r).Select(c => c.Name)],
             };
             var (name, basis) = DeclaredName(r, environment);
             if (name is null) { items.Add(baseItem with { State = DeclaredObservedState.UnableToVerify, NameBasis = basis, Reason = basis }); continue; }

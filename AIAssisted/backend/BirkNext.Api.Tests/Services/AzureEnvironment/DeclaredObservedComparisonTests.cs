@@ -97,6 +97,27 @@ public sealed class DeclaredObservedComparisonTests
     }
 
     [Fact]
+    public async Task Source_validation_logic_is_its_own_layer_between_declared_and_observed()
+    {
+        const string check = """
+            #!/bin/bash
+            # Policy: every Key Vault declares purge protection.
+            for f in "$@"; do
+              if grep -q 'resource "azurerm_key_vault"' "$f" && ! grep -q purge_protection_enabled "$f"; then
+                echo "$f: azurerm_key_vault must enable purge protection" >&2
+                exit 1
+              fi
+            done
+            """;
+        var domains = SourceFixtures.Analyze([.. Orders(), ("scripts/check-kv.sh", check)]);
+        var c = DeclaredObservedComparer.Compare(domains.Infrastructure, Guid.NewGuid(), domains.SourceFingerprint, await Observed(), SourceEnvironments.Normalize("dev"), "chosen");
+        var kv = Item(c, "kv-orders-dev");
+        kv.State.Should().Be(DeclaredObservedState.DeclaredAndObserved);
+        kv.SourceChecks.Should().ContainSingle().Which.Should().Contain("validation");
+        Item(c, "app-orders-dev").SourceChecks.Should().BeEmpty("no source check inspects App Service declarations");
+    }
+
+    [Fact]
     public async Task Settings_that_differ_are_listed_with_both_values()
     {
         var c = Compare(await Observed());

@@ -274,6 +274,7 @@ public sealed class IntegrationJourneyService(
             BoundIntegrations = [.. context.Bindings.Where(binding => binding.SnapshotId == snapshot.Id)
                 .Select(binding => names.TryGetValue(binding.IntegrationId, out var name) ? name : binding.IntegrationId).Order(StringComparer.Ordinal)],
             InfrastructureFormats = TestPackSources.InfrastructureFormats(snapshot),
+            InfrastructureAutomation = TestPackSources.InfrastructureAutomation(snapshot),
             ConfigurationEnvironments = BirkNext.SourceDomains.SourceEnvironmentValueExtractor.Environments(snapshot),
         }).ToArray();
         return new SourceSetupView

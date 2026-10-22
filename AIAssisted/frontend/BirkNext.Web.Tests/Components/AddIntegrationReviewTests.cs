@@ -140,6 +140,30 @@ public sealed class AddIntegrationReviewTests : BunitContext
     }
 
     [Fact]
+    public void Terraform_declarations_are_proposed_for_the_event_hub_and_consumer_group_and_using_one_only_fills_the_draft()
+    {
+        BirkNext.SourceDomains.SourceResourceCandidate Declared(string name, BirkNext.SourceDomains.InfrastructureResourceKind kind, string type) =>
+            new($"infra/{type}.x", name, kind, type, new(BirkNext.SourceDomains.SourceEnvironmentKind.Development, "dev"), "tfvars dev.tfvars", "infra/main.tf", 7, BirkNext.SourceArchitecture.ArchitectureEvidenceState.Confirmed);
+        _api.Suggestions = kind => kind switch
+        {
+            BirkNext.SourceDomains.InfrastructureResourceKind.EventHub => new() { Comparison = new() { Kind = kind, Candidates = [Declared("person-events", kind, "azurerm_eventhub")] }, ArchiveName = "iac.zip", Fingerprint = "abcdef0123456789", SnapshotBasis = "only snapshot with infrastructure evidence" },
+            BirkNext.SourceDomains.InfrastructureResourceKind.ConsumerGroup => new() { Comparison = new() { Kind = kind, Candidates = [Declared("birknext-review", kind, "azurerm_eventhub_consumer_group")] }, ArchiveName = "iac.zip", Fingerprint = "abcdef0123456789" },
+            _ => null,
+        };
+        var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, _profile));
+        cut.Find("[data-testid=ip-add]").Click();
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(IntegrationKind.EventHub));
+        cut.WaitForElement("[data-testid=ip-edit-topic-source]").TextContent.Should().Contain("person-events").And.Contain("Declared in source");
+        cut.Find("[data-testid=ip-edit-topic-source-use]").Click();
+        cut.Find("[data-testid=ip-edit-topic]").GetAttribute("value").Should().Be("person-events");
+        cut.WaitForElement("[data-testid=ip-edit-consumer-group-source-use]").Click();
+        cut.Find("[data-testid=ip-edit-consumer-group]").GetAttribute("value").Should().Be("birknext-review");
+        _api.Saved.Should().BeEmpty("using a Terraform proposal never saves");
+        cut.Find("[data-testid=ip-edit-kind]").Change(nameof(IntegrationKind.HttpApi));
+        cut.FindAll("[data-testid=ip-edit-topic-source], [data-testid=ip-edit-consumer-group-source]").Should().BeEmpty("HTTP endpoints get no messaging proposals");
+    }
+
+    [Fact]
     public void TypeChange_RecalculatesTheVisibleFields_BothWays()
     {
         _templates = [Intake(null)];

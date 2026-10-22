@@ -117,6 +117,24 @@ public sealed class PipelineReviewPageTests : BunitContext
     }
 
     [Fact]
+    public void A_script_step_is_described_by_the_infrastructure_check_it_runs_and_never_as_passed()
+    {
+        var review = Shop();
+        var pipeline = review.Tests[0];
+        review = review with { Tests = [.. review.Tests, pipeline with { Category = ValidationCategory.InfrastructureCheck, Name = "Provider report", Tool = "python script", Targets = ["scripts/check-provider-versions.py"],
+            Gates = [], RunsAfter = [], Script = "scripts/check-provider-versions.py", ScriptPurpose = "Version check · Report only (exits 0)", InfrastructureChecks = ["Provider version report"], ScriptGate = "Failure tolerated",
+            Evidence = pipeline.Evidence with { Line = 999 } }] };
+        _api.Setup(a => a.ReviewAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((review, (string?)null));
+        var page = Page();
+        page.Find("[data-testid=pr-tab-tests]").Click();
+        page.Find("[data-testid=pr-test-gate]").Change("");
+        var row = page.FindAll("[data-testid=pr-test-row]").Single(r => r.TextContent.Contains("Infrastructure checks"));
+        row.QuerySelector("[data-testid=pr-test-infra]")!.TextContent.Should().Contain("scripts/check-provider-versions.py").And.Contain("Provider version report")
+            .And.Contain("Failure tolerated").And.Contain("not executed by analysis");
+        row.TextContent.Should().NotContain("Passed");
+    }
+
+    [Fact]
     public void The_tests_view_separates_test_presence_from_gating_in_words_and_symbols()
     {
         var page = Page();
