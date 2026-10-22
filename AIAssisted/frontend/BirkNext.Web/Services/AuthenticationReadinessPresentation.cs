@@ -51,6 +51,7 @@ public sealed record AuthenticationPrerequisite(
     {
         "certificate" => State == AuthPrerequisiteState.Ok ? "shield-check" : "shield-warning",
         "proxy" => State == AuthPrerequisiteState.Ok ? "network-check" : "network-warning",
+        "auth-settings" => "key",
         _ => State == AuthPrerequisiteState.Ok ? "browser-check" : "browser-warning",
     };
 }

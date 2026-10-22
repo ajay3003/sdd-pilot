@@ -133,9 +133,9 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         cut.Find("#authentication-configuration-heading").TextContent.Should().Be("Authentication configuration");
         cut.Find("#authentication-verification-heading").TextContent.Should().Be("Authentication runtime verification");
         cut.Find("#authenticated-testing-heading").TextContent.Should().Be("Authenticated testing context");
-        // Detection is a block inside the configuration section, not a second full-width configuration card.
-        Testid(cut, "authentication-discovery").Closest("[data-testid='authentication-configuration']").Should().NotBeNull();
-        cut.Find("#authentication-status-heading").TextContent.Should().Be("Detection");
+        // The settings check is the fourth prerequisite card; the configuration section no longer carries a detection block.
+        Testid(cut, "auth-card-auth-settings").Closest("[data-testid='auth-prerequisites']").Should().NotBeNull();
+        cut.FindAll("#authentication-status-heading, [data-testid='authentication-discovery']").Should().BeEmpty();
     }
 
     /// <summary>
@@ -147,7 +147,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Detect(MatchingAuthentication);
 
-        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
         Row(cut, "authentication-configuration-state").Should().Be("Configured");
         Row(cut, "auth-summary-configuration").Should().Be("Configured");
 
@@ -238,7 +238,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Detect(MatchingAuthentication);
 
-        Row(cut, "authentication-provider").Should().Be("Microsoft Entra ID");
+        Row(cut, "authentication-configured-provider").Should().Be("Microsoft Entra ID");
         cut.Markup.Should().NotContain("MicrosoftEntraId", "the enum spelling is an implementation detail");
 
         // Including inside the editable configuration, where the select used to render enum names.
@@ -299,7 +299,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
         var prerequisites = Testid(cut, "auth-prerequisites");
         prerequisites.QuerySelectorAll("h5").Select(h => h.TextContent.Trim()).Should().Equal(
-            "HTTPS inspection certificate", "Local HTTPS Proxy", "Dedicated Edge browser");
+            "HTTPS inspection certificate", "Local HTTPS Proxy", "Dedicated Edge browser", "Authentication settings");
         foreach (var step in new[] { "Step 1", "Step 2", "Step 3", "Step 4" })
             cut.Markup.Should().NotContain(step);
 
@@ -365,27 +365,40 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Detect(MatchingAuthentication);
 
-        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
         Testid(cut, "authentication-configuration").TextContent.Should().Contain("edited here");
 
-        // One configuration section, so the provider is named once as configured and once as detected — never in a
-        // second full-width card that repeats both.
+        // One configuration section, and a match renders no comparison: the provider is named once, as configured.
         cut.FindAll("[data-testid='authentication-configuration']").Should().ContainSingle();
+        cut.FindAll("[data-testid='authentication-differences'], [data-testid='authentication-apply-selected']").Should().BeEmpty();
         Row(cut, "authentication-configured-provider").Should().Be("Microsoft Entra ID");
-        Occurrences(VisibleText(cut.Find("[data-testid='fa-auth-panel']")), "Microsoft Entra ID").Should().Be(2);
+        Occurrences(VisibleText(cut.Find("[data-testid='fa-auth-panel']")), "Microsoft Entra ID").Should().Be(1);
     }
 
     // 34, 35, 36.
     [Fact]
-    public void DifferingConfigurationKeepsItsComparisonAndItsApplyAction()
+    public void DifferingConfigurationIsAConflictThatNeedsAnExplicitDecision()
     {
         var mismatched = MatchingAuthentication.Replace(ClientId, "99999999-9999-9999-9999-999999999999");
         var cut = Detect(mismatched);
 
-        Row(cut, "authentication-match-summary").Should().NotContain("matches saved configuration");
-        cut.Find("[data-testid='authentication-comparison']").QuerySelectorAll("tr")
-            .Should().Contain(r => r.TextContent.Contains(ClientId), "the comparison still lists both values");
-        cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Apply authentication");
+        Row(cut, "auth-status-auth-settings").Should().Be("Review required (1 difference)");
+        cut.Find("#authentication-differences-heading").TextContent.Should().Be("Authentication differences");
+        var row = cut.FindAll("[data-testid='authentication-difference-row']").Should().ContainSingle().Subject;
+        row.GetAttribute("data-setting").Should().Be("Expected Client ID");
+        row.TextContent.Should().Contain(ClientId).And.Contain("99999999-9999-9999-9999-999999999999").And.Contain("Conflict requiring review");
+        cut.FindAll("[data-testid='authentication-apply-selected']").Should().BeEmpty("nothing is pre-selected");
+
+        // Keep saved is a reviewed difference, not a match.
+        cut.Find("[data-testid='auth-decision-keep-expected-client-id']").Change(true);
+        Row(cut, "auth-status-auth-settings").Should().Be("Reviewed — 1 kept saved");
+        cut.FindAll("[data-testid='authentication-apply-selected']").Should().BeEmpty();
+
+        cut.Find("[data-testid='auth-decision-use-expected-client-id']").Change(true);
+        Row(cut, "authentication-apply-selected").Should().Be("Apply selected changes (1)");
+        cut.Find("[data-testid='authentication-apply-selected']").Click();
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches draft — not saved yet");
+        cut.Find("#configured-client-id").GetAttribute("value").Should().Be(ClientId);
     }
 
     // ── §43. Semantic separations ────────────────────────────────────────────────────────────

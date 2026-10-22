@@ -170,10 +170,11 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         Click(cut, "Authentication");
         var persisted = JsonSerializer.Serialize(settings.Settings);
-        var discovery = cut.Find("[data-testid='edge-auth-discovery']").TextContent;
+        // Nothing is saved, so every detected value is a safe change waiting for an explicit decision.
+        var discovery = cut.Find("[data-testid='authentication-differences']").TextContent;
         Assert.Contains("https://login.microsoftonline.com/tenant-id", discovery);
         Assert.Contains("client-id", discovery);
-        Assert.Contains("Detect Settings", discovery);
+        Assert.Contains("Safe change available", discovery);
         foreach (var action in new[] { "Check Edge compatibility", "Start Edge for authenticated testing", "Check Edge compatibility" })
         {
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == action).HasAttribute("disabled")));
@@ -181,7 +182,8 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check Edge compatibility").HasAttribute("disabled")));
             Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel");
             // Settings form stays read-only, and the managed Edge runtime panel carries no editable control at all (no runtime trust opt-in).
-            Assert.Empty(cut.FindAll("input, select, textarea"));
+            // Review decisions on authentication differences are radio buttons that write nothing until Apply selected changes.
+            Assert.Empty(cut.FindAll("input:not([data-testid^=auth-decision-]), select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);

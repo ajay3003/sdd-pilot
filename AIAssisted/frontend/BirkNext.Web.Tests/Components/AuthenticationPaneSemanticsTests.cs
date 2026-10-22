@@ -163,8 +163,9 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         Runtime(Prepared);
         var cut = Open(Configured, detect: true);
 
-        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
-        Row(cut, "authentication-detection-state").Should().Be("Detected");
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
+        Row(cut, "auth-summary-settings").Should().Be("Matches saved configuration");
+        Has(cut, "authentication-differences").Should().BeFalse("a match renders no review panel");
 
         var visible = Visible(cut);
         visible.Should().NotContain("No authentication is configured");
@@ -183,7 +184,7 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         var cut = Open(Configured, detect: true);
 
         Row(cut, "authentication-configuration-state").Should().Be("Configured");
-        Row(cut, "authentication-detection-state").Should().Be("Detected");
+        Row(cut, "auth-summary-settings").Should().Be("Matches saved configuration");
         Row(cut, "auth-summary-verification").Should().Be("Sign-in check not recorded");
         // A live session with nothing through it yet is not the same as no context at all.
         Row(cut, "auth-summary-context").Should().Be("Waiting for authenticated traffic");
@@ -221,8 +222,9 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         var cut = Open(Configured);
 
         Row(cut, "authentication-configuration-state").Should().Be("Configured");
-        Row(cut, "authentication-detection-state").Should().Be("Not run");
-        Row(cut, "authentication-config-source").Should().Be("Not available");
+        Row(cut, "auth-status-auth-settings").Should().Be("Not checked");
+        Row(cut, "auth-summary-settings").Should().Be("Not checked");
+        Row(cut, "auth-action-auth-settings").Should().Be("Check authentication settings");
         Visible(cut).Should().NotContain("No authentication provider is configured");
     }
 
@@ -338,16 +340,14 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         var cut = Open(Configured, detect: true);
 
         cut.FindAll("[data-testid='authentication-configuration']").Should().ContainSingle();
-        cut.FindAll("[data-testid='authentication-discovery']").Should().ContainSingle();
-        El(cut, "authentication-discovery").Closest("[data-testid='authentication-configuration']").Should().NotBeNull();
+        // Detection is no longer a block inside the configuration section: the fourth prerequisite card states the check.
+        Has(cut, "authentication-discovery").Should().BeFalse();
+        El(cut, "auth-card-auth-settings").Closest("[data-testid='authentication-configuration']").Should().BeNull();
 
         var configuration = El(cut, "authentication-configuration");
         Row(cut, "authentication-configured-provider").Should().Be("Microsoft Entra ID");
-        Row(cut, "authentication-provider").Should().Be("Microsoft Entra ID");
         Row(cut, "authentication-sign-in-required").Should().Be("Yes");
-        Row(cut, "authentication-detection-state").Should().Be("Detected");
-        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
-        Row(cut, "authentication-config-source").Should().Be("Detect Settings");
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
         configuration.TextContent.Should().Contain("Use Edit Environment");
     }
 

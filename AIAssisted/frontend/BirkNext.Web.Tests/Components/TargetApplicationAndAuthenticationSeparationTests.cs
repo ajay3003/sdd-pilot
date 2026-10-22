@@ -157,102 +157,79 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
         var cut = Detect(MatchingAuthentication);
         OpenTab(cut, "Authentication");
 
-        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
-        Row(cut, "authentication-provider").Should().Be("Microsoft Entra ID");
-        // Authenticated testing is its own section now; the status card no longer echoes it.
+        Row(cut, "auth-status-auth-settings").Should().Be("Matches saved configuration");
+        Row(cut, "authentication-configured-provider").Should().Be("Microsoft Entra ID");
         Row(cut, "authenticated-testing-state").Should().Be("Not connected");
         Row(cut, "authentication-sign-in-required").Should().NotBeNullOrWhiteSpace();
 
-        // Exactly one place lists the identifiers, and the old duplicate list is gone.
-        cut.FindAll("[data-testid='authentication-comparison']").Should().ContainSingle();
+        // A match lists nothing to review: no comparison, no Apply, and no detected identifier echoed anywhere on the tab.
+        cut.FindAll("[data-testid='authentication-comparison'], [data-testid='authentication-apply-selected']").Should().BeEmpty();
         cut.Markup.Should().NotContain("Configured identifiers and redirect URLs");
-
-        // Authority / Tenant / Client ID appear ONLY inside that one comparison — no second read-only block.
-        var comparison = Testid(cut, "authentication-comparison").OuterHtml;
-        foreach (var value in new[] { Authority, Tenant, ClientId })
-            Occurrences(cut.Markup, value).Should().Be(Occurrences(comparison, value),
-                $"{value} must not appear outside the single detected/configured comparison");
+        Testid(cut, "fa-auth-panel").QuerySelector("[data-testid='authentication-differences']").Should().BeNull();
     }
 
-    private static int Occurrences(string haystack, string needle)
-    {
-        var count = 0;
-        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0; i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
-            count++;
-        return count;
-    }
-
-    // ── 5–6. Comparison stays collapsed while everything matches ──────────────
+    // ── 5–6. Saved and detected identical: no differences panel ───────────────
 
     [Fact]
-    public void MatchingConfiguration_KeepsComparisonCollapsed_AndViewDetailsRevealsIt()
+    public void MatchingConfiguration_RendersNoDifferencesPanelAndNoApply()
     {
         var cut = Detect(MatchingAuthentication);
         OpenTab(cut, "Authentication");
 
-        var details = Testid(cut, "edge-auth-discovery");
-        details.HasAttribute("open").Should().BeFalse("everything matches, so the detail is not forced open");
-        Testid(cut, "authentication-details-toggle").TextContent.Trim().Should().Be("View details");
+        cut.FindAll("[data-testid='authentication-differences']").Should().BeEmpty("the panel exists only when there is something to review");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Apply"));
+        Row(cut, "auth-summary-settings").Should().Be("Matches saved configuration");
+    }
 
-        // The comparison itself is present in the DOM behind the disclosure and carries all four columns.
+    // ── 7. A mismatched value is a conflict listed in the differences panel ────
+
+    [Fact]
+    public void MismatchedValue_IsListedAsAConflict_AndMatchingValuesAreNot()
+    {
+        var cut = Detect(MismatchedAuthentication);
+        OpenTab(cut, "Authentication");
+
+        Row(cut, "auth-status-auth-settings").Should().Be("Review required (1 difference)");
         var table = Testid(cut, "authentication-comparison");
-        table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Setting", "Detected", "Configured", "Status");
-        table.TextContent.Should().Contain("Match").And.NotContain("Different");
+        table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim()).Should().Equal("Setting", "Saved", "Detected", "State / decision");
+        var clientIdRow = table.QuerySelectorAll("tbody tr").Should().ContainSingle().Subject;
+        clientIdRow.QuerySelector("th")!.TextContent.Trim().Should().Be("Expected Client ID");
+        clientIdRow.TextContent.Should().Contain(ClientId).And.Contain(OtherClientId).And.Contain("Conflict requiring review");
+
+        // Settings that agree are only in the collapsed full list, as No change.
+        var all = Testid(cut, "authentication-all-settings");
+        all.HasAttribute("open").Should().BeFalse();
+        all.QuerySelectorAll("tbody tr").Single(r => r.QuerySelector("th")!.TextContent.Trim() == "Expected Authority")
+            .TextContent.Should().Contain("No change");
     }
 
-    // ── 7. A mismatched value renders the Different state and opens the detail ─
+    // ── 8. Applying is an explicit, per-setting draft edit ─────────────────────
 
     [Fact]
-    public void MismatchedValue_RendersDifferentState_AndExpandsAutomatically()
+    public void NothingIsAppliedUntilAValueIsExplicitlySelected()
     {
         var cut = Detect(MismatchedAuthentication);
         OpenTab(cut, "Authentication");
 
-        Testid(cut, "edge-auth-discovery").HasAttribute("open").Should().BeTrue("a difference must not stay hidden");
-        Row(cut, "authentication-match-summary").Should().Contain("differs from saved configuration");
-
-        var clientIdRow = Testid(cut, "authentication-comparison").QuerySelectorAll("tbody tr")
-            .Single(r => r.QuerySelector("th")!.TextContent.Trim() == "Expected Client ID");
-        clientIdRow.TextContent.Should().Contain(ClientId).And.Contain(OtherClientId).And.Contain("Different");
-
-        // Settings that do agree are still reported as Match — Different is per value, not per card.
-        Testid(cut, "authentication-comparison").QuerySelectorAll("tbody tr")
-            .Single(r => r.QuerySelector("th")!.TextContent.Trim() == "Expected Authority")
-            .TextContent.Should().Contain("Match");
-    }
-
-    // ── 8. Apply authentication only becomes an action when it would change something ─
-
-    [Fact]
-    public void ApplyAuthentication_IsInertWhenDetectedAlreadyMatchesSavedConfiguration()
-    {
-        var cut = Detect(MatchingAuthentication);
-        OpenTab(cut, "Authentication");
-
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Apply authentication")
-            .HasAttribute("disabled").Should().BeTrue();
-        Row(cut, "apply-authentication-explanation").Should().Be("Detected values already match saved configuration.");
+        cut.FindAll("[data-testid='authentication-apply-selected']").Should().BeEmpty();
+        cut.FindAll("[data-testid^='auth-decision-'] input:checked").Should().BeEmpty("no decision is pre-selected");
     }
 
     [Fact]
-    public void ApplyAuthentication_IsOfferedAndNamesTheValuesItWouldChange()
+    public void ApplySelectedChanges_WritesOnlyTheDraft()
     {
         var cut = Detect(MismatchedAuthentication);
         OpenTab(cut, "Authentication");
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Apply authentication")
-            .HasAttribute("disabled").Should().BeFalse();
-        var explanation = Row(cut, "apply-authentication-explanation");
-        explanation.Should().Contain("Expected Client ID", "the user must see which value changes");
-        explanation.Should().NotContain("Expected Authority", "settings that already match do not change");
-        explanation.Should().Contain("not saved automatically", "detected values are never persisted on their own");
+        cut.Find("[data-testid='auth-decision-use-expected-client-id']").Change(true);
+        Row(cut, "authentication-apply-selected").Should().Be("Apply selected changes (1)");
+        cut.Find("[data-testid='authentication-apply-selected']").Click();
 
         // Applying is a draft edit, never a save: the persisted profile still holds the old client ID.
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Apply authentication").Click();
         cut.Find("#configured-client-id").GetAttribute("value").Should().Be(ClientId, "the draft now holds the detected value");
         _settings.Settings.Profiles.Single(p => p.Id == "dev").Authentication.ExpectedClientId.Should().Be(OtherClientId);
         JSInterop.Invocations.Should().NotContain(i => i.Identifier == "birkNextStorage.setItem");
+        Row(cut, "authentication-apply-result").Should().Contain("1 change applied to the draft. Save changes to keep it.");
     }
 
     // ── 9–10. Verification and testing method remain visible on Authentication ─
@@ -287,22 +264,19 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
         note.QuerySelector(".fa-auth-note-tag")!.TextContent.Trim().Should().Be("DEV only");
     }
 
-    // ── 11–12. Advanced details are collapsed but complete ────────────────────
+    // ── 11–12. The full comparison is collapsed but complete ──────────────────
 
     [Fact]
-    public void AdvancedAuthenticationDetails_AreCollapsedByDefault_AndCarryTheExpectedIdentifiers()
+    public void AllComparedSettings_AreCollapsedByDefault_AndCarryTheExpectedIdentifiers()
     {
-        var cut = Detect(MatchingAuthentication);
+        var cut = Detect(MismatchedAuthentication);
         OpenTab(cut, "Authentication");
 
-        var details = Testid(cut, "edge-auth-discovery");
+        var details = Testid(cut, "authentication-all-settings");
         details.HasAttribute("open").Should().BeFalse();
-        details.QuerySelector("caption")!.TextContent.Trim().Should().Be("Advanced authentication details");
-
-        var settings = Testid(cut, "authentication-comparison").QuerySelectorAll("tbody th")
-            .Select(th => th.TextContent.Trim()).ToList();
+        var settings = details.QuerySelectorAll("tbody th").Select(th => th.TextContent.Trim()).ToList();
         settings.Should().Equal("Identity provider", "Expected Authority", "Expected Tenant", "Expected Client ID", "Allowed Redirect URLs");
-        Row(cut, "authentication-detection-source").Should().Be("Detect Settings");
+        details.TextContent.Should().Contain("not discoverable from the public sign-in flow");
     }
 
     // ── 13. No credential surface is introduced ──────────────────────────────
@@ -333,19 +307,19 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
         var cut = Detect(MismatchedAuthentication);
         OpenTab(cut, "Authentication");
 
-        // Card state has a text status badge next to the heading, plus a summary sentence.
-        var card = Testid(cut, "authentication-discovery");
-        card.QuerySelector(".fa-card-status")!.TextContent.Trim().Should().NotBeEmpty();
-        Row(cut, "authentication-match-summary").Should().NotBeEmpty();
+        // The card states its status in words; the differences panel repeats it next to its heading.
+        Row(cut, "auth-status-auth-settings").Should().NotBeEmpty();
+        Row(cut, "authentication-differences-state").Should().Be(Row(cut, "auth-status-auth-settings"));
 
         // Every comparison badge carries a word, and its decorative glyph is hidden from assistive tech.
         foreach (var badge in Testid(cut, "authentication-comparison").QuerySelectorAll(".fa-compare-badge"))
         {
-            badge.TextContent.Trim().Should().ContainAny("Match", "Different", "Not configured", "Not detected", "Not available");
+            badge.TextContent.Trim().Should().ContainAny("Safe change available", "Conflict requiring review");
             badge.QuerySelector("[aria-hidden=true]").Should().NotBeNull();
         }
-
-        // The card itself stays neutral; only the badge changes.
-        card.ClassList.Should().Contain("fa-state-detected");
+        // Each decision is a labelled radio pair inside a fieldset with a legend.
+        var decision = Testid(cut, "auth-decision-expected-client-id");
+        decision.QuerySelector("legend")!.TextContent.Should().Contain("Expected Client ID");
+        decision.QuerySelectorAll("label").Select(l => l.TextContent.Trim()).Should().Equal("Keep saved value", "Use detected value");
     }
 }

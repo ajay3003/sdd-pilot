@@ -384,13 +384,16 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open();
         Click(cut, "Detect settings");
         OpenTab(cut, "Authentication");
-        // One configuration section; detection is a block inside it rather than a second full-width card.
+        // One configuration section; the settings check is the fourth prerequisite card, not a block or a second full-width card.
         Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication configuration"));
-        Assert.Single(cut.FindAll("[data-testid='authentication-discovery']"));
-        Assert.Single(cut.FindAll("h4").Where(x => x.TextContent == "Detection"));
+        Assert.Single(cut.FindAll("[data-testid='auth-card-auth-settings']"));
+        Assert.Empty(cut.FindAll("[data-testid='authentication-discovery']"));
+        Assert.Empty(cut.FindAll("h4").Where(x => x.TextContent == "Detection"));
         Assert.Empty(cut.FindAll(".fa-result-grid"));
         Assert.DoesNotContain("Detected Authentication", cut.Markup);
-        Assert.True(HasButton(cut, "Apply authentication"));
+        Assert.False(HasButton(cut, "Apply authentication"));
+        // Nothing is applied until the reviewer selects a value.
+        Assert.Empty(cut.FindAll("[data-testid='authentication-apply-selected']"));
         Assert.Equal(0, SaveCalls());
     }
 
@@ -404,7 +407,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         OpenTab(cut, "Authentication");
         Assert.Empty(cut.FindAll("#authenticated-testing-method-select"));
         Assert.Single(cut.FindAll("[data-testid='authenticated-testing-method-value']"));
-        Assert.Single(cut.FindAll("[data-testid='authentication-discovery']"));
+        Assert.Single(cut.FindAll("[data-testid='auth-card-auth-settings']"));
         // The capability inventory lives in the selected method.s setup panel, one disclosure away.
         foreach (var candidate in new[] { "managed-edge-panel", "local-https-proxy-panel", "manual-only-panel" })
             Assert.Equal(candidate == panel, Has(cut, candidate));
@@ -412,7 +415,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal(method == AuthenticatedTestingMethod.LocalHttpsProxy, Has(cut, "proxy-security-warning"));
         // Method is a row of the one Authenticated testing card now, not a card of its own.
         Assert.Empty(cut.FindAll("[data-testid='authenticated-testing-method']"));
-        Assert.True(cut.Markup.IndexOf("data-testid=\"authentication-discovery\"") < cut.Markup.IndexOf("data-testid=\"authenticated-testing\""));
+        Assert.True(cut.Markup.IndexOf("data-testid=\"auth-card-auth-settings\"") < cut.Markup.IndexOf("data-testid=\"authenticated-testing\""));
         Assert.True(cut.Markup.IndexOf("data-testid=\"authenticated-testing\"") < cut.Markup.IndexOf($"data-testid=\"{panel}\""));
         Assert.DoesNotContain("TargetTabNotInspectable", cut.Markup);
         Click(cut, "Edit Environment");

@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using BirkNext.Web.Models;
 using Bunit;
@@ -16,47 +15,51 @@ public sealed partial class AuthenticationApplyDraftTests
         card.TextContent.Should().Contain(label);
     }
 
+    /// <summary>The fourth prerequisite card: its status chip and tone are the one statement of the settings check.</summary>
+    private static void SettingsCard(IRenderedComponent<Component> cut, string tone, string status)
+    {
+        cut.Find("[data-testid=auth-card-auth-settings]").ClassList.Should().Contain("ar-tone-" + tone);
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be(status);
+    }
+
     [Fact]
-    public void AuthenticationCards_TrackDetectApplyCancelAndSave()
+    public void AuthenticationCards_TrackCheckApplyCancelAndSave()
     {
         var cut = Open();
         OpenTab(cut, "Authentication");
-        Card(cut, "authentication-discovery", "neutral", "Not detected");
+        SettingsCard(cut, "muted", "Not checked");
         Card(cut, "authentication-configuration", "saved", "Saved configuration");
-        Click(cut, "Detect settings");
-        OpenTab(cut, "Authentication");
-        Card(cut, "authentication-discovery", "detected", "Detected — proposal available");
+        cut.Find("[data-testid=auth-action-auth-settings]").Click();
+        SettingsCard(cut, "needs-action", "Review required (5 differences)");
         SaveCalls().Should().Be(0);
-        Click(cut, "Apply authentication");
-        Card(cut, "authentication-discovery", "draft", "Applied to draft");
+        UseAllDetected(cut);
+        SettingsCard(cut, "ready", "Matches draft — not saved yet");
         Card(cut, "authentication-configuration", "draft", "Unsaved changes");
         cut.Find(".fa-page-unsaved").TextContent.Should().Be("Unsaved changes");
         ButtonDisabled(cut, "Save changes").Should().BeFalse();
         SaveCalls().Should().Be(0);
         Click(cut, "Cancel");
-        Card(cut, "authentication-discovery", "detected", "Detected — proposal available");
+        SettingsCard(cut, "needs-action", "Review required (5 differences)");
         Card(cut, "authentication-configuration", "saved", "Saved configuration");
         SaveCalls().Should().Be(0);
-        Click(cut, "Apply authentication");
+        UseAllDetected(cut);
         Click(cut, "Save changes");
-        cut.WaitForAssertion(() => Card(cut, "authentication-discovery", "saved", "Matches saved configuration"));
-        ButtonDisabled(cut, "Apply authentication").Should().BeTrue();
+        cut.WaitForAssertion(() => SettingsCard(cut, "ready", "Matches saved configuration"));
+        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty();
         SaveCalls().Should().Be(1);
     }
 
     [Fact]
-    public async Task MatchingProposal_HandlerIsNoOpEvenWhenInvokedDirectly()
+    public void MatchingConfiguration_OffersNothingToApply()
     {
         var cut = Open($$"""
         { "authenticationType": "MicrosoftEntraId", "expectedAuthority": "{{Authority}}", "expectedTenant": "{{Tenant}}",
           "expectedClientId": "{{ClientId}}", "allowedRedirectUrls": ["{{Redirect}}"] }
         """);
-        Click(cut, "Detect settings");
         OpenTab(cut, "Authentication");
-        Card(cut, "authentication-discovery", "saved", "Matches saved configuration");
-        ButtonDisabled(cut, "Apply authentication").Should().BeTrue();
-        await cut.InvokeAsync(() => typeof(Component).GetMethod("ApplyDetectedAuthenticationSettings",
-            BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(cut.Instance, null));
+        cut.Find("[data-testid=auth-action-auth-settings]").Click();
+        SettingsCard(cut, "ready", "Matches saved configuration");
+        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty();
         cut.FindAll(".fa-detail-header-actions button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");
         SaveCalls().Should().Be(0);
     }
@@ -101,14 +104,15 @@ public sealed partial class AuthenticationApplyDraftTests
     }
 
     [Fact]
-    public void DivergentAuthenticationEdit_BlocksStaleProposal_AndCancelRestoresEvidence()
+    public void DivergentAuthenticationEdit_RequiresRecheck_AndCancelRestoresTheReview()
     {
         var cut = DetectAndApply(Open());
         cut.Find("#configured-authority").Change("https://login.microsoftonline.com/other");
-        Card(cut, "authentication-discovery", "needs-action", "Detection stale");
-        ButtonDisabled(cut, "Apply authentication").Should().BeTrue();
+        SettingsCard(cut, "needs-action", "Recheck required");
+        cut.Find("[data-testid=auth-card-auth-settings]").TextContent.Should().Contain("Authentication settings changed since the last check");
+        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty("a stale comparison is never reviewed or applied");
         Click(cut, "Cancel");
-        Card(cut, "authentication-discovery", "detected", "Detected — proposal available");
+        SettingsCard(cut, "needs-action", "Review required (5 differences)");
         SaveCalls().Should().Be(0);
     }
 }

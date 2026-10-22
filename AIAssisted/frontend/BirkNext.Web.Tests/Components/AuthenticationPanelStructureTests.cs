@@ -158,7 +158,9 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
         Text(cut, "auth-readiness-detail").Should().Be("No authentication provider is configured for this Target Environment.");
         // The prerequisites are the method's, not the provider's, so they stay visible and operable.
         cut.FindAll("[data-testid=auth-prerequisites]").Should().ContainSingle();
-        cut.Find("[data-testid=auth-verify]").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("[data-testid=auth-verify]").Should().BeEmpty("an unavailable action is a stated state, not a greyed-out button");
+        Text(cut, "auth-verify-unavailable").Should().Be("Manual sign-in unavailable");
+        Text(cut, "auth-verify-blocked").Should().Contain("Configure an authentication provider");
     }
 
     [Fact]
@@ -204,11 +206,18 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
     }
 
     [Fact]
-    public void ADisabledVerifyAlwaysNamesWhatIsMissing()
+    public void AnUnavailableVerifyNamesWhatIsMissingAndOffersTheFix()
     {
         var cut = Render(Proxy(DedicatedBrowserVerification.NotRunning, LocalHttpsProxyState.Stopped, edgePort: null));
-        cut.Find("[data-testid=auth-verify]").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("[data-testid=auth-verify]").Should().BeEmpty();
+        Text(cut, "auth-verify-unavailable").Should().Be("Manual sign-in unavailable");
         Text(cut, "auth-verify-blocked").Should().Contain("Local HTTPS Proxy (Not running)");
+        Text(cut, "auth-verify-fix").Should().Be("Start proxy", "the first blocking prerequisite's own action");
+
+        // Proxy running, browser closed: the action is "Open browser", never a disabled sign-in button.
+        var browserClosed = Render(Proxy(DedicatedBrowserVerification.NotRunning, LocalHttpsProxyState.Listening, edgePort: null));
+        Text(browserClosed, "auth-verify-blocked").Should().Contain("Dedicated Edge browser (Not running)");
+        Text(browserClosed, "auth-verify-fix").Should().Be("Open browser");
     }
 
     // ── No duplicated warnings ───────────────────────────────────────────────

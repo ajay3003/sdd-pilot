@@ -512,6 +512,29 @@
     .fa-auth-comparison td { display: block; border: 0; padding: .1rem .25rem; }
 }
 
+/* ── Authentication differences: one decision per difference ──────────────── */
+
+.fa-auth-decision {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .25rem .75rem;
+    margin: .375rem 0 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+
+.fa-auth-decision label { display: inline-flex; align-items: center; gap: .25rem; font-size: .8125rem; }
+
+@media (max-width: 720px) {
+    .fa-auth-comparison td[data-label]::before {
+        content: attr(data-label) ": ";
+        font-family: var(--font-sans, inherit);
+        font-weight: 600;
+        color: var(--clr-text-subtle);
+    }
+}
+
 /* ── Target Application: detected identity summary ───────────────────────────── */
 
 .fa-detected-card {

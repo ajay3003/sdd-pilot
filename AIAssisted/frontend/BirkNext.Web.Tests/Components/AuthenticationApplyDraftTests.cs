@@ -12,9 +12,9 @@ using Component = BirkNext.Web.Components.FrontendAnalysisSettings;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Authentication follows the same Detected → Apply → draft → Save changes model as the endpoint
-/// proposals. Applying detected authentication mutates the draft only, surfaces a bold icon-led
-/// "Unsaved changes" indicator, and must never invalidate target discovery or claim the URL changed.
+/// Authentication follows the Check → review differences → Apply selected changes → draft → Save changes model.
+/// Applying selected detected values mutates the draft only, surfaces a bold icon-led "Unsaved changes" indicator,
+/// and must never invalidate target discovery or claim the URL changed.
 /// </summary>
 public sealed partial class AuthenticationApplyDraftTests : BunitContext
 {
@@ -102,7 +102,8 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     private static void AssertDiscoveryCurrent(IRenderedComponent<Component> cut, bool editing = true)
     {
         OpenTab(cut, "Target Application");
-        DetectionLabel(cut).Should().BeOneOf(["Target detection complete", "Detection needs current settings"], "discovery is current; only unsaved edits keep detection from matching the saved settings");
+        DetectionLabel(cut).Should().BeOneOf(["Target detection complete", "Target detected — unsaved changes", "Target detected — recheck after settings change"],
+            "discovery is current; only authentication edits keep the sign-in check from matching the detection");
         cut.Markup.Should().Contain("Detection result");
         cut.Find(".fa-result-message").TextContent.Should().NotContain("changed");
         cut.Markup.Should().Contain("Reachable");
@@ -130,8 +131,16 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
         OpenTab(cut, "Authentication");
-        Click(cut, "Apply authentication");
+        UseAllDetected(cut);
         return cut;
+    }
+
+    /// <summary>Chooses "Use detected value" for every listed difference, then Apply selected changes. Nothing is pre-selected.</summary>
+    internal static void UseAllDetected<T>(IRenderedComponent<T> cut) where T : Microsoft.AspNetCore.Components.IComponent
+    {
+        var count = cut.FindAll("[data-testid^=auth-decision-use-]").Count;
+        for (var i = 0; i < count; i++) cut.FindAll("[data-testid^=auth-decision-use-]")[i].Change(true);
+        cut.Find("[data-testid=authentication-apply-selected]").Click();
     }
 
     // ── 20. Apply test ──────────────────────────────────────────────────────────
@@ -149,7 +158,8 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
             // Settings form stays read-only; the managed Edge runtime panel has no editable control either (no runtime trust opt-in).
             // Integrations are a backend catalog saved per record, outside the profile draft: its search/filter controls are not
             // profile fields, and nothing there is written unless the user saves an integration.
-            if (tab != "Integrations") cut.FindAll("input, select, textarea").Should().BeEmpty(tab);
+            // Authentication differences carry review decisions (radio buttons), which are not profile fields and write nothing.
+            if (tab != "Integrations") cut.FindAll("input:not([data-testid^=auth-decision-]), select, textarea").Should().BeEmpty(tab);
             cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel", tab);
         }
         _integrations.Saved.Should().BeEmpty("detecting settings never writes an integration");
@@ -188,9 +198,10 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.FindAll("#configured-authentication-type").Should().BeEmpty();
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty("nothing has been applied yet");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
-        cut.FindAll("[data-testid='authentication-discovery']").Should().ContainSingle("the Authentication tab leads with one status card");
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Review required (5 differences)");
+        cut.FindAll("[data-testid=authentication-apply-selected]").Should().BeEmpty("Apply appears only after an explicit selection");
 
-        Click(cut, "Apply authentication");
+        UseAllDetected(cut);
 
         // Configured draft populated from the detected proposal
         cut.Find("#configured-authentication-type").GetAttribute("value").Should().Be("MicrosoftEntraId");
@@ -199,9 +210,10 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Find("#configured-client-id").GetAttribute("value").Should().Be(ClientId);
         cut.Find("#configured-redirect-urls").GetAttribute("value").Should().Contain(Redirect);
 
-        // Detected evidence remains visible as provenance
-        cut.FindAll("[data-testid='authentication-discovery']").Should().ContainSingle();
-        cut.Markup.Should().Contain("Apply authentication");
+        // The applied values now match the draft; the card says so without claiming they are saved
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Matches draft — not saved yet");
+        cut.FindAll("[data-testid=authentication-differences]").Should().BeEmpty("no differences remain against the draft");
+        cut.Find("[data-testid=authentication-apply-result]").TextContent.Should().Contain("5 changes applied to the draft");
 
         // Dirty → top-level Save enabled, unsaved indicator visible, no second Save inside Authentication
         ButtonDisabled(cut, "Save changes").Should().BeFalse();
@@ -245,8 +257,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         configured.TextContent.Trim().Should().Be("Configured Authentication");
         configured.NextElementSibling!.ClassList.Should().Contain("fa-unsaved-notice");
 
-        // Apply and Save are real buttons with clear accessible names (keyboard reachable by default)
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Apply authentication").GetAttribute("type").Should().Be("button");
+        // Save is a real button with a clear accessible name (keyboard reachable by default)
         cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Save changes");
     }
 
@@ -295,12 +306,12 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Persisted().Authentication.ExpectedAuthority.Should().BeNull();
         SaveCalls().Should().Be(savesBefore);
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
-        // The persisted configured provider is listed once, in the comparison, rather than echoed as a
-        // second read-only row beside the detected one. After Cancel it must show the persisted value,
-        // not the applied draft.
+        // After Cancel the comparison is against the persisted value again, not the cancelled draft: the differences return,
+        // each undecided, because the earlier decisions were spent by Apply.
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Review required (5 differences)");
         cut.Find("[data-testid='authentication-comparison']").QuerySelectorAll("tr")
             .Single(r => r.QuerySelector("th")?.TextContent.Trim() == "Identity provider")
-            .QuerySelectorAll("td")[1].TextContent
+            .QuerySelectorAll("td")[0].TextContent
             .Should().NotContain("Microsoft Entra ID", "view mode shows persisted authentication, not the cancelled draft");
 
         AssertDiscoveryCurrent(cut, editing: false);
@@ -311,11 +322,17 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     [Fact]
     public void ApplyAuthentication_WhenDetectedEqualsPersisted_DoesNotCreateFalseDirtyState()
     {
-        var cut = DetectAndApply(Open($$"""
+        var cut = Open($$"""
         { "authenticationType": "MicrosoftEntraId", "expectedAuthority": "{{Authority}}", "expectedTenant": "{{Tenant}}",
           "expectedClientId": "{{ClientId}}", "allowedRedirectUrls": ["{{Redirect}}"] }
-        """));
+        """);
+        Click(cut, "Detect settings");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
+        OpenTab(cut, "Authentication");
 
+        // Saved and detected match: nothing to review, nothing to apply
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Matches saved configuration");
+        cut.FindAll("[data-testid=authentication-differences], [data-testid=authentication-apply-selected]").Should().BeEmpty();
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
         cut.FindAll("#configured-authentication-type").Should().BeEmpty();
@@ -363,7 +380,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Completed (recorded manually)");
         ButtonDisabled(cut, "Set as Active").Should().BeFalse();
 
-        Click(cut, "Apply authentication");
+        UseAllDetected(cut);
 
         // The recorded check no longer matches the configured expectations → out of date (unsaved edits block activation as before)…
         cut.Find("[data-testid=authentication-verification-status]").TextContent.Trim().Should().Be("Out of date: save changes, then check again");
@@ -378,7 +395,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
     // ── Defect 1: applying the detector's own proposal must not demand re-detection ──
 
-    /// <summary>Expected flow: Detect → Apply authentication → Save → (optional) manual sign-in check. No second Detect.</summary>
+    /// <summary>Expected flow: Check → Use detected values → Apply selected changes → Save → (optional) manual sign-in check. No second check.</summary>
     [Fact]
     public void AfterSave_AppliedProposal_DetectionIsCompleteAndTheSignInCheckIsAvailableWithoutRedetect()
     {
@@ -387,7 +404,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.WaitForAssertion(() => Persisted().Authentication.AuthenticationType.Should().Be(FrontendAuthenticationType.MicrosoftEntraId));
 
         cut.Markup.Should().NotContain("changed since detection");
-        cut.Markup.Should().NotContain("Run Detect settings again");
+        cut.Markup.Should().NotContain("Run Detect settings again").And.NotContain("Recheck authentication settings before");
         cut.FindAll("#detection-readiness-reason").Should().BeEmpty();
         AssertDiscoveryCurrent(cut, editing: false);
 
@@ -416,7 +433,8 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Open manual sign-in check");
 
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
-        cut.Markup.Should().Contain("Run Detect settings again before recording a sign-in check.");
+        cut.Markup.Should().Contain("Recheck authentication settings before recording a sign-in check.");
+        cut.Find("[data-testid=auth-status-auth-settings]").TextContent.Should().Be("Recheck required");
         ButtonDisabled(cut, "Record sign-in check completed").Should().BeTrue();
         OpenTab(cut, "Target Application");
         cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings again");
@@ -464,7 +482,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
         // After Apply, before Save: draft labelled as draft + unsaved, saved value named explicitly
         OpenTab(cut, "Authentication");
-        Click(cut, "Apply authentication");
+        UseAllDetected(cut);
         OpenTab(cut, "Target Application");
         resultGrid().Should().Contain("Configured authentication (draft)").And.Contain("Unsaved").And.Contain("saved: None");
 

@@ -32,8 +32,15 @@
                     @AuthenticationPaneStates.ConfigurationLabel(State.Configuration)
                 </dd>
             </div>
+            @if (SettingsCheck is { } settings)
+            {
+                <div>
+                    <dt>Authentication settings</dt>
+                    <dd class="ar-tone-@settings.Tone" data-testid="auth-summary-settings">@settings.StatusLabel</dd>
+                </div>
+            }
             <div>
-                <dt>Manual sign-in check</dt>
+                <dt>Manual sign-in</dt>
                 <dd class="ar-tone-@AuthenticationPaneStates.VerificationTone(State.Verification)" data-testid="auth-summary-verification">
                     @AuthenticationPaneStates.VerificationLabel(State.Verification)
                 </dd>
@@ -48,24 +55,35 @@
         </dl>
 
         <div class="ar-hero-actions">
-            <button type="button" class="btn-primary" data-testid="auth-verify"
-                    disabled="@(!Summary.CanVerify)" @onclick="OnVerify">Check sign-in manually</button>
-            @* A disabled action always says what is missing; a greyed-out button on its own makes the user guess. *@
-            @if (AuthenticationReadinessPresentation.VerificationBlockedReason(Summary) is { Length: > 0 } blocked)
+            @if (Summary.CanVerify)
             {
-                <p class="ar-blocked" data-testid="auth-verify-blocked">@blocked</p>
+                <button type="button" class="btn-primary" data-testid="auth-verify" @onclick="OnVerify">Check sign-in manually</button>
+            }
+            else
+            {
+                @* Not a greyed-out button: the state, the reason, and the one action that removes the reason. Manual sign-in
+                   is separate from the authentication settings check, so a settings difference never appears here. *@
+                <p class="ar-blocked" data-testid="auth-verify-blocked">
+                    <span class="ar-chip ar-chip-muted" data-testid="auth-verify-unavailable">Manual sign-in unavailable</span>
+                    <span>@AuthenticationReadinessPresentation.VerificationBlockedReason(Summary)</span>
+                </p>
+                @if (VerificationFix is { } fix)
+                {
+                    <button type="button" class="btn-secondary" data-testid="auth-verify-fix" disabled="@Busy"
+                            @onclick="() => OnAction.InvokeAsync(fix.ActionId)">@fix.ActionLabel</button>
+                }
             }
         </div>
     </div>
 
-    @if (Summary.Prerequisites.Count > 0)
+    @if (Summary.Prerequisites.Count > 0 || SettingsCheck is not null)
     {
         @* Status cards, not a wizard. Once the system is operational this is not a linear sequence, and numbering it
            told the reader to start at the top even when only the third one needed anything. *@
         <div class="ar-section" data-testid="auth-prerequisites">
             <h4 class="ar-section-title" id="auth-prerequisites-heading">Prerequisites</h4>
             <div class="ar-cards" role="group" aria-labelledby="auth-prerequisites-heading">
-                @foreach (var item in Summary.Prerequisites)
+                @foreach (var item in Cards)
                 {
                     <article class="ar-card ar-tone-@item.Tone" data-testid="auth-card-@item.Id">
                         <div class="ar-card-head">
@@ -95,7 +113,7 @@
                         @if (item.ActionLabel is { Length: > 0 } action)
                         {
                             <button type="button" class="btn-secondary" data-testid="auth-action-@item.Id"
-                                    disabled="@Busy" @onclick="() => OnAction.InvokeAsync(item.ActionId)">@action</button>
+                                    disabled="@(item.Id == AuthenticationSettingsChecks.Id ? SettingsBusy : Busy)" @onclick="() => OnAction.InvokeAsync(item.ActionId)">@action</button>
                         }
                     </article>
                 }
@@ -193,10 +211,23 @@
     [Parameter] public EventCallback OnOpenDiscovery { get; set; }
     /// <summary>Configuration, verification and authenticated context, placed between prerequisites and the hand-off.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>
+    /// The fourth card: the read-only authentication settings check. Shown for every method, and never an input to
+    /// <see cref="AuthenticationReadinessSummary.CanVerify"/> — a configuration difference is a review question, not a missing prerequisite.
+    /// </summary>
+    [Parameter] public AuthenticationPrerequisite? SettingsCheck { get; set; }
+    /// <summary>Disables only the settings check's own action while it runs; proxy operations keep their own busy state.</summary>
+    [Parameter] public bool SettingsBusy { get; set; }
     /// <summary>The capability inventory, collapsed by default.</summary>
     [Parameter] public RenderFragment? Capabilities { get; set; }
 
     private AuthenticationReadinessSummary Summary => State.Readiness;
+
+    private IEnumerable<AuthenticationPrerequisite> Cards => SettingsCheck is { } settings ? [.. Summary.Prerequisites, settings] : Summary.Prerequisites;
+
+    /// <summary>The first proxy prerequisite that blocks manual sign-in and has an action, e.g. "Open browser".</summary>
+    private AuthenticationPrerequisite? VerificationFix => Summary.Prerequisites
+        .FirstOrDefault(p => p.State is not (AuthPrerequisiteState.Ok or AuthPrerequisiteState.NotRequired) && p.ActionLabel is { Length: > 0 } && p.ActionId is { Length: > 0 });
 
     private static string ProcessArgument(LocalHttpsProxyStatus runtime) => runtime.EdgeProxyArgument switch
     {
