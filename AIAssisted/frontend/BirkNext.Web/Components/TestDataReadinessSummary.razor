@@ -1,0 +1,49 @@
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+
+@* Read-only Test Data readiness per kind from the shared catalog: approved and usable here → Ready; schema gone → Stale; approved only for another
+   environment → Environment mismatch (never reused). Shows aliases and states only — never values — and never approves or changes an asset. *@
+<div class="sd-source-contracts" data-testid="td-readiness">
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="td-readiness-error">@error</p> }
+    else if (_catalog is null) { <p class="sd-muted" role="status">Loading test data…</p> }
+    else if (_catalog.Assets.Count == 0) { <p class="sd-muted" data-testid="td-readiness-empty">No test data is configured. <a href="test-data">Open Test Data</a></p> }
+    else
+    {
+        <ul class="sd-list" data-testid="td-readiness-list">
+            @foreach (var group in _catalog.Assets.Where(a => Kinds is null || Kinds.Contains(a.Kind)).GroupBy(a => a.Kind).OrderBy(g => g.Key))
+            {
+                var readiness = TestDataLifecycle.Readiness(group.Key.ToString(), group, 0, Environment);
+                <li data-testid="td-readiness-row" data-kind="@group.Key" data-state="@readiness.State">
+                    <strong>@TestDataPresentation.KindLabel(group.Key)</strong>
+                    <span class="sd-pill @(readiness.State == TestDataReadinessState.Ready ? "sd-pill-complete" : "sd-pill-partial")">@StateLabel(readiness.State)</span>
+                    — @readiness.Text <span class="sd-context">@string.Join(", ", group.Select(a => a.Alias).Take(6))@(group.Count() > 6 ? " …" : "")</span>
+                </li>
+            }
+        </ul>
+        <p class="sd-muted">Readiness only — values stay in the backend and are used when a test runs. <a href="test-data">Open Test Data</a></p>
+    }
+</div>
+@code {
+    /// <summary>The environment name assets are scoped to (null: any environment).</summary>
+    [Parameter] public string? Environment { get; set; }
+    /// <summary>Kinds relevant to the consumer (null: all).</summary>
+    [Parameter] public IReadOnlyList<TestDataKind>? Kinds { get; set; }
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private TestDataCatalogView? _catalog;
+    private string? _error;
+
+    public static string StateLabel(TestDataReadinessState state) => state switch
+    {
+        TestDataReadinessState.Ready => "Ready",
+        TestDataReadinessState.CandidateOnly => "Candidate only",
+        TestDataReadinessState.Stale => "Stale",
+        TestDataReadinessState.EnvironmentMismatch => "Environment mismatch",
+        _ => "Missing",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { (_catalog, _error) = await TestDataApiService.Resolve(ServiceProvider).CatalogAsync(); }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or NullReferenceException) { _error = "Test Data is unavailable in this session."; }
+    }
+}

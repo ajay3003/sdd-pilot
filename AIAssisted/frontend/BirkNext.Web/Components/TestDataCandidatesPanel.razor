@@ -1,0 +1,76 @@
+@using BirkNext.Integrations
+@using BirkNext.TestData
+@using BirkNext.Web.Services
+
+@* Structural Test Data candidates of one Source Analysis snapshot the reader chooses (never the newest automatically), proposed from shared
+   contract and data model evidence. A candidate carries structure, rules and an expected outcome — never values for identities, never secrets —
+   and is never approved, stored or used by listing it here. *@
+<div class="sd-source-contracts" data-testid="td-candidates-panel">
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="td-candidates-error">@error</p> }
+    else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="td-candidates-no-snapshots">No Source Analysis snapshot is stored.</p> }
+    else
+    {
+        <label class="sd-field">Source snapshot
+            <select data-testid="td-candidates-snapshot" value="@_selected" @onchange="SelectAsync">
+                <option value="">Select a snapshot…</option>
+                @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
+            </select>
+        </label>
+    }
+    @if (_loadingCandidates) { <p class="sd-muted" role="status">Loading candidates…</p> }
+    else if (_candidates is { } candidates)
+    {
+        <p class="sd-muted" data-testid="td-candidates-note">@candidates.Count candidate(s) — structure and rules only. A candidate is never approved automatically and is not used by any test until it is approved in the catalog. Identity fields are controlled references and are never generated.</p>
+        @if (candidates.Count > 0)
+        {
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Test data candidates"><table data-testid="td-candidates-table">
+                <thead><tr><th scope="col">Candidate</th><th scope="col">Origin</th><th scope="col">Intent</th><th scope="col">Expected outcome</th><th scope="col">State</th></tr></thead>
+                <tbody>
+                    @foreach (var c in candidates)
+                    {
+                        <tr data-testid="td-candidate" data-origin="@c.Origin" data-intent="@c.Intent">
+                            <td data-label="Candidate"><span class="sd-provenance">@c.Label</span><br /><span class="sd-context">@c.DerivedFrom · @c.Structure.Count field(s) · @c.Rules.Count rule(s)</span></td>
+                            <td data-label="Origin">@(c.Origin == TestDataCandidateOrigin.ContractEvidence ? "Contract evidence" : c.Origin == TestDataCandidateOrigin.DataModelEvidence ? "Data model evidence" : c.Origin.ToString())</td>
+                            <td data-label="Intent">@c.Intent</td>
+                            <td data-label="Expected outcome">@(c.ExpectedOutcome ?? "Not stated")</td>
+                            <td data-label="State"><span class="sd-pill sd-pill-muted" data-testid="td-candidate-state">Candidate — not approved</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        }
+    }
+    else if (_selected.Length > 0) { <p class="sd-muted" role="status" data-testid="td-candidates-unavailable">Candidates could not be loaded for this snapshot.</p> }
+</div>
+@code {
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
+    private IReadOnlyList<TestDataCandidate>? _candidates;
+    private string _selected = "";
+    private string? _error;
+    private bool _loadingCandidates;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
+        try { _snapshots = await api.ListSourceSnapshotsAsync(""); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
+    }
+
+    private ITestDataApiService? Api()
+    {
+        try { return TestDataApiService.Resolve(ServiceProvider); }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or NullReferenceException) { return null; }
+    }
+
+    private async Task SelectAsync(ChangeEventArgs e)
+    {
+        _selected = e.Value?.ToString() ?? string.Empty;
+        _candidates = null;
+        if (!Guid.TryParse(_selected, out var id) || Api() is not { } testData) return;
+        _loadingCandidates = true;
+        try { _candidates = await testData.CandidatesAsync(id); }
+        finally { _loadingCandidates = false; }
+    }
+}

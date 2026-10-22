@@ -194,6 +194,20 @@
                 }
             </ul>
         </section>
+
+        <section class="td-card" aria-labelledby="td-candidates-heading" data-testid="td-candidates">
+            <h2 id="td-candidates-heading">Candidates from source evidence</h2>
+            <p class="td-note">Structure, rules and expected outcomes proposed from a Source Analysis snapshot's contracts and data model. Candidates are never approved automatically.</p>
+            <ReviewDisclosure Text="Review candidates" CollapseText="Hide candidates" TestId="td-candidates" Class="disclosure-inline">
+                <TestDataCandidatesPanel />
+            </ReviewDisclosure>
+            @if (catalog.Assets.Count > 0)
+            {
+                <ReviewDisclosure Text="Documentation (metadata only)" CollapseText="Hide documentation" TestId="td-documentation" Class="disclosure-inline">
+                    <pre class="td-preview" tabindex="0" aria-label="Test data documentation" data-testid="td-documentation-text">@TestDataLifecycle.Documentation(catalog.Assets)</pre>
+                </ReviewDisclosure>
+            }
+        </section>
     }
 </div>
 

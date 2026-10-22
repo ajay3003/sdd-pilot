@@ -7,6 +7,9 @@ namespace BirkNext.Web.Tests.Integration;
 /// <summary>In-memory <see cref="IIntegrationCatalogApiService"/> for component tests; records calls, performs no HTTP.</summary>
 public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
+    /// <summary>Stored Source Analysis snapshots (newest first) for components that let the reader choose one.</summary>
+    public IReadOnlyList<IqrSourceSnapshot> SourceSnapshots { get; set; } = [];
+    public Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(SourceSnapshots);
     public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
     /// <summary>The canonical IQR source-evidence bindings the pane shows per integration (read-only here).</summary>
     public IReadOnlyList<IntegrationEvidenceBinding> EvidenceBindings { get; set; } = [];

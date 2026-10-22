@@ -19,4 +19,10 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog) 
     [HttpGet("assets/{id}")]
     public async Task<ActionResult<TestDataAssetDetail>> Asset(string id, CancellationToken ct) =>
         await catalog.DetailAsync(id, ct) is { } detail ? Ok(detail) : NotFound();
+
+    /// <summary>Structural candidates from one exact Source Analysis snapshot (shared contract and data model evidence). Candidates are never
+    /// approved, stored or used by being listed; identity fields carry a controlled-reference placeholder, never a generated identity.</summary>
+    [HttpGet("candidates")]
+    public async Task<ActionResult<IReadOnlyList<TestDataCandidate>>> Candidates([FromServices] TestDataCandidateService candidates, [FromQuery] Guid snapshotId, [FromQuery] string? environmentId, CancellationToken ct) =>
+        await candidates.CandidatesAsync(environmentId ?? "", snapshotId, ct) is { } list ? Ok(list) : NotFound();
 }

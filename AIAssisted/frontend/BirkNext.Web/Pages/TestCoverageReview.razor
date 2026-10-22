@@ -290,6 +290,9 @@
                                 <ul class="tco-list">@foreach (var g in r.PipelineGating) { <li data-testid="tco-pipeline-gate"><strong>@g.Project</strong> — @g.Step in @g.Pipeline · @g.Gating <span class="tco-muted">@g.Execution</span></li> }</ul>
                             </details>
                         }
+                        <BirkNext.Web.Shared.Components.Common.ReviewDisclosure Text="Test data readiness" CollapseText="Hide test data readiness" Hint="Shared Test Data catalog · aliases and approval only" TestId="tco-test-data" Class="disclosure-inline" @bind-Expanded="_testDataExpanded">
+                            @if (_testDataExpanded) { <BirkNext.Web.Components.TestDataReadinessSummary /> }
+                        </BirkNext.Web.Shared.Components.Common.ReviewDisclosure>
                         @if (r.Contracts.Count > 0)
                         {
                             <details class="tco-details" data-testid="tco-contracts">
@@ -437,7 +440,7 @@
     private BirkNext.Web.Services.Explorers.ArtifactExplorerState? _specification;
     private IReadOnlyList<TestCoverageRunSummary> _history = [];
     private string _view = "overview";
-    private bool _busy, _loaded, _showNotAssessed;
+    private bool _busy, _loaded, _showNotAssessed, _testDataExpanded;
     private int _journeyLimit = 10, _behaviorLimit = 25, _gapLimit = 30;
     private ElementReference _resultHeading;
     private readonly CancellationTokenSource _cts = new();

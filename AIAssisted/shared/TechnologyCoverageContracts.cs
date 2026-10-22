@@ -88,6 +88,8 @@ public static class TechnologySupportRegistry
         new("contract.xsd-package", "XSD package (shared engine)", TechnologyArea.Contract, F, ["contract.xsd"],
             "Compiled package: import/include resolution within the package (never fetched), QName-resolved effective structure, facets, cycles and unresolved references; one comparison engine shared by Schema Studio and Impact Analysis; schema-derived test generation in Schema Studio. XML instance validation is test evidence, not contract verification."),
         new("contract.asyncapi", "AsyncAPI", TechnologyArea.Contract, P, ["contract.asyncapi"], "Channels and operations; payload schemas not resolved."),
+        new("testdata.candidates.shared", "Shared Test Data candidates and lifecycle", TechnologyArea.Contract, P, ["contract.xsd", "contract.openapi", "contract.jsonschema"],
+            "Structural candidates (valid case + per-required-field negative cases with expected rejections) from stored contract and data model evidence of one chosen snapshot; identity fields stay controlled references and are never generated. Candidates are never approved automatically; a schema change marks linked assets for review without modifying them."),
         new("contract.xsd", "XML Schema", TechnologyArea.Contract, P, ["contract.xsd"], "Per file in Source Analysis: elements, occurrences, facets, named types, imports/includes as file presence, code references. Referenced types are not expanded here; the compiled package view is the XSD package provider."),
         new("contract.protobuf", "Protobuf", TechnologyArea.Contract, P, ["contract.protobuf", "integration.grpc"], "Messages, fields and services by pattern."),
         new("pipeline.azuredevops", "Azure Pipelines", TechnologyArea.Pipeline, F, ["pipeline.azuredevops"],
@@ -229,11 +231,11 @@ public static class TechnologySupportRegistry
         new("cloud.kubernetes", "Kubernetes", TechnologyArea.Cloud, N, P, N, U, N, N, ["source.iac.kubernetes"], "Manifests only; no cluster access.", [Capability.Kubernetes]),
 
         // Contracts.
-        new("contract.openapi", "OpenAPI", TechnologyArea.Contract, N, N, F, N, N, N, ["contract.openapi"], "Swagger/OpenAPI 2 and some YAML constructs are read partially; OpenAPI 3 is supported."),
+        new("contract.openapi", "OpenAPI", TechnologyArea.Contract, N, N, F, N, N, N, ["contract.openapi", "testdata.candidates.shared"], "Swagger/OpenAPI 2 and some YAML constructs are read partially; OpenAPI 3 is supported."),
         new("contract.graphql", "GraphQL SDL", TechnologyArea.Contract, N, N, F, N, N, N, ["contract.graphql", "contract.graphql-introspection"], "Schema and operations are parsed as contracts; runtime GraphQL behavior is reviewed separately in API Quality Review."),
         new("contract.asyncapi", "AsyncAPI", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.asyncapi"], "Payload schemas not resolved."),
-        new("contract.jsonschema", "JSON Schema", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.jsonschema"], "Top-level properties, required, types and enums; $ref and composition keywords are not resolved."),
-        new("contract.xsd", "XML Schema (XSD)", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.xsd", "contract.xsd-package"], "Runtime message delivery and producer/consumer compatibility are not verified. Schema Studio provides structural validation, import/include resolution within the package, structure/type/constraint inspection, local XML validation and schema-derived tests."),
+        new("contract.jsonschema", "JSON Schema", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.jsonschema", "testdata.candidates.shared"], "Top-level properties, required, types and enums; $ref and composition keywords are not resolved."),
+        new("contract.xsd", "XML Schema (XSD)", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.xsd", "contract.xsd-package", "testdata.candidates.shared"], "Runtime message delivery and producer/consumer compatibility are not verified. Schema Studio provides structural validation, import/include resolution within the package, structure/type/constraint inspection, local XML validation and schema-derived tests."),
         new("contract.wsdl", "WSDL", TechnologyArea.Contract, N, N, U, N, N, N, [], "No WSDL analyzer."),
         new("contract.protobuf", "Protobuf", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.protobuf"], "Pattern-based."),
         new("contract.avro", "Avro", TechnologyArea.Contract, N, N, U, N, N, N, [], "Not parsed."),

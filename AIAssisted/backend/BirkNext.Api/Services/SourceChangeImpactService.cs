@@ -14,7 +14,7 @@ using System.Text.Json;
 namespace BirkNext.Api.Services;
 
 /// <summary>Builds technical impact from exact Source Analysis snapshots, then enriches it with persisted QA traceability.</summary>
-public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvidenceProvider sources)
+public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvidenceProvider sources, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null)
 {
     public async Task<IReadOnlyList<ImpactSnapshotOption>> ListSnapshotsAsync(string environmentId, CancellationToken ct)
     {
@@ -48,6 +48,17 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                 "Unclassified source change", after.Id.ToString(), "Unclassified source change", "Snapshot fingerprints differ, but no supported structured comparison identified the change. Impact is unknown; review required.", []));
         var maxImpactDepth = Math.Clamp(request.MaxImpactDepth, 0, 3);
         var impacts = BuildTechnicalImpacts(before, after, changes, limitations, maxImpactDepth, await sources.ListAsync(request.EnvironmentId ?? string.Empty, ct));
+        // Shared Test Data: approved assets whose schema or data-model entity changed are marked for review and structural revalidation —
+        // never modified automatically.
+        if (testData is not null)
+        {
+            var contractFiles = changes.Where(c => c.Domain == ImpactChangeDomain.Contracts).SelectMany(c => c.SourceFiles);
+            var entities = changes.Where(c => c.Domain == ImpactChangeDomain.Database).Select(c => c.EntityKey.Split('.')[0]);
+            foreach (var affected in BirkNext.TestData.TestDataLifecycle.Affected(testData.View().Assets, contractFiles, entities, []))
+                impacts.Add(new TechnicalImpactItem($"Test data asset:{affected.Alias}", "Test data asset", affected.Alias, affected.Alias,
+                    affected.State == BirkNext.TestData.TestDataLifecycleState.ReviewRequired ? ImpactChangeDomain.Contracts : ImpactChangeDomain.Database,
+                    TechnicalImpactLevel.Potential, "Inferred", $"{affected.State}: {affected.Reason}", [], [], []));
+        }
 
         // Traceability is deliberately a second stage: no links can remove or downgrade a technical impact.
         var files = impacts.SelectMany(i => i.SourceFiles).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);

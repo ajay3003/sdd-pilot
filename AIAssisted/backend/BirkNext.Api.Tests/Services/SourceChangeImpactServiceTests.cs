@@ -277,6 +277,40 @@ public sealed class SourceChangeImpactServiceTests
         report.TechnicalImpacts.Should().NotContain(i => i.Reason.Contains("broken", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task A_changed_schema_marks_its_approved_test_data_asset_for_review_without_modifying_it()
+    {
+        await using var db = Db();
+        const string Xsd = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:r" elementFormDefault="qualified">
+              <xs:element name="Report"><xs:complexType><xs:sequence><xs:element name="Id" type="xs:string" /><xs:element name="Hours" type="xs:decimal" /></xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        SourceEvidenceDomainsSnapshot Domains(string xsd) => new() { Contracts = new ContractEvidence { Contracts = [BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadXmlSchema("schemas/report.xsd", xsd)] } };
+        var before = Snapshot("v1", []) with { EvidenceDomains = Domains(Xsd) };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1),
+            EvidenceDomains = Domains(Xsd.Replace("""<xs:element name="Hours" type="xs:decimal" />""", "")) };
+        var asset = new BirkNext.Api.Services.TestData.TestDataAsset { Id = "report", Alias = "report-valid", Kind = BirkNext.TestData.TestDataKind.Structured, Approval = BirkNext.TestData.TestDataApproval.Approved,
+            Source = "Fixture", SourceId = "fixture", Schema = new BirkNext.TestData.TestDataSchemaReference("schemas/report.xsd") };
+        var catalog = new BirkNext.Api.Services.TestData.TestDataCatalog([new OneAssetProvider(asset)]);
+
+        var report = await new SourceChangeImpactService(db, new SnapshotProvider([before, after]), catalog).AnalyzeAsync(Request(before, after), default);
+
+        var impact = report!.TechnicalImpacts.Should().ContainSingle(i => i.EntityType == "Test data asset").Subject;
+        impact.DisplayName.Should().Be("report-valid");
+        impact.Level.Should().Be(TechnicalImpactLevel.Potential);
+        impact.Reason.Should().StartWith("ReviewRequired").And.Contain("not modified");
+        catalog.View().Assets.Single().Approval.Should().Be(BirkNext.TestData.TestDataApproval.Approved, "impact never changes an asset's approval");
+    }
+
+    private sealed class OneAssetProvider(BirkNext.Api.Services.TestData.TestDataAsset asset) : BirkNext.Api.Services.TestData.ITestDataProvider
+    {
+        public string Id => "fixture";
+        public string Label => "Fixture";
+        public string Description => "Test fixture";
+        public IReadOnlyList<BirkNext.Api.Services.TestData.TestDataAsset> Assets() => [asset];
+    }
+
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
     private static SourceChangeImpactRequest Request(IqrSourceSnapshot before, IqrSourceSnapshot after) => new("dev", "generic", before.Id, after.Id);
 

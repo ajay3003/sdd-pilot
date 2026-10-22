@@ -283,6 +283,9 @@
                             Note="Integration and contract checks the pipelines run before or after deployments. Delivery readiness only — it never verifies a runtime integration." />
                     }
                 </ReviewDisclosure>
+                <ReviewDisclosure Text="Test data readiness" CollapseText="Hide test data readiness" Hint="Shared Test Data catalog · messages, payloads and expected results; never values" TestId="iqr-test-data" Class="iqr-detail-disclosure" @bind-Expanded="_testDataExpanded">
+                    @if (_testDataExpanded) { <BirkNext.Web.Components.TestDataReadinessSummary Kinds="@([BirkNext.TestData.TestDataKind.Message, BirkNext.TestData.TestDataKind.Structured, BirkNext.TestData.TestDataKind.File, BirkNext.TestData.TestDataKind.ExpectedResult])" /> }
+                </ReviewDisclosure>
                 <ReviewDisclosure Text="Advanced" CollapseText="Hide advanced" Hint="systems, transports, provisioning, application messaging" TestId="iqr-setup-advanced" Class="iqr-detail-disclosure">
                     <section class="iqr-group" aria-labelledby="iqr-group-areas-heading" data-testid="iqr-group-areas">
                         <h3 class="iqr-group-heading" id="iqr-group-areas-heading">Integration areas</h3>
@@ -754,7 +757,7 @@
 </div>
 
 @code {
-    private bool _deliveryExpanded;
+    private bool _deliveryExpanded, _testDataExpanded;
     private static string ObservedLabel(BirkNext.AzureEnvironment.ObservedLookupState state) => state switch
     {
         BirkNext.AzureEnvironment.ObservedLookupState.Observed => "Observed",

@@ -11,12 +11,20 @@ public interface ITestDataApiService
 {
     Task<(TestDataCatalogView? Catalog, string? Error)> CatalogAsync(CancellationToken ct = default);
     Task<(TestDataAssetDetail? Detail, string? Error)> AssetAsync(string id, CancellationToken ct = default);
+    /// <summary>Structural candidates of one exact snapshot (GET api/test-data/candidates); never approved by listing.</summary>
+    Task<IReadOnlyList<TestDataCandidate>?> CandidatesAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TestDataCandidate>?>(null);
 }
 
 public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 {
     public const string Title = "Test Data";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<IReadOnlyList<TestDataCandidate>?> CandidatesAsync(Guid snapshotId, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<TestDataCandidate>>($"api/test-data/candidates?snapshotId={snapshotId}", Json, ct); }
+        catch (HttpRequestException) { return null; }
+    }
 
     /// <summary>
     /// A client for the one configured backend address (the same <c>BackendUrl</c> rule every API client uses), for a page that is not wired
