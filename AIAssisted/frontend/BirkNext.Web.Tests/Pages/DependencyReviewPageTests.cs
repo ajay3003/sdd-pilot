@@ -152,34 +152,63 @@ public sealed class DependencyReviewPageTests : BunitContext
             cut.Find("[data-testid='dr-override'] button").Click();
             cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromText("{}", "renovate.json"));
         }
-        cut.Find("[data-testid='dr-run']").Click();
+        cut.Find("[data-testid='dr-next-action']").GetAttribute("data-action").Should().Be(nameof(DependencyReviewNextAction.RunSourceReview));
+        cut.Find("[data-testid='dr-next-action']").Click();
         cut.WaitForElement("[data-testid='dr-summary']");
         return cut;
     }
 
+    /// <summary>Opens one section of the stored source review (Summary, Findings, Dependency mapping …).</summary>
+    private static void Open(IRenderedComponent<DependencyReview> cut, string section) =>
+        cut.FindAll("[data-testid='dr-section']").Single(s => s.GetAttribute("data-section") == section).Click();
+
     [Fact]
-    public void ResultIsSummaryFirst_WithAttentionManagersAndUsageBeforePolicy()
+    public void ResultSectionsFollowTheDecisionOrder_AndSummaryComesFirst()
     {
         var cut = RunReview();
-        var markup = cut.Markup;
-        int At(string id) => markup.IndexOf($"data-testid=\"{id}\"", StringComparison.Ordinal);
 
-        new[] { At("dr-summary"), At("dr-attention"), At("dr-result-scope"), At("dr-managers"), At("dr-usage"), At("dr-policy"), At("dr-inventory"), At("dr-technical"), At("dr-previous") }
-            .Where(i => i >= 0).Should().BeInAscendingOrder("summary, attention, scope, managers, usage, policy, inventory, technical, history");
-        At("dr-attention").Should().BeLessThan(At("dr-config"), "attention comes before technical configuration");
-        At("dr-managers").Should().BeLessThan(At("dr-matrix"), "managers come before policy simulation");
+        cut.FindAll("[data-testid='dr-section']").Select(s => s.GetAttribute("data-section"))
+            .Should().Equal("summary", "findings", "mapping", "simulation", "usage", "versions", "policy", "scope", "technical", "history");
+        cut.Find("[data-testid='dr-section'][aria-current='true']").GetAttribute("data-section").Should().Be("summary");
+        cut.Find("[data-testid='dr-result-identity']").TextContent.Should().Contain("Evidence: Source snapshot");
+        cut.Find("[data-testid='dr-summary-outside']").TextContent.Should().Contain("Registry/advisory status").And.Contain("Not assessed in source review")
+            .And.Contain("Runtime Renovate execution").And.Contain("Deployed comparison");
+        cut.FindAll("[data-testid='dr-matrix']").Should().BeEmpty("simulation scenarios are their own section, not part of the summary");
     }
 
     [Fact]
-    public void TechnicalSectionsStartCollapsed_AndTheUsageSectionIsVisible()
+    public void ReadyStateIsCompact_WithOnePrimaryRunAction()
+    {
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
+        cut.Find("[data-testid='dr-related-include']").Click();
+
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready to run");
+        cut.Find("[data-testid='dr-ready-summary']").TextContent.Should().Contain("M2LB + 1 related source")
+            .And.Contain("Registry, advisory and license checks require inventory evidence");
+        cut.FindAll("[data-testid='dr-next']").Should().BeEmpty("the ready state is a compact summary, not a blocker panel");
+        cut.Find("[data-testid='dr-ready-details']").HasAttribute("open").Should().BeFalse("readiness details are collapsed when ready");
+        cut.FindAll(".btn-primary").Should().ContainSingle("one primary run action, not a second run panel")
+            .Which.TextContent.Should().Be("Run source dependency analysis");
+    }
+
+    [Fact]
+    public void TechnicalSectionsStartCollapsed_AndTheUsageSectionIsPrimary()
     {
         _api.Result = Scoped();
         var cut = RunReview();
 
-        foreach (var id in new[] { "dr-scenarios", "dr-deps", "dr-rules", "dr-technical", "dr-config", "dr-single-disclosure", "dr-scope-details" })
+        Open(cut, "simulation");
+        cut.Find("[data-testid='dr-single-disclosure-body']").HasAttribute("hidden").Should().BeTrue("custom simulation is advanced");
+        Open(cut, "policy");
+        foreach (var id in new[] { "dr-config", "dr-rules" })
             cut.Find($"[data-testid='{id}-body']").HasAttribute("hidden").Should().BeTrue($"{id} is collapsed by default");
+        Open(cut, "scope");
+        cut.Find("[data-testid='dr-scope-details-body']").HasAttribute("hidden").Should().BeTrue();
+        Open(cut, "technical");
+        cut.Find("[data-testid='dr-deps-body']").HasAttribute("hidden").Should().BeTrue();
+        Open(cut, "usage");
         cut.Find("[data-testid='dr-usage']").Closest("[hidden]").Should().BeNull("dependency usage is a primary section");
-        cut.Find("[data-testid='dr-ready-details']").HasAttribute("open").Should().BeFalse("readiness folds away once a result exists");
     }
 
     [Fact]
@@ -188,21 +217,29 @@ public sealed class DependencyReviewPageTests : BunitContext
         _api.Result = Scoped();
         var cut = RunReview();
 
+        Open(cut, "scope");
         cut.Find("[data-testid='dr-outside-scope']").TextContent.Should().Be("Unknown");
-        cut.Find("[data-testid='dr-usage']").TextContent.Should().Contain(DependencyUsagePresentation.OutsideScope).And.Contain("Transitive package usage: not assessed");
+        cut.Find("[data-testid='dr-scope-immutable']").TextContent.Should().Contain("Newer snapshots never change this stored result");
+        Open(cut, "usage");
+        cut.Find("[data-testid='dr-usage']").TextContent.Should().Contain(DependencyUsagePresentation.OutsideScope).And.Contain("Transitive package usage: not assessed")
+            .And.Contain("A central version declaration alone is not usage");
         cut.Markup.Should().NotContain("Unused");
-        cut.Find("[data-testid='dr-policy']").TextContent.Should().Contain("not evidence that these updates exist")
-            .And.Contain("does not mean known vulnerabilities exist").And.Contain("does not prove Renovate ran successfully");
+        Open(cut, "policy");
+        cut.Find("[data-testid='dr-policy']").TextContent.Should().Contain("does not mean known vulnerabilities exist").And.Contain("runtime execution is not verified");
+        Open(cut, "simulation");
+        cut.Find("[data-testid='dr-policy-simulation']").TextContent.Should().Contain("not a registry result").And.Contain("They do not query registries");
     }
 
     [Fact]
-    public void RunIsDisabledUntilASourceSnapshotIsChosen()
+    public void RunIsNotOfferedUntilASourceSnapshotIsChosen()
     {
         var cut = Render<DependencyReview>();
 
-        cut.Find("[data-testid='dr-run']").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid='dr-next-action']").GetAttribute("data-action").Should().NotBe(nameof(DependencyReviewNextAction.RunSourceReview));
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready");
         cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
-        cut.Find("[data-testid='dr-run']").HasAttribute("disabled").Should().BeFalse();
+        cut.Find("[data-testid='dr-next-action']").GetAttribute("data-action").Should().Be(nameof(DependencyReviewNextAction.RunSourceReview));
+        cut.Find("[data-testid='dr-next-action']").HasAttribute("disabled").Should().BeFalse();
         cut.Find("[data-testid='dr-primary-summary']").TextContent.Should().Contain("M2LB").And.Contain("c850a1b2…");
         cut.FindAll("[data-testid='dr-summary']").Should().BeEmpty();
     }
@@ -213,14 +250,17 @@ public sealed class DependencyReviewPageTests : BunitContext
         var cut = RunReview();
 
         (_api.LastSourceRequest!.PrimarySnapshotId, _api.LastSourceRequest.RelatedSnapshotIds.Single()).Should().Be((SourceScopeFixture.App.SnapshotId, SourceScopeFixture.Common.SnapshotId));
+        Open(cut, "policy");
         var tabs = cut.FindAll("[data-testid='dr-repo-tab']");
         tabs.Select(t => t.GetAttribute("data-repository")).Should().Equal("M2LB", "M2LB.Common");
         tabs[1].TextContent.Should().Contain("Missing");
         tabs[1].Click();
-        cut.Find("[data-testid='dr-repo']").GetAttribute("data-repository").Should().Be("M2LB.Common");
         cut.Find("[data-testid='dr-coverage']").TextContent.Should().Be("Missing");
+        cut.Find("[data-testid='dr-config'] button").Click();
         cut.Find("[data-testid='dr-no-config']").TextContent.Should().Contain("No Renovate configuration");
+        Open(cut, "simulation");
         cut.FindAll("[data-testid='dr-matrix']").Should().BeEmpty();
+        cut.Find("[data-testid='dr-sim-none']").TextContent.Should().Contain("No scenarios");
     }
 
     [Fact]
@@ -232,26 +272,34 @@ public sealed class DependencyReviewPageTests : BunitContext
     }
 
     [Fact]
-    public void FindingsShowNeedsReviewFirst()
+    public void FindingsSeparateNeedsReviewFromCoverageLimitations()
     {
         var cut = RunReview();
 
-        var findings = cut.FindAll("[data-testid='dr-finding']");
-        findings[0].GetAttribute("data-rule").Should().Be("rule-scope-inconsistent");
-        findings[0].TextContent.Should().Contain("Needs review");
-        // The detail is shown once per rule group (every instance says the same), with the instances behind "View evidence".
+        Open(cut, "findings");
+        var groups = cut.FindAll("[data-testid='dr-finding-group']");
+        groups.Select(g => g.GetAttribute("data-rule")).Should().Equal("rule-scope-inconsistent", "renovate-missing");
+        groups[0].TextContent.Should().Contain("Needs review").And.Contain("Review rule matchers").And.Contain("1 repository");
+        groups[0].QuerySelector("button")!.Click();
         cut.FindAll("[data-testid='dr-finding-group']")[0].TextContent.Should().Contain("CdcReplay").And.Contain("Aspire");
+        var limitations = cut.Find("[data-testid='dr-coverage-limitations']");
+        limitations.QuerySelectorAll("[data-testid='dr-limitation']").Select(l => l.GetAttribute("data-rule")).Should().Contain(["preset-unresolved", "runtime-not-assessed"]);
+        cut.Find("[data-testid='dr-attention']").TextContent.Should().NotContain("Presets not expanded", "a limitation is never a finding");
+        Open(cut, "technical");
         cut.Find("[data-testid='dr-drift']").TextContent.Should().Contain("added CdcReplay");
     }
 
     [Fact]
-    public void SimulationUsesSyntheticCandidateWordingOnly()
+    public void SimulationUsesScenarioVersionWording_GroupedByPackage()
     {
         var cut = RunReview();
 
-        var matrix = cut.Find("[data-testid='dr-matrix']");
-        matrix.QuerySelectorAll("th").Select(h => h.TextContent).Should().Contain(DependencyLabels.SyntheticCandidate);
-        cut.Find("[data-testid='dr-repo']").TextContent.Should().NotContainAny("Latest", "latest version", "Available version", "Published");
+        Open(cut, "simulation");
+        cut.FindAll("[data-testid='dr-sim-group']").Select(g => g.GetAttribute("data-package")).Should().Equal("Aspire.Hosting", "Compose", "Polly", "Serilog");
+        cut.Find("[data-testid='dr-sim-group'][data-package='Aspire.Hosting']").QuerySelectorAll("[data-testid='dr-sim']").Should().HaveCount(2);
+        cut.Find("[data-testid='dr-matrix']").QuerySelectorAll("th").Select(h => h.TextContent).Should().Contain(DependencySourceResultPresentation.ScenarioVersion);
+        cut.Find("[data-testid='dr-sim-summary']").TextContent.Should().Contain("Scenarios generated5").And.Contain("Not assessable1");
+        cut.Find("[data-testid='dr-policy-simulation']").TextContent.Should().NotContainAny("Latest", "latest version", "Available version", "Published");
     }
 
     [Fact]
@@ -259,6 +307,7 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         var cut = RunReview();
 
+        Open(cut, "simulation");
         var results = cut.FindAll("[data-testid='dr-sim']").Select(r => r.TextContent).ToList();
         results.Should().Contain(r => r.Contains("Deferred by schedule"));
         results.Should().Contain(r => r.Contains("Ignored by Renovate") && !r.Contains("Up to date"));
@@ -267,23 +316,29 @@ public sealed class DependencyReviewPageTests : BunitContext
     }
 
     [Fact]
-    public void ResultFilterNarrowsTheMatrix()
+    public void ResultFilterNarrowsTheScenarios()
     {
         var cut = RunReview();
 
+        Open(cut, "simulation");
         cut.FindAll("[data-testid='dr-filter']").Single(b => b.GetAttribute("data-result") == "Blocked").Click();
 
         cut.FindAll("[data-testid='dr-sim']").Should().ContainSingle().Which.GetAttribute("data-result").Should().Be("Blocked");
         cut.Find("[data-testid='dr-filter-all']").Click();
         cut.FindAll("[data-testid='dr-sim']").Should().HaveCount(5);
+        cut.Find("[data-testid='dr-filter-type']").Change(nameof(DependencyUpdateType.Major));
+        cut.FindAll("[data-testid='dr-sim']").Should().HaveCount(2);
     }
 
     [Fact]
-    public void WhyThisPolicyExplainsMatchedRulesAndLimitations()
+    public void WhyTheseResultsExplainsMatchedRulesAndLimitations_OncePerPackage()
     {
         var cut = RunReview();
 
-        cut.FindAll("[data-testid='dr-sim']")[1].QuerySelector("button")!.Click();
+        Open(cut, "simulation");
+        var aspire = cut.Find("[data-testid='dr-sim-group'][data-package='Aspire.Hosting']");
+        aspire.QuerySelectorAll("button").Where(b => b.TextContent.Contains("Why these results")).Should().ContainSingle("one explanation per package, not per scenario");
+        aspire.QuerySelectorAll("button").Single(b => b.TextContent.Contains("Why these results")).Click();
 
         var explanation = cut.Find("[data-testid='dr-explanation']");
         explanation.TextContent.Should().Contain("Rule #2").And.Contain("matchFileNames [Aspire/**]").And.Contain("automerge from repository config");
@@ -295,6 +350,7 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         var cut = RunReview();
 
+        Open(cut, "simulation");
         cut.Find("[data-testid='dr-single-package']").Change("0");
         cut.Find("[data-testid='dr-single-current']").GetAttribute("value").Should().Be("13.4.6");
         cut.Find("[data-testid='dr-single-candidate']").GetAttribute("value").Should().Be("14.0.0");
@@ -303,7 +359,7 @@ public sealed class DependencyReviewPageTests : BunitContext
         _api.LastSimulation!.RunId.Should().Be(_api.Result!.RunId);
         _api.LastSimulation.File.Should().Be("Aspire/Aspire.csproj");
         cut.Find("[data-testid='dr-single-outcome']").TextContent.Should().Be("Blocked");
-        cut.Find("[data-testid='dr-single-result']").TextContent.Should().Contain(DependencyLabels.SyntheticCandidate);
+        cut.Find("[data-testid='dr-single-result']").TextContent.Should().Contain(DependencySourceResultPresentation.ScenarioVersion).And.Contain("synthetic test value");
     }
 
     [Fact]
@@ -312,6 +368,7 @@ public sealed class DependencyReviewPageTests : BunitContext
         _api.SimulationError = "Package, current version and synthetic candidate are required.";
         var cut = RunReview();
 
+        Open(cut, "simulation");
         cut.Find("[data-testid='dr-single-run']").Click();
 
         cut.Find("[data-testid='dr-single-error']").TextContent.Should().Contain("required");
@@ -322,21 +379,25 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         var cut = RunReview();
 
+        Open(cut, "policy");
         cut.Find("[data-testid='dr-security']").TextContent.Should().Contain("Not configured").And.Contain("no vulnerability claim");
         cut.Find("[data-testid='dr-runtime']").TextContent.Should().Contain("Not assessed");
+        cut.Find("[data-testid='dr-policy-summary']").TextContent.Should().Contain("1 not expanded").And.Contain("Partial");
+        Open(cut, "summary");
         cut.Find("[data-testid='dr-category'][data-category='Runtime automation']").TextContent.Should().Contain("Not assessed");
     }
 
     [Fact]
-    public void HistoryOpensAStoredRun()
+    public void HistoryOpensAStoredRunUnderItsEvidenceMode()
     {
         _api.History.Add(new DependencyReviewRunSummary(_api.Result!.RunId, _api.Result.CompletedAt, "stored", 2, 3));
         var cut = Render<DependencyReview>();
 
         cut.Find("[data-testid='dr-history']").Change(_api.Result.RunId.ToString());
 
-        cut.Find("[data-testid='dr-headline']").TextContent.Should().Contain("2 repositories reviewed").And.Contain("Renovate missing for M2LB.Common");
-        cut.Find("[data-testid='dr-status']").TextContent.Should().Contain("stored review");
+        cut.Find("[data-testid='dr-headline']").TextContent.Should().Contain("2 repositories reviewed");
+        cut.Find("[data-testid='dr-mode'][aria-pressed='true']").GetAttribute("data-mode").Should().Be(nameof(DependencyReviewMode.Source));
+        cut.Find("[data-testid='dr-status']").TextContent.Should().Contain("stored source review").And.Contain("evidence: Source snapshot");
     }
 
     [Fact]

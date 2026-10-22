@@ -56,3 +56,38 @@ public sealed record CrossSourceObservation(string Kind, string Manager, string 
 
 /// <summary>A selected source references a package that another selected source produces.</summary>
 public sealed record SourceRelationship(string FromRepository, string PackageName, List<string> ReferencedValues, int Projects, string ToRepository, string? PublishedVersion);
+
+// ── SBOM candidates in source snapshots ───────────────────────────────────────────────────────────────────────────────────────
+
+/// <summary>A file in a source snapshot whose name marks a supported SBOM or lock file. Found by path only: snapshots keep paths, not file
+/// content, so a candidate is validated when the file itself is uploaded — never assumed valid and never imported automatically.</summary>
+public sealed record SbomCandidate(Guid SnapshotId, string Repository, string Path, SbomFormat Format, DateTimeOffset AnalyzedAt);
+
+/// <summary>One snapshot that was checked for SBOM candidates, and whether its file inventory was complete.</summary>
+public sealed record SbomCheckedSnapshot(Guid SnapshotId, string Repository, bool FileInventoryComplete, int Files);
+
+public sealed record SbomCandidateScan
+{
+    public List<SbomCheckedSnapshot> Checked { get; init; } = [];
+    public List<SbomCandidate> Candidates { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
+}
+
+/// <summary>
+/// Which file names are supported SBOM inputs. Source dependency declarations (.csproj, Directory.Packages.props, package.json, renovate.json)
+/// are never SBOMs — they belong to the Source snapshot review.
+/// </summary>
+public static class SbomCandidates
+{
+    public static SbomFormat? Classify(string path)
+    {
+        var name = System.IO.Path.GetFileName(path.Replace('\\', '/')).ToLowerInvariant();
+        if (name == "packages.lock.json") return SbomFormat.NuGetLockFile;
+        if (name.EndsWith(".spdx.json", StringComparison.Ordinal) || name is "sbom.spdx.json" or "spdx.json") return SbomFormat.SpdxJson;
+        if (name.EndsWith(".cdx.json", StringComparison.Ordinal) || name is "bom.json" or "sbom.json" || name.EndsWith(".bom.json", StringComparison.Ordinal)
+            || (name.Contains("cyclonedx", StringComparison.Ordinal) && name.EndsWith(".json", StringComparison.Ordinal))) return SbomFormat.CycloneDxJson;
+        if (name.EndsWith(".cdx.xml", StringComparison.Ordinal) || name is "bom.xml" or "sbom.xml" || name.EndsWith(".bom.xml", StringComparison.Ordinal)
+            || (name.Contains("cyclonedx", StringComparison.Ordinal) && name.EndsWith(".xml", StringComparison.Ordinal))) return SbomFormat.CycloneDxXml;
+        return null;
+    }
+}

@@ -418,6 +418,9 @@ public sealed record DependencyHealthRequest
     public Guid? PolicyRunId { get; init; }
     public string? PolicyRepository { get; init; }
     public string? Label { get; init; }
+    /// <summary>The evidence mode that produced this run (<see cref="DependencyEvidenceModes"/>), stored with the result so a run never appears to
+    /// belong to another mode. Null in runs recorded before it existed; <see cref="DependencyEvidenceModes.Of"/> derives it for them.</summary>
+    public string? EvidenceMode { get; init; }
 }
 
 public sealed record DependencyHealthRun
@@ -443,7 +446,34 @@ public sealed record DependencyHealthRun
     public List<string> Limitations { get; init; } = [];
 }
 
-public sealed record DependencyHealthRunSummary(Guid RunId, DateTimeOffset CompletedAt, string Label, string InventoryName, int Dependencies, int Findings, Guid? RefreshOf);
+public sealed record DependencyHealthRunSummary(Guid RunId, DateTimeOffset CompletedAt, string Label, string InventoryName, int Dependencies, int Findings, Guid? RefreshOf,
+    string? EvidenceMode = null);
+
+/// <summary>The evidence modes a dependency-health run can come from. A source snapshot review is a different review type (Renovate policy).</summary>
+public static class DependencyEvidenceModes
+{
+    public const string Inventory = "Inventory";
+    public const string Sbom = "Sbom";
+    public const string Deployed = "Deployed";
+
+    /// <summary>The stored mode, or — for runs recorded before the mode was stored — the mode its evidence implies (deployed evidence →
+    /// Deployed, an SBOM or lock-file inventory → SBOM, anything else → Existing inventory).</summary>
+    public static string Of(DependencyHealthRun run) =>
+        run.Request.EvidenceMode is { Length: > 0 } mode ? mode
+        : run.Request.DeployedInventoryId is not null ? Deployed
+        : run.Inventory.SourceType is InventorySourceType.Sbom or InventorySourceType.LockFile ? Sbom
+        : Inventory;
+
+    public static string Label(string? mode) => mode switch
+    {
+        Sbom => "SBOM",
+        Deployed => "Deployed evidence",
+        _ => "Existing inventory",
+    };
+
+    /// <summary>The review type a mode produces: health for inventory and SBOM, a deployment comparison for deployed evidence.</summary>
+    public static string ReviewType(string? mode) => mode == Deployed ? "Deployment comparison" : "Dependency health review";
+}
 
 public static class DependencyHealthLabels
 {

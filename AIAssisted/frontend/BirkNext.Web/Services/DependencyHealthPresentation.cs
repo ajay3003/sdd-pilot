@@ -5,7 +5,17 @@ namespace BirkNext.Web.Services;
 /// <summary>Dependency table filters. "Issues" = what a test lead should look at; being behind alone is not an issue.</summary>
 public enum HealthFilter { All, Issues, Security, Outdated, DeprecatedOrUnlisted, LicenseUnknown, RegistryUnavailable }
 
-public sealed record HealthTile(string Label, string Value, string Detail, string Tone, string TestId);
+/// <summary>The sections of a stored health/comparison result. Each evidence mode shows only its own (no false uniformity).</summary>
+public enum HealthResultSection { Summary, Findings, Differences, Dependencies, Evidence, Automation, Target, History }
+
+/// <summary>How much of the inventory one kind of evidence covers ("Registry 31/32"), with what the rest is.</summary>
+public sealed record EvidenceCoverage(string Check, int Covered, int Total, string Detail, string TestId)
+{
+    public string Value => Total == 0 ? "—" : $"{Covered}/{Total}";
+}
+
+/// <summary>Observations by meaning: review-worthy findings, plain observations (behind, deprecated), and missing evidence/limitations.</summary>
+public sealed record HealthObservationGroups(IReadOnlyList<HealthObservation> NeedsReview, IReadOnlyList<HealthObservation> Observed, IReadOnlyList<HealthObservation> MissingEvidence);
 
 /// <summary>
 /// Pure projection of a dependency health run for the page and export. Wording follows the evidence: "Latest published stable" (never
@@ -159,27 +169,74 @@ public static class DependencyHealthPresentation
         _ => $"{days / 365} years ({days} days)",
     };
 
-    public static IReadOnlyList<HealthTile> Tiles(DependencyHealthRun run)
+    /// <summary>Mode-specific navigation: Existing inventory, SBOM (no automation unless observed) and Deployed evidence (differences + target).</summary>
+    public static IReadOnlyList<HealthResultSection> Sections(string? mode, DependencyHealthRun run) => mode switch
     {
-        var s = run.Summary;
-        ReviewCategory? C(string name) => run.Categories.FirstOrDefault(c => c.Name == name);
-        var updates = s.PatchBehind + s.MinorBehind + s.MajorBehind;
-        var licensePct = s.Dependencies == 0 ? 0 : 100 * s.LicenseDetected / s.Dependencies;
+        DependencyEvidenceModes.Sbom => run.Automation.State == AutomationState.Observed
+            ? [HealthResultSection.Summary, HealthResultSection.Findings, HealthResultSection.Dependencies, HealthResultSection.Evidence, HealthResultSection.Automation, HealthResultSection.History]
+            : [HealthResultSection.Summary, HealthResultSection.Findings, HealthResultSection.Dependencies, HealthResultSection.Evidence, HealthResultSection.History],
+        DependencyEvidenceModes.Deployed => [HealthResultSection.Summary, HealthResultSection.Differences, HealthResultSection.Dependencies, HealthResultSection.Evidence, HealthResultSection.Target, HealthResultSection.History],
+        _ => [HealthResultSection.Summary, HealthResultSection.Findings, HealthResultSection.Dependencies, HealthResultSection.Evidence, HealthResultSection.Automation, HealthResultSection.History],
+    };
+
+    /// <summary>Needs review = a matched policy/advisory finding or an evidence conflict; Observed = facts such as being behind or deprecated;
+    /// Missing evidence = what could not be retrieved or assessed. Never all equivalent findings.</summary>
+    public static HealthObservationGroups Groups(DependencyHealthRun run)
+    {
+        var ordered = OrderedObservations(run);
+        return new([.. ordered.Where(o => o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict)],
+            [.. ordered.Where(o => o.Kind == ObservationKind.Observed)],
+            [.. ordered.Where(o => o.Kind is ObservationKind.MissingEvidence or ObservationKind.Limitation)]);
+    }
+
+    /// <summary>Evidence coverage per check, counted over the reviewed package@version items.</summary>
+    public static IReadOnlyList<EvidenceCoverage> Coverage(DependencyHealthRun run)
+    {
+        var items = run.Items;
+        var total = items.Count;
+        var registry = items.Count(i => i.Registry.State is RegistryState.Observed or RegistryState.Unlisted or RegistryState.VersionNotFound or RegistryState.PackageNotFound);
+        var registryUnavailable = items.Count(i => i.Registry.State is RegistryState.RegistryUnavailable or RegistryState.Timeout or RegistryState.Unauthorized or RegistryState.RateLimited or RegistryState.ProviderError);
+        var advisoryUsable = items.Count(i => i.Security.State is AdvisoryState.Affected or AdvisoryState.NotAffectedByMatchedAdvisory or AdvisoryState.NoMatchedAdvisoryObserved);
+        var advisoryUnavailable = items.Count(i => i.Security.State == AdvisoryState.AdvisorySourceUnavailable);
+        var license = items.Count(i => i.License.State is LicenseState.Detected or LicenseState.Multiple);
+        var version = items.Count(i => i.VersionStatus is VersionStatus.Current or VersionStatus.NewerThanLatestStable or VersionStatus.PatchBehind or VersionStatus.MinorBehind or VersionStatus.MajorBehind);
+        var provenance = items.Count(i => i.Locations.Count > 0 || i.Dependency.Location is not null);
         return
         [
-            new("Inventory", run.Freshness.ToString(), $"{run.Inventory.Name} · captured {Utc(run.Inventory.CapturedAt)}", Tone(run.Freshness), "dh-tile-inventory"),
-            new("Dependencies", s.Dependencies.ToString(), $"{(s.Declarations > s.Dependencies ? $"{s.Declarations} declarations · " : "")}{DependencyHealthLabels.Source(run.Inventory.SourceType)} · {DependencyHealthLabels.Stage(run.Inventory.Stage)}", "muted", "dh-tile-dependencies"),
-            new("Version health", s.RegistryObserved + s.RegistryNotFound + s.RegistryUnavailable == 0 ? "Not assessed" : $"{updates} updates observed",
-                $"{s.PatchBehind} patch · {s.MinorBehind} minor · {s.MajorBehind} major behind · registry {s.RegistryObserved} observed, {s.RegistryNotFound} not found, {s.RegistryUnavailable} unavailable", Tone(C("Version health")?.State ?? ReviewCategoryState.NotAssessed), "dh-tile-version"),
-            new("Security advisories", C("Security advisories")?.State == ReviewCategoryState.NotAssessed ? "Not assessed" : $"{s.AffectedDependencies} affected",
-                $"{s.AdvisorySourceUnavailable} advisory source unavailable · {s.NoMatchedAdvisory} no matched advisory observed", s.AffectedDependencies > 0 ? "danger" : Tone(C("Security advisories")?.State ?? ReviewCategoryState.NotAssessed), "dh-tile-security"),
-            new("Deprecated / unlisted", C("Deprecated / unlisted")?.State == ReviewCategoryState.NotAssessed ? "Not assessed" : $"{s.DeprecatedOrUnlisted} observed", "Registry metadata, in NuGet's terms", "muted", "dh-tile-deprecated"),
-            new("License metadata", $"{licensePct}% available", $"{s.LicenseDetected} detected · {s.LicenseUnknown} unknown or not declared", "muted", "dh-tile-license"),
-            new("Renovate policy", CategoryLabel(C("Renovate policy")?.State ?? ReviewCategoryState.NotAssessed), C("Renovate policy")?.Detail ?? "", Tone(C("Renovate policy")?.State ?? ReviewCategoryState.NotAssessed), "dh-tile-policy"),
-            new("Automation", DependencyHealthLabels.Automation(run.Automation.State), run.Automation.Provider, Tone(run.Automation.State), "dh-tile-automation"),
-            new("Deployment comparison", CategoryLabel(C("Deployment comparison")?.State ?? ReviewCategoryState.NotAssessed), C("Deployment comparison")?.Detail ?? "", Tone(C("Deployment comparison")?.State ?? ReviewCategoryState.NotAssessed), "dh-tile-deployment"),
+            new("Registry", registry, total, $"{registryUnavailable} unavailable · {total - registry - registryUnavailable} not assessed", "dh-coverage-registry"),
+            new("Advisory", advisoryUsable, total, $"{advisoryUnavailable} advisory source unavailable · {total - advisoryUsable - advisoryUnavailable} not assessed or not comparable", "dh-coverage-advisory"),
+            new("License", license, total, $"{total - license} unknown or not declared — missing evidence, not non-compliance", "dh-coverage-license"),
+            new("Version metadata", version, total, $"{total - version} not comparable, unavailable or not assessed", "dh-coverage-version"),
+            new("Source provenance", provenance, total, "Items with an inventory location (file, SBOM component or artifact)", "dh-coverage-provenance"),
         ];
     }
+
+    /// <summary>"0 matched advisories" plus what the rest is — never "0 affected" as if every dependency was cleared.</summary>
+    public static string SecurityLine(DependencyHealthRun run)
+    {
+        var s = run.Summary;
+        if (run.Categories.FirstOrDefault(c => c.Name == "Security advisories")?.State == ReviewCategoryState.NotAssessed) return "Security advisories not assessed";
+        var parts = new List<string> { $"{s.AffectedDependencies} matched advisor{(s.AffectedDependencies == 1 ? "y" : "ies")}" };
+        if (s.NoMatchedAdvisory > 0) parts.Add($"{s.NoMatchedAdvisory} dependenc{(s.NoMatchedAdvisory == 1 ? "y" : "ies")} had no matched advisory evidence");
+        if (s.AdvisorySourceUnavailable > 0) parts.Add($"advisory source unavailable for {s.AdvisorySourceUnavailable}");
+        if (s.SecurityNotAssessed > 0) parts.Add($"{s.SecurityNotAssessed} not assessed");
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>Where the reviewed inventory came from, in the evidence's own terms ("SBOM · Manifest dependency", never "Repository source" for an SBOM).</summary>
+    public static string InventorySource(DependencyInventorySnapshot inventory) => inventory.SourceType switch
+    {
+        InventorySourceType.Sbom => $"SBOM · manifest dependencies{(inventory.Format is { } f ? $" · {DependencyHealthLabels.Format(f)}" : "")}",
+        InventorySourceType.LockFile => "Lock file · resolved dependencies",
+        InventorySourceType.Deployment => "Deployed evidence · deployed artifacts",
+        _ => inventory.SourceRunId is not null ? "Previous source review · declared dependencies" : "Repository source · declared dependencies",
+    };
+
+    public static string Title(HealthResultSection section, string? mode) => section switch
+    {
+        HealthResultSection.Dependencies when mode == DependencyEvidenceModes.Deployed => "Deployed artifacts",
+        _ => section.ToString(),
+    };
 
     public static string Headline(DependencyHealthRun run) =>
         $"Dependency health · {run.Summary.Dependencies} dependencies from {run.Inventory.Name} · {run.Summary.AffectedDependencies} affected by a matched advisory · "

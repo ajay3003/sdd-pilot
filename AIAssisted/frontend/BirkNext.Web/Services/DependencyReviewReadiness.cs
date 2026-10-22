@@ -6,7 +6,16 @@ namespace BirkNext.Web.Services;
 /// available to another (the health review).</summary>
 public enum DependencyReviewMode { None, Source, Inventory, Sbom, Deployed }
 
-public sealed record DependencyReviewModeCard(DependencyReviewMode Mode, string Title, string Summary, string Action, string BestFor);
+public sealed record DependencyReviewModeCard(DependencyReviewMode Mode, string Title, string Summary, string Action, string BestFor)
+{
+    /// <summary>The review type this evidence produces ("Source &amp; policy review", "Dependency health review" …).</summary>
+    public string Purpose { get; init; } = "";
+    public IReadOnlyList<string> CanAssess { get; init; } = [];
+    public IReadOnlyList<string> CannotAssess { get; init; } = [];
+}
+
+/// <summary>The compact Ready state: what will run, on what, and what is deliberately not part of this run.</summary>
+public sealed record DependencyReviewReadySummary(string Title, IReadOnlyList<(string Label, string Value)> Facts, string WillAssess, string? NotInThisRun);
 
 /// <summary>Readiness rows are grouped: what was chosen (inputs), what the run will check (analysis), what it will compare (comparison).</summary>
 public enum ReadinessGroup { Inputs, Analysis, Comparison }
@@ -41,6 +50,8 @@ public sealed record ReadinessInput
     public bool SourceSnapshotsAvailable { get; init; }
     /// <summary>The chosen primary snapshot, e.g. "M2LB · c850a1b2…".</summary>
     public string? PrimarySource { get; init; }
+    /// <summary>The primary snapshot's repository name for the compact ready summary ("M2LB.Common").</summary>
+    public string? PrimaryRepository { get; init; }
     public bool PrimaryHasEvidence { get; init; }
     public string? PrimaryEvidenceNote { get; init; }
     public int RelatedIncluded { get; init; }
@@ -52,8 +63,11 @@ public sealed record ReadinessInput
     public InventorySummary? Inventory { get; init; }
     public string? PendingSbom { get; init; }
     public bool SbomInvalid { get; init; }
-    /// <summary>The chosen SBOM was validated and stored as an inventory.</summary>
+    /// <summary>The chosen SBOM was validated and stored as an inventory (the inventory is then <see cref="Inventory"/> in SBOM mode).</summary>
     public bool SbomReviewed { get; init; }
+    /// <summary>Supported SBOM candidates found in the checked source snapshots (by file name); null until the snapshots were checked.</summary>
+    public int? SbomCandidates { get; init; }
+    public string? SbomFormat { get; init; }
     public InventorySummary? PolicyInventory { get; init; }
     public InventorySummary? Deployed { get; init; }
     public string? DeploymentTarget { get; init; }
@@ -69,11 +83,59 @@ public static class DependencyReviewReadiness
 {
     public static readonly IReadOnlyList<DependencyReviewModeCard> Modes =
     [
-        new(DependencyReviewMode.Source, "Source snapshot", "Use source already analyzed by Source Analysis. Declared dependencies + Renovate policy.", "Choose source snapshot", "repository/source review"),
-        new(DependencyReviewMode.Inventory, "Existing inventory", "Registry, security and license review without source upload", "Choose inventory", "registry/security/license analysis"),
-        new(DependencyReviewMode.Sbom, "Review SBOM", "Review CycloneDX / SPDX / packages.lock.json input", "Upload SBOM", "generated dependency manifests"),
-        new(DependencyReviewMode.Deployed, "Deployed evidence", "Compare known inventory with a selected Target Environment", "Choose target", "inventory vs environment comparison"),
+        new(DependencyReviewMode.Source, "Source snapshot", "Use source already analyzed by Source Analysis.", "Choose source snapshot", "repository/source review")
+        {
+            Purpose = "Source & policy review",
+            CanAssess = ["declared dependencies", "PackageReference/project usage", "Renovate configuration/policy", "source dependency mapping", "cross-source version differences"],
+            CannotAssess = ["registry freshness", "vulnerability/advisory state", "license registry metadata", "deployed inventory"],
+        },
+        new(DependencyReviewMode.Inventory, "Existing inventory", "Use a previously captured dependency inventory without uploading source.", "Choose inventory", "registry/security/license review")
+        {
+            Purpose = "Dependency health review",
+            CanAssess = ["latest published stable version", "registry metadata", "deprecated/unlisted status", "security advisories", "license metadata"],
+            CannotAssess = ["source usage mapping", "Renovate policy without a linked source review", "runtime loading", "deployment state without deployed evidence"],
+        },
+        new(DependencyReviewMode.Sbom, "Review SBOM", "Review CycloneDX, SPDX or packages.lock.json.", "Upload SBOM", "generated dependency manifests")
+        {
+            Purpose = "Manifest health review",
+            CanAssess = ["dependencies in the supplied manifest", "registry/version health", "advisories", "licenses"],
+            CannotAssess = ["source usage", "runtime loading", "deployment alignment", "source Renovate policy"],
+        },
+        new(DependencyReviewMode.Deployed, "Deployed evidence", "Compare a known dependency inventory with a selected Target Environment.", "Choose target", "inventory vs environment comparison")
+        {
+            Purpose = "Deployment comparison",
+            CanAssess = ["expected inventory vs deployed evidence", "environment differences where proven"],
+            CannotAssess = ["source policy review", "dependency-health evidence (unless also present)"],
+        },
     ];
+
+    /// <summary>The compact Ready state of the selected mode, or null when it is not ready.</summary>
+    public static DependencyReviewReadySummary? ReadySummary(ReadinessInput input)
+    {
+        if (!NextStep(input).Ready) return null;
+        return input.Mode switch
+        {
+            DependencyReviewMode.Source => new("Ready to run",
+                [("Source scope", (input.PrimaryRepository ?? input.PrimarySource ?? "") + (input.RelatedIncluded > 0 ? $" + {input.RelatedIncluded} related source{(input.RelatedIncluded == 1 ? "" : "s")}" : ""))],
+                "Declared dependencies, Renovate configuration and policy, dependency mapping, cross-source usage and version differences.",
+                "Registry, advisory and license checks require inventory evidence and are not part of this source-only run."),
+            DependencyReviewMode.Inventory when input.Inventory is { } inv => new("Ready to run dependency health review",
+                [("Inventory", inv.Name), ("Dependencies", inv.Dependencies.ToString()), ("Freshness", inv.Freshness.ToString())],
+                "Registry/version health, advisory evidence, license metadata and deprecation status.",
+                "Source usage mapping and Renovate policy are not part of an inventory review unless a linked source review is chosen."),
+            DependencyReviewMode.Sbom when input.Inventory is { } sbom => new("Ready to run SBOM dependency health review",
+                [("Evidence", "SBOM"), ("Format", input.SbomFormat ?? "Validated document"), ("Dependencies", sbom.Dependencies.ToString()), ("Validation", "Passed"), ("Inventory", "Derived from SBOM")],
+                "Registry/version health, advisory evidence, license metadata and deprecation status of the dependencies in the SBOM.",
+                "Source usage, Renovate policy and deployed state are not proven by an SBOM."),
+            DependencyReviewMode.Deployed when input.Inventory is { } known && input.Deployed is { } deployed => new("Ready to compare",
+                [("Known inventory", known.Name), ("Deployed evidence", deployed.Name)],
+                "Expected inventory vs deployed evidence, where the deployed evidence proves it.",
+                "Versions are compared only where the deployed evidence states them; absence is never assumed."),
+            _ => null,
+        };
+    }
+
+    public const string ReadinessMeaning = "Readiness shows whether the inputs required for the selected review mode are available. It is not a dependency-health result.";
 
     public static string ModeName(DependencyReviewMode mode) => Modes.FirstOrDefault(m => m.Mode == mode)?.Title ?? "Not selected";
 
@@ -157,13 +219,15 @@ public static class DependencyReviewReadiness
         DependencyReviewMode.Inventory => input.Inventory is { } inventory
             ? new(true, DependencyReviewNextAction.RunHealthReview, "Run dependency health review", $"Registry, security advisory and license checks run on {inventory.Name}.", "info")
             : new(false, DependencyReviewNextAction.ChooseInventory, "Choose inventory", "Registry, security advisory and license checks need a stored inventory."),
+        // SBOM lifecycle: no SBOM → uploaded (validate) → invalid (no inventory) | valid (inventory derived) → health review.
         DependencyReviewMode.Sbom => input.PendingSbom is null
-            ? new(false, DependencyReviewNextAction.UploadSbom, "Upload SBOM", "Review SBOM needs a CycloneDX, SPDX or packages.lock.json document.")
+            ? new(false, DependencyReviewNextAction.UploadSbom, "Upload SBOM", (input.SbomCandidates == 0 ? "No supported SBOM was detected in the checked source snapshots. " : "")
+                + "Review SBOM needs a CycloneDX, SPDX or packages.lock.json document.")
             : input.SbomInvalid
                 ? new(false, DependencyReviewNextAction.UploadSbom, "Upload a valid SBOM", "The SBOM is not valid; no inventory was created.", "attention")
-                : input.SbomReviewed
-                    ? new(true, DependencyReviewNextAction.UploadSbom, "Upload another SBOM", $"{input.PendingSbom} is stored as an inventory and its dependency health review has run.", "info")
-                    : new(true, DependencyReviewNextAction.ReviewSbom, "Review SBOM", $"{input.PendingSbom} is validated, stored as an inventory and then checked for registry, advisory and license evidence.", "info"),
+                : input.SbomReviewed && input.Inventory is not null
+                    ? new(true, DependencyReviewNextAction.RunHealthReview, "Run SBOM dependency health review", $"{input.PendingSbom} was validated and an inventory was created from it.", "info")
+                    : new(false, DependencyReviewNextAction.ReviewSbom, "Validate SBOM", $"{input.PendingSbom} is validated first; only a valid document becomes an inventory."),
         DependencyReviewMode.Deployed => input.Deployed is null
             ? input.CanCaptureDeployed
                 ? new(false, DependencyReviewNextAction.CaptureDeployed, "Capture deployed evidence", $"Reads the deployed metadata of {input.DeploymentTarget ?? "the target"} with a read-only GET.")

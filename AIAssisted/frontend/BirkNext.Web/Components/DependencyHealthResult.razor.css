@@ -59,3 +59,17 @@
     .dh-field { max-width: none; width: 100%; }
     .dh-table-scroll { max-height: 26rem; }
 }
+
+/* Evidence-mode-specific result sections. */
+.dh-section-nav { display: flex; flex-wrap: wrap; gap: .3rem; border-bottom: 1px solid var(--clr-border); padding-bottom: .4rem; }
+.dh-section-tab { padding: .3rem .65rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); font-size: .84rem; cursor: pointer; }
+.dh-section-tab.active { border-color: var(--clr-link, #2563eb); background: #eff6ff; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.dh-section-tab:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.dh-summary-groups { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+.dh-summary-group { border: 1px solid var(--clr-border-subtle, #eef2f7); border-radius: var(--radius-md); padding: .5rem .7rem; display: grid; gap: .3rem; align-content: start; min-width: 0; }
+.dh-summary-group h3 { margin: 0; font-size: .88rem; }
+.dh-summary-context { background: var(--clr-surface); }
+.dh-observation-group { display: grid; gap: .3rem; }
+.dh-observation-group h3 { margin: .3rem 0 0; font-size: .9rem; }
+.btn-link { background: none; border: 0; padding: 0; color: var(--clr-link, #174d86); text-decoration: underline; cursor: pointer; font: inherit; font-size: .82rem; justify-self: start; }
+.btn-link:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }

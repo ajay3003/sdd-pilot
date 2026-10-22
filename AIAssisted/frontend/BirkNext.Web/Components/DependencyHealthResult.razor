@@ -1,275 +1,383 @@
 @using BirkNext.Dependencies
 @using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.DependencyHealthPresentation
 
 @* One stored dependency-health run, exactly as recorded (opening it never re-queries a registry). Every value names its source and
    retrieval time; a refresh creates a new run. Wording rules: "Latest published stable" (not recommended), "No matched advisories observed"
-   (not safe), "Security evidence unavailable" (not 0), license policy "not configured" (not pass), runtime loading "Not assessed". *@
-<section class="dh-card" aria-labelledby="dh-heading" data-testid="dh-result" data-run="@Run.RunId">
+   (not safe), "Security evidence unavailable" (not 0), license policy "not configured" (not pass), runtime loading "Not assessed".
+   Navigation is evidence-mode specific: Existing inventory, SBOM and Deployed evidence each show only their own sections. *@
+<section class="dh-card" aria-labelledby="dh-heading" data-testid="dh-result" data-run="@Run.RunId" data-mode="@Mode">
     <div class="dh-head">
         <div>
-            <h2 id="dh-heading">Dependency health</h2>
-            <p class="dh-muted" data-testid="dh-headline">@DependencyHealthPresentation.Headline(Run)</p>
+            <h2 id="dh-heading">@(Mode == DependencyEvidenceModes.Sbom ? "SBOM dependency health" : DependencyEvidenceModes.ReviewType(Mode))</h2>
+            <p class="dh-muted" data-testid="dh-identity">Evidence: @DependencyEvidenceModes.Label(Mode) · @P.InventorySource(Run.Inventory) · @Run.Inventory.Name</p>
+            <p class="dh-muted" data-testid="dh-headline">@P.Headline(Run)</p>
             <p class="dh-muted" data-testid="dh-run-meta">
-                Run @DependencyHealthPresentation.Utc(Run.CompletedAt) · stored snapshot, not live@(Run.RefreshOf is not null ? " · refresh of an earlier run (unchanged)" : "")
+                Run @P.Utc(Run.CompletedAt) · stored snapshot, not live@(Run.RefreshOf is not null ? " · refresh of an earlier run (unchanged)" : "")
             </p>
         </div>
         <div class="dh-actions">
-            <button type="button" class="btn-secondary" data-testid="dh-refresh" disabled="@Busy" @onclick="OnRefresh">Refresh current dependency evidence</button>
+            <button type="button" class="btn-secondary" data-testid="dh-refresh" disabled="@Busy" @onclick="OnRefresh" title="Re-collects registry, advisory, license and automation evidence for the same inventory as a new run; this run stays unchanged">Refresh current dependency evidence</button>
             <button type="button" class="btn-secondary" data-testid="dh-export" @onclick="OnExport">Export HTML</button>
         </div>
     </div>
 
-    <ul class="dh-tiles" aria-label="Dependency health summary">
-        @foreach (var tile in DependencyHealthPresentation.Tiles(Run))
+    <nav class="dh-section-nav" aria-label="Result sections" data-testid="dh-section-nav">
+        @foreach (var sec in Sections)
         {
-            <li class="dh-tile" data-testid="@tile.TestId">
-                <span class="dh-tile-label">@tile.Label</span>
-                <span class="dh-tile-value"><span class="dh-badge dh-badge-@tile.Tone">@tile.Value</span></span>
-                <span class="dh-muted dh-tile-detail">@tile.Detail</span>
-            </li>
+            var active = _section == sec;
+            <button type="button" class="dh-section-tab @(active ? "active" : "")" aria-current="@(active ? "true" : null)" data-testid="dh-section" data-section="@sec.ToString().ToLowerInvariant()"
+                    @onclick="() => _section = sec">@P.Title(sec, Mode)</button>
         }
-    </ul>
+    </nav>
 
-    <ReviewDisclosure Text="Checks and evidence sources" CollapseText="Hide checks and evidence sources" TestId="dh-sources" Class="disclosure-inline"
-                      Hint="@($"{Run.Sources.Count(s => s.State == "Used")} used · {Run.Sources.Count(s => s.State != "Used")} other")">
-        <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Evidence sources">
-            <table class="dh-table" data-testid="dh-sources-table">
-                <thead><tr><th scope="col">Check</th><th scope="col">Source</th><th scope="col">State</th><th scope="col">Retrieved</th><th scope="col">Detail</th></tr></thead>
-                <tbody>
-                    @foreach (var source in Run.Sources)
-                    {
-                        <tr data-category="@source.Category"><td><span class="dh-chip">@DependencyHealthLabels.Category(source.Category)</span></td><td>@source.Name</td><td>@source.State</td>
-                            <td class="dh-nowrap">@DependencyHealthPresentation.Utc(source.RetrievedAt)</td><td>@source.Detail</td></tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-        <ul class="dh-categories" data-testid="dh-categories">
-            @foreach (var category in Run.Categories)
-            {
-                <li data-testid="dh-category" data-category="@category.Name"><strong>@category.Name</strong> <span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(category.State)">@DependencyHealthPresentation.CategoryLabel(category.State)</span>
-                    <span class="dh-muted">@category.Detail</span></li>
-            }
-        </ul>
-    </ReviewDisclosure>
-
-    <h3>Findings and observations</h3>
-    @if (Run.Observations.Count == 0) { <p class="dh-muted" data-testid="dh-no-observations">No findings, limitations or notable observations.</p> }
-    <ul class="dh-observations" data-testid="dh-observations">
-        @foreach (var o in DependencyHealthPresentation.OrderedObservations(Run))
-        {
-            <li class="dh-observation dh-observation-@o.Kind.ToString().ToLowerInvariant()" data-testid="dh-observation" data-kind="@o.Kind" data-category="@o.Category">
-                <div>
-                    <span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(o.Kind)">@DependencyHealthLabels.Kind(o.Kind)</span>
-                    <span class="dh-chip">@DependencyHealthLabels.Category(o.Category)</span>
-                    @if (o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict) { <span class="dh-chip">@DependencyLabels.Severity(o.Severity)</span> }
-                    @if (o.SourceSeverity is { } sev) { <span class="dh-chip" title="Severity as stated by the advisory source">Source severity: @sev</span> }
-                    <strong>@o.Title</strong>
-                </div>
-                <p>@o.Detail</p>
-                @if (o.Evidence.Any(e => e.Length > 0))
-                {
-                    <ReviewDisclosure Text="Evidence" CollapseText="Hide evidence" Class="disclosure-inline">
-                        <ul class="dh-list dh-mono">@foreach (var e in o.Evidence.Where(e => e.Length > 0)) { <li>@e</li> }</ul>
-                    </ReviewDisclosure>
-                }
-            </li>
-        }
-    </ul>
-
-    <h3 id="dh-deps-heading">Dependencies</h3>
-    <div class="dh-filters">
-        <div class="dh-filter" role="group" aria-label="Filter dependencies">
-            @foreach (var filter in Enum.GetValues<HealthFilter>())
-            {
-                <button type="button" class="dh-filter-chip @(_filter == filter ? "active" : "")" aria-pressed="@(_filter == filter ? "true" : "false")" data-testid="dh-filter" data-filter="@filter"
-                        @onclick="() => SetFilter(filter)">@DependencyHealthPresentation.FilterLabel(filter) (@DependencyHealthPresentation.Count(Run, filter))</button>
-            }
-        </div>
-        <label class="dh-field">Find package
-            <input class="form-control" type="search" data-testid="dh-search" value="@_search" @oninput="e => { _search = e.Value?.ToString(); _limit = PageSize; }" />
-        </label>
-    </div>
-    @{ var rows = DependencyHealthPresentation.Items(Run, _filter, _search); }
-    <p class="dh-muted" role="status" aria-live="polite" data-testid="dh-row-count">Showing @Math.Min(_limit, rows.Count) of @rows.Count (@DependencyHealthPresentation.FilterLabel(_filter)).</p>
-    <div class="dh-table-wrap dh-table-scroll" tabindex="0" role="region" aria-labelledby="dh-deps-heading">
-        <table class="dh-table dh-deps" data-testid="dh-table">
-            <thead>
-                <tr><th scope="col">Package</th><th scope="col">Observed version</th><th scope="col">Source</th><th scope="col">@DependencyHealthLabels.LatestStable</th><th scope="col">Version status</th>
-                    <th scope="col">Security</th><th scope="col">License</th><th scope="col">Registry</th><th scope="col">Evidence age</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var item in rows.Take(_limit))
-                {
-                    var open = _selected == item.Key;
-                    <tr data-testid="dh-row" data-package="@item.Dependency.PackageName" class="@(open ? "selected" : "")">
-                        <td class="dh-pkg-cell">
-                            <button type="button" class="dh-pkg" aria-expanded="@(open ? "true" : "false")" aria-controls="dh-detail" data-testid="dh-row-toggle" @onclick="() => Toggle(item.Key)">
-                                @item.Dependency.PackageName
-                            </button>
-                            <span class="dh-muted dh-mono">@item.Dependency.PackageManager@(item.Locations.Count > 1 ? $" · {item.Locations.Count} declarations" : "")</span>
-                        </td>
-                        <td class="dh-mono">@DependencyHealthPresentation.ObservedVersion(item.Dependency)</td>
-                        <td>@DependencyHealthPresentation.SourceText(item.Dependency)</td>
-                        <td class="dh-mono">@(item.Registry.LatestStable ?? "—")</td>
-                        <td><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(item.VersionStatus)">@DependencyHealthLabels.Version(item.VersionStatus)</span></td>
-                        <td><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(item.Security.State)" data-testid="dh-row-security">@DependencyHealthPresentation.SecurityText(item)</span></td>
-                        <td><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(item.License.State)">@DependencyHealthPresentation.LicenseText(item)</span></td>
-                        <td><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(item.Registry.State)">@DependencyHealthPresentation.RegistryText(item)</span></td>
-                        <td class="dh-nowrap">@DependencyHealthPresentation.EvidenceAge(item, Run.CompletedAt)</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-    @if (rows.Count > _limit)
+    @switch (_section)
     {
-        <button type="button" class="btn-secondary dh-more" data-testid="dh-more" @onclick="() => _limit = rows.Count">Show all @rows.Count</button>
-    }
+        case HealthResultSection.Summary:
+            var s = Run.Summary;
+            var updates = s.PatchBehind + s.MinorBehind + s.MajorBehind;
+            ReviewCategory? C(string name) => Run.Categories.FirstOrDefault(c => c.Name == name);
+            <div class="dh-summary-groups" data-testid="dh-summary">
+                <section class="dh-summary-group" aria-labelledby="dh-sum-health" data-testid="dh-summary-health">
+                    <h3 id="dh-sum-health">@(Mode == DependencyEvidenceModes.Sbom ? "Manifest summary" : "Dependency health")</h3>
+                    <dl class="dh-facts">
+                        @if (Mode == DependencyEvidenceModes.Sbom)
+                        {
+                            <div><dt>Evidence source</dt><dd>SBOM</dd></div>
+                            <div><dt>Format</dt><dd>@(Run.Inventory.Format is { } f ? DependencyHealthLabels.Format(f) : "Not recorded")@(Run.Inventory.FormatVersion is { } fv ? $" {fv}" : "")</dd></div>
+                        }
+                        <div data-testid="dh-tile-dependencies"><dt>Dependencies</dt><dd>@s.Dependencies@(s.Declarations > s.Dependencies ? $" ({s.Declarations} declarations)" : "")</dd></div>
+                        <div data-testid="dh-tile-version"><dt>Version updates observed</dt><dd>@(s.RegistryObserved + s.RegistryNotFound + s.RegistryUnavailable == 0 ? "Not assessed" : $"{updates} ({s.PatchBehind} patch · {s.MinorBehind} minor · {s.MajorBehind} major)")</dd></div>
+                        <div data-testid="dh-tile-deprecated"><dt>Deprecated / unlisted</dt><dd>@(C("Deprecated / unlisted")?.State == ReviewCategoryState.NotAssessed ? "Not assessed" : $"{s.DeprecatedOrUnlisted} observed") <span class="dh-muted">— registry metadata, not a vulnerability</span></dd></div>
+                        <div data-testid="dh-tile-security"><dt>Security advisories</dt><dd><span class="dh-badge dh-badge-@(s.AffectedDependencies > 0 ? "danger" : "info")">@s.AffectedDependencies matched</span> <span class="dh-muted" data-testid="dh-security-line">@P.SecurityLine(Run)</span></dd></div>
+                    </dl>
+                </section>
+                <section class="dh-summary-group" aria-labelledby="dh-sum-coverage" data-testid="dh-summary-coverage">
+                    <h3 id="dh-sum-coverage">Evidence coverage</h3>
+                    <dl class="dh-facts">
+                        @foreach (var coverage in P.Coverage(Run).Take(3))
+                        {
+                            <div data-testid="@coverage.TestId"><dt>@coverage.Check</dt><dd>@coverage.Value@(coverage.Check == "License" && coverage.Total > 0 ? $" · {100 * coverage.Covered / coverage.Total}%" : "")</dd></div>
+                        }
+                    </dl>
+                    <button type="button" class="btn-link" data-testid="dh-goto-evidence" @onclick="() => _section = HealthResultSection.Evidence">View evidence coverage</button>
+                </section>
+                <section class="dh-summary-group dh-summary-context" aria-labelledby="dh-sum-context" data-testid="dh-summary-context">
+                    <h3 id="dh-sum-context">Related context</h3>
+                    <dl class="dh-facts">
+                        <div data-testid="dh-tile-inventory"><dt>Inventory</dt><dd><span class="dh-badge dh-badge-@P.Tone(Run.Freshness)">@Run.Freshness</span> <span class="dh-muted">captured @P.Utc(Run.Inventory.CapturedAt)@(Run.FreshnessDetail.Length > 0 ? $" · {Run.FreshnessDetail}" : "")</span></dd></div>
+                        @if (Mode != DependencyEvidenceModes.Sbom || C("Renovate policy")?.State != ReviewCategoryState.NotAssessed)
+                        {
+                            <div data-testid="dh-tile-policy"><dt>Renovate policy</dt><dd>@(Run.PolicySource is { } policySource ? $"Assessed from linked source review ({policySource})" : P.CategoryLabel(C("Renovate policy")?.State ?? ReviewCategoryState.NotAssessed))</dd></div>
+                        }
+                        @if (Mode != DependencyEvidenceModes.Sbom)
+                        {
+                            <div data-testid="dh-tile-automation"><dt>Renovate runtime</dt><dd>@DependencyHealthLabels.Automation(Run.Automation.State)</dd></div>
+                        }
+                        <div data-testid="dh-tile-deployment"><dt>Deployment comparison</dt><dd>@P.CategoryLabel(C("Deployment comparison")?.State ?? ReviewCategoryState.NotAssessed)@(Run.Request.DeployedInventoryId is null ? " — no deployed evidence selected" : "")</dd></div>
+                    </dl>
+                </section>
+            </div>
+            break;
 
-    <div id="dh-detail" aria-live="polite">
-        @if (Run.Items.FirstOrDefault(i => i.Key == _selected) is { } d)
-        {
-            <section class="dh-detail" aria-labelledby="dh-detail-heading" data-testid="dh-detail" data-package="@d.Dependency.PackageName">
-                <div class="dh-head">
-                    <h3 id="dh-detail-heading">@d.Dependency.PackageName <span class="dh-mono">@DependencyHealthPresentation.ObservedVersion(d.Dependency)</span></h3>
-                    <button type="button" class="btn-secondary" data-testid="dh-detail-close" @onclick="() => _selected = null">Close details</button>
-                </div>
-                <dl class="dh-facts">
-                    <div><dt>Inventory provenance</dt><dd>@Run.Inventory.Provenance</dd></div>
-                    <div><dt>Locations (@d.Locations.Count)</dt><dd class="dh-mono" data-testid="dh-detail-locations">@(d.Locations.Count == 0 ? "—" : string.Join(" · ", d.Locations))</dd></div>
-                    <div><dt>Identifiers</dt><dd class="dh-mono">@(d.Dependency.Purl ?? "No purl") @(d.Dependency.Cpe is { } cpe ? $" · {cpe}" : "")</dd></div>
-                    <div><dt>Hashes</dt><dd class="dh-mono" data-testid="dh-detail-hashes">@(d.Dependency.Hashes.Count == 0 ? "Not available" : string.Join(" · ", d.Dependency.Hashes.Select(h => $"{h.Algorithm} {h.Value}")))</dd></div>
-                    @if (d.Dependency.Registry is { } feed) { <div><dt>Package source</dt><dd class="dh-mono">@feed</dd></div> }
-                </dl>
-
-                <h4>Lifecycle stages</h4>
-                <ul class="dh-stages" data-testid="dh-stages">
-                    @foreach (var stage in d.Stages)
-                    {
-                        <li data-stage="@stage.Stage"><strong>@DependencyHealthLabels.Stage(stage.Stage)</strong> <span>@stage.State@(stage.Version is { } v ? $": {v}" : "")</span>
-                            @if (stage.Source is { } src) { <span class="dh-muted"> (@src)</span> }</li>
-                    }
-                </ul>
-                @if (d.Conflicts.Count > 0)
+        case HealthResultSection.Findings:
+            var groups = P.Groups(Run);
+            <div data-testid="dh-observations">
+                @if (Run.Observations.Count == 0) { <p class="dh-muted" data-testid="dh-no-observations">No findings, limitations or notable observations.</p> }
+                @foreach (var (title, items, testId, help) in new[]
                 {
-                    <p class="dh-conflict" data-testid="dh-detail-conflict"><span class="dh-badge dh-badge-attention">Evidence conflict</span> Needs review — neither source is chosen: @string.Join("; ", d.Conflicts)</p>
+                    ("Needs review", groups.NeedsReview, "dh-group-needs-review", "Matched advisories, policy matches and evidence conflicts."),
+                    ("Observed", groups.Observed, "dh-group-observed", "Facts such as being behind or deprecated — observations, not defects, unless a policy says so."),
+                    ("Missing evidence", groups.MissingEvidence, "dh-group-missing", "What could not be retrieved or assessed — a gap in evidence, not non-compliance."),
+                })
+                {
+                    if (items.Count == 0) continue;
+                    <section class="dh-observation-group" aria-labelledby="@($"{testId}-h")" data-testid="@testId">
+                        <h3 id="@($"{testId}-h")">@title <span class="dh-badge dh-badge-muted">@items.Count</span></h3>
+                        <p class="dh-muted">@help</p>
+                        <ul class="dh-observations">
+                            @foreach (var o in items)
+                            {
+                                <li class="dh-observation dh-observation-@o.Kind.ToString().ToLowerInvariant()" data-testid="dh-observation" data-kind="@o.Kind" data-category="@o.Category">
+                                    <div>
+                                        <span class="dh-badge dh-badge-@P.Tone(o.Kind)">@DependencyHealthLabels.Kind(o.Kind)</span>
+                                        <span class="dh-chip">@DependencyHealthLabels.Category(o.Category)</span>
+                                        @if (o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict) { <span class="dh-chip">@DependencyLabels.Severity(o.Severity)</span> }
+                                        @if (o.SourceSeverity is { } sev) { <span class="dh-chip" title="Severity as stated by the advisory source">Source severity: @sev</span> }
+                                        <strong>@o.Title</strong>
+                                    </div>
+                                    <p>@o.Detail</p>
+                                    @if (o.Evidence.Any(e => e.Length > 0))
+                                    {
+                                        <ReviewDisclosure Text="View evidence" CollapseText="Hide evidence" Class="disclosure-inline">
+                                            <ul class="dh-list dh-mono">@foreach (var e in o.Evidence.Where(e => e.Length > 0)) { <li>@e</li> }</ul>
+                                        </ReviewDisclosure>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </section>
                 }
+            </div>
+            break;
 
-                <h4>Registry</h4>
-                <dl class="dh-facts" data-testid="dh-detail-registry">
-                    <div><dt>State</dt><dd>@DependencyHealthLabels.Registry(d.Registry.State) — @d.Registry.Detail</dd></div>
-                    <div><dt>@DependencyHealthLabels.LatestStable</dt><dd>@(d.Registry.LatestStable ?? "—") @(d.Registry.LatestStablePublished is { } lp ? $"(published {DependencyHealthPresentation.Date(lp)})" : "")</dd></div>
-                    @if (d.Registry.LatestPrerelease is { } pre) { <div><dt>Latest prerelease</dt><dd>@pre</dd></div> }
-                    <div><dt>Observed version published</dt><dd>@DependencyHealthPresentation.Date(d.Registry.ObservedPublished) · age @DependencyHealthPresentation.Age(d.ObservedAgeDays) (no age threshold applied)</dd></div>
-                    <div><dt>Version status</dt><dd>@DependencyHealthLabels.Version(d.VersionStatus) — @d.VersionDetail</dd></div>
-                    @if (d.Registry.Deprecation is { } dep) { <div><dt>Deprecated</dt><dd>@string.Join(", ", dep.Reasons)@(dep.AlternatePackage is { } alt ? $" · alternate {alt}" : "")@(dep.Message is { } m ? $" · {m}" : "")</dd></div> }
-                    <div><dt>Retrieved</dt><dd>@(d.Registry.Registry.Length > 0 ? d.Registry.Registry : "—"), @DependencyHealthPresentation.Utc(d.Registry.RetrievedAt)@(d.Registry.FromCache ? " (cached)" : "")</dd></div>
-                </dl>
+        case HealthResultSection.Differences:
+            <section aria-labelledby="dh-diff-heading" data-testid="dh-differences">
+                <h3 id="dh-diff-heading">Differences</h3>
+                <p class="dh-muted">Expected inventory compared with deployed evidence. A version is compared only where the deployed evidence states it; absence is never assumed.</p>
+                @if (Run.Comparisons.Count == 0) { <p class="dh-muted" data-testid="dh-differences-none">No comparison in this run (no deployed evidence was selected).</p> }
+                @Comparisons
+            </section>
+            break;
 
-                <h4>Security</h4>
-                <p data-testid="dh-detail-security"><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(d.Security.State)">@DependencyHealthLabels.Advisory(d.Security.State)</span> @d.Security.Detail
-                    <span class="dh-muted">@(d.Security.Source.Length > 0 ? $"({d.Security.Source}, {DependencyHealthPresentation.Utc(d.Security.RetrievedAt)})" : "")</span></p>
-                @if (d.Security.Advisories.Count > 0)
+        case HealthResultSection.Dependencies:
+            <h3 id="dh-deps-heading">@P.Title(HealthResultSection.Dependencies, Mode)</h3>
+            <div class="dh-filters">
+                <div class="dh-filter" role="group" aria-label="Filter dependencies">
+                    @foreach (var filter in Enum.GetValues<HealthFilter>())
+                    {
+                        <button type="button" class="dh-filter-chip @(_filter == filter ? "active" : "")" aria-pressed="@(_filter == filter ? "true" : "false")" data-testid="dh-filter" data-filter="@filter"
+                                @onclick="() => SetFilter(filter)">@P.FilterLabel(filter) (@P.Count(Run, filter))</button>
+                    }
+                </div>
+                <label class="dh-field">Find package
+                    <input class="form-control" type="search" data-testid="dh-search" value="@_search" @oninput="e => { _search = e.Value?.ToString(); _limit = PageSize; }" />
+                </label>
+            </div>
+            <p class="dh-muted">Issues are review-worthy states (matched advisory, conflict, deprecated or unlisted, denied license, blocked remediation). Being behind is an observation, not an issue.</p>
+            var rows = P.Items(Run, _filter, _search);
+            <p class="dh-muted" role="status" aria-live="polite" data-testid="dh-row-count">Showing @Math.Min(_limit, rows.Count) of @rows.Count (@P.FilterLabel(_filter)).</p>
+            <div class="dh-table-wrap dh-table-scroll" tabindex="0" role="region" aria-labelledby="dh-deps-heading">
+                <table class="dh-table dh-deps" data-testid="dh-table">
+                    <thead>
+                        <tr><th scope="col">Package</th><th scope="col">Observed version</th><th scope="col">Source</th><th scope="col">@DependencyHealthLabels.LatestStable</th><th scope="col">Version status</th>
+                            <th scope="col">Security</th><th scope="col">License</th><th scope="col">Registry</th><th scope="col">Evidence age</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in rows.Take(_limit))
+                        {
+                            var open = _selected == item.Key;
+                            <tr data-testid="dh-row" data-package="@item.Dependency.PackageName" class="@(open ? "selected" : "")">
+                                <td class="dh-pkg-cell">
+                                    <button type="button" class="dh-pkg" aria-expanded="@(open ? "true" : "false")" aria-controls="dh-detail" data-testid="dh-row-toggle" @onclick="() => Toggle(item.Key)">
+                                        @item.Dependency.PackageName
+                                    </button>
+                                    <span class="dh-muted dh-mono">@item.Dependency.PackageManager@(item.Locations.Count > 1 ? $" · {item.Locations.Count} declarations" : "")</span>
+                                </td>
+                                <td class="dh-mono">@P.ObservedVersion(item.Dependency)</td>
+                                <td>@P.SourceText(item.Dependency)</td>
+                                <td class="dh-mono">@(item.Registry.LatestStable ?? "—")</td>
+                                <td><span class="dh-badge dh-badge-@P.Tone(item.VersionStatus)">@DependencyHealthLabels.Version(item.VersionStatus)</span></td>
+                                <td><span class="dh-badge dh-badge-@P.Tone(item.Security.State)" data-testid="dh-row-security">@P.SecurityText(item)</span></td>
+                                <td><span class="dh-badge dh-badge-@P.Tone(item.License.State)">@P.LicenseText(item)</span></td>
+                                <td><span class="dh-badge dh-badge-@P.Tone(item.Registry.State)">@P.RegistryText(item)</span></td>
+                                <td class="dh-nowrap">@P.EvidenceAge(item, Run.CompletedAt)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (rows.Count > _limit)
+            {
+                <button type="button" class="btn-secondary dh-more" data-testid="dh-more" @onclick="() => _limit = rows.Count">Show all @rows.Count</button>
+            }
+
+            <div id="dh-detail" aria-live="polite">
+                @if (Run.Items.FirstOrDefault(i => i.Key == _selected) is { } d)
                 {
-                    <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Advisories">
-                        <table class="dh-table" data-testid="dh-advisories">
-                            <thead><tr><th scope="col">Advisory</th><th scope="col">Aliases</th><th scope="col">Affects observed</th><th scope="col">Affected ranges</th><th scope="col">Fixed in</th><th scope="col">Source severity</th></tr></thead>
+                    <section class="dh-detail" aria-labelledby="dh-detail-heading" data-testid="dh-detail" data-package="@d.Dependency.PackageName">
+                        <div class="dh-head">
+                            <h3 id="dh-detail-heading">@d.Dependency.PackageName <span class="dh-mono">@P.ObservedVersion(d.Dependency)</span></h3>
+                            <button type="button" class="btn-secondary" data-testid="dh-detail-close" @onclick="() => _selected = null">Close details</button>
+                        </div>
+                        <dl class="dh-facts">
+                            <div><dt>Inventory provenance</dt><dd>@Run.Inventory.Provenance</dd></div>
+                            <div><dt>Locations (@d.Locations.Count)</dt><dd class="dh-mono" data-testid="dh-detail-locations">@(d.Locations.Count == 0 ? "—" : string.Join(" · ", d.Locations))</dd></div>
+                            <div><dt>Identifiers</dt><dd class="dh-mono">@(d.Dependency.Purl ?? "No purl") @(d.Dependency.Cpe is { } cpe ? $" · {cpe}" : "")</dd></div>
+                            <div><dt>Hashes</dt><dd class="dh-mono" data-testid="dh-detail-hashes">@(d.Dependency.Hashes.Count == 0 ? "Not available" : string.Join(" · ", d.Dependency.Hashes.Select(h => $"{h.Algorithm} {h.Value}")))</dd></div>
+                            @if (d.Dependency.Registry is { } feed) { <div><dt>Package source</dt><dd class="dh-mono">@feed</dd></div> }
+                        </dl>
+
+                        <h4>Lifecycle stages</h4>
+                        <ul class="dh-stages" data-testid="dh-stages">
+                            @foreach (var stage in d.Stages)
+                            {
+                                <li data-stage="@stage.Stage"><strong>@DependencyHealthLabels.Stage(stage.Stage)</strong> <span>@stage.State@(stage.Version is { } v ? $": {v}" : "")</span>
+                                    @if (stage.Source is { } src) { <span class="dh-muted"> (@src)</span> }</li>
+                            }
+                        </ul>
+                        @if (d.Conflicts.Count > 0)
+                        {
+                            <p class="dh-conflict" data-testid="dh-detail-conflict"><span class="dh-badge dh-badge-attention">Evidence conflict</span> Needs review — neither source is chosen: @string.Join("; ", d.Conflicts)</p>
+                        }
+
+                        <h4>Registry</h4>
+                        <dl class="dh-facts" data-testid="dh-detail-registry">
+                            <div><dt>State</dt><dd>@DependencyHealthLabels.Registry(d.Registry.State) — @d.Registry.Detail</dd></div>
+                            <div><dt>@DependencyHealthLabels.LatestStable</dt><dd>@(d.Registry.LatestStable ?? "—") @(d.Registry.LatestStablePublished is { } lp ? $"(published {P.Date(lp)})" : "")</dd></div>
+                            @if (d.Registry.LatestPrerelease is { } pre) { <div><dt>Latest prerelease</dt><dd>@pre</dd></div> }
+                            <div><dt>Observed version published</dt><dd>@P.Date(d.Registry.ObservedPublished) · age @P.Age(d.ObservedAgeDays) (no age threshold applied)</dd></div>
+                            <div><dt>Version status</dt><dd>@DependencyHealthLabels.Version(d.VersionStatus) — @d.VersionDetail</dd></div>
+                            @if (d.Registry.Deprecation is { } dep) { <div><dt>Deprecated</dt><dd>@string.Join(", ", dep.Reasons)@(dep.AlternatePackage is { } alt ? $" · alternate {alt}" : "")@(dep.Message is { } m ? $" · {m}" : "") <span class="dh-muted">(registry metadata — not a security issue)</span></dd></div> }
+                            <div><dt>Retrieved</dt><dd>@(d.Registry.Registry.Length > 0 ? d.Registry.Registry : "—"), @P.Utc(d.Registry.RetrievedAt)@(d.Registry.FromCache ? " (cached)" : "")</dd></div>
+                        </dl>
+
+                        <h4>Security</h4>
+                        <p data-testid="dh-detail-security"><span class="dh-badge dh-badge-@P.Tone(d.Security.State)">@DependencyHealthLabels.Advisory(d.Security.State)</span> @d.Security.Detail
+                            <span class="dh-muted">@(d.Security.Source.Length > 0 ? $"({d.Security.Source}, {P.Utc(d.Security.RetrievedAt)})" : "")</span></p>
+                        @if (d.Security.Advisories.Count > 0)
+                        {
+                            <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Advisories">
+                                <table class="dh-table" data-testid="dh-advisories">
+                                    <thead><tr><th scope="col">Advisory</th><th scope="col">Aliases</th><th scope="col">Affects observed</th><th scope="col">Affected ranges</th><th scope="col">Fixed in</th><th scope="col">Source severity</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var a in d.Security.Advisories)
+                                        {
+                                            <tr><td class="dh-mono">@(a.Url is { } url ? (MarkupString)$"<a href=\"{System.Net.WebUtility.HtmlEncode(url)}\" target=\"_blank\" rel=\"noopener noreferrer\">{System.Net.WebUtility.HtmlEncode(a.Id)}</a>" : (MarkupString)System.Net.WebUtility.HtmlEncode(a.Id))@(a.Withdrawn ? " (withdrawn)" : "")</td>
+                                                <td class="dh-mono">@string.Join(", ", a.Aliases)</td>
+                                                <td>@(a.AffectsObservedVersion switch { true => "Yes", false => "No", null => "Not comparable" })</td>
+                                                <td class="dh-mono">@string.Join(" | ", a.AffectedRanges)</td><td class="dh-mono">@(a.FixedVersions.Count == 0 ? "Not stated" : string.Join(", ", a.FixedVersions))</td>
+                                                <td>@(a.SourceSeverity ?? "Not stated")@(a.SeverityVectors.Count > 0 ? $" · {string.Join(" ", a.SeverityVectors)}" : "")</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        @if (d.Security.FixedIn is { } fixedIn) { <p data-testid="dh-detail-fixed">Fixed in: <span class="dh-mono">@fixedIn</span> <span class="dh-muted">(per the advisory source — evidence, not a tested or recommended upgrade)</span></p> }
+
+                        <h4>Renovate policy</h4>
+                        @if (d.Remediation is { } r)
+                        {
+                            <p data-testid="dh-detail-remediation"><span class="dh-badge dh-badge-@P.Tone(r.State)">@DependencyHealthLabels.Remediation(r.State)</span> @r.Explanation</p>
+                        }
+                        else { <p class="dh-muted">@(Run.PolicySource is null ? "Not assessed — no source/config selected." : "No security fix to check against the policy.")</p> }
+
+                        <h4>License</h4>
+                        <p data-testid="dh-detail-license"><span class="dh-badge dh-badge-@P.Tone(d.License.State)">@DependencyHealthLabels.License(d.License.State)</span>
+                            @DependencyHealthLabels.LicensePolicy(d.License.Policy) — @d.License.Detail</p>
+
+                        <h4>History</h4>
+                        <p class="dh-muted" data-testid="dh-detail-history">@(d.History.Count == 0 ? Run.Request.BaselineInventoryId is null ? "No baseline selected." : "Same version in the baseline." : $"Previous: {string.Join("; ", d.History)}")</p>
+                    </section>
+                }
+            </div>
+            break;
+
+        case HealthResultSection.Evidence:
+            <section aria-labelledby="dh-coverage-heading" data-testid="dh-evidence">
+                <h3 id="dh-coverage-heading">Evidence coverage</h3>
+                <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Evidence coverage">
+                    <table class="dh-table" data-testid="dh-coverage">
+                        <thead><tr><th scope="col">Evidence</th><th scope="col">Covered</th><th scope="col">The rest</th></tr></thead>
+                        <tbody>
+                            @foreach (var coverage in P.Coverage(Run)) { <tr data-testid="@coverage.TestId"><th scope="row">@coverage.Check</th><td>@coverage.Value</td><td>@coverage.Detail</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="dh-muted" data-testid="dh-inventory-source">Inventory: @P.InventorySource(Run.Inventory) · @Run.Inventory.Provenance</p>
+                <ReviewDisclosure Text="Checks and evidence sources" CollapseText="Hide checks and evidence sources" TestId="dh-sources" Class="disclosure-inline"
+                                  Hint="@($"{Run.Sources.Count(src => src.State == "Used")} used · {Run.Sources.Count(src => src.State != "Used")} other")">
+                    <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Evidence sources">
+                        <table class="dh-table" data-testid="dh-sources-table">
+                            <thead><tr><th scope="col">Check</th><th scope="col">Source</th><th scope="col">State</th><th scope="col">Retrieved</th><th scope="col">Detail</th></tr></thead>
                             <tbody>
-                                @foreach (var a in d.Security.Advisories)
+                                @foreach (var source in Run.Sources)
                                 {
-                                    <tr><td class="dh-mono">@(a.Url is { } url ? (MarkupString)$"<a href=\"{System.Net.WebUtility.HtmlEncode(url)}\" target=\"_blank\" rel=\"noopener noreferrer\">{System.Net.WebUtility.HtmlEncode(a.Id)}</a>" : (MarkupString)System.Net.WebUtility.HtmlEncode(a.Id))@(a.Withdrawn ? " (withdrawn)" : "")</td>
-                                        <td class="dh-mono">@string.Join(", ", a.Aliases)</td>
-                                        <td>@(a.AffectsObservedVersion switch { true => "Yes", false => "No", null => "Not comparable" })</td>
-                                        <td class="dh-mono">@string.Join(" | ", a.AffectedRanges)</td><td class="dh-mono">@(a.FixedVersions.Count == 0 ? "Not stated" : string.Join(", ", a.FixedVersions))</td>
-                                        <td>@(a.SourceSeverity ?? "Not stated")@(a.SeverityVectors.Count > 0 ? $" · {string.Join(" ", a.SeverityVectors)}" : "")</td></tr>
+                                    <tr data-category="@source.Category"><td><span class="dh-chip">@DependencyHealthLabels.Category(source.Category)</span></td><td>@source.Name</td><td>@source.State</td>
+                                        <td class="dh-nowrap">@P.Utc(source.RetrievedAt)</td><td>@source.Detail</td></tr>
                                 }
                             </tbody>
                         </table>
                     </div>
-                }
-                @if (d.Security.FixedIn is { } fixedIn) { <p data-testid="dh-detail-fixed">Fixed in: <span class="dh-mono">@fixedIn</span> <span class="dh-muted">(per the advisory source — evidence, not a tested or recommended upgrade)</span></p> }
-
-                <h4>Renovate policy</h4>
-                @if (d.Remediation is { } r)
-                {
-                    <p data-testid="dh-detail-remediation"><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(r.State)">@DependencyHealthLabels.Remediation(r.State)</span> @r.Explanation</p>
-                }
-                else { <p class="dh-muted">@(Run.PolicySource is null ? "Not assessed — no source/config selected." : "No security fix to check against the policy.")</p> }
-
-                <h4>License</h4>
-                <p data-testid="dh-detail-license"><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(d.License.State)">@DependencyHealthLabels.License(d.License.State)</span>
-                    @DependencyHealthLabels.LicensePolicy(d.License.Policy) — @d.License.Detail</p>
-
-                <h4>History</h4>
-                <p class="dh-muted" data-testid="dh-detail-history">@(d.History.Count == 0 ? Run.Request.BaselineInventoryId is null ? "No baseline selected." : "Same version in the baseline." : $"Previous: {string.Join("; ", d.History)}")</p>
+                    <ul class="dh-categories" data-testid="dh-categories">
+                        @foreach (var category in Run.Categories)
+                        {
+                            <li data-testid="dh-category" data-category="@category.Name"><strong>@category.Name</strong> <span class="dh-badge dh-badge-@P.Tone(category.State)">@P.CategoryLabel(category.State)</span>
+                                <span class="dh-muted">@category.Detail</span></li>
+                        }
+                    </ul>
+                </ReviewDisclosure>
+                @if (Mode != DependencyEvidenceModes.Deployed) { @Comparisons }
+                <ReviewDisclosure Text="Limitations" CollapseText="Hide limitations" TestId="dh-limitations" Class="disclosure-inline" Hint="@Run.Limitations.Count.ToString()">
+                    <ul class="dh-list" data-testid="dh-limitations-list">@foreach (var limitation in Run.Limitations) { <li>@limitation</li> }</ul>
+                </ReviewDisclosure>
             </section>
-        }
-    </div>
+            break;
 
-    @foreach (var comparison in Run.Comparisons)
-    {
-        <ReviewDisclosure Text="@($"{DependencyHealthLabels.ComparisonKindName(comparison.Kind)}: {comparison.LeftName} vs {comparison.RightName}")" CollapseText="@($"Hide {DependencyHealthLabels.ComparisonKindName(comparison.Kind)}")"
-                          TestId="@($"dh-comparison-{comparison.Kind}")" Class="disclosure-inline" Hint="@($"{comparison.Entries.Count} entr{(comparison.Entries.Count == 1 ? "y" : "ies")} · {comparison.Unchanged} unchanged/matched")">
-            @foreach (var limitation in comparison.Limitations) { <p class="dh-muted">@limitation</p> }
-            <div class="dh-table-wrap dh-table-scroll" tabindex="0" role="region" aria-label="@DependencyHealthLabels.ComparisonKindName(comparison.Kind)">
-                <table class="dh-table" data-testid="dh-comparison-table">
-                    <thead><tr><th scope="col">Package</th><th scope="col">State</th><th scope="col">@comparison.LeftName</th><th scope="col">@comparison.RightName</th><th scope="col">Hash</th><th scope="col">Detail</th></tr></thead>
-                    <tbody>
-                        @foreach (var e in comparison.Entries)
-                        {
-                            <tr data-testid="dh-comparison-entry" data-state="@e.State"><td>@e.PackageName</td><td><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(e.State)">@DependencyHealthLabels.Comparison(e.State)</span></td>
-                                <td class="dh-mono">@(e.LeftValue ?? "—")</td><td class="dh-mono">@(e.RightValue ?? "—")</td><td>@(e.Hash == HashComparison.NotAvailable ? "Not available" : e.Hash.ToString())</td><td>@e.Detail</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </ReviewDisclosure>
+        case HealthResultSection.Automation:
+            <section aria-labelledby="dh-automation-heading" class="dh-automation" data-testid="dh-automation">
+                <h3 id="dh-automation-heading">Automation</h3>
+                <dl class="dh-facts">
+                    <div><dt>Renovate configuration</dt><dd data-testid="dh-automation-static">@(Run.Automation.StaticConfiguration ?? "Not assessed in this run (review from source to see it).")</dd></div>
+                    <div><dt>Renovate runtime</dt><dd><span class="dh-badge dh-badge-@P.Tone(Run.Automation.State)" data-testid="dh-automation-state">@DependencyHealthLabels.Automation(Run.Automation.State)</span>
+                        @(Run.Automation.Provider.Length > 0 ? $" ({Run.Automation.Provider})" : "") — @Run.Automation.Detail</dd></div>
+                </dl>
+                <p class="dh-muted">Static configuration in source never proves Renovate runs; runtime is read from a repository provider only when one is configured.</p>
+                @if (Run.Automation.State == AutomationState.Observed)
+                {
+                    <dl class="dh-facts">
+                        <div><dt>Last run</dt><dd>@(Run.Automation.LastRun is { } lr ? $"{lr.Id} · {lr.Result} · {P.Utc(lr.FinishedAt ?? lr.StartedAt)}" : "None observed")</dd></div>
+                        <div><dt>Last successful run</dt><dd>@(Run.Automation.LastSuccessfulRun is { } ls ? $"{ls.Id} · {P.Utc(ls.FinishedAt ?? ls.StartedAt)}" : "None observed")</dd></div>
+                        <div><dt>Failed runs (recent window)</dt><dd>@(Run.Automation.FailedRunsInWindow?.ToString() ?? "Not assessed")</dd></div>
+                        <div><dt>Dependency Dashboard</dt><dd>@Run.Automation.DependencyDashboard</dd></div>
+                    </dl>
+                    <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Open dependency pull requests">
+                        <table class="dh-table" data-testid="dh-prs">
+                            <thead><tr><th scope="col">Package</th><th scope="col">Current → proposed</th><th scope="col">Update type</th><th scope="col">PR age</th><th scope="col">PR state</th><th scope="col">Security-marked</th><th scope="col">Merge status</th></tr></thead>
+                            <tbody>
+                                @foreach (var pr in Run.Automation.OpenPullRequests)
+                                {
+                                    <tr data-testid="dh-pr"><td>@(pr.PackageName ?? pr.Title)</td><td class="dh-mono">@P.CurrentToProposed(pr)</td>
+                                        <td>@(pr.UpdateType is { } ut ? DependencyReviewPresentation.UpdateType(ut) : "Not assessed")</td>
+                                        <td>@(pr.AgeDays is { } age ? $"{age} days{(pr.Stale == true ? " · stale (configured threshold)" : "")}" : "Unknown")</td><td>Observed · @pr.Status</td>
+                                        <td>@(pr.SecurityMarked ? "Yes (PR says so)" : "No")</td><td>@(pr.MergeStatus ?? "Not provided")</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="dh-muted">An open PR is observed evidence, not an upgrade that is ready or safe. No open PR does not mean dependencies are current.</p>
+                }
+            </section>
+            break;
+
+        case HealthResultSection.Target:
+            <section aria-labelledby="dh-target-heading" data-testid="dh-target">
+                <h3 id="dh-target-heading">Target</h3>
+                @{ var deployed = Run.Comparisons.FirstOrDefault(c => c.Kind == ComparisonKind.ExpectedVsDeployed); }
+                <dl class="dh-facts">
+                    <div><dt>Expected inventory</dt><dd>@Run.Inventory.Name · @P.InventorySource(Run.Inventory)</dd></div>
+                    <div><dt>Deployed evidence</dt><dd>@(deployed?.RightName ?? "Not selected")</dd></div>
+                    <div><dt>Environment</dt><dd>@(Run.Inventory.Environment ?? "Not recorded")</dd></div>
+                </dl>
+                <p class="dh-muted">The deployed evidence and the target it was read from are stored with the evidence; this result never re-reads the target.</p>
+            </section>
+            break;
+
+        case HealthResultSection.History:
+            <section aria-labelledby="dh-history-heading" data-testid="dh-history-section">
+                <h3 id="dh-history-heading">History</h3>
+                <p class="dh-muted">Stored results open exactly as recorded, under the evidence mode that produced them; no registry or advisory source is queried.</p>
+                @History
+            </section>
+            break;
     }
-
-    <h3>Automation status</h3>
-    <div class="dh-automation" data-testid="dh-automation">
-        <p><span class="dh-badge dh-badge-@DependencyHealthPresentation.Tone(Run.Automation.State)" data-testid="dh-automation-state">@DependencyHealthLabels.Automation(Run.Automation.State)</span>
-            <strong>Renovate runtime</strong> @(Run.Automation.Provider.Length > 0 ? $"({Run.Automation.Provider})" : "") — @Run.Automation.Detail</p>
-        <p class="dh-muted" data-testid="dh-automation-static">@(Run.Automation.StaticConfiguration ?? "Static Renovate configuration: not assessed in this run (review from source to see it).")</p>
-        @if (Run.Automation.State == AutomationState.Observed)
-        {
-            <dl class="dh-facts">
-                <div><dt>Last run</dt><dd>@(Run.Automation.LastRun is { } lr ? $"{lr.Id} · {lr.Result} · {DependencyHealthPresentation.Utc(lr.FinishedAt ?? lr.StartedAt)}" : "None observed")</dd></div>
-                <div><dt>Last successful run</dt><dd>@(Run.Automation.LastSuccessfulRun is { } ls ? $"{ls.Id} · {DependencyHealthPresentation.Utc(ls.FinishedAt ?? ls.StartedAt)}" : "None observed")</dd></div>
-                <div><dt>Failed runs (recent window)</dt><dd>@(Run.Automation.FailedRunsInWindow?.ToString() ?? "Not assessed")</dd></div>
-                <div><dt>Dependency Dashboard</dt><dd>@Run.Automation.DependencyDashboard</dd></div>
-            </dl>
-            <div class="dh-table-wrap" tabindex="0" role="region" aria-label="Open dependency pull requests">
-                <table class="dh-table" data-testid="dh-prs">
-                    <thead><tr><th scope="col">Package</th><th scope="col">Current → proposed</th><th scope="col">Update type</th><th scope="col">PR age</th><th scope="col">PR state</th><th scope="col">Security-marked</th><th scope="col">Merge status</th></tr></thead>
-                    <tbody>
-                        @foreach (var pr in Run.Automation.OpenPullRequests)
-                        {
-                            <tr data-testid="dh-pr"><td>@(pr.PackageName ?? pr.Title)</td><td class="dh-mono">@DependencyHealthPresentation.CurrentToProposed(pr)</td>
-                                <td>@(pr.UpdateType is { } ut ? DependencyReviewPresentation.UpdateType(ut) : "Not assessed")</td>
-                                <td>@(pr.AgeDays is { } age ? $"{age} days{(pr.Stale == true ? " · stale (configured threshold)" : "")}" : "Unknown")</td><td>Observed · @pr.Status</td>
-                                <td>@(pr.SecurityMarked ? "Yes (PR says so)" : "No")</td><td>@(pr.MergeStatus ?? "Not provided")</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            <p class="dh-muted">An open PR is observed evidence, not an upgrade that is ready or safe. No open PR does not mean dependencies are current.</p>
-        }
-    </div>
-
-    <ReviewDisclosure Text="Limitations" CollapseText="Hide limitations" TestId="dh-limitations" Class="disclosure-inline" Hint="@Run.Limitations.Count.ToString()">
-        <ul class="dh-list" data-testid="dh-limitations-list">@foreach (var limitation in Run.Limitations) { <li>@limitation</li> }</ul>
-    </ReviewDisclosure>
 </section>
 
 @code {
     private const int PageSize = 60;
     [Parameter, EditorRequired] public DependencyHealthRun Run { get; set; } = default!;
+    /// <summary>The evidence mode that produced <see cref="Run"/> (<see cref="DependencyEvidenceModes"/>); defaults to the mode stored with the run.</summary>
+    [Parameter] public string? EvidenceMode { get; set; }
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback OnRefresh { get; set; }
     [Parameter] public EventCallback OnExport { get; set; }
+    /// <summary>The stored-results selector for this evidence mode (owned by the page).</summary>
+    [Parameter] public RenderFragment? History { get; set; }
 
+    private string Mode => EvidenceMode ?? DependencyEvidenceModes.Of(Run);
+    private IReadOnlyList<HealthResultSection> Sections => P.Sections(Mode, Run);
+
+    private HealthResultSection _section = HealthResultSection.Summary;
     private HealthFilter _filter = HealthFilter.All;
     private string? _search;
     private string? _selected;
@@ -280,7 +388,8 @@
     {
         if (_shownRun == Run.RunId) return;
         _shownRun = Run.RunId;
-        _filter = DependencyHealthPresentation.Count(Run, HealthFilter.Issues) > 0 ? HealthFilter.Issues : HealthFilter.All;
+        _section = HealthResultSection.Summary;
+        _filter = P.Count(Run, HealthFilter.Issues) > 0 ? HealthFilter.Issues : HealthFilter.All;
         _selected = null;
         _search = null;
         _limit = PageSize;
@@ -289,4 +398,27 @@
     private void SetFilter(HealthFilter filter) { _filter = filter; _limit = PageSize; }
 
     private void Toggle(string key) => _selected = _selected == key ? null : key;
+
+    private RenderFragment Comparisons => __builder =>
+    {
+        foreach (var comparison in Run.Comparisons)
+        {
+            <ReviewDisclosure Text="@($"{DependencyHealthLabels.ComparisonKindName(comparison.Kind)}: {comparison.LeftName} vs {comparison.RightName}")" CollapseText="@($"Hide {DependencyHealthLabels.ComparisonKindName(comparison.Kind)}")"
+                              TestId="@($"dh-comparison-{comparison.Kind}")" Class="disclosure-inline" Hint="@($"{comparison.Entries.Count} entr{(comparison.Entries.Count == 1 ? "y" : "ies")} · {comparison.Unchanged} unchanged/matched")">
+                @foreach (var limitation in comparison.Limitations) { <p class="dh-muted">@limitation</p> }
+                <div class="dh-table-wrap dh-table-scroll" tabindex="0" role="region" aria-label="@DependencyHealthLabels.ComparisonKindName(comparison.Kind)">
+                    <table class="dh-table" data-testid="dh-comparison-table">
+                        <thead><tr><th scope="col">Package</th><th scope="col">State</th><th scope="col">@comparison.LeftName</th><th scope="col">@comparison.RightName</th><th scope="col">Hash</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in comparison.Entries)
+                            {
+                                <tr data-testid="dh-comparison-entry" data-state="@e.State"><td>@e.PackageName</td><td><span class="dh-badge dh-badge-@P.Tone(e.State)">@DependencyHealthLabels.Comparison(e.State)</span></td>
+                                    <td class="dh-mono">@(e.LeftValue ?? "—")</td><td class="dh-mono">@(e.RightValue ?? "—")</td><td>@(e.Hash == HashComparison.NotAvailable ? "Not available" : e.Hash.ToString())</td><td>@e.Detail</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </ReviewDisclosure>
+        }
+    };
 }

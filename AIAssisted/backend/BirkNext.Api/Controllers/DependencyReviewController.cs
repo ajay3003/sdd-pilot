@@ -33,6 +33,11 @@ public sealed class DependencyReviewController(IDependencyReviewService reviews,
         return error is not null ? BadRequest(error) : Ok(result);
     }
 
+    /// <summary>SBOM / lock-file candidates in the given Source Analysis snapshots (by file name; content is validated only on upload).</summary>
+    [HttpGet("sbom-candidates")]
+    public async Task<ActionResult<SbomCandidateScan>> SbomCandidates([FromQuery] string? environmentId, [FromQuery] Guid[]? snapshot, CancellationToken ct) =>
+        Ok(await sourceScope.SbomCandidatesAsync(environmentId ?? "", [.. snapshot ?? []], ct));
+
     [HttpGet("runs")]
     public async Task<ActionResult<IReadOnlyList<DependencyReviewRunSummary>>> History(CancellationToken ct) => Ok(await reviews.HistoryAsync(ct));
 

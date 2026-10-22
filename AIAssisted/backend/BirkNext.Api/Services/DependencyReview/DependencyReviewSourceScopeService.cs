@@ -11,6 +11,8 @@ public interface IDependencyReviewSourceScopeService
     Task<ReviewSourceOptions> OptionsAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     /// <summary>Validates the scope and reviews exactly the selected immutable snapshots.</summary>
     Task<(DependencyReviewResult? Result, string? Error)> RunAsync(SourceDependencyReviewRequest request, CancellationToken ct = default);
+    /// <summary>Checks the given snapshots' file inventories for supported SBOM/lock-file names. Read-only; never imports or validates content.</summary>
+    Task<SbomCandidateScan> SbomCandidatesAsync(string environmentId, IReadOnlyList<Guid> snapshotIds, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -59,6 +61,32 @@ public sealed class DependencyReviewSourceScopeService(IReviewSourceEvidenceProv
     {
         var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
         return ReviewSourceEvidenceProvider.Options(sources.SourceAnalysisEnabled, snapshots, Evidence, scope, primary => Candidates(primary, snapshots), Problem);
+    }
+
+    /// <summary>SBOM candidates of exactly the given snapshots, by file name from the snapshot's file inventory.</summary>
+    public static SbomCandidateScan ScanForSbom(IEnumerable<IqrSourceSnapshot> snapshots)
+    {
+        var checkedSnapshots = new List<SbomCheckedSnapshot>();
+        var candidates = new List<SbomCandidate>();
+        var limitations = new List<string>();
+        foreach (var s in snapshots)
+        {
+            var repository = IdentityOf(s).DisplayName;
+            var files = s.TargetIndex?.Files ?? [];
+            checkedSnapshots.Add(new(s.Id, repository, s.TargetIndex?.FileInventoryComplete == true, files.Count));
+            if (s.TargetIndex is null) limitations.Add($"{repository}: analyzed before Source Analysis kept a file inventory, so it could not be checked for SBOM files.");
+            else if (!s.TargetIndex.FileInventoryComplete) limitations.Add($"{repository}: the snapshot's file inventory is incomplete; SBOM files outside it were not checked.");
+            foreach (var file in files)
+                if (SbomCandidates.Classify(file.RelativePath) is { } format) candidates.Add(new(s.Id, repository, file.RelativePath, format, s.AnalyzedAt));
+        }
+        return new SbomCandidateScan { Checked = checkedSnapshots, Candidates = [.. candidates.OrderBy(c => c.Repository, StringComparer.Ordinal).ThenBy(c => c.Path, StringComparer.Ordinal)], Limitations = limitations };
+    }
+
+    public async Task<SbomCandidateScan> SbomCandidatesAsync(string environmentId, IReadOnlyList<Guid> snapshotIds, CancellationToken ct = default)
+    {
+        if (!sources.SourceAnalysisEnabled || snapshotIds.Count == 0) return new SbomCandidateScan();
+        var wanted = snapshotIds.ToHashSet();
+        return ScanForSbom((await sources.ListAsync(environmentId, ct)).Where(s => wanted.Contains(s.Id)));
     }
 
     public async Task<(DependencyReviewResult? Result, string? Error)> RunAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)

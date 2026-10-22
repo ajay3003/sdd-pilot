@@ -29,6 +29,8 @@ public interface IDependencyReviewApiService
     Task<IReadOnlyList<DependencyHealthRunSummary>> HealthHistoryAsync(CancellationToken ct = default);
     Task<DependencyHealthRun?> GetHealthAsync(Guid runId, CancellationToken ct = default);
     Task<(DependencyHealthRun? Run, string? Error)> RefreshHealthAsync(Guid runId, CancellationToken ct = default);
+    /// <summary>SBOM / lock-file candidates in the given Source Analysis snapshots, by file name (read-only; nothing is imported).</summary>
+    Task<SbomCandidateScan> SbomCandidatesAsync(string environmentId, IReadOnlyList<Guid> snapshotIds, CancellationToken ct = default) => Task.FromResult(new SbomCandidateScan());
 }
 
 public sealed class DependencyReviewApiService(HttpClient http) : IDependencyReviewApiService
@@ -115,6 +117,10 @@ public sealed class DependencyReviewApiService(HttpClient http) : IDependencyRev
         using var response = await http.PostAsync($"api/dependency-review/health/{runId}/refresh", null, ct);
         return await HealthAsync(response, ct);
     }
+
+    public async Task<SbomCandidateScan> SbomCandidatesAsync(string environmentId, IReadOnlyList<Guid> snapshotIds, CancellationToken ct = default) =>
+        snapshotIds.Count == 0 ? new SbomCandidateScan()
+        : await http.GetFromJsonAsync<SbomCandidateScan>($"api/dependency-review/sbom-candidates?environmentId={Uri.EscapeDataString(environmentId)}{string.Concat(snapshotIds.Select(id => $"&snapshot={id:D}"))}", Json, ct) ?? new();
 
     private static async Task<(DependencyHealthRun?, string?)> HealthAsync(HttpResponseMessage response, CancellationToken ct)
     {

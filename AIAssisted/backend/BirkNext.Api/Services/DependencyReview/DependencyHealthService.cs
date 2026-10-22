@@ -528,7 +528,7 @@ public sealed class DependencyHealthService(
         var records = await db.DependencyHealthRuns.AsNoTracking().OrderByDescending(r => r.CompletedAt).Take(30).ToListAsync(ct);
         return records.Select(r => JsonSerializer.Deserialize<DependencyHealthRun>(r.ResultJson, Json)).OfType<DependencyHealthRun>()
             .Select(r => new DependencyHealthRunSummary(r.RunId, r.CompletedAt, r.Label, r.Inventory.Name, r.Summary.Dependencies,
-                r.Observations.Count(o => o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict), r.RefreshOf)).ToList();
+                r.Observations.Count(o => o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict), r.RefreshOf, DependencyEvidenceModes.Of(r))).ToList();
     }
 
     /// <summary>The stored snapshot exactly as recorded — no registry or advisory source is queried when an old run is opened.</summary>
