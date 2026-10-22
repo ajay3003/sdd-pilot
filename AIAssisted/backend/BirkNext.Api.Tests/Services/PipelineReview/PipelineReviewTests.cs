@@ -593,7 +593,7 @@ public sealed class PipelineReviewTests
         r.Deployments.Select(d => d.Environment).Should().BeEquivalentTo(["orders-dev", "orders-qa"], "the template default applies when no parameter is passed");
         Deployment(r, "orders-dev").Artifacts.Single().Should().Match<ArtifactLineageItem>(a => a.Artifact == "(container image)" && a.ProducerStage == "Build" && a.Basis.Contains("not statically derivable"));
         r.Pipelines.Single(p => p.Name == "orders-qa").Triggers.Select(t => t.Text).Should().Equal("No push trigger (`trigger: none`)", "No pull-request trigger (`pr: none`)");
-        var rebuild = Finding(r, PipelineFindingCategory.ArtifactLineageGap, "QA rebuilds instead of promoting the DEV-tested build (`orders-qa`)");
+        var rebuild = Finding(r, PipelineFindingCategory.ArtifactLineageGap, "QA appears to rebuild rather than reuse the DEV-tested artifact (`orders-qa`)");
         rebuild!.Should().Match<PipelineReviewFinding>(f => f.EvidenceState == ArchitectureEvidenceState.StronglySupported && f.Severity == PipelineFindingSeverity.Medium && f.Explanation.Contains("`Orders/src/Orders.Api`"));
     }
 

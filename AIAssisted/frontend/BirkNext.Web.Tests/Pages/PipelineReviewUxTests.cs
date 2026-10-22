@@ -86,15 +86,14 @@ public sealed class PipelineReviewUxTests : BunitContext
         var overview = page.Find("[data-testid=pr-overview]");
 
         overview.QuerySelectorAll("[data-testid=pr-finding]").Should().BeEmpty("instances live in Gaps");
-        var counts = page.Find("[data-testid=pr-severity-counts]").TextContent;
-        counts.Should().Contain($"High {_review.Findings.Count(f => f.Severity == PipelineFindingSeverity.High)}");
-        page.FindAll("[data-testid=pr-top-group]").Count.Should().BeLessThanOrEqualTo(6);
-        page.Find("[data-testid=pr-all-gaps]").TextContent.Should().Be($"Review all {_review.Findings.Count} gaps in {PipelineReviewGrouping.Group(_review.Findings).Count} groups");
+        page.Find("[data-testid=pr-counts]").TextContent.Should().Contain($"{_review.Findings.Count(f => f.Severity == PipelineFindingSeverity.High)} High");
+        page.FindAll("[data-testid=pr-top-group]").Count.Should().BeLessThanOrEqualTo(4);
+        page.Find("[data-testid=pr-all-gaps]").TextContent.Should().Be($"View all {_review.Findings.Count} findings in {PipelineReviewGrouping.Group(_review.Findings).Count} groups");
         // Triggers and artifacts are counts first; raw expressions and names are in collapsed details.
         page.Find("[data-testid=pr-trigger-summary]").TextContent.Should().NotBeEmpty();
         page.Find("[data-testid=pr-triggers]").Closest("details")!.HasAttribute("open").Should().BeFalse();
         page.Find("[data-testid=pr-artifacts]").Closest("details")!.HasAttribute("open").Should().BeFalse();
-        page.Find("[data-testid=pr-artifact-summary]").TextContent.Should().Contain("Named in pipeline definitions");
+        page.Find("[data-testid=pr-artifact-summary]").TextContent.Should().Contain("Defined in pipeline source").And.Contain("Actual publicationNot verified");
         page.Find("[data-testid=pr-path-note]").TextContent.Should().Contain("not deployment history").And.Contain("no runtime execution evidence");
     }
 
@@ -182,7 +181,7 @@ public sealed class PipelineReviewUxTests : BunitContext
         var page = Page("environments");
 
         page.FindAll("[data-testid=pr-env-card]").Should().HaveCount(_review.Environments.Count);
-        page.Find("[data-testid=pr-environments]").TextContent.Should().Contain("approval/check evidence: Not included");
+        page.Find("[data-testid=pr-approval-notice]").TextContent.Should().Contain("Approval/check metadata not included");
         foreach (var deployment in page.FindAll("[data-testid=pr-deployment]"))
         {
             var primary = deployment.QuerySelector("tr")!.TextContent;
@@ -190,7 +189,7 @@ public sealed class PipelineReviewUxTests : BunitContext
             primary.Should().NotContain("No rollback exists");
             deployment.QuerySelector("details")!.HasAttribute("open").Should().BeFalse();
         }
-        page.FindAll("[data-testid=pr-deployment]").Should().Contain(d => d.QuerySelector("tr")!.TextContent.Contains("Not detected in source"));
+        page.FindAll("[data-testid=pr-deployment]").Should().Contain(d => d.QuerySelector("tr")!.TextContent.Contains("Rollback not detected in source"));
         PipelineReviewGrouping.RollbackLabel("No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).").Should().Be("Not detected in source");
         PipelineReviewGrouping.ApprovalLabel($"Deployment job targets environment `qa`. {PipelineReviewText.ApprovalNotAssessable}").Should().Be("Runtime metadata required");
         PipelineReviewGrouping.ApprovalLabel("Something new").Should().Be("Something new", "unknown wording is shown as written, never guessed");
@@ -249,8 +248,8 @@ public sealed class PipelineReviewUxTests : BunitContext
 
         page.Find("[data-testid=pr-metadata]").HasAttribute("checked").Should().BeFalse();
         _api.Verify(a => a.ReviewAsync(It.IsAny<string>(), It.IsAny<Guid?>(), true, It.IsAny<CancellationToken>()), Times.Never);
-        page.Find("[data-testid=pr-ready-meaning]").TextContent.Should().Contain("not that pipelines pass");
-        page.Find("[data-testid=pr-boundary]").TextContent.Should().Contain("not that it ran, passed or deployed");
+        page.Find("[data-testid=pr-ready-meaning]").TextContent.Should().Contain("does not mean the pipelines passed");
+        page.Find("[data-testid=pr-boundary]").TextContent.Should().Contain("does not prove that a pipeline ran");
         page.Markup.Should().NotContain("Deployment succeeded").And.NotContain("Tests passed");
     }
 

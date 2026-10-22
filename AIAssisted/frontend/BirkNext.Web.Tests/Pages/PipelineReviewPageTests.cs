@@ -61,14 +61,14 @@ public sealed class PipelineReviewPageTests : BunitContext
     public void The_overview_is_summary_first_with_needs_attention_counts_and_no_score()
     {
         var page = Page();
-        page.Find("[data-testid=pr-overview] h2").TextContent.Should().StartWith("Needs attention");
         page.Find("[data-testid=pr-counts]").TextContent.Should().Be("1 High · 8 Medium · 1 Low · 1 Info · 2 not assessable", "assessment gaps (unresolved template/flow) are counted apart from quality findings");
         page.Find("[data-testid=pr-pipeline-count]").TextContent.Should().Be("4");
-        page.FindAll("[data-testid=pr-path] li").Select(li => li.TextContent).Should().Equal("pr-validation", "shop-build", "worker-build", "DEV", "QA", "no detected link", "PROD");
+        page.FindAll("[data-testid=pr-delivery-path] li").Select(li => li.TextContent).Should().Equal("pr-validation", "shop-build", "worker-build", "DEV", "QA", "no detected link", "PROD");
+        page.Find("[data-testid=pr-pipeline-path]").HasAttribute("open").Should().BeFalse("the pipeline-level path is secondary to the release path");
         page.Find("[data-testid=pr-top-findings]").TextContent.Should().Contain("PROD deployment is reachable without any detected test");
-        page.Find("[data-testid=pr-gating-summary]").TextContent.Should().Contain("QA").And.Contain("no post-deployment validation");
+        page.Find("[data-testid=pr-gating-summary]").TextContent.Should().Contain("QA").And.Contain("Post-deployment validation0 detected");
         page.Markup.Should().NotContain("%").And.NotContain("Score");
-        page.Find("[data-testid=pr-boundary]").TextContent.Should().Contain("not that it ran, passed or deployed");
+        page.Find("[data-testid=pr-boundary]").TextContent.Should().Contain("Source evidence only").And.Contain("does not prove that a pipeline ran");
     }
 
     [Fact]
@@ -121,6 +121,7 @@ public sealed class PipelineReviewPageTests : BunitContext
     {
         var page = Page();
         page.Find("[data-testid=pr-tab-tests]").Click();
+        page.Find("[data-testid=pr-test-gate]").Change("");
         var rows = page.FindAll("[data-testid=pr-matrix-row]");
         var integration = rows.Single(r => r.TextContent.StartsWith("Integration tests"));
         integration.QuerySelectorAll("td").Select(td => td.GetAttribute("data-state")).Should().Equal("None", "After", "None", "None");
@@ -158,7 +159,7 @@ public sealed class PipelineReviewPageTests : BunitContext
             PipelineReviewText.ChangesBoundary));
         var page = Page();
         page.Find("[data-testid=pr-tab-changes]").Click();
-        page.Find("[data-testid=pr-changes]").TextContent.Should().Contain("not pipeline runtime failures");
+        page.Find("[data-testid=pr-changes]").TextContent.Should().Contain("does not compare runtime execution outcomes");
         page.Find("[data-testid=pr-compare]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=pr-change][data-kind=GatingChanged]").TextContent.Should().Contain("High").And.Contain("DeployQA"));
     }
@@ -167,7 +168,8 @@ public sealed class PipelineReviewPageTests : BunitContext
     public void Export_uses_the_shared_export_engine()
     {
         var page = Page();
-        page.Find("[data-testid=pr-export]").Click();
+        page.Find("[data-testid=pr-export-toggle]").Click();
+        page.Find("[data-testid=pr-export-html]").Click();
         _export.Verify(e => e.ExportPipelineReview(It.Is<PipelineReviewResult>(r => r.SourceSnapshotId == SnapshotId)), Times.Once);
         JSInterop.VerifyInvoke("downloadHtmlFile");
     }

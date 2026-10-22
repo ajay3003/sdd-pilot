@@ -73,7 +73,7 @@ public sealed class PipelineReviewDashboardTests : BunitContext
         page.Find("[data-testid=pr-evidence-versions]").TextContent.Should().Contain("v1").And.Contain("v2");
         page.Find("[data-testid=pr-reanalyze]").GetAttribute("href").Should().Be("source-analysis");
 
-        page.FindAll("[data-testid^=pr-tab-]").Select(t => t.TextContent).Should().Equal("Overview", "Flow", "Gaps", "Tests", "Environments", "Dependencies", "Changes");
+        page.FindAll("[data-testid^=pr-tab-]").Select(t => t.TextContent).Should().Equal("Overview", "Flow", "Findings", "Tests", "Environments", "Dependencies", "Changes");
         foreach (var tab in new[] { "flow", "gaps", "tests", "environments", "dependencies", "changes" })
         {
             page.Find($"[data-testid=pr-tab-{tab}]").Click();
@@ -81,10 +81,8 @@ public sealed class PipelineReviewDashboardTests : BunitContext
             page.Find("[data-testid=pr-placeholder]").TextContent.Should().Contain("Refresh");
         }
 
-        var tiles = page.FindAll("[data-testid=pr-summary-card]").ToDictionary(t => t.GetAttribute("data-key")!, t => t.QuerySelector(".prv-tile-value")!.TextContent);
-        tiles["structure"].Should().Be("3", "the older evidence's pipeline-file count is shown, labelled historical");
-        page.Find("[data-testid=pr-summary-card][data-key=structure]").TextContent.Should().Contain("historical");
-        tiles.Where(t => t.Key != "structure").Should().OnlyContain(t => t.Value == "—", "unknown counts are never 0");
+        page.FindAll("[data-testid=pr-summary-card]").Should().BeEmpty("counts exist only for a reviewed result — never 0 for unknown");
+        page.FindAll("[data-testid=pr-readiness-item]").Select(i => i.TextContent).Should().Contain(t => t.Contains("3 pipeline files"), "the older evidence's file count stays in the evidence details");
     }
 
     [Fact]
@@ -94,10 +92,10 @@ public sealed class PipelineReviewDashboardTests : BunitContext
 
         Status(page).Should().Be("Partial");
         page.FindAll("[data-testid=pr-provider]").Select(p => p.TextContent).Should().Equal("Pipeline provider: Azure Pipelines");
-        var tiles = page.FindAll("[data-testid=pr-summary-card]").ToDictionary(t => t.GetAttribute("data-key")!, t => t.QuerySelector(".prv-tile-value")!.TextContent);
-        tiles["provider"].Should().Be("Azure Pipelines");
-        tiles["gates"].Should().Be(Shop().Tests.Count.ToString());
-        page.Find("[data-testid=pr-summary-card][data-key=gates]").TextContent.Should().Contain("defined, not executed");
+        page.Find("[data-testid=pr-provider-fact]").TextContent.Should().Be("Azure Pipelines");
+        var tiles = page.FindAll("[data-testid=pr-summary-card]").ToDictionary(t => t.GetAttribute("data-key")!, t => t.QuerySelector("dd")!.TextContent);
+        tiles.Keys.Should().Equal("pipelines", "deployments", "tests", "environments", "findings", "artifacts");
+        tiles["tests"].Should().Be(Shop().Tests.Count.ToString());
         page.FindAll("[data-testid=pr-state]").Should().BeEmpty();
         page.Find("[data-testid=pr-triggers]").TextContent.Should().NotBeEmpty();
     }
@@ -108,7 +106,7 @@ public sealed class PipelineReviewDashboardTests : BunitContext
         var clean = Shop() with { UnresolvedTemplates = [], Findings = [.. PipelineReviewScoring.QualityFindings(Shop().Findings)] };
         var page = Page(Option(ciCd: 2, pipelines: 4, ciCdStatus: "Partial", repository: "shop"), clean);
 
-        Status(page).Should().Be("Ready", "the CI/CD domain's static-reader 'Partial' disclaimer is not partial coverage");
+        Status(page).Should().Be("Review ready", "the CI/CD domain's static-reader 'Partial' disclaimer is not partial coverage");
     }
 
     [Fact]
@@ -145,7 +143,8 @@ public sealed class PipelineReviewDashboardTests : BunitContext
         var page = Page(Option(ciCd: 1, pipelines: 2, repository: null), Stale());
 
         page.Find("[data-testid=pr-source-name]").TextContent.Should().Be("M2LB _2_");
-        page.Find("[data-testid=pr-source-card]").TextContent.Should().Contain("Partial").And.Contain("Needs refresh");
+        page.Find("[data-testid=pr-source-coverage]").TextContent.Should().Contain("Partial");
+        page.Find("[data-testid=pr-evidence-details]").TextContent.Should().Contain("Needs refresh");
         page.Find("[data-testid=pr-snapshot] option").TextContent.Should().Be("M2LB _2_ · 2026-10-01 11:14 UTC · Partial · needs refresh · latest");
         page.Find("[data-testid=pr-technical-body]").HasAttribute("hidden").Should().BeTrue();
         page.Find("[data-testid=pr-technical-body]").TextContent.Should().Contain("M2LB _2_.zip").And.Contain(SnapshotId.ToString());
@@ -158,12 +157,12 @@ public sealed class PipelineReviewDashboardTests : BunitContext
 
         var box = page.Find("[data-testid=pr-metadata]");
         box.GetAttribute("aria-describedby").Should().Be("pr-metadata-help");
-        page.Find("#pr-metadata-help").TextContent.Should().Contain("works without it");
-        page.Find("[data-testid=pr-enrichment] .prv-enrich-state .sd-pill").GetAttribute("data-status").Should().Be("Not included");
+        page.Find("#pr-metadata-help").TextContent.Should().Contain("works without them").And.Contain("not a prerequisite");
+        page.Find("[data-testid=pr-runtime-metadata] .sd-pill").GetAttribute("data-status").Should().Be("Not included");
         page.FindAll("[data-testid=pr-tab-flow]").Should().ContainSingle("the source review is usable without metadata");
 
         box.Change(true);
-        page.WaitForAssertion(() => page.Find("[data-testid=pr-enrichment] .prv-enrich-state .sd-pill").GetAttribute("data-status").Should().Be("Included"));
+        page.WaitForAssertion(() => page.Find("[data-testid=pr-runtime-metadata] .sd-pill").GetAttribute("data-status").Should().Be("Included"));
     }
 
     [Fact]

@@ -804,7 +804,7 @@ public static class PipelineReviewBuilder
             var lowerEnv = Display(best[0].Lower);
             Add(ctx, PipelineFindingCategory.ArtifactLineageGap, Critical(higher.EnvironmentKind) ? PipelineFindingSeverity.Medium : PipelineFindingSeverity.Low,
                 best.Count == 1 ? ArchitectureEvidenceState.StronglySupported : ArchitectureEvidenceState.Inferred, $"rebuild-env|{higher.Id}",
-                $"{Display(higher)} rebuilds instead of promoting the {lowerEnv}-tested build (`{higher.PipelineName}`)",
+                $"{Display(higher)} appears to rebuild rather than reuse the {lowerEnv}-tested artifact (`{higher.PipelineName}`)",
                 $"The artifact deployed to {Display(higher)} may not be the one tested in {lowerEnv}: it is built again, from whatever source the {Display(higher)} run checks out.",
                 $"{(best.Count == 1 ? $"`{best[0].Lower.PipelineName}`" : $"{string.Join(", ", best.Select(b => $"`{b.Lower.PipelineName}`"))} (equally close)")} and `{higher.PipelineName}` build the same source "
                     + $"({string.Join(", ", best[0].Shared.Take(3).Select(s => $"`{s}`"))}); {Display(higher)} deploys output of `{ctx.Name(hp.ProducerPipeline!)}` stage `{hp.ProducerStage}`. `{higher.PipelineName}` runs {higher.HowReached}.",

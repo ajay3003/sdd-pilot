@@ -457,3 +457,23 @@
 .prv-pipeline > summary::-webkit-details-marker, .prv-gap-group > summary::-webkit-details-marker { display: none; }
 .prv-pipeline > summary::before, .prv-gap-group > summary::before { content: "▸"; color: var(--clr-text-muted); margin-right: 0.1rem; }
 .prv-pipeline[open] > summary::before, .prv-gap-group[open] > summary::before { content: "▾"; }
+
+/* Compact evidence header: what is reviewed and how much evidence there is, in one block (replaces Source/Readiness/Enrichment cards). */
+.prv-evidence { display: grid; gap: 0.5rem; padding: 0.8rem 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); min-width: 0; }
+.prv-evidence-title { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+.prv-evidence-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; }
+.prv-evidence-facts div { display: grid; gap: 0.1rem; min-width: 0; }
+.prv-evidence-facts dt { color: var(--clr-text-muted); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.prv-evidence-facts dd { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.prv-evidence-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 1rem; }
+.prv-scope-banner { margin: 0; padding: 0.55rem 0.8rem; border: 1px solid var(--clr-border); border-left: 3px solid var(--prv-indigo); border-radius: var(--radius-md); background: var(--prv-indigo-bg); font-size: 0.86rem; overflow-wrap: anywhere; }
+.prv-scope-banner p { margin: 0; }
+/* Release path: ordered steps; links between environments are their own rows so the relationship is readable without arrows. */
+.prv-release { display: grid; gap: 0.4rem; }
+.prv-release-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.prv-release-steps li { display: grid; gap: 0.1rem; padding: 0.45rem 0.7rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.prv-release-link { margin-left: 1.2rem; border-style: dashed !important; background: var(--clr-surface); }
+.prv-release-detail { font-size: 0.84rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.prv-kpis { margin-top: 0.4rem; }
+.prv-open-flow { font-weight: 600; color: var(--clr-link, #2563eb); }
+.prv-subtype { font-weight: 400; }

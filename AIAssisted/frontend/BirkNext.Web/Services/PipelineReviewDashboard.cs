@@ -33,7 +33,7 @@ public static class PipelineReviewDashboard
             NoPipelines when source?.CiCdStatus == nameof(SourceDomainStatus.Unsupported) => new("Unsupported", "⊘", CapabilityTone.Neutral),
             NoPipelines => new("N/A", "–", CapabilityTone.Neutral),
             _ when IsPartial(r, source) => new("Partial", "◐", CapabilityTone.Caution),
-            _ => new("Ready", "✓", CapabilityTone.Positive),
+            _ => new("Review ready", "✓", CapabilityTone.Positive),
         };
     }
 
