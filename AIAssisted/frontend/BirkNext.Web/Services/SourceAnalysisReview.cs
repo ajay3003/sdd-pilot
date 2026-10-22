@@ -58,14 +58,55 @@ public static class ArchitectureReview
         : d.ConfigurationReference is { Length: > 0 } key ? $"No component is wired to {key} in this source"
         : "Matching target host/base address not identified in this source";
 
+    /// <summary>
+    /// Reason category of an unresolved dependency, from the dependency's own fields only (never from text): conflicting candidates; evidence that
+    /// exists only in local orchestration or compose files; a messaging entity whose name is not resolved; an HTTP/GraphQL base address not
+    /// identified; otherwise the target component. Null when the target was resolved.
+    /// </summary>
+    public static string? ReasonCategory(ArchitectureDependency d)
+    {
+        // An Unresolved-state dependency can still point to an unresolved node (a channel whose name is not resolved): it keeps a reason.
+        if (d.ToId is not null && d.ConflictingTargets.Count == 0 && d.EvidenceState != ArchitectureEvidenceState.Unresolved) return null;
+        if (d.ConflictingTargets.Count > 0) return ReasonConflict;
+        if (d.Evidence.Count > 0 && d.Evidence.All(e => e.Kind == ArchitectureEvidenceKind.DevelopmentOrchestration)) return ReasonLocalOrchestration;
+        if (d.Evidence.Count > 0 && d.Evidence.All(e => e.Kind == ArchitectureEvidenceKind.ContainerCompose)) return ReasonCompose;
+        return d.DependencyType switch
+        {
+            ArchitectureDependencyType.EventHubProduce or ArchitectureDependencyType.EventHubConsume or ArchitectureDependencyType.ServiceBusPublish
+                or ArchitectureDependencyType.ServiceBusConsume => ReasonChannel,
+            ArchitectureDependencyType.Http or ArchitectureDependencyType.GraphQl => ReasonBaseUrl,
+            ArchitectureDependencyType.PackageDependency or ArchitectureDependencyType.ProjectReference => ReasonExternal,
+            _ => ReasonTarget,
+        };
+    }
+
+    public const string ReasonTarget = "Target component unresolved", ReasonChannel = "Channel/entity name unresolved", ReasonBaseUrl = "Base URL unresolved",
+        ReasonConflict = "Conflict", ReasonLocalOrchestration = "Local orchestration only", ReasonCompose = "Compose evidence only", ReasonExternal = "External dependency";
+
+    /// <summary>Plain state wording for one dependency: a dependency whose target is unknown was still detected.</summary>
+    public static string StateText(ArchitectureDependency d) =>
+        d.EvidenceState == ArchitectureEvidenceState.Unresolved || d.ToId is null ? "Relationship detected · target unresolved" : ArchitecturePresentation.StateLabel(d.EvidenceState);
+
+    /// <summary>The extractor's unresolved-evidence kinds grouped by cause, so missing source relationships, ambiguous configuration and runtime
+    /// scope are not mixed. Unknown kinds fall under "Other analyzer evidence".</summary>
+    public static string CauseGroup(string kind) => kind switch
+    {
+        "Unresolved target" or "Producer not found" or "Consumer not found" => "Missing relationship evidence",
+        "Channel name unresolved" or "Conflict" => "Ambiguous configuration",
+        "Deployment not assessed" or "Local orchestration only" => "Outside Source Analysis runtime scope",
+        _ => "Other analyzer evidence",
+    };
+
+    public static readonly IReadOnlyList<string> CauseGroups = ["Missing relationship evidence", "Ambiguous configuration", "Outside Source Analysis runtime scope", "Other analyzer evidence"];
+
     /// <summary>The primary reason for a non-complete architecture status (actual data).</summary>
     public static string? StatusReason(ArchitectureSnapshot a)
     {
         if (a.Status is ArchitectureStatus.Complete) return null;
         if (a.Status is ArchitectureStatus.Unsupported) return "Not assessed: no supported project type was found in this source.";
         var dep = ArchitectureEvidenceSummary.Dependencies(a);
-        return dep.Unresolved > 0 ? SourceAnalysisReview.Plural(dep.Unresolved, "unresolved dependency", "unresolved dependencies")
-            : a.Diagnostics.Count > 0 ? SourceAnalysisReview.Plural(a.Diagnostics.Count, "unresolved evidence item", "unresolved evidence items")
+        return dep.Unresolved > 0 ? SourceAnalysisReview.Plural(dep.Unresolved, "dependency target unresolved", "dependency targets unresolved")
+            : a.Diagnostics.Count > 0 ? SourceAnalysisReview.Plural(a.Diagnostics.Count, "evidence item needs review", "evidence items need review")
             : "Some source constructs could not be interpreted";
     }
 }
@@ -73,8 +114,17 @@ public static class ArchitectureReview
 /// <summary>One summary row: a domain's status and the one reason that explains a non-complete status, plus where to review it.</summary>
 public sealed record SourceSummaryRow(string Key, string Title, string Status, string? Reason, string Area, string? Domain, string? Detail = null);
 
-/// <summary>One thing needing attention: a count of source findings or unresolved evidence that someone should review (never an analyzer limitation).</summary>
-public sealed record SourceAttentionItem(string Key, int Count, string Text, string Area, string? Domain, string? View = null);
+/// <summary>One item a person may want to review in one area: unresolved source relationships, declarations that need interpretation, evidence
+/// needing review, classification gaps or heuristic parses needing confirmation. Counts of different areas are never added together: they
+/// are analyzer evidence of different kinds, not application defects.</summary>
+public sealed record SourceAttentionItem(string Key, int Count, string Text, string Area, string? Domain, string? View = null)
+{
+    /// <summary>The area the item belongs to (a quality-evidence domain, or the top-level area).</summary>
+    public string AreaTitle => Domain ?? Area;
+}
+
+/// <summary>Why the selected snapshot's analysis coverage is Partial, from the snapshot's own counts and limitations (never a failure).</summary>
+public sealed record SnapshotCoverage(string Status, IReadOnlyList<string> Reasons, IReadOnlyList<string> Limitations);
 
 /// <summary>Grouped change counts of one area (Components, Dependencies, …) for summary-first change views.</summary>
 public sealed record SourceChangeGroup(string Label, int Added, int Removed, int Changed);
@@ -93,11 +143,7 @@ public static class SourceAnalysisReview
         if (s.Architecture is not { } a) return new("architecture", "Architecture", "Not assessed", "This snapshot predates architecture extraction.", SourceAnalysisAreas.Architecture, null);
         var status = SourceAnalysisOverview.StatusLabel(a.Status);
         if (a.Status == ArchitectureStatus.Unsupported) return new("architecture", "Architecture", "Not assessed", "No supported project type was found in this source.", SourceAnalysisAreas.Architecture, null);
-        var dep = ArchitectureEvidenceSummary.Dependencies(a);
-        var reason = a.Status == ArchitectureStatus.Complete ? null
-            : dep.Unresolved > 0 ? Plural(dep.Unresolved, "unresolved dependency", "unresolved dependencies")
-            : a.Diagnostics.Count > 0 ? Plural(a.Diagnostics.Count, "unresolved evidence item", "unresolved evidence items")
-            : "Some source constructs could not be interpreted";
+        var reason = ArchitectureReview.StatusReason(a);
         return new("architecture", "Architecture", status, reason, SourceAnalysisAreas.Architecture, null,
             $"{Plural(a.Components.Count, "component", "components")} · {Plural(a.MessagingChannels.Count, "messaging channel", "messaging channels")}");
     }
@@ -108,11 +154,11 @@ public static class SourceAnalysisReview
         if (d.Status == DatabaseAnalysisStatus.Unsupported) return new("data", "Data", "Not detected", "No supported database declaration was found in this source.", SourceAnalysisAreas.Data, null);
         var status = SourceAnalysisOverview.StatusLabel(d.Status);
         var reason = d.Status == DatabaseAnalysisStatus.Complete ? null
-            : d.Conflicts.Count > 0 ? Plural(d.Conflicts.Count, "conflicting declaration", "conflicting declarations")
-            : d.UnresolvedEvidence.Count > 0 ? Plural(d.UnresolvedEvidence.Count, "unresolved declaration", "unresolved declarations")
+            : d.Conflicts.Count > 0 ? Plural(d.Conflicts.Count, "conflicting source declaration", "conflicting source declarations")
+            : d.UnresolvedEvidence.Count > 0 ? NotFullyResolved(d.UnresolvedEvidence.Count)
             : "Some declarations could not be interpreted";
         return new("data", "Data", status, reason, SourceAnalysisAreas.Data, null,
-            $"{Plural(d.Databases.Count, "database candidate", "database candidates")} · {Plural(DatabaseEvidenceSummary.Tables(d).Count, "table", "tables")}");
+            $"{Plural(d.Databases.Count, "database candidate", "database candidates")} · {Plural(DatabaseEvidenceSummary.Tables(d).Count, "table / entity", "tables / entities")}");
     }
 
     public static SourceSummaryRow Observability(IqrSourceSnapshot s)
@@ -121,7 +167,7 @@ public static class SourceAnalysisReview
         if (o.Status == ArchitectureStatus.Unsupported) return new("observability", "Observability", "Not assessed", "No supported source language was found.", SourceAnalysisAreas.Quality, "Observability");
         var review = SourceObservabilityPresentation.NeedsReview(o);
         var status = SourceAnalysisOverview.StatusLabel(o.Status);
-        var reason = o.Status == ArchitectureStatus.Complete ? null : review > 0 ? $"{Plural(review, "finding needs", "findings need")} review" : "Some evidence could only be read partially";
+        var reason = o.Status == ArchitectureStatus.Complete ? null : review > 0 ? EvidenceNeedsReview(review) : "Some evidence could only be read partially";
         return new("observability", "Observability", status, reason, SourceAnalysisAreas.Quality, "Observability");
     }
 
@@ -136,11 +182,11 @@ public static class SourceAnalysisReview
         if (!SourceEvidenceDomainsPresentation.Assessed(result)) return new(key, domain, status, result.StatusReason, SourceAnalysisAreas.Quality, domain);
         var (reason, detail) = domain switch
         {
-            "Configuration" => (Unknown(e.Configuration) > 0 ? Plural(Unknown(e.Configuration), "uncategorized key", "uncategorized keys") : result.StatusReason,
+            "Configuration" => (Unknown(e.Configuration) > 0 ? NeedsClassification(Unknown(e.Configuration)) : result.StatusReason,
                 $"{Plural(e.Configuration.Entries.Count, "entry", "entries")} · {Plural(e.Configuration.Files.Count, "file", "files")}"),
             "CI/CD" => (CiCdReason(e.CiCd), Plural(e.CiCd.Pipelines.Count(p => !p.IsTemplate), "pipeline", "pipelines")),
-            "Contracts" => (Heuristic(e.Contracts) > 0 ? $"{Plural(Heuristic(e.Contracts), "contract", "contracts")} parsed heuristically" : result.StatusReason,
-                Plural(e.Contracts.Contracts.Count, "contract", "contracts")),
+            "Contracts" => (Heuristic(e.Contracts) > 0 ? HeuristicNeedsConfirmation(Heuristic(e.Contracts)) : result.StatusReason,
+                $"{Plural(e.Contracts.Contracts.Count, "contract", "contracts")} detected"),
             _ => (result.StatusReason, Plural(e.Infrastructure.Resources.Count(r => r.Kind == "resource"), "resource", "resources")),
         };
         return new(key, domain, status, result.Status == SourceDomainStatus.Complete ? null : reason ?? "Some evidence could only be read partially", SourceAnalysisAreas.Quality, domain, detail);
@@ -160,38 +206,65 @@ public static class SourceAnalysisReview
     public static string CiCdReason(PipelineEvidence p)
     {
         var other = p.Pipelines.Sum(x => x.Steps.Count(s => s.Kind == PipelineStepKind.Other));
-        if (other > 0) return $"{Plural(other, "step", "steps")} not classified";
+        if (other > 0) return $"{Plural(other, "pipeline step needs", "pipeline steps need")} classification";
         var untriggered = p.Pipelines.Count(x => !x.IsTemplate && x.Triggers.All(t => t.Type is "none" or "manual"));
-        if (untriggered > 0) return $"{Plural(untriggered, "pipeline has", "pipelines have")} no CI trigger";
+        if (untriggered > 0) return $"{Plural(untriggered, "pipeline has", "pipelines have")} no CI trigger detected";
         return "Templates, expressions and conditions are not evaluated";
     }
 
     public static int Unknown(ConfigurationEvidence c) => c.Entries.Count(e => e.Category == ConfigurationCategory.Unknown);
     public static int Heuristic(ContractEvidence k) => k.Contracts.Count(c => c.ParseSupport != DomainSupport.Supported);
 
-    /// <summary>Things needing attention: source evidence a person should review. Analyzer limitations are counted separately.</summary>
+    // One wording per kind of review item, shared by the summary rows, the review list and the area pages.
+    public static string NotFullyResolved(int n) => Plural(n, "source declaration not fully resolved", "source declarations not fully resolved");
+    public static string EvidenceNeedsReview(int n) => Plural(n, "evidence item needs review", "evidence items need review");
+    public static string NeedsClassification(int n) => Plural(n, "entry needs classification", "entries need classification");
+    public static string HeuristicNeedsConfirmation(int n) => Plural(n, "heuristic parse needs confirmation", "heuristic parses need confirmation");
+
+    /// <summary>Review items per area: source evidence a person may want to look at. Analyzer limitations are listed separately, and counts of
+    /// different areas are never summed into one number.</summary>
     public static IReadOnlyList<SourceAttentionItem> Attention(IqrSourceSnapshot s)
     {
         var items = new List<SourceAttentionItem>();
         if (s.Architecture is { } a && a.Status != ArchitectureStatus.Unsupported && ArchitectureEvidenceSummary.Dependencies(a) is { Unresolved: > 0 } dep)
-            items.Add(new("architecture-unresolved", dep.Unresolved, $"{Plural(dep.Unresolved, "unresolved architecture dependency", "unresolved architecture dependencies")}", SourceAnalysisAreas.Architecture, null, "Dependencies"));
+            items.Add(new("architecture-unresolved", dep.Unresolved, Plural(dep.Unresolved, "dependency detected with an unresolved target", "dependencies detected with unresolved targets"), SourceAnalysisAreas.Architecture, null, "Dependencies"));
         if (s.DatabaseArchitecture is { } d && d.Status != DatabaseAnalysisStatus.Unsupported)
         {
-            if (d.UnresolvedEvidence.Count > 0) items.Add(new("data-unresolved", d.UnresolvedEvidence.Count, Plural(d.UnresolvedEvidence.Count, "unresolved database declaration", "unresolved database declarations"), SourceAnalysisAreas.Data, null));
-            if (d.Conflicts.Count > 0) items.Add(new("data-conflicts", d.Conflicts.Count, Plural(d.Conflicts.Count, "conflicting database declaration", "conflicting database declarations"), SourceAnalysisAreas.Data, null));
+            if (d.UnresolvedEvidence.Count > 0) items.Add(new("data-unresolved", d.UnresolvedEvidence.Count, NotFullyResolved(d.UnresolvedEvidence.Count), SourceAnalysisAreas.Data, null));
+            if (d.Conflicts.Count > 0) items.Add(new("data-conflicts", d.Conflicts.Count, Plural(d.Conflicts.Count, "conflicting source declaration", "conflicting source declarations"), SourceAnalysisAreas.Data, null));
         }
         if (s.Observability is { } o && SourceObservabilityPresentation.NeedsReview(o) is > 0 and var review)
-            items.Add(new("observability-findings", review, Plural(review, "observability finding", "observability findings"), SourceAnalysisAreas.Quality, "Observability"));
+            items.Add(new("observability-findings", review, EvidenceNeedsReview(review), SourceAnalysisAreas.Quality, "Observability"));
         if (s.EvidenceDomains is { } e)
         {
             if (SourceEvidenceDomainsPresentation.Assessed(e.Configuration) && Unknown(e.Configuration) > 0)
-                items.Add(new("configuration-uncategorized", Unknown(e.Configuration), Plural(Unknown(e.Configuration), "uncategorized configuration entry", "uncategorized configuration entries"), SourceAnalysisAreas.Quality, "Configuration"));
+                items.Add(new("configuration-uncategorized", Unknown(e.Configuration), NeedsClassification(Unknown(e.Configuration)), SourceAnalysisAreas.Quality, "Configuration"));
             if (e.Configuration.Conflicts.Count > 0)
                 items.Add(new("configuration-conflicts", e.Configuration.Conflicts.Count, Plural(e.Configuration.Conflicts.Count, "potential configuration conflict", "potential configuration conflicts"), SourceAnalysisAreas.Quality, "Configuration"));
-            if (SourceEvidenceDomainsPresentation.Assessed(e.Contracts) && ContractsNeedingReview(e.Contracts).Count > 0)
-                items.Add(new("contracts-review", ContractsNeedingReview(e.Contracts).Count, Plural(ContractsNeedingReview(e.Contracts).Count, "contract needs review", "contracts need review"), SourceAnalysisAreas.Quality, "Contracts"));
+            if (SourceEvidenceDomainsPresentation.Assessed(e.Contracts) && Heuristic(e.Contracts) > 0)
+                items.Add(new("contracts-review", Heuristic(e.Contracts), HeuristicNeedsConfirmation(Heuristic(e.Contracts)), SourceAnalysisAreas.Quality, "Contracts"));
         }
         return items;
+    }
+
+    /// <summary>Areas with something to review, in reading order (an area appears once even with several items).</summary>
+    public static IReadOnlyList<(string Area, IReadOnlyList<SourceAttentionItem> Items)> ReviewAreas(IqrSourceSnapshot s) =>
+        [.. Attention(s).GroupBy(i => i.AreaTitle).Select(g => (g.Key, (IReadOnlyList<SourceAttentionItem>)g.ToList()))];
+
+    /// <summary>Why the snapshot's analysis coverage is Partial, from its own counts (never a failure): source files in languages Source Analysis
+    /// detects but does not analyze, heuristic parsing, analyzer limitations; runtime state is always outside Source Analysis.</summary>
+    public static SnapshotCoverage Coverage(IqrSourceSnapshot s)
+    {
+        var reasons = new List<string>();
+        var coverage = s.TechnologyCoverage;
+        if (coverage is { UnsupportedSourceFiles: > 0 } c) reasons.Add($"{Plural(c.UnsupportedSourceFiles, "source file is", "source files are")} in a language Source Analysis detects but does not analyze");
+        var heuristic = s.EvidenceDomains is { } e ? Heuristic(e.Contracts) : 0;
+        if (heuristic > 0) reasons.Add($"{Plural(heuristic, "contract", "contracts")} required heuristic parsing");
+        var limitations = s.Limitations.Concat(coverage?.Limitations ?? []).Distinct(StringComparer.Ordinal).ToList();
+        if (limitations.Count > 0) reasons.Add($"{Plural(limitations.Count, "analyzer limitation applies", "analyzer limitations apply")} to this snapshot");
+        reasons.Add("Runtime and deployment state are outside Source Analysis");
+        var status = s.Status switch { SourceAnalysisStatus.Ready => "Complete", SourceAnalysisStatus.Partial => "Partial", _ => "Not assessed" };
+        return new(status, reasons, limitations);
     }
 
     /// <summary>Analyzer limitations of the snapshot (what analyzers could not interpret) — collapsed by default, never an application defect.</summary>
@@ -201,10 +274,10 @@ public static class SourceAnalysisReview
 
     /// <summary>Contracts needing review and why: partial/heuristic parsing, no owning component, unsupported constructs.</summary>
     public static IReadOnlyList<(SourceContract Contract, string Reason)> ContractsNeedingReview(ContractEvidence k) =>
-        [.. k.Contracts.Select(c => (c, Reason: c.ParseSupport == DomainSupport.Unsupported ? "Unsupported construct"
-                : c.ParseSupport == DomainSupport.Partial ? "Parsed heuristically"
-                : c.Producer is null && c.ConsumerHints.Count == 0 ? "No owning component"
-                : c.EvidenceState is ArchitectureEvidenceState.Conflict ? "Ambiguous owner" : null))
+        [.. k.Contracts.Select(c => (c, Reason: c.ParseSupport == DomainSupport.Unsupported ? "Not parsed — needs confirmation"
+                : c.ParseSupport == DomainSupport.Partial ? "Heuristic parsing — needs confirmation"
+                : c.Producer is null && c.ConsumerHints.Count == 0 ? "Producer/owner not stated in source"
+                : c.EvidenceState is ArchitectureEvidenceState.Conflict ? "Ambiguous owner — needs review" : null))
             .Where(x => x.Reason is not null).Select(x => (x.c, x.Reason!))];
 
     /// <summary>Who uses a contract, from source evidence only: the producing component, consumer hints and cross-domain links.</summary>
@@ -217,13 +290,21 @@ public static class SourceAnalysisReview
         return ([.. produced.Distinct(StringComparer.Ordinal)], [.. used.Distinct(StringComparer.Ordinal)]);
     }
 
-    /// <summary>Plain-language parsing label: Structured (a supported structured reader) or Partial (some constructs interpreted heuristically).</summary>
+    /// <summary>Plain-language parsing method: Structured (a supported structured reader) or Heuristic (some constructs interpreted heuristically).
+    /// A method, never a validity verdict.</summary>
     public static string Parsing(DomainSupport support) => support switch
     {
         DomainSupport.Supported => "Structured",
-        DomainSupport.Partial => "Partial",
-        _ => "Unsupported",
+        DomainSupport.Partial => "Heuristic",
+        _ => "Not parsed",
     };
+
+    /// <summary>Review state of one contract, kept apart from its existence, ownership, usage and parsing method: heuristic or unparsed contracts
+    /// need confirmation; an ambiguous owner needs review; otherwise no action.</summary>
+    public static string ContractReviewState(SourceContract c) =>
+        c.ParseSupport != DomainSupport.Supported ? "Needs confirmation"
+        : c.EvidenceState is ArchitectureEvidenceState.Conflict ? "Needs review"
+        : "No action";
 
     public static IReadOnlyList<SourceChangeGroup> ArchitectureChanges(IEnumerable<ArchitectureChange> changes) =>
         [.. changes.GroupBy(c => c.Area).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => new SourceChangeGroup(g.Key,

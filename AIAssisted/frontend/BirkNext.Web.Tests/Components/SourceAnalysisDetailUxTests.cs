@@ -74,13 +74,13 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         var a = Arch();
         var dep = ArchitectureEvidenceSummary.Dependencies(a);
         cut.FindAll("[data-testid=arch-overview] dt").Select(d => d.TextContent).Should().Equal("Components", "Messaging channels", "Datastores", "External systems", "Dependencies");
-        cut.Find("[data-testid=arch-dependency-summary] dd").TextContent.Should().Be($"{dep.Confirmed + dep.StronglySupported} confirmed · {dep.Unresolved} unresolved");
+        cut.Find("[data-testid=arch-dependency-summary] dd").TextContent.Should().Be($"{dep.Confirmed + dep.StronglySupported + dep.Inferred} linked in source · {SourceAnalysisReview.Plural(dep.Unresolved, "target unresolved", "targets unresolved")}");
         cut.Find("[data-testid=arch-component-types]").TextContent.Should().NotContain(" 0 ", "zero-count component types are hidden by default");
         cut.Find("[data-testid=arch-all-types-toggle]").TextContent.Should().Contain("Show all component types");
         cut.FindAll(".btn-primary").Should().ContainSingle().Which.TextContent.Should().Be("Open topology");
-        cut.Find("[data-testid=arch-technologies]").TextContent.Should().Be("Technologies: 10 detected");
+        cut.Find("[data-testid=arch-technologies]").TextContent.Should().StartWith("Technologies detected: 10: ").And.EndWith("+5 more", "the five most used technologies are named; the rest are counted");
         cut.Find("[data-testid=arch-tech-all-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        cut.FindAll("[data-testid=arch-tech]").Should().HaveCount(10, "the full inventory stays reachable behind View technologies");
+        cut.FindAll("[data-testid=arch-tech]").Should().HaveCount(10, "the full inventory stays reachable behind View all technologies");
 
         cut.Find("[data-testid=arch-unresolved-count]").TextContent.Should().Be("4");
         cut.FindAll("[data-testid=arch-unresolved-groups] > li").Select(d => (d.GetAttribute("data-kind"), d.TextContent))
@@ -129,7 +129,7 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         core.QuerySelectorAll(":scope > label").Select(l => l.TextContent.Trim()).Should().HaveCount(3, "search, status and type");
         core.QuerySelectorAll(":scope > button").Select(b => b.TextContent).Should().Equal(["Fit to screen"], "no raw layout/export/selection buttons by default");
         cut.Find("[data-testid=arch-more-filters-toggle]").TextContent.Should().Contain("More filters");
-        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Technology").And.Contain("Protocol").And.Contain("Project/module").And.Contain("Confirmed only").And.Contain("Include inferred").And.Contain("Hide unresolved");
+        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Technology").And.Contain("Protocol").And.Contain("Project/module").And.Contain("Confirmed in source only").And.Contain("Include inferred").And.Contain("Hide unresolved");
         cut.FindAll("[data-testid=arch-clear-filters]").Should().BeEmpty("Clear filters only when a filter changed");
         cut.FindAll("[data-testid=arch-clear]").Should().BeEmpty("Clear highlight only when a highlight exists");
         cut.FindAll("[data-testid=arch-find-path]").Should().BeEmpty("Find path only when both ends are chosen");
@@ -149,7 +149,7 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
     {
         var cut = RenderArch();
         cut.Find("[data-testid=arch-tab-dependencies]").Click();
-        cut.FindAll("[data-testid=arch-dependencies] thead th").Select(t => t.TextContent).Should().Equal("From", "Target", "Type", "Protocol", "State", "Source");
+        cut.FindAll("[data-testid=arch-dependencies] thead th").Select(t => t.TextContent).Should().Equal("From", "Target", "Type", "Protocol", "State", "Reason", "Source");
         cut.FindAll("[data-testid=arch-dep-row]").Should().HaveCount(7, "every dependency remains");
         var http = cut.FindAll("[data-testid=arch-dep-row]").First(r => r.TextContent.Contains("Catalog.Api") && r.TextContent.Contains("Http"));
         http.TextContent.Should().NotContain("Application registration", "confidence is in the detail, not the row");
@@ -239,10 +239,10 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         var cut = RenderDb();
         Metrics(cut).Should().Equal(new Dictionary<string, string>
         {
-            ["Database candidates"] = "2", ["Schemas"] = "2", ["Tables / entities"] = "2", ["Relationships"] = "3", ["Indexes"] = "1", ["Unresolved"] = "3", ["Conflicts"] = "0",
+            ["Database candidates"] = "2", ["Schemas"] = "2", ["Tables / entities"] = "2", ["Relationships"] = "3", ["Indexes"] = "1", ["Not fully resolved"] = "3", ["Conflicts"] = "0",
         });
         cut.Find("[data-testid=db-status]").TextContent.Should().Be("Partial");
-        cut.Find("[data-testid=db-status-reason]").TextContent.Should().Be("3 unresolved declarations", "Partial always says why");
+        cut.Find("[data-testid=db-status-reason]").TextContent.Should().Be("3 source declarations not fully resolved", "Partial always says why");
         cut.FindAll("[data-testid=db-candidate-row]").Select(r => r.QuerySelector("th")!.TextContent).Should().Equal("ShopDbContext", "DDL source group");
         cut.FindAll("[data-testid=db-candidates] thead th").Select(t => t.TextContent).Should().Equal("Candidate", "Provider", "Evidence", "Project / source");
         cut.FindAll("[data-testid=db-physical-unknown]").Should().ContainSingle("an all-unknown physical identity is stated once, not per row").Which.TextContent.Should().Be("Unknown");
@@ -262,7 +262,7 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         states.Sum(s => s.Count).Should().Be(3, "every relationship has exactly one state");
         var cut = RenderDb();
         cut.FindAll("[data-testid=db-rel-states] > div").Select(d => (d.QuerySelector("dt")!.TextContent, d.QuerySelector("dd")!.TextContent))
-            .Should().Equal(("Confirmed", "1"), ("Observed from DDL", "1"), ("Unresolved", "1"));
+            .Should().Equal(("Confirmed in source", "1"), ("Observed from DDL", "1"), ("Unresolved", "1"));
         cut.Find("[data-testid=db-rel-evidence]").TextContent.Should().Contain("add up to 3");
     }
 
@@ -271,7 +271,7 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
     {
         var cut = RenderDb();
         cut.FindAll("[data-testid=db-unresolved-groups] > li").Select(d => d.TextContent).Should().Equal("Migration InsertData · 2", "HasForeignKey · 1");
-        cut.Find("[data-testid=db-unresolved] h3").TextContent.Should().Be("3 declarations unresolved");
+        cut.Find("[data-testid=db-unresolved] h3").TextContent.Should().Be("3 source declarations not fully resolved");
         cut.FindAll("[data-testid=db-unresolved-row]").Should().BeEmpty();
         cut.Find("[data-testid=db-limitations-detail-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         cut.Find("[data-testid=db-limitations-detail-body]").HasAttribute("hidden").Should().BeTrue();
@@ -289,11 +289,12 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         var cut = RenderDb();
         cut.Find("[data-testid=db-tab-diagram]").Click();
         var core = cut.Find("[data-testid=db-filters]");
-        core.QuerySelectorAll(":scope > label").Select(l => l.TextContent.Trim()).Should().HaveCount(3, "search, database and schema");
+        core.QuerySelectorAll(":scope > label").Select(l => l.TextContent.Trim()).Should().HaveCount(4, "search, database, schema and connected tables only");
         core.QuerySelectorAll(":scope > button").Select(b => b.TextContent).Should().Equal(["Fit to screen"]);
         cut.FindAll("[data-testid=db-selection-actions]").Should().BeEmpty("selection actions appear only when a table is selected");
         cut.FindAll("[data-testid=db-clear-related]").Should().BeEmpty("Clear related focus only when a related focus exists");
-        cut.Find("[data-testid=db-more-filters]").TextContent.Should().Contain("Project").And.Contain("Confirmed only").And.Contain("Include inferred").And.Contain("Hide isolated tables");
+        cut.Find("[data-testid=db-more-filters]").TextContent.Should().Contain("Project").And.Contain("Confirmed in source only").And.Contain("Include inferred").And.NotContain("isolated");
+        cut.Find("[data-testid=db-connected-only]").Should().NotBeNull("connected-tables-only sits in the core toolbar for large diagrams");
         cut.FindAll("[data-testid=db-toolbar] button").Select(b => b.TextContent).Should().Equal("Reset layout", "Save layout", "Export SVG");
         cut.FindAll("[data-testid=db-toolbar] label").Select(l => l.TextContent.Trim()).Should().Equal("Relationships", "PK/FK only", "All columns", "Show legend");
         cut.FindAll("[data-testid=db-legend]").Should().BeEmpty();
@@ -340,13 +341,13 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         cut.FindAll("[data-testid=db-relationships] thead th").Select(t => t.TextContent).Should().Equal("From", "From column(s)", "To", "To column(s)", "Cardinality", "Evidence", "Evidence details");
         var rows = cut.FindAll("[data-testid=db-relationship-row]");
         rows.Should().HaveCount(3, "no relationship is dropped");
-        rows.Select(r => r.QuerySelector(".db-pill")!.TextContent).Should().Equal("Confirmed", "Unresolved", "Observed from DDL");
+        rows.Select(r => r.QuerySelector(".db-pill")!.TextContent).Should().Equal("Confirmed in source", "Unresolved", "Observed from DDL");
         cut.FindAll("[data-testid=db-relationship-evidence]").Should().BeEmpty();
         rows[0].TextContent.Should().NotContain("001_Init.cs", "source paths are a drill-down");
         rows[0].QuerySelector("[data-testid=db-relationship-evidence-toggle]")!.Click();
         cut.Find("[data-testid=db-relationship-evidence]").TextContent.Should().Contain("Delete behavior: Cascade").And.Contain("Shop/Shop.Data/Migrations/001_Init.cs:40");
-        cut.Find("input[type=checkbox]").Change(true);
-        cut.FindAll("[data-testid=db-relationship-row]").Should().BeEmpty("Confirmed only keeps its existing meaning: it also filters tables, and Order is observed from a migration");
+        cut.Find("[data-testid=db-confirmed-only]").Change(true);
+        cut.FindAll("[data-testid=db-relationship-row]").Should().BeEmpty("Confirmed in source only keeps its existing meaning: it also filters tables, and Order is observed from a migration");
     }
 
     [Fact]
@@ -379,7 +380,7 @@ public sealed class SourceAnalysisDetailUxTests : BunitContext
         arch.FindAll("[data-testid=arch-overview] dd").Concat(arch.FindAll("[data-testid=arch-dep-states] dd")).Should().OnlyContain(d => d.TextContent == "Not assessed");
         // A Complete analysis that found nothing is a real zero.
         Render<ArchitectureWorkspace>(p => p.Add(c => c.Snapshot, new ArchitectureSnapshot { Status = ArchitectureStatus.Complete })).FindAll("[data-testid=arch-overview] dd")
-            .Should().OnlyContain(d => d.TextContent == "0" || d.TextContent == "0 confirmed · 0 unresolved");
+            .Should().OnlyContain(d => d.TextContent == "0" || d.TextContent == "0 linked in source · 0 targets unresolved");
     }
 
     [Fact]

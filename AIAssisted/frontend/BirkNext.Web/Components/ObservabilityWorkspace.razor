@@ -24,27 +24,26 @@
         var review = SourceObservabilityPresentation.NeedsReview(Snapshot);
         var evidence = SourceObservabilityPresentation.EvidenceSummary(dimensions);
         @if (!Assessed) { <p class="obs-muted" data-testid="obs-not-assessed">Not assessed: no supported source language was found in this snapshot, so correlation and logging are not assessed (not zero).</p> }
-        <dl class="obs-summary" data-testid="obs-overview">
-            <div><dt>Overall</dt><dd>@if (Assessed) { <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceObservabilityPresentation.StatusLabel(Snapshot.Status)" /> } else { @("Not assessed") }</dd></div>
-            <div><dt>Needs attention</dt><dd data-testid="obs-needs-review">@M(review)</dd></div>
-            @foreach (var group in groups.Where(g => g.Key != "tests"))
+        @* One summary (counts over the evidence areas) and one area list below — the area states are not repeated in other card sets. *@
+        <div class="obs-summary-line" data-testid="obs-overview">
+            @if (Assessed)
             {
-                var headline = SourceObservabilityPresentation.Headline(group.Dimensions);
-                <div data-testid="obs-group-headline" data-group="@group.Key"><dt>@group.Title</dt><dd>@if (Assessed) { <SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(headline)" /> } else { @("Not assessed") }</dd></div>
+                <ul class="obs-evidence-counts" data-testid="obs-evidence-summary" aria-label="Evidence areas by state">
+                    <li data-state="strong">@SourceAnalysisReview.Plural(evidence.Strong, "area", "areas") with strong evidence</li>
+                    @if (evidence.Partial > 0) { <li data-state="partial">@SourceAnalysisReview.Plural(evidence.Partial, "area", "areas") with partial evidence</li> }
+                    <li data-state="review">@SourceAnalysisReview.Plural(evidence.NeedsReview, "area needs", "areas need") review</li>
+                    <li data-state="notfound">@SourceAnalysisReview.Plural(evidence.NotFound, "area", "areas") with no source evidence</li>
+                </ul>
+                <p class="obs-muted">Evidence items needing review: <strong data-testid="obs-needs-review">@review</strong></p>
             }
-        </dl>
+            else { <p class="obs-muted" data-testid="obs-needs-review">Not assessed</p> }
+        </div>
         <div class="sa-actions">
             <button type="button" class="btn-primary" data-testid="obs-review-findings" @onclick="ReviewFindings">Review findings</button>
         </div>
         <section class="obs-panel" aria-labelledby="obs-dimensions-heading" data-testid="obs-dimensions">
-            <h3 id="obs-dimensions-heading">Evidence summary</h3>
-            <dl class="obs-mini" data-testid="obs-evidence-summary">
-                <div data-state="strong"><dt>Strong evidence</dt><dd>@SourceAnalysisReview.Plural(evidence.Strong, "area", "areas")</dd></div>
-                <div data-state="partial"><dt>Partial</dt><dd>@SourceAnalysisReview.Plural(evidence.Partial, "area", "areas")</dd></div>
-                <div data-state="review"><dt>Needs review</dt><dd>@SourceAnalysisReview.Plural(evidence.NeedsReview, "area", "areas")</dd></div>
-                <div data-state="notfound"><dt>No evidence found</dt><dd>@SourceAnalysisReview.Plural(evidence.NotFound, "area", "areas")</dd></div>
-            </dl>
-            <p class="obs-muted" data-testid="obs-not-found-help">Not found means no evidence was detected in the selected source. It does not prove the application lacks that capability at runtime.</p>
+            <h3 id="obs-dimensions-heading">Evidence areas</h3>
+            <p class="obs-muted" data-testid="obs-not-found-help">Not found in source means no evidence was detected in this snapshot. It does not mean the capability is absent at runtime.</p>
             <div class="sa-group-cards">
                 @foreach (var group in groups)
                 {
@@ -104,17 +103,29 @@
             <h3 id="obs-components-heading">Components <span class="obs-count">@Snapshot.Components.Count</span></h3>
             <div class="obs-scroll sa-stack" tabindex="0" role="region" aria-label="Observability by component">
                 <table role="table">
-                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Component</th><th role="columnheader" scope="col">Tracing</th><th role="columnheader" scope="col">Logging</th><th role="columnheader" scope="col">Exporters</th><th role="columnheader" scope="col">Runtime</th></tr></thead>
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Component</th><th role="columnheader" scope="col">Tracing</th><th role="columnheader" scope="col">Logging</th><th role="columnheader" scope="col">Exporters</th><th role="columnheader" scope="col">Runtime</th><th role="columnheader" scope="col"><span class="visually-hidden">Evidence details</span></th></tr></thead>
                     <tbody role="rowgroup">
                         @foreach (var c in Snapshot.Components)
                         {
+                            var open = _openComponents.Contains(c.ComponentId);
                             <tr role="row" data-testid="obs-component-row" data-component="@c.ComponentId">
                                 <th role="rowheader" scope="row">@c.Name <span class="obs-context">@c.ComponentType</span></th>
-                                <td role="cell" data-label="Tracing"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Correlation)" /><span class="obs-context">@Join(c.TracingTechnologies)</span></td>
-                                <td role="cell" data-label="Logging"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Logging)" /><span class="obs-context">@Join(c.LoggingFrameworks) · @c.LogCalls log call(s)</span></td>
-                                <td role="cell" data-label="Exporters">@Join(c.TelemetryExporters)</td>
+                                <td role="cell" data-label="Tracing"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Correlation)" /></td>
+                                <td role="cell" data-label="Logging"><SourceStatusBadge Dimension="SourceStatusDimension.Observation" Label="@ObservabilitySnapshot.Label(c.Logging)" /><span class="obs-context" data-testid="obs-component-log-calls">@SourceAnalysisReview.Plural(c.LogCalls, "call", "calls")</span></td>
+                                <td role="cell" data-label="Exporters">@(c.TelemetryExporters.Count == 0 ? "None found in source" : SourceAnalysisReview.Plural(c.TelemetryExporters.Count, "exporter", "exporters"))</td>
                                 <td role="cell" data-label="Runtime" class="obs-muted">Not assessed in Source Analysis</td>
+                                <td role="cell"><button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" data-testid="obs-component-evidence-toggle" @onclick="() => ToggleComponent(c.ComponentId)">@(open ? "Hide evidence" : "View evidence")<span class="visually-hidden"> for @c.Name</span></button></td>
                             </tr>
+                            @if (open)
+                            {
+                                <tr role="row" class="sd-detail-row" data-testid="obs-component-evidence"><td role="cell" colspan="6">
+                                    <dl class="obs-mini">
+                                        <div><dt>Tracing technologies</dt><dd>@Join(c.TracingTechnologies)</dd></div>
+                                        <div><dt>Logging frameworks</dt><dd>@Join(c.LoggingFrameworks) · @SourceAnalysisReview.Plural(c.LogCalls, "log call", "log calls")</dd></div>
+                                        <div><dt>Exporter references</dt><dd>@Join(c.TelemetryExporters)</dd></div>
+                                    </dl>
+                                </td></tr>
+                            }
                         }
                     </tbody>
                 </table>
@@ -285,6 +296,8 @@
     private static readonly string[] Tabs = ["Overview", "Correlation & tracing", "Logging quality", "Changes"];
     private static string Slug(string tab) => tab switch { "Correlation & tracing" => "correlation", "Logging quality" => "logging", _ => tab.ToLowerInvariant() };
     private string _tab = "Overview";
+    private readonly HashSet<string> _openComponents = [];
+    private void ToggleComponent(string id) { if (!_openComponents.Add(id)) _openComponents.Remove(id); }
     private string _boundaryType = "", _boundaryState = "", _boundaryComponent = "";
     private readonly Dictionary<string, (string Category, string Severity, string Kind, string Component, string Search)> _filters = [];
     private readonly HashSet<string> _expanded = [];

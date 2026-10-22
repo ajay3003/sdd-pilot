@@ -269,3 +269,9 @@ h2 .sa-status, h3 .sa-status { white-space: normal; }
 @media (max-width: 640px) {
     .sa-summary-title { flex-basis: auto; }
 }
+
+/* Ordinary source values are plain text, not warning-coloured: issue/conflict styling stays reserved for real review states. */
+.sd-workspace code { color: inherit; }
+/* Toolbar selects shrink with the viewport: a long database/schema name never widens the page. */
+.arch-toolbar-core label, .db-toolbar-core label { max-width: 100%; min-width: 0; }
+.arch-toolbar-core select, .db-toolbar-core select { max-width: 100%; min-width: 0; flex: 1 1 auto; text-overflow: ellipsis; }

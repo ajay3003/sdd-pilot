@@ -77,3 +77,7 @@
 /* Counts never wrap digit by digit; long kinds wrap instead. */
 .arch-mini dd, .arch-groups dd { white-space: nowrap; flex-shrink: 0; }
 .arch-groups { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); }
+
+/* Unresolved evidence grouped by cause (missing relationship evidence, ambiguous configuration, runtime scope, other). */
+.arch-cause-groups { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: .86rem; }
+.arch-cause-groups .arch-causes { margin-top: .15rem; }

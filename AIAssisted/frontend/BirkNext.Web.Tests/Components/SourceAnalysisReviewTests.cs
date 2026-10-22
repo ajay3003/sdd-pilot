@@ -99,9 +99,9 @@ public sealed class SourceAnalysisReviewTests : BunitContext
             },
         };
         var rows = SourceAnalysisReview.QualityRows(Snapshot(withUnknown)).ToDictionary(r => r.Key);
-        rows["configuration"].Reason.Should().Be("1 uncategorized key");
-        rows["contracts"].Reason.Should().Be("2 contracts parsed heuristically");
-        rows["contracts"].Detail.Should().Be("2 contracts");
+        rows["configuration"].Reason.Should().Be("1 entry needs classification");
+        rows["contracts"].Reason.Should().Be("2 heuristic parses need confirmation");
+        rows["contracts"].Detail.Should().Be("2 contracts detected");
         rows.Values.Where(r => r.Status != "Complete").Should().OnlyContain(r => !string.IsNullOrWhiteSpace(r.Reason));
         SourceAnalysisReview.Attention(Snapshot(withUnknown)).Should().Contain(a => a.Key == "configuration-uncategorized" && a.Count == 1);
 
@@ -114,7 +114,8 @@ public sealed class SourceAnalysisReviewTests : BunitContext
     {
         var cut = Render<ConfigurationWorkspace>(p => p.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence()));
         cut.Find("[data-testid=sd-config-lead]").TextContent.Should().Be("4 entries across 2 files");
-        cut.Find("[data-testid=sd-config-classification] dd").TextContent.Should().Be("4 classified · 0 uncategorized");
+        cut.Find("[data-testid=sd-config-classification] dd").TextContent.Should().Be("4");
+        cut.Find("[data-testid=sd-config-attention]").TextContent.Should().StartWith("0");
         cut.Find("[data-testid=sd-config-sensitive]").TextContent.Should().Be("1");
         cut.Find("[data-testid=sd-config-overview]").TextContent.Should().Contain("Values remain redacted");
         cut.FindAll("[data-testid=sd-config-review-unknown]").Should().BeEmpty("no review action for an empty set");
@@ -160,11 +161,11 @@ public sealed class SourceAnalysisReviewTests : BunitContext
 
         var cut = Render<ContractsWorkspace>(p => p.Add(x => x.Evidence, withConsumer));
         cut.Find("[data-testid=sd-contracts-lead]").TextContent.Should().Be("2 contracts detected");
-        cut.Find("[data-testid=sd-contracts-parsing]").TextContent.Should().Be("Partial 2");
-        cut.FindAll("[data-testid=sd-contracts-review-reason]").Select(r => r.TextContent).Should().Equal("Parsed heuristically: Shop API, OrderPlaced");
+        cut.Find("[data-testid=sd-contracts-parsing]").TextContent.Should().Be("Heuristic 2");
+        cut.FindAll("[data-testid=sd-contracts-review-reason]").Select(r => r.TextContent).Should().Equal("Heuristic parsing — needs confirmation: Shop API, OrderPlaced");
         cut.Find("[data-testid=sd-contracts-filter-type]").Change("OpenApi");
         cut.Find("[data-testid=sd-contract-usage]").TextContent.Should().Be("Worker");
-        cut.Find("[data-testid=sd-contract-parser]").TextContent.Should().Be("Partial", "plain-language parsing, not a coloured badge only");
+        cut.Find("[data-testid=sd-contract-parser]").TextContent.Should().Be("Parsing method: Heuristic", "plain-language parsing method with text, not a coloured badge only");
         cut.Find("[data-testid=sd-contracts-filter-type]").Change("MessageContract");
         cut.Find("[data-testid=sd-contract-usage]").TextContent.Should().Be("Not stated in source");
     }
@@ -175,10 +176,10 @@ public sealed class SourceAnalysisReviewTests : BunitContext
         var p = SourceEvidenceDomainsUiTests.Evidence().CiCd;
         SourceAnalysisReview.CiCdReason(p).Should().Be("Templates, expressions and conditions are not evaluated");
         var manual = p with { Pipelines = [.. p.Pipelines.Select(x => x with { Triggers = [new PipelineTrigger { Type = "manual" }] })] };
-        SourceAnalysisReview.CiCdReason(manual).Should().Be("1 pipeline has no CI trigger", "a template is not counted");
+        SourceAnalysisReview.CiCdReason(manual).Should().Be("1 pipeline has no CI trigger detected", "a template is not counted");
         var other = p with { Pipelines = [.. p.Pipelines.Select(x => x with { Steps = [.. x.Steps, new PipelineStep { Id = x.Id + "#x", Name = "custom", Kind = PipelineStepKind.Other }] })] };
-        SourceAnalysisReview.CiCdReason(other).Should().Be("2 steps not classified");
-        Render<PipelineWorkspace>(r => r.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence() with { CiCd = other })).Markup.Should().Contain("2 steps not classified", "the domain header shows the same reason as the Overview");
+        SourceAnalysisReview.CiCdReason(other).Should().Be("2 pipeline steps need classification");
+        Render<PipelineWorkspace>(r => r.Add(x => x.Evidence, SourceEvidenceDomainsUiTests.Evidence() with { CiCd = other })).Markup.Should().Contain("2 pipeline steps need classification", "the domain header shows the same reason as the Overview");
     }
 
     [Fact]

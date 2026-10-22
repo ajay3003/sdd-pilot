@@ -102,13 +102,14 @@ public static class SourceEvidenceDomainsPresentation
 
     // ── Configuration ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public sealed record ConfigFilter(string Category = "", string Environment = "", string Technology = "", string Sensitivity = "", string File = "", string Search = "");
+    public sealed record ConfigFilter(string Category = "", string Environment = "", string Technology = "", string Sensitivity = "", string File = "", string Search = "", string Component = "");
 
     public static IEnumerable<ConfigurationEntry> Filter(IEnumerable<ConfigurationEntry> entries, ConfigFilter f) => entries.Where(e =>
         (f.Category.Length == 0 || e.Category.ToString() == f.Category)
         && (f.Environment.Length == 0 || EnvironmentKey(e.Environment) == f.Environment)
         && (f.Technology.Length == 0 || e.Technology == f.Technology)
         && (f.File.Length == 0 || e.File == f.File)
+        && (f.Component.Length == 0 || e.Component == f.Component)
         && (f.Sensitivity.Length == 0 || (f.Sensitivity == "Sensitive" ? e.Sensitivity != ConfigurationSensitivity.None : e.Sensitivity == ConfigurationSensitivity.None))
         && (f.Search.Length == 0 || e.Key.Contains(f.Search, StringComparison.OrdinalIgnoreCase) || (e.ValuePreviewSafe?.Contains(f.Search, StringComparison.OrdinalIgnoreCase) ?? false)));
 
@@ -206,12 +207,12 @@ public static class SourceEvidenceDomainsPresentation
 
     // ── Contracts ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public static string Owner(SourceContract c) => c.Producer is { } p ? $"Producer: {p}" : c.ConsumerHints.Count > 0 ? $"Consumer: {string.Join(", ", c.ConsumerHints)}" : "No owning component";
+    public static string Owner(SourceContract c) => c.Producer is { } p ? $"Producer: {p}" : c.ConsumerHints.Count > 0 ? $"Consumer: {string.Join(", ", c.ConsumerHints)}" : "Producer/owner: not stated in source";
 
     /// <summary>The ownership role shown in its own column (the same rule as <see cref="Owner"/>: a producer wins over consumer hints).</summary>
     public static string OwnerRole(SourceContract c) => c.Producer is not null ? "Producer" : c.ConsumerHints.Count > 0 ? "Consumer" : "—";
 
-    public static string OwnerComponent(SourceContract c) => c.Producer ?? (c.ConsumerHints.Count > 0 ? string.Join(", ", c.ConsumerHints) : "No owning component");
+    public static string OwnerComponent(SourceContract c) => c.Producer ?? (c.ConsumerHints.Count > 0 ? string.Join(", ", c.ConsumerHints) : "Not stated in source");
 
     /// <summary>What the old "Read" column showed: <see cref="SourceContract.ParseSupport"/>, i.e. how far the analyzer could read the contract file.</summary>
     public const string ParserCoverageHelp = "Parser coverage is how far the analyzer could read the contract file. Supported: read by a structured reader. Partial: read heuristically, or some constructs ($ref, fragments, payload schemas) were not resolved. It is not contract quality, compatibility or a pass/fail result.";

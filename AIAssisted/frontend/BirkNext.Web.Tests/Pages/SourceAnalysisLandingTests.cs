@@ -180,7 +180,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=sa-current]").GetAttribute("data-snapshot").Should().Be(current.Id.ToString());
         (cut.Find("[data-testid=sa-current-archive]").TextContent, cut.Find("[data-testid=sa-current-analyzed]").TextContent, cut.Find("[data-testid=sa-current-files]").TextContent)
             .Should().Be(("shop-api.zip", "2026-09-29 08:15 UTC", "120"));
-        cut.Find("[data-testid=sa-current-evidence]").TextContent.Should().Be("Ready", "the source-evidence status sits next to the archive name");
+        cut.Find("[data-testid=sa-current-evidence]").TextContent.Should().Be("Analysis coverage: Complete", "the analysis coverage sits right under the archive name");
         cut.Find("[data-testid=sa-snapshot-details-toggle]").GetAttribute("aria-expanded").Should().Be("false", "provenance is one disclosure away");
         cut.Find("[data-testid=sa-current-fingerprint]").GetAttribute("title").Should().Be(current.Archive.Sha256);
         cut.FindAll("[data-testid=sa-snapshot-facts] dt").Select(d => d.TextContent).Should().StartWith(["Fingerprint", "Commit", "Created by"]);
@@ -190,10 +190,10 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         Status(cut, "data").Should().Be("Partial", "Partial is never Failed");
         cut.Find("[data-testid=sa-overview-summary]").TextContent.Should().NotContain("Failed");
         Reason(cut, "architecture").Should().NotBeNullOrEmpty("every Partial status shows its reason");
-        Reason(cut, "data").Should().Be("5 unresolved declarations", "the reason is the data area's own unresolved count");
+        Reason(cut, "data").Should().Be("5 source declarations not fully resolved", "the reason is the data area's own unresolved count");
         Detail(cut, "architecture").Should().Be("3 components · 1 messaging channel");
-        Detail(cut, "data").Should().Be("1 database candidate · 4 tables");
-        cut.Find("[data-testid=sa-attention-item][data-key=data-unresolved]").TextContent.Should().Contain("5 unresolved database declarations");
+        Detail(cut, "data").Should().Be("1 database candidate · 4 tables / entities");
+        cut.Find("[data-testid=sa-attention-item][data-key=data-unresolved]").TextContent.Should().Contain("5 source declarations not fully resolved");
         cut.FindAll("[data-testid=sa-overview-actions] .btn-primary").Should().ContainSingle().Which.TextContent.Should().Be("Review architecture");
         cut.Find("[data-testid=sa-analyzer-limitations-toggle]").GetAttribute("aria-expanded").Should().Be("false", "analyzer limitations are not findings and stay collapsed");
         (cut.Find("[data-testid=sa-open-architecture]").TextContent, cut.Find("[data-testid=sa-open-data]").TextContent).Should().Be(("Review Architecture", "Review Data"));
@@ -235,7 +235,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=source-snapshot]").Change(older.Id.ToString());
 
         Detail(cut, "architecture").Should().StartWith("5 components", "the summary follows the selected snapshot");
-        Detail(cut, "data").Should().EndWith("7 tables", "both rows read the same selected snapshot");
+        Detail(cut, "data").Should().EndWith("7 tables / entities", "both rows read the same selected snapshot");
 
         cut.Find("[data-testid=sa-open-architecture]").Click();
         cut.Find("[data-testid=area-architecture]").GetAttribute("aria-current").Should().Be("page");

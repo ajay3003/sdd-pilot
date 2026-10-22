@@ -190,7 +190,13 @@ public static class ArchitecturePresentation
         _ => type.ToString(),
     };
 
-    public static string StateLabel(ArchitectureEvidenceState state) => state == ArchitectureEvidenceState.StronglySupported ? "Strongly supported" : state.ToString();
+    /// <summary>Source-scoped evidence label: "Confirmed in source" never reads as a runtime confirmation.</summary>
+    public static string StateLabel(ArchitectureEvidenceState state) => state switch
+    {
+        ArchitectureEvidenceState.Confirmed => "Confirmed in source",
+        ArchitectureEvidenceState.StronglySupported => "Strongly supported",
+        _ => state.ToString(),
+    };
 
     /// <summary>Nodes reachable from <paramref name="id"/> along edge direction (downstream) or against it (upstream), up to <paramref name="depth"/> levels.</summary>
     public static HashSet<string> Reachable(ArchitectureGraph g, string id, bool downstream, int depth)

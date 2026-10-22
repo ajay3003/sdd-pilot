@@ -19,9 +19,9 @@
             <div><dt>Generated documents</dt><dd>@g.Documents.Count(d => d.Origin == DocumentationOrigin.Generated)</dd></div>
             <div><dt>Generator traced</dt><dd>@g.Modules.Count(m => m.GeneratorIds.Count > 0) of @g.Modules.Count</dd></div>
             <div><dt>Potentially stale</dt><dd>@g.Modules.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale)</dd></div>
-            <div><dt>Source/doc discrepancies</dt><dd>@g.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift)</dd></div>
+            <div data-testid="sa-generated-docs-differences"><dt>Candidate differences</dt><dd>@g.Drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift) <span class="gds-muted">need review</span></dd></div>
         </dl>
-        <p class="gds-muted">Generated documentation is its own evidence type — never authored documentation, never source evidence. Discrepancies are candidates for review.</p>
+        <p class="gds-muted">Generated documentation is its own evidence type — never authored documentation, never source evidence. Differences between source and generated documents are candidates for review, not confirmed defects.</p>
     }
     <a class="gds-link" href="admin/system-settings?section=generated-docs-health" data-testid="sa-generated-docs-link">Open Generated Documentation Health</a>
 </section>

@@ -51,8 +51,10 @@ public static class ArchitectureEvidenceSummary
 /// <summary>Database evidence summaries from the snapshot's own facts: relationship states (one per relationship), unresolved evidence by type.</summary>
 public static class DatabaseEvidenceSummary
 {
+    /// <summary>Source-scoped evidence label: "Confirmed in source" never reads as a deployed-database confirmation.</summary>
     public static string StateLabel(DatabaseEvidenceState state) => state switch
     {
+        DatabaseEvidenceState.Confirmed => "Confirmed in source",
         DatabaseEvidenceState.ObservedFromMigration => "Observed from migration",
         DatabaseEvidenceState.ObservedFromDDL => "Observed from DDL",
         _ => state.ToString(),

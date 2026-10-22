@@ -45,8 +45,13 @@
             </dl>
             <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
             <ReviewDisclosure Text="How to read statuses" CollapseText="Hide status guide" TestId="sa-status-legend" Class="disclosure-inline">
-                <p class="sa-muted" data-testid="sa-runtime-dependent">Runtime-dependent evidence is @(_profile is null ? "not available here — select a Target Environment for runtime reviews" : "available to runtime reviews, never to Source Analysis").
-                    Partial means some evidence could only be read partially (never a failure); Not detected means nothing of that kind is in this source (not that the capability is absent).</p>
+                <div class="sa-muted sa-status-guide" data-testid="sa-status-guide">
+                    <p>Source Analysis describes evidence in the selected source snapshot.</p>
+                    <p><strong>Not found in source</strong> means no supporting evidence was detected here. It does not prove the capability is absent at runtime.</p>
+                    <p><strong>Partial</strong> means useful evidence was produced, but analysis coverage is incomplete — not a failure.</p>
+                    <p><strong>Inferred</strong> means a relationship or value was derived indirectly and is not direct source proof.</p>
+                    <p data-testid="sa-runtime-dependent">Runtime and deployment state are not assessed here. Runtime-dependent evidence is @(_profile is null ? "not available here — select a Target Environment for runtime reviews" : "available to runtime reviews, never to Source Analysis").</p>
+                </div>
                 <dl class="sa-legend" data-testid="sa-status-legend-list">
                     @foreach (var (dimension, examples) in StatusLegend)
                     {
@@ -67,10 +72,30 @@
                     <p class="sa-current-title" data-testid="sa-current" data-snapshot="@selected.Id">
                         <strong data-testid="sa-current-archive">@selected.Archive.FileName</strong>
                         <span class="sa-muted"><span data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</span> files · Analyzed <span data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</span></span>
-                        <span class="sa-pill sa-pill-@(selected.Status == SourceAnalysisStatus.Ready ? "complete" : "partial")"><span class="visually-hidden">Source evidence: </span><span data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</span></span>
                     </p>
                 }
             </div>
+            @if (selected is not null)
+            {
+                var coverage = SourceAnalysisReview.Coverage(selected);
+                <div class="sa-coverage" data-testid="sa-coverage" data-status="@coverage.Status">
+                    <p class="sa-coverage-head"><span class="sa-muted">Analysis coverage</span>
+                        <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@coverage.Status" HiddenPrefix="Analysis coverage: " TestId="sa-current-evidence" /></p>
+                    @if (coverage.Status != "Complete")
+                    {
+                        <ul class="sa-coverage-reasons" aria-label="Why the analysis coverage is @coverage.Status.ToLowerInvariant()" data-testid="sa-coverage-reasons">
+                            @foreach (var reason in coverage.Reasons) { <li data-testid="sa-coverage-reason">@reason</li> }
+                        </ul>
+                        <p class="sa-muted">Partial is not an analysis failure: every area below shows the evidence that was produced.</p>
+                    }
+                    @if (coverage.Limitations.Count > 0)
+                    {
+                        <ReviewDisclosure Text="@($"View limitations ({coverage.Limitations.Count})")" CollapseText="Hide limitations" TestId="sa-coverage-limitations" Class="disclosure-small">
+                            <ul class="sa-list" data-testid="sa-coverage-limitation-list">@foreach (var l in coverage.Limitations) { <li>@l</li> }</ul>
+                        </ReviewDisclosure>
+                    }
+                </div>
+            }
             <div class="sa-controls">
                 <label class="sa-field">Change snapshot
                     <select id="sa-snapshot-select" class="form-control" @bind="_selected" @bind:after="SnapshotChanged" data-testid="source-snapshot" disabled="@(_busy || _snapshots.Count == 0)">
@@ -211,7 +236,7 @@
             </nav>
             @if (_area == SourceAnalysisAreas.Overview)
             {
-                var attention = SourceAnalysisReview.Attention(selected);
+                var reviewAreas = SourceAnalysisReview.ReviewAreas(selected);
                 var limitations = SourceAnalysisReview.Limitations(selected);
                 <section class="sa-card sa-summary" aria-labelledby="sa-current-heading" data-testid="sa-overview-summary">
                     <h2 id="sa-current-heading" tabindex="-1">Analysis summary</h2>
@@ -224,16 +249,21 @@
                     </ul>
                 </section>
                 <section class="sa-card sa-attention" aria-labelledby="sa-attention-heading" data-testid="sa-attention">
-                    <h2 id="sa-attention-heading">Things needing attention <span class="sa-count" data-testid="sa-attention-count">@attention.Sum(a => a.Count)</span></h2>
-                    @if (attention.Count == 0) { <p class="sa-muted" data-testid="sa-attention-none">Nothing in this snapshot needs review.</p> }
+                    <h2 id="sa-attention-heading">Review needed <span class="sa-count" data-testid="sa-attention-count">@SourceAnalysisReview.Plural(reviewAreas.Count, "area", "areas")</span></h2>
+                    @if (reviewAreas.Count == 0) { <p class="sa-muted" data-testid="sa-attention-none">Nothing in this snapshot needs review.</p> }
                     else
                     {
+                        <p class="sa-muted" data-testid="sa-attention-note">Evidence worth a look, per area. These are analyzer results of different kinds — unresolved source relationships, declarations to interpret, classification gaps and heuristic parses — not application defects, so they are not added together.</p>
                         <ul class="sa-attention-list">
-                            @foreach (var item in attention)
+                            @foreach (var (areaTitle, items) in reviewAreas)
                             {
-                                <li data-testid="sa-attention-item" data-key="@item.Key"><span>@item.Text</span> <a href="@ReviewHref(item.Area, item.Domain)" @onclick="() => OpenReview(item.Area, item.Domain, item.View)" @onclick:preventDefault>Review<span class="visually-hidden">@(" " + item.Text)</span></a></li>
+                                @foreach (var item in items)
+                                {
+                                    <li data-testid="sa-attention-item" data-key="@item.Key" data-area="@areaTitle"><span class="sa-attention-area">@areaTitle</span> <span>@item.Text</span> <a href="@ReviewHref(item.Area, item.Domain)" @onclick="() => OpenReview(item.Area, item.Domain, item.View)" @onclick:preventDefault>Review<span class="visually-hidden">@(" " + areaTitle + ": " + item.Text)</span></a></li>
+                                }
                             }
                         </ul>
+                        <p class="sa-muted">Review opens the area; nothing is confirmed or accepted automatically.</p>
                     }
                     <div class="sa-actions" data-testid="sa-overview-actions">
                         <button type="button" class="btn-primary" data-testid="sa-review-architecture" @onclick="() => OpenReview(SourceAnalysisAreas.Architecture, null, null)">Review architecture</button>
@@ -249,7 +279,8 @@
                     var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
                     <ReviewDisclosure Text="@($"View cross-source relationships ({evidence.CrossDomain.Links.Count})")" CollapseText="Hide cross-source relationships" TestId="sa-cross-domain-disclosure" Class="disclosure-small">
                         <section class="sa-card" aria-labelledby="sa-links-heading" data-testid="sa-cross-domain">
-                            <h3 id="sa-links-heading">Cross-source relationships <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(evidence.CrossDomain.Status)" /></h3>
+                            <h3 id="sa-links-heading">Cross-source relationships <SourceStatusBadge Dimension="SourceStatusDimension.Completeness" Label="@SourceDomainText.Label(evidence.CrossDomain.Status)" TestId="sa-cross-domain-status" /></h3>
+                            @if (evidence.CrossDomain.Status == SourceDomainStatus.Complete) { <p class="sa-muted" data-testid="sa-cross-domain-scope">Relationship matching complete for this snapshot — every supported matching pass ran over this source. It does not establish completeness for the whole project.</p> }
                             @if (summary.Count == 0) { <p class="sa-muted" data-testid="sa-cross-domain-empty">@(evidence.CrossDomain.StatusReason ?? "No relationships between the source-evidence domains of this snapshot.")</p> }
                             else
                             {
@@ -348,12 +379,15 @@
     private string ReviewHref(string area, string? domain) => area == SourceAnalysisAreas.Quality && domain is not null
         ? Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = SourceAnalysisAreas.AreaParam(area), ["view"] = SourceAnalysisAreas.Slug(domain) })
         : AreaHref(area);
-    /// <summary>The four status dimensions with the labels each one uses — kept apart in the legend as on every page.</summary>
+    /// <summary>The status dimensions with the labels each one uses — kept apart in the legend as on every page. One badge never describes
+    /// several dimensions.</summary>
     private static readonly (SourceStatusDimension Dimension, string[] Examples)[] StatusLegend =
     [
-        (SourceStatusDimension.Completeness, ["Complete", "Partial", "Not detected"]),
-        (SourceStatusDimension.Confidence, ["Confirmed", "Strongly supported", "Inferred", "Unresolved"]),
-        (SourceStatusDimension.Observation, ["Detected", "Partial", "Needs review", "Not found"]),
+        (SourceStatusDimension.Confidence, ["Detected in source", "Confirmed in source", "Inferred", "Not found in source"]),
+        (SourceStatusDimension.Completeness, ["Complete", "Partial", "Not assessed"]),
+        (SourceStatusDimension.Resolution, ["Resolved", "Unresolved", "Ambiguous", "Conflict"]),
+        (SourceStatusDimension.ReviewAction, ["No action", "Needs review", "Needs confirmation"]),
+        (SourceStatusDimension.Runtime, ["Not assessed here"]),
         (SourceStatusDimension.ParserSupport, ["Supported", "Partial"]),
     ];
     private string _area = SourceAnalysisAreas.Overview;

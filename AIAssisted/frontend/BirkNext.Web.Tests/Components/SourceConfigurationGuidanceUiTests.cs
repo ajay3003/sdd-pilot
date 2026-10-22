@@ -174,10 +174,11 @@ public sealed class SourceConfigurationGuidanceUiTests : BunitContext
             },
         };
         var cut = Render<ConfigurationWorkspace>(p => p.Add(x => x.Evidence, evidence));
-        cut.Find("[data-testid=sd-config-declared-note]").TextContent.Should().Contain("runtime not verified");
+        cut.Find("[data-testid=sd-config-declared-note]").TextContent.Should().Contain("Runtime is not assessed here");
+        cut.FindAll("[data-testid=sd-config-declared-runtime]").Should().OnlyContain(c => c.TextContent == "Not assessed", "runtime is its own column");
         cut.FindAll("[data-testid=sd-config-declared-group]").Should().HaveCount(4);
         var test = cut.Find("[data-testid=sd-config-declared-row][data-key='Environment.Server.Test']");
-        test.TextContent.Should().Contain("https://parcels.test.example.invalid").And.Contain("OpenAPI · api/parcels.json → servers[0]").And.Contain("Declared in source").And.Contain("Runtime not verified");
+        test.TextContent.Should().Contain("https://parcels.test.example.invalid").And.Contain("OpenAPI · api/parcels.json → servers[0]").And.Contain("Declared in source").And.Contain("Not assessed");
         cut.Markup.Should().Contain("Infrastructure as Code · infra/main.tf → azurerm_servicebus_topic.closed (line 7)");
     }
 

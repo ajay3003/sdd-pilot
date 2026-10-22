@@ -29,7 +29,7 @@
             <div><dt>Tables / entities</dt><dd>@M(tables.Count)</dd></div>
             <div><dt>Relationships</dt><dd>@M(AllRelationships.Count)</dd></div>
             <div><dt>Indexes</dt><dd>@M(tables.Sum(t => t.Indexes.Count))</dd></div>
-            <div><dt>Unresolved</dt><dd>@M(Snapshot.UnresolvedEvidence.Count)</dd></div>
+            <div><dt>Not fully resolved</dt><dd>@M(Snapshot.UnresolvedEvidence.Count)</dd></div>
             <div><dt>Conflicts</dt><dd>@M(Snapshot.Conflicts.Count)</dd></div>
         </dl>
         <div class="db-actions">
@@ -55,12 +55,12 @@
             </div>
         </section>
         <section class="db-panel" aria-labelledby="db-unresolved-heading" data-testid="db-unresolved">
-            <h3 id="db-unresolved-heading"><span data-testid="db-unresolved-count">@Snapshot.UnresolvedEvidence.Count</span> @(Snapshot.UnresolvedEvidence.Count == 1 ? "declaration" : "declarations") unresolved</h3>
+            <h3 id="db-unresolved-heading"><span data-testid="db-unresolved-count">@Snapshot.UnresolvedEvidence.Count</span> source @(Snapshot.UnresolvedEvidence.Count == 1 ? "declaration" : "declarations") not fully resolved</h3>
             @if (unresolvedGroups.Count == 0) { <p class="db-muted">Every database declaration in this source was interpreted.</p> }
             else
             {
                 <ul class="db-causes" data-testid="db-unresolved-groups">@foreach (var g in unresolvedGroups.Take(8)) { <li>@g.Label <span class="db-muted">· @g.Count</span></li> }@if (unresolvedGroups.Count > 8) { <li>@(unresolvedGroups.Count - 8) other type(s) <span class="db-muted">· @unresolvedGroups.Skip(8).Sum(g => g.Count)</span></li> }</ul>
-                <p class="db-muted">Source declarations the analysis could not interpret with certainty — limitations of source analysis, not database defects.</p>
+                <p class="db-muted" data-testid="db-unresolved-note">These are source declarations the analyzer could not interpret with certainty. They are not database defects.</p>
                 <ReviewDisclosure Text="@($"Review unresolved evidence ({Snapshot.UnresolvedEvidence.Count})")" CollapseText="Hide unresolved evidence" TestId="db-unresolved-detail" Class="disclosure-small" @bind-Expanded="_showUnresolved">
                     @if (_showUnresolved)
                     {
@@ -105,8 +105,8 @@
     }
     else if (_tab == "Changes")
     {
-        <h3>Schema changes</h3>
-        <p class="db-muted" data-testid="db-change-label">This compares source declarations. Migration deployment and live database changes are not assessed. @SourceBoundary.ChangesNotDrift</p>
+        <h3>Source declaration changes</h3>
+        <p class="db-muted" data-testid="db-change-label">This compares source declarations. It does not prove migration deployment, live database drift or runtime database changes. @SourceBoundary.ChangesNotDrift</p>
         @if (Previous is null)
         {
             <p class="sa-empty-line" data-testid="db-no-previous">No earlier data analysis of this source is available for comparison. @if (ChooseSnapshot.HasDelegate) { <button type="button" class="db-link" data-testid="db-choose-snapshot" @onclick="() => ChooseSnapshot.InvokeAsync()">Choose another snapshot</button> }</p>
@@ -120,26 +120,30 @@
             else
             {
                 <dl class="sa-change-summary" data-testid="db-change-summary">@foreach (var g in SourceAnalysisReview.DatabaseChanges(changes)) { <div data-testid="db-change-group" data-area="@g.Label"><dt>@g.Label</dt><dd>@SourceAnalysisReview.ChangeText(g)</dd></div> }</dl>
-                <ReviewDisclosure Text="@($"View detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="db-change-details" Class="disclosure-small">
-                    <ul class="db-list" data-testid="db-changes">@foreach (var change in changes) { <li>@change.Kind · @change.Object · @change.Detail</li> }</ul>
+                <ReviewDisclosure Text="@($"Review detailed changes ({changes.Count})")" CollapseText="Hide detailed changes" TestId="db-change-details" Class="disclosure-small">
+                    @foreach (var verb in changes.GroupBy(c => SourceAnalysisReview.DatabaseChangeKind(c.Kind).Verb).OrderBy(g => Array.IndexOf(new[] { "Added", "Removed", "Changed" }, g.Key) is var i && i < 0 ? 99 : i))
+                    {
+                        <h4 class="sa-change-area">@verb.Key <span class="db-muted">· @verb.Count()</span></h4>
+                        <ul class="db-list" data-testid="db-changes" data-kind="@verb.Key">@foreach (var change in verb) { <li>@change.Kind · @change.Object · @change.Detail</li> }</ul>
+                    }
                 </ReviewDisclosure>
             }
         }
     }
     else
     {
-        var moreFilters = new[] { _project != "", _confirmed, !_inferred, _hideIsolated }.Count(x => x);
+        var moreFilters = new[] { _project != "", _confirmed, !_inferred }.Count(x => x);
         <div class="db-toolbar-core" data-testid="db-filters">
             <label class="db-search"><span class="visually-hidden">Search table, entity or column</span><input type="search" @bind="_search" @bind:event="oninput" placeholder="Search" aria-label="Search table, entity or column" /></label>
             <label>Database <select @bind="_database"><option value="">All</option>@foreach (var db in Snapshot.Databases) { <option value="@db.Id">@db.LogicalName</option> }</select></label>
             <label>Schema <select @bind="_schema"><option value="">All</option>@foreach (var schema in AllTables.Select(t => t.SchemaName ?? "Unknown").Distinct()) { <option>@schema</option> }</select></label>
+            <label class="db-check"><input type="checkbox" data-testid="db-connected-only" @bind="_hideIsolated" /> Connected tables only</label>
             @if (_tab == "Diagram") { <button type="button" class="btn-secondary" data-testid="db-fit" @onclick="Fit">Fit to screen</button> }
             <ReviewDisclosure Text="@(moreFilters > 0 ? $"More filters ({moreFilters})" : "More filters")" TestId="db-more-filters" Class="disclosure-small arch-menu">
                 <div class="arch-menu-body">
                     <label>Project <select @bind="_project"><option value="">All</option>@foreach (var project in AllTables.Select(t => t.SourceProject).Distinct()) { <option value="@project">@SourceAnalysisReview.FileName(project)</option> }</select></label>
-                    <label><input type="checkbox" @bind="_confirmed" /> Confirmed only</label>
+                    <label><input type="checkbox" data-testid="db-confirmed-only" @bind="_confirmed" /> Confirmed in source only</label>
                     <label><input type="checkbox" @bind="_inferred" /> Include inferred</label>
-                    <label><input type="checkbox" @bind="_hideIsolated" /> Hide isolated tables</label>
                     @if (moreFilters > 0 || _search != "" || _database != "" || _schema != "") { <button type="button" class="db-link" data-testid="db-clear-filters" @onclick="ClearFilters">Clear filters</button> }
                 </div>
             </ReviewDisclosure>
@@ -172,8 +176,9 @@
                     }
                     @if (_legend)
                     {
-                        <p class="db-legend" data-testid="db-legend"><span><span class="db-line" aria-hidden="true"></span>Confirmed</span><span><span class="db-line db-line-dashed" aria-hidden="true"></span>Inferred</span><span><span class="db-line db-line-dotted" aria-hidden="true"></span>Observed from migration/DDL or unresolved</span><span class="db-muted">Labels show the evidence state · drag tables, pan blank space, scroll to zoom · Tab to a table and press Enter.</span></p>
+                        <p class="db-legend" data-testid="db-legend"><span><span class="db-line" aria-hidden="true"></span>Confirmed in source</span><span><span class="db-line db-line-dashed" aria-hidden="true"></span>Inferred</span><span><span class="db-line db-line-dotted" aria-hidden="true"></span>Observed from migration/DDL or unresolved</span><span class="db-muted">Labels show the evidence state · drag tables, pan blank space, scroll to zoom · Tab to a table and press Enter.</span></p>
                     }
+                    <p class="db-muted" role="status" data-testid="db-diagram-scope">Showing @SourceAnalysisReview.Plural(VisibleTables.Count, "table", "tables") of @AllTables.Count@(_hideIsolated ? " · connected tables only" : "")@(_database != "" ? " · one database" : "")@(_schema != "" ? $" · schema {_schema}" : "").@if (_largeDefaultApplied && _hideIsolated) { <span> Large model: tables without relationships are hidden by default. </span><button type="button" class="db-link" data-testid="db-show-all" @onclick="ShowAllTables">Show all tables</button> }</p>
                     <div class="db-canvas" @ref="_canvas" tabindex="0" aria-label="Database diagram. Tables and Relationships list the same information."></div>
                     <p role="status" class="db-muted">@_message</p>
                 }
@@ -204,7 +209,7 @@
                         var open = _openRows.Contains(key);
                         <tr data-testid="db-relationship-row"><td><button type="button" class="db-name" @onclick="() => SelectTable(relationship.FromTable)">@TableName(relationship.FromTable)</button></td><td>@string.Join(", ", relationship.FromColumns)</td><td>@TableName(relationship.ToTable)</td><td>@string.Join(", ", relationship.ToColumns)</td><td>@relationship.Cardinality</td>
                             <td><span class="db-pill">@DatabaseEvidenceSummary.StateLabel(relationship.EvidenceState)</span></td>
-                            <td><button type="button" class="db-link" aria-expanded="@(open ? "true" : "false")" data-testid="db-relationship-evidence-toggle" @onclick="() => Toggle(key)">@(open ? "Hide evidence" : $"View evidence ({relationship.Evidence.Count})")<span class="visually-hidden"> for @TableName(relationship.FromTable) to @TableName(relationship.ToTable)</span></button></td></tr>
+                            <td><button type="button" class="db-link" aria-expanded="@(open ? "true" : "false")" data-testid="db-relationship-evidence-toggle" @onclick="() => Toggle(key)">@(open ? "Hide evidence" : $"View evidence ({SourceAnalysisReview.Plural(relationship.Evidence.Count, "item", "items")})")<span class="visually-hidden"> for @TableName(relationship.FromTable) to @TableName(relationship.ToTable)</span></button></td></tr>
                         @if (open) { <tr class="db-detail-row" data-testid="db-relationship-evidence"><td colspan="7"><p class="db-muted">@relationship.Confidence · Delete behavior: @(relationship.DeleteBehavior ?? "Unknown")@(relationship.IsRequired is { } required ? $" · Required: {required}" : "")@(relationship.Name is { } name ? $" · {name}" : "")</p>@EvidenceList(relationship.Evidence)</td></tr> }
                     }
                     </tbody></table></div>
@@ -262,8 +267,8 @@
     {
         DatabaseAnalysisStatus.Complete => null,
         DatabaseAnalysisStatus.Unsupported => "No supported database declaration was found in this source.",
-        _ when Snapshot.Conflicts.Count > 0 => SourceAnalysisReview.Plural(Snapshot.Conflicts.Count, "conflicting declaration", "conflicting declarations"),
-        _ when Snapshot.UnresolvedEvidence.Count > 0 => SourceAnalysisReview.Plural(Snapshot.UnresolvedEvidence.Count, "unresolved declaration", "unresolved declarations"),
+        _ when Snapshot.Conflicts.Count > 0 => SourceAnalysisReview.Plural(Snapshot.Conflicts.Count, "conflicting source declaration", "conflicting source declarations"),
+        _ when Snapshot.UnresolvedEvidence.Count > 0 => SourceAnalysisReview.NotFullyResolved(Snapshot.UnresolvedEvidence.Count),
         _ => "Some declarations could not be interpreted",
     };
     /// <summary>One export pattern: HTML and JSON everywhere, SVG only on the diagram.</summary>
@@ -308,11 +313,20 @@
     private RenderFragment EvidenceList(List<DatabaseEvidence> evidence) => builder => { var i = 0; foreach (var e in evidence) { builder.OpenElement(i++, "p"); builder.AddContent(i++, $"{e.State} · {e.Type} · {e.Explanation} · {e.Project} · {e.Path}:{e.Line}–{e.EndLine} · {e.Extractor}"); builder.CloseElement(); } };
     [JSInvokable] public Task SelectTable(string id) { _selected = id; StateHasChanged(); return Task.CompletedTask; }
     private void OpenDiagram() => _tab = "Diagram";
+    /// <summary>Above this many tables the diagram first shows connected tables only (presentation only; every table stays in Tables).</summary>
+    private const int LargeModel = 60;
+    private bool _largeDefaultApplied;
+    private void ShowAllTables() => _hideIsolated = false;
     private void ClearRelated() => _related = null;
     private void ShowRelated() { if (_selected is null) return; _related = [_selected]; var frontier = new HashSet<string>(_related); for (var level = 0; level < _depth && frontier.Count > 0; level++) { var next = AllRelationships.Where(State).Where(r => frontier.Contains(r.FromTable) || frontier.Contains(r.ToTable)).SelectMany(r => new[] { r.FromTable, r.ToTable }).Where(id => !_related.Contains(id)).ToHashSet(); _related.UnionWith(next); frontier = next; } _search = ""; _tab = "Diagram"; }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_tab != "Diagram") { _renderKey = null; return; }
+        if (!_largeDefaultApplied && !_hideIsolated && _related is null && AllTables.Count > LargeModel && AllRelationships.Count > 0)
+        {
+            // A large model opens on its connected tables: a full forced layout of every table is hard to read. Applied once.
+            _largeDefaultApplied = true; _hideIsolated = true; StateHasChanged(); return;
+        }
         _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/databaseDiagram.js"); _reference ??= DotNetObjectReference.Create(this);
         var nodes = VisibleTables.Select(t => new { id = t.Id, name = t.LogicalName, state = Snapshot.Conflicts.Any(c => c.TableId == t.Id) ? "Conflict · " + t.EvidenceState : t.EvidenceState.ToString(), columns = (_pkOnly ? t.Columns.Where(c => c.IsPrimaryKey || c.IsForeignKey) : _allColumns || _expanded.Contains(t.Id) ? t.Columns : t.Columns.Where(c => c.IsPrimaryKey || c.IsForeignKey).Concat(t.Columns.Where(c => !c.IsPrimaryKey && !c.IsForeignKey).Take(3))).Select(c => (c.IsPrimaryKey ? "PK " : c.IsForeignKey ? "FK " : "") + c.Name).ToArray() }).ToArray();
         var edges = _edges ? VisibleRelationships.Select(r => new { from = r.FromTable, to = r.ToTable, label = r.Cardinality + " · " + r.EvidenceState, state = r.EvidenceState.ToString() }).ToArray() : [];

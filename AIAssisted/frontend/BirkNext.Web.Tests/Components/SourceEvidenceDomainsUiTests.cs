@@ -249,8 +249,8 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
         var row = cut.Find("[data-testid=sd-cicd-pipeline][data-template=false]");
         row.QuerySelector("[data-testid=sd-cicd-trigger-types]")!.TextContent.Should().Be("Push", "the row shows trigger types only");
         row.TextContent.Should().NotContain("branches main", "branches and paths are in the expandable detail");
-        row.QuerySelectorAll("td")[1].TextContent.Should().Be("1 test step", "the included template's unit-test step counts (cycle-safe)");
-        row.QuerySelectorAll("td")[2].TextContent.Should().Be("1 deploy step");
+        row.QuerySelectorAll("td")[2].TextContent.Should().Be("1 test step", "the included template's unit-test step counts (cycle-safe)");
+        row.QuerySelectorAll("td")[3].TextContent.Should().Be("1 deploy step");
         cut.Find("[data-testid=sd-cicd-open]").GetAttribute("aria-expanded").Should().Be("false");
         cut.Find("[data-testid=sd-cicd-open]").Click();
         cut.Find("[data-testid=sd-cicd-open]").GetAttribute("aria-expanded").Should().Be("true");

@@ -21,18 +21,18 @@
         <p class="sd-lead" data-testid="sd-contracts-lead">@SourceAnalysisReview.Plural(K.Contracts.Count, "contract", "contracts") detected</p>
         <dl class="sd-summary" data-testid="sd-contracts-summary">
             <div><dt>Types</dt><dd data-testid="sd-contracts-types">@string.Join(" · ", K.Contracts.GroupBy(c => c.Type).OrderByDescending(g => g.Count()).Select(g => $"{SourceDomainText.Label(g.Key)} {g.Count()}"))</dd></div>
-            <div><dt>Parsing</dt><dd data-testid="sd-contracts-parsing">@string.Join(" · ", K.Contracts.GroupBy(c => SourceAnalysisReview.Parsing(c.ParseSupport)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}"))</dd></div>
-            <div><dt>Needs review</dt><dd data-testid="sd-contracts-needs-review">@review.Count</dd></div>
+            <div><dt>Parsing method</dt><dd data-testid="sd-contracts-parsing">@string.Join(" · ", K.Contracts.GroupBy(c => SourceAnalysisReview.Parsing(c.ParseSupport)).OrderByDescending(g => g.Key == "Structured").ThenBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}"))</dd></div>
+            <div><dt>Needs confirmation</dt><dd data-testid="sd-contracts-needs-review">@SourceAnalysisReview.Heuristic(K) <span class="sd-context">heuristic parses</span></dd></div>
         </dl>
-        <p class="sd-muted" data-testid="sd-contracts-parsing-help"><strong>Structured</strong> — parsed using a supported structured reader. <strong>Partial</strong> — some constructs were interpreted heuristically and should be reviewed. Neither is a runtime validation, and Partial does not mean the contract is invalid.</p>
+        <p class="sd-muted" data-testid="sd-contracts-parsing-help">Every contract listed here was <strong>detected in source</strong> (the file exists). <strong>Structured</strong> — parsed by a supported structured reader. <strong>Heuristic</strong> — some constructs were interpreted heuristically, so the parse needs confirmation. Neither is a runtime validation, and heuristic parsing does not mean the contract is invalid. Producer and consumer are separate facts and may be inferred or not stated in source.</p>
         <ReviewDisclosure Text="How contract analysis works" CollapseText="Hide contract analysis notes" TestId="sd-contracts-how" Class="disclosure-small">
             <p class="sa-help-text" id="sd-contracts-parser-help" data-testid="sd-contracts-parser-help">@SourceEvidenceDomainsPresentation.ParserCoverageHelp</p>
         </ReviewDisclosure>
         @if (review.Count > 0)
         {
             <section class="sd-panel" aria-labelledby="sd-contracts-review-heading" data-testid="sd-contracts-review">
-                <h3 id="sd-contracts-review-heading">@SourceAnalysisReview.Plural(review.Count, "contract needs", "contracts need") review</h3>
-                <ul class="sd-list">@foreach (var g in review.GroupBy(r => r.Reason)) { <li data-testid="sd-contracts-review-reason">@g.Key: @string.Join(", ", g.Select(r => r.Contract.Name))</li> }</ul>
+                <h3 id="sd-contracts-review-heading">@SourceAnalysisReview.Plural(review.Count, "contract needs", "contracts need") confirmation or review</h3>
+                <ul class="sd-list">@foreach (var g in review.GroupBy(r => r.Reason)) { <li data-testid="sd-contracts-review-reason">@g.Key: @string.Join(", ", g.Take(5).Select(r => r.Contract.Name))@(g.Count() > 5 ? $" +{g.Count() - 5} more" : "")</li> }</ul>
                 <button type="button" class="btn-primary" data-testid="sd-contracts-review-action" @onclick="ReviewContracts">Review contracts</button>
             </section>
         }
@@ -54,7 +54,7 @@
                 var showOperations = group.Operations || all.Any(c => c.Operations.Count > 0);
                 var showTypes = group.TypeCounts || all.Any(c => c.Types.Count > 0);
                 var showType = all.Select(c => c.Type).Distinct().Count() > 1;
-                var columns = 6 + (showType ? 1 : 0);
+                var columns = 7 + (showType ? 1 : 0);
                 <section class="sa-type-group" aria-labelledby="@($"{bodyId}-heading")" data-testid="sd-contracts-group" data-group="@group.Key" data-count="@all.Count">
                     <h4 id="@($"{bodyId}-heading")" class="visually-hidden">@group.Label</h4>
                     <button type="button" class="sa-type-group-toggle" aria-expanded="@(expanded ? "true" : "false")" aria-controls="@bodyId" data-testid="sd-contracts-group-toggle" @onclick="() => ToggleGroup(group.Key)">
@@ -65,7 +65,7 @@
                         {
                             <div class="sd-scroll sa-stack" tabindex="0" role="region" aria-label="@($"{group.Label} contracts")">
                                 <table role="table" data-testid="sd-contracts-table">
-                                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Contract</th>@if (showType) { <th role="columnheader" scope="col">Type</th> }<th role="columnheader" scope="col">Owner / component</th><th role="columnheader" scope="col">Used by</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Parsing</th><th role="columnheader" scope="col"><span class="visually-hidden">Evidence details</span></th></tr></thead>
+                                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Contract</th>@if (showType) { <th role="columnheader" scope="col">Type</th> }<th role="columnheader" scope="col">Producer / owner</th><th role="columnheader" scope="col">Consumer / used by</th><th role="columnheader" scope="col">Evidence</th><th role="columnheader" scope="col">Parsing</th><th role="columnheader" scope="col">Review state</th><th role="columnheader" scope="col"><span class="visually-hidden">Evidence details</span></th></tr></thead>
                                     <tbody role="rowgroup">
                                         @foreach (var c in shown)
                                         {
@@ -74,17 +74,19 @@
                                             <tr role="row" data-testid="sd-contract" data-type="@c.Type">
                                                 <th role="rowheader" scope="row">@c.Name@(c.Version is { } v ? $" {v}" : "")@if (showOperations && c.Operations.Count > 0 || showTypes && c.Types.Count > 0) { <span class="sd-context">@(c.Operations.Count > 0 ? $"{c.Operations.Count} operations" : $"{c.Types.Count} types")</span> }</th>
                                                 @if (showType) { <td role="cell" data-label="Type">@SourceDomainText.Label(c.Type)</td> }
-                                                <td role="cell" data-label="Owner / component" data-testid="sd-contract-component"><span data-testid="sd-contract-role" class="sd-context">@SourceEvidenceDomainsPresentation.OwnerRole(c)</span> @(usage.ProducedBy.Count > 0 ? string.Join(", ", usage.ProducedBy) : SourceEvidenceDomainsPresentation.OwnerComponent(c))</td>
-                                                <td role="cell" data-label="Used by" data-testid="sd-contract-usage">@(usage.UsedBy.Count > 0 ? string.Join(", ", usage.UsedBy) : "Not stated in source")</td>
-                                                <td role="cell" data-label="Evidence"><SourceStatusBadge Dimension="SourceStatusDimension.Confidence" Label="@SourceDomainText.Label(c.EvidenceState)" TestId="sd-contract-evidence" /></td>
-                                                <td role="cell" data-label="Parsing" data-testid="sd-contract-parser">@SourceAnalysisReview.Parsing(c.ParseSupport)</td>
+                                                <td role="cell" data-label="Producer / owner"><span data-testid="sd-contract-component"><span data-testid="sd-contract-role" class="sd-context">@SourceEvidenceDomainsPresentation.OwnerRole(c)</span> @(usage.ProducedBy.Count > 0 ? string.Join(", ", usage.ProducedBy) : SourceEvidenceDomainsPresentation.OwnerComponent(c))</span>
+                                                    @if (usage.ProducedBy.Count > 0 || c.Producer is not null) { <SourceStatusBadge Dimension="SourceStatusDimension.Confidence" Label="@SourceDomainText.Label(c.EvidenceState)" HiddenPrefix="Ownership: " TestId="sd-contract-owner-evidence" /> }</td>
+                                                <td role="cell" data-label="Consumer / used by" data-testid="sd-contract-usage">@(usage.UsedBy.Count > 0 ? string.Join(", ", usage.UsedBy) : "Not stated in source")</td>
+                                                <td role="cell" data-label="Evidence"><SourceStatusBadge Dimension="SourceStatusDimension.Confidence" Label="Detected in source" HiddenPrefix="Contract: " TestId="sd-contract-evidence" /></td>
+                                                <td role="cell" data-label="Parsing" data-testid="sd-contract-parser"><SourceStatusBadge Dimension="SourceStatusDimension.ParserSupport" Label="@SourceAnalysisReview.Parsing(c.ParseSupport)" HiddenPrefix="Parsing method: " /></td>
+                                                <td role="cell" data-label="Review state" data-testid="sd-contract-review-state"><SourceStatusBadge Dimension="SourceStatusDimension.ReviewAction" Label="@SourceAnalysisReview.ContractReviewState(c)" /></td>
                                                 <td role="cell"><button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" data-testid="sd-contract-toggle" @onclick="() => Toggle(c.Id)">@(open ? "Hide evidence" : "View evidence")<span class="visually-hidden"> for @c.Name</span></button></td>
                                             </tr>
                             @if (open)
                             {
                                 <tr role="row" class="sd-detail-row" data-testid="sd-contract-detail"><td role="cell" colspan="@columns">
-                                    <p><strong>Source:</strong> <span class="sd-path">@SourceEvidenceDomainsPresentation.Location(c.File, c.Line)</span> · @c.Format · parser coverage @c.ParseSupport</p>
-                                    <p><strong>Owner basis:</strong> @(c.ProducerBasis ?? "—")</p>
+                                    <p><strong>Source:</strong> <span class="sd-path">@SourceEvidenceDomainsPresentation.Location(c.File, c.Line)</span> · @c.Format · parsing method @SourceAnalysisReview.Parsing(c.ParseSupport)</p>
+                                    <p><strong>Producer/owner basis:</strong> @(c.ProducerBasis ?? "Not stated in source") · ownership evidence @SourceDomainText.Label(c.EvidenceState)</p>
                                     @if (c.Operations.Count > 0) { <p><strong>Operations:</strong> @string.Join(", ", c.Operations.Take(60).Select(o => o.Name))@(c.Operations.Count > 60 ? $" … +{c.Operations.Count - 60}" : "")</p> }
                                     @if (c.Types.Count > 0)
                                     {
@@ -152,7 +154,7 @@
     private HashSet<string> _expanded = [];
     private void Toggle(string id) { if (!_open.Add(id)) _open.Remove(id); }
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    private string? StatusReason => SourceAnalysisReview.Heuristic(K) is > 0 and var partial ? $"{SourceAnalysisReview.Plural(partial, "contract", "contracts")} parsed heuristically" : null;
+    private string? StatusReason => SourceAnalysisReview.Heuristic(K) is > 0 and var partial ? SourceAnalysisReview.HeuristicNeedsConfirmation(partial) : null;
     /// <summary>Opens every contract group with a contract needing review and moves focus to the list.</summary>
     private async Task ReviewContracts()
     {

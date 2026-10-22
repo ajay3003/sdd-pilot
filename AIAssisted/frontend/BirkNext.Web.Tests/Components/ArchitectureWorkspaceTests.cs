@@ -70,7 +70,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         var overview = cut.Find("[data-testid=arch-overview]").TextContent;
         overview.Should().Contain("Components3").And.Contain("Messaging channels1").And.Contain("Datastores1");
         cut.Find("[data-testid=arch-dependency-summary]").TextContent.Should().Contain("unresolved");
-        cut.Find("[data-testid=arch-dep-states]").TextContent.Should().Contain("Unresolved1").And.Contain("Inferred1", "every evidence state stays reachable behind View dependency evidence");
+        cut.Find("[data-testid=arch-dep-states]").TextContent.Should().Contain("Relationship detected · target unresolved1").And.Contain("Inferred1", "every evidence state stays reachable behind View dependency evidence");
         cut.Find("[data-testid=arch-diagnostics]").TextContent.Should().Contain("not application defects").And.NotContain("Billing:BaseUrl", "raw unresolved evidence is a drill-down");
         cut.Find("[data-testid=arch-unresolved-detail-toggle]").Click();
         cut.Find("[data-testid=arch-unresolved-table]").TextContent.Should().Contain("Billing:BaseUrl");
@@ -130,7 +130,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         var cut = RenderModel();
         Tab(cut, "system");
         cut.Find("[data-testid=arch-toolbar]").TextContent.Should().Contain("Type", "component type is a core filter");
-        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Confirmed only").And.Contain("Include inferred").And.Contain("Hide unresolved").And.Contain("Libraries");
+        cut.Find("[data-testid=arch-filters]").TextContent.Should().Contain("Confirmed in source only").And.Contain("Include inferred").And.Contain("Hide unresolved").And.Contain("Libraries");
         cut.Find("[data-testid=arch-canvas]").GetAttribute("aria-label").Should().Contain("table below lists the same relationships");
         var edgeTable = cut.Find("[data-testid=arch-edge-table]");
         edgeTable.QuerySelectorAll("tbody tr").Length.Should().Be(5);
@@ -179,7 +179,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     {
         var cut = RenderModel();
         Tab(cut, "messaging");
-        cut.Find("[data-testid=arch-messaging-table]").TextContent.Should().Contain("catalog.changed").And.Contain("Service Bus topic").And.Contain("Catalog.Api (Confirmed)")
+        cut.Find("[data-testid=arch-messaging-table]").TextContent.Should().Contain("catalog.changed").And.Contain("Service Bus topic").And.Contain("Catalog.Api (Confirmed in source)")
             .And.Contain("Search.Worker (Inferred, Wolverine)").And.Contain("search-sub");
     }
 

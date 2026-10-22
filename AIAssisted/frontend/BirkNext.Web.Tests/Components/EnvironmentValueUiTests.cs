@@ -43,16 +43,17 @@ public sealed class EnvironmentValueUiTests : BunitContext
             Entry("ApiBaseUrl", "https://billing-qa.example.test/api", "Qa", "Billing.Web", "billing/appsettings.Qa.json"),
             Entry("ApiBaseUrl", "http://localhost:7112/api", "Development", "Orders.Web", "orders/appsettings.Development.json"));
         var cut = Render<ConfigurationWorkspace>(p => p.Add(x => x.Evidence, evidence));
-        cut.FindAll(".sa-subnav-item").Single(b => b.TextContent == "Environment values").Click();
+        cut.FindAll(".sa-subnav-item").Single(b => b.TextContent == "Source environment values").Click();
 
         var rows = cut.FindAll("[data-testid=sd-config-envvalue]");
         rows.Select(r => (r.GetAttribute("data-environment"), r.QuerySelectorAll("td")[0].TextContent, r.QuerySelector("[data-testid=sd-config-envvalue-state]")!.TextContent))
             .Should().BeEquivalentTo([
-                ("Development", "Gateway.Api", "Declared"),
-                ("QA", "Billing.Web", "Declared"),
-                ("QA", "Gateway.Api", "Review required"),
-                ("QA", "Orders.Web", "Declared")], "different components are not a conflict; two QA origins of one component are");
-        cut.Find("[data-testid=sd-config-envvalues]").TextContent.Should().Contain("appsettings.Qa.json (Cors:AllowedOrigins:0)").And.Contain("runtime not verified");
+                ("Development", "Gateway.Api", "Declared in source"),
+                ("QA", "Billing.Web", "Declared in source"),
+                ("QA", "Gateway.Api", "Needs review"),
+                ("QA", "Orders.Web", "Declared in source")], "different components are not a conflict; two QA origins of one component are");
+        cut.Find("[data-testid=sd-config-envvalues]").TextContent.Should().Contain("appsettings.Qa.json (Cors:AllowedOrigins:0)").And.Contain("They do not prove deployed Target Environments");
+        cut.FindAll("[data-testid=sd-config-envvalue-runtime]").Should().OnlyContain(c => c.TextContent == "Not assessed", "runtime is its own column, never folded into the state");
         cut.Markup.Should().NotContain("localhost", "a developer-machine URL is never offered for a deployed environment");
     }
 

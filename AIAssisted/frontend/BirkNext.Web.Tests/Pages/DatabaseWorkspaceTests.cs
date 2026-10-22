@@ -22,6 +22,6 @@ public sealed class DatabaseWorkspaceTests : BunitContext
     }
     [Fact] public void ChangesRequirePreviousSnapshotAndNeverClaimDrift()
     {
-        var cut = Render<DatabaseWorkspace>(p => p.Add(c => c.Snapshot, Model())); cut.FindAll("nav button").Single(b => b.TextContent == "Changes").Click(); cut.Markup.Should().Contain("Schema changes").And.NotContain("deployed DB drift"); cut.Find("[data-testid=db-no-previous]").TextContent.Should().Contain("No earlier data analysis"); cut.Find("[data-testid=db-change-label]").TextContent.Should().Contain("not deployment drift").And.Contain("Migration deployment and live database changes are not assessed");
+        var cut = Render<DatabaseWorkspace>(p => p.Add(c => c.Snapshot, Model())); cut.FindAll("nav button").Single(b => b.TextContent == "Changes").Click(); cut.Markup.Should().Contain("Source declaration changes").And.NotContain("deployed DB drift"); cut.Find("[data-testid=db-no-previous]").TextContent.Should().Contain("No earlier data analysis"); cut.Find("[data-testid=db-change-label]").TextContent.Should().Contain("not deployment drift").And.Contain("It does not prove migration deployment, live database drift or runtime database changes");
     }
 }

@@ -217,8 +217,8 @@ public sealed class ObservabilityWorkspaceTests : BunitContext
 
         var row = cut.Find("[data-testid=sa-summary-row][data-key=observability]");
         row.GetAttribute("data-status").Should().Be("Partial");
-        row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Be("4 findings need review", "Partial always says why, from the snapshot's own findings");
-        cut.FindAll("[data-testid=sa-attention-item]").Should().Contain(i => i.TextContent.Contains("4 observability findings"));
+        row.QuerySelector("[data-testid=sa-summary-reason]")!.TextContent.Should().Be("4 evidence items need review", "Partial always says why, from the snapshot's own findings");
+        cut.FindAll("[data-testid=sa-attention-item]").Should().Contain(i => i.TextContent.Contains("4 evidence items need review"));
         cut.Find("[data-testid=sa-open-observability]").Click();
         cut.Find("[data-testid=area-qualityevidence]").GetAttribute("aria-current").Should().Be("page");
         cut.Find("[data-testid=sa-quality-observability]").GetAttribute("aria-current").Should().Be("true");

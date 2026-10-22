@@ -33,7 +33,7 @@
             <div><dt>Messaging channels</dt><dd>@M(o.Channels)</dd></div>
             <div><dt>Datastores</dt><dd>@M(o.DataStores)</dd></div>
             <div><dt>External systems</dt><dd>@M(o.ExternalSystems)</dd></div>
-            <div data-testid="arch-dependency-summary"><dt>Dependencies</dt><dd>@(Assessed ? $"{dep.Confirmed + dep.StronglySupported} confirmed · {dep.Unresolved} unresolved" : "Not assessed")</dd></div>
+            <div data-testid="arch-dependency-summary"><dt>Dependencies</dt><dd>@if (Assessed) { <span data-testid="arch-dependency-linked">@(dep.Confirmed + dep.StronglySupported + dep.Inferred) linked in source</span><span data-testid="arch-dependency-unresolved">@(" · " + SourceAnalysisReview.Plural(dep.Unresolved, "target unresolved", "targets unresolved"))@(dep.Conflict > 0 ? $" · {dep.Conflict} conflicting" : "")</span> } else { @("Not assessed") }</dd></div>
         </dl>
         @if (Assessed && types.Any(t => t.Count > 0))
         {
@@ -51,10 +51,10 @@
                 <h3 id="arch-dep-evidence-heading">Dependency evidence</h3>
                 <p class="arch-muted" data-testid="arch-dep-evidence-note">@dep.Runtime runtime dependencies. Each has exactly one evidence state, so these add up to @dep.Runtime.@(dep.NonRuntime > 0 ? $" {dep.NonRuntime} build-time, orchestration and configuration links are listed under Dependencies." : "")</p>
                 <dl class="arch-mini" data-testid="arch-dep-states">
-                    <div data-state="Confirmed"><dt>Confirmed</dt><dd>@M(dep.Confirmed)</dd></div>
+                    <div data-state="Confirmed"><dt>Confirmed in source</dt><dd>@M(dep.Confirmed)</dd></div>
                     <div data-state="StronglySupported"><dt>Strongly supported</dt><dd>@M(dep.StronglySupported)</dd></div>
                     <div data-state="Inferred"><dt>Inferred</dt><dd>@M(dep.Inferred)</dd></div>
-                    <div data-state="Unresolved"><dt>Unresolved</dt><dd>@M(dep.Unresolved)</dd></div>
+                    <div data-state="Unresolved"><dt>Relationship detected · target unresolved</dt><dd>@M(dep.Unresolved)</dd></div>
                     <div data-state="Conflict"><dt>Conflicts</dt><dd>@M(dep.Conflict)</dd></div>
                 </dl>
                 <p class="arch-muted" data-testid="arch-dep-target">Separate dimension: target not identified in source for @dep.TargetNotIdentified of @dep.All dependencies. An unresolved dependency can still point to an unresolved channel.</p>
@@ -65,8 +65,16 @@
             @if (groups.Count == 0) { <p class="arch-muted">Nothing unresolved in this snapshot.</p> }
             else
             {
-                <p class="arch-muted">Main causes — limits of source analysis or evidence the source does not state, not application defects:</p>
-                <ul class="arch-causes" data-testid="arch-unresolved-groups">@foreach (var g in groups) { <li data-kind="@g.Label">@g.Count @g.Label.ToLowerInvariant()</li> }</ul>
+                <p class="arch-muted">Grouped by cause — limits of source analysis or evidence the source does not state, not application defects:</p>
+                <ul class="arch-cause-groups" data-testid="arch-unresolved-cause-groups">
+                    @foreach (var cause in ArchitectureReview.CauseGroups)
+                    {
+                        var inCause = groups.Where(g => ArchitectureReview.CauseGroup(g.Label) == cause).ToList();
+                        if (inCause.Count == 0) continue;
+                        <li data-testid="arch-cause-group" data-cause="@cause"><strong>@cause</strong> <span class="arch-muted">· @inCause.Sum(g => g.Count)</span>
+                            <ul class="arch-causes" data-testid="arch-unresolved-groups">@foreach (var g in inCause) { <li data-kind="@g.Label">@g.Count @g.Label.ToLowerInvariant()</li> }</ul></li>
+                    }
+                </ul>
                 <ReviewDisclosure Text="@($"Review unresolved evidence ({Snapshot.Diagnostics.Count})")" CollapseText="Hide unresolved evidence" TestId="arch-unresolved-detail" Class="disclosure-small" @bind-Expanded="_showUnresolved">
                     @if (_showUnresolved)
                     {
@@ -85,8 +93,8 @@
                 </ReviewDisclosure>
             }
         </section>
-        <p class="arch-muted" data-testid="arch-technologies">Technologies: @technologies.Count detected</p>
-        <ReviewDisclosure Text="@($"View technologies ({technologies.Count})")" CollapseText="Hide technologies" TestId="arch-tech-all" Class="disclosure-small">
+        <p class="arch-muted arch-tech-summary" data-testid="arch-technologies">Technologies detected: @technologies.Count@if (technologies.Count > 0) { <span>: </span><span data-testid="arch-tech-top">@string.Join(", ", technologies.Take(5).Select(t => t.Name))</span>@(technologies.Count > 5 ? $" +{technologies.Count - 5} more" : "") }</p>
+        <ReviewDisclosure Text="@($"View all technologies ({technologies.Count})")" CollapseText="Hide technologies" TestId="arch-tech-all" Class="disclosure-small">
             <ul class="arch-chips">@foreach (var t in technologies) { <li data-testid="arch-tech"><strong>@t.Name</strong> <span class="arch-muted">@t.Category@(t.Components.Count > 0 ? $" · {t.Components.Count}" : "")</span></li> }</ul>
             <p class="arch-muted">Inventory with component counts — a technology is not a deployed component.</p>
         </ReviewDisclosure>
@@ -98,10 +106,18 @@
             <label>Search dependencies <input type="search" data-testid="arch-dep-search" @bind="_depSearch" @bind:event="oninput" /></label>
             <label>Type <select @bind="_depType"><option value="">All</option>@foreach (var t in Snapshot.Dependencies.Select(d => d.DependencyType.ToString()).Distinct().Order()) { <option>@t</option> }</select></label>
             <label>State <select data-testid="arch-dep-state" @bind="_depState"><option value="">All</option>@foreach (var s in Snapshot.Dependencies.Select(d => d.EvidenceState).Distinct().Order()) { <option value="@s">@ArchitecturePresentation.StateLabel(s)</option> }</select></label>
+            @if (DependencyReasons.Count > 0)
+            {
+                <label>Unresolved reason <select data-testid="arch-dep-reason" @bind="_depReason"><option value="">All</option>@foreach (var (reason, count) in DependencyReasons) { <option value="@reason">@reason (@count)</option> }</select></label>
+            }
         </div>
+        @if (DependencyReasons.Count > 0)
+        {
+            <p class="arch-muted" data-testid="arch-dep-reason-summary">Targets unresolved by reason: @string.Join(" · ", DependencyReasons.Select(r => $"{r.Reason} {r.Count}")). The dependency itself was detected in source; only its target could not be identified.</p>
+        }
         <div class="arch-table" tabindex="0" role="region" aria-label="All extracted dependencies">
             <table data-testid="arch-dependencies">
-                <thead><tr><th scope="col">From</th><th scope="col">Target</th><th scope="col">Type</th><th scope="col">Protocol</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
+                <thead><tr><th scope="col">From</th><th scope="col">Target</th><th scope="col">Type</th><th scope="col">Protocol</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col">Source</th></tr></thead>
                 <tbody>
                     @foreach (var d in Dependencies)
                     {
@@ -116,7 +132,8 @@
                                 else { @Name(d.ToId) }</td>
                             <td>@d.DependencyType@(d.Framework is { } fw ? $" · {fw}" : "")</td>
                             <td>@d.Protocol</td>
-                            <td><span class="arch-pill">@ArchitecturePresentation.StateLabel(d.EvidenceState)</span></td>
+                            <td><span class="arch-pill" data-testid="arch-dep-state-text">@ArchitectureReview.StateText(d)</span></td>
+                            <td data-testid="arch-dep-reason-cell">@(ArchitectureReview.ReasonCategory(d) ?? "—")</td>
                             <td class="arch-source-cell"><span title="@where">@SourceAnalysisReview.FileName(first?.File)</span> <button type="button" class="arch-link" data-testid="arch-dep-evidence" aria-label="@($"View evidence for {Name(d.FromComponentId)} {d.DependencyType}{(where is null ? "" : $", source {where}")}")" @onclick="() => OpenDependency(d.Id)">View evidence</button></td>
                         </tr>
                     }
@@ -166,7 +183,7 @@
         var moreFilters = MoreFilterCount;
         <div class="arch-toolbar-core" data-testid="arch-toolbar">
             <label class="arch-search"><span class="visually-hidden">Search</span><input type="search" data-testid="arch-search" @bind="_search" @bind:event="oninput" placeholder="Search" aria-label="Search components, channels, datastores" /></label>
-            <label>Status <select data-testid="arch-status-filter" @bind="StatusFilter"><option value="">All</option><option value="confirmed">Confirmed only</option><option value="resolved">Hide unresolved</option></select></label>
+            <label>Status <select data-testid="arch-status-filter" @bind="StatusFilter"><option value="">All</option><option value="confirmed">Confirmed in source only</option><option value="resolved">Hide unresolved</option></select></label>
             <label>Type <select data-testid="arch-type-filter" @bind="ComponentTypeFilter">@Options(Snapshot.Components.Select(c => c.ComponentType.ToString()))</select></label>
             <button type="button" class="btn-secondary" data-testid="arch-fit" @onclick="Fit">Fit to screen</button>
             <ReviewDisclosure Text="@(moreFilters > 0 ? $"More filters ({moreFilters})" : "More filters")" TestId="arch-more-filters" Class="disclosure-small arch-menu">
@@ -174,7 +191,7 @@
                     <label>Technology <select @bind="TechnologyFilter">@Options(Snapshot.Components.SelectMany(c => c.Technologies))</select></label>
                     <label>Protocol <select @bind="ProtocolFilter">@Options(ArchitecturePresentation.TypesOf(View).Select(t => t.ToString()))</select></label>
                     <label>Project/module <select @bind="ModuleFilter">@Options(Snapshot.Components.Select(c => c.Module))</select></label>
-                    <label><input type="checkbox" data-testid="arch-confirmed-only" @bind="ConfirmedOnly" /> Confirmed only</label>
+                    <label><input type="checkbox" data-testid="arch-confirmed-only" @bind="ConfirmedOnly" /> Confirmed in source only</label>
                     <label><input type="checkbox" data-testid="arch-include-inferred" @bind="IncludeInferred" /> Include inferred</label>
                     <label><input type="checkbox" data-testid="arch-hide-unresolved" @bind="HideUnresolved" /> Hide unresolved</label>
                     @if (View == SourceArchitectureView.System) { <label><input type="checkbox" data-testid="arch-show-libraries" @bind="ShowLibraries" /> Libraries</label> }
@@ -347,7 +364,13 @@
     private ArchitectureGraphNode? SelectedNode => _selectedNode is null ? null : Graph.Nodes.FirstOrDefault(n => n.Id == _selectedNode) ?? (ArchitecturePresentation.Node(Snapshot, _selectedNode, out var n) ? n : null);
     private ArchitectureDependency? SelectedDependency => _selectedEdge is null ? null : Snapshot.Dependencies.FirstOrDefault(d => d.Id == _selectedEdge);
 
+    private string _depReason = "";
+    /// <summary>Unresolved dependencies counted per reason category (largest first), from the dependencies' own fields.</summary>
+    private IReadOnlyList<(string Reason, int Count)> DependencyReasons => Snapshot.Dependencies.Select(ArchitectureReview.ReasonCategory).OfType<string>()
+        .GroupBy(r => r).Select(g => (g.Key, g.Count())).OrderByDescending(g => g.Item2).ThenBy(g => g.Key, StringComparer.Ordinal).ToList();
+
     private IEnumerable<ArchitectureDependency> Dependencies => Snapshot.Dependencies.Where(d => (_depType == "" || d.DependencyType.ToString() == _depType) && (_depState == "" || d.EvidenceState.ToString() == _depState)
+        && (_depReason == "" || ArchitectureReview.ReasonCategory(d) == _depReason)
         && (_depSearch == "" || new[] { Name(d.FromComponentId), d.ToId is null ? d.TargetReference : Name(d.ToId), d.DependencyType.ToString(), d.ConfigurationReference, d.Framework, d.Protocol }
             .Any(v => v?.Contains(_depSearch, StringComparison.OrdinalIgnoreCase) == true)));
 
