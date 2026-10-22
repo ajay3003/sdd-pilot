@@ -129,8 +129,12 @@ public sealed partial class TestBehaviorSourceAnalyzer : ITestBehaviorAnalyzer
                         Targets = targets,
                         Signals = signals,
                         Assertions = assertions,
-                        RequirementReferences = RequirementPattern().Matches(text).Select(m => m.Value.ToUpperInvariant())
-                            .Concat(definition?.References.Select(r => r.Id) ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+                        // A discovered test's links are the discovery's graded references (Confirmed/StronglySupported only — Inferred stays a
+                        // candidate); the identifier pattern applies only where no discovery provider exists (NUnit, MSTest).
+                        RequirementReferences = (definition is not null
+                                ? definition.References.Where(r => r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported).Select(r => r.Id)
+                                : RequirementPattern().Matches(text).Select(m => m.Value.ToUpperInvariant()))
+                            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
                         BehaviorTokens = Tokens(method.Identifier.ValueText),
                         ExpectedOutcomes = assertions.Where(a => a.Kind is TestAssertionKind.HttpStatus or TestAssertionKind.ExceptionThrown or TestAssertionKind.AuthorizationResult)
                             .Select(a => a.Detail).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),

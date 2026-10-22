@@ -76,7 +76,12 @@ public sealed record DeliveryDeployment(string Id, string Pipeline, string Pipel
 
 /// <summary>A test step as configured. <see cref="Gating"/> says which deployments it gates (from source relationships); it is never executed here.</summary>
 public sealed record DeliveryTestDefinition(string Name, ValidationCategory Category, string Pipeline, string? Stage, string? Job, IReadOnlyList<string> Targets,
-    IReadOnlyList<string> GatesDeployments, bool PostDeploy, bool ContinueOnError, string? Condition, string Gating, string Execution = "Configured — not executed by analysis");
+    IReadOnlyList<string> GatesDeployments, bool PostDeploy, bool ContinueOnError, string? Condition, string Gating, string Execution = "Configured — not executed by analysis")
+{
+    /// <summary>Discovered test projects this step runs and their canonical test count (shared Test Evidence identities) — configured, not executed.</summary>
+    public IReadOnlyList<string> TestProjects { get; init; } = [];
+    public int CanonicalTests { get; init; }
+}
 
 public sealed record DeliveryArtifact(string Artifact, string Deployment, string Source, string? ProducerPipeline, string? ProducerStage, string State, string Basis);
 
@@ -185,6 +190,21 @@ public sealed record DeliveryPipelineChange(string Pipeline, string Kind, string
 
 public static class DeliveryEvidenceQueries
 {
+    /// <summary>Links pipeline test steps to the canonical tests of the projects they run (by the snapshot's discovered test projects).</summary>
+    public static DeliveryEvidence WithCanonicalTests(DeliveryEvidence e, BirkNext.TestEvidence.SourceTestInventory? inventory)
+    {
+        if (inventory is null) return e;
+        var projects = inventory.Projects.Select(p => (p.Name, Path: p.Path, Tests: p.DefinitionCount)).ToList();
+        return e with
+        {
+            Tests = [.. e.Tests.Select(t =>
+            {
+                var hit = projects.Where(p => t.Targets.Any(x => x.Contains(p.Name, StringComparison.OrdinalIgnoreCase) || x.Contains(p.Path, StringComparison.OrdinalIgnoreCase))).ToList();
+                return t with { TestProjects = [.. hit.Select(p => p.Name)], CanonicalTests = hit.Sum(p => p.Tests) };
+            })],
+        };
+    }
+
     /// <summary>Stable identity of one definition's content: a run of an earlier definition never describes the current YAML.</summary>
     public static string DefinitionFingerprint(PipelineDefinition d)
     {

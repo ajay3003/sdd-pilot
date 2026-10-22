@@ -329,6 +329,10 @@
                     }
                     else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
                 }
+                else if (_domain == "Tests")
+                {
+                    <BirkNext.Web.Components.SourceDomains.TestEvidenceWorkspace @key="selected.Id" Snapshot="selected" />
+                }
                 else if (_domain == "Dependencies")
                 {
                     <BirkNext.Web.Components.SourceDomains.DependencyEvidenceWorkspace @key="selected.Id" Snapshot="selected" Snapshots="_snapshots" />

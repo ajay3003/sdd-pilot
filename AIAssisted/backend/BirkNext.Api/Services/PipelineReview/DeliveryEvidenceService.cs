@@ -25,7 +25,7 @@ public sealed class DeliveryDerivationProvider : IPipelineEvidenceProvider
     public DeliveryEvidenceProviderDescriptor Descriptor => DeliveryEvidenceProviders.Get("delivery-derivation");
 
     public static DeliveryEvidence For(IqrSourceSnapshot snapshot) =>
-        DeliveryEvidenceProjection.From(PipelineReviewBuilder.Build(snapshot), SourcePipelineEvidenceProvider.Definitions(snapshot));
+        DeliveryEvidenceQueries.WithCanonicalTests(DeliveryEvidenceProjection.From(PipelineReviewBuilder.Build(snapshot), SourcePipelineEvidenceProvider.Definitions(snapshot)), snapshot.TestInventory);
 }
 
 /// <summary>Read-only delivery evidence for one exact snapshot (never the newest in its place). Runtime metadata stays a separate provider.</summary>
@@ -37,6 +37,6 @@ public sealed class DeliveryEvidenceService(IPipelineReviewService reviews, IRev
     {
         if (await sources.ResolveAsync(environmentId, snapshotId, ct) is not { } snapshot) return null;
         var review = await reviews.ReviewAsync(environmentId, snapshotId, false, ct);
-        return review is null ? null : DeliveryEvidenceProjection.From(review, SourcePipelineEvidenceProvider.Definitions(snapshot));
+        return review is null ? null : DeliveryEvidenceQueries.WithCanonicalTests(DeliveryEvidenceProjection.From(review, SourcePipelineEvidenceProvider.Definitions(snapshot)), snapshot.TestInventory);
     }
 }

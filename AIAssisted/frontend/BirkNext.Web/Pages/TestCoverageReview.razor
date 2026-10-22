@@ -130,6 +130,26 @@
                 @switch (_view)
                 {
                     case "overview":
+                        @if (r.Dimensions is { } testDims)
+                        {
+                            <h3>Test evidence dimensions</h3>
+                            <p class="tco-muted">Kept apart on purpose — there is no single coverage percentage. Discovered ≠ linked ≠ configured in CI ≠ executed ≠ passed.</p>
+                            <dl class="tco-facts" data-testid="tco-dimensions">
+                                <div><dt>Discovered in source</dt><dd>@testDims.Discovered</dd></div>
+                                <div><dt>Explicit requirement links</dt><dd>@testDims.RequirementLinkedExplicit</dd></div>
+                                <div><dt>Candidate links only</dt><dd>@testDims.RequirementCandidateOnly</dd></div>
+                                <div><dt>Project configured in CI</dt><dd>@testDims.ConfiguredInCi</dd></div>
+                                <div><dt>Executed (@testDims.Context)</dt><dd data-testid="tco-dim-executed">@testDims.ExecutedInContext</dd></div>
+                                <div><dt>Passed (@testDims.Context)</dt><dd>@testDims.PassedInContext</dd></div>
+                                <div><dt>Execution-only results</dt><dd data-testid="tco-dim-execution-only">@testDims.ExecutionOnly</dd></div>
+                            </dl>
+                            @if (r.ExecutionOnly.Count > 0)
+                            {
+                                <details class="tco-details" data-testid="tco-execution-only"><summary>@r.ExecutionOnly.Count imported result(s) match no discovered test</summary>
+                                    <ul class="tco-list">@foreach (var e in r.ExecutionOnly.Take(50)) { <li>@e.TestName — @e.Result <span class="tco-muted">@(e.Environment ?? "context not recorded") · @e.Basis</span></li> }</ul></details>
+                            }
+                            @if (r.DiscoveryLimitations.Count > 0) { <ul class="tco-list" data-testid="tco-discovery-limitations">@foreach (var l in r.DiscoveryLimitations) { <li>@l</li> }</ul> }
+                        }
                         <h3>What the evidence shows</h3>
                         <dl class="tco-facts tco-evidence-facts" data-testid="tco-levels">
                             <div><dt>Unit-level</dt><dd>@levels.Unit</dd></div>

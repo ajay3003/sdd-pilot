@@ -303,6 +303,12 @@ public sealed record TestCoverageReviewResult
     public bool Partial { get; init; }
     /// <summary>Which contract operations / message roots discovered tests reference (shared contract evidence). Discovered tests, not executions.</summary>
     public List<ContractCoverageItem> Contracts { get; init; } = [];
+    /// <summary>Imported executions that match no discovered test (execution-only), preserved.</summary>
+    public List<CoverageExecutionOnly> ExecutionOnly { get; init; } = [];
+    /// <summary>Coverage dimensions from shared Test Evidence (discovered / explicitly linked / candidate-only / in CI / executed / passed) — never one percentage.</summary>
+    public BirkNext.TestEvidence.TestCoverageDimensions? Dimensions { get; init; }
+    /// <summary>Source test-discovery limitations (unsupported frameworks are limitations, not zero tests).</summary>
+    public List<string> DiscoveryLimitations { get; init; } = [];
     /// <summary>How each test project's pipeline test steps relate to deployments (shared delivery evidence): configured ≠ gating ≠ executed.</summary>
     public List<CoverageDeliveryTest> PipelineGating { get; init; } = [];
 }
@@ -337,7 +343,12 @@ public sealed record CoverageRequirement(string Id, string Text, string? Priorit
 public sealed record CoverageArtifactRef(string ArtifactId, string Path, string? Module, string Fingerprint);
 
 /// <summary>An imported execution result (TRX via the SDD lifecycle). TestId is the correlated test definition id when known.</summary>
-public sealed record CoverageExecution(string TestId, string TestName, string Result);
+/// <summary>One imported execution. <see cref="TestId"/> is the canonical test identity (stable identity or definition id) when correlated.
+/// <see cref="Environment"/>/<see cref="ExecutedAt"/> keep the execution context explicit: a local run never answers for QA.</summary>
+public sealed record CoverageExecution(string TestId, string TestName, string Result, string? Environment = null, DateTimeOffset? ExecutedAt = null);
+
+/// <summary>An imported execution that matches no discovered test — kept (never discarded) with why it did not match.</summary>
+public sealed record CoverageExecutionOnly(string TestName, string Result, string? Environment, string Basis);
 
 public sealed record TestCoverageReviewRequest
 {

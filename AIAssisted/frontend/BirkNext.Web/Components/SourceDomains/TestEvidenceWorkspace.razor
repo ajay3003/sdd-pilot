@@ -1,0 +1,48 @@
+@using BirkNext.Integrations
+@using BirkNext.TestEvidence
+
+@* Source Analysis → Tests: the tests this snapshot's discovery stored, as canonical test identities (the same ones Test Coverage, Pipeline
+   Review delivery evidence, traceability and Impact Analysis use). Discovered in source ≠ configured in CI ≠ executed ≠ passed. *@
+<section class="sd-workspace" aria-labelledby="sd-tests-heading" data-testid="tests-workspace">
+    <h2 id="sd-tests-heading" tabindex="-1">Tests</h2>
+    @if (Snapshot.TestInventory is not { } inventory)
+    {
+        <div class="sd-neutral" data-testid="sd-tests-not-assessed"><p>This snapshot predates source test discovery — tests are not assessed (not zero). Analyze the archive again in Source Analysis.</p></div>
+    }
+    else
+    {
+        var tests = TestEvidenceQueries.FromInventory(inventory);
+        var explicitLinked = tests.Count(t => t.Requirements.Any(r => r.Confidence is TestMappingConfidence.Explicit or TestMappingConfidence.Strong));
+        var candidateOnly = tests.Count(t => t.Requirements.Count > 0 && t.Requirements.All(r => r.Confidence is TestMappingConfidence.Candidate or TestMappingConfidence.Inferred));
+        <p class="sd-muted">Discovered in source, read once when this snapshot was analyzed. Whether a test is configured in CI, ran or passed is other evidence.</p>
+        <dl class="sd-summary" data-testid="sd-tests-overview">
+            <div><dt>Tests discovered</dt><dd>@tests.Count</dd></div>
+            <div><dt>Test projects</dt><dd>@inventory.Projects.Count</dd></div>
+            <div><dt>Requirement links (explicit)</dt><dd data-testid="sd-tests-explicit">@explicitLinked</dd></div>
+            <div><dt>Candidate links only</dt><dd data-testid="sd-tests-candidates">@candidateOnly</dd></div>
+            <div><dt>Skip declared</dt><dd>@tests.Count(t => t.SkipDeclared)</dd></div>
+        </dl>
+        <div class="sa-actions"><a class="btn-primary" href="test-coverage-review" data-testid="sd-tests-review">Review test coverage</a></div>
+        <section class="sd-panel" aria-labelledby="sd-tests-projects-heading" data-testid="sd-tests-projects">
+            <h3 id="sd-tests-projects-heading">Test projects</h3>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Test projects">
+                <table>
+                    <thead><tr><th scope="col">Project</th><th scope="col">Framework</th><th scope="col">Kind</th><th scope="col">Tests</th><th scope="col">Source discovery</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in inventory.Projects)
+                        {
+                            <tr data-testid="sd-tests-project"><th scope="row">@p.Name<span class="sd-context">@p.Path</span></th><td>@(p.Framework ?? "Unknown")</td><td>@p.Kind</td>
+                                <td>@(p.DiscoverySupported ? p.DefinitionCount.ToString() : "Not discovered")</td>
+                                <td>@(p.DiscoverySupported ? "Supported" : "Not supported — results can still be imported")</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        var limitations = TestEvidenceQueries.Limitations(inventory);
+        @if (limitations.Count > 0) { <ul class="sd-list" data-testid="sd-tests-limitations">@foreach (var l in limitations) { <li>@l</li> }</ul> }
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = default!;
+}

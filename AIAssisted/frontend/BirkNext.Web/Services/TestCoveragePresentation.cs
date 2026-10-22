@@ -30,7 +30,7 @@ public static class TestCoveragePresentation
             RequirementIds = s.LinkedRequirements.Select(r => r.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList(),
             Given = s.Given, When = s.When, Then = s.Then,
         }).ToList();
-        var executions = workspace.SddLifecycle.TestExecutions.Select(e => new CoverageExecution(e.TestId, e.TestName, e.Result)).ToList();
+        var executions = workspace.SddLifecycle.TestExecutions.Select(e => new CoverageExecution(e.TestId, e.TestName, e.Result, e.EnvironmentReference, e.FinishedAt ?? e.StartedAt)).ToList();
         return new CoverageWorkspaceEvidence
         {
             ProjectName = projectName,

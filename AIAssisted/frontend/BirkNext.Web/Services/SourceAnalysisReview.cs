@@ -15,7 +15,7 @@ public static class SourceAnalysisAreas
 {
     public const string Overview = "Overview", Architecture = "Architecture", Data = "Data", Quality = "Quality Evidence";
     public static readonly IReadOnlyList<string> Top = [Overview, Architecture, Data, Quality];
-    public static readonly IReadOnlyList<string> QualityDomains = ["Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts", "Dependencies"];
+    public static readonly IReadOnlyList<string> QualityDomains = ["Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts", "Dependencies", "Tests"];
 
     /// <summary>Area (and quality domain) of an <c>?area=</c> value, new or legacy; unknown values open the Overview.</summary>
     public static (string Area, string? Domain) Resolve(string? area, string? view)
@@ -181,10 +181,21 @@ public static class SourceAnalysisReview
             $"{Plural(packages, "declared package", "declared packages")} · {Plural(d.PublishedPackages.Count, "produced package", "produced packages")}");
     }
 
+    /// <summary>Source tests the snapshot's discovery stored (canonical test identities). Unsupported frameworks are limitations, not zero.</summary>
+    public static SourceSummaryRow Tests(IqrSourceSnapshot s)
+    {
+        if (s.TestInventory is not { } inventory) return new("tests", "Tests", "Not assessed", "This snapshot predates source test discovery. Analyze the archive again in Source Analysis.", SourceAnalysisAreas.Quality, "Tests");
+        if (inventory.Projects.Count == 0) return new("tests", "Tests", "Not detected", "No test project in this source.", SourceAnalysisAreas.Quality, "Tests");
+        var unsupported = inventory.Projects.Count(p => !p.DiscoverySupported);
+        return new("tests", "Tests", unsupported > 0 ? "Partial" : "Complete", unsupported > 0 ? $"{unsupported} test project(s) use a framework without source discovery — not zero tests" : null,
+            SourceAnalysisAreas.Quality, "Tests", $"{Plural(inventory.Definitions.Count, "test", "tests")} in {Plural(inventory.Projects.Count, "test project", "test projects")}");
+    }
+
     public static SourceSummaryRow Domain(IqrSourceSnapshot s, string domain)
     {
         if (domain == "Observability") return Observability(s);
         if (domain == "Dependencies") return Dependencies(s);
+        if (domain == "Tests") return Tests(s);
         var key = SourceAnalysisAreas.Slug(domain);
         if (s.EvidenceDomains is not { } e) return new(key, domain, "Not assessed", "This snapshot predates the source-evidence domains.", SourceAnalysisAreas.Quality, domain);
         SourceDomainResult result = domain switch { "Infrastructure" => e.Infrastructure, "Configuration" => e.Configuration, "CI/CD" => e.CiCd, _ => e.Contracts };

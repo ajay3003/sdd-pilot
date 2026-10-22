@@ -499,6 +499,32 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                     "Observability evidence names component", c.Detail, component.Evidence.Select(e => e.File));
             }
         }
+        // Shared Test Evidence: canonical tests a change may affect — through the changed contract (test code references it), a changed package
+        // (the test project declares it) or an impacted component (test project named after it, a candidate). Never a failed test.
+        var canonical = BirkNext.TestEvidence.TestEvidenceQueries.FromInventory(after.TestInventory ?? before.TestInventory);
+        if (canonical.Count > 0)
+        {
+            void AddTests(ImpactChange change, IEnumerable<BirkNext.TestEvidence.ImpactedTest> tests)
+            {
+                foreach (var t in tests.Take(50))
+                    Add("Test", $"test:{t.Test.Id}", $"{t.Test.ClassName.Split('.').Last()}.{t.Test.MethodName}", change.Domain, TechnicalImpactLevel.Potential,
+                        t.Confidence == "Candidate" ? "Inferred" : "StronglySupported", $"{(t.Confidence == "Candidate" ? "Possible" : "Likely")} test impact: {t.Reason} The test is not marked failed.",
+                        change, "Canonical test", t.Test.Project, [t.Test.File]);
+            }
+            var contracts = (after.EvidenceDomains ?? before.EvidenceDomains)?.Contracts.Contracts ?? [];
+            var declared = (after.DependencyEvidence?.Dependencies ?? []).Concat(before.DependencyEvidence?.Dependencies ?? []).ToList();
+            foreach (var change in changes)
+            {
+                if (change.Domain == ImpactChangeDomain.Contracts && contracts.FirstOrDefault(x => x.Id == change.EntityKey.Split('|')[0]) is { } contract)
+                    AddTests(change, BirkNext.TestEvidence.TestEvidenceQueries.Impacted(canonical, [], contract.CodeReferences.Where(r => r.Kind == "Test code reference").Select(r => r.File), []));
+                if (change.Domain == ImpactChangeDomain.Dependencies && change.EntityType != "Produced package")
+                    AddTests(change, BirkNext.TestEvidence.TestEvidenceQueries.Impacted(canonical, [], [],
+                        declared.Where(d => $"{d.Manager}|{d.PackageName}|{d.OwnerFile}".Equals(change.EntityKey, StringComparison.OrdinalIgnoreCase)).SelectMany(d => d.ReferencedBy)));
+            }
+            foreach (var component in items.Values.Where(i => i.EntityType == "Component").ToList())
+                if (changes.FirstOrDefault(c => component.SourceChangeIds.Contains(c.Id)) is { } source)
+                    AddTests(source, BirkNext.TestEvidence.TestEvidenceQueries.Impacted(canonical, [component.DisplayName], [], []));
+        }
         ExpandDependentComponents(before.Architecture, after.Architecture, items, maxDepth);
         if (changes.Count == 0) limitations.Add("No structured changes were produced by the supported Source Analysis comparisons. This does not prove no impact.");
         return items.Values.OrderBy(i => i.Level).ThenBy(i => i.Domain).ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();

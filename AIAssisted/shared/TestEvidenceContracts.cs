@@ -135,6 +135,27 @@ public static class TestEvidenceProviderRegistry
         ], "Syntax only (no compilation): theory data from MemberData/ClassData and runtime display names are unknown until results are imported."),
     ];
 
+    /// <summary>Other test-evidence sources and how each relates to the canonical test model. Configured ≠ executed; candidates ≠ executions;
+    /// quality checks are registered as checks — a static finding never becomes a test.</summary>
+    public static IReadOnlyList<TestEvidenceProviderDescriptor> RelatedSources { get; } =
+    [
+        new("test.pipeline-definition", "Pipeline test definitions", "PipelineConfiguration", ["azure-pipelines.yml"],
+            [new("CanonicalIdentity", "Partial", "Steps link to discovered test projects (and their canonical tests) by the project they run."), new("Execution", "Unsupported", "Configured, never executed by analysis.")],
+            "A test step in YAML says the tests are configured in CI, not that they ran or passed."),
+        new("test.generated.schema", "Schema Studio generated contract tests", "GeneratedCandidates", ["xsd"],
+            [new("Candidates", "Full", "Valid and invalid (negative) cases from the shared contract evidence; a rejected invalid payload is a passing negative case."), new("Execution", "Partial", "Local XML validation runs are recorded separately from the candidates.")],
+            "Generated candidates are never executed tests until a run records them."),
+        new("test.manual.scenario", "Acceptance scenarios (manual)", "ManualScenario", [".md"],
+            [new("Scenarios", "Full", "Acceptance scenarios from the specification."), new("Execution", "Unsupported", "Manual execution is recorded separately; a scenario is not an execution.")],
+            "A written scenario is not evidence that it was performed."),
+        new("test.critical-e2e", "Critical E2E flows (read-only)", "BrowserExecution", ["history"],
+            [new("Execution", "Full", "Run history with status per environment, read-only."), new("CanonicalIdentity", "Partial", "Flows are referenced by id; they are not source tests.")],
+            "Read-only: BirkNext test evidence never changes Critical E2E flows or runs."),
+        new("test.quality-checks", "Frontend / API / performance / accessibility checks", "QualityCheck", [],
+            [new("Registration", "Partial", "Executable checks keep their own review evidence; findings are findings, never tests.")],
+            "A static or runtime finding never becomes a test automatically."),
+    ];
+
     public static TestEvidenceProviderDescriptor? Find(string providerId) => Providers.FirstOrDefault(p => p.ProviderId == providerId);
 }
 

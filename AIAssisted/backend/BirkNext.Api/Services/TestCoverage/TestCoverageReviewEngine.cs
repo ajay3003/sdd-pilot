@@ -65,14 +65,24 @@ public static partial class TestCoverageReviewEngine
 
         var executions = Executions(workspace.Executions);
         var factById = (facts?.Tests ?? []).ToDictionary(f => f.TestId, StringComparer.Ordinal);
+        // One canonical identity per test: a fact and a discovered definition for the same method (same file + method, e.g. a nested class the
+        // two scanners name differently) are one test, never two.
+        var definitionById = (inventory?.Definitions ?? []).GroupBy(d => d.TestDefinitionId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var definitionByMethod = (inventory?.Definitions ?? []).GroupBy(d => $"{d.FilePath}|{d.MethodName}", StringComparer.Ordinal)
+            .Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        SourceTestDefinition? DefinitionOf(TestBehaviorFact fact) =>
+            definitionById.GetValueOrDefault(fact.TestId) ?? definitionByMethod.GetValueOrDefault($"{fact.FilePath}|{fact.MethodName}");
+        var claimed = new HashSet<string>(StringComparer.Ordinal);
         var devs = new List<Dev>();
         foreach (var fact in facts?.Tests ?? [])
         {
             ct.ThrowIfCancellationRequested();
-            devs.Add(new Dev(BuildTest(fact, null, projectToComponents, ownership, executions), fact, Tokens(fact)));
+            var definition = DefinitionOf(fact);
+            if (definition is not null) claimed.Add(definition.TestDefinitionId);
+            devs.Add(new Dev(BuildTest(fact, definition, projectToComponents, ownership, executions), fact, Tokens(fact)));
         }
         // Inventory tests without per-test facts (old snapshot, or a discovery-only framework): listed, not analyzed.
-        foreach (var definition in (inventory?.Definitions ?? []).Where(d => !factById.ContainsKey(d.TestDefinitionId)))
+        foreach (var definition in (inventory?.Definitions ?? []).Where(d => !factById.ContainsKey(d.TestDefinitionId) && !claimed.Contains(d.TestDefinitionId)))
             devs.Add(new Dev(BuildTest(null, definition, projectToComponents, ownership, executions), null, Tokens(definition.MethodName)));
         Phase("Discovering test projects and analyzing tests", devs.Count);
 
@@ -132,7 +142,33 @@ public static partial class TestCoverageReviewEngine
             Partial = facts is null || facts.Truncated || inventory?.Status == SourceTestDiscoveryStatus.Partial || architecture is null,
             Contracts = ContractCoverage(current, tests),
             PipelineGating = PipelineGating(current, tests),
+            ExecutionOnly = ExecutionOnly(workspace.Executions, inventory),
+            Dimensions = Dimensions(current, inventory, workspace.Executions),
+            DiscoveryLimitations = [.. BirkNext.TestEvidence.TestEvidenceQueries.Limitations(inventory)],
         };
+    }
+
+    private static IEnumerable<BirkNext.TestEvidence.TestExecutionRecord> Records(IEnumerable<CoverageExecution> executions) =>
+        executions.Select(e => new BirkNext.TestEvidence.TestExecutionRecord(e.TestId, e.TestName, e.Result, e.ExecutedAt, e.Environment ?? "Unspecified context", e.Environment, null, null, "Imported result"));
+
+    /// <summary>Imported executions no discovered test matches — kept, with the reason (shared Test Evidence matching).</summary>
+    private static List<CoverageExecutionOnly> ExecutionOnly(IEnumerable<CoverageExecution> executions, SourceTestInventory? inventory) =>
+        [.. BirkNext.TestEvidence.TestEvidenceQueries.Match(Records(executions), BirkNext.TestEvidence.TestEvidenceQueries.FromInventory(inventory))
+            .Where(m => m.Test is null).Select(m => new CoverageExecutionOnly(m.Execution.TestName, m.Execution.Result, m.Execution.Environment, m.Basis)).Take(200)];
+
+    /// <summary>Dimensioned coverage in the context of the most recent imported environment (or "Unspecified context").</summary>
+    private static BirkNext.TestEvidence.TestCoverageDimensions? Dimensions(IqrSourceSnapshot snapshot, SourceTestInventory? inventory, IReadOnlyList<CoverageExecution> executions)
+    {
+        if (inventory is null) return null;
+        var tests = BirkNext.TestEvidence.TestEvidenceQueries.FromInventory(inventory);
+        var matches = BirkNext.TestEvidence.TestEvidenceQueries.Match(Records(executions), tests);
+        var context = executions.OrderByDescending(e => e.ExecutedAt ?? DateTimeOffset.MinValue).FirstOrDefault()?.Environment ?? "Unspecified context";
+        var configured = snapshot.EvidenceDomains?.CiCd.Pipelines is { Count: > 0 }
+            ? BirkNext.Api.Services.PipelineReview.DeliveryDerivationProvider.For(snapshot).Tests
+                .SelectMany(t => tests.Select(x => x.Project).Distinct(StringComparer.OrdinalIgnoreCase).Where(p => t.Targets.Any(target => target.Contains(p, StringComparison.OrdinalIgnoreCase))))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return BirkNext.TestEvidence.TestEvidenceQueries.Coverage(inventory, tests, configured, matches, context);
     }
 
     /// <summary>Pipeline test steps per discovered test project, from shared delivery evidence (the stored CI/CD evidence; no YAML is read).</summary>
@@ -169,7 +205,8 @@ public static partial class TestCoverageReviewEngine
     private static Dictionary<string, string> Executions(IEnumerable<CoverageExecution> executions)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var e in executions)
+        // The most recent execution wins (TryAdd keeps the first one added).
+        foreach (var e in executions.OrderByDescending(e => e.ExecutedAt ?? DateTimeOffset.MinValue))
         {
             if (!string.IsNullOrWhiteSpace(e.TestId)) map.TryAdd(e.TestId, e.Result);
             if (!string.IsNullOrWhiteSpace(e.TestName)) map.TryAdd("name:" + e.TestName, e.Result);
@@ -187,7 +224,9 @@ public static partial class TestCoverageReviewEngine
         var mapped = (fact?.TargetProjects.Count > 0 ? fact.TargetProjects : fact?.ProductionProjects ?? [])
             .SelectMany(p => projectToComponents.GetValueOrDefault(p) ?? []).Select(c => c.Id).Distinct(StringComparer.Ordinal).ToList();
         var (level, strength, basis) = fact is null ? LevelFromInventory(definition!) : Level(fact);
-        var result = executions.GetValueOrDefault(id) ?? executions.GetValueOrDefault("name:" + fqn) ?? executions.GetValueOrDefault("name:" + name);
+        // Canonical identity first (stable identity / definition id), then the names a runner reports.
+        var result = executions.GetValueOrDefault(id) ?? (definition is null ? null : executions.GetValueOrDefault(definition.StableIdentity) ?? executions.GetValueOrDefault(definition.TestDefinitionId))
+            ?? executions.GetValueOrDefault("name:" + fqn) ?? executions.GetValueOrDefault("name:" + name) ?? (definition is null ? null : executions.GetValueOrDefault("name:" + definition.FullyQualifiedName));
         var execution = result switch
         {
             null => TestExecutionState.NotVerified,
@@ -210,7 +249,9 @@ public static partial class TestCoverageReviewEngine
             TestId = id, Name = name, Project = project, FilePath = fact?.FilePath ?? definition!.FilePath, Line = fact?.Line ?? definition!.Line,
             Framework = fact?.Framework ?? definition!.Framework, Level = level, LevelEvidence = strength, LevelBasis = basis, Ownership = owner, OwnershipBasis = ownerBasis,
             Analyzed = fact is not null, Skipped = fact?.Skipped ?? definition!.SkipDeclared, Execution = execution, Components = mapped,
-            Boundaries = fact?.Signals ?? [], Assertions = assertions, RequirementIds = fact?.RequirementReferences ?? definition!.References.Select(r => r.Id).ToList(),
+            Boundaries = fact?.Signals ?? [], Assertions = assertions,
+            // Only explicit (Confirmed / StronglySupported) references link; Inferred ones are candidates and never count as coverage.
+            RequirementIds = fact?.RequirementReferences ?? definition!.References.Where(r => r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported).Select(r => r.Id).ToList(),
             Purpose = fact is null ? "Test found by discovery; its content was not analyzed." : Purpose(fact), Strength = testStrength,
         };
     }

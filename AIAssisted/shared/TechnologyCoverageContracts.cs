@@ -120,6 +120,10 @@ public static class TechnologySupportRegistry
             "Test projects from project metadata; [Fact]/[Theory], traits and explicit requirement references from C# syntax. Discovery only, never a result."),
         new("test.execution.trx", "TRX test result import", TechnologyArea.Testing, F, ["test.trx"],
             "Manual import of .trx files (VSTest logger or Microsoft.Testing.Platform). Framework-independent parsing; source correlation only where a discovery provider exists."),
+        new("test.canonical-identity", "Canonical test identity (shared Test Evidence)", TechnologyArea.Testing, P, ["test.xunit"],
+            "One identity (repository + project + fully-qualified name) shared by Test Coverage, Source Analysis, pipeline delivery evidence, traceability and Impact Analysis. Executions match by identity, then by name; unmatched results are kept as execution-only. Requirement links keep their confidence (explicit vs candidate)."),
+        new("test.pipeline-definition", "Pipeline test definitions", TechnologyArea.Testing, P, ["test.xunit", "test.nunit", "test.mstest"],
+            "Test steps in pipelines linked to discovered test projects (configured in CI, gating from the delivery derivation). Never an execution."),
     ];
 
     public static IReadOnlyList<TechnologySupportDescriptor> Technologies { get; } =
@@ -223,7 +227,7 @@ public static class TechnologySupportRegistry
         new("contract.avro", "Avro", TechnologyArea.Contract, N, N, U, N, N, N, [], "Not parsed."),
 
         // Testing: source test discovery (SourceAnalysis) and execution-result import (ResultImport) are separate dimensions.
-        new("test.xunit", "xUnit", TechnologyArea.Testing, N, P, N, N, N, N, ["test.discovery.dotnet.xunit"],
+        new("test.xunit", "xUnit", TechnologyArea.Testing, N, P, N, N, N, N, ["test.discovery.dotnet.xunit", "test.canonical-identity", "test.pipeline-definition"],
             "Syntax-only: custom FactAttribute subclasses, inherited tests and MemberData rows are not resolved. Results come from TRX import.", null, U),
         new("test.nunit", "NUnit", TechnologyArea.Testing, N, U, N, N, N, N, [], "Detected only: no source test discovery. Results import from TRX without source correlation.", null, U),
         new("test.mstest", "MSTest", TechnologyArea.Testing, N, U, N, N, N, N, [], "Detected only: no source test discovery. Results import from TRX without source correlation.", null, U),

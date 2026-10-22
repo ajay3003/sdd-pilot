@@ -82,8 +82,8 @@ public sealed class SourceAnalysisHierarchyTests : BunitContext
         cut.FindAll("[data-testid=sa-area-group-label]").Should().BeEmpty("no eight-tab legacy bar with group captions");
         cut.Find("[data-testid=area-qualityevidence]").Click();
         var domains = cut.Find("nav.sa-subnav[aria-label='Quality evidence domains']");
-        domains.QuerySelectorAll("button").Select(b => b.TextContent).Should().Equal("Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts", "Dependencies");
-        cut.FindAll("[data-testid=sa-quality-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("observability", "infrastructure", "configuration", "cicd", "contracts", "dependencies");
+        domains.QuerySelectorAll("button").Select(b => b.TextContent).Should().Equal("Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts", "Dependencies", "Tests");
+        cut.FindAll("[data-testid=sa-quality-rows] [data-testid=sa-summary-row]").Select(r => r.GetAttribute("data-key")).Should().Equal("observability", "infrastructure", "configuration", "cicd", "contracts", "dependencies", "tests");
     }
 
     [Fact]
