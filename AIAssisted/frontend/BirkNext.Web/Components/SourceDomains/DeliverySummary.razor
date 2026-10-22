@@ -1,0 +1,53 @@
+@using BirkNext.Delivery
+@using BirkNext.Web.Services
+
+@* Source Analysis → CI/CD: the delivery summary of THIS snapshot from shared delivery evidence (the same evidence Pipeline Review shows) —
+   deployments defined, what gates them, artifact promotion vs rebuild, post-deploy validation. Declared only; nothing ran here. *@
+<div class="sd-source-contracts" data-testid="sd-delivery">
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="sd-delivery-error">@error</p> }
+    else if (_delivery is not { } e) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
+    else if (e.Deployments.Count == 0) { <p data-testid="sd-delivery-none">No deployment is defined in these pipelines.</p> }
+    else
+    {
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Deployments defined in pipelines">
+            <table data-testid="sd-delivery-table">
+                <thead><tr><th scope="col">Environment</th><th scope="col">Pipeline</th><th scope="col">Artifact</th><th scope="col">Before deployment</th><th scope="col">After deployment</th></tr></thead>
+                <tbody>
+                    @foreach (var d in e.Deployments)
+                    {
+                        <tr data-testid="sd-delivery-deployment"><th scope="row">@d.EnvironmentLabel<span class="sd-context">@d.State</span></th><td>@d.PipelineName</td>
+                            <td>@Strategy(d.Artifacts)<span class="sd-context">@d.ArtifactBasis</span></td>
+                            <td>@(d.Before.Count == 0 ? "No validation on the dependency path" : string.Join(", ", d.Before.Select(g => $"{g.Label} ({g.StateText})")))</td>
+                            <td>@(d.PostDeploy.Count == 0 ? "No post-deploy validation" : string.Join(", ", d.PostDeploy.Select(g => g.Label)))</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="sd-muted" data-testid="sd-delivery-runtime">@e.RuntimeText</p>
+        <ReviewDisclosure Text="View delivery documentation summary" CollapseText="Hide delivery documentation summary" TestId="sd-delivery-doc" Class="disclosure-inline">
+            <pre class="sd-doc" data-testid="sd-delivery-doc-text">@DeliveryDocumentation.Markdown(e)</pre>
+        </ReviewDisclosure>
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public Guid SnapshotId { get; set; }
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private DeliveryEvidence? _delivery;
+    private string? _error;
+
+    public static string Strategy(ArtifactStrategy s) => s switch
+    {
+        ArtifactStrategy.PromotedFromEarlierStage => "Promoted (same build)",
+        ArtifactStrategy.BuiltInSameRun => "Built in the same run",
+        ArtifactStrategy.RebuiltForEnvironment => "Rebuilt for this environment",
+        ArtifactStrategy.NoArtifact => "No artifact consumed",
+        _ => "Producer not resolved",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IPipelineReviewApiService)) is not IPipelineReviewApiService api) { _error = "Delivery evidence is unavailable in this session."; return; }
+        _delivery = await api.DeliveryAsync("", SnapshotId);
+        if (_delivery is null) _error = "Delivery evidence could not be derived for this snapshot.";
+    }
+}

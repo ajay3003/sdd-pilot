@@ -1,0 +1,97 @@
+@using BirkNext.Delivery
+@using BirkNext.PipelineReview
+@using BirkNext.Web.Services
+
+@* Shared delivery evidence on consumer pages (quality reviews, Target Environments, Environment Analysis): what a Source Analysis snapshot's
+   pipelines DEFINE — gates configured before deployments, post-deploy validation, environment delivery paths. The snapshot is chosen
+   explicitly (never the newest). A configured gate is not a passed check and a deployment definition is not a deployment. *@
+<div class="sd-source-contracts" data-testid="delivery-evidence">
+    <p class="sd-muted">@Note</p>
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="delivery-error">@error</p> }
+    else if (_sources is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+    else if (_sources.Snapshots.Count(s => s.Pipelines > 0) == 0) { <p class="sd-muted" data-testid="delivery-none">No Source Analysis snapshot with pipeline definitions is stored.</p> }
+    else
+    {
+        <label class="sd-field">Source snapshot
+            <select data-testid="delivery-snapshot" value="@_selected" @onchange="SelectAsync">
+                <option value="">Select a snapshot…</option>
+                @foreach (var s in _sources.Snapshots.Where(s => s.Pipelines > 0)) { <option value="@s.Id">@s.ArchiveName · @s.Pipelines pipeline(s) · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
+            </select>
+        </label>
+        @if (_loading) { <p class="sd-muted" role="status">Loading delivery evidence…</p> }
+        else if (_delivery is { } e)
+        {
+            @if (Environments)
+            {
+                var labels = e.Deployments.Select(d => (d.EnvironmentLabel, d.EnvironmentKind)).DistinctBy(x => x.EnvironmentLabel.ToLowerInvariant()).ToList();
+                @if (labels.Count == 0) { <p data-testid="delivery-no-environments">No deployment is defined in these pipelines.</p> }
+                <ul class="sd-list" data-testid="delivery-environments">
+                    @foreach (var (label, kind) in labels)
+                    {
+                        var mapping = DeliveryEvidenceQueries.Map(label, kind, Targets);
+                        var ladder = DeliveryEvidenceQueries.Ladder(label, true, mapping.State is EnvironmentMappingState.Mapped or EnvironmentMappingState.StrongCandidate, e);
+                        <li data-testid="delivery-environment" data-mapping="@mapping.State"><strong>@label</strong> · @Mapping(mapping.State) <span class="sd-context">@mapping.Text</span>
+                            <span class="sd-context" data-testid="delivery-ladder">@ladder.Declared → @ladder.DeliveryPath → @ladder.DeploymentObserved → Runtime: @ladder.RuntimeObserved → Validation: @ladder.Validated</span></li>
+                    }
+                </ul>
+            }
+            else
+            {
+                var gates = e.Deployments.Select(d => (Deployment: d, Before: d.Before.Where(g => Categories.Contains(g.Category)).ToList(), After: d.PostDeploy.Where(g => Categories.Contains(g.Category)).ToList())).ToList();
+                @if (e.Deployments.Count == 0) { <p data-testid="delivery-no-environments">No deployment is defined in these pipelines.</p> }
+                <ul class="sd-list" data-testid="delivery-gates">
+                    @foreach (var (d, before, after) in gates)
+                    {
+                        <li data-testid="delivery-gate"><strong>@d.EnvironmentLabel</strong> · @d.PipelineName ·
+                            @(before.Count == 0 ? "no such check on the delivery path" : string.Join(", ", before.Select(g => $"{g.Label} — {g.StateText}")))
+                            @if (after.Count > 0) { <span class="sd-context">After deployment: @string.Join(", ", after.Select(g => g.Label))</span> }</li>
+                    }
+                </ul>
+            }
+            <p class="sd-muted" data-testid="delivery-runtime">Configured in pipeline source — not executed, passed or deployed as far as this evidence shows. @e.RuntimeText</p>
+            <p><a class="sd-link" href="pipeline-review" data-testid="delivery-open-review">Open Pipeline Review</a></p>
+        }
+    }
+</div>
+@code {
+    [Parameter] public string EnvironmentId { get; set; } = "";
+    [Parameter] public IReadOnlyList<ValidationCategory> Categories { get; set; } = [];
+    /// <summary>Environment mode: pipeline environment labels, their mapping to Target Environments and the evidence ladder.</summary>
+    [Parameter] public bool Environments { get; set; }
+    [Parameter] public IReadOnlyList<(string Name, string Kind)> Targets { get; set; } = [];
+    [Parameter] public string Note { get; set; } = "Quality gates as the pipelines of a Source Analysis snapshot define them. Choose the snapshot — none is selected automatically.";
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private PipelineReviewSourceList? _sources;
+    private DeliveryEvidence? _delivery;
+    private string _selected = "";
+    private string? _error;
+    private bool _loading;
+
+    private static string Mapping(EnvironmentMappingState state) => state switch
+    {
+        EnvironmentMappingState.Mapped => "Mapped",
+        EnvironmentMappingState.StrongCandidate => "Strong candidate",
+        EnvironmentMappingState.NeedsConfirmation => "Needs confirmation",
+        EnvironmentMappingState.Ambiguous => "Ambiguous",
+        _ => "Unmapped",
+    };
+
+    private IPipelineReviewApiService? Api => ServiceProvider.GetService(typeof(IPipelineReviewApiService)) as IPipelineReviewApiService;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Api is not { } api) { _error = "Pipeline evidence is unavailable in this session."; return; }
+        try { _sources = await api.SourcesAsync(EnvironmentId); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
+    }
+
+    private async Task SelectAsync(ChangeEventArgs args)
+    {
+        _selected = args.Value?.ToString() ?? "";
+        _delivery = null;
+        if (!Guid.TryParse(_selected, out var id) || Api is not { } api) return;
+        _loading = true;
+        try { _delivery = await api.DeliveryAsync(EnvironmentId, id); if (_delivery is null) _error = "Delivery evidence could not be loaded for this snapshot."; }
+        finally { _loading = false; }
+    }
+}

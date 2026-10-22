@@ -262,6 +262,14 @@
                                 }
                             </table>
                         </div>
+                        @if (r.PipelineGating.Count > 0)
+                        {
+                            <details class="tco-details" data-testid="tco-pipeline-gating">
+                                <summary>Pipeline test steps (@r.PipelineGating.Count(g => g.Gating.StartsWith("Gates")) gate a deployment)</summary>
+                                <p class="tco-muted">From the source snapshot's delivery evidence: a test configured in a pipeline is not a test that gates deployment, and neither is a test that ran or passed.</p>
+                                <ul class="tco-list">@foreach (var g in r.PipelineGating) { <li data-testid="tco-pipeline-gate"><strong>@g.Project</strong> — @g.Step in @g.Pipeline · @g.Gating <span class="tco-muted">@g.Execution</span></li> }</ul>
+                            </details>
+                        }
                         @if (r.Contracts.Count > 0)
                         {
                             <details class="tco-details" data-testid="tco-contracts">

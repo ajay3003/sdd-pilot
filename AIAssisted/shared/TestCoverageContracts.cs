@@ -303,7 +303,12 @@ public sealed record TestCoverageReviewResult
     public bool Partial { get; init; }
     /// <summary>Which contract operations / message roots discovered tests reference (shared contract evidence). Discovered tests, not executions.</summary>
     public List<ContractCoverageItem> Contracts { get; init; } = [];
+    /// <summary>How each test project's pipeline test steps relate to deployments (shared delivery evidence): configured ≠ gating ≠ executed.</summary>
+    public List<CoverageDeliveryTest> PipelineGating { get; init; } = [];
 }
+
+/// <summary>One pipeline test step that runs a test project: whether it gates a deployment (from source dependencies/conditions). Never a run result.</summary>
+public sealed record CoverageDeliveryTest(string Project, string Pipeline, string Step, string Category, string Gating, string Execution);
 
 /// <summary>Test links of one source contract: <see cref="Covered"/> of <see cref="Elements"/> operations/message roots are named by a test or the
 /// contract file is named by test code. A link is evidence a test targets the contract — never that it ran or passed.</summary>

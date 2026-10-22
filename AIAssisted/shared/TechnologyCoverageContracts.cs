@@ -93,6 +93,10 @@ public static class TechnologySupportRegistry
         new("pipeline.github-actions", "GitHub Actions", TechnologyArea.Pipeline, P, ["pipeline.github-actions"], "Triggers, jobs, environments and run commands by pattern; reusable workflows not expanded."),
         new("pipeline.gitlab", "GitLab CI", TechnologyArea.Pipeline, P, ["pipeline.gitlab"], "Stages, jobs, environments and scripts by pattern; includes not resolved."),
         new("pipeline.jenkins", "Jenkins", TechnologyArea.Pipeline, P, ["pipeline.jenkins"], "Declarative stage names and sh/bat commands by pattern; Groovy not evaluated."),
+        new("pipeline.delivery-derivation", "Delivery derivation (shared delivery evidence)", TechnologyArea.Pipeline, F, ["pipeline.azuredevops"],
+            "Local template composition, deployment dependency paths, test gating only from dependsOn/conditions/explicit gates, artifact promotion vs rebuild, post-deploy validation and environment labels (mapped to Target Environments only by confirmation). Declared, never executed."),
+        new("pipeline.azuredevops-metadata", "Azure DevOps metadata (optional)", TechnologyArea.Pipeline, P, ["pipeline.azuredevops"],
+            "Optional read-only definitions, environments and configured checks. Run history, stage results, published artifacts and deployment outcomes are not read; source-only review works without it."),
         new("dependency.nuget", "NuGet", TechnologyArea.Dependency, F, ["dependency.nuget"],
             "From source: csproj PackageReference, Central Package Management (Directory.Packages.props, VersionOverride), Directory.Build.props, SDK and tools. packages.lock.json as an imported resolved inventory (transitive). nuget.org freshness and OSV advisories only when online enrichment is available."),
         new("source.dependency.renovate", "Renovate policy", TechnologyArea.Dependency, P, ["dependency.nuget", "dependency.docker", "dependency.npm"],
@@ -188,7 +192,7 @@ public static class TechnologySupportRegistry
         new("dependency.sbom", "SBOM (CycloneDX / SPDX)", TechnologyArea.Dependency, N, P, N, N, N, N, ["dependency.sbom"], "Registry freshness only for NuGet packages.", [Capability.PackageInventory]),
 
         // Pipelines.
-        new("pipeline.azuredevops", "Azure Pipelines", TechnologyArea.Pipeline, N, F, N, P, N, N, ["pipeline.azuredevops"], "Run history needs optional read-only Azure DevOps access. Pipeline definitions are analyzed from source.", [Capability.Pipeline]),
+        new("pipeline.azuredevops", "Azure Pipelines", TechnologyArea.Pipeline, N, F, N, P, N, N, ["pipeline.azuredevops", "pipeline.delivery-derivation", "pipeline.azuredevops-metadata"], "Run history needs optional read-only Azure DevOps access. Pipeline definitions are analyzed from source.", [Capability.Pipeline]),
         new("pipeline.github-actions", "GitHub Actions", TechnologyArea.Pipeline, N, P, N, U, N, N, ["pipeline.github-actions"], "Pattern-based; no run history.", [Capability.Pipeline]),
         new("pipeline.gitlab", "GitLab CI", TechnologyArea.Pipeline, N, P, N, U, N, N, ["pipeline.gitlab"], "Pattern-based; includes not resolved; no run history.", [Capability.Pipeline]),
         new("pipeline.jenkins", "Jenkins", TechnologyArea.Pipeline, N, P, N, U, N, N, ["pipeline.jenkins"], "Pattern-based; Groovy not evaluated; no run history.", [Capability.Pipeline]),

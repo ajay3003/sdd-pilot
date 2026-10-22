@@ -511,6 +511,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient<BirkNext.Api.Services.PipelineReview.IPipelineMetadataSource, BirkNext.Api.Services.PipelineReview.AzureDevOpsPipelineMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewService, BirkNext.Api.Services.PipelineReview.PipelineReviewService>();
+builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.DeliveryEvidenceService>();
 // AI-Generated Code Review: deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
 builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestCoverage.ITestCoverageReviewService, BirkNext.Api.Services.TestCoverage.TestCoverageReviewService>();

@@ -32,6 +32,11 @@
             <div><dt>Failed</dt><dd data-testid="sd-contracts-failed">@summary.Failed</dd></div>
             <div><dt>Needs review</dt><dd data-testid="sd-contracts-review-count">@summary.NeedsReview</dd></div>
         </dl>
+        var contractSteps = BirkNext.Delivery.DeliveryEvidenceQueries.ContractValidationSteps(Evidence.CiCd);
+        @if (contractSteps.Count > 0)
+        {
+            <p class="sd-muted" data-testid="sd-contracts-pipeline-validation">Contract validation in pipelines: @contractSteps.Count configured step(s) (@string.Join(", ", contractSteps.Take(4).Select(s => s.Name)))@(contractSteps.Count > 4 ? " …" : "") — configured, not a validation result.</p>
+        }
         @if (versionGroups.Count > 0)
         {
             <section class="sd-panel" aria-labelledby="sd-contracts-versions-heading" data-testid="sd-contracts-versions">

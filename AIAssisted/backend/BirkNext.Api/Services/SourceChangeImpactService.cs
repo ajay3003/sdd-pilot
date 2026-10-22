@@ -453,7 +453,24 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                 }
             }
             if (c.Domain == ImpactChangeDomain.CiCd)
+            {
                 Add("Pipeline", c.EntityKey, c.Name, c.Domain, TechnicalImpactLevel.NeedsReview, "Unresolved", "Pipeline/deployment source changed; release impact needs review.", c, "Pipeline change", "No application behavior is inferred.", c.SourceFiles);
+                // Shared delivery evidence: classify the declared change and reach the environments this pipeline deploys to — a potential effect on
+                // the delivery path, never a claim that a deployment or test result changed.
+                var previousDefinition = before.EvidenceDomains?.CiCd.Pipelines.FirstOrDefault(p => p.Id == c.EntityKey);
+                var currentDefinition = after.EvidenceDomains?.CiCd.Pipelines.FirstOrDefault(p => p.Id == c.EntityKey);
+                if (previousDefinition is not null && currentDefinition is not null)
+                {
+                    var deliveryChanges = BirkNext.Delivery.DeliveryEvidenceQueries.Changes(previousDefinition, currentDefinition);
+                    // Environments reached through templates come from the delivery derivation (template composition), not the file's own keys.
+                    var deployedTo = BirkNext.Api.Services.PipelineReview.DeliveryDerivationProvider.For(after).Deployments.Where(d => d.Pipeline == c.EntityKey).Select(d => d.EnvironmentLabel);
+                    foreach (var environment in currentDefinition.Environments.Union(previousDefinition.Environments, StringComparer.OrdinalIgnoreCase).Union(deployedTo, StringComparer.OrdinalIgnoreCase))
+                        if (deliveryChanges.Count > 0)
+                            Add("Environment delivery path", $"{c.EntityKey}:{environment}", $"{environment} ({currentDefinition.Name})", c.Domain, TechnicalImpactLevel.Potential, "Inferred",
+                                $"Potential delivery impact: {string.Join("; ", deliveryChanges.Take(4).Select(d => $"{d.Kind} {d.Detail} — {d.Classification}"))}. Declared in source; no deployment or test result is implied.",
+                                c, "Pipeline deploys to", "Shared delivery evidence (declared)", c.SourceFiles);
+                }
+            }
             // A produced internal package changed: projects in other stored snapshots that consume it are potentially affected (version alignment),
             // read from shared dependency evidence. No compatibility failure is claimed and no test is marked failed.
             if (c.Domain == ImpactChangeDomain.Dependencies && c.EntityType == "Produced package")

@@ -141,9 +141,20 @@
             @RenderSnapshot(snap)
         }
     }
+    <section class="sd-panel" aria-labelledby="az-delivery-h" data-testid="az-delivery">
+        <h2 id="az-delivery-h">Delivery path (pipeline source)</h2>
+        <ReviewDisclosure Text="Show delivery evidence ladder" CollapseText="Hide delivery evidence ladder" TestId="az-delivery-disclosure" Class="disclosure-inline" @bind-Expanded="_deliveryExpanded">
+            @if (_deliveryExpanded)
+            {
+                <BirkNext.Web.Components.DeliveryEvidencePanel Environments="true"
+                    Note="Declared → delivery path defined → deployment observed → runtime observed → validated, each from its own evidence. Azure observations here never mark a pipeline deployment as executed." />
+            }
+        </ReviewDisclosure>
+    </section>
 </div>
 
 @code {
+    private bool _deliveryExpanded;
     private static readonly string[] Environments = ["dev", "test", "qa", "staging", "prod"];
     private static readonly (string Key, string Label)[] Tabs =
         [("overview", "Overview"), ("resources", "Resources"), ("topology", "Topology"), ("access", "Access"), ("observations", "Observations"), ("declared", "Declared vs observed"), ("suggestions", "Target Environment suggestions")];

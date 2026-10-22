@@ -131,7 +131,19 @@ public static partial class TestCoverageReviewEngine
             Phases = phases, Limitations = limitations.Distinct(StringComparer.Ordinal).ToList(),
             Partial = facts is null || facts.Truncated || inventory?.Status == SourceTestDiscoveryStatus.Partial || architecture is null,
             Contracts = ContractCoverage(current, tests),
+            PipelineGating = PipelineGating(current, tests),
         };
+    }
+
+    /// <summary>Pipeline test steps per discovered test project, from shared delivery evidence (the stored CI/CD evidence; no YAML is read).</summary>
+    private static List<CoverageDeliveryTest> PipelineGating(IqrSourceSnapshot snapshot, List<CoverageTest> tests)
+    {
+        if (snapshot.EvidenceDomains?.CiCd.Pipelines is not { Count: > 0 }) return [];
+        var delivery = BirkNext.Api.Services.PipelineReview.DeliveryDerivationProvider.For(snapshot);
+        return [.. tests.Select(t => t.Project).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(project => BirkNext.Delivery.DeliveryEvidenceQueries.TestsFor(delivery, project)
+                .Select(d => new CoverageDeliveryTest(project, delivery.Pipelines.FirstOrDefault(p => p.Id == d.Pipeline)?.Name ?? d.Pipeline, d.Name, d.Category.ToString(), d.Gating, d.Execution)))
+            .DistinctBy(x => $"{x.Project}|{x.Pipeline}|{x.Step}")];
     }
 
     /// <summary>Contract operations / message roots referenced by discovered tests, from the snapshot's stored contract evidence (never re-parsed).</summary>

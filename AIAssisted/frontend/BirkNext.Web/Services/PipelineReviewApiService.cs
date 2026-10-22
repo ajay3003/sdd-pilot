@@ -16,12 +16,20 @@ public interface IPipelineReviewApiService
     Task<(PipelineReviewResult? Result, string? Error)> ReviewAsync(string environmentId, Guid? snapshotId, bool metadata, CancellationToken ct = default);
     Task<PathProbeResult?> ProbeAsync(string environmentId, Guid snapshotId, string path, CancellationToken ct = default);
     Task<PipelineReviewComparison?> CompareAsync(string environmentId, Guid previous, Guid current, CancellationToken ct = default);
+    /// <summary>Shared delivery evidence of one exact snapshot (GET api/delivery-evidence/{id}); null when unavailable.</summary>
+    Task<BirkNext.Delivery.DeliveryEvidence?> DeliveryAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<BirkNext.Delivery.DeliveryEvidence?>(null);
 }
 
 public sealed class PipelineReviewApiService(HttpClient http) : IPipelineReviewApiService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static string Env(string id) => $"environmentId={Uri.EscapeDataString(id)}";
+
+    public async Task<BirkNext.Delivery.DeliveryEvidence?> DeliveryAsync(string environmentId, Guid snapshotId, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<BirkNext.Delivery.DeliveryEvidence>($"api/delivery-evidence/{snapshotId}?{Env(environmentId)}", Json, ct); }
+        catch (HttpRequestException) { return null; }
+    }
 
     public async Task<PipelineReviewSourceList> SourcesAsync(string environmentId, CancellationToken ct = default)
     {

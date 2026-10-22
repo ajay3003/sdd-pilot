@@ -276,6 +276,13 @@
 
             @if (_readiness is { } areas)
             {
+                <ReviewDisclosure Text="Delivery readiness (pipeline source)" CollapseText="Hide delivery readiness" Hint="Integration and contract checks configured in pipelines · not runtime integration verification" TestId="iqr-delivery" Class="iqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
+                    @if (_deliveryExpanded)
+                    {
+                        <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Integration, BirkNext.PipelineReview.ValidationCategory.Contract, BirkNext.PipelineReview.ValidationCategory.Smoke, BirkNext.PipelineReview.ValidationCategory.HealthCheck])"
+                            Note="Integration and contract checks the pipelines run before or after deployments. Delivery readiness only — it never verifies a runtime integration." />
+                    }
+                </ReviewDisclosure>
                 <ReviewDisclosure Text="Advanced" CollapseText="Hide advanced" Hint="systems, transports, provisioning, application messaging" TestId="iqr-setup-advanced" Class="iqr-detail-disclosure">
                     <section class="iqr-group" aria-labelledby="iqr-group-areas-heading" data-testid="iqr-group-areas">
                         <h3 class="iqr-group-heading" id="iqr-group-areas-heading">Integration areas</h3>
@@ -747,6 +754,7 @@
 </div>
 
 @code {
+    private bool _deliveryExpanded;
     private static string ObservedLabel(BirkNext.AzureEnvironment.ObservedLookupState state) => state switch
     {
         BirkNext.AzureEnvironment.ObservedLookupState.Observed => "Observed",

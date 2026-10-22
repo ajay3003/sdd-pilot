@@ -321,6 +321,9 @@
                 <ReviewDisclosure Text="Source contract evidence" CollapseText="Hide source contract evidence" Hint="Published contract in a Source Analysis snapshot · separate from runtime behaviour" TestId="aqr-source-contracts" Class="aqr-detail-disclosure" @bind-Expanded="_sourceContractsExpanded">
                     @if (_sourceContractsExpanded) { <BirkNext.Web.Components.SourceDomains.SourceContractEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" /> }
                 </ReviewDisclosure>
+                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="API, security and smoke checks configured in pipeline source · not passed" TestId="aqr-delivery-gates" Class="aqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
+                    @if (_deliveryExpanded) { <BirkNext.Web.Components.DeliveryEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" Categories="@([BirkNext.PipelineReview.ValidationCategory.Api, BirkNext.PipelineReview.ValidationCategory.Security, BirkNext.PipelineReview.ValidationCategory.Smoke, BirkNext.PipelineReview.ValidationCategory.HealthCheck, BirkNext.PipelineReview.ValidationCategory.Contract])" /> }
+                </ReviewDisclosure>
                 @if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl))
                 {
                     var gqlTargets = _targets.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList();
@@ -860,7 +863,7 @@
         summary.Coverage.Count == 0 ? "No coverage recorded" : string.Join(" · ", summary.Coverage.Take(2).Select(r => $"{r.Label}: {r.Value}"));
 
     /// <summary>The two contract states plus the baseline count, in the order the expanded rows repeat them.</summary>
-    private bool _sourceContractsExpanded;
+    private bool _sourceContractsExpanded, _deliveryExpanded;
     private static string ContractHint(ApiReviewContractPanelModel contracts) => string.Join(" · ",
         contracts.Rows.Where(r => r.State != ApiReviewContractState.NotApplicable)
             .Select(r => $"{r.Label}: {ApiReviewContractStates.HeaderSummary(r.State)}")

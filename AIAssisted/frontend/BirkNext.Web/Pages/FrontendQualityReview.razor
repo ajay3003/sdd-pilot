@@ -170,6 +170,14 @@
                     <FrontendQualityNotAssessedList Items="FrontendQualityLandingPresentation.NotAssessed" />
                 </ReviewDisclosure>
 
+                <ReviewDisclosure Text="Pipeline quality gates" CollapseText="Hide pipeline quality gates" Hint="Configured in pipeline source · not passed"
+                                  TestId="fqr-delivery-gates" Class="fqr-detail-disclosure" @bind-Expanded="_deliveryExpanded">
+                    @if (_deliveryExpanded)
+                    {
+                        <BirkNext.Web.Components.DeliveryEvidencePanel EnvironmentId="@(_context?.ActiveProfile.Id ?? "")" Categories="@([BirkNext.PipelineReview.ValidationCategory.E2E, BirkNext.PipelineReview.ValidationCategory.Frontend, BirkNext.PipelineReview.ValidationCategory.Accessibility, BirkNext.PipelineReview.ValidationCategory.Smoke, BirkNext.PipelineReview.ValidationCategory.Performance])" />
+                    }
+                </ReviewDisclosure>
+
                 @* 6. Technical details — the one place engine ids, layer state, runtime reasons, the full target URL,
                        approved origins and exact timestamps live. No decision above this line needs them. *@
                 <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details"
@@ -916,6 +924,7 @@
     private string RunButtonText => _running ? "Analysing..."
         : _engineStatusPending ? EngineStatusPendingText
         : "Run Frontend Quality Review";
+    private bool _deliveryExpanded;
     private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
         || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending;
     /// <summary>Human-readable reason shown next to a disabled Run button. Mirrors <see cref="RunDisabled"/>; never a technical code.</summary>

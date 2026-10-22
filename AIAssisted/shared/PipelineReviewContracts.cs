@@ -269,6 +269,13 @@ public sealed record PipelineReviewChange(PipelineChangeKind Kind, string Pipeli
 
 public sealed record PipelineReviewComparison(Guid PreviousSnapshotId, Guid CurrentSnapshotId, List<PipelineReviewChange> Changes, string Boundary);
 
+/// <summary>Stable finding ids (category + key hash), shared by the review rules and the delivery evidence projection.</summary>
+public static class PipelineFindingIds
+{
+    public static string For(PipelineFindingCategory category, string key) =>
+        $"{category}-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..10].ToLowerInvariant()}";
+}
+
 public static class PipelineReviewText
 {
     public const int RulesVersion = 1;

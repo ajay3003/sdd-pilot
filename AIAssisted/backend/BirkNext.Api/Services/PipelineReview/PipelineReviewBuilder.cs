@@ -673,8 +673,7 @@ public static class PipelineReviewBuilder
 
     // ── Findings ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static string FindingId(PipelineFindingCategory category, string key) =>
-        $"{category}-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..10].ToLowerInvariant()}";
+    private static string FindingId(PipelineFindingCategory category, string key) => PipelineFindingIds.For(category, key);
 
     private static void Add(Context ctx, PipelineFindingCategory category, PipelineFindingSeverity severity, ArchitectureEvidenceState state, string key, string title, string why,
         string explanation, IEnumerable<string> pipelines, string? environment, IEnumerable<PipelineEvidenceRef> evidence, string action)

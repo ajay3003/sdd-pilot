@@ -82,6 +82,10 @@
             </div>
         </section>
         @if (P.DependencyAutomation.Count > 0) { <p class="sd-muted" data-testid="sd-cicd-automation">Dependency-update automation configured: @string.Join(", ", P.DependencyAutomation)</p> }
+        <ReviewDisclosure Text="Delivery summary" CollapseText="Hide delivery summary" Hint="Deployments, gates, artifact promotion — shared delivery evidence" TestId="sd-cicd-delivery" Class="disclosure-inline" @bind-Expanded="_deliveryExpanded">
+            @if (_deliveryExpanded) { <DeliverySummary SnapshotId="Evidence.SourceSnapshotId" /> }
+        </ReviewDisclosure>
+        <p class="sd-muted"><a class="sd-link" href="pipeline-review" data-testid="sd-cicd-open-review">Review delivery in Pipeline Review</a> — the same delivery evidence, with findings and the full flow.</p>
         <SourceDomainChanges Slug="cicd" Label="CI/CD" Domain="SourceEvidenceDomain.CiCd" Current="Evidence" Previous="Previous" />
         <SourceDomainLimitations Slug="cicd" Result="P" Capabilities="Capabilities" />
     }
@@ -89,6 +93,7 @@
 @code {
     [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
     [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+    private bool _deliveryExpanded;
     private PipelineEvidence P => Evidence.CiCd;
     private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.CiCd);
     private readonly HashSet<string> _open = [];

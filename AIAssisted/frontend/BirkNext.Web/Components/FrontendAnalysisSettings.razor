@@ -334,6 +334,13 @@
                         <div class="fa-dl-row"><dt>Description</dt><dd>@(profile.Description ?? "No description")</dd></div>
                         <div class="fa-dl-row"><dt>Notes</dt><dd>@(profile.Notes ?? "No notes")</dd></div>
                     </dl>
+                    <ReviewDisclosure Text="Delivery path (pipeline source)" CollapseText="Hide delivery path" Hint="Defined deployments · never observed or healthy" TestId="te-delivery" Class="disclosure-inline" @bind-Expanded="_deliveryExpanded">
+                        @if (_deliveryExpanded)
+                        {
+                            <BirkNext.Web.Components.DeliveryEvidencePanel EnvironmentId="@profile.Id" Environments="true" Targets="@([.. FaSettings.Settings.Profiles.Select(p => (p.Name, p.EnvironmentType.ToString()))])"
+                                Note="Which pipeline environments deploy to this Target Environment, from a Source Analysis snapshot. A pipeline label is only a candidate until mapped; a defined deployment is not an observed or healthy one." />
+                        }
+                    </ReviewDisclosure>
                 }
             }
 
@@ -1637,6 +1644,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string? _appliedInitialProfileId;
 
     private string                   _activeTab = "general";
+    private bool _deliveryExpanded;
     private string?                  _appliedInitialTab;
     private FrontendSecuritySettings EndpointSecuritySettings
     {

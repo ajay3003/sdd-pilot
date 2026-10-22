@@ -86,6 +86,7 @@
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/DependencyEvidenceContracts.cs" Link="Models/DependencyEvidenceContracts.cs" />
     <Compile Include="../../shared/ContractEvidenceContracts.cs" Link="Models/ContractEvidenceContracts.cs" />
+    <Compile Include="../../shared/DeliveryEvidenceContracts.cs" Link="Models/DeliveryEvidenceContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
     <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />
     <Compile Include="../../shared/GraphQlSchemaArtifactContracts.cs" Link="Models/GraphQlSchemaArtifactContracts.cs" />

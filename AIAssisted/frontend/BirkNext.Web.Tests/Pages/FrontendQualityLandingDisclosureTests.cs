@@ -585,7 +585,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         // 46. High-level to technical: what the review can reach, what it covers, what runs it, what it reads,
         // where its scope ends, and only then the diagnostics.
-        titles.Should().Equal("Review access", "Review scope", "Engines", "Outside this review", "Technical details");
+        titles.Should().Equal("Review access", "Review scope", "Engines", "Outside this review", "Pipeline quality gates", "Technical details");
         titles.Should().OnlyHaveUniqueItems();
     }
 

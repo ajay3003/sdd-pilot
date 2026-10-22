@@ -167,6 +167,11 @@
             case Tab.History: @History() break;
         }
 
+        <section class="ptc-technical-section" aria-label="Pipeline performance gates" data-testid="pt-delivery-section">
+            <ReviewDisclosure Text="Pipeline performance gates" CollapseText="Hide pipeline performance gates" Hint="Configured in pipeline source · not executed" TestId="pt-delivery-gates" Class="ptc-technical" @bind-Expanded="_deliveryExpanded">
+                @if (_deliveryExpanded) { <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" /> }
+            </ReviewDisclosure>
+        </section>
         <section class="ptc-technical-section" aria-label="Technical details" data-testid="pt-technical-section">
         <ReviewDisclosure Text="Show technical details" CollapseText="Hide technical details" Hint="IDs, provider and image" TestId="pt-technical" Class="ptc-technical">
             <dl class="ptc-tech">
@@ -205,6 +210,7 @@
     };
 
     private bool _saving;
+    private bool _deliveryExpanded;
     private bool _saveFailed;
     private string? _saveError;
     private List<ResourceTargetStatus> _resourceTargets = [];
