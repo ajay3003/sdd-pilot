@@ -20,7 +20,13 @@
    Source Analysis snapshot. The two stay separate evidence domains; they share only the import identity and the archive fingerprint. *@
 <PageTitle>Import Project</PageTitle>
 <div class="pi-page">
-    <PageHeader Title="Import Project" Description="Import a real project. Upload one ZIP containing source code, supported project documents, or both." />
+    <PageHeader Title="Import Project" Description="Import a real project. Upload one ZIP containing source code, supported project documents, or both.">
+        @if (_phase == Phase.Result)
+        {
+            @* Same place as Back in the review pages' post-run headers. Secondary: the next steps below stay the primary actions. *@
+            <button type="button" class="btn-secondary" data-testid="pi-back" @onclick="BackToImportProject">Back to Import Project</button>
+        }
+    </PageHeader>
 
     @if (_phase == Phase.Choose)
     {
@@ -294,14 +300,27 @@
 
         @TargetEnvironmentFact
 
-        <div class="pi-actions" data-testid="pi-next">
-            @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
-            @if (_commit?.Source.SnapshotId is { } resultSnapshot)
-            {
-                <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="@ProjectImportPresentation.SourceAnalysisHref(resultSnapshot)" data-testid="pi-open-source">Open Source Analysis</a>
-            }
-            <a class="btn-secondary" href="getting-started" data-testid="pi-open-workflow">Recommended Workflow</a>
-            @ImportAnotherButton("pi-import-another", "pi-import-another-file")
+        <div class="pi-result-actions">
+            <section class="pi-action-group" aria-labelledby="pi-next-heading">
+                <h2 id="pi-next-heading" class="pi-action-heading">Next steps</h2>
+                <div class="pi-actions" data-testid="pi-next">
+                    @if (doneDiscovery.HasArtifacts && FirstExplorerFor(doneDiscovery) is { } explorer) { <a class="btn-primary" href="@explorer.Route" data-testid="pi-open-documents">Review documents in @explorer.Label</a> }
+                    @if (_commit?.Source.SnapshotId is { } resultSnapshot)
+                    {
+                        <a class="@(doneDiscovery.HasArtifacts ? "btn-secondary" : "btn-primary")" href="@ProjectImportPresentation.SourceAnalysisHref(resultSnapshot)" data-testid="pi-open-source">Open Source Analysis</a>
+                    }
+                    <a class="btn-secondary" href="getting-started" data-testid="pi-open-workflow">Recommended Workflow</a>
+                </div>
+            </section>
+            @* Two different things: Back only leaves this result view (the import stays saved and current); Import another opens the file
+               chooser for the next archive at once. *@
+            <section class="pi-action-group" aria-labelledby="pi-import-actions-heading">
+                <h2 id="pi-import-actions-heading" class="pi-action-heading">Import</h2>
+                <div class="pi-actions" data-testid="pi-import-actions">
+                    <button type="button" class="btn-secondary" data-testid="pi-back-bottom" @onclick="BackToImportProject">Back to Import Project</button>
+                    @ImportAnotherButton("pi-import-another", "pi-import-another-file")
+                </div>
+            </section>
         </div>
     }
 </div>
@@ -402,6 +421,8 @@
         // Persisted history, the current project, snapshots and IQR bindings are untouched.
         _commit = null; _saveWarning = false; _retrying = false; _duplicate = null; _importAgain = false; _currentRetryMessage = null; _useMessage = null;
         _failure = null;
+        // The progress card shows the preview's counts: the previous archive's preview must not be shown while this one validates.
+        _preview = null; _discovery = null; _classified = 0; _classifyTotal = 0;
         _fileName = args.File.Name;
         _phase = Phase.Validating;
         _progress = new ProjectImportCommitEvent { Stage = "Uploading and validating the archive", Detail = "Reading the ZIP and checking its entries." };
@@ -496,20 +517,36 @@
         try
         {
             var (commit, error) = await Api.CommitAsync(preview.StagingId);
+            // The user may have left the result view while this ran: the import record is still updated, the page state is not revived.
+            var stillShown = ReferenceEquals(_preview, preview) && _commit is not null;
             if (commit is not null)
             {
-                _commit = commit;
+                if (stillShown) _commit = commit;
                 Activation.UpdateSource(preview.ImportId, commit.Source, commit.StagingId, commit.StagedUntil);
                 _saveWarning = !await AutoSave.SaveNowAsync();
                 if (commit.Source.SnapshotId is not null) await Applicability.RefreshAsync();
             }
-            else if (error is not null)
+            else if (error is not null && stillShown)
             {
                 _commit = _commit with { Source = _commit.Source with { State = ProjectImportSourceState.Failed, CanRetry = error.Code != "IMPORT_STAGING_EXPIRED", Code = error.Code, Message = error.Message } };
             }
         }
-        catch (HttpRequestException ex) { _commit = _commit with { Source = _commit.Source with { Message = BackendRequestClassifier.FromException("Project import", ex).UserMessage } }; }
+        catch (HttpRequestException ex) when (ReferenceEquals(_preview, preview) && _commit is not null) { _commit = _commit with { Source = _commit.Source with { Message = BackendRequestClassifier.FromException("Project import", ex).UserMessage } }; }
+        catch (HttpRequestException) { /* left the result view; the record keeps its last known source state */ }
         finally { _retrying = false; }
+    }
+
+    /// <summary>
+    /// "Back to Import Project": navigation, not rollback. Clears only this page's import session (result, preview, fingerprint, progress,
+    /// errors, file input) and shows the upload view. The import record, its documents and artifact selections, its Source Analysis snapshot,
+    /// the current project and IQR bindings are untouched, and the staged archive is kept so the current card can still retry the source.
+    /// Unlike "Import another project" it does not open the file chooser.
+    /// </summary>
+    private void BackToImportProject()
+    {
+        Reset();
+        // Focus the top of the upload view (the just-imported current project), not the chooser at the end of the page.
+        _focusId = Activation.Current is null ? "pi-choose-file" : "pi-current-heading";
     }
 
     private void CancelAsync()

@@ -11,6 +11,9 @@
 .pi-warning { margin: 0; padding: .45rem .6rem; border-left: 3px solid #b45309; background: #fffbeb; color: #78350f; font-size: .86rem; }
 .pi-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; min-width: 0; }
 .pi-actions a:not(.btn-primary):not(.btn-secondary) { font-size: .88rem; }
+.pi-result-actions { display: grid; gap: .85rem; min-width: 0; }
+.pi-action-group { display: grid; gap: .4rem; min-width: 0; }
+.pi-action-heading { margin: 0; font-size: .8rem; font-weight: 600; color: var(--clr-text-muted); }
 .pi-outcomes, .pi-list { margin: 0; padding-left: 1.1rem; display: grid; gap: .25rem; font-size: .88rem; }
 
 .pi-file-button { position: relative; display: inline-flex; align-items: center; padding: .45rem 1rem; border: 1px solid var(--clr-link, #2563eb); border-radius: var(--radius-md); cursor: pointer; font-size: .9rem; font-weight: 600; background: var(--clr-link, #2563eb); color: #fff; }
