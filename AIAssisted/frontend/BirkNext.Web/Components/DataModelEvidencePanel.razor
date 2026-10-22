@@ -1,0 +1,69 @@
+@using BirkNext.DataModelEvidence
+@using BirkNext.DatabaseArchitecture
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+@* Shared data model evidence of a Source Analysis snapshot (the persistence model Source Analysis extracted once) beside the documented
+   data model: entity ≠ table until mapped, explicit vs convention mapping, declared migrations (never "applied"), nullability layers.
+   With a snapshot passed in it renders that snapshot; otherwise the reader chooses one (never the newest automatically). *@
+<div class="sd-source-contracts" data-testid="data-model-evidence">
+    @if (Snapshot is null)
+    {
+        @if (_error is { } error) { <p class="sd-muted" role="status">@error</p> }
+        else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
+        else if (_snapshots.Count == 0) { <p class="sd-muted" data-testid="data-model-evidence-none">No Source Analysis snapshot with a database model is stored.</p> }
+        else
+        {
+            <label class="sd-field">Source snapshot
+                <select data-testid="data-model-evidence-snapshot" value="@_selected" @onchange="e => _selected = e.Value?.ToString() ?? string.Empty">
+                    <option value="">Select a snapshot…</option>
+                    @foreach (var s in _snapshots) { <option value="@s.Id">@s.Archive.FileName · analyzed @s.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</option> }
+                </select>
+            </label>
+        }
+    }
+    @if (Model is { } model)
+    {
+        var entities = DataModelQueries.GetEntities(model);
+        var migrations = DataModelQueries.Migrations(model);
+        <dl class="sd-summary" data-testid="data-model-evidence-summary">
+            <div><dt>Tables / entities</dt><dd>@entities.Count</dd></div>
+            <div><dt>Explicit table mapping</dt><dd data-testid="data-model-evidence-explicit">@entities.Count(e => e.Mapping == DataMappingConfidence.Explicit)</dd></div>
+            <div><dt>Convention only</dt><dd data-testid="data-model-evidence-convention">@entities.Count(e => e.Mapping == DataMappingConfidence.Strong && e.Entity is not null)</dd></div>
+            <div><dt>Migrations declared</dt><dd data-testid="data-model-evidence-migrations">@migrations.Count</dd></div>
+            <div><dt>Nullability differences</dt><dd>@entities.Sum(e => e.Fields.Count(f => f.NullabilityDiffers))</dd></div>
+        </dl>
+        @if (DocumentedEntities is { Count: > 0 } documented)
+        {
+            var sourceNames = entities.Select(e => e.Entity ?? e.Table).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var missing = documented.Where(d => !sourceNames.Contains(d)).ToList();
+            <p data-testid="data-model-evidence-documented">@(documented.Count - missing.Count) of @documented.Count documented entities found in source@(missing.Count > 0 ? $" · not found: {string.Join(", ", missing.Take(8))}{(missing.Count > 8 ? " …" : "")}" : "")</p>
+        }
+        <p class="sd-muted">Declared in source. Migrations are declarations, not proof they were applied; no live database or row data was read. A convention mapping is not an explicit table name.</p>
+        <ReviewDisclosure Text="View data dictionary" CollapseText="Hide data dictionary" TestId="data-model-evidence-dictionary" Class="disclosure-inline">
+            <pre class="sd-doc" data-testid="data-model-evidence-dictionary-text">@DataModelQueries.Dictionary(model)</pre>
+        </ReviewDisclosure>
+    }
+    else if (Snapshot is not null || _selected.Length > 0)
+    {
+        <p class="sd-muted" data-testid="data-model-evidence-unavailable">This snapshot has no database model (it predates database analysis or the source has none).</p>
+    }
+</div>
+@code {
+    /// <summary>A known snapshot (Source Analysis Data); null lets the reader choose one (Data Model Explorer).</summary>
+    [Parameter] public DatabaseArchitectureSnapshot? Snapshot { get; set; }
+    [Parameter] public IReadOnlyList<string>? DocumentedEntities { get; set; }
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
+    private string _selected = "";
+    private string? _error;
+    private DatabaseArchitectureSnapshot? Model => Snapshot ?? _snapshots?.FirstOrDefault(s => s.Id.ToString() == _selected)?.DatabaseArchitecture;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Snapshot is not null) return;
+        if (ServiceProvider.GetService(typeof(IIntegrationCatalogApiService)) is not IIntegrationCatalogApiService api) { _error = "Source Analysis is unavailable in this session."; return; }
+        try { _snapshots = [.. (await api.ListSourceSnapshotsAsync("")).Where(s => s.DatabaseArchitecture is { Databases.Count: > 0 })]; }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded."; }
+    }
+}

@@ -22,6 +22,12 @@
         var relationshipStates = DatabaseEvidenceSummary.RelationshipStates(Snapshot);
         var unresolvedGroups = DatabaseEvidenceSummary.UnresolvedGroups(Snapshot);
         var physicalKnown = Snapshot.Databases.Any(d => d.PhysicalName is not null);
+        @if (Assessed)
+        {
+            <ReviewDisclosure Text="Mapping, migrations and data dictionary" CollapseText="Hide mapping, migrations and data dictionary" Hint="Shared data model evidence" TestId="db-shared-evidence" Class="disclosure-inline">
+                <DataModelEvidencePanel Snapshot="Snapshot" />
+            </ReviewDisclosure>
+        }
         @if (!Assessed) { <p class="db-muted" data-testid="db-not-assessed">Not detected: no supported database declaration was found in this source snapshot, so these counts are not assessed (not zero).</p> }
         <dl class="db-summary" data-testid="db-overview">
             <div><dt>Database candidates</dt><dd>@M(Snapshot.Databases.Count)</dd></div>

@@ -35,6 +35,10 @@
                     SemanticModel="@_semanticModel"
                     InitialView="@_initialView"
                     OnTextChanged="ImportFromPanel" />
+                <ReviewDisclosure Text="Source data model evidence" CollapseText="Hide source data model evidence" Hint="The persistence model Source Analysis extracted · compared with this document"
+                                  TestId="dme-source-evidence" Class="disclosure-inline" @bind-Expanded="_sourceEvidenceExpanded">
+                    @if (_sourceEvidenceExpanded) { <DataModelEvidencePanel DocumentedEntities="@(_parsed?.Entities.Select(e => e.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList())" /> }
+                </ReviewDisclosure>
             </div>
         }
     </ArtifactExplorerHost>
@@ -43,6 +47,7 @@
 
 @code {
     private ArtifactExplorerHost? _host;
+    private bool _sourceEvidenceExpanded;
     private string _text = string.Empty;
     private string? _initialView;
     private string? _analysisError;

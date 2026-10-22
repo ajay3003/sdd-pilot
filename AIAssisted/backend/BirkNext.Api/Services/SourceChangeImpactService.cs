@@ -273,9 +273,16 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         else limitations.Add("Infrastructure, configuration, CI/CD and contract comparisons unavailable for one or both selected snapshots.");
 
         if (before.DatabaseArchitecture is { } bd && after.DatabaseArchitecture is { } ad)
-            output.AddRange(DatabaseSchemaComparison.Compare(bd, ad).Select((c, i) => new ImpactChange($"database:{i}:{c.Object}", ImpactChangeDomain.Database,
+        {
+            // Shared data model evidence classifies each change (and flags a model change without migration evidence as a potential gap).
+            var dataChanges = BirkNext.DataModelEvidence.DataModelQueries.Changes(bd, ad);
+            output.AddRange(dataChanges.Select((c, i) => new ImpactChange($"database:{i}:{c.Object}", ImpactChangeDomain.Database,
                 c.Kind.StartsWith("Added", StringComparison.Ordinal) ? ImpactChangeKind.Added : c.Kind.StartsWith("Removed", StringComparison.Ordinal) ? ImpactChangeKind.Removed : ImpactChangeKind.Changed,
-                c.Kind, c.Object, c.Object, c.Detail, DatabaseFiles(after.DatabaseArchitecture, c.Object).Concat(DatabaseFiles(before.DatabaseArchitecture, c.Object)).Distinct(StringComparer.OrdinalIgnoreCase).ToList())));
+                c.Kind, c.Object, c.Object, c.Detail, DatabaseFiles(after.DatabaseArchitecture, c.Object).Concat(DatabaseFiles(before.DatabaseArchitecture, c.Object)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                ContractClassification: c.Classification)));
+            if (dataChanges.Any(c => c.Classification.Contains("Potential migration gap", StringComparison.Ordinal)))
+                limitations.Add("Some data model changes have no migration evidence in source: potential migration gap — review (not an automatic defect).");
+        }
         else limitations.Add("Database comparison unavailable for one or both selected snapshots.");
 
         if (before.Observability is { } bo && after.Observability is { } ao)

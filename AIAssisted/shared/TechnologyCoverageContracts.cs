@@ -66,6 +66,8 @@ public static class TechnologySupportRegistry
             "Components, project references, HTTP clients, messaging, datastores and interfaces from .csproj and C# syntax (Roslyn). Other languages are not analyzed."),
         new("source.database.efcore", "EF Core / migrations", TechnologyArea.Database, F, ["db.sqlserver", "db.postgresql"],
             "DbContext, entities, keys and relationships from EF Core models and migrations."),
+        new("source.data-model.shared", "Shared data model evidence", TechnologyArea.Database, P, ["db.sqlserver", "db.postgresql"],
+            "Scoped entities/tables with mapping confidence (explicit ToTable/[Table] vs convention; names never confirm), separate nullability layers, declared migrations (never applied), potential migration gaps, candidate contract-field lineage and engine-level correlation with declared database resources. No live database or row data."),
         new("source.database.sql-ddl", "SQL DDL", TechnologyArea.Database, P, ["db.sqlserver", "db.postgresql", "db.oracle", "db.mysql"],
             "Basic CREATE/ALTER TABLE and CREATE INDEX; dialect extensions, PL/SQL, T-SQL procedures and dynamic SQL are not assessed."),
         new("source.observability.dotnet", "C# observability", TechnologyArea.Language, P, ["lang.csharp"],
@@ -188,8 +190,8 @@ public static class TechnologySupportRegistry
         new("integration.scim", "SCIM provisioning", TechnologyArea.Integration, F, P, P, P, U, P, [], "GET-only runtime checks.", [Capability.Authentication]),
 
         // Databases.
-        new("db.sqlserver", "SQL Server", TechnologyArea.Database, N, F, N, N, N, N, ["source.database.efcore", "source.database.sql-ddl"], "Schema from EF Core and basic DDL; no live database connection.", [Capability.RelationalDatabase]),
-        new("db.postgresql", "PostgreSQL", TechnologyArea.Database, N, F, N, N, N, N, ["source.database.efcore", "source.database.sql-ddl"], "Schema from EF Core and basic DDL; no live database connection.", [Capability.RelationalDatabase]),
+        new("db.sqlserver", "SQL Server", TechnologyArea.Database, N, F, N, N, N, N, ["source.database.efcore", "source.database.sql-ddl", "source.data-model.shared"], "Schema from EF Core and basic DDL; no live database connection.", [Capability.RelationalDatabase]),
+        new("db.postgresql", "PostgreSQL", TechnologyArea.Database, N, F, N, N, N, N, ["source.database.efcore", "source.database.sql-ddl", "source.data-model.shared"], "Schema from EF Core and basic DDL; no live database connection.", [Capability.RelationalDatabase]),
         new("db.oracle", "Oracle", TechnologyArea.Database, N, P, N, N, N, N, ["source.database.sql-ddl"],
             "Only basic CREATE TABLE/INDEX DDL is read; PL/SQL, packages, sequences/triggers semantics and Oracle-specific types are not assessed.", [Capability.RelationalDatabase]),
         new("db.mysql", "MySQL / MariaDB", TechnologyArea.Database, N, P, N, N, N, N, ["source.database.sql-ddl"], "Basic DDL only.", [Capability.RelationalDatabase]),
