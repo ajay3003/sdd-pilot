@@ -59,6 +59,26 @@ public sealed class IntegrationJourneyEngineTests
     }
 
     [Fact]
+    public async Task UnrelatedPack_GetsSeparateReadinessDimensions_AndItsRunKeepsTheEvidenceContextItStartedWith()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        Wire(harness, everyStepVerified: false);
+        var service = harness.Service(new ExampleOrdersJourneyPack());
+
+        var view = (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single();
+        view.Dimensions.Select(d => d.Dimension).Should().OnlyHaveUniqueItems().And.HaveCount(Enum.GetValues<JourneyDimension>().Length);
+        view.Dimensions.Single(d => d.Dimension == JourneyDimension.Execution).State.Should().Be(JourneyDimensionState.Ready);
+        view.Dimensions.Single(d => d.Dimension == JourneyDimension.TestData).State.Should().Be(JourneyDimensionState.NotAssessed, "the pack declares no Test Data");
+        view.Assessment.Should().Be(JourneyAssessmentState.NotRun);
+
+        var run = await service.StartAsync(Request(), null, default);
+        run.EvidenceContext.Should().NotBeNull();
+        run.EvidenceContext!.PackVersion.Should().NotBeEmpty();
+        (await service.PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single().Assessment.Should().Be(JourneyReadinessComposer.Assessment(run.OverallState));
+        (await service.GetAsync(run.RunId, default))!.EvidenceContext.Should().BeEquivalentTo(run.EvidenceContext, "history keeps the context the run started with");
+    }
+
+    [Fact]
     public async Task AcceptedAndObservedSteps_WithoutVerification_ArePartial_NeverCompleted()
     {
         await using var harness = new IntegrationJourneyHarness();

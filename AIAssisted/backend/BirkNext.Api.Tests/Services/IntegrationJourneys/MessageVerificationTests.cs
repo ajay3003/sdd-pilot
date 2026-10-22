@@ -94,6 +94,33 @@ public sealed class MessageVerificationTests
         persisted.Should().NotContain(InstanceGuid.ToString("D")).And.NotContain(InstanceGuid.ToString("N"));
     }
 
+    [Fact]
+    public async Task AnInstanceReferencedByTwoRuns_StaysUnresolved_TheNewestIsNeverChosen()
+    {
+        var t = await TestBed.CreateAsync();
+        await t.RecordSourceRunAsync(receipt: JourneyStepState.Verified);
+        await t.RecordSourceRunAsync(receipt: JourneyStepState.Verified);
+        var record = (await t.VerifyAsync(Inputs("valid-report", instance: InstanceGuid))).MessageVerification!;
+
+        record.SourceRunId.Should().BeNull("two recorded runs reference the instance; the tester names one");
+        record.Providers.Single(item => item.ProviderId == SkoleNaervaerMessageEvidence.AltinnProvider).Detail.Should().Contain("ambiguous").And.Contain("never chosen automatically");
+        record.Correlations.Single(item => item.SourceType == "Altinn instance reference").Certainty.Should().Be(MessageCorrelationCertainty.Uncorrelated);
+        record.Assertions.Should().NotContain(item => item.Id == "altinn-confirmed" && item.Verdict == MessageVerificationVerdict.Passed);
+    }
+
+    [Fact]
+    public async Task SkoletjenestenAndMm_Disagreeing_IsReviewRequired_NotAPassOrAFailure()
+    {
+        var t = await TestBed.CreateAsync();
+        t.Telemetry.Mm = Rows(Mm("Mottatt"));
+        t.Telemetry.Skole = Rows(Skole("Avvist", "422"));
+        var record = (await t.VerifyAsync(Inputs("valid-report", message: MessageId))).MessageVerification!;
+
+        record.Assertions.Single(item => item.Id == "skole-200").Verdict.Should().Be(MessageVerificationVerdict.ReviewRequired);
+        record.Verdict.Should().Be(MessageVerificationVerdict.ReviewRequired);
+        record.VerdictReason.Should().Contain("disagree");
+    }
+
     // ── MM and Skoletjenesten (telemetry) ────────────────────────────────────────────────────────────────────────
 
     [Fact]

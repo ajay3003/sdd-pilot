@@ -180,16 +180,72 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=snt-journey]").Should().HaveCount(3));
         string Cell(string journey, string label) => State(page.Find($"[data-journey={journey}] td[data-label='{label}']"));
-        Cell("utdanningsdata", "Configuration").Should().Be("Not applicable", "the sample journey declares no integration requirement");
-        Cell("utdanningsdata", "Source evidence").Should().Be("Missing");
+        Cell("utdanningsdata", "Integration").Should().Be("Not applicable", "the sample journey declares no integration requirement");
         Cell("utdanningsdata", "Execution").Should().Be("Blocked");
-        Cell("periodeavslutning", "Source evidence").Should().Be("Not applicable", "it declares no source-evidence prerequisite");
+        Cell("utdanningsdata", "Test Data").Should().Be("Not assessed", "no readiness dimension was reported — never guessed");
         page.Find("[data-journey=rapportmottak] [data-testid=snt-journey-blockers]").TextContent.Should().Be("2 actions", "grouped tester actions, not raw checks");
         page.Find("[data-journey=utdanningsdata] th").TextContent.Should().Contain("BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning");
         page.FindAll("[data-testid=ijp-panel], [data-testid=atp-panel], [data-testid=mvp], [data-testid=act-panel]").Should().BeEmpty("no feature is rendered inline on the overview");
         page.FindAll("[data-testid=snt-journey-open]").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer?tab=utdanningsdata",
             "extensions/skolenaervaer?tab=rapportmottak", "extensions/skolenaervaer?tab=periodeavslutning");
-        page.FindAll("[data-testid=snt-journeys] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Journey", "Configuration", "Source evidence", "Execution", "Attention", "Action");
+        page.FindAll("[data-testid=snt-journeys] th[role=columnheader]").Select(th => th.TextContent).Should().Equal("Journey", "Integration", "Contract", "Test Data", "Execution", "Verification", "Attention", "Action");
+    }
+
+    [Fact]
+    public void Overview_matrix_reads_the_shared_readiness_dimensions_and_counts_attention_by_owner()
+    {
+        WithTarget();
+        var pack = IntegrationJourneyPanelTests.SamplePack();
+        JourneyReadinessDimension Dim(JourneyDimension d, string label, JourneyDimensionState state, string owner, string key, bool optional = false) => new(d, label, state, $"{label} evidence", owner, key, optional);
+        _journeys.Pack = pack with
+        {
+            Journeys = [.. pack.Journeys.Select(j => j.Journey.JourneyId != "rapportmottak" ? j : j with
+            {
+                Assessment = JourneyAssessmentState.ExecutedNotVerified,
+                Dimensions =
+                [
+                    Dim(JourneyDimension.Integration, "Integration", JourneyDimensionState.Partial, "Target Environment → Integrations", "integrations"),
+                    Dim(JourneyDimension.Contracts, "Contracts", JourneyDimensionState.ReviewRequired, "Integration Quality Review / Contract & Schema Evidence", "source-contracts"),
+                    Dim(JourneyDimension.TestData, "Test Data", JourneyDimensionState.Missing, "Test Data", "test-data"),
+                    Dim(JourneyDimension.Execution, "Execution", JourneyDimensionState.Blocked, "Target Environment / execution safety", "execution-settings"),
+                    Dim(JourneyDimension.Verification, "Verification", JourneyDimensionState.Partial, "Runtime evidence / Verify", "verify"),
+                    Dim(JourneyDimension.Delivery, "Delivery", JourneyDimensionState.Partial, "Pipeline Review", "pipeline-review", optional: true),
+                ],
+            })],
+        };
+        var page = Open();
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-journey]").Should().HaveCount(3));
+        string Cell(string label) => State(page.Find($"[data-journey=rapportmottak] td[data-label='{label}']"));
+        (Cell("Integration"), Cell("Contract"), Cell("Test Data"), Cell("Verification")).Should().Be(("Partial", "Review required", "Missing", "Partial"));
+        page.Find("[data-journey=rapportmottak] [data-testid=snt-matrix-assessment]").TextContent.Should().Be("Last run: Executed · not verified", "executed is not verified");
+        page.Find("[data-testid=snt-attention-summary]").TextContent.Should().Be("5 things need attention: 1 integration, 1 contracts, 1 test data, 1 execution, 1 verification",
+            "an optional dimension (delivery) never needs attention");
+        page.FindAll("[data-testid=snt-attention-category] a").Select(a => a.GetAttribute("href")).Should().Contain("/test-data")
+            .And.Contain("/source-analysis?area=quality-evidence&view=contracts").And.Contain("/admin/system-settings?section=target-environments");
+    }
+
+    [Fact]
+    public void A_journey_shows_each_dimension_with_its_owner_and_never_edits_shared_configuration()
+    {
+        WithTarget();
+        var pack = IntegrationJourneyPanelTests.SamplePack();
+        _journeys.Pack = pack with
+        {
+            Journeys = [.. pack.Journeys.Select(j => j.Journey.JourneyId != "rapportmottak" ? j : j with
+            {
+                Dimensions = [new(JourneyDimension.TestData, "Test Data", JourneyDimensionState.Missing, "Approved Test Data is missing for a required role — a journey prerequisite, not a product defect.", "Test Data", "test-data")
+                    { Items = ["Reporter: missing"], Provenance = "Test Data catalog (shared)" }],
+            })],
+        };
+        var page = Open("rapportmottak");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=journey-dimension]").Should().ContainSingle());
+        var row = page.Find("[data-testid=journey-dimension]");
+        row.QuerySelector("[data-testid=journey-dimension-state]")!.TextContent.Should().Be("Missing");
+        row.QuerySelector("[data-testid=journey-dimension-owner]")!.TextContent.Should().Be("Test Data");
+        row.QuerySelector("[data-testid=journey-dimension-action]")!.GetAttribute("href").Should().Be("/test-data");
+        row.QuerySelectorAll("input, select, textarea").Should().BeEmpty("the test pack links to the owner instead of editing shared Test Data");
     }
 
     private sealed class FakeTopology(IReadOnlyList<BirkNext.IntegrationTopology.TopologyPathResult> paths) : IIntegrationTopologyApiService
@@ -361,8 +417,8 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         cards[2].QuerySelector("[data-testid=snt-source-archive]")!.TextContent.Should().Be("Expected: OpenAPI / Swagger document");
         cards[2].QuerySelector("[data-testid=snt-source-action]")!.GetAttribute("href").Should().Be("/source-analysis");
         page.Find("[data-testid=snt-journey][data-journey=rapportmottak] [data-testid=snt-journey-sources]").TextContent
-            .Should().Be("MU (Meldingsutveksleren) bound · M2LB available · needs binding · Altinn Skolenærvær application missing");
-        page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("M2LB available · needs binding");
+            .Should().Be("Source: MU (Meldingsutveksleren) bound · M2LB available · needs binding · Altinn Skolenærvær application missing");
+        page.Find("[data-testid=snt-journey][data-journey=utdanningsdata] [data-testid=snt-journey-sources]").TextContent.Should().Be("Source: M2LB available · needs binding");
         page.FindAll("[data-testid=snt-workspace]").Should().BeEmpty("no project workspace is needed for this pack, so none is shown as a warning");
         page.Find("[data-testid=snt-source]").TextContent.Should().StartWith("Provided by Integration Quality Review bindings");
         page.FindAll("[data-testid=snt-source-summary]").Select(s => s.QuerySelector("[data-testid=snt-source-summary-state]")!.TextContent).Should().Equal("Bound", "Available · needs binding", "Missing");

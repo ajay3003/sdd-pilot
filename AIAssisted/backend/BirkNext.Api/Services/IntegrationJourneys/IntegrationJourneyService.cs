@@ -64,7 +64,8 @@ public sealed class IntegrationJourneyService(
     IntegrationJourneyRunGate gate,
     TimeProvider clock,
     ILogger<IntegrationJourneyService> logger,
-    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null) : IIntegrationJourneyService
+    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null,
+    BirkNext.Api.Services.TestData.TestDataCatalog? testData = null) : IIntegrationJourneyService
 {
     private static readonly TimeSpan RunTimeout = TimeSpan.FromMinutes(10);
     /// <summary>Prerequisite keys of the journey's declared IQR integration requirements.</summary>
@@ -370,6 +371,42 @@ public sealed class IntegrationJourneyService(
             notApplied);
     }
 
+    /// <summary>The journey's declared Test Data roles resolved through the shared catalog (aliases and states only; nothing is stored).</summary>
+    private (IReadOnlyList<BirkNext.TestData.TestDataRequirement>, BirkNext.TestData.TestDataResolutionResult?, string?) ResolveTestData(IIntegrationJourneyPack pack, IntegrationJourneyDefinition journey)
+    {
+        var requirements = pack.TestDataRequirements(journey);
+        if (requirements.Count == 0) return (requirements, null, null);
+        if (testData is null) return (requirements, null, "The shared Test Data catalog is not available in this host.");
+        try { return (requirements, testData.Resolve(requirements), null); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            logger.LogWarning(ex, "Test Data could not be resolved for journey {Journey}.", journey.JourneyId);
+            return (requirements, null, "The Test Data catalog could not be read.");
+        }
+    }
+
+    /// <summary>The source snapshots and the Test Data versions a run starts with: only deterministic resolutions (exactly one approved
+    /// asset) are recorded, so the record never claims a version the run did not use.</summary>
+    private JourneyRunEvidenceContext EvidenceContext(IIntegrationJourneyPack pack, IntegrationJourneyDefinition journey, JourneyPackContext context)
+    {
+        var (_, resolution, _) = ResolveTestData(pack, journey);
+        var resolved = resolution?.Roles.Where(role => role.State == BirkNext.TestData.TestDataResolutionState.Resolved && role.AssetAlias is not null).Select(role => role.AssetAlias!).ToHashSet(StringComparer.Ordinal) ?? [];
+        var assets = resolved.Count == 0 || testData is null ? [] : testData.View().Assets.Where(asset => resolved.Contains(asset.Alias)).Select(BirkNext.TestData.TestDataLifecycle.Usage).ToArray();
+        return new JourneyRunEvidenceContext
+        {
+            PackVersion = pack.PackVersion,
+            SourceSnapshots = [.. JourneyBoundSnapshots(pack, journey, context).Select(snapshot => new JourneyRunSourceReference(snapshot.Id, snapshot.Archive.FileName, snapshot.AnalyzedAt))],
+            TestData = assets,
+        };
+    }
+
+    /// <summary>The IQR-bound snapshots of the integrations that fulfil one journey's requirements (falls back to the pack's bound sources when
+    /// the journey declares no integration).</summary>
+    internal static IReadOnlyList<IqrSourceSnapshot> JourneyBoundSnapshots(IIntegrationJourneyPack pack, IntegrationJourneyDefinition journey, JourneyPackContext context) =>
+        journey.Integrations.Count == 0 ? BoundSnapshots(pack, context)
+            : journey.Integrations.SelectMany(requirement => context.Catalog.Integrations.Where(integration => pack.Matches(requirement, integration)))
+                .Select(integration => context.BoundSnapshot(integration.Id)).OfType<IqrSourceSnapshot>().DistinctBy(snapshot => snapshot.Id).ToArray();
+
     /// <summary>The IQR-bound snapshots of the configured integrations that fulfil this pack's requirements, in requirement order.</summary>
     internal static IReadOnlyList<IqrSourceSnapshot> BoundSnapshots(IIntegrationJourneyPack pack, JourneyPackContext context) =>
         pack.Journeys.SelectMany(journey => journey.Integrations)
@@ -417,6 +454,7 @@ public sealed class IntegrationJourneyService(
             EnvironmentName = context.TrustedEnvironment?.DisplayName ?? request.EnvironmentId, StartedAt = started,
             Steps = journey.Steps.Select(step => new JourneyStepResult { StepId = step.StepId, Label = step.Label, State = JourneyStepState.NotAssessed, Reason = "Not started." }).ToArray(),
             Limitations = journey.Limitations, InputSummary = inputs.Summary, InitiatedBy = SafeInitiator(initiator),
+            EvidenceContext = EvidenceContext(pack, journey, context),
         };
 
         var blockers = new List<string>();
@@ -619,6 +657,10 @@ public sealed class IntegrationJourneyService(
         var configuredAll = journey.Integrations.Count > 0 && prerequisites.Where(item => item.Key.StartsWith(IntegrationKeyPrefix, StringComparison.Ordinal)).All(item => item.State == JourneyReadinessState.Ready);
         var sourceVerified = sourceItems.Length > 0 && sourceItems.All(item => item.State == JourneyReadinessState.Ready);
         var runtimeVerified = lastRun?.OverallState == JourneyRunState.Completed;
+        var (testDataRequirements, testDataResolution, testDataProblem) = ResolveTestData(pack, journey);
+        var journeyBound = JourneyBoundSnapshots(pack, journey, context);
+        var dimensions = JourneyReadinessComposer.Compose(new JourneyReadinessInputs(journey, prerequisites, stepStatus, runnable, journeyBound,
+            testDataRequirements, testDataResolution, testDataProblem));
         return new IntegrationJourneyView
         {
             Journey = journey, Readiness = readiness, Prerequisites = prerequisites, MatchedIntegrations = matched, StepStatus = stepStatus, CanRun = canRun, RunnableScenarios = runnable,
@@ -626,6 +668,8 @@ public sealed class IntegrationJourneyService(
                 ? await DelegatedCapabilitiesAsync(journey, context, matches, ct)
                 : journey.Scenarios.Select(scenario => Capability(scenario, prerequisites, runnable)).ToArray(),
             LastRun = lastRun is null ? null : Summary(lastRun),
+            Dimensions = dimensions, Assessment = JourneyReadinessComposer.Assessment(lastRun?.OverallState),
+            SourceArchives = [.. journeyBound.Select(snapshot => snapshot.Archive.FileName).Distinct(StringComparer.OrdinalIgnoreCase)],
             ReadinessSummary = readiness switch
             {
                 JourneyReadinessState.Ready => "Ready to run after confirmation.",

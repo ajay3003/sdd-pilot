@@ -14,7 +14,8 @@ using System.Text.Json;
 namespace BirkNext.Api.Services;
 
 /// <summary>Builds technical impact from exact Source Analysis snapshots, then enriches it with persisted QA traceability.</summary>
-public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvidenceProvider sources, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null)
+public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvidenceProvider sources, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null,
+    BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService? journeys = null)
 {
     public async Task<IReadOnlyList<ImpactSnapshotOption>> ListSnapshotsAsync(string environmentId, CancellationToken ct)
     {
@@ -59,6 +60,7 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                     affected.State == BirkNext.TestData.TestDataLifecycleState.ReviewRequired ? ImpactChangeDomain.Contracts : ImpactChangeDomain.Database,
                     TechnicalImpactLevel.Potential, "Inferred", $"{affected.State}: {affected.Reason}", [], [], []));
         }
+        impacts.AddRange(await JourneyImpactsAsync(request.EnvironmentId, before, after, changes, ct));
 
         // Traceability is deliberately a second stage: no links can remove or downgrade a technical impact.
         var files = impacts.SelectMany(i => i.SourceFiles).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -257,6 +259,24 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
             if (results.Count >= 100) break;
         }
         return results.Values.OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// Test-pack journeys whose canonical (IQR-bound) source is the compared repository: a potential impact to review — the journey's
+    /// readiness and logic stay with its pack, nothing is re-run, and the journey is never marked failed.
+    /// </summary>
+    private async Task<IReadOnlyList<TechnicalImpactItem>> JourneyImpactsAsync(string? environmentId, IqrSourceSnapshot before, IqrSourceSnapshot after, IReadOnlyList<ImpactChange> changes, CancellationToken ct)
+    {
+        if (journeys is null || string.IsNullOrWhiteSpace(environmentId) || changes.Count == 0) return [];
+        IReadOnlyList<IntegrationJourneyPackView> packs;
+        try { packs = await journeys.PacksAsync(environmentId, ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRequestException) { return []; }
+        var archives = new[] { before.Archive.FileName, after.Archive.FileName };
+        var domains = string.Join(", ", changes.Select(c => c.Domain).Distinct());
+        return [.. packs.SelectMany(pack => pack.Journeys.Where(j => j.SourceArchives.Any(a => archives.Contains(a, StringComparer.OrdinalIgnoreCase)))
+            .Select(j => new TechnicalImpactItem($"Journey:{pack.PackId}/{j.Journey.JourneyId}", "Journey", $"{pack.PackId}/{j.Journey.JourneyId}", $"{pack.DisplayName} · {j.Journey.DisplayName}",
+                changes[0].Domain, TechnicalImpactLevel.Potential, "Inferred",
+                $"Potential journey impact: its bound source {after.Archive.FileName} changed ({domains}). Review the journey's readiness; nothing is re-run or marked failed.", [], [], [])))];
     }
 
     private static List<ImpactChange> Compare(IqrSourceSnapshot before, IqrSourceSnapshot after, List<string> limitations)

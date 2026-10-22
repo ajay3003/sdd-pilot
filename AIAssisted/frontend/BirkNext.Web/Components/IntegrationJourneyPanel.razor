@@ -367,6 +367,7 @@
                                 <div class="ijp-table" tabindex="0" role="region" aria-label="Last journey run" data-testid="ijp-last-run" data-state="@run.OverallState">
                                     <p><span class="ijp-pill ijp-pill-neutral">@IntegrationJourneyPresentation.Run(run.OverallState)</span> @run.StateReason</p>
                                     @if (run.InputSummary.Count > 0) { <ul class="ijp-notes" data-testid="ijp-run-inputs" aria-label="Run inputs (redacted)">@foreach (var item in run.InputSummary) { <li>@item</li> }</ul> }
+                                    @if (run.EvidenceContext is { } evidence) { <ul class="ijp-notes" data-testid="ijp-run-evidence-context" aria-label="Evidence the run started with">@foreach (var source in evidence.SourceSnapshots) { <li>Source: @source.Archive · analyzed @source.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</li> }@foreach (var data in evidence.TestData) { <li>Test Data: @data.Alias · version @(data.Fingerprint is { Length: > 12 } f ? f[..12] : data.Fingerprint ?? "n/a")</li> }@if (evidence.PackVersion.Length > 0) { <li>Test pack version @evidence.PackVersion</li> }</ul> }
                                     <table>
                                         <thead><tr><th scope="col">Step</th><th scope="col">State</th><th scope="col">Evidence</th><th scope="col">Reason</th></tr></thead>
                                         <tbody>@foreach (var step in run.Steps)

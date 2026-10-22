@@ -49,6 +49,9 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities => [];
     /// <summary>Generic Test Data capabilities the pack resolves through the shared Test Data catalog. Default: none.</summary>
     IReadOnlyList<TestPackCapabilityRequirement> RequiredTestDataCapabilities => [];
+    /// <summary>The Test Data roles a journey needs (domain requirements), resolved by the journey service through the shared Test Data catalog
+    /// — the pack never stores or copies a payload. Optional roles never block. Default: none.</summary>
+    IReadOnlyList<BirkNext.TestData.TestDataRequirement> TestDataRequirements(IntegrationJourneyDefinition journey) => [];
     /// <summary>The logical sources the pack needs (repositories/applications), each resolved through IQR bindings. Default: none declared.</summary>
     IReadOnlyList<TestPackSourceRole> SourceRoles => [];
     /// <summary>Reference metadata the pack ships for its <see cref="TestPackSourceProvider.TestPackReference"/> sources (by role key). Default: none.</summary>

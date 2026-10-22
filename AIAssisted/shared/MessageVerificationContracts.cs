@@ -19,7 +19,9 @@ public enum MessageEvidenceStage
 
 /// <summary>A verification result. Passed only when the evidence proves the expected result.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum MessageVerificationVerdict { Passed, Failed, Blocked, NotRun, NotEvaluated }
+/// <summary>ReviewRequired: evidence providers disagree about the same fact, so neither is taken automatically. Partly proven evidence stays
+/// NotEvaluated (its reason names what is proven): it never proves the business outcome.</summary>
+public enum MessageVerificationVerdict { Passed, Failed, Blocked, NotRun, NotEvaluated, ReviewRequired }
 
 /// <summary>
 /// What an evidence provider could do. QueryCompletedNoEvidence = the read ran inside its window and found nothing (not a failure);

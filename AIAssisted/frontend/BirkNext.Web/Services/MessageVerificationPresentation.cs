@@ -18,6 +18,7 @@ public static class MessageVerificationPresentation
         MessageVerificationVerdict.Failed => "Failed",
         MessageVerificationVerdict.Blocked => "Blocked",
         MessageVerificationVerdict.NotRun => "Not run",
+        MessageVerificationVerdict.ReviewRequired => "Review required",
         _ => "Not evaluated",
     };
 
@@ -25,7 +26,7 @@ public static class MessageVerificationPresentation
     {
         MessageVerificationVerdict.Passed => "ready",
         MessageVerificationVerdict.Failed => "danger",
-        MessageVerificationVerdict.Blocked => "attention",
+        MessageVerificationVerdict.Blocked or MessageVerificationVerdict.ReviewRequired => "attention",
         _ => "neutral",
     };
 

@@ -266,10 +266,13 @@ public sealed class SkoleNaervaerMessageEvidence(IntegrationJourneyRunStore hist
         {
             var runs = (await history.ListAsync(new IntegrationJourneyHistoryQuery(context.EnvironmentId, SkoleNaervaerJourneyPack.Id, SkoleNaervaerJourneyPack.RapportmottakId), 200, ct))
                 .Where(item => Mine(item) && item.Steps.Any(step => step.Correlation == reference)).ToArray();
-            source = runs.FirstOrDefault();
+            // An ambiguous reference stays unresolved: several recorded runs are never narrowed to the newest automatically — the tester names the run.
+            source = runs.Length == 1 ? runs[0] : null;
             matches = runs.Length;
-            altinn = Status(AltinnProvider, altinnName, "Altinn", source is null ? MessageEvidenceProviderState.QueryCompletedNoEvidence : MessageEvidenceProviderState.Available,
-                source is null ? $"No recorded run in this environment references {reference}." : $"{runs.Length} recorded run(s) reference {reference}; the most recent is used.", altinnBasis, "BirkNext operator");
+            altinn = Status(AltinnProvider, altinnName, "Altinn", runs.Length == 0 ? MessageEvidenceProviderState.QueryCompletedNoEvidence : MessageEvidenceProviderState.Available,
+                runs.Length == 0 ? $"No recorded run in this environment references {reference}."
+                : runs.Length == 1 ? $"1 recorded run references {reference}."
+                : $"{runs.Length} recorded runs reference {reference} — ambiguous: give the BirkNext run id to choose one (the newest is never chosen automatically).", altinnBasis, "BirkNext operator");
         }
         else altinn = Status(AltinnProvider, altinnName, "Altinn", MessageEvidenceProviderState.NotEvaluated, "No BirkNext run or Altinn instance was given.", altinnBasis, "BirkNext operator");
 
@@ -537,7 +540,7 @@ public static class SkoleNaervaerMessageVerification
         if (input.InstanceReference is { } given)
             result.Add(new("Altinn instance reference", given, "BirkNext run id", s.SourceRun?.RunId.ToString("N")[..8], SkoleNaervaerMessageEvidence.AltinnProvider, s.CollectedAt,
                 "A recorded run whose steps carry this reference", s.SourceRun is null ? MessageCorrelationCertainty.Uncorrelated : MessageCorrelationCertainty.ExactIdentifierMatch,
-                s.SourceRunMatches > 1 ? $"{s.SourceRunMatches} runs reference it; the most recent is used." : ""));
+                s.SourceRunMatches > 1 ? $"{s.SourceRunMatches} runs reference it — unresolved until the tester names one run." : ""));
         if (input.MessageId is { } id)
         {
             var text = id.ToString("D");
@@ -585,6 +588,10 @@ public static class SkoleNaervaerMessageVerification
                     : last.Utfall is "Avvist" or "Dodbrev" ? MessageVerificationVerdict.Failed : MessageVerificationVerdict.NotEvaluated, mmBasis);
         MessageAssertion Answered200()
         {
+            // Two providers about the same fact: when they disagree, neither wins automatically.
+            if (skoleAnswer is not null && skoleAnswer.Utfall != "Mottatt" && events.Any(item => item.Utfall == "Mottatt"))
+                return new("skole-200", "Skoletjenesten answered 200 Mottatt", "Mottatt", $"Conflicting evidence: Skoletjenesten logged {skoleAnswer.Utfall}; MM recorded Mottatt",
+                    MessageVerificationVerdict.ReviewRequired, "Skoletjenesten intake log vs MM outcome event");
             if (skoleAnswer is not null)
                 return new("skole-200", "Skoletjenesten answered 200 Mottatt", "Mottatt", skoleAnswer.Utfall!, skoleAnswer.Utfall == "Mottatt" ? MessageVerificationVerdict.Passed : MessageVerificationVerdict.Failed,
                     "Skoletjenesten intake log");
@@ -677,6 +684,8 @@ public static class SkoleNaervaerMessageVerification
     public static MessageVerificationVerdict Verdict(IReadOnlyList<MessageAssertion> assertions, out string reason)
     {
         if (assertions.Count == 0) { reason = "No assertion applies."; return MessageVerificationVerdict.NotEvaluated; }
+        if (assertions.FirstOrDefault(item => item.Verdict == MessageVerificationVerdict.ReviewRequired) is { } conflict)
+        { reason = $"Review required: evidence providers disagree about {conflict.Label} ({conflict.Observed}); nothing is passed automatically."; return MessageVerificationVerdict.ReviewRequired; }
         if (assertions.FirstOrDefault(item => item.Verdict == MessageVerificationVerdict.Failed) is { } failed) { reason = $"Failed: {failed.Label} — observed {failed.Observed}."; return MessageVerificationVerdict.Failed; }
         if (assertions.All(item => item.Verdict == MessageVerificationVerdict.Passed)) { reason = "Every assertion is proven by the evidence."; return MessageVerificationVerdict.Passed; }
         var open = assertions.Where(item => item.Verdict != MessageVerificationVerdict.Passed).Select(item => item.Label).ToArray();

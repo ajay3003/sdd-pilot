@@ -4,6 +4,7 @@ using BirkNext.Api.Services.ContractEvolution;
 using BirkNext.Api.Services.Integrations;
 using BirkNext.Integrations;
 using BirkNext.SourceDomains;
+using BirkNext.TestData;
 
 namespace BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 
@@ -85,6 +86,41 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new(SkoleNaervaerTestData.ReporterRole, "Synthetic reporter reference", "Test Data", "An approved, validated synthetic reporter for the target test environment."),
         new(SkoleNaervaerTestData.ChildRole, "Approved synthetic identity", "Test Data", "An approved synthetic person declared known or unknown to Person; never a real identity."),
     ];
+
+    /// <summary>
+    /// Domain Test Data per journey, resolved by the journey service through the shared Test Data catalog (the pack keeps no payload copies).
+    /// Roles the current executors do not consume are optional references: missing ones are journey prerequisites, never product defects, and
+    /// never block. Identities are controlled references only — a protected (Kode 6/7) identity is never generated.
+    /// </summary>
+    public IReadOnlyList<TestDataRequirement> TestDataRequirements(IntegrationJourneyDefinition journey) => journey.JourneyId switch
+    {
+        RapportmottakId =>
+        [
+            SkoleNaervaerTestData.Reporter,
+            SkoleNaervaerTestData.Child(knownToPerson: true),
+            Optional("Valid report payload", TestDataKind.Structured, "skolenaervaer-report"),
+            Optional("Invalid-format payload", TestDataKind.Structured, "skolenaervaer-report", "negative-test"),
+            Optional("Duplicate-report reference", TestDataKind.Structured, "skolenaervaer-report", "duplicate"),
+            Optional("Protected identity reference", TestDataKind.EntityReference, "protected-identity") with { EntityType = "person" },
+            Optional("Reporting period", TestDataKind.ReferenceData, "reporting-period"),
+            Optional("Expected downstream result", TestDataKind.ExpectedResult, "skolenaervaer-report-outcome"),
+        ],
+        UtdanningsdataId =>
+        [
+            Optional("Synthetic child known to Person", TestDataKind.EntityReference, "synthetic", AltinnTestDataProvider.KnownToPerson) with { EntityType = "person" },
+            Optional("Education CDC row", TestDataKind.Structured, "utdanning-cdc-row"),
+            Optional("Expected Utdanning result", TestDataKind.ExpectedResult, "utdanning-outcome"),
+        ],
+        PeriodeavslutningId =>
+        [
+            new() { Role = "Closed reporting period", Kind = TestDataKind.ReferenceData, Capabilities = ["reporting-period", "closed"] },
+            Optional("Expected Bufdata dataset metadata", TestDataKind.ExpectedResult, "bufdata-dataset"),
+        ],
+        _ => [],
+    };
+
+    private static TestDataRequirement Optional(string role, TestDataKind kind, params string[] capabilities) =>
+        new() { Role = role, Kind = kind, Capabilities = [.. capabilities], Optional = true };
 
     private const string AltinnAppSource = "Altinn Skolenærvær app";
     public const string MuSource = "mu";

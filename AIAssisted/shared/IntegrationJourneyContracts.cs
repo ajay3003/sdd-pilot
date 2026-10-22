@@ -179,6 +179,51 @@ public sealed record IntegrationJourneyView
     /// <summary>Every scenario with its execution status and declared verification capability (for a delegated journey, its provider's catalog).</summary>
     public IReadOnlyList<JourneyScenarioCapability> ScenarioCapabilities { get; init; } = [];
     public IntegrationJourneyRunSummary? LastRun { get; init; }
+    /// <summary>Separate readiness per dimension (integration, contracts, source bindings, infrastructure, environment, Test Data, test evidence,
+    /// execution, verification, optional delivery), each composed from the shared evidence owner it names — never collapsed into one score.</summary>
+    public IReadOnlyList<JourneyReadinessDimension> Dimensions { get; init; } = [];
+    /// <summary>What the last run established, kept apart from readiness: executed ≠ verified.</summary>
+    public JourneyAssessmentState Assessment { get; init; } = JourneyAssessmentState.NotRun;
+    /// <summary>Archives of the source snapshots IQR binds to this journey's integrations (identity only), so Impact Analysis can name
+    /// journeys whose canonical source changed without owning journey logic.</summary>
+    public IReadOnlyList<string> SourceArchives { get; init; } = [];
+}
+
+/// <summary>The readiness dimensions of a journey. Generic: a pack declares requirements; the journey service composes shared evidence.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyDimension { Integration, Contracts, SourceBindings, Infrastructure, EnvironmentConfiguration, TestData, TestEvidence, Execution, Verification, Delivery }
+
+/// <summary>One dimension's state. Declared/available evidence is never "Ready" for a runtime fact: infrastructure declared in source is Partial.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyDimensionState { Ready, Partial, ReviewRequired, Missing, Blocked, NotAssessed }
+
+/// <summary>The last run's outcome as an assessment: not run, executed but not verified, partially verified, verified, failed or blocked.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum JourneyAssessmentState { NotRun, ExecutedNotVerified, Partial, Verified, Failed, Blocked }
+
+/// <summary>
+/// One readiness dimension of a journey: its state, the evidence it was composed from (counts and states, never values), and the feature that
+/// owns the fix (<see cref="OwnerKey"/>: integrations, execution-settings, iqr-evidence, source-contracts, source-infrastructure, test-data,
+/// test-coverage, pipeline-review, verify, local-execution). An optional dimension never blocks a journey.
+/// </summary>
+public sealed record JourneyReadinessDimension(JourneyDimension Dimension, string Label, JourneyDimensionState State, string Evidence, string Owner, string OwnerKey, bool Optional = false)
+{
+    /// <summary>Supporting facts (one line each), e.g. "Producer contract: Available", "Runtime validation: Not assessed".</summary>
+    public IReadOnlyList<string> Items { get; init; } = [];
+    /// <summary>The shared evidence family the dimension was read from ("Contract & Schema Evidence", "Test Data catalog" …).</summary>
+    public string Provenance { get; init; } = "";
+}
+
+/// <summary>A source snapshot a run's readiness was assessed against (identity only).</summary>
+public sealed record JourneyRunSourceReference(Guid SnapshotId, string Archive, DateTimeOffset AnalyzedAt);
+
+/// <summary>The exact evidence context a run started with — kept immutable with the run, so history never re-reads current evidence.</summary>
+public sealed record JourneyRunEvidenceContext
+{
+    public string PackVersion { get; init; } = "";
+    public IReadOnlyList<JourneyRunSourceReference> SourceSnapshots { get; init; } = [];
+    /// <summary>Test Data versions (alias + fingerprint) the run could only have used — deterministic resolutions; never a value.</summary>
+    public IReadOnlyList<BirkNext.TestData.TestDataUsage> TestData { get; init; } = [];
 }
 
 public sealed record IntegrationJourneyPackView
@@ -259,6 +304,8 @@ public sealed record IntegrationJourneyRun
     public string? InitiatedBy { get; init; }
     /// <summary>For a read-only message verification run: its sanitized evidence, correlations and assertions (null for every other run).</summary>
     public MessageVerificationRecord? MessageVerification { get; init; }
+    /// <summary>The source snapshots and Test Data versions the run started with (null for runs recorded before this was kept).</summary>
+    public JourneyRunEvidenceContext? EvidenceContext { get; init; }
 }
 
 public sealed record IntegrationJourneyRunSummary(Guid RunId, string PackId, string JourneyId, string ScenarioId, string EnvironmentId, JourneyRunState State,

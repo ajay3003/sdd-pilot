@@ -117,13 +117,29 @@
             }
 
             <h3 class="snt-subheading" id="snt-journeys-heading">Journeys</h3>
+            @if (_pack is not null && JourneyReadinessPresentation.Attention(Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>()) is var attention)
+            {
+                <div class="snt-attention-categories" data-testid="snt-attention-categories">
+                    <p data-testid="snt-attention-summary"><strong>@JourneyReadinessPresentation.AttentionSummary(attention)</strong></p>
+                    @if (attention.Count > 0)
+                    {
+                        <ul class="snt-attention-owner-list">
+                            @foreach (var category in attention)
+                            {
+                                var href = JourneyReadinessPresentation.OwnerHref(category.OwnerKey, _profile?.Id);
+                                <li data-testid="snt-attention-category" data-dimension="@category.Dimension">@category.Label (@category.Count: @string.Join(", ", category.Journeys)) — owner: @category.Owner@if (href is not null) { <text> · </text><a href="@href">@JourneyReadinessPresentation.OwnerAction(category.OwnerKey)</a> }</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
             @if (_initialized && _profile is null)
             {
                 <p role="status" data-testid="snt-journeys-not-ready">Journey readiness is not available until a Target Environment is selected. Nothing has been run or assessed.</p>
             }
             <div class="snt-scroll" role="region" aria-labelledby="snt-journeys-heading">
                 <table class="snt-table snt-stack" role="table" data-testid="snt-journeys">
-                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Journey</th><th role="columnheader" scope="col">Configuration</th><th role="columnheader" scope="col">Source evidence</th><th role="columnheader" scope="col">Execution</th><th role="columnheader" scope="col">Attention</th><th role="columnheader" scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+                    <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">Journey</th><th role="columnheader" scope="col">Integration</th><th role="columnheader" scope="col">Contract</th><th role="columnheader" scope="col">Test Data</th><th role="columnheader" scope="col">Execution</th><th role="columnheader" scope="col">Verification</th><th role="columnheader" scope="col">Attention</th><th role="columnheader" scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
                     <tbody role="rowgroup">
                         @foreach (var journey in Journeys)
                         {
@@ -131,13 +147,16 @@
                             var actions = view is null ? 0 : AttentionGroups(journey.JourneyId).Count;
                             <tr role="row" class="snt-journey-row" data-testid="snt-journey" data-journey="@journey.JourneyId">
                                 <th role="rowheader" scope="row"><span class="snt-journey-name">@journey.DisplayName</span><span class="snt-flow">@journey.Flow</span></th>
-                                <td role="cell" data-label="Configuration">@Dimension("Configuration", view is null ? Unknown : JourneyConfiguration(view))</td>
-                                <td role="cell" data-label="Source evidence">@Dimension("Source evidence", view is null ? Unknown : TestPackPresentation.SourceEvidence(view))
+                                <td role="cell" data-label="Integration" data-testid="snt-matrix-integration">@Dimension("Integration", view is null ? Unknown : MatrixValue(view, JourneyDimension.Integration, JourneyConfiguration(view)))
                                     @if (SourceGuidancePresentation.ForJourney(_guidance, journey.JourneyId) is { Count: > 0 } sources)
                                     {
-                                        <span class="snt-journey-sources" data-testid="snt-journey-sources">@string.Join(" · ", sources.Select(SourceGuidancePresentation.SourceShort))</span>
+                                        <span class="snt-journey-sources" data-testid="snt-journey-sources">Source: @string.Join(" · ", sources.Select(SourceGuidancePresentation.SourceShort))</span>
                                     }</td>
+                                <td role="cell" data-label="Contract" data-testid="snt-matrix-contract">@Dimension("Contract", view is null ? Unknown : MatrixValue(view, JourneyDimension.Contracts, "Not assessed"))</td>
+                                <td role="cell" data-label="Test Data" data-testid="snt-matrix-test-data">@Dimension("Test Data", view is null ? Unknown : MatrixValue(view, JourneyDimension.TestData, "Not assessed"))</td>
                                 <td role="cell" data-label="Execution" data-testid="snt-journey-status">@Dimension("Execution readiness", view is null ? Unknown : TestPackPresentation.ExecutionReadiness(view))</td>
+                                <td role="cell" data-label="Verification" data-testid="snt-matrix-verification">@Dimension("Verification", view is null ? Unknown : MatrixValue(view, JourneyDimension.Verification, "Not assessed"))
+                                    @if (view is not null) { <span class="snt-journey-sources" data-testid="snt-matrix-assessment">Last run: @JourneyReadinessPresentation.AssessmentLabel(view.Assessment)</span> }</td>
                                 <td role="cell" data-label="Attention" data-testid="snt-journey-blockers">@(view is null ? "—" : actions == 0 ? "None" : $"{actions} action{(actions == 1 ? "" : "s")}")</td>
                                 <td role="cell"><a class="btn-secondary snt-open" href="@TabHref(journey.JourneyId)" @onclick="() => SelectTabAsync(journey.JourneyId)" @onclick:preventDefault
                                        aria-label="@($"Open {journey.DisplayName}")" data-testid="snt-journey-open">Open</a></td>
@@ -447,7 +466,7 @@
     private static string Tone(string value) => value switch
     {
         "Configured" or "Verified" or "Ready" or "Available (read-only)" => "ready",
-        "Partial" => "attention",
+        "Partial" or "Review required" or "Partially verified" or "Executed · not verified" => "attention",
         "Not configured" or "Missing" or "Missing integration" or "Blocked" or "Not available" or "Not ready" or "Available · needs binding" => "attention",
         _ => "neutral",
     };
@@ -458,9 +477,14 @@
             <span><span class="snt-dimension-label">Configuration</span> @Dimension("Configuration", JourneyConfiguration(view))</span>
             <span><span class="snt-dimension-label">Source evidence</span> @Dimension("Source evidence", TestPackPresentation.SourceEvidence(view))</span>
             <span><span class="snt-dimension-label">Execution</span> @Dimension("Execution readiness", TestPackPresentation.ExecutionReadiness(view))</span>
-            <span><span class="snt-dimension-label">Assessment</span> @Dimension("Assessment", "Not assessed")</span>
+            <span><span class="snt-dimension-label">Assessment</span> @Dimension("Assessment", JourneyReadinessPresentation.AssessmentLabel(view.Assessment))</span>
         </div>
+        <JourneyReadinessDimensions View="view" ProfileId="@_profile?.Id" />
     };
+
+    /// <summary>A matrix cell from the journey's shared readiness dimension (fallback when the backend sent none).</summary>
+    private static string MatrixValue(IntegrationJourneyView view, JourneyDimension dimension, string fallback) =>
+        JourneyReadinessPresentation.Get(view, dimension) is { } d ? JourneyReadinessPresentation.StateLabel(d.State) : fallback;
 
     /// <summary>Group titles in this pack's own terms; the grouping itself is the shared, generic one.</summary>
     private static readonly IReadOnlyDictionary<string, string> GroupTitles = new Dictionary<string, string>(StringComparer.Ordinal)

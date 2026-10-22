@@ -1,0 +1,42 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.JourneyReadinessPresentation
+
+@* A journey's readiness per dimension (generic, any test pack): each row is the requirement, the current shared evidence, its state, the owning
+   feature and an action that navigates to it — the test pack never edits another owner's configuration. Optional dimensions never block. *@
+<section class="sd-source-contracts" aria-labelledby="@($"{IdPrefix}-heading")" data-testid="journey-dimensions" data-journey="@View.Journey.JourneyId">
+    <h3 class="sd-reason" id="@($"{IdPrefix}-heading")"><strong>Readiness by dimension</strong> <span class="sd-muted">· last run: <span data-testid="journey-assessment">@P.AssessmentLabel(View.Assessment)</span></span></h3>
+    @if (View.Dimensions.Count == 0)
+    {
+        <p class="sd-muted" data-testid="journey-dimensions-none">Readiness dimensions are not available for this journey.</p>
+    }
+    else
+    {
+        <ul class="sd-rows" data-testid="journey-dimension-list">
+            @foreach (var d in View.Dimensions)
+            {
+                var href = P.OwnerHref(d.OwnerKey, ProfileId);
+                <li class="sd-row" data-testid="journey-dimension" data-dimension="@d.Dimension" data-state="@d.State">
+                    <div>
+                        <strong>@d.Label</strong>@if (d.Optional) { <span class="sd-muted"> · optional</span> }
+                        <span class="sd-pill sd-pill-@(P.Tone(d.State) switch { "ready" => "complete", "partial" => "partial", "attention" => "attention", _ => "muted" })" data-testid="journey-dimension-state">@P.StateLabel(d.State)</span>
+                    </div>
+                    <p class="sd-reason" data-testid="journey-dimension-evidence">@d.Evidence</p>
+                    <p class="sd-muted">Owner: <span data-testid="journey-dimension-owner">@d.Owner</span>@if (href is not null && d.State != JourneyDimensionState.Ready) { <text> · </text><a href="@href" data-testid="journey-dimension-action">@P.OwnerAction(d.OwnerKey)</a> }</p>
+                    @if (d.Items.Count > 0 || d.Provenance.Length > 0)
+                    {
+                        <ReviewDisclosure Text="Evidence and provenance" CollapseText="Hide evidence" TestId="@($"{IdPrefix}-{d.Dimension}")" Class="disclosure-inline disclosure-small">
+                            @if (d.Provenance.Length > 0) { <p class="sd-muted">From: @d.Provenance</p> }
+                            <ul class="sd-list">@foreach (var item in d.Items) { <li>@item</li> }</ul>
+                        </ReviewDisclosure>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public IntegrationJourneyView View { get; set; } = default!;
+    [Parameter] public string? ProfileId { get; set; }
+    private string IdPrefix => $"jd-{View.Journey.JourneyId}";
+}

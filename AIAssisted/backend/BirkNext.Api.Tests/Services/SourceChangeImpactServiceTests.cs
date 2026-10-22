@@ -303,6 +303,37 @@ public sealed class SourceChangeImpactServiceTests
         catalog.View().Assets.Single().Approval.Should().Be(BirkNext.TestData.TestDataApproval.Approved, "impact never changes an asset's approval");
     }
 
+    [Fact]
+    public async Task A_change_to_a_journeys_bound_source_names_the_journey_as_a_potential_impact_without_owning_its_logic()
+    {
+        await using var db = Db();
+        const string Xsd = """
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:r" elementFormDefault="qualified">
+              <xs:element name="Report"><xs:complexType><xs:sequence><xs:element name="Id" type="xs:string" /><xs:element name="Hours" type="xs:decimal" /></xs:sequence></xs:complexType></xs:element>
+            </xs:schema>
+            """;
+        SourceEvidenceDomainsSnapshot Domains(string xsd) => new() { Contracts = new ContractEvidence { Contracts = [BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadXmlSchema("schemas/report.xsd", xsd)] } };
+        var before = Snapshot("v1", []) with { EvidenceDomains = Domains(Xsd) };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1), EvidenceDomains = Domains(Xsd.Replace("""<xs:element name="Hours" type="xs:decimal" />""", "")) };
+        var journeys = new Moq.Mock<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService>();
+        journeys.Setup(j => j.PacksAsync("dev", Moq.It.IsAny<CancellationToken>())).Returns(Task.FromResult<IReadOnlyList<IntegrationJourneyPackView>>(
+        [
+            new IntegrationJourneyPackView { PackId = "orders", DisplayName = "Orders", Journeys =
+            [
+                new IntegrationJourneyView { Journey = new() { PackId = "orders", JourneyId = "intake", DisplayName = "Intake" }, SourceArchives = ["Acme.Orders.zip"] },
+                new IntegrationJourneyView { Journey = new() { PackId = "orders", JourneyId = "billing", DisplayName = "Billing" }, SourceArchives = ["Billing.zip"] },
+            ] },
+        ]));
+
+        var report = await new SourceChangeImpactService(db, new SnapshotProvider([before, after]), null, journeys.Object).AnalyzeAsync(Request(before, after), default);
+
+        var journey = report!.TechnicalImpacts.Should().ContainSingle(i => i.EntityType == "Journey").Subject;
+        journey.DisplayName.Should().Be("Orders · Intake");
+        journey.Level.Should().Be(TechnicalImpactLevel.Potential);
+        journey.Reason.Should().Contain("nothing is re-run or marked failed");
+        journeys.Verify(j => j.StartAsync(Moq.It.IsAny<IntegrationJourneyRunRequest>(), Moq.It.IsAny<string?>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Never);
+    }
+
     private sealed class OneAssetProvider(BirkNext.Api.Services.TestData.TestDataAsset asset) : BirkNext.Api.Services.TestData.ITestDataProvider
     {
         public string Id => "fixture";
