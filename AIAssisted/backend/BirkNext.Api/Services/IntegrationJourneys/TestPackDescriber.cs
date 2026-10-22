@@ -29,6 +29,7 @@ public static class TestPackDescriber
             new("Overview", [new(OverviewViewId, "Overview", TestPackViewKind.Overview)]),
             new("Journeys", journeys.Select(journey => new TestPackView(journey.JourneyId, journey.DisplayName, TestPackViewKind.Journey, journey.JourneyId)).ToList()),
         };
+        if (pack.SecurityView is { } security) navigation.Add(new("Security", [security with { Kind = TestPackViewKind.Security }]));
         var verify = verification.Concat(pack.Rules.Count > 0 ? [new TestPackView(RulesViewId, "Architecture Rules", TestPackViewKind.Rules)] : Array.Empty<TestPackView>()).ToList();
         if (verify.Count > 0) navigation.Add(new("Verify", verify));
         if (pack.SupportsHistory) navigation.Add(new("History", [new(HistoryViewId, "History", TestPackViewKind.History)]));

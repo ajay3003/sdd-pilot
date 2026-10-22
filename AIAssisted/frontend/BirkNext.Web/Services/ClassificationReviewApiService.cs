@@ -16,6 +16,9 @@ public interface IClassificationReviewApiService
     /// <summary>Throws <see cref="InvalidOperationException"/> with the backend's reason when the source scope is rejected.</summary>
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
+    /// <summary>Each consumer's assessment (M01, Skolenærvær …) of the same shared evidence; null when unavailable.</summary>
+    Task<IReadOnlyList<SecurityClassificationConsumerAssessment>?> ConsumersAsync(string environmentId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<SecurityClassificationConsumerAssessment>?>(null);
 }
 
 public sealed class ClassificationReviewApiService(HttpClient http) : IClassificationReviewApiService
@@ -62,5 +65,11 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct);
+    }
+
+    public async Task<IReadOnlyList<SecurityClassificationConsumerAssessment>?> ConsumersAsync(string environmentId, CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<SecurityClassificationConsumerAssessment>>($"api/security-classification/consumers?{Env(environmentId)}", Json, ct); }
+        catch (HttpRequestException) { return null; }
     }
 }

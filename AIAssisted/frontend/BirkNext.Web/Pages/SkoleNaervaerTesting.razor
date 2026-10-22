@@ -320,6 +320,21 @@
             }
         </section>
     }
+    else if (CurrentView is { Kind: TestPackViewKind.Security } securityView)
+    {
+        <section id="snt-security" class="snt-panel" aria-labelledby="snt-security-heading" data-testid="snt-security">
+            <h2 id="snt-security-heading" tabindex="-1">@securityView.DisplayName</h2>
+            <p class="snt-muted">@securityView.Description Shared requirements come from the one Security Classification review; the Skolenærvær rules below are this extension's own. Nothing runs from this page.</p>
+            @if (_profile is null)
+            {
+                <p role="status" data-testid="snt-security-not-ready">Not available until a Target Environment is selected.</p>
+            }
+            else
+            {
+                <SecurityConsumerProjection EnvironmentId="@_profile.Id" ConsumerId="@PackId" />
+            }
+        </section>
+    }
     else if (CurrentView is { Kind: TestPackViewKind.History })
     {
         <section id="snt-history" class="snt-panel" aria-labelledby="snt-history-heading">
@@ -422,6 +437,7 @@
         new("Overview", [new(TestPackOverview, "Overview", TestPackViewKind.Overview)]),
         new("Journeys", [new("utdanningsdata", "Utdanningsdata", TestPackViewKind.Journey, "utdanningsdata"), new(RapportmottakId, "Rapportmottak", TestPackViewKind.Journey, RapportmottakId),
             new(PeriodeavslutningId, "Periodeavslutning", TestPackViewKind.Journey, PeriodeavslutningId)]),
+        new("Security", [new("security", "Security / Gradert tilgang", TestPackViewKind.Security)]),
         new("Verify", [new("message-verification", "Message Verification", TestPackViewKind.Verification, RapportmottakId, "message-verification", "Read-only verification of what happened to one message."),
             new("architecture-rules", "Architecture Rules", TestPackViewKind.Rules)]),
         new("History", [new("history", "History", TestPackViewKind.History)]),
@@ -808,7 +824,7 @@
     {
         _tab = key;
         _focusAfterRender = CurrentView is { Kind: TestPackViewKind.Journey, JourneyId: { } journey } ? $"{SectionId(journey)}-heading"
-            : CurrentView?.Kind switch { TestPackViewKind.Verification => "snt-verification-heading", TestPackViewKind.Rules => "snt-rules-heading", TestPackViewKind.History => "snt-history-heading", _ => "snt-overview-heading" };
+            : CurrentView?.Kind switch { TestPackViewKind.Verification => "snt-verification-heading", TestPackViewKind.Rules => "snt-rules-heading", TestPackViewKind.History => "snt-history-heading", TestPackViewKind.Security => "snt-security-heading", _ => "snt-overview-heading" };
         Navigation.NavigateTo(TabHref(key));
         await LoadForTabAsync();
     }

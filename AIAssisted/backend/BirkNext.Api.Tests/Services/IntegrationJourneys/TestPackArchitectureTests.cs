@@ -171,8 +171,8 @@ public sealed class TestPackArchitectureTests
         descriptor.VerificationViews.Should().ContainSingle().Which.Should().Be(new TestPackView("message-verification", "Message Verification", TestPackViewKind.Verification,
             "rapportmottak", "message-verification", "Read-only verification of what happened to one message, from recorded and telemetry evidence."));
         descriptor.RuleIds.Should().Equal("mm-no-person", "skoleadapter-no-person", "utdanning-person", "rapport-person");
-        descriptor.Navigation.Select(group => group.Label).Should().Equal("Overview", "Journeys", "Verify", "History");
-        ViewIds(descriptor).Should().Equal("overview", "utdanningsdata", "rapportmottak", "periodeavslutning", "message-verification", "architecture-rules", "history");
+        descriptor.Navigation.Select(group => group.Label).Should().Equal("Overview", "Journeys", "Security", "Verify", "History");
+        ViewIds(descriptor).Should().Equal("overview", "utdanningsdata", "rapportmottak", "periodeavslutning", "security", "message-verification", "architecture-rules", "history");
         descriptor.RequiredTestDataCapabilities.Select(item => item.Owner).Should().OnlyContain(owner => owner == "Test Data");
         descriptor.SupportsHistory.Should().BeTrue();
         TestPackDescriber.FindView(descriptor, "rapportmottak")!.Kind.Should().Be(TestPackViewKind.Journey);

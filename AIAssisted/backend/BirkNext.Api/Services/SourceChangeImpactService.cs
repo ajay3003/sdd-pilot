@@ -15,7 +15,8 @@ namespace BirkNext.Api.Services;
 
 /// <summary>Builds technical impact from exact Source Analysis snapshots, then enriches it with persisted QA traceability.</summary>
 public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvidenceProvider sources, BirkNext.Api.Services.TestData.TestDataCatalog? testData = null,
-    BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService? journeys = null)
+    BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyService? journeys = null,
+    IEnumerable<BirkNext.Api.Services.SecurityClassification.ISecurityClassificationConsumer>? securityConsumers = null)
 {
     public async Task<IReadOnlyList<ImpactSnapshotOption>> ListSnapshotsAsync(string environmentId, CancellationToken ct)
     {
@@ -61,6 +62,13 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
                     TechnicalImpactLevel.Potential, "Inferred", $"{affected.State}: {affected.Reason}", [], [], []));
         }
         impacts.AddRange(await JourneyImpactsAsync(request.EnvironmentId, before, after, changes, ct));
+        // Shared Security Classification: a changed classification rule reaches every consumer of the capability (M01, Skolenærvær …);
+        // each consumer's assessment is re-read, never re-run or marked failed.
+        if (securityConsumers is not null && SecurityClassificationAssessments.ChangedRules(before.SecurityClassificationEvidence, after.SecurityClassificationEvidence) is { Count: > 0 } changedRules)
+            foreach (var consumer in securityConsumers.Select(c => c.Definition))
+                impacts.Add(new TechnicalImpactItem($"Security consumer:{consumer.ConsumerId}", "Security classification consumer", consumer.ConsumerId, consumer.DisplayName,
+                    changes.FirstOrDefault()?.Domain ?? ImpactChangeDomain.Unclassified, TechnicalImpactLevel.Potential, "Inferred",
+                    $"Potential impact: classification rule(s) changed ({string.Join(", ", changedRules.Take(5))}{(changedRules.Count > 5 ? " …" : "")}). Re-review {consumer.DisplayName}'s security assessment; nothing is re-run.", [], [], []));
 
         // Traceability is deliberately a second stage: no links can remove or downgrade a technical impact.
         var files = impacts.SelectMany(i => i.SourceFiles).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);

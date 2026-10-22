@@ -639,6 +639,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassif
     sp.GetRequiredService<BirkNext.Api.Services.SecurityClassification.ClassificationTestContextStore>(), sp.GetRequiredService<ILogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>>(),
     sp.GetService<IHttpContextAccessor>()?.HttpContext?.User.Identity is { IsAuthenticated: true, Name: { Length: > 0 } name } ? name : "local",
     sp.GetRequiredService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
+// Security Classification as a shared capability: consumers (M01, Skolenærvær …) read one assessment of the same stored evidence.
+builder.Services.AddSingleton<BirkNext.Api.Services.SecurityClassification.ISecurityClassificationConsumer, BirkNext.Api.Services.SecurityClassification.M01SecurityClassificationConsumer>();
+builder.Services.AddSingleton<BirkNext.Api.Services.SecurityClassification.ISecurityClassificationConsumer, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerSecurityConsumer>();
+builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.SecurityClassificationConsumerService>();
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of Source Analysis snapshots, inventories and SBOMs.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewSourceScopeService, BirkNext.Api.Services.DependencyReview.DependencyReviewSourceScopeService>();

@@ -62,10 +62,10 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         var page = Open();
 
         page.FindAll("[data-testid=snt-nav]").Should().ContainSingle("the page has exactly one primary navigation");
-        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().Equal(["Overview", "Journeys", "Verify", "History"], "four top-level areas, never seven equal tabs");
+        page.FindAll(".snt-nav a").Select(a => a.TextContent).Should().Equal(["Overview", "Journeys", "Security", "Verify", "History"], "five top-level areas, never eight equal tabs");
         // Path-qualified links: with <base href="/"> a bare "?tab" or "#id" would leave the page. An area opens its first view.
         page.FindAll(".snt-nav a").Select(a => a.GetAttribute("href")).Should().Equal("extensions/skolenaervaer", "extensions/skolenaervaer?tab=utdanningsdata",
-            "extensions/skolenaervaer?tab=message-verification", "extensions/skolenaervaer?tab=history");
+            "extensions/skolenaervaer?tab=security", "extensions/skolenaervaer?tab=message-verification", "extensions/skolenaervaer?tab=history");
         page.FindAll(".snt-nav a[aria-current=page]").Select(a => a.TextContent).Should().Equal("Overview");
         page.FindAll("[data-testid=snt-subnav]").Should().BeEmpty("the overview has no secondary navigation");
         page.FindAll(".snt-panel").Should().ContainSingle().Which.Id.Should().Be("snt-overview");
@@ -246,6 +246,27 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         row.QuerySelector("[data-testid=journey-dimension-owner]")!.TextContent.Should().Be("Test Data");
         row.QuerySelector("[data-testid=journey-dimension-action]")!.GetAttribute("href").Should().Be("/test-data");
         row.QuerySelectorAll("input, select, textarea").Should().BeEmpty("the test pack links to the owner instead of editing shared Test Data");
+    }
+
+    [Fact]
+    public void The_security_area_projects_the_shared_classification_evidence_without_its_own_source_or_context()
+    {
+        WithTarget();
+        var classification = new Mock<IClassificationReviewApiService>();
+        classification.Setup(a => a.ConsumersAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(
+        [
+            new SecurityClassificationConsumerAssessment("skolenaervaer", "Skolenærvær", "Gradert tilgang across the Skolenærvær journeys", null, null,
+                [new("bufdata-exclusion", "Bufdata exclusion rule", SecurityRequirementState.NotTested, "The Bufdata dataset must not contain fødselsnummer or DUF.", "No runtime evidence for this domain rule yet.", "Skolenærvær Testing") { DomainSpecific = true }],
+                "1 of 1 requirement(s) not verified yet."),
+        ]);
+        Services.AddSingleton(classification.Object);
+        var page = Open("security");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=sc-consumer]").Should().ContainSingle().Which.GetAttribute("data-consumer").Should().Be("skolenaervaer"));
+        page.Find("#snt-security-heading").TextContent.Should().Be("Security / Gradert tilgang");
+        page.Find("[data-testid=sc-open-full-review]").GetAttribute("href").Should().Be("/security-classification-review");
+        page.Find("[data-testid=snt-security]").QuerySelectorAll("input, select, textarea").Should().BeEmpty("no duplicate source selection or test context");
+        classification.Verify(a => a.SaveContextAsync(It.IsAny<string>(), It.IsAny<ClassificationTestContext>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private sealed class FakeTopology(IReadOnlyList<BirkNext.IntegrationTopology.TopologyPathResult> paths) : IIntegrationTopologyApiService
@@ -431,7 +452,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
     {
         WithTarget();
         var page = Open();
-        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-nav] a.snt-tab").Should().HaveCount(4));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=snt-nav] a.snt-tab").Should().HaveCount(5));
         page.FindAll("[data-testid=snt-nav] ul, [data-testid=snt-nav] li").Should().BeEmpty("no bullets, even before styles load");
     }
 
@@ -792,6 +813,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
                 new("Overview", [new("overview", "Overview", TestPackViewKind.Overview)]),
                 new("Journeys", [new("utdanningsdata", "Utdanningsdata", TestPackViewKind.Journey, "utdanningsdata"), new("rapportmottak", "Rapportmottak", TestPackViewKind.Journey, "rapportmottak"),
                     new("periodeavslutning", "Periodeavslutning", TestPackViewKind.Journey, "periodeavslutning")]),
+                new("Security", [new("security", "Security / Gradert tilgang", TestPackViewKind.Security, Description: "From the shared Security Classification evidence.")]),
                 new("Verify", [new("message-verification", "Message Verification", TestPackViewKind.Verification, "rapportmottak", "message-verification"), new("architecture-rules", "Architecture Rules", TestPackViewKind.Rules)]),
                 new("History", [new("history", "History", TestPackViewKind.History)]),
             ],

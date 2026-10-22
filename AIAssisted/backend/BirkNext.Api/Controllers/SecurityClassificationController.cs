@@ -51,6 +51,13 @@ public sealed class SecurityClassificationController(IClassificationReviewServic
         catch (InvalidSourceSelectionException e) { return BadRequest(e.Message); }
     }
 
+    /// <summary>Each consumer's assessment (M01, Skolenærvær …) of the same shared evidence: latest stored review, canonical test context,
+    /// approved controlled identity references. Read-only.</summary>
+    [HttpGet("consumers")]
+    public async Task<ActionResult<IReadOnlyList<SecurityClassificationConsumerAssessment>>> Consumers([FromServices] BirkNext.Api.Services.SecurityClassification.SecurityClassificationConsumerService consumers,
+        [FromQuery] string environmentId, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await consumers.AssessAsync(environmentId, ct));
+
     [HttpGet("runs/{runId:guid}")]
     public async Task<ActionResult<ClassificationReviewResult>> GetRun(Guid runId, CancellationToken ct) =>
         await reviews.GetRunAsync(runId, ct) is { } run ? Ok(run) : NotFound();

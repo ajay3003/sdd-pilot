@@ -91,6 +91,7 @@
     <Compile Include="../../shared/QualityEvidenceContracts.cs" Link="Models/QualityEvidenceContracts.cs" />
     <Compile Include="../../shared/DataModelEvidenceContracts.cs" Link="Models/DataModelEvidenceContracts.cs" />
     <Compile Include="../../shared/TestDataLifecycleContracts.cs" Link="Models/TestDataLifecycleContracts.cs" />
+    <Compile Include="../../shared/SecurityClassificationAssessmentContracts.cs" Link="Models/SecurityClassificationAssessmentContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
     <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />
     <Compile Include="../../shared/GraphQlSchemaArtifactContracts.cs" Link="Models/GraphQlSchemaArtifactContracts.cs" />

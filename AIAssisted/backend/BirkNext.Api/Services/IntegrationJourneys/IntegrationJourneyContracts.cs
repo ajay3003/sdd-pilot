@@ -45,6 +45,8 @@ public interface IIntegrationJourneyPack
     IReadOnlyList<string> Limitations { get; }
     /// <summary>Read-only verification views the pack offers next to its journeys (e.g. verifying what happened to one message). Default: none.</summary>
     IReadOnlyList<TestPackView> VerificationViews => [];
+    /// <summary>The pack's read-only projection of the shared Security Classification capability (its consumer id is the pack id). Default: none.</summary>
+    TestPackView? SecurityView => null;
     /// <summary>Source/runtime evidence the pack needs, owned by Source Analysis or Integration Quality Review. Default: none declared.</summary>
     IReadOnlyList<TestPackCapabilityRequirement> RequiredEvidenceCapabilities => [];
     /// <summary>Generic Test Data capabilities the pack resolves through the shared Test Data catalog. Default: none.</summary>

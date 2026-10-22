@@ -1,0 +1,67 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@using A = BirkNext.Integrations.SecurityClassificationAssessments
+
+@* The shared Security Classification evidence as one or every consumer sees it: requirement, shared evidence, runtime test, status. The same
+   stored review behind every row; a domain rule is marked as the consumer's own. Read-only — the full review (source selection, test context,
+   runs) stays on the standalone page. *@
+<div class="sd-source-contracts" data-testid="sc-consumers">
+    @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="sc-consumers-error">@error</p> }
+    else if (_assessments is null) { <p class="sd-muted" role="status">Loading security assessment…</p> }
+    else
+    {
+        @foreach (var consumer in _assessments.Where(a => ConsumerId is null || a.ConsumerId == ConsumerId))
+        {
+            <section aria-labelledby="@($"sc-consumer-{consumer.ConsumerId}")" data-testid="sc-consumer" data-consumer="@consumer.ConsumerId">
+                @if (ConsumerId is null) { <h3 class="sd-reason" id="@($"sc-consumer-{consumer.ConsumerId}")"><strong>@consumer.DisplayName</strong> <span class="sd-muted">· @consumer.Context</span></h3> }
+                else { <h3 class="visually-hidden" id="@($"sc-consumer-{consumer.ConsumerId}")">@consumer.DisplayName security requirements</h3> }
+                <p class="sd-reason" data-testid="sc-consumer-summary">@consumer.Summary <span class="sd-muted">@(consumer.RunId is null ? "No review recorded yet." : $"From review {consumer.RunId.Value.ToString("N")[..8]} · {consumer.AssessedAt?.ToUniversalTime():yyyy-MM-dd HH:mm} UTC")</span></p>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{consumer.DisplayName} security requirements")">
+                    <table data-testid="sc-consumer-table">
+                        <thead><tr><th scope="col">Security requirement</th><th scope="col">Shared evidence</th><th scope="col">Runtime test</th><th scope="col">Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in consumer.Requirements)
+                            {
+                                <tr data-testid="sc-consumer-requirement" data-key="@r.Key" data-state="@r.State">
+                                    <th scope="row">@r.Title@if (r.DomainSpecific) { <span class="sd-context">@consumer.DisplayName rule · owner: @r.Owner</span> } else { <span class="sd-context">Owner: @r.Owner</span> }</th>
+                                    <td>@r.SharedEvidence</td>
+                                    <td>@r.RuntimeTest</td>
+                                    <td><span class="sd-pill @Tone(r.State)" data-testid="sc-consumer-state">@A.Label(r.State)</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        @if (ConsumerId is not null)
+        {
+            <p><a class="btn-secondary" href="/security-classification-review" data-testid="sc-open-full-review">Open M01 – Gradert tilgang review</a>
+                <span class="sd-muted"> · source selection, the test context and runs are managed there (one canonical context; nothing is duplicated here).</span></p>
+        }
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    /// <summary>One consumer's projection (e.g. a test pack); null lists every consumer (the standalone review's Consumers section).</summary>
+    [Parameter] public string? ConsumerId { get; set; }
+    [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    private IReadOnlyList<SecurityClassificationConsumerAssessment>? _assessments;
+    private string? _error;
+
+    private static string Tone(SecurityRequirementState state) => state switch
+    {
+        SecurityRequirementState.Verified or SecurityRequirementState.SourceEvidence => "sd-pill-complete",
+        SecurityRequirementState.IssueDetected => "sd-pill-attention",
+        SecurityRequirementState.NotApplicable => "sd-pill-muted",
+        _ => "sd-pill-partial",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IClassificationReviewApiService)) is not IClassificationReviewApiService api) { _error = "Security Classification is unavailable in this session."; return; }
+        if (string.IsNullOrWhiteSpace(EnvironmentId)) { _error = "Select a Target Environment to see the security assessment."; return; }
+        _assessments = await api.ConsumersAsync(EnvironmentId);
+        _error = _assessments is null ? "The shared security assessment could not be loaded." : null;
+    }
+}

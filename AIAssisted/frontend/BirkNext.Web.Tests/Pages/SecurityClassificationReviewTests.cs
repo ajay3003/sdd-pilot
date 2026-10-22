@@ -560,7 +560,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = Page();
 
         var order = cut.FindAll("section[data-testid]").Select(e => e.GetAttribute("data-testid")).ToList();
-        order.Should().Equal("sc-source-evidence", "sc-coverage-summary", "sc-setup", "sc-needed", "sc-run-card");
+        order.Should().Equal("sc-source-evidence", "sc-coverage-summary", "sc-setup", "sc-needed", "sc-run-card", "sc-consumers-section");
         cut.Find("[data-item='counts']").GetAttribute("data-status").Should().Be("Missing", "no run has provided count evidence yet");
     }
 

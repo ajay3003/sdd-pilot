@@ -122,6 +122,11 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     private static TestDataRequirement Optional(string role, TestDataKind kind, params string[] capabilities) =>
         new() { Role = role, Kind = kind, Capabilities = [.. capabilities], Optional = true };
 
+    /// <summary>Skolenærvær's Security / Gradert tilgang projection of the shared Security Classification evidence (consumer
+    /// <see cref="SkoleNaervaerSecurityConsumer"/>); the full review stays on the standalone page.</summary>
+    public TestPackView? SecurityView { get; } = new("security", "Security / Gradert tilgang", TestPackViewKind.Security,
+        Description: "Does classification survive the Skolenærvær flow, and can graded access be tested? From the shared Security Classification evidence.");
+
     private const string AltinnAppSource = "Altinn Skolenærvær app";
     public const string MuSource = "mu";
     public const string M2lbSource = "m2lb";

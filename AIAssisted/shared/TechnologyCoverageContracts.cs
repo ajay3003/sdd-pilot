@@ -88,6 +88,8 @@ public static class TechnologySupportRegistry
         new("contract.xsd-package", "XSD package (shared engine)", TechnologyArea.Contract, F, ["contract.xsd"],
             "Compiled package: import/include resolution within the package (never fetched), QName-resolved effective structure, facets, cycles and unresolved references; one comparison engine shared by Schema Studio and Impact Analysis; schema-derived test generation in Schema Studio. XML instance validation is test evidence, not contract verification."),
         new("contract.asyncapi", "AsyncAPI", TechnologyArea.Contract, P, ["contract.asyncapi"], "Channels and operations; payload schemas not resolved."),
+        new("security.classification.shared", "Security Classification (shared capability: M01, Skolenærvær consumers)", TechnologyArea.Integration, P, ["integration.graphql", "integration.eventhub"],
+            "Classification model and propagation from source (CDC/guard), authorization protection in source, and bounded runtime authorization observations (unauthorized denial / authorized graded access on tested surfaces only) from one review; consumers add domain rules. Identities are controlled Test Data references, never generated; runtime results under another test context are not current; source/runtime disagreement needs review."),
         new("journey.readiness.shared", "Test-pack journey readiness (shared evidence composition)", TechnologyArea.Integration, P, ["integration.eventhub", "integration.servicebus", "integration.rest"],
             "Per journey: integration, contracts, source bindings, infrastructure (declared ≠ deployed), environment, Test Data, test evidence, execution, verification and optional delivery — each read from its shared evidence owner and never collapsed into one score. Executed ≠ verified; ambiguous runs stay unresolved; provider conflicts need review."),
         new("testdata.candidates.shared", "Shared Test Data candidates and lifecycle", TechnologyArea.Contract, P, ["contract.xsd", "contract.openapi", "contract.jsonschema"],
@@ -171,7 +173,7 @@ public static class TechnologySupportRegistry
         new("framework.airflow", "Apache Airflow", TechnologyArea.Framework, N, U, N, N, N, N, [], "Detected only; DAGs are not analyzed."),
 
         // Integrations: configuration ≠ runtime ≠ active test. Only Event Hubs has an active test; Kafka/RabbitMQ/SOAP are catalog-only.
-        new("integration.eventhub", "Azure Event Hubs", TechnologyArea.Integration, F, P, N, P, P, P, ["runtime.eventhub.azure", "journey.readiness.shared"],
+        new("integration.eventhub", "Azure Event Hubs", TechnologyArea.Integration, F, P, N, P, P, P, ["runtime.eventhub.azure", "journey.readiness.shared", "security.classification.shared"],
             "Runtime evidence is opt-in and read-only (Azure is off by default); the active send test runs in DEV/QA only. Source configuration is analyzed.", [Capability.EventStreaming]),
         new("integration.servicebus", "Azure Service Bus", TechnologyArea.Integration, F, P, N, P, U, P, ["runtime.servicebus.azure", "journey.readiness.shared"],
             "No active send/receive validation. Source configuration is analyzed and runtime evidence is read-only ARM metadata (GET only).", [Capability.Messaging]),
@@ -182,7 +184,7 @@ public static class TechnologySupportRegistry
         new("integration.activemq", "ActiveMQ / JMS", TechnologyArea.Integration, P, U, U, U, U, U, [], "Catalog entry only.", [Capability.Messaging]),
         new("integration.rest", "REST / HTTP API", TechnologyArea.Integration, F, P, F, F, P, P, ["contract.openapi", "runtime.http", "journey.readiness.shared"],
             "Active tests are read-only requests and source analysis is partial. Runtime is reviewed through API Quality Review against a configured target.", [Capability.RestApi]),
-        new("integration.graphql", "GraphQL API", TechnologyArea.Integration, F, P, F, F, P, P, ["contract.graphql", "runtime.http"],
+        new("integration.graphql", "GraphQL API", TechnologyArea.Integration, F, P, F, F, P, P, ["contract.graphql", "runtime.http", "security.classification.shared"],
             "Active tests are read-only queries and source analysis is partial. Runtime is reviewed through API Quality Review against a configured target.", [Capability.GraphQlApi]),
         new("integration.soap", "SOAP / WSDL", TechnologyArea.Integration, P, U, U, U, U, U, [],
             "No WSDL analyzer and no SOAP runtime client; XSD files are parsed as XML Schema only.", [Capability.SoapApi]),

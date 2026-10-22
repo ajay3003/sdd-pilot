@@ -364,11 +364,20 @@
                 <p class="sc-muted" data-testid="sc-missing-pointer">Missing evidence and next steps are listed in “What’s needed to complete this review” near the top of the page.</p>
             </section>
         }
+
+        <section class="sc-card" aria-labelledby="sc-consumers-heading" data-testid="sc-consumers-section">
+            <h2 id="sc-consumers-heading">Consumers</h2>
+            <p class="sc-muted">The same shared evidence is consumed by each domain below; their assessments can differ while the evidence stays the same. Domain rules belong to their consumer.</p>
+            <ReviewDisclosure Text="Show consumer assessments" CollapseText="Hide consumer assessments" TestId="sc-consumers-disclosure" Class="disclosure-inline" @bind-Expanded="_consumersExpanded">
+                @if (_consumersExpanded) { <SecurityConsumerProjection EnvironmentId="@(_profile?.Id ?? "")" /> }
+            </ReviewDisclosure>
+        </section>
     }
 </div>
 
 @code {
     private FrontendAnalysisProfile? _profile;
+    private bool _consumersExpanded;
     private ClassificationOverview? _overview;
     private ClassificationReviewResult? _result;
     private ClassificationScopeOptions? _options;

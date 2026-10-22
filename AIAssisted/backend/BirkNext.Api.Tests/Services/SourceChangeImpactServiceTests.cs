@@ -334,6 +334,29 @@ public sealed class SourceChangeImpactServiceTests
         journeys.Verify(j => j.StartAsync(Moq.It.IsAny<IntegrationJourneyRunRequest>(), Moq.It.IsAny<string?>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Never);
     }
 
+    [Fact]
+    public async Task A_changed_classification_rule_reaches_every_security_classification_consumer()
+    {
+        await using var db = Db();
+        ClassificationSnapshotEvidence Evidence(ClassificationState guard) => new()
+        {
+            Levels = [new() { Nivaa = 3, Verdi = "Kode6", KreverGradertTilgang = true }],
+            Facts = [new() { Id = "cdc-guard", Area = ClassificationArea.Guard, Title = "CDC guard rejects Kode 6/7", State = guard }],
+        };
+        var before = Snapshot("v1", []) with { SecurityClassificationEvidence = Evidence(ClassificationState.SourceVerified) };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1), SecurityClassificationEvidence = Evidence(ClassificationState.IssueDetected) };
+        BirkNext.Api.Services.SecurityClassification.ISecurityClassificationConsumer[] consumers =
+            [new BirkNext.Api.Services.SecurityClassification.M01SecurityClassificationConsumer(), new BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerSecurityConsumer()];
+
+        var report = await new SourceChangeImpactService(db, new SnapshotProvider([before, after]), null, null, consumers).AnalyzeAsync(Request(before, after), default);
+
+        var items = report!.TechnicalImpacts.Where(i => i.EntityType == "Security classification consumer").ToList();
+        items.Select(i => i.EntityId).Should().Equal("m01", "skolenaervaer");
+        items.Should().OnlyContain(i => i.Level == TechnicalImpactLevel.Potential && i.Reason.Contains("CDC guard rejects Kode 6/7") && i.Reason.Contains("nothing is re-run"));
+
+        SecurityClassificationAssessments.ChangedRules(Evidence(ClassificationState.SourceVerified), Evidence(ClassificationState.SourceVerified)).Should().BeEmpty("unchanged rules (or moved lines) are not changes");
+    }
+
     private sealed class OneAssetProvider(BirkNext.Api.Services.TestData.TestDataAsset asset) : BirkNext.Api.Services.TestData.ITestDataProvider
     {
         public string Id => "fixture";

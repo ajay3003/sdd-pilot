@@ -554,7 +554,8 @@ public sealed record JourneyRunValidation
 // described from the pack's own metadata. The descriptor is generic: a page renders any pack from it, and the engine never names a pack.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TestPackViewKind { Overview, Journey, Verification, Rules, History }
+/// <summary>Security: the pack's projection of the shared Security Classification capability (consumer id = pack id); read-only.</summary>
+public enum TestPackViewKind { Overview, Journey, Verification, Rules, History, Security }
 
 /// <summary>One top-level view of a test pack. <c>ViewId</c> is the stable route key; for a journey view it equals the journey id.</summary>
 public sealed record TestPackView(string ViewId, string DisplayName, TestPackViewKind Kind, string? JourneyId = null, string? ScenarioId = null, string Description = "");
