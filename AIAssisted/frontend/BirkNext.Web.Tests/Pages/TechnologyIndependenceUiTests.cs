@@ -168,18 +168,25 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         Services.AddSingleton<IIntegrationCatalogApiService>(api);
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
         var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.bufetat.no/" }));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template]").TextContent.Should().Contain("never applied automatically").And.Contain("cannot be reliably discovered from source"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template]").TextContent.Should().Contain("Never applied automatically").And.Contain("cannot be reliably derived from source evidence"));
+        cut.Find("#ip-helper-heading").TextContent.Should().Be("Project-specific environment setup");
+        cut.Find("[data-testid=ip-template-safe]").TextContent.Should().Contain("Existing configured values are never overwritten").And.Contain("not auto-added");
+        cut.FindAll("[data-testid=ip-template-apply]").Should().BeEmpty("the proposed setup is reviewed before it can be applied");
         cut.Find("[data-testid=ip-template]").TextContent.Should().NotContain("complete M2LB configuration");
         api.Calls.Should().NotContain(c => c.StartsWith("apply-template"), "loading never applies a template");
 
         cut.FindAll("[data-testid=ip-template-item]").Should().BeEmpty("the exact records are listed on request, before applying");
+        cut.Find("[data-testid=ip-template-review]").TextContent.Should().Be("Review proposed setup");
         cut.Find("[data-testid=ip-template-review]").Click();
-        cut.FindAll("[data-testid=ip-template-item]").Select(i => i.GetAttribute("data-provenance")).Should().Equal("ConfirmedMapping", "ConfiguredAssumption");
-        cut.Find("[data-testid=ip-template-items]").TextContent.Should().Contain("Confirmed mapping").And.Contain("Assumption");
-        cut.Find("[data-testid=ip-template]").TextContent.Should().Contain("never overwritten").And.Contain("are not added");
+        cut.Find("[data-testid=ip-template-review]").TextContent.Should().Be("Hide setup details");
+        cut.FindAll("[data-testid=ip-template-group]").Select(g => g.GetAttribute("data-group")).Should().Equal("Assumptions", "ConfirmedMappings");
+        cut.FindAll("[data-testid=ip-template-item]").Select(i => i.GetAttribute("data-provenance")).Should().Equal("ConfiguredAssumption", "ConfirmedMapping");
+        cut.Find("[data-testid=ip-template-items]").TextContent.Should().Contain("Confirmed mapping").And.Contain("Assumption").And.Contain("Assumed value — not verified at runtime.");
+        cut.Find("[data-testid=ip-template-summary]").TextContent.Should().Contain("1 assumption").And.Contain("1 confirmed integration mapping").And.Contain("0 existing values overwritten");
+        cut.Find("[data-testid=ip-template-apply]").TextContent.Should().Be("Apply safe setup");
 
         cut.Find("[data-testid=ip-template-apply]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-applied]").TextContent.Should().Contain("M2LB DEV helper applied").And.Contain("not discovered evidence"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-applied]").TextContent.Should().Contain("M2LB DEV helper applied").And.Contain("not discovered evidence").And.Contain("assumptions stay assumptions"));
         api.Calls.Should().Contain("apply-template:m2lb-dev-eventhub");
         cut.FindAll("[data-testid=ip-template]").Should().BeEmpty("an applied helper is not offered again");
     }
@@ -195,7 +202,8 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         Services.AddSingleton<IIntegrationCatalogApiService>(api);
         Services.AddSingleton(new IntegrationMappingEvidenceSession());
         var cut = Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "prod", Name = "Prod", EnvironmentType = FrontendEnvironmentType.Production, TargetUrl = "https://m2lbdev.bufetat.no/" }));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-apply]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ip-template-review]"));
+        cut.Find("[data-testid=ip-template-review]").Click();
         cut.Find("[data-testid=ip-template-apply]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-save-status]").TextContent.Should().Be("Not applied: The M2LB DEV helper is never applied to a Production environment."));
         cut.Find("[data-testid=ip-save-status]").GetAttribute("data-state").Should().Be("Failed");

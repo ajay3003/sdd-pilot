@@ -69,8 +69,8 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         var added = await AttachSeedAsync(environmentId, ct);
         logger.LogInformation("Integration template {Template} applied explicitly to {EnvironmentId}.", templateId, environmentId);
         return new IntegrationTemplateApplyResult(await ReadAsync(environmentId, [added > 0
-            ? $"Applied the M2LB DEV helper: {added} record{(added == 1 ? "" : "s")} added. Existing records were left unchanged."
-            : "The M2LB DEV helper is already applied; nothing was changed."], ct, false), null);
+            ? $"Applied the {M2lbDevIntegrationSeed.TemplateName}: {added} record{(added == 1 ? "" : "s")} added. Existing records were left unchanged."
+            : $"The {M2lbDevIntegrationSeed.TemplateName} is already applied; nothing was changed."], ct, false), null);
     }
 
     /// <summary>Adds seed records whose stable id is missing. Existing records — edited or not — are left exactly as they are.</summary>

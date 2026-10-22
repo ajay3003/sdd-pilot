@@ -2,14 +2,26 @@
 @if (State.PrimaryId is null && State.Current is { } current)
 {
     <div class="rse-suggest" data-testid="@($"{Prefix}-current-snapshot")">
-        <span>Current Source Analysis snapshot: <strong>@current.Repository</strong> · <span class="rse-wrap">@current.ArchiveName</span> · <code title="@current.Fingerprint">@ReviewSourceScopes.Short(current.Fingerprint)</code> · Source Analysis: @current.SourceStatus</span>
+        @if (Compact)
+        {
+            <span>@CurrentText: <strong class="rse-wrap">@current.ArchiveName</strong> · @current.SourceStatus</span>
+        }
+        else
+        {
+            <span>@CurrentText: <strong>@current.Repository</strong> · <span class="rse-wrap">@current.ArchiveName</span> · <code title="@current.Fingerprint">@ReviewSourceScopes.Short(current.Fingerprint)</code> · Source Analysis: @current.SourceStatus</span>
+        }
         <span class="rse-actions">
-            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-use-current")" disabled="@Busy" @onclick="() => PickAsync(current.SnapshotId)">Use this snapshot</button>
-            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-choose-another")" @onclick="FocusAsync">Choose another</button>
+            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-use-current")" disabled="@Busy" @onclick="() => PickAsync(current.SnapshotId)">@UseCurrentText</button>
+            @if (!Compact) { <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-choose-another")" @onclick="FocusAsync">Choose another</button> }
         </span>
     </div>
 }
-<label class="rse-field rse-primary-field">@Label
+@if (Compact && State.PrimaryId is { } selectedId)
+{
+    <p class="rse-suggest" data-testid="@($"{Prefix}-selected-snapshot")">Selected source: <strong class="rse-wrap">@(State.Snapshots.FirstOrDefault(s => s.SnapshotId == selectedId)?.ArchiveName ?? "Source snapshot")</strong></p>
+}
+@* Compact: one selection step — the current candidate's one-click choice, and this list as the way to choose another or change it. *@
+<label class="rse-field rse-primary-field">@(Compact ? State.PrimaryId is null ? State.Current is null ? Label : "Or choose another snapshot" : "Change snapshot" : Label)
     <select @ref="_select" id="@SelectId" class="form-control" data-testid="@($"{Prefix}-primary")" value="@(State.PrimaryId?.ToString() ?? "")" disabled="@Busy"
             @onchange="e => PickAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null)">
         <option value="">Choose source snapshot (none selected)</option>
@@ -31,6 +43,11 @@
     [Parameter] public string? SelectId { get; set; }
     /// <summary>Raised after the primary changed (the page reloads its options for the new scope).</summary>
     [Parameter] public EventCallback<Guid?> OnPrimaryChanged { get; set; }
+    /// <summary>One selection step: the current candidate is one click; the list is the one way to choose another; a choice reads as "Selected source".</summary>
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public string CurrentText { get; set; } = "Current Source Analysis snapshot";
+    [Parameter] public string UseCurrentText { get; set; } = "Use this snapshot";
+
 
     private ElementReference _select;
     /// <summary>The snapshot select, for pages that move focus to it (e.g. a "next step" action).</summary>

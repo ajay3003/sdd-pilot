@@ -51,8 +51,8 @@ public sealed class EventHubRuntimeEvidenceUiTests : BunitContext
         var cut = Open();
         Text(cut, "ip-runtime-sources-status").Should().Be("Sources configured: 4/4");
         Text(cut, "ip-runtime-execution-status").Should().Be("Runtime execution: Not available");
-        Text(cut, "ip-summary-runtime").Should().Be("Configured", "the compact summary states configuration only; execution availability is its own statement");
-        Text(cut, "ip-summary-azure").Should().Be("Runtime execution: Not available");
+        Text(cut, "ip-summary-runtime").Should().Be("Sources configured · read during review", "the compact summary states configuration only; execution availability is its own statement");
+        Text(cut, "ip-summary-azure").Should().Be("Azure runtime reading: Not enabled for this BirkNext instance");
         Text(cut, "ip-runtime-execution-value").Should().Be("Not available");
         Text(cut, "ip-runtime-execution-summary").Should().Be("Azure access is not enabled for this BirkNext instance.");
         Text(cut, "ip-runtime-sources-count").Should().Be("4 of 4 configured");
@@ -68,7 +68,7 @@ public sealed class EventHubRuntimeEvidenceUiTests : BunitContext
         _api.Catalog = M2lbFixture.SeededCatalog(azureEnabled: true);
         var cut = Expand(Open());
         Text(cut, "ip-runtime-execution-status").Should().Be("Runtime execution: Available");
-        Text(cut, "ip-summary-azure").Should().Be("Runtime execution: Available");
+        Text(cut, "ip-summary-azure").Should().Be("Azure runtime reading: Enabled for this BirkNext instance (read-only, during review)");
         Text(cut, "ip-runtime-sources-status").Should().Be("Sources configured: 4/4");
         cut.Find("[data-testid=ip-runtime-execution-group]").GetAttribute("data-available").Should().Be("true");
         foreach (var key in new[] { "metadata", "groups", "checkpoint", "appinsights" })

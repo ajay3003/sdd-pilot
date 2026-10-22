@@ -63,7 +63,7 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
     {
         UseRichSource();
         var cut = Open();
-        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().Equal("Configured integrations", "Suggestions from Source Analysis", "Source evidence", "Advanced");
+        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().Equal("Configured integrations", "Integration candidates from Source Analysis", "Source evidence", "Advanced");
         cut.Find("[data-testid=ip-summary-env]").TextContent.Should().Be("Development · m2lbdev.bufetat.no");
         cut.Find("[data-testid=ip-summary-suggestions]").TextContent.Should().Be("32");
         cut.FindAll("[data-testid=ip-suggestion]").Should().BeEmpty("32 candidate rows are never listed until requested");
@@ -96,7 +96,9 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         UseRichSource();
         var cut = Open();
         var card = cut.Find("[data-testid=ip-source-evidence]");
-        card.TextContent.Should().Contain("M2LB (2).zip").And.Contain("Analysis: Partial").And.Contain("Updated 2026-10-01 07:30 UTC");
+        card.TextContent.Should().Contain("M2LB (2).zip").And.Contain("Partial analysis").And.Contain("updated 2026-10-01 07:30 UTC");
+        cut.Find("[data-testid=ip-source-partial]").TextContent.Should().Be("Why partial?");
+        card.TextContent.Should().NotContain("0 of 0");
         cut.Find("[data-testid=ip-source-open]").GetAttribute("href").Should().Be("/source-analysis");
         cut.Find("[data-testid=ip-open-messaging-evidence]").GetAttribute("href").Should().Be("/source-analysis/application-messaging");
     }
@@ -107,13 +109,17 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         UseRichSource(5);
         _api.Catalog = new IntegrationCatalog { EnvironmentId = "dev" };
         var cut = Open();
-        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured").And.Contain("5 integration candidates found from Source Analysis");
+        cut.Find("[data-testid=ip-empty]").TextContent.Should().Contain("No integrations configured for Development.").And.Contain("5 integration candidates were discovered from Source Analysis.");
+        cut.Find("[data-testid=ip-empty-review]").TextContent.Should().Be("Review integration candidates");
+        cut.Find("[data-testid=ip-empty-add]").TextContent.Should().Be("Add manually");
+        cut.FindAll("button").Count(b => b.TextContent.Trim() == "Review integration candidates").Should().Be(1, "exactly one review CTA");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Contains("Review suggestions"));
         cut.Find("[data-testid=ip-empty-review]").ClassList.Should().Contain("btn-primary", "reviewing the candidates is the next action");
         cut.Find("[data-testid=ip-empty-add]").ClassList.Should().Contain("btn-secondary");
         cut.FindAll("[data-testid=ip-add], [data-testid=ip-review-suggestions]").Should().BeEmpty("the empty state owns the actions; nothing is duplicated above it");
         cut.Find("[data-testid=ip-empty-review]").Click();
         cut.FindAll("[data-testid=ip-suggestion]").Should().NotBeEmpty();
-        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("None — no configured integrations");
         cut.FindAll("[data-testid=ip-table], [data-testid=ip-platform], [data-testid=ip-runtime-status]").Should().BeEmpty("no giant empty tables or runtime panels before configuration exists");
         cut.Find("[data-testid=ip-empty-add]").Click();
         cut.Find("[data-testid=ip-editor]");
@@ -218,9 +224,11 @@ public sealed class IntegrationsOwnershipUiTests : BunitContext
         toggle.Click();
         cut.Find("[data-testid=ip-advanced-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         var body = cut.Find("[data-testid=ip-advanced-body]");
-        body.TextContent.Should().Contain("Platforms and runtime evidence setup");
+        body.TextContent.Should().Contain("Runtime evidence is separate from configuration.");
         cut.FindAll("#ip-advanced-body h4").Select(h => h.TextContent).Should().StartWith(["Runtime"]).And.Contain(["Messaging", "Diagnostics"]);
-        cut.Find("[data-testid=ip-messaging-semantics]").TextContent.Should().Contain("Configured (in this catalog) ≠ discovered (in source) ≠ linked (bound to a consumer here) ≠ observed (at runtime)");
+        cut.FindAll("[data-testid=ip-messaging-semantics] li").Select(l => l.TextContent).Should().Equal("Discovered in source", "Configured for this environment", "Linked to a configured integration", "Observed at runtime");
+        cut.Find("[data-testid=ip-messaging-semantics]").TextContent.Should().Contain("These states do not imply one another.");
+        cut.Find("#am-heading").TextContent.Should().Be("Environment messaging evidence");
         cut.Find("[data-testid=am]").GetAttribute("data-view").Should().Be("Configuration");
         cut.FindAll("[data-testid=ip-platform-origin]").Select(o => o.TextContent).Should().OnlyContain(o => o == "Seed" || o == "Seed · modified");
     }

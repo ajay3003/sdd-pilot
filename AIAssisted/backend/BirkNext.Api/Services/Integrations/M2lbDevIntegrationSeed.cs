@@ -30,7 +30,7 @@ public static partial class M2lbDevIntegrationSeed
     public const string PersonAdapterApp = "ca-m2lb-person-adp-dev-nwe-001";
     public const string Name = "m2lb-dev-eventhub";
     public const string FrontendHost = "m2lbdev.bufetat.no";
-    public const string TemplateName = "M2LB DEV helper";
+    public const string TemplateName = "M2LB Development setup";
     public const string TemplateDescription = "Adds only environment-specific configuration that cannot be reliably discovered from source: the M2LB DEV platforms and their runtime identifiers, the confirmed Person CDC mapping, and the M2LB child security classification extension. Other integrations come from Source Analysis suggestions.";
     public const string PlatformId = "dev:eventhub:m2lb";
     public const string SystemName = "BIRK CDC / Debezium";
@@ -48,11 +48,11 @@ public static partial class M2lbDevIntegrationSeed
     public static string? ApplyBlock(string? environmentType, string? targetUrl)
     {
         if (string.Equals(environmentType, "Production", StringComparison.OrdinalIgnoreCase))
-            return "The M2LB DEV helper is never applied to a Production environment.";
+            return $"The {TemplateName} is never applied to a Production environment.";
         if (!string.Equals(environmentType, "Development", StringComparison.OrdinalIgnoreCase))
-            return $"The M2LB DEV helper applies only to a Development environment (this one is {(string.IsNullOrWhiteSpace(environmentType) ? "of unknown type" : environmentType)}).";
+            return $"The {TemplateName} applies only to a Development environment (this one is {(string.IsNullOrWhiteSpace(environmentType) ? "of unknown type" : environmentType)}).";
         if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) || !string.Equals(uri.Host, FrontendHost, StringComparison.OrdinalIgnoreCase))
-            return $"The M2LB DEV helper applies only to the M2LB DEV environment ({FrontendHost}).";
+            return $"The {TemplateName} applies only to the M2LB DEV environment ({FrontendHost}).";
         return null;
     }
 

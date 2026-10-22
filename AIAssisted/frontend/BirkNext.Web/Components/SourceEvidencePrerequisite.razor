@@ -5,7 +5,7 @@
     @if (ShowStatusLine)
     {
         <p class="rse-line"><strong>@Title</strong> <span class="rse-badge rse-badge-@Tone" data-testid="@($"{Prefix}-source-state")">@StateLabel</span>
-            <span class="rse-muted">@(Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? "Required for source checks" : "Optional — the review runs without it")</span></p>
+            <span class="rse-muted">@(RequirementText ?? (Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? "Required for source checks" : "Optional — the review runs without it"))</span></p>
     }
     @if (!SourceAnalysisEnabled)
     {
@@ -38,6 +38,8 @@
     [Parameter] public bool SourceAnalysisEnabled { get; set; } = true;
     [Parameter] public string Prefix { get; set; } = "src";
     [Parameter] public string Title { get; set; } = "Source evidence";
+    /// <summary>Overrides the generic requirement sentence with what this consumer actually needs the snapshot for.</summary>
+    [Parameter] public string? RequirementText { get; set; }
     /// <summary>The review's name in guidance sentences, e.g. "Dependency Review".</summary>
     [Parameter] public string ConsumerName { get; set; } = "This review";
     /// <summary>What else on the page stays usable without source (direct consumers).</summary>

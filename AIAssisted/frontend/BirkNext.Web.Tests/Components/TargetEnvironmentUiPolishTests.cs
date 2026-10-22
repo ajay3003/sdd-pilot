@@ -146,8 +146,9 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         var cut = OpenIntegrations();
 
         var note = cut.WaitForElement("[data-testid=ip-intro]");
-        note.TextContent.Should().Contain("Configured integrations used by Integration Quality Review.");
-        note.TextContent.Should().Contain("never added here automatically", "the page must not imply Endpoint Discovery populates it");
+        note.TextContent.Should().Contain("reviewed in Integration Quality Review");
+        cut.Find("[data-testid=ip-how-evidence-toggle]").Click();
+        cut.Find("[data-testid=ip-how-evidence-list]").TextContent.Should().Contain("never added here automatically", "the page must not imply Endpoint Discovery populates it");
         note.ClassList.Should().NotContain(c => c.Contains("warn") || c.Contains("error"));
         note.GetAttribute("style").Should().BeNullOrEmpty("styling moved out of inline attributes");
     }

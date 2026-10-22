@@ -91,15 +91,18 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     {
         var cut = Config();
         cut.FindAll("[data-testid=am] input[type=file]").Should().BeEmpty("source is uploaded only in Source Analysis");
-        cut.Find("[data-testid=am-source-gate]").TextContent.Should().Contain("Messaging source").And.Contain("Required for source checks");
+        cut.Find("[data-testid=am-source-gate]").TextContent.Should().Contain("Messaging source snapshot").And.Contain("Required to evaluate source-based messaging relationships for configured integrations");
         cut.Find("[data-testid=am-primary]").Id.Should().Be(ServiceBusPlatformPanel.MessagingUploadId);
         cut.Find("[data-testid=am-use-scope]").HasAttribute("disabled").Should().BeTrue("nothing is chosen until the user picks a snapshot");
-        cut.Find("[data-testid=am-use-scope]").TextContent.Should().Be("Use messaging evidence from this snapshot");
+        cut.Find("[data-testid=am-use-scope]").TextContent.Should().Be("Build messaging evidence");
         Pane().Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only").And.Contain("Source Analysis snapshots");
 
         _api.Messaging = Set();
         Config().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence");
-        Config().Find("[data-testid=am-rebuild-explanation]").TextContent.Should().Contain("source is not re-analyzed").And.Contain("existing consumer bindings")
+        Config().Find("[data-testid=am-rebuild-explanation]").TextContent.Should().Be("Builds messaging evidence from the selected stored Source Analysis snapshot. Source files are not re-analyzed, and configured integrations are not changed.");
+        var technical = Config();
+        technical.Find("[data-testid=am-rebuild-technical-toggle]").Click();
+        technical.Find("[data-testid=am-rebuild-technical-text]").TextContent.Should().Contain("source is not re-analyzed").And.Contain("existing consumer bindings")
             .And.Contain("No live source, broker or runtime system is contacted or modified");
         Config().Find("[data-testid=am-use-scope]").GetAttribute("aria-describedby").Should().Be("am-rebuild-explanation");
         var evidence = Pane();

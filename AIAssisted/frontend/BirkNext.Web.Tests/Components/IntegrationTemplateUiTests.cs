@@ -406,7 +406,7 @@ public sealed class IntegrationTemplateUiTests : BunitContext
     // ── One generic Add integration trigger per page state ────────────────────────────────────────────────────────────────────────
 
     private static List<AngleSharp.Dom.IElement> GenericTriggers(IRenderedComponent<IntegrationsPane> cut) =>
-        cut.FindAll("button").Where(b => b.TextContent.Trim() == "Add integration").ToList();
+        cut.FindAll("button").Where(b => b.TextContent.Trim() is "Add integration" or "Add manually").ToList();
 
     [Fact]
     public void NoIntegrations_OneTriggerInTheEmptyState()

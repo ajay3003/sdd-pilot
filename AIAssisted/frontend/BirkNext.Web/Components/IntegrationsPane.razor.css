@@ -250,3 +250,22 @@
 @media (max-width: 600px) {
     .ip-dl-fields > div { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* ── Candidate review, project-specific setup ─────────────────────────────── */
+.ip-how-list { margin: .25rem 0 0; padding-left: 1.25rem; font-size: .8125rem; }
+.ip-small { font-size: .8125rem; }
+.ip-suggestion-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .25rem .75rem; margin: .375rem 0; font-size: .8125rem; min-width: 0; }
+.ip-suggestion-facts > div { min-width: 0; }
+.ip-suggestion-facts dt { font-weight: 600; color: var(--clr-text-subtle); }
+.ip-suggestion-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ip-suggestion-group { list-style: none; margin: .5rem 0; padding: .5rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.ip-suggestion-group > details > summary { cursor: pointer; }
+.ip-candidate-review { flex-basis: 100%; margin-top: .5rem; padding: .5rem .75rem; border-left: 3px solid var(--clr-primary); background: var(--clr-surface); font-size: .8125rem; }
+.ip-setup-card { padding: 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.ip-setup-card h4 { margin: 0 0 .25rem; }
+.ip-safe-apply { margin: .5rem 0; padding: .5rem .75rem; border-left: 3px solid var(--clr-success, var(--clr-primary)); background: var(--clr-surface); font-size: .8125rem; }
+.ip-safe-apply p { margin: .25rem 0 0; }
+.ip-setup-summary { margin: .75rem 0; font-size: .875rem; }
+.ip-setup-summary ul { margin: .25rem 0 0; padding-left: 1.25rem; }
+.ip-setup-group h5 { margin: .75rem 0 .25rem; font-size: .875rem; }

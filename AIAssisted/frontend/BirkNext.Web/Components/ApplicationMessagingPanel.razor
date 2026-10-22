@@ -9,30 +9,35 @@
    usage, handlers, routes, retry, outbox, telemetry. Full shows both (component tests). *@
 <section class="am" aria-labelledby="am-heading" data-testid="am" data-view="@View">
     <div class="am-title">
-        <h3 id="am-heading">@(View == ApplicationMessagingView.Configuration ? "Environment-wide messaging discovery evidence" : "Application messaging")</h3>
+        <h3 id="am-heading">@(View == ApplicationMessagingView.Configuration ? "Environment messaging evidence" : "Application messaging")</h3>
     </div>
     @if (View == ApplicationMessagingView.Configuration)
     {
-        <p class="am-muted" data-testid="am-scope-distinction">The snapshot chosen here feeds this environment's application-messaging evidence (Wolverine applications, handlers, routes) only.
-            It is not the canonical source evidence of an integration: that is bound per integration in <a href="/integration-quality-review?view=evidence">Integration Quality Review → Evidence</a>.</p>
+        <p class="am-muted" data-testid="am-scope-distinction">Builds environment-level messaging evidence from an existing Source Analysis snapshot. This evidence can support source-based messaging checks across configured integrations.
+            Canonical integration evidence is still reviewed and bound per integration in <a href="/integration-quality-review?view=evidence">Integration Quality Review → Evidence</a>.</p>
     }
     @if (View != ApplicationMessagingView.Evidence)
     {
     <div class="am-snapshot" data-testid="am-source-snapshots">
-        <SourceEvidencePrerequisite State="_scope" Prefix="am" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" Title="Messaging source"
+        <SourceEvidencePrerequisite State="_scope" Prefix="am" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" Title="Messaging source snapshot"
+                                    RequirementText="Required to evaluate source-based messaging relationships for configured integrations."
                                     ConsumerName="Application messaging" EmptyHeadingLevel="4"
                                     OtherSectionsNote="Event Hub and Service Bus runtime evidence does not need a source snapshot.">
-            <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="am" Busy="_busy" Label="Source snapshot" SelectId="@ServiceBusPlatformPanel.MessagingUploadId" MissingEvidenceLabel="no messaging evidence" OnPrimaryChanged="_ => ReloadScopeAsync()" />
+            <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="am" Busy="_busy" Label="Source snapshot" SelectId="@ServiceBusPlatformPanel.MessagingUploadId" MissingEvidenceLabel="no messaging evidence" OnPrimaryChanged="_ => ReloadScopeAsync()"
+                                    Compact="true" CurrentText="Current candidate" UseCurrentText="Use current snapshot" />
             <ReviewSourceScopePanel State="_scope" Prefix="am" Busy="_busy" EvidenceLabel="Messaging evidence" MissingEvidenceLabel="no messaging evidence"
                                     RelatedExplanation="Suggested when the primary references another source that hosts a Wolverine application of its own; each snapshot is analyzed on its own."
                                     OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusAsync" />
             <div class="am-actions">
-                <button type="button" class="btn-primary" data-testid="am-use-scope" disabled="@(_busy || !_scope.Resolved)" aria-describedby="am-rebuild-explanation" @onclick="UseScopeAsync">@(Evidence is null ? "Use messaging evidence from this snapshot" : "Rebuild messaging evidence")</button>
+                <button type="button" class="btn-primary" data-testid="am-use-scope" disabled="@(_busy || !_scope.Resolved)" aria-describedby="am-rebuild-explanation" @onclick="UseScopeAsync">@(Evidence is null ? "Build messaging evidence" : "Rebuild messaging evidence")</button>
             </div>
             @* What the action does, exactly (ApplicationMessagingStore.UseSourceScopeAsync): it copies the messaging evidence the chosen snapshots
                already hold into this environment's one stored evidence set. *@
-            <p class="am-muted" id="am-rebuild-explanation" data-testid="am-rebuild-explanation">Recalculated: this environment's stored messaging evidence (applications, handlers, routes and limitations), taken from the selected snapshots' existing Source Analysis — source is not re-analyzed.
-                Unchanged: the snapshots themselves, configured integrations and existing consumer bindings (kept for applications that remain). No live source, broker or runtime system is contacted or modified.</p>
+            <p class="am-muted" id="am-rebuild-explanation" data-testid="am-rebuild-explanation">Builds messaging evidence from the selected stored Source Analysis snapshot. Source files are not re-analyzed, and configured integrations are not changed.</p>
+            <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="am-rebuild-technical" Class="disclosure-inline disclosure-small">
+                <p class="am-muted" data-testid="am-rebuild-technical-text">Recalculated: this environment's stored messaging evidence (applications, handlers, routes and limitations), taken from the selected snapshots' existing Source Analysis — source is not re-analyzed.
+                    Unchanged: the snapshots themselves, configured integrations and existing consumer bindings (kept for applications that remain). No live source, broker or runtime system is contacted or modified.</p>
+            </ReviewDisclosure>
         </SourceEvidencePrerequisite>
     </div>
     }
@@ -40,7 +45,7 @@
     {
         <p class="am-status" role="status" aria-live="polite" data-testid="am-status">@_status</p>
         @if (_error is { } configError) { <p class="am-error" role="alert" data-testid="am-error">@configError</p> }
-        @if (Evidence is null) { <p class="am-muted" data-testid="am-empty">No messaging evidence built for this environment yet.</p> }
+        @if (Evidence is null) { <p class="am-muted" data-testid="am-empty">No messaging evidence available yet. Select a Source Analysis snapshot to build environment-level messaging evidence.</p> }
         else
         {
             <p class="am-muted" data-testid="am-config-summary">@Evidence.Applications.Count analyzed application(s). Wolverine usage, handlers, routes, retry and telemetry are shown in

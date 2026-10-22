@@ -233,7 +233,7 @@ public sealed class IntegrationCatalogTests
         applied.AppliedTemplateId.Should().Be(M2lbDevIntegrationSeed.Name);
         applied.DomainExtensions.Should().Equal(BirkNext.Technology.DomainExtensionIds.M2lbChildSecurityClassification);
         applied.Templates.Should().BeEmpty("an applied template is not offered again");
-        applied.Notices.Should().ContainSingle(n => n.StartsWith("Applied the M2LB DEV helper: 4 records added"));
+        applied.Notices.Should().ContainSingle(n => n.StartsWith("Applied the M2LB Development setup: 4 records added"));
         (await service.ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name, "Development", DevUrl))!.Catalog!.Notices.Should().ContainSingle(n => n.Contains("already applied"));
         (await service.ApplyTemplateAsync(DevId, "unknown-template", "Development", DevUrl)).Should().BeNull();
     }

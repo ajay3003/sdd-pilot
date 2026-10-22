@@ -30,23 +30,33 @@
         @foreach (var notice in _notices) { <p class="ip-notice" role="status" data-testid="ip-notice">@notice</p> }
 
         <section class="ip-overview" aria-label="Integrations overview" data-testid="ip-overview">
-            <p class="ip-muted" data-testid="ip-intro">Configured integrations used by Integration Quality Review. Observed REST and GraphQL traffic is shown in Endpoint Discovery and is never added here automatically.</p>
+            <p class="ip-muted" data-testid="ip-intro">Integrations configured for this environment are reviewed in Integration Quality Review. Candidates discovered from Source Analysis are reviewed here before they are added.</p>
             <dl class="ip-summary" data-testid="ip-summary">
                 <div><dt>Environment</dt><dd data-testid="ip-summary-env">@IntegrationsOverviewPresentation.Environment(Profile)</dd></div>
                 <div><dt>Configured integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
-                <div><dt>New integrations suggested by source</dt><dd data-testid="ip-summary-suggestions" title="Integrations Source Analysis detected that are not configured here — not contract candidates and not consumer mapping candidates.">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
-                <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime" title="@IntegrationsOverviewPresentation.Meaning(runtime)">@IntegrationsOverviewPresentation.Label(runtime)</span></dd></div>
+                <div><dt>Source-discovered candidates</dt><dd data-testid="ip-summary-suggestions" title="Integrations Source Analysis detected that are not configured here — not contract candidates and not consumer mapping candidates.">@(suggestions.Available ? suggestions.Total.ToString() : "Unavailable")</dd></div>
+                @if (suggestions.Available) { <div><dt>Ready to review</dt><dd data-testid="ip-summary-ready">@suggestions.StronglySupported</dd></div> }
+                <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(runtime)" data-testid="ip-summary-runtime" title="@IntegrationsOverviewPresentation.Meaning(runtime)">@IntegrationsOverviewPresentation.OverviewRuntimeLabel(_catalog, runtime)</span></dd></div>
             </dl>
-            @* The create action belongs to Configured integrations (its empty state, or its header); the summary stays informational. *@
+            @* The one way into the candidate review once integrations exist; while none exist, the empty state below carries it instead. *@
             @if (_catalog.Integrations.Count > 0 && suggestions.Available && suggestions.Total > 0)
             {
                 <div class="ip-actions-row">
-                    <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review source suggestions</button>
+                    <button type="button" class="btn-secondary" data-testid="ip-review-suggestions" @onclick="OpenSuggestions">Review integration candidates</button>
                 </div>
             }
             <p class="ip-save-note" data-testid="ip-save-note">Changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
             <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
         </section>
+        <ReviewDisclosure Text="How integration evidence works" CollapseText="Hide how integration evidence works" TestId="ip-how-evidence" Class="disclosure-inline disclosure-small">
+            <ul class="ip-how-list" data-testid="ip-how-evidence-list">
+                <li><strong>Discovered in Source Analysis</strong> — what source code and configuration declare. A candidate is never configured or confirmed automatically.</li>
+                <li><strong>Configured</strong> — what this environment's integration catalog says should exist.</li>
+                <li><strong>Mapping confirmed</strong> — a person reviewed the consumer mapping against evidence.</li>
+                <li><strong>Observed at runtime</strong> — only what a runtime-aware review or capture actually read.</li>
+                <li>Observed REST and GraphQL traffic is shown in Endpoint Discovery and is never added here automatically.</li>
+            </ul>
+        </ReviewDisclosure>
 
         @if (_editing is { } editing)
         {
@@ -73,15 +83,16 @@
             @if (_catalog.Integrations.Count == 0)
             {
                 <div class="ip-empty" data-testid="ip-empty">
-                    <p><strong>No integrations configured</strong></p>
+                    <p><strong>No integrations configured for @Profile.EnvironmentType.</strong></p>
                     <p class="ip-muted" data-testid="ip-empty-suggestions">@(suggestions.Available
-                        ? suggestions.Total == 0 ? "No integration candidates were found from Source Analysis." : $"{suggestions.Total} integration candidate{(suggestions.Total == 1 ? "" : "s")} found from Source Analysis ({suggestions.StronglySupported} strongly supported)."
-                        : "Source suggestions unavailable — no source snapshot is linked.")</p>
+                        ? suggestions.Total == 0 ? "No integration candidates were found from Source Analysis." : $"{suggestions.Total} integration candidate{(suggestions.Total == 1 ? " was" : "s were")} discovered from Source Analysis."
+                        : "Integration candidates are unavailable — no source snapshot is linked.")
+                        @if (suggestions.Available && suggestions.StronglySupported > 0) { <span data-testid="ip-empty-ready"> @suggestions.StronglySupported @(suggestions.StronglySupported == 1 ? "is" : "are") ready to review first.</span> }</p>
                     @if (_editing is null)
                     {
                         <div class="ip-actions-row">
-                            @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review suggestions</button> }
-                            <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" id="ip-add-trigger" data-testid="ip-empty-add" @ref="_addTrigger" @onclick="BeginAdd">Add integration</button>
+                            @if (suggestions.Available && suggestions.Total > 0) { <button type="button" class="btn-primary" data-testid="ip-empty-review" @onclick="OpenSuggestions">Review integration candidates</button> }
+                            <button type="button" class="@(suggestions.Available && suggestions.Total > 0 ? "btn-secondary" : "btn-primary")" id="ip-add-trigger" data-testid="ip-empty-add" @ref="_addTrigger" @onclick="BeginAdd">Add manually</button>
                         </div>
                     }
                 </div>
@@ -339,11 +350,13 @@
                     </div>
                 }
             }
-            <p class="ip-workflow"><a class="ip-link" href="/integration-quality-review" data-testid="ip-open-iqr">Open Integration Quality Review</a> <span class="ip-muted">Review can run with limitations while mapping or runtime evidence is unavailable.</span></p>
+            <p class="ip-workflow"><a class="ip-link" href="/integration-quality-review" data-testid="ip-open-iqr">Open Integration Quality Review</a> <span class="ip-muted">@(_catalog.Integrations.Count == 0
+                ? "Integration Quality Review can run with limited coverage before mappings and runtime evidence are complete."
+                : "Review can run with limitations while mapping or runtime evidence is unavailable.")</span></p>
         </section>
 
         <section class="ip-section" aria-labelledby="ip-suggestions-heading" data-testid="ip-suggestions">
-            <h3 id="ip-suggestions-heading">Suggestions from Source Analysis</h3>
+            <h3 id="ip-suggestions-heading">Integration candidates from Source Analysis</h3>
             @if (!suggestions.Available)
             {
                 <p class="ip-muted" data-testid="ip-suggestions-unavailable"><strong>Unavailable.</strong> No source snapshot is linked. Configured integrations work without it.
@@ -352,41 +365,57 @@
             }
             else
             {
-                <p class="ip-muted" data-testid="ip-suggestions-note">Detected in source and not configured here. <strong>A suggestion is never automatically configured</strong> and never a confirmed mapping; adding one keeps it a suggestion until you confirm it.</p>
+                <p class="ip-muted" data-testid="ip-suggestions-note">Discovered in source and not configured here. <strong>A candidate is never configured or confirmed automatically</strong>; adding one keeps its consumer mapping unconfirmed until you confirm it.</p>
                 <dl class="ip-suggestion-summary" data-testid="ip-suggestions-summary">
                     <div><dt>Candidates</dt><dd data-testid="ip-suggestions-total">@suggestions.Total</dd></div>
-                    <div><dt>Strongly supported</dt><dd data-testid="ip-suggestions-strong">@suggestions.StronglySupported</dd></div>
-                    <div><dt>Suggested</dt><dd data-testid="ip-suggestions-suggested">@suggestions.Suggested</dd></div>
-                    <div><dt>Unassigned</dt><dd data-testid="ip-suggestions-unassigned">@suggestions.Unassigned</dd></div>
-                    @if (suggestions.Conflicts > 0) { <div><dt>Conflict</dt><dd data-testid="ip-suggestions-conflicts">@suggestions.Conflicts</dd></div> }
+                    <div><dt>Ready to review</dt><dd data-testid="ip-suggestions-strong">@suggestions.StronglySupported</dd></div>
+                    <div><dt>Needs confirmation</dt><dd data-testid="ip-suggestions-suggested">@suggestions.Suggested</dd></div>
+                    <div><dt>Needs mapping</dt><dd data-testid="ip-suggestions-unassigned">@suggestions.Unassigned</dd></div>
+                    @if (suggestions.Conflicts > 0) { <div><dt>Conflicting evidence</dt><dd data-testid="ip-suggestions-conflicts">@suggestions.Conflicts</dd></div> }
                 </dl>
+                <p class="ip-muted ip-small" data-testid="ip-suggestions-legend">Ready to review: explicit source wiring or several independent indicators. Needs confirmation: naming or convention only. Needs mapping: no consumer identified in source.</p>
                 @if (suggestions.Total > 0)
                 {
-                    <button type="button" class="btn-secondary" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide suggestions" : "Review suggestions")</button>
+                    <button type="button" class="ip-disclosure" data-testid="ip-suggestions-toggle" aria-expanded="@(_suggestionsOpen ? "true" : "false")" aria-controls="ip-suggestion-list" @onclick="() => _suggestionsOpen = !_suggestionsOpen">@(_suggestionsOpen ? "Hide candidates" : $"Show candidates ({suggestions.Total})")</button>
                 }
                 @if (_suggestionsOpen)
                 {
-                    var shown = IntegrationsOverviewPresentation.Prioritized(_sources, _showAllSuggestions);
+                    var shown = IntegrationsOverviewPresentation.Candidates(_sources, _candidateFilter, _candidateSearch);
+                    var mixed = _candidateFilter == CandidateFilter.All;
                     <div id="ip-suggestion-list" tabindex="-1" @ref="_suggestionsFocus" data-testid="ip-suggestion-list">
-                        <p class="ip-muted" data-testid="ip-suggestion-filter">@(_showAllSuggestions ? $"Showing all {suggestions.Total} candidates." : $"Showing strongly supported mappings and conflicts ({shown.Count} of {suggestions.Total}).")
-                            <button type="button" class="ip-link" data-testid="ip-suggestions-all" @onclick="() => _showAllSuggestions = !_showAllSuggestions">@(_showAllSuggestions ? "Show only strongly supported and conflicts" : $"Show all {suggestions.Total} candidates")</button></p>
-                        @if (shown.Count == 0) { <p class="ip-muted" data-testid="ip-suggestions-none">No strongly supported mapping or conflict. Show all candidates to review the rest.</p> }
+                        <div class="ip-filters" role="group" aria-label="Filter integration candidates">
+                            <label class="ip-field-inline">Review state
+                                <select class="form-control" data-testid="ip-candidate-filter" @bind="_candidateFilter">
+                                    <option value="@CandidateFilter.Ready">Ready to review (@suggestions.StronglySupported)</option>
+                                    <option value="@CandidateFilter.NeedsConfirmation">Needs confirmation (@suggestions.Suggested)</option>
+                                    <option value="@CandidateFilter.NeedsMapping">Needs mapping (@suggestions.Unassigned)</option>
+                                    @if (suggestions.Conflicts > 0) { <option value="@CandidateFilter.Conflicts">Conflicting evidence (@suggestions.Conflicts)</option> }
+                                    <option value="@CandidateFilter.All">All (@suggestions.Total)</option>
+                                </select>
+                            </label>
+                            <label class="ip-field-inline">Search <input type="search" class="form-control" data-testid="ip-candidate-search" @bind="_candidateSearch" @bind:event="oninput" placeholder="Producer, consumer or channel" /></label>
+                        </div>
+                        <p class="ip-muted" role="status" data-testid="ip-suggestion-filter">Showing @shown.Count of @suggestions.Total candidates@(mixed ? "" : $" · {IntegrationsOverviewPresentation.Label(IntegrationsOverviewPresentation.Strength(_candidateFilter)!.Value)}").
+                            @if (!mixed) { <button type="button" class="ip-link" data-testid="ip-suggestions-all" @onclick="() => _candidateFilter = CandidateFilter.All">Show all @suggestions.Total candidates</button> }</p>
+                        @if (shown.Count == 0) { <p class="ip-muted" data-testid="ip-suggestions-none">No candidate matches this view. Choose another review state or show all candidates.</p> }
                         <ul class="ip-suggestion-items">
-                            @foreach (var c in shown)
+                            @foreach (var group in IntegrationsOverviewPresentation.GroupByProducer(shown))
                             {
-                                var strength = IntegrationsOverviewPresentation.Strength(c);
-                                var configured = IntegrationsOverviewPresentation.AlreadyConfigured(_catalog, c);
-                                <li class="ip-suggestion" data-testid="ip-suggestion" data-strength="@strength" data-candidate="@c.Id">
-                                    <div class="ip-suggestion-main">
-                                        <strong>@(c.SourceEntity ?? SourceIntegrationsPresentation.ChannelShort(c.ChannelName))</strong>
-                                        <span class="ip-cell-sub" data-testid="ip-suggestion-kind">@IntegrationsOverviewPresentation.SuggestionKind(c)</span>
-                                        <span class="ip-cell-sub">@SourceIntegrationLabels.Transport(c.Transport) → @(c.ConsumerCandidate ?? "consumer not found in source") · <span class="ip-mono" title="@c.ChannelName">@SourceIntegrationsPresentation.ChannelShort(c.ChannelName)</span></span>
-                                        <span class="ip-cell-sub ip-muted ip-wrap" data-testid="ip-suggestion-origin">@IntegrationsOverviewPresentation.DetectedIn(c, _sources?.Discovery?.ArchiveName)</span>
-                                    </div>
-                                    <span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(strength)" data-testid="ip-suggestion-strength">@IntegrationsOverviewPresentation.Label(strength)</span>
-                                    @if (configured) { <span class="ip-muted" data-testid="ip-suggestion-configured">Already configured</span> }
-                                    else { <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-suggestion-add" aria-label="@($"Add integration {c.SourceEntity ?? c.ChannelName}")" disabled="@(_saveState == SaveState.Saving)" @onclick="() => AddSuggestionAsync(c)">Add this integration</button> }
-                                </li>
+                                @if (group.Count() > 1)
+                                {
+                                    <li class="ip-suggestion-group" data-testid="ip-suggestion-group" data-producer="@group.Key">
+                                        <details>
+                                            <summary><strong>@group.Key</strong> · @group.Count() candidate relationships</summary>
+                                            <ul class="ip-suggestion-items">
+                                                @foreach (var c in group) { @CandidateRow(c, mixed) }
+                                            </ul>
+                                        </details>
+                                    </li>
+                                }
+                                else
+                                {
+                                    @CandidateRow(group.First(), mixed)
+                                }
                             }
                         </ul>
                     </div>
@@ -394,18 +423,76 @@
             }
         </section>
 
+        @if (_catalog.Templates.FirstOrDefault() is { } offer)
+        {
+            var setupGroups = offer.Items.GroupBy(IntegrationsOverviewPresentation.Group).OrderBy(g => g.Key).ToList();
+            <section class="ip-section ip-helper" aria-labelledby="ip-helper-heading" data-testid="ip-template">
+                <h3 id="ip-helper-heading">Project-specific environment setup</h3>
+                <div class="ip-card ip-setup-card">
+                    <h4 data-testid="ip-template-name">@offer.Name</h4>
+                    <p data-testid="ip-template-kind">Adds project-specific @Profile.EnvironmentType configuration that cannot be reliably derived from source evidence.</p>
+                    <p class="ip-muted">Optional. Never applied automatically. Existing configured values are never overwritten.</p>
+                    <div class="ip-safe-apply" data-testid="ip-template-safe">
+                        <strong>Safe apply</strong>
+                        <p>Existing configured values are never overwritten. Source-discovered integration candidates are reviewed separately and are not auto-added.</p>
+                    </div>
+                    <div class="ip-actions-row">
+                        <button type="button" class="btn-secondary" data-testid="ip-template-review" aria-expanded="@(_templateReview ? "true" : "false")" aria-controls="ip-template-items" @onclick="() => _templateReview = !_templateReview">@(_templateReview ? "Hide setup details" : "Review proposed setup")</button>
+                        @if (_templateReview)
+                        {
+                            <button type="button" class="btn-secondary" data-testid="ip-template-apply" @onclick="() => ApplyTemplateAsync(offer)" disabled="@(_editing is not null)">Apply safe setup</button>
+                        }
+                    </div>
+                    @if (_templateReview)
+                    {
+                        <div id="ip-template-items" data-testid="ip-template-items">
+                            <div class="ip-setup-summary" data-testid="ip-template-summary">
+                                <strong>Proposed setup</strong>
+                                <ul>
+                                    @foreach (var g in setupGroups) { <li>@IntegrationsOverviewPresentation.GroupCount(g.Key, g.Count())</li> }
+                                    <li data-testid="ip-template-overwritten">0 existing values overwritten — records that already exist are kept as they are</li>
+                                </ul>
+                            </div>
+                            @foreach (var g in setupGroups)
+                            {
+                                <section class="ip-setup-group" aria-label="@IntegrationsOverviewPresentation.GroupLabel(g.Key)" data-testid="ip-template-group" data-group="@g.Key">
+                                    <h5>@IntegrationsOverviewPresentation.GroupLabel(g.Key)</h5>
+                                    <ul class="ip-template-items">
+                                        @foreach (var item in g)
+                                        {
+                                            <li data-testid="ip-template-item" data-provenance="@item.Provenance"><strong>@item.Name</strong>
+                                                <span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.ProvenanceTone(item.Provenance)" data-testid="ip-template-item-state">@IntegrationsOverviewPresentation.Provenance(item.Provenance)</span>
+                                                <span class="ip-cell-sub" data-testid="ip-template-item-help">@IntegrationsOverviewPresentation.ProvenanceHelp(item)</span>
+                                                <span class="ip-cell-sub ip-muted">@item.Detail</span></li>
+                                        }
+                                    </ul>
+                                </section>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+        @if (_catalog.AppliedTemplateId is { } appliedTemplate)
+        {
+            <p class="ip-muted" data-testid="ip-template-applied">Project-specific setup @(_appliedTemplateNames.GetValueOrDefault(appliedTemplate) ?? _catalog.Templates.FirstOrDefault(t => t.Id == appliedTemplate)?.Name ?? $"template {appliedTemplate}") applied. Its records are ordinary integrations (origin “Seed”) you can edit or delete; values from it are setup values, not discovered evidence, and assumptions stay assumptions.</p>
+        }
+
         <section class="ip-section ip-source-card" aria-labelledby="ip-source-heading" data-testid="ip-source-evidence">
             <h3 id="ip-source-heading">Source evidence</h3>
             @if (_sources?.Discovery is { } discovery)
             {
-                <p data-testid="ip-source-summary"><span class="ip-mono" data-testid="ip-source-archive">@discovery.ArchiveName</span> · Analysis: <span data-testid="ip-source-status">@discovery.Status</span>
-                    <span class="ip-muted">· Updated @discovery.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</span></p>
+                <p data-testid="ip-source-summary"><span class="ip-mono" data-testid="ip-source-archive">@discovery.ArchiveName</span> · <span data-testid="ip-source-status">@discovery.Status</span> analysis
+                    <span class="ip-muted">· updated @discovery.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</span>
+                    @if (discovery.Status == SourceDiscoveryStatus.Partial) { <span class="ip-muted"> · <a class="ip-link" href="/source-analysis" data-testid="ip-source-partial">Why partial?</a> (a Source Analysis limitation, not a partial integration)</span> }</p>
             }
             else { <p class="ip-muted" data-testid="ip-source-summary">No source snapshot is linked to this environment.</p> }
             <p class="ip-actions-row">
-                <a class="btn-secondary ip-btn-link" href="/source-analysis" data-testid="ip-source-open">Open Source Analysis</a>
+                <a class="ip-link" href="/source-analysis" data-testid="ip-source-open">View source evidence</a>
             </p>
-            <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="ip-source-details" Class="disclosure-inline">
+            <p class="ip-muted" data-testid="ip-messaging-per-integration">Messaging evidence is reviewed per integration.
+                <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-open-iqr-evidence">Open Integration Quality Review evidence</a></p>
+            <ReviewDisclosure Text="View technical details" CollapseText="Hide technical details" TestId="ip-source-details" Class="disclosure-inline">
             @if (_terraform is { SourceAnalysisEnabled: true } terraform)
             {
                 var reviews = IntegrationsOverviewPresentation.Reviews(terraform);
@@ -418,7 +505,7 @@
                     {
                         var compared = terraform.Values.Count(v => v.Comparison.State is SourceComparisonState.Matches || IntegrationsOverviewPresentation.NeedsReview(v.Comparison.State));
                         var matching = terraform.Values.Count(v => v.Comparison.State == SourceComparisonState.Matches);
-                        <p data-testid="ip-terraform-status"><strong>Terraform:</strong> <span class="ip-mono">@terraform.ArchiveName</span> · @matching of @compared compared value@(compared == 1 ? "" : "s") match source@(reviews.Count > 0 ? $" · {reviews.Count} need{(reviews.Count == 1 ? "s" : "")} review" : "").
+                        <p data-testid="ip-terraform-status"><strong>Terraform:</strong> <span class="ip-mono">@terraform.ArchiveName</span> · @IntegrationsOverviewPresentation.TerraformSummary(matching, compared, reviews.Count)
                             <span class="ip-muted">Declared in source is not deployed; neither value is changed automatically.</span></p>
                         @if (reviews.Count > 0)
                         {
@@ -434,49 +521,22 @@
                     }
                 </div>
             }
-            <p class="ip-muted"><a class="ip-link" href="/source-analysis/application-messaging" data-testid="ip-open-messaging-evidence">Application messaging evidence</a> · bound per integration in <a class="ip-link" href="/integration-quality-review?view=evidence">Integration Quality Review → Evidence</a></p>
+            @if (_sources?.Discovery is { } technicalDiscovery) { <p class="ip-muted" data-testid="ip-source-snapshot-id">Snapshot <code>@technicalDiscovery.SourceSnapshotId</code></p> }
+            <p class="ip-muted"><a class="ip-link" href="/source-analysis/application-messaging" data-testid="ip-open-messaging-evidence">Application messaging evidence in Source Analysis</a> · canonical evidence is bound per integration in Integration Quality Review → Evidence.</p>
             </ReviewDisclosure>
         </section>
-
-        @if (_catalog.Templates.FirstOrDefault() is { } offer)
-        {
-            <section class="ip-section ip-helper" aria-labelledby="ip-helper-heading" data-testid="ip-template">
-                <p class="ip-helper-kind" data-testid="ip-template-kind">Environment helper — optional, project-specific, never applied automatically</p>
-                <h3 id="ip-helper-heading">@offer.Name</h3>
-                <p class="ip-muted">@offer.Description @offer.SuggestionReason It is never applied automatically and never overwrites an existing integration.</p>
-                <div class="ip-actions-row">
-                    <button type="button" class="btn-secondary" data-testid="ip-template-review" aria-expanded="@(_templateReview ? "true" : "false")" aria-controls="ip-template-items" @onclick="() => _templateReview = !_templateReview">@(_templateReview ? "Hide template" : "Review template")</button>
-                    <button type="button" class="btn-secondary" data-testid="ip-template-apply" @onclick="() => ApplyTemplateAsync(offer)" disabled="@(_editing is not null)">Apply</button>
-                </div>
-                @if (_templateReview)
-                {
-                    <ul class="ip-template-items" id="ip-template-items" data-testid="ip-template-items">
-                        @foreach (var item in offer.Items)
-                        {
-                            <li data-testid="ip-template-item" data-provenance="@item.Provenance"><strong>@item.Kind · @item.Name</strong> <span class="ip-pill ip-pill-muted">@IntegrationsOverviewPresentation.Provenance(item.Provenance)</span>
-                                <span class="ip-cell-sub">@item.Detail</span></li>
-                        }
-                    </ul>
-                    <p class="ip-muted">Existing records are never overwritten, and values Source Analysis discovers (hubs, consumers, Service Bus entities, routes) are not added.</p>
-                }
-            </section>
-        }
-        @if (_catalog.AppliedTemplateId is { } appliedTemplate)
-        {
-            <p class="ip-muted" data-testid="ip-template-applied">Extension helper @(_appliedTemplateNames.GetValueOrDefault(appliedTemplate) ?? _catalog.Templates.FirstOrDefault(t => t.Id == appliedTemplate)?.Name ?? $"template {appliedTemplate}") applied. Its records are ordinary integrations (origin “Seed”) you can edit or delete; values from it are template values, not discovered evidence.</p>
-        }
 
         <section class="ip-section ip-advanced" aria-labelledby="ip-advanced-heading" data-testid="ip-advanced">
             <h3 id="ip-advanced-heading" class="ip-advanced-heading">
                 <button type="button" class="ip-disclosure" data-testid="ip-advanced-toggle" aria-expanded="@(_advancedOpen ? "true" : "false")" aria-controls="ip-advanced-body" @onclick="() => _advancedOpen = !_advancedOpen">Advanced</button>
             </h3>
-            @if (!_advancedOpen) { <p class="ip-muted">Runtime (platforms and runtime evidence) · Messaging (evidence scope and links) · Diagnostics (source discovery).</p> }
+            @if (!_advancedOpen) { <p class="ip-muted">Runtime (platforms and runtime evidence setup) · Messaging (environment messaging evidence) · Diagnostics (refresh integration candidates).</p> }
             else
             {
                 <div id="ip-advanced-body" data-testid="ip-advanced-body">
                     <h4 data-testid="ip-advanced-runtime">Runtime</h4>
-                    <p class="ip-muted">Platforms and runtime evidence setup. Configured ≠ observed: runtime evidence is read only when a review runs.</p>
-                    <p class="ip-muted" data-testid="ip-advanced-execution"><span class="ip-pill ip-pill-@EventHubRuntimeEvidencePresentation.ExecutionTone(_catalog.AzureRuntimeEnabled)" data-testid="ip-summary-azure">@EventHubRuntimeEvidencePresentation.ExecutionBadge(_catalog.AzureRuntimeEnabled)</span></p>
+                    <p class="ip-muted" data-testid="ip-runtime-copy">Runtime evidence is separate from configuration. Configured values do not prove what is running. Runtime evidence is only available after a runtime-aware review or capture.</p>
+                    <p class="ip-muted" data-testid="ip-advanced-execution"><span class="ip-pill ip-pill-@EventHubRuntimeEvidencePresentation.ExecutionTone(_catalog.AzureRuntimeEnabled)" data-testid="ip-summary-azure">Azure runtime reading: @(_catalog.AzureRuntimeEnabled ? "Enabled for this BirkNext instance (read-only, during review)" : "Not enabled for this BirkNext instance")</span></p>
                     @if (_catalog.Platforms.Count == 0) { <p class="ip-muted" data-testid="ip-no-platforms">No platform is configured. Runtime evidence is set up per platform once an integration uses one.</p> }
                     @foreach (var platform in _catalog.Platforms)
                     {
@@ -529,17 +589,20 @@
                     }
 
                     <h4 data-testid="ip-advanced-messaging">Messaging</h4>
-                    <p class="ip-muted" data-testid="ip-messaging-semantics">Configured (in this catalog) ≠ discovered (in source) ≠ linked (bound to a consumer here) ≠ observed (at runtime). Source and configuration evidence never imply runtime observation.</p>
+                    <div class="ip-muted" data-testid="ip-messaging-semantics"><p>Messaging evidence has four separate states:</p>
+                        <ul><li>Discovered in source</li><li>Configured for this environment</li><li>Linked to a configured integration</li><li>Observed at runtime</li></ul>
+                        <p>These states do not imply one another.</p></div>
                     <ApplicationMessagingPanel EnvironmentId="@Profile.Id" Catalog="_catalog" Evidence="_messaging" EvidenceChanged="set => _messaging = set" View="ApplicationMessagingView.Configuration" />
 
                     <h4 data-testid="ip-advanced-diagnostics">Diagnostics</h4>
                     <div class="ip-actions-row">
-                        <button type="button" class="btn-secondary" data-testid="ip-discover" disabled="@_discovering" @onclick="DiscoverAsync">@(_discovering ? "Discovering…" : "Re-run source discovery")</button>
+                        <button type="button" class="btn-secondary" data-testid="ip-discover" aria-describedby="ip-discover-help" disabled="@_discovering" @onclick="DiscoverAsync">@(_discovering ? "Refreshing…" : "Refresh integration candidates")</button>
                     </div>
+                    <p class="ip-muted" id="ip-discover-help" data-testid="ip-discover-help">Re-evaluates integration candidates from the stored Source Analysis snapshot. Source is not re-analyzed, nothing is configured, and no live system is contacted.</p>
                     @if (_discoveryReport is { } discoveryReport)
                     {
                         <div class="ip-discovery-report" role="status" data-testid="ip-discovery-report">
-                            <strong>Discovery result</strong>
+                            <strong>Refresh result</strong>
                             <ul>@foreach (var line in discoveryReport) { <li>@line</li> }</ul>
                         </div>
                     }
@@ -587,7 +650,11 @@
     private string _mappingFilter = "";
     /// <summary>Source suggestions are secondary: listed only on request, strongly supported and conflicts first.</summary>
     private bool _suggestionsOpen;
-    private bool _showAllSuggestions;
+    /// <summary>The candidate list opens on the candidates ready to review first; other review states and All are one choice away.</summary>
+    private CandidateFilter _candidateFilter = CandidateFilter.Ready;
+    private string _candidateSearch = "";
+    /// <summary>The candidate whose review panel is open. Opening it never adds, configures or confirms anything.</summary>
+    private string? _reviewingCandidate;
     private bool _focusSuggestions;
     private ElementReference _suggestionsFocus;
     private bool _templateReview;
@@ -656,6 +723,57 @@
 
     private void OpenSuggestions() { _suggestionsOpen = true; _focusSuggestions = true; }
 
+    /// <summary>
+    /// One candidate: the relationship in words first (producer → consumer, kind, channel, evidence), technical source details behind a disclosure.
+    /// "Review & configure" only opens the review panel; adding keeps the consumer mapping unconfirmed.
+    /// </summary>
+    private RenderFragment CandidateRow(SourceIntegrationCandidate c, bool mixed) => __builder =>
+    {
+        var strength = IntegrationsOverviewPresentation.Strength(c);
+        var configured = IntegrationsOverviewPresentation.AlreadyConfigured(_catalog!, c);
+        var reviewing = _reviewingCandidate == c.Id;
+        var slug = Slug(c.Id);
+        <li class="ip-suggestion" data-testid="ip-suggestion" data-strength="@strength" data-candidate="@c.Id">
+            <div class="ip-suggestion-main">
+                <strong data-testid="ip-suggestion-relationship">@IntegrationsOverviewPresentation.Relationship(c)</strong>
+                <span class="ip-cell-sub" data-testid="ip-suggestion-kind">@IntegrationsOverviewPresentation.SuggestionKind(c)</span>
+                <dl class="ip-suggestion-facts">
+                    <div><dt>Producer</dt><dd>@IntegrationsOverviewPresentation.Producer(c)</dd></div>
+                    <div><dt>Consumer</dt><dd>@(c.ConsumerCandidate ?? "Not identified in source")</dd></div>
+                    <div><dt>Channel</dt><dd class="ip-mono ip-wrap" title="@c.ChannelName">@SourceIntegrationsPresentation.ChannelShort(c.ChannelName)</dd></div>
+                    <div><dt>Evidence</dt><dd data-testid="ip-suggestion-evidence">@SourceIntegrationsPresentation.Evidence(c.ConsumerEvidence)</dd></div>
+                </dl>
+                <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="@($"ip-suggestion-details-{slug}")" Class="disclosure-inline disclosure-small">
+                    <dl class="ip-dl ip-dl-technical">
+                        <div><dt>Detected in</dt><dd class="ip-wrap" data-testid="ip-suggestion-origin">@IntegrationsOverviewPresentation.DetectedIn(c, _sources?.Discovery?.ArchiveName)</dd></div>
+                        <div><dt>Transport</dt><dd>@SourceIntegrationLabels.Transport(c.Transport)</dd></div>
+                        <div><dt>Channel</dt><dd class="ip-mono ip-wrap">@(c.ChannelName ?? "—")</dd></div>
+                        @if (c.NamespaceName is { } ns) { <div><dt>Namespace</dt><dd class="ip-mono ip-wrap">@ns</dd></div> }
+                        @if (c.ProducerComponent is { } component) { <div><dt>Component</dt><dd class="ip-mono ip-wrap">@component</dd></div> }
+                        @foreach (var e in c.Evidence.Take(5)) { <div><dt>Source</dt><dd class="ip-mono ip-wrap">@e.File</dd></div> }
+                    </dl>
+                </ReviewDisclosure>
+            </div>
+            @if (mixed) { <span class="ip-pill ip-pill-@IntegrationsOverviewPresentation.Tone(strength)" data-testid="ip-suggestion-strength">@IntegrationsOverviewPresentation.Label(strength)</span> }
+            @if (configured) { <span class="ip-muted" data-testid="ip-suggestion-configured">Already configured</span> }
+            else
+            {
+                <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-suggestion-review" aria-expanded="@(reviewing ? "true" : "false")" aria-controls="@($"ip-candidate-review-{slug}")"
+                        aria-label="@($"Review and configure {IntegrationsOverviewPresentation.Relationship(c)}")" @onclick="() => _reviewingCandidate = reviewing ? null : c.Id">Review &amp; configure</button>
+            }
+            @if (reviewing && !configured)
+            {
+                <div class="ip-candidate-review" id="@($"ip-candidate-review-{slug}")" data-testid="ip-candidate-review">
+                    <p>Adding creates a configured integration with origin “Source suggestion”. Its consumer mapping stays <strong>unconfirmed</strong> until you confirm it under Configured integrations.</p>
+                    <div class="ip-actions-row">
+                        <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-suggestion-add" disabled="@(_saveState == SaveState.Saving)" @onclick="() => AddSuggestionAsync(c)">Add as unconfirmed integration</button>
+                        <button type="button" class="ip-link" data-testid="ip-candidate-review-cancel" @onclick="() => _reviewingCandidate = null">Cancel</button>
+                    </div>
+                </div>
+            }
+        </li>
+    };
+
     /// <summary>Adds a source suggestion as a configured integration. Origin = source suggestion; the mapping stays a suggestion until confirmed.</summary>
     private Task AddSuggestionAsync(SourceIntegrationCandidate candidate)
     {
@@ -679,7 +797,8 @@
         _search.Length > 0 ? $"Search: {_search}" : null,
     }.Where(x => x is not null));
 
-    /// <summary>"Discover from source": re-runs source integration discovery on the stored snapshot and shows a compact result. Source-only.</summary>
+    /// <summary>"Refresh integration candidates": re-evaluates candidates from the stored snapshot (the backend runs the same pure discovery over
+    /// stored architecture evidence — no archive re-processing, no runtime call) and shows a compact result.</summary>
     private async Task DiscoverAsync()
     {
         _discovering = true;

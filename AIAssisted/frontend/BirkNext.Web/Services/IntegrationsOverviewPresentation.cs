@@ -17,6 +17,12 @@ public sealed record SuggestionSummary(bool Available, int Total, int StronglySu
 /// </summary>
 public enum TerraformSupport { NotCompared, SeededAssumption, Supported, NeedsReview }
 
+/// <summary>The candidate list's review-state filter. <see cref="Ready"/> is the default view; <see cref="All"/> lists every candidate.</summary>
+public enum CandidateFilter { Ready, NeedsConfirmation, NeedsMapping, Conflicts, All }
+
+/// <summary>One project-specific setup item, grouped by what kind of evidence or configuration it is.</summary>
+public enum SetupGroup { Platforms, HistoricalRuntimeEvidence, Assumptions, ConfirmedMappings, Extensions }
+
 /// <summary>Runtime evidence setup of an integration or environment: whether its runtime evidence SOURCES are configured — never observed health.
 /// Unavailable: the integration's kind has no runtime evidence provider (e.g. HTTP/API), so there is nothing to configure.</summary>
 public enum RuntimeEvidenceStatus { NotConfigured, Partial, Configured, Unavailable }
@@ -35,13 +41,118 @@ public static class IntegrationsOverviewPresentation
         _ => SuggestionStrength.Suggested,
     };
 
+    /// <summary>
+    /// The review state a person acts on. Same semantics as before, plainer words: StronglySupported (explicit wiring or several independent
+    /// indicators) is ready to review first; Suggested (naming/convention only) needs confirmation; Unassigned (no consumer identified) needs
+    /// mapping. None of them is a confirmed mapping.
+    /// </summary>
     public static string Label(SuggestionStrength strength) => strength switch
     {
-        SuggestionStrength.StronglySupported => "Strongly supported",
-        SuggestionStrength.Suggested => "Suggested",
-        SuggestionStrength.Conflict => "Conflict",
-        _ => "Unassigned",
+        SuggestionStrength.StronglySupported => "Ready to review",
+        SuggestionStrength.Suggested => "Needs confirmation",
+        SuggestionStrength.Conflict => "Conflicting evidence",
+        _ => "Needs mapping",
     };
+
+    /// <summary>The source-evidence wording stored with an added record's mapping provenance (unchanged by the review-state relabel).</summary>
+    private static string EvidenceWording(SuggestionStrength strength) => strength switch
+    {
+        SuggestionStrength.StronglySupported => "strongly supported",
+        SuggestionStrength.Suggested => "suggested",
+        SuggestionStrength.Conflict => "conflict",
+        _ => "unassigned",
+    };
+
+    public static SuggestionStrength? Strength(CandidateFilter filter) => filter switch
+    {
+        CandidateFilter.Ready => SuggestionStrength.StronglySupported,
+        CandidateFilter.NeedsConfirmation => SuggestionStrength.Suggested,
+        CandidateFilter.NeedsMapping => SuggestionStrength.Unassigned,
+        CandidateFilter.Conflicts => SuggestionStrength.Conflict,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The candidate review list: one review state (or all), optionally searched, ordered ready-first then needs confirmation, needs mapping and
+    /// conflicts, alphabetical by relationship within a state — never the backend's incidental order.
+    /// </summary>
+    public static IReadOnlyList<SourceIntegrationCandidate> Candidates(SourceIntegrationsReport? report, CandidateFilter filter, string? search = null) =>
+        Suggestions(report)
+            .Where(c => Strength(filter) is not { } wanted || Strength(c) == wanted)
+            .Where(c => string.IsNullOrWhiteSpace(search) || SearchText(c).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(c => Strength(c) switch { SuggestionStrength.StronglySupported => 0, SuggestionStrength.Suggested => 1, SuggestionStrength.Unassigned => 2, _ => 3 })
+            .ThenBy(Relationship, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Id, StringComparer.Ordinal).ToList();
+
+    private static string SearchText(SourceIntegrationCandidate c) =>
+        string.Join(" ", new[] { Relationship(c), c.ChannelName, c.ProducerComponent, c.SourceSystem, SuggestionKind(c), c.NamespaceName }.OfType<string>());
+
+    /// <summary>Who produces or calls, in words: the source entity, else the producing component, else the source system, else the channel.</summary>
+    public static string Producer(SourceIntegrationCandidate c) =>
+        c.SourceEntity ?? c.ProducerComponent ?? c.SourceSystem ?? SourceIntegrationsPresentation.ChannelShort(c.ChannelName);
+
+    /// <summary>"Producer → consumer": the human-readable relationship a candidate row leads with.</summary>
+    public static string Relationship(SourceIntegrationCandidate c) => $"{Producer(c)} → {c.ConsumerCandidate ?? "consumer not identified"}";
+
+    /// <summary>Candidates sharing a producer, so several technically different relationships of one component read as one expandable group.</summary>
+    public static IReadOnlyList<IGrouping<string, SourceIntegrationCandidate>> GroupByProducer(IReadOnlyList<SourceIntegrationCandidate> candidates) =>
+        candidates.GroupBy(Producer, StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>The overview's runtime-evidence answer, in words that never sound like a failed execution or a missing configuration object.</summary>
+    public static string OverviewRuntimeLabel(IntegrationCatalog catalog, RuntimeEvidenceStatus status) => catalog.Integrations.Count == 0
+        ? "None — no configured integrations"
+        : status switch
+        {
+            RuntimeEvidenceStatus.Configured => "Sources configured · read during review",
+            RuntimeEvidenceStatus.Partial => "Partly set up",
+            RuntimeEvidenceStatus.Unavailable => "Not applicable to these integrations",
+            _ => "Setup required",
+        };
+
+    /// <summary>Which project-specific setup group an item belongs to.</summary>
+    public static SetupGroup Group(IntegrationTemplateItem item) => item switch
+    {
+        { Provenance: IntegrationTemplateProvenance.ConfirmedMapping } => SetupGroup.ConfirmedMappings,
+        _ when item.Kind.Contains("Extension", StringComparison.OrdinalIgnoreCase) => SetupGroup.Extensions,
+        _ when item.Kind.Contains("Platform", StringComparison.OrdinalIgnoreCase) => SetupGroup.Platforms,
+        { Provenance: IntegrationTemplateProvenance.HistoricalAudit } => SetupGroup.HistoricalRuntimeEvidence,
+        _ => SetupGroup.Assumptions,
+    };
+
+    public static string GroupLabel(SetupGroup group) => group switch
+    {
+        SetupGroup.Platforms => "Platforms",
+        SetupGroup.HistoricalRuntimeEvidence => "Historical runtime evidence",
+        SetupGroup.Assumptions => "Assumptions",
+        SetupGroup.ConfirmedMappings => "Confirmed integration mappings",
+        _ => "Extensions",
+    };
+
+    /// <summary>Pre-apply counts in words ("3 platform settings"), one per non-empty group.</summary>
+    public static string GroupCount(SetupGroup group, int count) => group switch
+    {
+        SetupGroup.Platforms => $"{count} platform setting{(count == 1 ? "" : "s")}",
+        SetupGroup.HistoricalRuntimeEvidence => $"{count} historical runtime evidence record{(count == 1 ? "" : "s")}",
+        SetupGroup.Assumptions => $"{count} assumption{(count == 1 ? "" : "s")}",
+        SetupGroup.ConfirmedMappings => $"{count} confirmed integration mapping{(count == 1 ? "" : "s")}",
+        _ => $"{count} extension{(count == 1 ? "" : "s")}",
+    };
+
+    /// <summary>What a setup item's state means, so an assumption never carries the confidence of a confirmed mapping or a runtime observation.</summary>
+    public static string ProvenanceHelp(IntegrationTemplateItem item) => item.Provenance switch
+    {
+        IntegrationTemplateProvenance.ConfirmedMapping => "Reviewed mapping carried by this setup.",
+        IntegrationTemplateProvenance.ConfiguredAssumption => Group(item) == SetupGroup.Extensions
+            ? "Project-specific extension setup, not general integration discovery. Assumed — not verified at runtime."
+            : "Assumed value — not verified at runtime.",
+        _ => "Previously verified; not re-verified for the current review.",
+    };
+
+    /// <summary>The Terraform line of Source evidence. "0 of 0" is never a metric: no comparable value reads as exactly that.</summary>
+    public static string TerraformSummary(int matching, int compared, int reviews) => compared == 0
+        ? "Terraform evidence available. No comparable environment values were found."
+        : $"{matching} of {compared} compared value{(compared == 1 ? "" : "s")} match source{(reviews > 0 ? $" · {reviews} need{(reviews == 1 ? "s" : "")} review" : "")}.";
+
+
 
     public static string Tone(SuggestionStrength strength) => strength switch
     {
@@ -96,7 +207,7 @@ public static class IntegrationsOverviewPresentation
                 ? new IntegrationConsumer
                 {
                     DisplayName = consumer, MappingState = ConsumerMappingState.Suggested, MappingSourceSnapshotId = snapshotId,
-                    MappingSource = $"Source Analysis suggestion ({Label(Strength(candidate)).ToLowerInvariant()})",
+                    MappingSource = $"Source Analysis suggestion ({EvidenceWording(Strength(candidate))})",
                 }
                 : new IntegrationConsumer { MappingState = ConsumerMappingState.NeedsConfirmation },
             Origin = IntegrationRecordOrigin.SourceSuggestion,
@@ -239,5 +350,11 @@ public static class IntegrationsOverviewPresentation
         IntegrationTemplateProvenance.ConfirmedMapping => "Confirmed mapping",
         IntegrationTemplateProvenance.ConfiguredAssumption => "Assumption",
         _ => "Historical audit",
+    };
+
+    public static string ProvenanceTone(IntegrationTemplateProvenance provenance) => provenance switch
+    {
+        IntegrationTemplateProvenance.ConfirmedMapping => "info",
+        _ => "muted",
     };
 }

@@ -74,7 +74,7 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     public void TheSectionsAreGeneric_NoSourceSystemOrTechnologyInTheirTitles()
     {
         var cut = Open();
-        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Suggestions from Source Analysis", "Source evidence"]);
+        cut.FindAll("h3").Select(h => h.TextContent.Trim()).Should().StartWith(["Configured integrations", "Integration candidates from Source Analysis", "Source evidence"]);
         cut.FindAll("h3").Select(h => h.TextContent).Should().NotContain(h => h.Contains("Debezium") || h.Contains("BIRK CDC"));
         cut.FindAll("[data-testid=ip-group]").Should().BeEmpty("the configured group name is no longer a section title");
         cut.FindAll("[data-testid=ip-table] thead th").Select(h => h.TextContent.Trim()).Should().Equal("Integration", "Type", "Producer / source", "Consumer / destination", "Configuration", "Source evidence", "Runtime evidence", "Actions");
@@ -238,7 +238,8 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     {
         UseM2lbReport();
         var cut = Open().WithAdvancedOpen();
-        cut.Find("[data-testid=ip-discover]").TextContent.Should().Be("Re-run source discovery");
+        cut.Find("[data-testid=ip-discover]").TextContent.Should().Be("Refresh integration candidates");
+        cut.Find("[data-testid=ip-discover-help]").TextContent.Should().Contain("stored Source Analysis snapshot").And.Contain("Source is not re-analyzed").And.Contain("no live system is contacted");
         cut.Find("[data-testid=ip-discover]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-discovery-report]").GetAttribute("role").Should().Be("status"));
         _api.Calls.Should().Contain("discover-source-integrations");
@@ -342,19 +343,27 @@ public sealed class SourceIntegrationsUiTests : BunitContext
     }
 
     [Fact]
-    public void Suggestions_AreSummarized_AndTheDefaultListShowsStronglySupportedAndConflictsOnly()
+    public void Candidates_AreSummarized_AndTheDefaultListShowsReadyToReviewFirst()
     {
         UseSuggestions();
         var cut = Open();
         Int(cut, "ip-summary-suggestions").Should().Be(4);
         (Int(cut, "ip-suggestions-total"), Int(cut, "ip-suggestions-strong"), Int(cut, "ip-suggestions-suggested"), Int(cut, "ip-suggestions-unassigned"), Int(cut, "ip-suggestions-conflicts"))
             .Should().Be((4, 1, 1, 1, 1));
+        cut.Find("[data-testid=ip-review-suggestions]").TextContent.Should().Be("Review integration candidates");
         cut.Find("[data-testid=ip-review-suggestions]").Click();
-        cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("Conflict", "StronglySupported");
-        cut.Find("[data-testid=ip-suggestion-filter]").TextContent.Should().Contain("strongly supported mappings and conflicts (2 of 4)");
+        cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("StronglySupported");
+        cut.FindAll("[data-testid=ip-suggestion-strength]").Should().BeEmpty("a single-state view does not repeat the same badge on every row");
+        cut.Find("[data-testid=ip-suggestion-filter]").TextContent.Should().Contain("Showing 1 of 4 candidates · Ready to review");
+        cut.Find("[data-testid=ip-candidate-filter]").Change(nameof(CandidateFilter.Conflicts));
+        cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("Conflict");
         cut.Find("[data-testid=ip-suggestions-all]").Click();
-        cut.FindAll("[data-testid=ip-suggestion]").Should().HaveCount(4);
+        cut.FindAll("[data-testid=ip-suggestion]").Select(r => r.GetAttribute("data-strength")).Should().Equal("StronglySupported", "Suggested", "Unassigned", "Conflict");
+        cut.FindAll("[data-testid=ip-suggestion-strength]").Select(s => s.TextContent).Should().Equal("Ready to review", "Needs confirmation", "Needs mapping", "Conflicting evidence");
+        cut.Find("[data-testid=ip-candidate-search]").Input("Orders");
+        cut.FindAll("[data-testid=ip-suggestion]").Should().ContainSingle().Which.QuerySelector("[data-testid=ip-suggestion-relationship]")!.TextContent.Should().Be("Orders → Orders.Worker");
         cut.Find("[data-testid=ip-suggestions-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        _api.Saved.Should().BeEmpty("reviewing candidates writes nothing");
     }
 
     [Fact]
@@ -363,9 +372,14 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         UseSuggestions();
         var cut = Open();
         cut.Find("[data-testid=ip-review-suggestions]").Click();
-        var add = cut.FindAll("[data-testid=ip-suggestion]").Single(r => r.GetAttribute("data-strength") == "StronglySupported").QuerySelector("[data-testid=ip-suggestion-add]")!;
-        add.TextContent.Should().Be("Add this integration", "a suggestion's action is about that suggestion, not the generic trigger");
-        add.GetAttribute("aria-label").Should().StartWith("Add integration ");
+        var review = cut.FindAll("[data-testid=ip-suggestion]").Single(r => r.GetAttribute("data-strength") == "StronglySupported").QuerySelector("[data-testid=ip-suggestion-review]")!;
+        review.TextContent.Should().Be("Review & configure", "the list action reviews a candidate; it never implies a confirmed mapping");
+        review.GetAttribute("aria-label").Should().StartWith("Review and configure ");
+        review.Click();
+        _api.Created.Should().BeEmpty("opening the review adds nothing");
+        cut.Find("[data-testid=ip-candidate-review]").TextContent.Should().Contain("stays unconfirmed");
+        var add = cut.Find("[data-testid=ip-suggestion-add]");
+        add.TextContent.Should().Be("Add as unconfirmed integration");
         add.Click();
         cut.WaitForAssertion(() => _api.Created.Should().ContainSingle());
         var created = _api.Created.Single();
