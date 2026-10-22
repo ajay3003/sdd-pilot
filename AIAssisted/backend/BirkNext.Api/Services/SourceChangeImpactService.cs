@@ -47,7 +47,7 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
             changes.Add(new ImpactChange("unclassified-snapshot-change", ImpactChangeDomain.Unclassified, ImpactChangeKind.Changed,
                 "Unclassified source change", after.Id.ToString(), "Unclassified source change", "Snapshot fingerprints differ, but no supported structured comparison identified the change. Impact is unknown; review required.", []));
         var maxImpactDepth = Math.Clamp(request.MaxImpactDepth, 0, 3);
-        var impacts = BuildTechnicalImpacts(before, after, changes, limitations, maxImpactDepth);
+        var impacts = BuildTechnicalImpacts(before, after, changes, limitations, maxImpactDepth, await sources.ListAsync(request.EnvironmentId ?? string.Empty, ct));
 
         // Traceability is deliberately a second stage: no links can remove or downgrade a technical impact.
         var files = impacts.SelectMany(i => i.SourceFiles).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -285,6 +285,18 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         else limitations.Add("Observability comparison unavailable for one or both selected snapshots.");
         if (before.DependencyEvidence is not null || after.DependencyEvidence is not null)
         {
+            // Packages the source produces: a version change propagates to consumers (see BuildTechnicalImpacts).
+            var producedBefore = (before.DependencyEvidence?.PublishedPackages ?? []).GroupBy(p => p.PackageId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var producedAfter = (after.DependencyEvidence?.PublishedPackages ?? []).GroupBy(p => p.PackageId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            foreach (var id in producedAfter.Keys.Union(producedBefore.Keys, StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))
+            {
+                producedBefore.TryGetValue(id, out var was); producedAfter.TryGetValue(id, out var now);
+                if (was is not null && now is not null && string.Equals(was.Version, now.Version, StringComparison.OrdinalIgnoreCase)) continue;
+                var package = now ?? was!;
+                output.Add(new ImpactChange($"produced:{id}", ImpactChangeDomain.Dependencies, was is null ? ImpactChangeKind.Added : now is null ? ImpactChangeKind.Removed : ImpactChangeKind.Changed,
+                    "Produced package", id, package.PackageId, was is null ? $"Now produces {id} {now!.Version ?? "(version not declared)"}" : now is null ? $"No longer declares it produces {id}" : $"Produced version {was.Version ?? "(not declared)"} → {now.Version ?? "(not declared)"}",
+                    [package.Project]));
+            }
             static string Key(DeclaredDependency d) => $"{d.Manager}|{d.PackageName}|{d.OwnerFile}";
             var old = (before.DependencyEvidence?.Dependencies ?? []).GroupBy(Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             var next = (after.DependencyEvidence?.Dependencies ?? []).GroupBy(Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -304,7 +316,8 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         return output;
     }
 
-    private static List<TechnicalImpactItem> BuildTechnicalImpacts(IqrSourceSnapshot before, IqrSourceSnapshot after, List<ImpactChange> changes, List<string> limitations, int maxDepth)
+    private static List<TechnicalImpactItem> BuildTechnicalImpacts(IqrSourceSnapshot before, IqrSourceSnapshot after, List<ImpactChange> changes, List<string> limitations, int maxDepth,
+        IReadOnlyList<IqrSourceSnapshot>? stored = null)
     {
         var items = new Dictionary<string, TechnicalImpactItem>(StringComparer.OrdinalIgnoreCase);
         void Add(string type, string id, string name, ImpactChangeDomain domain, TechnicalImpactLevel level, string state, string reason,
@@ -429,6 +442,17 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
             }
             if (c.Domain == ImpactChangeDomain.CiCd)
                 Add("Pipeline", c.EntityKey, c.Name, c.Domain, TechnicalImpactLevel.NeedsReview, "Unresolved", "Pipeline/deployment source changed; release impact needs review.", c, "Pipeline change", "No application behavior is inferred.", c.SourceFiles);
+            // A produced internal package changed: projects in other stored snapshots that consume it are potentially affected (version alignment),
+            // read from shared dependency evidence. No compatibility failure is claimed and no test is marked failed.
+            if (c.Domain == ImpactChangeDomain.Dependencies && c.EntityType == "Produced package")
+            {
+                var consumers = DependencyEvidenceQueries.FindDependencyImpact((stored ?? []).Where(o => o.Id != before.Id && o.Id != after.Id && o.DependencyEvidence is not null
+                        && o.Archive.Sha256 != before.Archive.Sha256 && o.Archive.Sha256 != after.Archive.Sha256).OrderBy(o => o.AnalyzedAt)
+                    .Select(o => new DependencySourceEvidence(o.Id, o.Archive.FileName, o.AnalyzedAt, o.DependencyEvidence!, o.Archive.Sha256)), new DependencyCoordinate("nuget", c.Name));
+                foreach (var x in consumers)
+                    Add("Consuming project", $"{x.SnapshotId}:{x.Project}", $"{System.IO.Path.GetFileNameWithoutExtension(x.Project)} ({x.Source})", c.Domain, TechnicalImpactLevel.Potential, x.Confidence,
+                        $"Potential version alignment impact: {x.Reason}", c, "Package producer → consumer", $"declares {x.DeclaredVersion ?? "no exact version"}", [x.Project]);
+            }
             if (c.Domain == ImpactChangeDomain.Dependencies && arch is not null)
             {
                 var dependencyEvidence = removed ? before.DependencyEvidence : after.DependencyEvidence;

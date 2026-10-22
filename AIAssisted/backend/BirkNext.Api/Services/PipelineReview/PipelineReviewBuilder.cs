@@ -134,9 +134,40 @@ public static class PipelineReviewBuilder
         {
             Pipelines = pipelines, Deployments = ctx.Deployments, Tests = tests, TestMatrix = matrix, Environments = environments, Progression = progression,
             Dependencies = dependencies, PathCoverage = coverage, Findings = findings, UnresolvedTemplates = unresolved, DeliveryPath = path, Nodes = nodes, Edges = edges,
-            Limitations = Limitations(ctx, cicd, unresolved),
+            Limitations = Limitations(ctx, cicd, unresolved), DependencyAutomation = DependencyAutomation(ctx),
         };
         return result with { Story = PipelineStoryWriter.Write(ctx, result) };
+    }
+
+    /// <summary>
+    /// Pipeline ↔ dependency evidence: restore/install, dependency and security scans, SBOM generation, package publication (correlated with the
+    /// packages this source declares it produces) and Renovate automation found in source. Every item is configuration — no scan "passed", no
+    /// package "was published" and Renovate never "ran" without run evidence.
+    /// </summary>
+    internal static List<PipelineDependencyAutomation> DependencyAutomation(Context ctx)
+    {
+        var items = new List<PipelineDependencyAutomation>();
+        var produced = ctx.Snapshot.DependencyEvidence?.PublishedPackages ?? [];
+        foreach (var e in ctx.Pipelines)
+            foreach (var s in e.Steps)
+            {
+                var step = s.Step;
+                var (kind, state, detail) = step.Kind switch
+                {
+                    PipelineStepKind.Restore => ("Restore / install", "Configured", $"{step.Tool}: resolves dependencies at build time; the resolved set is not recorded in source."),
+                    PipelineStepKind.DependencyScan => ("Dependency scan", step.ContinueOnError ? "Configured (failure tolerated)" : "Dependency quality gate configured", "Scan result not assessed: no run evidence."),
+                    PipelineStepKind.SecurityScan => ("Security / license scan", step.ContinueOnError ? "Configured (failure tolerated)" : "Configured", "Scan result not assessed: no run evidence."),
+                    PipelineStepKind.Sbom => ("SBOM generation", "Configured", "The generated SBOM is not in this source; import it in Dependency Review to review it."),
+                    PipelineStepKind.Publish when produced.Count > 0 => ("Package publication", "Candidate",
+                        $"Publish/pack step in a source that declares it produces {string.Join(", ", produced.Select(p => p.Version is null ? p.PackageId : $"{p.PackageId} {p.Version}").Distinct().Take(4))}{(produced.Count > 4 ? ", …" : "")}. Source-defined; not proven published."),
+                    _ => ((string?)null, "", ""),
+                };
+                if (kind is null) continue;
+                items.Add(new(kind, ctx.Name(e.Id), s.Stage, Friendly(step), state, detail));
+            }
+        foreach (var file in ctx.Snapshot.EvidenceDomains?.CiCd.DependencyAutomation ?? [])
+            items.Add(new("Update automation", file, null, "Configuration file", "Configured in source", "Renovate/Dependabot configuration: Renovate running, PRs created and updates merged are not assessed."));
+        return [.. items.DistinctBy(i => (i.Kind, i.Pipeline, i.Stage, i.Step))];
     }
 
     // ── Pipelines, roles, resources ───────────────────────────────────────────────────────────────────────────────────

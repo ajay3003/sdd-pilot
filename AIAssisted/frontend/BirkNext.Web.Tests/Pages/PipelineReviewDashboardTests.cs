@@ -101,6 +101,31 @@ public sealed class PipelineReviewDashboardTests : BunitContext
     }
 
     [Fact]
+    public void DependencyAutomation_IsGroupedByCapability_WithEveryStepBehindADisclosure()
+    {
+        var restore = new PipelineDependencyAutomation("Restore / install", "api-dev", "Build", "dotnet restore", "Configured", "Resolved set not recorded in source.");
+        var result = Shop() with
+        {
+            DependencyAutomation =
+            [
+                restore, restore with { Pipeline = "api-qa" }, restore with { Pipeline = "api-qa", Step = "docker build" },
+                new("Security / license scan", "api-dev", "Build", "Trivy", "Configured (failure tolerated)", "Scan result not assessed: no run evidence."),
+            ],
+        };
+        var page = Page(Option(ciCd: 2, pipelines: 4, repository: "shop"), result);
+        page.Find("[data-testid=pr-tab-tests]").Click();
+
+        var kinds = page.FindAll("[data-testid=pr-dependency-kind]");
+        kinds.Select(k => k.GetAttribute("data-kind")).Should().Equal("Restore / install", "Security / license scan");
+        kinds[0].TextContent.Should().Contain("3 step(s) in 2 pipeline(s)").And.Contain("Configured 3");
+        page.Find("[data-testid=pr-dependency-steps-body]").HasAttribute("hidden").Should().BeTrue("the per-step rows stay collapsed");
+        page.Find("[data-testid=pr-dependency-steps-toggle]").Click();
+        page.Find("[data-testid=pr-dependency-steps-body]").HasAttribute("hidden").Should().BeFalse();
+        page.FindAll("[data-testid=pr-dependency-item]").Should().HaveCount(4);
+        page.Find("[data-testid=pr-dependency-automation]").TextContent.Should().NotContainEquivalentOf("passed ");
+    }
+
+    [Fact]
     public void ReviewedWithoutGaps_IsReady()
     {
         var clean = Shop() with { UnresolvedTemplates = [], Findings = [.. PipelineReviewScoring.QualityFindings(Shop().Findings)] };

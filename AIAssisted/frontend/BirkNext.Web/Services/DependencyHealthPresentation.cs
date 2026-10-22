@@ -271,7 +271,7 @@ public static class DependencyHealthPresentation
     };
 
     public static string Headline(DependencyHealthRun run) =>
-        $"Dependency health · {run.Summary.Dependencies} dependencies from {run.Inventory.Name} · {run.Summary.AffectedDependencies} affected by a matched advisory · "
+        $"Dependency health · {run.Summary.Dependencies} dependencies from {run.Inventory.Name} · {DependencyEvidenceQueries.AdvisoryCoverage(run).Text} · "
         + $"{run.Observations.Count(o => o.Kind is ObservationKind.Finding or ObservationKind.EvidenceConflict)} finding(s) · {run.Observations.Count(o => o.Kind == ObservationKind.Limitation)} limitation(s)";
 
     /// <summary>Findings first, then conflicts, missing evidence, limitations and plain observations.</summary>

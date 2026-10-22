@@ -83,7 +83,8 @@
                         <div data-testid="dh-tile-dependencies"><dt>Dependencies</dt><dd>@s.Dependencies@(s.Declarations > s.Dependencies ? $" ({s.Declarations} declarations)" : "")</dd></div>
                         <div data-testid="dh-tile-version"><dt>Version updates observed</dt><dd>@(s.RegistryObserved + s.RegistryNotFound + s.RegistryUnavailable == 0 ? "Not assessed" : $"{updates} ({s.PatchBehind} patch · {s.MinorBehind} minor · {s.MajorBehind} major)")</dd></div>
                         <div data-testid="dh-tile-deprecated"><dt>Deprecated / unlisted</dt><dd>@(C("Deprecated / unlisted")?.State == ReviewCategoryState.NotAssessed ? "Not assessed" : $"{s.DeprecatedOrUnlisted} observed") <span class="dh-muted">— registry metadata, not a vulnerability</span></dd></div>
-                        <div data-testid="dh-tile-security"><dt>Security advisories</dt><dd><span class="dh-badge dh-badge-@(s.AffectedDependencies > 0 ? "danger" : "info")">@s.AffectedDependencies matched</span> <span class="dh-muted" data-testid="dh-security-line">@P.SecurityLine(Run)</span></dd></div>
+                        <div data-testid="dh-tile-security"><dt>Security advisories</dt><dd>@{ var advisory = DependencyEvidenceQueries.AdvisoryCoverage(Run); }<span class="dh-badge dh-badge-@(s.AffectedDependencies > 0 ? "danger" : "info")" data-testid="dh-security-badge">@(s.AffectedDependencies > 0 ? $"{s.AffectedDependencies} matched" : advisory.Complete ? "No matched advisories" : "Coverage incomplete")</span>
+                            <span class="dh-muted" data-testid="dh-advisory-coverage">@advisory.Text</span> <span class="dh-muted" data-testid="dh-security-line">@P.SecurityLine(Run)</span></dd></div>
                     </dl>
                 </section>
                 <section class="dh-summary-group" aria-labelledby="dh-sum-coverage" data-testid="dh-summary-coverage">
@@ -94,6 +95,10 @@
                             <div data-testid="@coverage.TestId"><dt>@coverage.Check</dt><dd>@coverage.Value@(coverage.Check == "License" && coverage.Total > 0 ? $" · {100 * coverage.Covered / coverage.Total}%" : "")</dd></div>
                         }
                     </dl>
+                    <details class="dh-dimensions" data-testid="dh-coverage-dimensions">
+                        <summary>Coverage by dimension</summary>
+                        <ul>@foreach (var dimension in DependencyEvidenceQueries.Coverage(Run)) { <li data-testid="dh-coverage-dimension" data-complete="@(dimension.Complete ? "true" : "false")"><strong>@dimension.Dimension:</strong> @dimension.Text</li> }</ul>
+                    </details>
                     <button type="button" class="btn-link" data-testid="dh-goto-evidence" @onclick="() => _section = HealthResultSection.Evidence">View evidence coverage</button>
                 </section>
                 <section class="dh-summary-group dh-summary-context" aria-labelledby="dh-sum-context" data-testid="dh-summary-context">

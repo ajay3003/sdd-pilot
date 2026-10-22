@@ -11,8 +11,9 @@ using Microsoft.Extensions.Options;
 namespace BirkNext.Api.Services.DependencyReview;
 
 /// <summary>Renovate runtime evidence from a repository provider — separate from Renovate configuration.</summary>
-public interface IDependencyAutomationSource
+public interface IDependencyAutomationSource : IDependencyEvidenceProvider
 {
+    BirkNext.Dependencies.DependencyEvidenceProviderDescriptor IDependencyEvidenceProvider.Descriptor => BirkNext.Dependencies.DependencyEvidenceProviders.Get("renovate-execution");
     Task<AutomationEvidence> GetAsync(string? repository, int? stalePullRequestAfterDays, CancellationToken ct);
 }
 

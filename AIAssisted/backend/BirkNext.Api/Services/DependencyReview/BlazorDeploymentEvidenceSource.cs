@@ -11,8 +11,9 @@ namespace BirkNext.Api.Services.DependencyReview;
 public sealed record DeployedCaptureOutcome(DependencyInventorySnapshot? Inventory, DeploymentCaptureReport Report);
 
 /// <summary>Deployed dependency evidence for a target (read-only GETs of public deployment metadata, plus evidence BirkNext already holds).</summary>
-public interface IDeployedDependencySource
+public interface IDeployedDependencySource : IDependencyEvidenceProvider
 {
+    BirkNext.Dependencies.DependencyEvidenceProviderDescriptor IDependencyEvidenceProvider.Descriptor => BirkNext.Dependencies.DependencyEvidenceProviders.Get("deployed-capture");
     Task<DeployedCaptureOutcome> CaptureAsync(DeployedCaptureRequest request, CancellationToken ct);
 }
 
@@ -156,8 +157,8 @@ public sealed partial class BlazorDeploymentEvidenceSource(HttpClient http, IBro
             CaptureOverall.Partial => $"Deployment evidence captured with limitations: {artifacts.Count} runtime artifacts observed. Browser observation covers loaded resources, not necessarily all deployed artifacts.",
             CaptureOverall.Failed => "Deployment evidence not captured: the target could not be read (see capture details).",
             _ => framework == "Blazor WebAssembly"
-                ? $"Deployment evidence not captured: no supported capture strategy produced deployment evidence ({attempted} attempted)."
-                : "Deployment evidence not captured: no Blazor WebAssembly deployment metadata was found, and no other deployment-capture provider applies to this target.",
+                ? $"Capture method unavailable: no supported capture method produced deployment evidence ({attempted} attempted). Deployment evidence may still exist through another method (a deployed-artifact SBOM)."
+                : "Capture method unavailable: no Blazor WebAssembly deployment metadata was found and no other supported capture method applies to this target. This does not mean deployment evidence is irrelevant — import a deployed-artifact SBOM instead.",
         };
         var report = new DeploymentCaptureReport
         {

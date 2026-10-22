@@ -1,0 +1,89 @@
+@using BirkNext.Dependencies
+@using BirkNext.Integrations
+
+@* Source Analysis → Dependencies: the dependency evidence this snapshot stored at analysis time (never re-parsed) — package managers, declared
+   dependencies, internal packages it produces or consumes (across the loaded snapshots, never merged), version differences and Renovate policy
+   files. Concise by design: decisions, enrichment and history belong to Dependency Review. A package dependency is not a runtime integration. *@
+<section class="sd-workspace" aria-labelledby="sd-deps-heading" data-testid="dependency-workspace">
+    <h2 id="sd-deps-heading" tabindex="-1">Dependencies</h2>
+    @if (Snapshot.DependencyEvidence is not { } d)
+    {
+        <div class="sd-neutral" data-testid="sd-deps-not-assessed"><p>This snapshot predates dependency evidence. Analyze the archive again in Source Analysis to capture it.</p></div>
+    }
+    else
+    {
+        var packages = d.Dependencies.GroupBy(x => new DependencyCoordinate(DependencyCoordinate.EcosystemOf(x.Manager), x.PackageName).Key).ToList();
+        var mappings = Mappings();
+        var differences = DependencyEvidenceQueries.VersionDifferences(mappings).Count();
+        <p class="sd-muted">Declared in source, read once when this snapshot was analyzed. Resolved versions, deployment and runtime loading are other evidence layers.</p>
+        <dl class="sd-summary" data-testid="sd-deps-overview">
+            <div><dt>Declared packages</dt><dd>@packages.Count</dd></div>
+            <div><dt>Package managers</dt><dd>@d.Managers.Count</dd></div>
+            <div><dt>Internal packages produced</dt><dd>@d.PublishedPackages.Count</dd></div>
+            <div><dt>Internal package mappings</dt><dd>@mappings.Count</dd></div>
+            <div><dt>Version differences</dt><dd data-testid="sd-deps-differences">@differences</dd></div>
+            <div><dt>Not read natively</dt><dd>@d.UnsupportedManifests.Count</dd></div>
+        </dl>
+        <div class="sa-actions"><a class="btn-primary" href="dependency-review" data-testid="sd-deps-review">Review dependencies</a></div>
+
+        <section class="sd-panel" aria-labelledby="sd-deps-managers-heading" data-testid="sd-deps-managers">
+            <h3 id="sd-deps-managers-heading">Package managers</h3>
+            @if (d.Managers.Count == 0) { <p class="sd-empty">No supported package manager files.</p> }
+            else
+            {
+                <ul class="sd-list">@foreach (var m in d.Managers) { <li><strong>@m.Manager</strong> · @m.Files.Count file(s)@(m.Files.Any(f => f.EndsWith("Directory.Packages.props", StringComparison.OrdinalIgnoreCase)) ? " · central package management" : "")</li> }</ul>
+            }
+            @if (d.UnsupportedManifests.Count > 0) { <p class="sd-muted" data-testid="sd-deps-unsupported">Not read natively (tool limitation, not missing dependencies): @string.Join(", ", d.UnsupportedManifests)</p> }
+        </section>
+
+        <section class="sd-panel" aria-labelledby="sd-deps-internal-heading" data-testid="sd-deps-internal">
+            <h3 id="sd-deps-internal-heading">Internal packages <span class="sd-count">@mappings.Count</span></h3>
+            <p class="sd-muted">Packages a source produces and the projects that consume them, across the stored snapshots (each kept separate). A different version is a version difference, not an incompatibility.</p>
+            @if (mappings.Count == 0) { <p class="sd-empty" data-testid="sd-deps-internal-empty">No internal package producer/consumer relationship involves this snapshot in the stored snapshots.</p> }
+            else
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Internal packages">
+                    <table data-testid="sd-deps-internal-table">
+                        <thead><tr><th scope="col">Package</th><th scope="col">Producer</th><th scope="col">Consumers</th><th scope="col">Mapped</th><th scope="col">Mapped with version difference</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in mappings)
+                            {
+                                <tr data-testid="sd-deps-mapping"><th scope="row">@m.Package.Name</th>
+                                    <td>@(m.ProducerVersion ?? "version not declared")<span class="sd-context">@m.ProducerSource · @m.ProducerProject</span></td>
+                                    <td>@m.Consumers.Count<span class="sd-context">versions @string.Join(", ", m.ConsumerVersions) · in @m.Consumers.Select(c => c.SnapshotId).Distinct().Count() source snapshot(s)</span></td>
+                                    <td>@m.Aligned</td>
+                                    <td>@m.VersionDifferences@if (m.NotComparable > 0) { <span class="sd-context">@m.NotComparable not comparable</span> }</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="sd-panel" aria-labelledby="sd-deps-policy-heading" data-testid="sd-deps-policy">
+            <h3 id="sd-deps-policy-heading">Update policy evidence</h3>
+            @if (d.RenovateFiles.Count == 0) { <p class="sd-empty">No Renovate configuration in this source.</p> }
+            else { <p>Renovate configuration: @string.Join(", ", d.RenovateFiles.Select(f => f.Path))</p> }
+            @if (d.Automation.Count > 0) { <p class="sd-muted">Automation definitions: @string.Join("; ", d.Automation)</p> }
+            <p class="sd-muted">Renovate configuration detected ≠ Renovate running ≠ pull request created ≠ update merged. Renovate is never executed here.</p>
+        </section>
+        <ReviewDisclosure Text="View dependency documentation summary" CollapseText="Hide dependency documentation summary" TestId="sd-deps-doc" Class="disclosure-inline">
+            <pre class="sd-doc" data-testid="sd-deps-doc-text">@DependencyDocumentation.Markdown(new DependencySourceEvidence(Snapshot.Id, Snapshot.Archive.FileName, Snapshot.AnalyzedAt, d), mappings)</pre>
+        </ReviewDisclosure>
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = default!;
+    [Parameter] public IReadOnlyList<IqrSourceSnapshot> Snapshots { get; set; } = [];
+
+    /// <summary>Mappings among the loaded snapshots that involve this snapshot as producer or consumer.</summary>
+    private IReadOnlyList<InternalPackageMapping> Mappings()
+    {
+        // The viewed snapshot first, so it stands for its own archive content when the same archive was analyzed more than once.
+        var sources = Snapshots.Where(s => s.Id != Snapshot.Id).OrderBy(s => s.AnalyzedAt).Prepend(Snapshot).Where(s => s.DependencyEvidence is not null)
+            .Select(s => new DependencySourceEvidence(s.Id, s.Archive.FileName, s.AnalyzedAt, s.DependencyEvidence!, s.Archive.Sha256)).ToList();
+        return [.. DependencyEvidenceQueries.InternalPackageMappings(sources)
+            .Where(m => m.ProducerSnapshotId == Snapshot.Id || m.Consumers.Any(c => c.SnapshotId == Snapshot.Id))
+            .Select(m => m with { Consumers = m.ProducerSnapshotId == Snapshot.Id ? m.Consumers : [.. m.Consumers.Where(c => c.SnapshotId == Snapshot.Id)] })];
+    }
+}

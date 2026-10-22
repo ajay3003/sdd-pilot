@@ -2,6 +2,7 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services;
 using BirkNext.Api.Services.SourceAnalysis;
+using BirkNext.Dependencies;
 using BirkNext.Integrations;
 using BirkNext.SourceArchitecture;
 using BirkNext.SourceImpact;
@@ -222,6 +223,28 @@ public sealed class SourceChangeImpactServiceTests
         report.TechnicalImpacts.Should().Contain(i => i.EntityType == "Terraform delivery workflow" && i.DisplayName == "2 azurerm_role_assignment declaration(s)"
             && i.Reason.Contains("The declared infrastructure itself did not change"));
         report.Changes.Should().NotContain(c => c.EntityType == "Resource", "a changed check is an automation change, not an infrastructure change");
+    }
+
+    [Fact]
+    public async Task A_produced_package_version_change_surfaces_consumers_in_other_snapshots_as_potential_impact_only()
+    {
+        await using var db = Db();
+        SourceDependencyEvidence Produces(string version) => new() { PublishedPackages = [new("Contoso.Common", "src/Contoso.Common/Contoso.Common.csproj", version)] };
+        var before = Snapshot("v1", []) with { DependencyEvidence = Produces("2.3.0") };
+        var after = Snapshot("v1", []) with { Archive = new SourceArchive("Acme.Orders.zip", new string('c', 64), 1), DependencyEvidence = Produces("2.4.1") };
+        var consumer = Snapshot("v1", []) with
+        {
+            Archive = new SourceArchive("Contoso.Orders.zip", new string('d', 64), 1),
+            DependencyEvidence = new SourceDependencyEvidence { Dependencies = [new DeclaredDependency { Manager = "nuget", PackageName = "Contoso.Common", CurrentValue = "2.3.0",
+                OwnerFile = "src/Skole.Infrastructure/Skole.Infrastructure.csproj", ReferencedBy = ["src/Skole.Infrastructure/Skole.Infrastructure.csproj"] }] },
+        };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after, consumer]));
+        var report = await service.AnalyzeAsync(Request(before, after), default);
+        report!.Changes.Should().ContainSingle(c => c.EntityType == "Produced package" && c.Detail == "Produced version 2.3.0 → 2.4.1");
+        var impact = report.TechnicalImpacts.Should().ContainSingle(i => i.EntityType == "Consuming project").Subject;
+        impact.Level.Should().Be(TechnicalImpactLevel.Potential);
+        impact.DisplayName.Should().Be("Skole.Infrastructure (Contoso.Orders.zip)");
+        impact.Reason.Should().StartWith("Potential version alignment impact").And.Contain("Compatibility is not assessed");
     }
 
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

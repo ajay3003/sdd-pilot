@@ -195,7 +195,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         await ReportProgressAsync("Analyzing dependency evidence", "Extracting repository identity and dependency manifests from the uploaded archive.");
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
-        snapshot = snapshot with { Repository = repository, DependencyEvidence = DependencyReview.SourceDependencyEvidenceExtractor.Extract(repository.DisplayName, bytes, name).Evidence };
+        snapshot = snapshot with { Repository = repository, DependencyEvidence = new DependencyReview.SourceSnapshotDependencyProvider().Extract(repository.DisplayName, bytes, name).Evidence };
         // Source test definitions (test projects, [Fact]/[Theory], traits, explicit requirement references): discovery only, consumed when execution
         // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
         await ReportProgressAsync("Discovering test definitions", "Finding test projects and declared test cases in source.");

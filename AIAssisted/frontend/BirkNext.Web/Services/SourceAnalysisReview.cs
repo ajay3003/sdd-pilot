@@ -15,7 +15,7 @@ public static class SourceAnalysisAreas
 {
     public const string Overview = "Overview", Architecture = "Architecture", Data = "Data", Quality = "Quality Evidence";
     public static readonly IReadOnlyList<string> Top = [Overview, Architecture, Data, Quality];
-    public static readonly IReadOnlyList<string> QualityDomains = ["Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts"];
+    public static readonly IReadOnlyList<string> QualityDomains = ["Observability", "Infrastructure", "Configuration", "CI/CD", "Contracts", "Dependencies"];
 
     /// <summary>Area (and quality domain) of an <c>?area=</c> value, new or legacy; unknown values open the Overview.</summary>
     public static (string Area, string? Domain) Resolve(string? area, string? view)
@@ -171,9 +171,20 @@ public static class SourceAnalysisReview
         return new("observability", "Observability", status, reason, SourceAnalysisAreas.Quality, "Observability");
     }
 
+    /// <summary>Dependency evidence the snapshot stored at analysis time (declarations, managers, produced packages, Renovate policy files).</summary>
+    public static SourceSummaryRow Dependencies(IqrSourceSnapshot s)
+    {
+        if (s.DependencyEvidence is not { } d) return new("dependencies", "Dependencies", "Not assessed", "This snapshot predates dependency evidence. Analyze the archive again in Source Analysis.", SourceAnalysisAreas.Quality, "Dependencies");
+        if (d.Dependencies.Count == 0 && d.PublishedPackages.Count == 0) return new("dependencies", "Dependencies", "Not detected", "No supported dependency declaration in this source.", SourceAnalysisAreas.Quality, "Dependencies");
+        var packages = d.Dependencies.Select(x => $"{x.Manager}:{x.PackageName}".ToLowerInvariant()).Distinct().Count();
+        return new("dependencies", "Dependencies", "Complete", d.UnsupportedManifests.Count > 0 ? $"{d.UnsupportedManifests.Count} manifest type(s) not read natively" : null, SourceAnalysisAreas.Quality, "Dependencies",
+            $"{Plural(packages, "declared package", "declared packages")} · {Plural(d.PublishedPackages.Count, "produced package", "produced packages")}");
+    }
+
     public static SourceSummaryRow Domain(IqrSourceSnapshot s, string domain)
     {
         if (domain == "Observability") return Observability(s);
+        if (domain == "Dependencies") return Dependencies(s);
         var key = SourceAnalysisAreas.Slug(domain);
         if (s.EvidenceDomains is not { } e) return new(key, domain, "Not assessed", "This snapshot predates the source-evidence domains.", SourceAnalysisAreas.Quality, domain);
         SourceDomainResult result = domain switch { "Infrastructure" => e.Infrastructure, "Configuration" => e.Configuration, "CI/CD" => e.CiCd, _ => e.Contracts };

@@ -38,6 +38,21 @@ public sealed class DependencyReviewController(IDependencyReviewService reviews,
     public async Task<ActionResult<SbomCandidateScan>> SbomCandidates([FromQuery] string? environmentId, [FromQuery] Guid[]? snapshot, CancellationToken ct) =>
         Ok(await sourceScope.SbomCandidatesAsync(environmentId ?? "", [.. snapshot ?? []], ct));
 
+    /// <summary>The dependency evidence provider family and its availability here (offline/online, what each proves and cannot prove).</summary>
+    [HttpGet("providers")]
+    public ActionResult<IReadOnlyList<DependencyEvidenceProviderStatus>> Providers([FromServices] DependencyEvidenceProviderRegistry registry) => Ok(registry.Status());
+
+    /// <summary>Internal package producer → consumer mappings across the given Source Analysis snapshots (all stored ones when none are given),
+    /// read from stored evidence — never re-parsed, never merged. Several producer snapshots are all listed; none is picked by date.</summary>
+    [HttpGet("internal-packages")]
+    public async Task<ActionResult<IReadOnlyList<InternalPackageMapping>>> InternalPackages([FromServices] BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider sources,
+        [FromQuery] string? environmentId, [FromQuery] Guid[]? snapshot, CancellationToken ct)
+    {
+        var all = await sources.ListAsync(environmentId ?? "", ct);
+        var chosen = snapshot is { Length: > 0 } ids ? all.Where(s => ids.Contains(s.Id)).ToList() : all.ToList();
+        return Ok(new InternalPackageRelationshipProvider().Mappings(chosen));
+    }
+
     [HttpGet("runs")]
     public async Task<ActionResult<IReadOnlyList<DependencyReviewRunSummary>>> History(CancellationToken ct) => Ok(await reviews.HistoryAsync(ct));
 

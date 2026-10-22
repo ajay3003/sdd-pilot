@@ -653,6 +653,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDependenc
 builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedDependencySource, BirkNext.Api.Services.DependencyReview.BlazorDeploymentEvidenceSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyHealthService, BirkNext.Api.Services.DependencyReview.DependencyHealthService>();
+builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.DependencyEvidenceProviderRegistry>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

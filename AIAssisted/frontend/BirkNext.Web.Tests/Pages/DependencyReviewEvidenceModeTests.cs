@@ -244,6 +244,38 @@ public sealed class DependencyReviewEvidenceModeTests : BunitContext
     }
 
     [Fact]
+    public void A_run_is_current_only_for_the_evidence_selected_in_its_mode_and_stays_in_history()
+    {
+        var cut = RunInventoryReview();
+        cut.Find("[data-testid='dh-inventory']").Change("");
+        cut.FindAll("[data-testid='dh-result']").Should().BeEmpty("no inventory is selected, so no run is the current result");
+        cut.Find("[data-testid='dr-history-disclosure-toggle']").Click();
+        cut.FindAll("[data-testid='dh-history'] option").Skip(1).Should().ContainSingle("the run stays in History");
+    }
+
+    [Fact]
+    public void Zero_matched_advisories_with_unavailable_coverage_is_never_presented_as_zero_vulnerabilities()
+    {
+        var cut = RunInventoryReview();
+        cut.Find("[data-testid='dh-security-badge']").TextContent.Should().Be("Coverage incomplete");
+        cut.Find("[data-testid='dh-advisory-coverage']").TextContent.Should().StartWith("No matched advisories in available evidence").And.Contain("advisory coverage incomplete (1 of 1");
+        cut.Find("[data-testid='dh-headline']").TextContent.Should().Contain("No matched advisories in available evidence").And.NotContain("0 affected");
+        cut.Markup.Should().NotContain("0 vulnerabilities");
+        cut.FindAll("[data-testid='dh-coverage-dimension']").Select(d => d.TextContent.Split(':')[0]).Should()
+            .Equal("Inventory coverage", "Registry coverage", "Advisory coverage", "License coverage", "Policy coverage", "Deployment coverage");
+    }
+
+    [Fact]
+    public void Each_mode_names_the_evidence_providers_it_uses()
+    {
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-mode'][data-mode='Sbom']").Click();
+        cut.FindAll("[data-testid='dr-mode-provider']").Select(p => p.GetAttribute("data-provider")).Should().Contain(["sbom", "registry-metadata", "security-advisories", "license-metadata"]).And.NotContain("source-snapshot");
+        cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
+        cut.Find("[data-testid='dr-mode-provider'][data-provider='deployed-capture']").TextContent.Should().Contain("One failed method is not 'no deployment evidence'");
+    }
+
+    [Fact]
     public void LegacyRunsDeriveTheirEvidenceMode_FromTheirOwnEvidence()
     {
         var sbom = HealthRun(new DependencyHealthRequest()) with { Inventory = new DependencyInventorySnapshot { SourceType = InventorySourceType.Sbom } };

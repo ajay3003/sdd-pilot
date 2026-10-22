@@ -180,7 +180,7 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
         var cut = Page(Snapshot(Evidence()));
         cut.FindAll("[data-testid=sa-areas] a").Select(a => a.TextContent).Should().Equal("Overview", "Architecture", "Data", "Quality Evidence");
         cut.Find("[data-testid=area-qualityevidence]").Click();
-        cut.FindAll("[data-testid=sa-quality-rows] > li").Should().HaveCount(5, "the Quality Evidence landing summarizes all five domains first");
+        cut.FindAll("[data-testid=sa-quality-rows] > li").Should().HaveCount(6, "the Quality Evidence landing summarizes all six domains first");
         foreach (var (slug, workspace) in new[] { ("infrastructure", "infrastructure-workspace"), ("configuration", "configuration-workspace"), ("cicd", "cicd-workspace"), ("contracts", "contracts-workspace") })
         {
             cut.Find($"[data-testid=sa-quality-{slug}]").Click();

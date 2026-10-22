@@ -69,6 +69,15 @@
             <div class="dr-mode-scope" data-testid="dr-mode-scope">
                 <p><strong>Can assess:</strong> @string.Join(", ", chosenMode.CanAssess).</p>
                 <p><strong>Cannot assess from this evidence alone:</strong> @string.Join(", ", chosenMode.CannotAssess).</p>
+                <details class="dr-mode-providers" data-testid="dr-mode-providers">
+                    <summary>Evidence providers for this mode</summary>
+                    <ul>
+                        @foreach (var provider in DependencyEvidenceProviders.ForMode(ProviderModeKey(_mode)))
+                        {
+                            <li data-testid="dr-mode-provider" data-provider="@provider.Key"><strong>@provider.Name</strong> · @provider.Layer layer · @(provider.RequiresNetwork ? "online (explicit, optional)" : "offline") — @provider.Proves <em>Cannot prove:</em> @provider.CannotProve</li>
+                        }
+                    </ul>
+                </details>
             </div>
         }
 
@@ -617,6 +626,7 @@
                         var simSummary = R.Summary(simRepo.Simulations);
                         <section aria-labelledby="dr-sim-heading" data-testid="dr-policy-simulation">
                             <h3 id="dr-sim-heading">Policy simulation scenarios <span class="dr-muted">· @simRepo.Repository</span></h3>
+                            <p class="dr-muted" data-testid="dr-sim-synthetic"><strong>Synthetic policy simulation.</strong> These scenarios simulate Renovate policy behavior. No packages are changed and Renovate is not run.</p>
                             <p class="dr-muted">@R.SimulationHelp @R.SimulationIsNotAnUpdateCheck</p>
                             @if (simRepo.Simulations.Count == 0) { <p class="dr-muted" data-testid="dr-sim-none">No scenarios for this repository.</p> }
                             else
@@ -1043,8 +1053,17 @@
 
     /// <summary>The source review shown as current: only under Source snapshot, the mode that produced it.</summary>
     private DependencyReviewResult? CurrentSource => _mode == DependencyReviewMode.Source ? _result : null;
-    /// <summary>The health run shown as current: only under the evidence mode that produced it (never a stale run under another mode).</summary>
-    private DependencyHealthRun? CurrentHealth => _health is not null && _healthOrigin == ModeKey(_mode) ? _health : null;
+    /// <summary>The health run shown as current: only under the evidence mode that produced it AND for the evidence currently selected in that mode
+    /// (a newly chosen SBOM, or no SBOM yet, never shows an earlier run; older runs stay in History).</summary>
+    private DependencyHealthRun? CurrentHealth => _health is not null && _healthOrigin == ModeKey(_mode) && _health.Inventory.Id == HealthInventoryId ? _health : null;
+
+    private static string ProviderModeKey(DependencyReviewMode mode) => mode switch
+    {
+        DependencyReviewMode.Source => DependencyEvidenceProviders.SourceMode,
+        DependencyReviewMode.Inventory => DependencyEvidenceProviders.InventoryMode,
+        DependencyReviewMode.Sbom => DependencyEvidenceProviders.SbomMode,
+        _ => DependencyEvidenceProviders.DeployedMode,
+    };
 
     private static string? ModeKey(DependencyReviewMode mode) => mode switch
     {
@@ -1614,6 +1633,8 @@
         _health = run;
         _healthOrigin = DependencyEvidenceModes.Of(run);
         _mode = ModeOf(_healthOrigin);
+        // The opened run's evidence becomes the selected evidence of its mode, so current result and selection always agree.
+        if (_mode == DependencyReviewMode.Sbom) _sbomInventoryId = run.Inventory.Id; else _inventoryId = run.Inventory.Id;
     }
 
     private async Task ExportHealthHtml()

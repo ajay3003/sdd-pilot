@@ -124,7 +124,7 @@ public sealed class BlazorDeploymentEvidenceTests
         report.Overall.Should().Be(CaptureOverall.NotCaptured);
         report.Capability.Should().Be(CaptureCapability.Partial, "the runtime is positively detected; only artifact extraction is unsupported");
         report.Framework.Should().Be("Blazor WebAssembly");
-        report.Summary.Should().StartWith("Deployment evidence not captured: no supported capture strategy produced deployment evidence");
+        report.Summary.Should().StartWith("Capture method unavailable: no supported capture method produced deployment evidence").And.Contain("may still exist", "one failed method is not \"deployment evidence irrelevant\"");
     }
 
     [Fact]

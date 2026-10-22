@@ -220,6 +220,10 @@ public sealed record PipelineMetadataSummary
 public sealed record PipelineDefinitionMetadata(string Id, string Name, string? Folder, string? YamlPath, string? Repository);
 public sealed record EnvironmentChecksMetadata(string Name, List<string> Checks);
 
+/// <summary>A dependency-related pipeline capability (restore, dependency scan, SBOM generation, package publication, Renovate automation): what the
+/// definitions configure. Configured is never "passed" — run evidence is required for that.</summary>
+public sealed record PipelineDependencyAutomation(string Kind, string Pipeline, string? Stage, string Step, string State, string Detail);
+
 public sealed record PipelineReviewResult
 {
     public Guid SourceSnapshotId { get; init; }
@@ -232,6 +236,8 @@ public sealed record PipelineReviewResult
     public string State { get; init; } = "Reviewed";
     public string StateReason { get; init; } = "";
     public List<ReviewedPipeline> Pipelines { get; init; } = [];
+    /// <summary>Dependency automation and package publication the pipelines configure, correlated with the snapshot's dependency evidence.</summary>
+    public List<PipelineDependencyAutomation> DependencyAutomation { get; init; } = [];
     public List<PipelineGraphNode> Nodes { get; init; } = [];
     public List<PipelineGraphEdge> Edges { get; init; } = [];
     public List<FlowStoryStep> Story { get; init; } = [];

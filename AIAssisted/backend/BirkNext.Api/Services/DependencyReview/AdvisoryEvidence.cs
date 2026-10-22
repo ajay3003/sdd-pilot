@@ -27,8 +27,9 @@ public sealed record AdvisoryRecord
 /// <summary>Advisories per package name, plus the packages the source could not answer for (unavailable ≠ no advisories).</summary>
 public sealed record AdvisoryLookup(Dictionary<string, List<AdvisoryRecord>> ByPackage, Dictionary<string, string> Failed, DateTimeOffset RetrievedAt);
 
-public interface IAdvisoryProvider
+public interface IAdvisoryProvider : IDependencyEvidenceProvider
 {
+    BirkNext.Dependencies.DependencyEvidenceProviderDescriptor IDependencyEvidenceProvider.Descriptor => BirkNext.Dependencies.DependencyEvidenceProviders.Get("security-advisories");
     string Name { get; }
     bool Supports(InventoryDependency dep);
     Task<AdvisoryLookup> LookupAsync(IReadOnlyList<string> packageNames, CancellationToken ct);

@@ -85,7 +85,7 @@ public sealed class DependencyHealthService(
 
     public async Task<InventoryImportResult> ImportAsync(string fileName, byte[] bytes, SbomRole role, string? environment, string? name, CancellationToken ct = default)
     {
-        var (validation, inventory) = InventorySources.Import(new InventorySources.ImportInput(System.IO.Path.GetFileName(fileName), bytes, role, environment, name, DateTimeOffset.UtcNow));
+        var (validation, inventory) = new SbomDependencyProvider().Import(new InventorySources.ImportInput(System.IO.Path.GetFileName(fileName), bytes, role, environment, name, DateTimeOffset.UtcNow));
         if (inventory is null)
         {
             logger.LogInformation("Dependency inventory import rejected: {Format}, {Errors} validation error(s).", validation.Format, validation.Errors.Count);

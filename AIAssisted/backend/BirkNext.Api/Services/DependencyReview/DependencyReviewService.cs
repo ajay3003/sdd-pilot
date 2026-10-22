@@ -76,7 +76,7 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
         foreach (var (name, bytes) in archives)
         {
             var repository = RepositoryName(name);
-            var (evidence, error) = SourceDependencyEvidenceExtractor.Extract(repository, bytes, name);
+            var (evidence, error) = new SourceSnapshotDependencyProvider().Extract(repository, bytes, name);
             if (evidence is null) return (null, error);
             var over = configOverrides.FirstOrDefault(o => string.Equals(o.Repository, repository, StringComparison.OrdinalIgnoreCase));
             sources.Add((SourceDependencyEvidenceExtractor.Input(repository, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), evidence, over.Content is null ? null : (over.FileName, over.Content)), evidence));

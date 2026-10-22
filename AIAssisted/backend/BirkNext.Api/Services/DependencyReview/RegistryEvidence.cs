@@ -13,8 +13,9 @@ public sealed record RegistryVersion(string Version, bool Listed, DateTimeOffset
 public sealed record RegistryPackageResult(RegistryState State, string Detail, List<RegistryVersion> Versions, DateTimeOffset RetrievedAt, bool FromCache = false);
 
 /// <summary>Read-only package metadata source for one ecosystem. Implementations issue GET requests only and never authenticate to publish.</summary>
-public interface IPackageRegistryProvider
+public interface IPackageRegistryProvider : IDependencyEvidenceProvider
 {
+    BirkNext.Dependencies.DependencyEvidenceProviderDescriptor IDependencyEvidenceProvider.Descriptor => BirkNext.Dependencies.DependencyEvidenceProviders.Get("registry-metadata");
     string Manager { get; }
     string Registry { get; }
     Task<RegistryPackageResult> GetPackageAsync(string packageName, CancellationToken ct);
