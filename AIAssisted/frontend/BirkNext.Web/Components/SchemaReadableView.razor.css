@@ -60,3 +60,9 @@
 .sr-node > summary:focus-visible, .sr-source-details summary:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
 .sr-node > summary { cursor: pointer; }
 .sr-node[open] > summary { margin-bottom: .2rem; }
+
+/* Name, occurrence and child count read as separate facts. */
+.sr-count { color: #4b5563; margin-left: .35rem; }
+.sr-doc-details summary, .sr-values-details summary { cursor: pointer; font-size: .82rem; }
+/* Long qualified names ({namespace}Name) in lists must not set the grid min-content width; break them anywhere. */
+.sr-list code, .sr-facts .sr-mono { overflow-wrap: anywhere; }

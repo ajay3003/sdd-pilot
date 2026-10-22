@@ -1,3 +1,4 @@
+using FluentAssertions;
 using BirkNext.Schemas;
 using BirkNext.Web.Components;
 using BirkNext.Web.Pages;
@@ -165,7 +166,8 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         Assert.True(fingerprint.TextContent.Trim().Length < package.Fingerprint.Length);
         Assert.Contains(package.Fingerprint, page.Find("[data-testid=ss-full-fingerprint]").TextContent);
         Assert.Contains("Order", page.Find("[data-testid=ss-root-element]").TextContent);
-        Assert.Contains("business", page.Find("[data-testid=ss-capability]").TextContent, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("business rules", page.Find("[data-testid=ss-not-verified]").TextContent, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("XSD structure", page.Find("[data-testid=ss-verified]").TextContent, StringComparison.Ordinal);
 
         page.Find("[data-testid=ss-shortcut-tests]").Click();
         Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Generated Tests").GetAttribute("aria-current"));
@@ -354,7 +356,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         OpenView(page, "Constraints");
         // Summary first: the total and the per-category counts come before the (collapsed) table.
         var all = page.Find("[data-testid=ss-constraints]").QuerySelectorAll("tbody tr").Length;
-        Assert.Equal($"{all} rules detected", page.Find("[data-testid=ss-constraint-total]").TextContent);
+        Assert.Equal($"{all} rule entries detected", page.Find("[data-testid=ss-constraint-total]").TextContent);
         Assert.Equal(all, page.FindAll("[data-testid=ss-rule-category] dd").Sum(dd => int.Parse(dd.TextContent)));
         Assert.Equal("false", page.Find("[data-testid=ss-constraint-list-toggle]").GetAttribute("aria-expanded"));
         Assert.True(page.Markup.IndexOf("ss-constraint-summary", StringComparison.Ordinal) < page.Markup.IndexOf("data-testid=\"ss-constraints\"", StringComparison.Ordinal));
@@ -402,7 +404,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
         OpenView(page, "Designer");
 
-        Assert.Equal(["Field", "Occurrence", "Rules"], page.Find("[data-testid=ss-designer-form]").QuerySelectorAll("legend").Select(l => l.TextContent));
+        Assert.Equal(["Field", "Occurrence", "Rules for text"], page.Find("[data-testid=ss-designer-form]").QuerySelectorAll("legend").Select(l => l.TextContent));
         Assert.Contains("never changed", page.Find("[data-testid=ss-source-safety]").TextContent);
         Assert.Equal("The imported source is never changed.", page.Find("[data-testid=ss-designer-immutable]").TextContent);
         // Plain-language occurrence first; the exact XML attributes stay as technical detail.
@@ -423,10 +425,14 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
         OpenView(page, "Generation Profile");
 
-        Assert.Equal("Profile", page.Find("[data-testid=ss-profile-section] > legend").TextContent);
-        Assert.Equal("Field rules", page.Find("[data-testid=ss-rule-section] > legend").TextContent);
-        Assert.Equal("Generate XML", page.Find("[data-testid=ss-generate-section] > legend").TextContent);
-        Assert.Equal("New profile random seed", page.Find("[data-testid=ss-seed-label]").FirstChild!.TextContent.Trim());
+        // Workflow first: the selected profile, what it generates and Generate XML; customization and management are secondary.
+        page.Find("[data-testid=ss-selected-profile]").TextContent.Should().Contain("Generates").And.Contain("Repeatable generation").And.Contain("Used by");
+        page.Find("[data-testid=ss-profile-generate]").ClassList.Should().Contain("btn-primary");
+        page.Find("[data-testid=ss-profile-manage-toggle]").GetAttribute("aria-expanded").Should().Be("false", "profile management is not the default workflow");
+        page.FindAll("[data-testid=ss-profile-form], [data-testid=ss-rule-section]").Should().BeEmpty("editing opens on Customize profile");
+        page.Find("[data-testid=ss-profile-customize]").Click();
+        Assert.Equal("Field overrides", page.Find("[data-testid=ss-rule-section] > legend").TextContent);
+        Assert.Equal("Seed for the new profile", page.Find("[data-testid=ss-seed-label]").FirstChild!.TextContent.Trim());
     }
 
     [Fact]
@@ -441,13 +447,14 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
 
         page.Find("select[aria-label='Generation Profile']").Change(saved.Id.ToString("D"));
         Assert.Contains("seed 4101", page.Find("[data-testid=ss-selected-profile]").TextContent);
+        page.Find("[data-testid=ss-profile-customize]").Click();
         // The form holds new-profile values (seed 1001); there is no Update action until the selected profile is loaded.
         Assert.Equal("1001", page.Find("[data-testid=ss-profile-seed]").GetAttribute("value"));
         Assert.DoesNotContain(page.FindAll("button"), b => b.TextContent.Contains("Update selected profile", StringComparison.Ordinal));
 
         page.FindAll("button").Single(b => b.TextContent.Contains("Load selected profile for editing", StringComparison.Ordinal)).Click();
         Assert.Equal("4101", page.Find("[data-testid=ss-profile-seed]").GetAttribute("value"));
-        Assert.Equal("Random seed of the selected profile", page.Find("[data-testid=ss-seed-label]").FirstChild!.TextContent.Trim());
+        Assert.Equal("Seed of the selected profile", page.Find("[data-testid=ss-seed-label]").FirstChild!.TextContent.Trim());
         page.FindAll("button").Single(b => b.TextContent.Contains("Cancel editing", StringComparison.Ordinal)).Click();
         Assert.Equal(4101, Assert.Single(profiles.Profiles).Seed);
 

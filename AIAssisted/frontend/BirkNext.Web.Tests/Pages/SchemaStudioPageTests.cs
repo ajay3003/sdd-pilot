@@ -70,7 +70,9 @@ public sealed class SchemaStudioPageTests : BunitContext
 
         Assert.Contains("Generic valid (built-in)", page.Markup);
         Assert.Contains("Export selected profile", page.Markup);
-        Assert.Contains("New profile random seed", page.Markup);
+        Assert.DoesNotContain("Seed for the new profile", page.Markup);
+        page.Find("[data-testid=ss-profile-customize]").Click();
+        Assert.Contains("Seed for the new profile", page.Markup);
     }
 
     [Fact]
@@ -114,7 +116,7 @@ public sealed class SchemaStudioPageTests : BunitContext
         page.Find("select[aria-label='Generation Profile']").Change(profile.Id.ToString("D"));
         page.FindAll("button").Single(button => button.TextContent.Contains("Load selected profile for editing", StringComparison.Ordinal)).Click();
         page.FindAll("label").Single(label => label.TextContent.Contains("Profile name", StringComparison.Ordinal)).QuerySelector("input")!.Change("Edited profile");
-        page.FindAll("label").Single(label => label.TextContent.Contains("Random seed", StringComparison.Ordinal)).QuerySelector("input")!.Change("29");
+        page.FindAll("label").Single(label => label.TextContent.Contains("Seed of the selected profile", StringComparison.Ordinal)).QuerySelector("input")!.Change("29");
         page.FindAll("button").Single(button => button.TextContent.Contains("Update selected profile", StringComparison.Ordinal)).Click();
 
         var edited = Assert.Single(profiles.Profiles);
@@ -216,10 +218,11 @@ public sealed class SchemaStudioPageTests : BunitContext
         page.Find("[data-testid=ss-designer-steps]").TextContent.Should().Contain("Edit a working draft").And.Contain("Preview and validate it").And.Contain("Save a new immutable version");
         page.Find("[data-testid=ss-designer-name]").Change("RecordId");
         page.Find("[data-testid=ss-designer-add]").Click();
-        page.Find("[data-testid=ss-designer-save]").HasAttribute("disabled").Should().BeTrue("a new version is saved only after the draft previews as valid");
+        page.FindAll("[data-testid=ss-designer-save]").Should().BeEmpty("a new version is offered only after the draft previews as valid");
+        page.Find("[data-testid=ss-draft-state]").TextContent.Should().StartWith("Draft differs from imported schema");
         Assert.Single(service.Packages);
         page.Find("[data-testid=ss-designer-preview]").Click();
-        page.Find("[data-testid=ss-designer-save]").HasAttribute("disabled").Should().BeFalse();
+        page.Find("[data-testid=ss-draft-state]").TextContent.Should().StartWith("Draft valid");
         page.Find("[data-testid=ss-designer-save]").ClassList.Should().Contain("btn-primary", "once valid, saving is the one primary action");
         page.Find("[data-testid=ss-designer-preview]").ClassList.Should().Contain("btn-secondary");
         page.Find("[data-testid=ss-designer-save]").Click();
@@ -245,7 +248,9 @@ public sealed class SchemaStudioPageTests : BunitContext
         OpenView(page, "Effective Schema");
 
         Assert.Contains("Id", page.Markup);
-        Assert.Contains("inherited from MessageType", page.Markup);
+        Assert.DoesNotContain("Inherited from MessageType", page.Markup);
+        page.Find("[data-testid=ss-effective-show-origin]").Change(true);
+        Assert.Contains("Inherited from MessageType", page.Markup);
         Assert.Contains("message.xsd", page.Markup);
         Assert.Contains("Period", page.Markup);
     }
@@ -325,7 +330,8 @@ public sealed class SchemaStudioPageTests : BunitContext
         var input = (AngleSharp.Html.Dom.IHtmlTextAreaElement)firstPage.Find("textarea[aria-label='Edit XSD source']");
         const string edited = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"><xs:element name=\"ChangedRoot\" type=\"xs:string\"/></xs:schema>";
         input.Change(edited);
-        firstPage.Find("[data-testid=ss-designer-keep]").Click();
+        firstPage.Find("[data-testid=ss-designer-more-toggle]").Click();
+        firstPage.Find("[data-testid=ss-designer-more-keep]").Click();
         Assert.Contains("Saved draft for draft.xsd", firstPage.Markup);
         Assert.Equal(edited, drafts.Find(package, "draft.xsd")?.Text);
 

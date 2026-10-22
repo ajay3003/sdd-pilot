@@ -31,11 +31,11 @@ public sealed class SchemaReadableViewTests : BunitContext
     // ── Wording matrix ──────────────────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("1", "1", "Required")]
-    [InlineData("0", "1", "Optional")]
-    [InlineData("0", "unbounded", "Optional, can repeat")]
-    [InlineData("1", "unbounded", "At least one, can repeat")]
-    [InlineData("2", "5", "Between 2 and 5 times")]
+    [InlineData("1", "1", "Required once")]
+    [InlineData("0", "1", "Optional, max once")]
+    [InlineData("0", "unbounded", "Optional, repeating")]
+    [InlineData("1", "unbounded", "Required, repeating")]
+    [InlineData("2", "5", "2–5 times")]
     public void Cardinality_IsReadable_AndExactIsPreserved(string min, string max, string expected)
     {
         P.CardinalityLabel(Member(min, max)).Should().Be(expected);
@@ -61,12 +61,18 @@ public sealed class SchemaReadableViewTests : BunitContext
     [InlineData(@"\d{2,4}", "Between 2 and 4 digits")]
     [InlineData(@"[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}", "Pattern rule defined")]
     [InlineData(@"(\d+\.)?(\d+\.)?(\*|\d+)", "Pattern rule defined")]
+    [InlineData(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "UUID format")]
+    [InlineData(@"[a-fA-F0-9]{8}-([a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}", "UUID format")]
+    [InlineData(@"\d+\.\d+(\.\d+)?", "Version number format")]
+    [InlineData(@"[A-Z]{3}[0-9]+", "Pattern rule defined")]
+    [InlineData(@"(unclosed", "Pattern rule defined")]
     public void Patterns_OnlyObviousDigitCountsAreTranslated(string pattern, string expected) => P.PatternLabel(pattern).Should().Be(expected);
 
     [Fact]
     public void Rules_LengthAndBounds_AreReadableWithRawFacet()
     {
-        P.Rules([new("minLength", "4"), new("maxLength", "4")]).Should().ContainSingle(r => r.Text == "Exactly 4 characters" && r.Raw == "minLength=4, maxLength=4");
+        P.Rules([new("minLength", "4"), new("maxLength", "4")]).Should().ContainSingle(r => r.Text == "Exactly 4 characters" && r.Raw == "xs:minLength=4, xs:maxLength=4");
+        P.Rules([new("minLength", "1")]).Should().ContainSingle(r => r.Text == "Minimum length 1 character" && r.Raw == "xs:minLength=1", "plain meaning first, the exact facet second");
         P.Rules([new("minInclusive", "0"), new("maxExclusive", "10")]).Select(r => r.Text).Should().Equal("Minimum value 0", "Less than 10");
     }
 
@@ -81,7 +87,7 @@ public sealed class SchemaReadableViewTests : BunitContext
     public void ChoiceWording_OnlyForRealXsChoice()
     {
         P.CardinalityLabel(Member("1", "1", compositor: "choice")).Should().Contain("one of the alternatives (xs:choice)");
-        P.CardinalityLabel(Member("0", "1") with { Name = "CHOICE_ELEMENT_Fodselsnummer__DUFnummer" }).Should().Be("Optional", "naming conventions never imply xs:choice");
+        P.CardinalityLabel(Member("0", "1") with { Name = "CHOICE_ELEMENT_Fodselsnummer__DUFnummer" }).Should().Be("Optional, max once", "naming conventions never imply xs:choice");
     }
 
     // ── Real Skolenærvær schema ─────────────────────────────────────────────────────────────────────────────────
@@ -102,16 +108,17 @@ public sealed class SchemaReadableViewTests : BunitContext
     {
         var view = Render<SchemaReadableView>(p => p.Add(x => x.Package, Import((Skolenaervaer, RealSchema(Skolenaervaer)))).Add(x => x.View, "Felt og regler"));
         var typeFravaer = view.Find("[data-path='Skolenaervaer/SkolenaervaerRegistrering/FravaerRegistrering/Fravaer/TypeFravaer']");
-        typeFravaer.TextContent.Should().Contain("Allowed values").And.Contain("From the type:")
+        typeFravaer.TextContent.Should().Contain("6 allowed values").And.Contain("From the type:")
             .And.Contain("1 = Lege/tannlege").And.Contain("9 = Annet fravær");
         typeFravaer.QuerySelectorAll(".sr-values li").Select(li => li.TextContent.Trim()).Should().Equal("1", "2", "3", "4", "5", "9");
+        typeFravaer.QuerySelector("[data-testid=sr-allowed-values]")!.HasAttribute("open").Should().BeFalse("a long value list is collapsed by default");
         view.Find("[data-path='Skolenaervaer/SkolenaervaerRegistrering/FravaerRegistrering/Fravaer']").TextContent
-            .Should().Contain("Optional, can repeat").And.Contain("0..*");
+            .Should().Contain("Optional, repeating").And.Contain("0..*");
         view.Find("[data-path='Skolenaervaer/Periode/StartDato']").TextContent.Should().Contain("Date and time").And.Contain("Required");
         view.Find("[data-path='Skolenaervaer/SkolenaervaerRegistrering/AntallTimerEtterPlanen']").TextContent.Should().Contain("Number").And.Contain("xs:double");
         view.Find("[data-path='Skolenaervaer/Meldingshode']").TextContent.Should().Contain("Inherited from MeldingType");
         view.Find("[data-path='Skolenaervaer/Klient/Identifikator/Fodselsnummer']").TextContent.Should().Contain("Exactly 11 digits").And.NotContain("xs:choice");
-        view.Find("[data-path='Skolenaervaer/Meldingshode/Id']").TextContent.Should().Contain("Pattern rule defined");
+        view.Find("[data-path='Skolenaervaer/Meldingshode/Id']").TextContent.Should().Contain("UUID format").And.Contain("xs:pattern=", "a recognized pattern is named, with the exact regex next to it");
 
         var text = view.Find("[data-testid=sr-fields]").TextContent;
         foreach (var invented in new[] { "SluttDato må", "later than", "greater than StartDato", "≥ 0", "Minimum value 0", "sum of", "excludes" })
@@ -124,7 +131,7 @@ public sealed class SchemaReadableViewTests : BunitContext
     public void Structure_ShowsProvenanceAndRawTypes()
     {
         var view = Render<SchemaReadableView>(p => p.Add(x => x.Package, Import((Skolenaervaer, RealSchema(Skolenaervaer)))).Add(x => x.View, "Struktur"));
-        view.Find("[data-testid=sr-structure]").TextContent.Should().Contain("top-level element · SkolenaervaerType").And.Contain("inherited from MeldingType")
+        view.Find("[data-testid=sr-structure]").TextContent.Should().Contain("Top-level message element · SkolenaervaerType").And.Contain("inherited from MeldingType")
             .And.Contain("PeriodeType").And.Contain("in fixed order (xs:sequence)");
     }
 

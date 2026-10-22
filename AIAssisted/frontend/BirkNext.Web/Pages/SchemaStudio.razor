@@ -58,10 +58,15 @@
                     <p class="ss-package-facts">
                         <span class="status-chip @(package.Validation == "Valid" ? "status-chip-healthy" : "status-chip-warning")" title="Technical XSD validation result" data-testid="ss-validity">@package.Validation</span>
                         <strong data-testid="ss-validity-headline">@SchemaStudioPresentation.ValidityHeadline(package.Validation)</strong>
-                        <span aria-hidden="true">·</span> <span data-testid="ss-file-count">@package.Files.Count XSD</span>
+                        <span aria-hidden="true">·</span> <span data-testid="ss-file-count">@SchemaStudioPresentation.Count(package.Files.Count, "XSD file", "XSD files")</span>
+                        <span aria-hidden="true">·</span> <span data-testid="ss-resolution">@SchemaStudioPresentation.ResolutionLine(package)</span>
                         <span aria-hidden="true">·</span> <span data-testid="ss-source-kind">@SourceSummary(package)</span>
                     </p>
                     <p class="ss-scope-line" data-testid="ss-validity-scope">@(package.Validation == "Valid" ? SchemaStudioPresentation.ValidityScope : "Schema validation reported problems; see the details below. Business rules and runtime integration behavior are not verified here.")</p>
+                    <dl class="ss-verification" data-testid="ss-verification">
+                        <div><dt>Verified here</dt><dd data-testid="ss-verified">@string.Join(" · ", SchemaStudioPresentation.VerifiedHere)</dd></div>
+                        <div><dt>Not verified here</dt><dd data-testid="ss-not-verified">@string.Join(" · ", SchemaStudioPresentation.NotVerifiedHere)</dd></div>
+                    </dl>
                     @if (Studio.Packages.Count > 1)
                     {
                         <div class="ss-switcher" data-testid="ss-package-switcher">
@@ -75,11 +80,12 @@
                     }
                 </div>
                 <div class="ss-package-actions" data-testid="ss-package-actions">
-                    <button type="button" class="btn-primary" data-testid="ss-save" @onclick="SaveCurrentSchema">Save analysis</button>
+                    <button type="button" class="btn-primary" data-testid="ss-save" aria-describedby="ss-save-help" @onclick="SaveCurrentSchema">Save analysis</button>
                     <button type="button" class="btn-secondary" data-testid="ss-change-source" aria-expanded="@(_changeSourceOpen ? "true" : "false")" @onclick="() => { _changeSourceOpen = !_changeSourceOpen; _importOpen = false; }">Change source</button>
                     <button type="button" class="btn-secondary" data-testid="ss-import-another" aria-expanded="@(_importOpen ? "true" : "false")" @onclick="() => { _importOpen = !_importOpen; _changeSourceOpen = false; }">Import another package</button>
                     <ExportMenu Label="More" TestId="ss-more" Options="@MoreOptions(package)" />
                 </div>
+                <p class="ss-muted ss-save-help" id="ss-save-help" data-testid="ss-save-help">Save analysis keeps this package and its source selection in the workspace. It never changes XSD files; drafts and generation profiles are saved separately.</p>
                 @if (!string.IsNullOrWhiteSpace(_artifactStatus)) { <p class="ss-saved-status" role="status" data-testid="ss-saved-status">@_artifactStatus</p> }
                 @if (!string.IsNullOrWhiteSpace(_artifactError)) { <p class="ss-error" role="alert">@_artifactError</p> }
             </div>
@@ -108,19 +114,12 @@
                     </dl>
                     <p class="ss-muted">This analysis stays bound to the selected source. Importing again creates a separate version; nothing is deployed or inferred to be runtime truth.</p>
                 </ReviewDisclosure>
-                <ReviewDisclosure Text="What Schema Studio verifies" CollapseText="Hide what Schema Studio verifies" TestId="ss-capability" Class="disclosure-small">
-                    <div class="ss-capability">
-                        <p><strong>Verifies:</strong> XSD structure · schema rules · local XML validation.</p>
-                        <p><strong>Does not verify:</strong> business logic · runtime integrations · message delivery.</p>
-                        <p class="ss-muted">An XSD-valid message is not business-valid, and it is not proof that an integration works in QA or production.</p>
-                    </div>
-                </ReviewDisclosure>
             </div>
 
             <label class="ss-search">Search this package <input type="search" @bind="_search" @bind:event="oninput" placeholder="Search elements, types, fields, namespaces or files" data-testid="ss-search" /></label>
             @if (!string.IsNullOrWhiteSpace(_search))
             {
-                <ul class="ss-search-results" data-testid="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab)">@result.Name</button> <small><span class="ss-search-category">@SchemaStudioPresentation.SearchCategory(result.Match, result.Tab)</span> · @SchemaStudioPresentation.FileName(result.File) · opens @SchemaStudioNavigation.GroupOf(result.Tab).Name → @SchemaStudioNavigation.Label(result.Tab)</small></li> }</ul>
+                <ul class="ss-search-results" data-testid="ss-search-results">@foreach (var result in Search(package, _search).Take(30)) { <li><button class="ss-link" @onclick="() => Jump(result.File, result.Tab, _search ?? result.Name)">@result.Name</button> <small><span class="ss-search-category">@SchemaStudioPresentation.SearchCategory(result.Match, result.Tab)</span> · @SchemaStudioPresentation.FileName(result.File) · opens @SchemaStudioNavigation.GroupOf(result.Tab).Name → @SchemaStudioNavigation.Label(result.Tab)</small></li> }</ul>
             }
             @* Two levels: five areas, then only the selected area's views. Every view keeps its identifier (search, links, ?view=). *@
             <nav class="ss-groups" aria-label="Schema Studio areas" data-testid="ss-groups">
@@ -149,10 +148,12 @@
                     <h3 class="ss-section-title">Schema package summary</h3>
                     <dl class="ss-stats" data-testid="ss-overview-stats">
                         <div><dt>Schema status</dt><dd><span data-testid="ss-overview-status">@SchemaStudioPresentation.ValidityHeadline(package.Validation)</span><small class="ss-muted ss-tech-term">Technical: @package.Validation (XSD validation only)</small></dd></div>
-                        <div><dt>Files</dt><dd>@package.Files.Count XSD</dd></div>
+                        <div><dt>Files</dt><dd>@SchemaStudioPresentation.Count(package.Files.Count, "XSD file", "XSD files")</dd></div>
                         <div><dt>Top-level message</dt><dd data-testid="ss-root-element">@SchemaStudioPresentation.MessageRoot(package)</dd></div>
-                        <div><dt>Message entry point</dt><dd data-testid="ss-root-xsd"><span title="@rootFile?.Name">@(rootFile is null ? (library ? "Not defined" : "Not identified") : SchemaStudioPresentation.FileName(rootFile.Name))</span><small class="ss-muted ss-tech-term">Technical: entry XSD</small></dd></div>
-                        <div><dt>Namespace</dt><dd class="ss-wrap">@(string.Join(", ", package.Files.Select(f => f.TargetNamespace).Where(n => n is not null).Distinct()) is { Length: > 0 } ns ? ns : "None declared")</dd></div>
+                        <div><dt>Entry schema</dt><dd data-testid="ss-root-xsd"><span title="@rootFile?.Name">@(rootFile is null ? (library ? "Not defined" : "Not identified") : SchemaStudioPresentation.FileName(rootFile.Name))</span><small class="ss-muted ss-tech-term">Technical: the file declaring the global message element</small></dd></div>
+                        <div><dt>Supporting schemas</dt><dd data-testid="ss-overview-supporting">@SchemaStudioPresentation.SupportingSchemas(package)<small class="ss-muted ss-tech-term">Imported or included reusable schemas</small></dd></div>
+                        @{ var namespaces = SchemaStudioPresentation.Namespaces(package); }
+                        <div><dt>Namespaces</dt><dd data-testid="ss-overview-namespaces">@namespaces.Count@if (namespaces.Count > 0) { <small class="ss-muted ss-overview-primary-ns" title="@namespaces[0]">Primary: @SchemaStudioPresentation.ShortNamespace(namespaces[0])</small> }<button type="button" class="ss-text-button" data-testid="ss-overview-view-namespaces" @onclick='() => _tab = "Namespaces"'>View namespaces</button></dd></div>
                         <div><dt>Schema dependencies</dt><dd data-testid="ss-overview-dependencies">@SchemaStudioPresentation.Dependencies(package)<small class="ss-muted ss-tech-term">@SchemaStudioPresentation.DependencyDetail(package)</small></dd></div>
                         <div><dt>Reusable definitions</dt><dd data-testid="ss-overview-definitions">@SchemaStudioPresentation.Definitions(package)<small class="ss-muted ss-tech-term">Technical: global declarations</small></dd></div>
                     </dl>
@@ -165,11 +166,11 @@
                         }
                         else if (package.EffectiveSchema.Count == 1)
                         {
-                            <p>This package defines the message <strong>@package.EffectiveSchema[0].Name</strong>. Its fields, types and rules can be reviewed, and schema-derived test cases can be run locally.</p>
+                            <p>This package defines the message <strong>@package.EffectiveSchema[0].Name</strong>. Its fields, reusable types and schema rules can be reviewed here, and schema-derived XML can be generated and validated locally. It does not test runtime integrations.</p>
                         }
                         else
                         {
-                            <p>This package defines @package.EffectiveSchema.Count top-level elements. Choose the message you want to review in Business structure.</p>
+                            <p>This package defines @package.EffectiveSchema.Count top-level messages. Choose the message you want to review in Business structure.</p>
                         }
                     </section>
                     <h3 class="ss-section-title">Start here</h3>
@@ -206,6 +207,17 @@
                     break;
                 case "Schema dependencies":
                     var dependencyEdges = DependencyEdges(package, _graphMode).Take(1001).ToArray();
+                    var linkCount = package.Files.Sum(f => f.Links.Count);
+                    var unresolvedLinks = package.Files.Sum(f => f.Links.Count(l => l.ResolvedFile is null));
+                    <section class="ss-rule-summary" aria-labelledby="ss-deps-title" data-testid="ss-dependency-summary">
+                        <h3 id="ss-deps-title" class="ss-section-title">Schema dependencies</h3>
+                        <dl class="ss-stats ss-stats-compact">
+                            <div><dt>Files</dt><dd>@package.Files.Count</dd></div>
+                            <div><dt>Imports/includes</dt><dd>@linkCount</dd></div>
+                            <div><dt>Unresolved</dt><dd data-testid="ss-dependency-unresolved">@unresolvedLinks</dd></div>
+                        </dl>
+                        <p class="ss-muted" data-testid="ss-dependency-scope">Resolved within this imported package. Remote schema locations are never fetched; this says nothing about runtime schema resolution.</p>
+                    </section>
                     <SchemaReadableView Package="package" View="Schema dependencies" OnFileSelected="OpenGraphFile" />
                     @if (package.Files.Count == 1 && package.Files[0].Links.Count == 0)
                     {
@@ -213,7 +225,10 @@
                         <p class="ss-muted" data-testid="ss-dependencies-single">This package contains one XSD with no imports or includes, so there is no dependency graph to show.</p>
                         break;
                     }
-                    <SchemaRelationshipGraph Package="package" OnFileSelected="OpenGraphFile" />
+                    <details class="ss-section-details" data-testid="ss-graph-disclosure"><summary>View relationship graph</summary>
+                        <SchemaRelationshipGraph Package="package" OnFileSelected="OpenGraphFile" />
+                    </details>
+                    <details class="ss-section-details" data-testid="ss-dependency-details"><summary>View dependency details</summary>
                     <details class="ss-section-details" data-testid="ss-linked-xsds"><summary>Linked XSD files · @package.Files.Count file(s), @package.Files.Sum(f => f.Links.Count) import(s)/include(s)</summary>
                         <p class="ss-muted">Relationships resolve only within this imported package. Missing files are shown as unresolved; remote schema locations are never fetched.</p>
                         <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Linked XSD files"><table class="ss-table"><thead><tr><th class="ss-col-file">File</th><th class="ss-col-flex">Namespace</th><th class="ss-col-compact">Relationship</th><th class="ss-col-file">Schema location</th><th class="ss-col-compact">Resolution</th></tr></thead><tbody>
@@ -227,6 +242,7 @@
                             <p class="ss-warning" role="status">Relationship view limited to 1,000 entries. Showing the first 1,000 relationships; additional relationships are omitted.</p>
                         }
                         <ul class="ss-dependencies">@foreach (var edge in dependencyEdges.Take(1000)) { <li>@edge</li> }</ul>
+                    </details>
                     </details>
                     break;
                 case "Schema Tree":
@@ -245,7 +261,7 @@
                                         @if (d.Documentation is not null) { <p class="ss-doc">@SchemaReadablePresentation.Normalize(d.Documentation)</p> }
                                         @if (d.Children.Count > 0)
                                         {
-                                            <ul class="ss-tree-fields">@foreach (var child in d.Children) { <li><strong>@child.Name</strong> <small class="ss-inline ss-muted">@(SchemaStudioPresentation.BuiltInLabel(child.Type) ?? BirkNext.Schemas.XmlSchemaPackageAnalyzer.LocalName(child.Type) ?? "Inline type") · @SchemaStudioPresentation.Occurrence(child.MinOccurs, child.MaxOccurs)@(child.Facets.Count > 0 ? " · " + string.Join(", ", SchemaReadablePresentation.Rules(child.Facets).Select(r => r.Text).Concat(SchemaReadablePresentation.AllowedValues(child.Facets).Count > 0 ? [SchemaStudioPresentation.Count(SchemaReadablePresentation.AllowedValues(child.Facets).Count, "allowed value", "allowed values")] : [])) : "")</small>@if (child.Documentation is not null) { <p class="ss-doc">@SchemaReadablePresentation.Normalize(child.Documentation)</p> }</li> }</ul>
+                                            <ul class="ss-tree-fields">@foreach (var child in d.Children) { <li><strong>@child.Name</strong> <small class="ss-inline ss-muted">@(SchemaStudioPresentation.BuiltInLabel(child.Type) ?? BirkNext.Schemas.XmlSchemaPackageAnalyzer.LocalName(child.Type) ?? "Inline type") · @SchemaStudioPresentation.Occurrence(child.MinOccurs, child.MaxOccurs) <span class="ss-tech-term">(technical: @SchemaStudioPresentation.ExactOccurrence(child.MinOccurs, child.MaxOccurs))</span>@(child.Facets.Count > 0 ? " · " + string.Join(", ", SchemaReadablePresentation.Rules(child.Facets).Select(r => r.Text).Concat(SchemaReadablePresentation.AllowedValues(child.Facets).Count > 0 ? [SchemaStudioPresentation.Count(SchemaReadablePresentation.AllowedValues(child.Facets).Count, "allowed value", "allowed values")] : [])) : "")</small>@if (child.Documentation is not null) { <p class="ss-doc">@SchemaReadablePresentation.Normalize(child.Documentation)</p> }</li> }</ul>
                                         }
                                         <details class="ss-tech" data-testid="ss-tree-technical"><summary>Technical details<span class="visually-hidden"> for @d.Name</span></summary>
                                             <dl class="ss-tech-facts">
@@ -253,7 +269,7 @@
                                                 <div><dt>Declared in</dt><dd>@f.Name</dd></div>
                                                 <div><dt>Full path</dt><dd><code>@d.Path</code></dd></div>
                                                 @if (d.Compositor is not null) { <div><dt>Compositor</dt><dd>@SchemaReadablePresentation.CompositorLabel(d.Compositor)</dd></div> }
-                                                @if (d.Facets.Count > 0) { <div><dt>Facets</dt><dd><code>@string.Join(", ", d.Facets.Select(x => x.Kind + "=" + x.Value))</code></dd></div> }
+                                                @if (d.Facets.Count > 0) { <div><dt>Facets</dt><dd><code>@string.Join(", ", d.Facets.Select(x => "xs:" + x.Kind + "=" + x.Value))</code></dd></div> }
                                                 @if (d.Children.Count > 0) { <div><dt>Occurrence</dt><dd><code>@string.Join(", ", d.Children.Select(c => $"{c.Name} {SchemaStudioPresentation.ExactOccurrence(c.MinOccurs, c.MaxOccurs)}"))</code></dd></div> }
                                             </dl>
                                         </details>
@@ -282,10 +298,16 @@
                         </select></label>
                         <label>Search fields <input type="search" @bind="_effectiveSearch" @bind:event="oninput" @bind:after="() => SetTreeExpanded(null)" data-testid="ss-effective-search" /></label>
                     </div>
+                    <div class="ss-effective-options" role="group" aria-label="Effective structure detail" data-testid="ss-effective-detail">
+                        <span class="ss-muted">Readable view. Also show:</span>
+                        <label class="ss-check"><input type="checkbox" @bind="_effShowTypes" data-testid="ss-effective-show-types" /> Types</label>
+                        <label class="ss-check"><input type="checkbox" @bind="_effShowOrigin" data-testid="ss-effective-show-origin" /> Origin</label>
+                        <label class="ss-check"><input type="checkbox" @bind="_effShowTechnical" data-testid="ss-effective-show-technical" /> Technical occurrence</label>
+                    </div>
                     <div @key="_treeGeneration" data-testid="ss-effective-tree">
                     @foreach (var root in package.EffectiveSchema)
                     {
-                        <article class="ss-card"><h3>@root.Name <small class="ss-muted">top-level message element · declared in <span title="@root.DeclaredIn">@SchemaStudioPresentation.FileName(root.DeclaredIn)</span></small></h3>
+                        <article class="ss-card"><h3>@root.Name <small class="ss-muted">Top-level message element@(_effShowOrigin ? " · declared in " + SchemaStudioPresentation.FileName(root.DeclaredIn) : "")</small></h3>
                             @if (root.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in root.Attributes) { @RenderAttribute(attribute) }</ul> }
                             <ul class="ss-tree">@foreach (var member in root.Children.Where(c => SchemaTreeFilter.Keep(c, _effectiveFilter, _effectiveSearch))) { @EffectiveMemberNode((member, 0)) }</ul>
                         </article>
@@ -306,12 +328,12 @@
                                         @if (truncated) { <details class="ss-tech"><summary>Show documentation<span class="visually-hidden"> for @d.Name</span></summary><p class="ss-doc">@SchemaReadablePresentation.Normalize(d.Documentation)</p></details> }
                                     }
                                     <details class="ss-tech" data-testid="ss-type-technical"><summary>Technical details<span class="visually-hidden"> for @d.Name</span></summary>
-                                        <dl class="ss-tech-facts"><div><dt>Kind</dt><dd>@SchemaStudioPresentation.KindLabel(d.Kind)</dd></div><div><dt>XSD base</dt><dd><code>@(d.Type ?? d.BaseType ?? "—")</code></dd></div><div><dt>Source</dt><dd>@f.Name</dd></div>@if (d.Facets.Count > 0) { <div><dt>Facets</dt><dd><code>@string.Join(", ", d.Facets.Select(x => x.Kind + "=" + x.Value))</code></dd></div> }</dl>
+                                        <dl class="ss-tech-facts"><div><dt>Kind</dt><dd>@SchemaStudioPresentation.KindLabel(d.Kind)</dd></div><div><dt>XSD base</dt><dd><code>@(d.Type ?? d.BaseType ?? "—")</code></dd></div><div><dt>Source</dt><dd>@f.Name</dd></div>@if (d.Facets.Count > 0) { <div><dt>Facets</dt><dd><code>@string.Join(", ", d.Facets.Select(x => "xs:" + x.Kind + "=" + x.Value))</code></dd></div> }</dl>
                                     </details></td>
                                 <td>@SchemaStudioPresentation.DeclarationMeaning(d)</td>
                                 <td>@SchemaStudioPresentation.BaseLabel(d)</td>
                                 <td>@SchemaStudioPresentation.RuleSummary(d)</td>
-                                <td class="ss-nowrap">@SchemaStudioPresentation.Count(UsageCount(package, d.Name), "reference", "references")</td></tr> }</tbody></table></div>
+                                <td class="ss-nowrap" data-testid="ss-type-usage">@(UsageCount(package, d.Name) is var used && used == 0 ? "Not used in this package" : $"Used in {SchemaStudioPresentation.Count(used, "place", "places")}")</td></tr> }</tbody></table></div>
                     break;
                 case "References":
                     @if (package.ReferencesTruncated)
@@ -336,8 +358,9 @@
                         && (_constraintSearch.Length == 0 || r.Path.Contains(_constraintSearch, StringComparison.OrdinalIgnoreCase) || r.Value.Contains(_constraintSearch, StringComparison.OrdinalIgnoreCase))).ToList();
                     <section class="ss-rule-summary" aria-labelledby="ss-rules-title" data-testid="ss-constraint-summary">
                         <h3 id="ss-rules-title" class="ss-section-title">Schema rules</h3>
-                        <p data-testid="ss-constraint-total"><strong>@SchemaStudioPresentation.Count(constraintRows.Count, "rule", "rules") detected</strong></p>
-                        <dl class="ss-stats ss-stats-compact">@foreach (var rule in SchemaStudioPresentation.RuleCounts(constraintRows.Select(r => r.Category))) { <div data-testid="ss-rule-category" data-category="@rule.Category"><dt>@SchemaStudioPresentation.CategoryLabel(rule.Category)</dt><dd>@rule.Count</dd></div> }</dl>
+                        <p data-testid="ss-constraint-total"><strong>@SchemaStudioPresentation.Count(constraintRows.Count, "rule entry", "rule entries") detected</strong></p>
+                        <dl class="ss-stats ss-stats-compact">@foreach (var rule in SchemaStudioPresentation.RuleCounts(constraintRows.Select(r => r.Category))) { <div data-testid="ss-rule-category" data-category="@rule.Category"><dt>@SchemaStudioPresentation.SummaryLabel(rule.Category)</dt><dd>@rule.Count</dd></div> }</dl>
+                        <p class="ss-muted" data-testid="ss-constraint-count-note">Allowed-value entries count each allowed value once (one field with 9 allowed values counts 9). The other counts are one per rule.</p>
                     </section>
                     <ReviewDisclosure Text="@($"View all rules ({constraintRows.Count})")" CollapseText="Hide rules" TestId="ss-constraint-list" Class="disclosure-small">
                         <div class="ss-rule-toolbar">
@@ -345,29 +368,31 @@
                             <label class="ss-field">Search rules <input type="search" @bind="_constraintSearch" @bind:event="oninput" data-testid="ss-constraint-search" /></label>
                         </div>
                         <p class="ss-muted" role="status" data-testid="ss-constraint-count">@shownConstraints.Count of @SchemaStudioPresentation.Count(constraintRows.Count, "rule", "rules")</p>
-                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Schema rules"><table class="ss-table ss-table-compact" data-testid="ss-constraints"><thead><tr><th class="ss-col-path">Field / type</th><th class="ss-col-compact">Rule</th><th class="ss-col-value">Value</th><th class="ss-col-file">Source</th><th class="ss-col-compact"><span class="visually-hidden">Evidence</span></th></tr></thead>
-                            <tbody>@foreach (var row in shownConstraints) { <tr data-category="@row.Category"><td title="@row.Path">@SchemaStudioPresentation.ShortPath(row.Path)</td><td>@SchemaStudioPresentation.RuleName(row.Constraint)<small class="ss-tech-term">@row.Constraint</small></td><td>@row.Display @if (row.Display != row.Value) { <small class="ss-tech-term"><code>@row.Value</code></small> }</td><td title="@row.Source">@SchemaStudioPresentation.FileName(row.Source)</td>
-                                <td><details class="ss-tech"><summary>View evidence<span class="visually-hidden"> for @row.Path @row.Constraint</span></summary><small class="ss-tech-term">Path <code>@row.Path</code> · XSD facet <code>@row.Constraint</code> · @row.Source</small></details></td></tr> }</tbody></table></div>
+                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Schema rules"><table class="ss-table ss-table-compact" data-testid="ss-constraints"><thead><tr><th class="ss-col-path">Field / type</th><th class="ss-col-compact">Rule</th><th class="ss-col-value">Meaning / value</th><th class="ss-col-file">Source</th><th class="ss-col-compact"><span class="visually-hidden">Evidence</span></th></tr></thead>
+                            <tbody>@foreach (var row in shownConstraints) { <tr data-category="@row.Category"><td title="@row.Path">@SchemaStudioPresentation.ShortPath(row.Path)</td><td>@SchemaStudioPresentation.RuleName(row.Constraint)<small class="ss-tech-term">@(row.Constraint == "Occurrence" ? "minOccurs/maxOccurs" : "xs:" + row.Constraint)</small></td><td>@row.Display @if (row.Display != row.Value) { <small class="ss-tech-term"><code>@row.Value</code></small> }</td><td title="@row.Source">@SchemaStudioPresentation.FileName(row.Source)</td>
+                                <td><details class="ss-tech"><summary>View evidence<span class="visually-hidden"> for @row.Path @row.Constraint</span></summary><small class="ss-tech-term">Path <code>@row.Path</code> · XSD @(row.Constraint == "Occurrence" ? "occurrence" : "facet") <code>@(row.Constraint == "Occurrence" ? row.Value : $"xs:{row.Constraint}={row.Value}")</code> · @row.Source</small></details></td></tr> }</tbody></table></div>
                     </ReviewDisclosure>
                     break;
                 case "Namespaces":
-                    @foreach (var group in package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)"))
-                    {
-                        var importers = package.Files.Where(f => f.Links.Any(l => l.ResolvedFile is not null && group.Any(g => g.Name == l.ResolvedFile))).Select(f => SchemaStudioPresentation.FileName(f.Name)).ToList();
-                        <article class="ss-card" data-testid="ss-namespace">
-                            <dl class="ss-facts">
-                                <div class="ss-facts-wide"><dt>XML namespace</dt><dd class="ss-wrap" data-testid="ss-namespace-uri">@group.Key</dd></div>
-                                <div><dt>Declared in</dt><dd data-testid="ss-namespace-files">@foreach (var file in group) { <span class="ss-file" title="@file.Name">@SchemaStudioPresentation.FileName(file.Name)</span> }</dd></div>
-                                <div><dt>Reusable definitions</dt><dd>@group.Sum(f => f.Declarations.Count)</dd></div>
-                                <div><dt>Imports/includes</dt><dd>@(group.Sum(f => f.Links.Count) is var links && links > 0 ? links.ToString() : "None")</dd></div>
-                                <div><dt>Imported by</dt><dd data-testid="ss-imported-by">@(importers.Count > 0 ? string.Join(", ", importers) : "None in this package")</dd></div>
-                            </dl>
-                            @if (group.Any(file => file.Name != SchemaStudioPresentation.FileName(file.Name)))
-                            {
-                                <details class="ss-tech"><summary>View file paths</summary><ul class="ss-plain-list">@foreach (var file in group) { <li><code>@SchemaText.Breakable(file.Name)</code></li> }</ul></details>
-                            }
-                        </article>
-                    }
+                    var namespaceGroups = package.Files.GroupBy(f => f.TargetNamespace ?? "(no target namespace)").ToList();
+                    <p class="ss-muted" role="status" data-testid="ss-namespace-count">@SchemaStudioPresentation.Count(namespaceGroups.Count, "namespace", "namespaces") in this schema package</p>
+                    <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Namespaces"><table class="ss-table ss-table-compact" data-testid="ss-namespaces">
+                        <thead><tr><th class="ss-col-name">Namespace</th><th class="ss-col-file">Declared in</th><th class="ss-col-compact">Reusable definitions</th><th class="ss-col-file">Imported by</th><th class="ss-col-compact">Imports/includes</th></tr></thead>
+                        <tbody>
+                        @foreach (var group in namespaceGroups)
+                        {
+                            var importers = package.Files.Where(f => f.Links.Any(l => l.ResolvedFile is not null && group.Any(g => g.Name == l.ResolvedFile))).Select(f => SchemaStudioPresentation.FileName(f.Name)).ToList();
+                            <tr data-testid="ss-namespace">
+                                @{ var shortNamespace = group.Key == "(no target namespace)" ? group.Key : SchemaStudioPresentation.ShortNamespace(group.Key); }
+                                <td>@if (shortNamespace == group.Key) { <strong class="ss-wrap" data-testid="ss-namespace-uri">@group.Key</strong> } else { <strong>@shortNamespace</strong><small class="ss-tech-term ss-wrap" data-testid="ss-namespace-uri">@group.Key</small> }</td>
+                                <td data-testid="ss-namespace-files">@foreach (var file in group) { <span class="ss-file" title="@file.Name">@SchemaStudioPresentation.FileName(file.Name)</span> }
+                                    @if (group.Any(file => file.Name != SchemaStudioPresentation.FileName(file.Name))) { <details class="ss-tech"><summary>View details<span class="visually-hidden"> of @group.Key</span></summary><ul class="ss-plain-list">@foreach (var file in group) { <li><code>@SchemaText.Breakable(file.Name)</code></li> }</ul></details> }</td>
+                                <td>@group.Sum(f => f.Declarations.Count)</td>
+                                <td data-testid="ss-imported-by">@(importers.Count > 0 ? string.Join(", ", importers) : "None in this package")</td>
+                                <td>@(group.Sum(f => f.Links.Count) is var links && links > 0 ? links.ToString() : "None")</td>
+                            </tr>
+                        }
+                        </tbody></table></div>
                     break;
                 case "Raw XSD":
                     var rawText = CurrentFile?.Text ?? "";
@@ -422,34 +447,51 @@
                             }
                             <fieldset class="ss-fieldset"><legend>Field</legend>
                                 <label>Name <input @bind="_newChildName" data-testid="ss-designer-name" /></label>
-                                <label>Type <select @bind="_newChildType" data-testid="ss-designer-type"><option value="xs:string">Text (xs:string)</option><option value="xs:decimal">Decimal number (xs:decimal)</option><option value="xs:integer">Whole number (xs:integer)</option><option value="xs:boolean">True/false (xs:boolean)</option><option value="xs:date">Date (xs:date)</option></select></label>
+                                <label>Type <select @bind="_newChildType" @bind:after="ClearInapplicableDesignerRules" data-testid="ss-designer-type"><option value="xs:string">Text (xs:string)</option><option value="xs:decimal">Decimal number (xs:decimal)</option><option value="xs:integer">Whole number (xs:integer)</option><option value="xs:boolean">True/false (xs:boolean)</option><option value="xs:date">Date (xs:date)</option></select></label>
                             </fieldset>
                             <fieldset class="ss-fieldset"><legend>Occurrence</legend>
                                 <label>Required? <select @bind="_newChildMin" data-testid="ss-designer-min"><option value="1">Yes</option><option value="0">No (optional)</option><option value="2">Yes, at least twice</option></select></label>
                                 <label>Repeat <select @bind="_newChildMax" data-testid="ss-designer-max"><option value="1">Once</option><option value="2">Up to 2 times</option><option value="unbounded">Unlimited</option></select></label>
                                 <small class="ss-tech-term">Technical: minOccurs / maxOccurs</small>
                             </fieldset>
-                            <fieldset class="ss-fieldset"><legend>Rules</legend>
-                                <label>Allowed values (comma separated) <input @bind="_newChildEnumeration" data-testid="ss-designer-enumeration" /></label>
-                                <label>Minimum value <input inputmode="decimal" @bind="_newChildNumericMinimum" data-testid="ss-designer-minimum" /></label>
-                                <label>Maximum value <input inputmode="decimal" @bind="_newChildNumericMaximum" data-testid="ss-designer-maximum" /></label>
-                                <small class="ss-tech-term">Technical: xs:enumeration, xs:minInclusive, xs:maxInclusive</small>
+                            <fieldset class="ss-fieldset" data-testid="ss-designer-rules" data-type="@_newChildType"><legend>Rules for @DesignerTypeLabel(_newChildType)</legend>
+                                @if (_newChildType == "xs:string")
+                                {
+                                    <label>Allowed values (comma separated) <input @bind="_newChildEnumeration" data-testid="ss-designer-enumeration" /></label>
+                                    <label>Minimum length <input type="number" min="0" inputmode="numeric" @bind="_newChildMinLength" data-testid="ss-designer-min-length" /></label>
+                                    <label>Maximum length <input type="number" min="0" inputmode="numeric" @bind="_newChildMaxLength" data-testid="ss-designer-max-length" /></label>
+                                    <label>Pattern (XSD regular expression) <input @bind="_newChildPattern" data-testid="ss-designer-pattern" /></label>
+                                    <small class="ss-tech-term">Technical: xs:enumeration, xs:minLength, xs:maxLength, xs:pattern</small>
+                                }
+                                else if (_newChildType is "xs:decimal" or "xs:integer")
+                                {
+                                    <label>Minimum value <input inputmode="decimal" @bind="_newChildNumericMinimum" data-testid="ss-designer-minimum" /></label>
+                                    <label>Maximum value <input inputmode="decimal" @bind="_newChildNumericMaximum" data-testid="ss-designer-maximum" /></label>
+                                    <small class="ss-tech-term">Technical: xs:minInclusive, xs:maxInclusive</small>
+                                }
+                                else if (_newChildType == "xs:date")
+                                {
+                                    <p class="ss-muted" data-testid="ss-designer-no-rules">Earliest/latest date rules are not supported by the field helper. Edit the XSD draft to add them.</p>
+                                }
+                                else
+                                {
+                                    <p class="ss-muted" data-testid="ss-designer-no-rules">A true/false field needs no extra rules.</p>
+                                }
                             </fieldset>
                         </div>
                         <div class="ss-actions"><button type="button" class="btn-secondary" data-testid="ss-designer-add" @onclick="AddDraftElement">Add field to draft</button></div>
                     }
                     <section class="ss-draft" aria-labelledby="ss-draft-title" data-testid="ss-draft">
                         <h4 id="ss-draft-title">Draft preview</h4>
-                        <p class="ss-muted" data-testid="ss-draft-state">@(_draft == CurrentFile?.Text ? "The working draft matches the imported XSD." : "The working draft differs from the imported XSD.")</p>
-                        <ReviewDisclosure Text="Show XSD draft" CollapseText="Hide XSD draft" TestId="ss-draft-editor" Class="disclosure-small">
+                        <p class="ss-muted" data-testid="ss-draft-state">@DraftState()</p>
+                        <ReviewDisclosure Text="View XSD draft" CollapseText="Hide XSD draft" TestId="ss-draft-editor" Class="disclosure-small">
                             <label class="ss-draft-label" for="ss-draft-editor">XSD working draft</label>
                             <textarea id="ss-draft-editor" class="ss-editor ss-code-scroll" @bind="_draft" @bind:after="() => _draftPreview = null" aria-label="Edit XSD source"></textarea>
                         </ReviewDisclosure>
                         <div class="ss-actions">
                             <button type="button" class="@(draftValid ? "btn-secondary" : "btn-primary")" data-testid="ss-designer-preview" @onclick="PreviewDraft">Preview & validate</button>
-                            <button type="button" class="@(draftValid ? "btn-primary" : "btn-secondary")" data-testid="ss-designer-save" disabled="@(!draftValid)" aria-describedby="@(draftValid ? null : "ss-designer-save-help")" @onclick="SaveDraft">Save new version</button>
-                            <button type="button" class="btn-secondary" data-testid="ss-designer-revert" @onclick="RevertDraft">Revert changes</button>
-                            <button type="button" class="ss-text-button" data-testid="ss-designer-keep" @onclick="SaveWorkingDraft">Keep working draft</button>
+                            @if (draftValid) { <button type="button" class="btn-primary" data-testid="ss-designer-save" @onclick="SaveDraft">Save new version</button> }
+                            <ExportMenu Label="More draft actions" TestId="ss-designer-more" Options="@DraftOptions()" />
                         </div>
                         @if (!draftValid) { <p class="ss-muted" id="ss-designer-save-help">Save new version becomes available after the draft previews as valid.</p> }
                     </section>
@@ -518,8 +560,12 @@
                             <div><dt>Invalid (negative) cases</dt><dd>@package.GeneratedTests.Count(t => !t.ExpectedValid)</dd></div>
                         </dl>
                         @if (package.GeneratedTestsTruncated) { <p class="ss-warning" role="status">Only the first 5,000 derived test candidates are available here; some candidate tests were omitted. Effective structure and Constraints still show the analyzed XSD evidence.</p> }
-                        <div class="ss-actions"><button type="button" class="btn-primary" data-testid="ss-run-tests" @onclick="RunGeneratedTests">Run generated tests</button>@if (package.GeneratedTests.Count > 100) { <span class="ss-muted">A run covers the first 100 cases.</span> }</div>
-                        <p class="ss-muted" data-testid="ss-test-semantics"><strong>Expected</strong> is what the XSD should do with the case. <strong>Validator</strong> is what the local XSD validator did. <strong>Result</strong> is Pass when they agree — an invalid case that the validator rejects is a passing negative test.</p>
+                        <p class="ss-muted" data-testid="ss-tests-profile">Generated using: <strong>@(SelectedProfile()?.Name ?? "Generic valid")</strong> <button type="button" class="ss-text-button" data-testid="ss-tests-open-profile" @onclick='() => _tab = "Generation Profile"'>Change generation profile</button></p>
+                        <div class="ss-actions"><button type="button" class="btn-primary" data-testid="ss-run-tests" @onclick="RunGeneratedTests">@(package.GeneratedTests.Count > RunLimit ? $"Run first {RunLimit} cases" : $"Run all {SchemaStudioPresentation.Count(package.GeneratedTests.Count, "case", "cases")}")</button>@if (package.GeneratedTests.Count > RunLimit) { <span class="ss-muted" data-testid="ss-run-scope">@RunLimit of @package.GeneratedTests.Count cases per run</span> }</div>
+                        <p class="ss-muted" data-testid="ss-test-semantics">A test passes when the local validator behaves as the XSD expects.</p>
+                        <ReviewDisclosure Text="How generated tests work" CollapseText="Hide how generated tests work" TestId="ss-test-how" Class="disclosure-small">
+                            <p class="ss-muted"><strong>Expected</strong> is what the XSD should do with the case. <strong>Validator</strong> is what the local XSD validator did. <strong>Result</strong> is Pass when they agree — an invalid case that the validator rejects is a passing negative test.</p>
+                        </ReviewDisclosure>
                         @if (_testResults.Count > 0)
                         {
                             <h4>Test results</h4>
@@ -567,13 +613,13 @@
                         </section>
                     }
                     <section class="ss-xml" aria-labelledby="ss-xml-title" data-testid="ss-validate-xml">
-                        <h4 id="ss-xml-title">Validate XML</h4>
-                        <p class="ss-muted">Validation runs locally against this package; nothing is sent anywhere.</p>
+                        <h4 id="ss-xml-title">Validate an XML document</h4>
+                        <p class="ss-muted">Check an XML document against this schema package locally; nothing is sent anywhere.</p>
                         @if (!XmlEditorVisible)
                         {
                             <div class="ss-actions">
                                 <button type="button" class="btn-secondary" data-testid="ss-xml-paste" @onclick="() => _xmlEditorOpen = true">Paste XML</button>
-                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" aria-describedby="@(library ? "ss-xml-generate-help" : null)" @onclick="GenerateXml">Generate minimum example</button>
+                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" aria-describedby="@(library ? "ss-xml-generate-help" : null)" @onclick="GenerateXml">Generate minimum valid example</button>
                             </div>
                             @if (library) { <p class="ss-muted" id="ss-xml-generate-help">A minimum example needs a top-level message element; this library XSD has none.</p> }
                         }
@@ -583,7 +629,7 @@
                             <textarea class="ss-editor ss-xml ss-code-scroll" @bind="_xml" aria-label="XML instance to validate" data-testid="ss-xml-editor"></textarea>
                             <div class="ss-actions">
                                 <button type="button" class="btn-primary" data-testid="ss-xml-validate" @onclick="ValidateXml">Validate XML</button>
-                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" @onclick="GenerateXml">Generate minimum example</button>
+                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" @onclick="GenerateXml">Generate minimum valid example</button>
                                 @if (!string.IsNullOrWhiteSpace(_xml))
                                 {
                                     <button type="button" class="ss-text-button" data-testid="ss-xml-save" @onclick="SaveCurrentXml">Save XML artifact</button>
@@ -627,63 +673,88 @@
                     }
                     break;
                 case "Generation Profile":
-                    <p>A generation profile controls how Schema Studio creates synthetic XML: which kind of values (valid, boundary, deliberately invalid…), optional per-field rules, and a random seed so the same profile always produces the same XML. Values are synthetic — never real identifiers, secrets or personal data — and only schema validity is evaluated.</p>
-                    @if (SelectedProfile() is { } activeProfile) { <p class="ss-selected-profile" data-testid="ss-selected-profile">Selected profile: <strong>@activeProfile.Name</strong> · @ProfileKindLabel(activeProfile.Kind) · @SchemaStudioPresentation.Count(activeProfile.Rules.Count, "field rule", "field rules")@(activeProfile.IsBuiltIn ? " · built-in, read-only" : "")<small class="ss-tech-term">Technical: seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)]</small></p> }
-                    <fieldset class="ss-fieldset" data-testid="ss-profile-section"><legend>Profile</legend>
+                    var currentProfile = SelectedProfile();
+                    <section class="ss-profile-summary" aria-labelledby="ss-profile-title" data-testid="ss-profile-summary">
+                        <h3 id="ss-profile-title" class="ss-section-title">Generation profile</h3>
+                        <p class="ss-muted">Controls how synthetic XML is generated. Values are synthetic — never real identifiers, secrets or personal data — and only schema validity is evaluated.</p>
                         <label class="ss-field">Selected profile
-                            <select @bind="_activeProfileId" @bind:after="() => _editingProfileId = null" aria-label="Generation Profile">
+                            <select @bind="_activeProfileId" @bind:after="() => _editingProfileId = null" aria-label="Generation Profile" data-testid="ss-profile-select">
                                 @foreach (var builtIn in SchemaGenerationProfilesService.BuiltIns(package.Fingerprint)) { <option value="@builtIn.Id">@builtIn.Name (built-in)</option> }
                                 @foreach (var profile in AvailableProfiles(package)) { <option value="@profile.Id">@profile.Name</option> }
                             </select>
                         </label>
-                        <div class="ss-actions">
-                            <button class="ss-text-button" @onclick="LoadProfileForEditing">Load selected profile for editing</button>
-                            <button class="ss-text-button" @onclick="CloneProfile">Clone selected</button>
-                            <button class="ss-text-button" @onclick="DeleteProfile">Delete selected</button>
-                            @if (SelectedProfile() is { } exportProfile) { <a class="ss-text-button" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
-                            <label class="ss-inline-file">Import profile JSON <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import generation profile JSON" /></label>
-                            <button class="btn-primary" @onclick="SaveProfiles">Save profiles to current workspace</button>
-                        </div>
-                        <fieldset class="ss-fieldset ss-subfieldset" data-testid="ss-profile-form"><legend>@(_editingProfileId is null ? "New profile" : "Edit selected profile")</legend>
-                            <label>@(_editingProfileId is null ? "New profile name" : "Profile name") <input @bind="_newProfileName" maxlength="120" /></label>
-                            <label>Kind of values <select @bind="_newProfileKind"><option value="@SchemaGenerationProfileKind.GenericValid">Generic valid values</option><option value="@SchemaGenerationProfileKind.Boundary">Boundary values (minimum/maximum)</option><option value="@SchemaGenerationProfileKind.ControlledInvalid">Deliberately invalid values</option><option value="@SchemaGenerationProfileKind.Minimal">Minimal XML (required fields only)</option><option value="@SchemaGenerationProfileKind.MaximumComplexity">Maximum complexity (all optional fields)</option></select></label>
-                            <label data-testid="ss-seed-label">@(_editingProfileId is null ? "New profile random seed" : "Random seed of the selected profile") <input type="number" @bind="_profileSeed" data-testid="ss-profile-seed" /></label>
-                            <small class="ss-tech-term">The seed makes generation repeatable: the same profile and seed always produce the same values.</small>
-                            <div class="ss-actions">
-                                @if (_editingProfileId is null) { <button class="btn-secondary" @onclick="CreateProfile">Create profile</button> }
-                                else { <button class="btn-secondary" @onclick="EditSelectedProfile">Update selected profile</button><button class="ss-text-button" @onclick="CancelProfileEditing">Cancel editing</button> }
-                            </div>
-                        </fieldset>
-                    </fieldset>
-                    <fieldset class="ss-fieldset" data-testid="ss-rule-section"><legend>Field rules</legend>
-                        @if (library)
+                        @if (currentProfile is { } activeProfile)
                         {
-                            <p class="ss-muted">Field rules apply to the fields of a top-level message element. This library XSD has none.</p>
+                            <dl class="ss-stats ss-stats-compact" data-testid="ss-selected-profile">
+                                <div><dt>Selected profile</dt><dd>@activeProfile.Name@(activeProfile.IsBuiltIn ? " (built-in)" : "")</dd></div>
+                                <div><dt>Generates</dt><dd>@ProfileKindLabel(activeProfile.Kind)</dd></div>
+                                <div><dt>Repeatable generation</dt><dd>Yes<small class="ss-tech-term">Technical: seed @activeProfile.Seed · schema @activeProfile.SchemaFingerprint[..Math.Min(12, activeProfile.SchemaFingerprint.Length)]</small></dd></div>
+                                <div><dt>Field overrides</dt><dd>@activeProfile.Rules.Count</dd></div>
+                                <div><dt>Used by</dt><dd>Generated tests</dd></div>
+                            </dl>
                         }
-                        else
-                        {
-                            <div class="ss-form-grid">
-                                <label>Field <select @bind="_rulePath" aria-label="Profile rule element path"><option value="">Choose a field</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @member.Member.Type</option> }</select></label>
-                                <label>Generation rule <select @bind="_ruleMode"><option value="@SchemaGenerationValueMode.Synthetic">Synthetic value</option><option value="@SchemaGenerationValueMode.SchemaDefault">Use schema default</option><option value="@SchemaGenerationValueMode.Boundary">Boundary value</option><option value="@SchemaGenerationValueMode.Invalid">Deliberately invalid</option><option value="@SchemaGenerationValueMode.FixedEnum">One of the allowed values</option><option value="@SchemaGenerationValueMode.Nil">Empty (nillable field)</option></select></label>
-                                <label>Minimum value <input type="number" step="any" @bind="_ruleMinimum" /></label><label>Maximum value <input type="number" step="any" @bind="_ruleMaximum" /></label>
-                                <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" /></label>
-                                <label>Date from <input type="date" @bind="_ruleDateFrom" /></label><label>Date to <input type="date" @bind="_ruleDateTo" /></label>
-                                <label>Repeat count (optional, 0–100) <input type="number" min="0" max="100" @bind="_ruleOccurrences" /></label>
-                            </div>
-                            <div class="ss-actions"><button class="btn-secondary" @onclick="SaveProfileRule">Save field rule</button></div>
-                        }
-                    </fieldset>
-                    <fieldset class="ss-fieldset" data-testid="ss-generate-section"><legend>Generate XML</legend>
                         @if (library)
                         {
                             <p class="ss-muted" data-testid="ss-generate-library">XML cannot be generated from a profile here: this library XSD has no top-level message element.</p>
                         }
                         else
                         {
-                            <label class="ss-field">Message element <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@SchemaStudioPresentation.FileName(root.DeclaredIn))</option> }</select></label>
-                            <div class="ss-actions"><button class="btn-secondary" @onclick="GenerateProfileXml">Generate XML from profile</button></div>
+                            <div class="ss-actions" data-testid="ss-generate-section">
+                                <label class="ss-field">Top-level message <select @bind="_profileRootName" aria-label="Generated XML root">@foreach (var root in package.EffectiveSchema) { <option value="@root.Name">@root.Name (@SchemaStudioPresentation.FileName(root.DeclaredIn))</option> }</select></label>
+                                <button class="btn-primary" data-testid="ss-profile-generate" @onclick="GenerateProfileXml">Generate XML</button>
+                                <button type="button" class="btn-secondary" data-testid="ss-profile-customize" aria-expanded="@(_customizeProfile ? "true" : "false")" @onclick="() => _customizeProfile = !_customizeProfile">@(_customizeProfile ? "Close customization" : "Customize profile")</button>
+                            </div>
+                        }
+                        <ReviewDisclosure Text="Manage profiles" CollapseText="Hide profile management" TestId="ss-profile-manage" Class="disclosure-small">
+                            <div class="ss-actions" data-testid="ss-profile-section">
+                                <button class="ss-text-button" @onclick="() => { LoadProfileForEditing(); _customizeProfile = true; }">Load selected profile for editing</button>
+                                <button class="ss-text-button" @onclick="CloneProfile">Clone selected</button>
+                                <button class="ss-text-button" @onclick="DeleteProfile">Delete selected</button>
+                                @if (currentProfile is { } exportProfile) { <a class="ss-text-button" download="@(exportProfile.Name + ".json")" href="@Download(ProfileCatalog!.ExportJson(exportProfile), "application/json")">Export selected profile</a> }
+                                <label class="ss-inline-file">Import profile JSON <InputFile accept=".json" OnChange="ImportProfile" aria-label="Import generation profile JSON" /></label>
+                                <button class="btn-secondary" @onclick="SaveProfiles">Save profiles to workspace</button>
+                            </div>
+                            <p class="ss-muted">Save profiles to workspace stores your generation profiles in this workspace; it does not change the schema or the analysis.</p>
+                        </ReviewDisclosure>
+                    </section>
+                    @if (_customizeProfile)
+                    {
+                    <fieldset class="ss-fieldset ss-subfieldset" data-testid="ss-profile-form"><legend>@(_editingProfileId is null ? "New profile" : "Edit selected profile")</legend>
+                        <label>@(_editingProfileId is null ? "New profile name" : "Profile name") <input @bind="_newProfileName" maxlength="120" /></label>
+                        <label>Generate <select @bind="_newProfileKind" data-testid="ss-profile-kind"><option value="@SchemaGenerationProfileKind.GenericValid">Valid values</option><option value="@SchemaGenerationProfileKind.Boundary">Boundary values (minimum/maximum)</option><option value="@SchemaGenerationProfileKind.ControlledInvalid">Deliberately invalid values</option><option value="@SchemaGenerationProfileKind.Minimal">Minimal XML (required fields only)</option><option value="@SchemaGenerationProfileKind.MaximumComplexity">Maximum complexity (all optional fields)</option></select></label>
+                        <details class="ss-tech" data-testid="ss-profile-advanced"><summary>Advanced: repeatable generation seed</summary>
+                            <label data-testid="ss-seed-label">@(_editingProfileId is null ? "Seed for the new profile" : "Seed of the selected profile") <input type="number" @bind="_profileSeed" data-testid="ss-profile-seed" /></label>
+                            <small class="ss-tech-term">The same profile and seed always produce the same values.</small>
+                        </details>
+                        <div class="ss-actions">
+                            @if (_editingProfileId is null) { <button class="btn-secondary" @onclick="CreateProfile">Create profile</button> }
+                            else { <button class="btn-secondary" @onclick="EditSelectedProfile">Update selected profile</button><button class="ss-text-button" @onclick="CancelProfileEditing">Cancel editing</button> }
+                        </div>
+                    </fieldset>
+                    <fieldset class="ss-fieldset" data-testid="ss-rule-section"><legend>Field overrides</legend>
+                        @if (library)
+                        {
+                            <p class="ss-muted">Field rules apply to the fields of a top-level message element. This library XSD has none.</p>
+                        }
+                        else
+                        {
+                            var ruleMember = ProfileMembers(package).FirstOrDefault(m => m.Path == _rulePath).Member;
+                            var ruleKind = RuleFieldKind(ruleMember);
+                            <div class="ss-form-grid" data-testid="ss-rule-form" data-kind="@ruleKind">
+                                <label>Field <select @bind="_rulePath" @bind:after="ClearInapplicableRuleValues" aria-label="Profile rule element path" data-testid="ss-rule-field"><option value="">Choose a field</option>@foreach (var member in ProfileMembers(package)) { <option value="@member.Path">@member.Path · @(SchemaReadablePresentation.TypeLabel(member.Member))</option> }</select></label>
+                                @if (ruleMember is not null)
+                                {
+                                    <label>Generation rule <select @bind="_ruleMode" data-testid="ss-rule-mode"><option value="@SchemaGenerationValueMode.Synthetic">Synthetic value</option><option value="@SchemaGenerationValueMode.SchemaDefault">Use schema default</option><option value="@SchemaGenerationValueMode.Boundary">Boundary value</option><option value="@SchemaGenerationValueMode.Invalid">Deliberately invalid</option>@if (SchemaReadablePresentation.AllowedValues(ruleMember.Facets).Count > 0) { <option value="@SchemaGenerationValueMode.FixedEnum">One of the allowed values</option> }<option value="@SchemaGenerationValueMode.Nil">Empty (nillable field)</option></select></label>
+                                    @if (ruleKind == "Number") { <label>Minimum value <input type="number" step="any" @bind="_ruleMinimum" data-testid="ss-rule-minimum" /></label><label>Maximum value <input type="number" step="any" @bind="_ruleMaximum" data-testid="ss-rule-maximum" /></label> }
+                                    else if (ruleKind == "Text") { <label>Minimum length <input type="number" min="0" max="4096" @bind="_ruleMinLength" data-testid="ss-rule-min-length" /></label><label>Maximum length <input type="number" min="0" max="4096" @bind="_ruleMaxLength" data-testid="ss-rule-max-length" /></label> }
+                                    else if (ruleKind == "Date") { <label>Date from <input type="date" @bind="_ruleDateFrom" data-testid="ss-rule-date-from" /></label><label>Date to <input type="date" @bind="_ruleDateTo" data-testid="ss-rule-date-to" /></label> }
+                                    @if (ruleKind == "Group" || ruleMember.MaxOccurs != "1") { <label>Repeat count (0–100) <input type="number" min="0" max="100" @bind="_ruleOccurrences" data-testid="ss-rule-occurrences" /></label> }
+                                }
+                            </div>
+                            <div class="ss-actions"><button class="btn-secondary" data-testid="ss-rule-save" disabled="@(ruleMember is null)" @onclick="SaveProfileRule">Save field rule</button>@if (ruleMember is null) { <span class="ss-muted">Choose a field first.</span> }</div>
                         }
                     </fieldset>
+                    }
                     @if (!string.IsNullOrWhiteSpace(_profileError)) { <p class="ss-error" role="alert">@_profileError</p> }
                     @if (!string.IsNullOrWhiteSpace(_profileStatus)) { <p class="ss-result" role="status">@_profileStatus</p> }
                     break;
@@ -715,6 +786,10 @@
     private int _treeGeneration;
     private void SetTreeExpanded(bool? expanded) { _treeExpanded = expanded; _treeGeneration++; }
     private SchemaTreeFilterKind _effectiveFilter = SchemaTreeFilterKind.All;
+    /// <summary>Effective structure detail beyond the readable default (all off by default).</summary>
+    private bool _effShowTypes, _effShowOrigin, _effShowTechnical;
+    /// <summary>Cases per generated-test run (the service clamps any request to 1..500).</summary>
+    private const int RunLimit = 100;
     private string _effectiveSearch = "", _constraintFilter = "", _constraintSearch = "", _rawSearch = "", _rawStatus = "";
     private bool _rawExpanded;
     /// <summary>The XML editor opens on request (Paste XML) or when XML exists (generated, reopened); it never occupies the page by default.</summary>
@@ -756,12 +831,12 @@
         foreach (var f in package.Files)
         foreach (var d in f.Declarations)
         {
-            foreach (var facet in d.Facets) yield return new(d.Path, facet.Kind, facet.Value, f.Name, SchemaTreeFilter.ConstraintCategory(facet.Kind), facet.Value);
+            foreach (var facet in d.Facets) yield return new(d.Path, facet.Kind, facet.Value, f.Name, SchemaTreeFilter.ConstraintCategory(facet.Kind), SchemaStudioPresentation.RuleMeaning(facet.Kind, facet.Value));
             foreach (var e in d.Children)
             {
                 yield return new(d.Path + "/" + e.Name, "Occurrence", $"{e.MinOccurs}..{e.MaxOccurs}{(e.Compositor is null ? "" : " · " + e.Compositor)}", e.SourceFile, "Occurrence",
                     SchemaStudioPresentation.Occurrence(e.MinOccurs, e.MaxOccurs));
-                foreach (var facet in e.Facets) yield return new(d.Path + "/" + e.Name, facet.Kind, facet.Value, e.SourceFile, SchemaTreeFilter.ConstraintCategory(facet.Kind), facet.Value);
+                foreach (var facet in e.Facets) yield return new(d.Path + "/" + e.Name, facet.Kind, facet.Value, e.SourceFile, SchemaTreeFilter.ConstraintCategory(facet.Kind), SchemaStudioPresentation.RuleMeaning(facet.Kind, facet.Value));
             }
         }
     }
@@ -780,21 +855,32 @@
             {
                 <details class="ss-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _treeExpanded, SchemaTreeFilter.IsFiltering(_effectiveFilter, _effectiveSearch))">
                     <summary>@MemberHeadline(context.Member)</summary>
-                    @MemberProvenance(context.Member)
+                    @if (_effShowOrigin) { @MemberProvenance(context.Member) }
                     @if (context.Member.Attributes is { Count: > 0 }) { <ul class="ss-tree">@foreach (var attribute in context.Member.Attributes) { @RenderAttribute(attribute) }</ul> }
                     <ul class="ss-tree">@foreach (var child in context.Member.Children.Where(c => SchemaTreeFilter.Keep(c, _effectiveFilter, _effectiveSearch))) { @EffectiveMemberNode((child, context.Depth + 1)) }</ul>
                 </details>
             }
-            else { @MemberHeadline(context.Member) @MemberProvenance(context.Member) }
+            else { @MemberHeadline(context.Member) @if (_effShowOrigin) { @MemberProvenance(context.Member) } }
         </li>;
 
-    /// <summary>Field, then its meaning in plain language (type, required/optional, rules); the exact type and occurrence follow as technical detail.</summary>
-    private static RenderFragment MemberHeadline(EffectiveMember member) =>
-        @<span><strong>@member.Name</strong> <small class="ss-inline">@SchemaReadablePresentation.TypeLabel(member) · @SchemaStudioPresentation.Occurrence(member.MinOccurs, member.MaxOccurs)@(member.Facets.Count > 0 ? " · " + string.Join(", ", SchemaReadablePresentation.Rules(member.Facets).Select(r => r.Text).Concat(SchemaReadablePresentation.AllowedValues(member.Facets).Count > 0 ? [SchemaStudioPresentation.Count(SchemaReadablePresentation.AllowedValues(member.Facets).Count, "allowed value", "allowed values")] : [])) : "") <span class="ss-tech-term">(@(member.Type ?? "inline") · @SchemaStudioPresentation.ExactOccurrence(member.MinOccurs, member.MaxOccurs))</span></small></span>;
+    /// <summary>Field, then its meaning in plain language (type, required/optional, rules). The declared type name, the exact occurrence and
+    /// the compositor appear only when the person asks for them (Types / Technical occurrence).</summary>
+    private RenderFragment MemberHeadline(EffectiveMember member) =>
+        @<span><strong>@member.Name</strong> <small class="ss-inline" data-testid="ss-effective-meaning">@MemberMeaning(member)</small>@if (_effShowTypes) { <small class="ss-tech-term" data-testid="ss-effective-type"> · @(BirkNext.Schemas.XmlSchemaPackageAnalyzer.LocalName(member.Type) ?? "inline type")</small> }@if (_effShowTechnical) { <small class="ss-tech-term" data-testid="ss-effective-technical"> · Technical: @(member.Type ?? "inline") · @SchemaStudioPresentation.ExactOccurrence(member.MinOccurs, member.MaxOccurs)@(member.BaseType is not null && member.BaseType != member.Type ? $" · base {member.BaseType}" : "")@(member.Compositor is null ? "" : $" · xs:{member.Compositor}")</small> }</span>;
 
-    /// <summary>Where a member comes from — kept, but visually subordinate to the field itself.</summary>
+    /// <summary>"Text · Required once · UUID format", "Group · Optional, max once · 4 fields".</summary>
+    private static string MemberMeaning(EffectiveMember member)
+    {
+        var parts = new List<string> { SchemaReadablePresentation.TypeLabel(member), SchemaStudioPresentation.Occurrence(member.MinOccurs, member.MaxOccurs) };
+        parts.AddRange(SchemaReadablePresentation.Rules(member.Facets).Select(r => r.Text));
+        if (SchemaReadablePresentation.AllowedValues(member.Facets).Count is > 0 and var allowed) parts.Add(SchemaStudioPresentation.Count(allowed, "allowed value", "allowed values"));
+        if (member.Children.Count > 0) parts.Add(SchemaStudioPresentation.Count(member.Children.Count, "field", "fields"));
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>Where a member comes from (Show origin): inheritance and the declaring file by name; full paths stay in Fields and rules provenance.</summary>
     private static RenderFragment MemberProvenance(EffectiveMember member) =>
-        @<small class="ss-provenance-line">declared in @SchemaStudioPresentation.FileName(member.DeclaredIn)@(member.InheritedFrom is null ? "" : $" · inherited from {member.InheritedFrom}")@(member.TypeDeclaredIn is null ? "" : $" · type declared in {member.TypeDeclaredIn}")@(member.BaseType is not null && member.BaseType != member.Type ? $" · base type {member.BaseType}" : "")@(member.Compositor is null ? "" : $" · {member.Compositor}")</small>;
+        @<small class="ss-provenance-line" data-testid="ss-effective-origin">@(member.InheritedFrom is null ? "" : $"Inherited from {BirkNext.Schemas.XmlSchemaPackageAnalyzer.LocalName(member.InheritedFrom) ?? member.InheritedFrom} · ")Declared in @SchemaStudioPresentation.FileName(member.DeclaredIn)@(member.TypeDeclaredIn is null ? "" : $" · type from {SchemaStudioPresentation.FileName(member.TypeDeclaredIn)}")</small>;
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
     private async Task CopyRaw(string text)
@@ -904,6 +990,31 @@
     private SavedSchemaPackage? SavedReference(SchemaPackage package) =>
         SavedPackages?.Packages.Where(saved => saved.ProjectScope == ProjectScope() && saved.Fingerprint == package.Fingerprint).OrderByDescending(saved => saved.SavedAt).FirstOrDefault();
     private void CancelProfileEditing() { _editingProfileId = null; _newProfileName = "My synthetic profile"; _profileSeed = 1001; _profileStatus = ""; }
+    private bool _customizeProfile;
+
+    /// <summary>Which override inputs apply to a field, from its schema type: Number (min/max value), Text (lengths), Date (from/to), Group (repeat
+    /// count), Other (generation rule only). A repeatable field also gets a repeat count.</summary>
+    private static string RuleFieldKind(EffectiveMember? member)
+    {
+        if (member is null) return "None";
+        if (SchemaReadablePresentation.IsGroup(member)) return "Group";
+        return SchemaReadablePresentation.TypeLabel(member) switch
+        {
+            "Whole number" or "Number" => "Number",
+            "Date" or "Date and time" => "Date",
+            "True/false" => "Other",
+            _ => "Text",
+        };
+    }
+
+    /// <summary>Choosing another field clears override values that do not apply to it, so no irrelevant value is saved.</summary>
+    private void ClearInapplicableRuleValues()
+    {
+        var kind = RuleFieldKind(ProfileMembers(Current!).FirstOrDefault(m => m.Path == _rulePath).Member);
+        if (kind != "Number") { _ruleMinimum = null; _ruleMaximum = null; }
+        if (kind != "Text") { _ruleMinLength = 0; _ruleMaxLength = 0; }
+        if (kind != "Date") { _ruleDateFrom = null; _ruleDateTo = null; }
+    }
 
     /// <summary>Fields of the effective schema whose name matches, for package search (opens Felt og regler). Bounded.</summary>
     private static IEnumerable<SearchHit> FieldHits(SchemaPackage package, string term)
@@ -941,7 +1052,35 @@
     private decimal? _ruleMinimum, _ruleMaximum;
     private DateOnly? _ruleDateFrom, _ruleDateTo;
     private string _newSchemaName = "new-schema", _newNamespace = "urn:example:schema", _newRoot = "Root", _newChildName = "NewElement", _newChildType = "xs:string", _newChildMin = "1", _newChildMax = "1";
-    private string _newChildEnumeration = "", _newChildNumericMinimum = "", _newChildNumericMaximum = "";
+    private string _newChildEnumeration = "", _newChildNumericMinimum = "", _newChildNumericMaximum = "", _newChildPattern = "";
+    private int? _newChildMinLength, _newChildMaxLength;
+
+    private static string DesignerTypeLabel(string type) => type switch
+    {
+        "xs:string" => "text", "xs:decimal" => "a decimal number", "xs:integer" => "a whole number", "xs:boolean" => "true/false", "xs:date" => "a date", _ => type,
+    };
+
+    /// <summary>Only the rule fields that apply to the chosen type are shown; values of rules that no longer apply are cleared.</summary>
+    private void ClearInapplicableDesignerRules()
+    {
+        if (_newChildType != "xs:string") { _newChildEnumeration = ""; _newChildMinLength = null; _newChildMaxLength = null; _newChildPattern = ""; }
+        if (_newChildType is not ("xs:decimal" or "xs:integer")) { _newChildNumericMinimum = ""; _newChildNumericMaximum = ""; }
+    }
+
+    /// <summary>The working draft's state in plain words; the exact preview diagnostics stay below.</summary>
+    private string DraftState() =>
+        _draft == CurrentFile?.Text ? "No draft changes yet"
+        : _draftPreview is null ? "Draft differs from imported schema — preview and validate it before saving"
+        : _draftPreview.Validation == "Valid" ? "Draft valid — it can be saved as a new version"
+        : "Draft has schema errors";
+
+    /// <summary>Less frequent draft actions: revert, and saving the working draft itself to this workspace (it is restored when the file is opened again).</summary>
+    private IReadOnlyList<ExportMenu.Option> DraftOptions() =>
+    [
+        // The menu is a child component: re-render this page after its action so the draft status appears.
+        new("revert", "Revert changes", async () => { await RevertDraft(); StateHasChanged(); }),
+        new("keep", "Save working draft to workspace", async () => { await SaveWorkingDraft(); StateHasChanged(); }),
+    ];
     private readonly List<SchemaTestResult> _testResults = [];
     private SchemaPackage? _draftPreview;
     private SchemaPackage? Current => Studio.Packages.FirstOrDefault(p => p.Id == _selectedId);
@@ -1234,10 +1373,16 @@
             if (hasNumericMinimum && hasNumericMaximum
                 && decimal.Parse(_newChildNumericMinimum, System.Globalization.CultureInfo.InvariantCulture) > decimal.Parse(_newChildNumericMaximum, System.Globalization.CultureInfo.InvariantCulture))
                 throw new InvalidDataException("The inclusive numeric minimum cannot exceed the maximum.");
+            var pattern = _newChildPattern.Trim();
+            var hasTextRules = _newChildMinLength is not null || _newChildMaxLength is not null || pattern.Length > 0;
+            if (hasTextRules && _newChildType != "xs:string") throw new InvalidDataException("Length and pattern rules require the Text element type.");
+            if (_newChildMinLength is < 0 || _newChildMaxLength is < 0) throw new InvalidDataException("Lengths cannot be negative.");
+            if (_newChildMinLength is { } minLength && _newChildMaxLength is { } maxLength && minLength > maxLength) throw new InvalidDataException("The minimum length cannot exceed the maximum length.");
+            if (pattern.Length > 256 || pattern.Any(char.IsControl)) throw new InvalidDataException("Use a pattern of at most 256 printable characters.");
             var added = new System.Xml.Linq.XElement(xs + "element", new System.Xml.Linq.XAttribute("name", _newChildName),
                 new System.Xml.Linq.XAttribute("minOccurs", _newChildMin), new System.Xml.Linq.XAttribute("maxOccurs", _newChildMax));
             var selectedType = _newChildType.Replace("xs:", typePrefix + ":", StringComparison.Ordinal);
-            if (enumerations.Length == 0 && !hasNumericMinimum && !hasNumericMaximum)
+            if (enumerations.Length == 0 && !hasNumericMinimum && !hasNumericMaximum && !hasTextRules)
                 added.Add(new System.Xml.Linq.XAttribute("type", selectedType));
             else
             {
@@ -1245,6 +1390,9 @@
                 foreach (var value in enumerations) restriction.Add(new System.Xml.Linq.XElement(xs + "enumeration", new System.Xml.Linq.XAttribute("value", value)));
                 if (hasNumericMinimum) restriction.Add(new System.Xml.Linq.XElement(xs + "minInclusive", new System.Xml.Linq.XAttribute("value", _newChildNumericMinimum.Trim())));
                 if (hasNumericMaximum) restriction.Add(new System.Xml.Linq.XElement(xs + "maxInclusive", new System.Xml.Linq.XAttribute("value", _newChildNumericMaximum.Trim())));
+                if (_newChildMinLength is { } min) restriction.Add(new System.Xml.Linq.XElement(xs + "minLength", new System.Xml.Linq.XAttribute("value", min)));
+                if (_newChildMaxLength is { } max) restriction.Add(new System.Xml.Linq.XElement(xs + "maxLength", new System.Xml.Linq.XAttribute("value", max)));
+                if (pattern.Length > 0) restriction.Add(new System.Xml.Linq.XElement(xs + "pattern", new System.Xml.Linq.XAttribute("value", pattern)));
                 added.Add(new System.Xml.Linq.XElement(xs + "simpleType", restriction));
             }
             compositor.Add(added);
@@ -1323,7 +1471,7 @@
     private async Task RunGeneratedTests()
     {
         if (Current is not { } package || package.GeneratedTests.Count == 0) return;
-        var results = SchemaStudioService.RunGeneratedTests(package, ProfileValues(), 100);
+        var results = SchemaStudioService.RunGeneratedTests(package, ProfileValues(), RunLimit);
         _testResults.AddRange(results.Where(r => _testResults.All(existing => existing.TestId != r.TestId)));
         // A run that validated nothing is not a validation run: it is never saved to history.
         if (results.Count == 0 || TestRuns is not { } history || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
@@ -1566,36 +1714,18 @@
         }
         if (mode is "Files + types" or "All relationships") foreach (var reference in package.References) yield return $"{reference.SourceFile} —{reference.Kind} {reference.Name}→ {reference.TargetFile}";
     }
-    private static RenderFragment RenderMember(EffectiveMember member) => builder =>
-    {
-        var seq = 0;
-        builder.OpenElement(seq++, "li"); builder.OpenElement(seq++, "strong"); builder.AddContent(seq++, member.Name); builder.CloseElement();
-        builder.AddContent(seq++, " "); builder.OpenElement(seq++, "small");
-        builder.AddContent(seq++, $"{member.Type ?? "inline"} · {member.MinOccurs}..{member.MaxOccurs} · declared in {member.DeclaredIn}");
-        if (member.InheritedFrom is not null) builder.AddContent(seq++, $" · inherited from {member.InheritedFrom}");
-        if (member.TypeDeclaredIn is not null) builder.AddContent(seq++, $" · type declared in {member.TypeDeclaredIn}");
-        if (member.BaseType is not null && member.BaseType != member.Type) builder.AddContent(seq++, $" · base type {member.BaseType}");
-        if (member.Compositor is not null) builder.AddContent(seq++, $" · {member.Compositor}");
-        builder.CloseElement();
-        if (member.Facets.Count > 0) { builder.OpenElement(seq++, "small"); builder.AddContent(seq++, " · " + string.Join(", ", member.Facets.Select(f => f.Kind + "=" + f.Value))); builder.CloseElement(); }
-        if (member.Attributes is { Count: > 0 }) { builder.OpenElement(seq++, "ul"); foreach (var attribute in member.Attributes) builder.AddContent(seq++, RenderAttribute(attribute)); builder.CloseElement(); }
-        if (member.Children.Count > 0) { builder.OpenElement(seq++, "ul"); foreach (var child in member.Children) builder.AddContent(seq++, RenderMember(child)); builder.CloseElement(); }
-        builder.CloseElement();
-    };
-    private static RenderFragment RenderAttribute(EffectiveAttribute attribute) => builder =>
-    {
-        var seq = 0;
-        builder.OpenElement(seq++, "li"); builder.OpenElement(seq++, "strong"); builder.AddContent(seq++, "@" + attribute.Name); builder.CloseElement();
-        builder.AddContent(seq++, " "); builder.OpenElement(seq++, "small");
-        builder.AddContent(seq++, $"{attribute.Type ?? "inline"} · {attribute.Use} · declared in {attribute.DeclaredIn}");
-        if (attribute.InheritedFrom is not null) builder.AddContent(seq++, $" · inherited from {attribute.InheritedFrom}");
-        if (attribute.TypeDeclaredIn is not null) builder.AddContent(seq++, $" · type declared in {attribute.TypeDeclaredIn}");
-        if (attribute.BaseType is not null && attribute.BaseType != attribute.Type) builder.AddContent(seq++, $" · base type {attribute.BaseType}");
-        if (attribute.Facets.Count > 0) builder.AddContent(seq++, " · " + string.Join(", ", attribute.Facets.Select(f => f.Kind + "=" + f.Value)));
-        builder.CloseElement(); builder.CloseElement();
-    };
+    /// <summary>An attribute in the same readable form as a field; origin and the exact type/facets follow the detail toggles.</summary>
+    private RenderFragment RenderAttribute(EffectiveAttribute attribute) =>
+        @<li data-testid="ss-effective-attribute"><strong>@("@" + attribute.Name)</strong> <small class="ss-inline">@SchemaReadablePresentation.TypeLabel(attribute) · @SchemaReadablePresentation.AttributeUseLabel(attribute)@(attribute.Facets.Count > 0 ? " · " + string.Join(" · ", SchemaReadablePresentation.Rules(attribute.Facets).Select(r => r.Text)) : "")</small>@if (_effShowTypes) { <small class="ss-tech-term"> · @(BirkNext.Schemas.XmlSchemaPackageAnalyzer.LocalName(attribute.Type) ?? "inline type")</small> }@if (_effShowTechnical) { <small class="ss-tech-term"> · Technical: @(attribute.Type ?? "inline") · use=@(attribute.Use)@(attribute.Facets.Count > 0 ? " · " + string.Join(", ", attribute.Facets.Select(f => "xs:" + f.Kind + "=" + f.Value)) : "")</small> }@if (_effShowOrigin) { <small class="ss-provenance-line">@(attribute.InheritedFrom is null ? "" : $"Inherited from {attribute.InheritedFrom} · ")Declared in @SchemaStudioPresentation.FileName(attribute.DeclaredIn)</small> }</li>;
     private static string Download(string text, string mime, bool isBase64 = false) => $"data:{mime};base64,{(isBase64 ? text : Convert.ToBase64String(Encoding.UTF8.GetBytes(text)))}";
-    private void Jump(string file, string tab) { _fileName = file; _tab = tab; _draft = CurrentFile?.Text; _search = ""; }
+    /// <summary>Opens a search hit's view on its file and carries the term into that view's own search where it has one.</summary>
+    private void Jump(string file, string tab, string term)
+    {
+        _fileName = file; _tab = tab; _draft = CurrentFile?.Text; _search = "";
+        if (tab == "Effective Schema") { _effectiveSearch = term; SetTreeExpanded(null); }
+        else if (tab == "Constraints") _constraintSearch = term;
+        else if (tab == "Raw XSD") _rawSearch = term;
+    }
     private static IEnumerable<SearchHit> Search(SchemaPackage package, string term)
     {
         foreach (var file in package.Files)
@@ -1609,6 +1739,9 @@
             }
         }
         foreach (var field in FieldHits(package, term)) yield return field;
+        // A field also opens its resolved (effective) form; raw occurrences open the read-only source of that file.
+        foreach (var field in FieldHits(package, term).Take(10)) yield return field with { Tab = "Effective Schema", Match = "effective" };
+        foreach (var file in package.Files.Where(f => f.Text.Contains(term, StringComparison.OrdinalIgnoreCase)).Take(10)) yield return new(SchemaStudioPresentation.FileName(file.Name), file.Name, "Raw XSD", "raw");
     }
     private sealed record SearchHit(string Name, string File, string Tab, string Match);
     private static IEnumerable<string> Compare(SchemaPackage old, SchemaPackage current)

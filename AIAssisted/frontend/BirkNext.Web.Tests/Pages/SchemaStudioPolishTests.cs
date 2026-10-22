@@ -58,7 +58,7 @@ public sealed class SchemaStudioPolishTests : BunitContext
         var page = Render<SchemaStudio>();
         page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("Report");
         page.Find("[data-testid=ss-root-xsd]").TextContent.Should().StartWith("report.xsd");
-        page.Find("[data-testid=ss-overview-status]").TextContent.Should().Be("Schema valid");
+        page.Find("[data-testid=ss-overview-status]").TextContent.Should().Be("XSD package structurally valid");
         page.Find("[data-testid=ss-meaning]").TextContent.Should().Contain("defines the message Report");
         page.Find("[data-testid=ss-shortcut-tests]").TextContent.Should().Contain("Run generated tests");
         page.Find("[data-testid=ss-overview-dependencies]").TextContent.Should().StartWith("None", "no implementation-style \"0 links\" wording");
@@ -80,7 +80,7 @@ public sealed class SchemaStudioPolishTests : BunitContext
         duf.Children[1].TextContent.Should().Be("Text type");
         duf.Children[2].TextContent.Should().Be("Text");
         duf.Children[3].TextContent.Should().Be("12 chars · 12-digit pattern");
-        duf.Children[4].TextContent.Should().Be("0 references");
+        duf.Children[4].TextContent.Should().Be("Not used in this package");
         var preview = duf.QuerySelector(".ss-doc-preview")!.TextContent;
         preview.Should().EndWith("…", "long documentation is a short preview in the row").And.HaveLength(91);
         duf.QuerySelector("details:not([data-testid])")!.HasAttribute("open").Should().BeFalse("the full documentation is behind Show documentation");
@@ -118,7 +118,7 @@ public sealed class SchemaStudioPolishTests : BunitContext
         page.Find("[data-testid=ss-namespace-uri]").ClassList.Should().Contain("ss-wrap", "long namespaces wrap instead of widening the page");
         page.Find("[data-testid=ss-namespace-files] span").TextContent.Should().Be("lib.v1.1.0.xsd");
         page.Find("[data-testid=ss-namespace-files] span").GetAttribute("title").Should().Be(LibraryPath);
-        page.Find("[data-testid=ss-namespace]").TextContent.Should().Contain("View file paths");
+        page.Find("[data-testid=ss-namespace]").TextContent.Should().Contain("View details");
     }
 
     [Fact]

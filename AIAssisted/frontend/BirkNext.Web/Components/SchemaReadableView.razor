@@ -93,7 +93,7 @@
                     @TreeToolbar
                     <article class="sr-business" data-testid="sr-business" @key="_treeGeneration">
                         <h4>@root.Name</h4>
-                        @if (P.Documentation(root) is { } rootDoc) { <p class="sr-doc">@rootDoc.Text</p> }
+                        @if (P.Documentation(root) is { } rootDoc) { @DocBlock(rootDoc.Text, "Show full description") }
                         @BusinessTree((root, root.Name, 0))
                     </article>
                     break;
@@ -111,7 +111,7 @@
                                         <td>@P.CardinalityLabel(member)<small class="sr-sub sr-mono">@P.ExactCardinality(member)</small></td>
                                         <td>@P.TypeLabel(member)<small class="sr-sub sr-mono">@P.RawType(member)</small></td>
                                         <td>@RulesCell(member)</td>
-                                        <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">From the type:</small> }<span class="sr-doc">@doc.Text</span> } else { <span class="sr-muted">—</span> }</td>
+                                        <td>@if (P.Documentation(member) is { } doc) { @if (doc.FromType) { <small class="sr-sub">From the type:</small> }@DocBlock(doc.Text, "Show full documentation") } else { <span class="sr-muted">—</span> }</td>
                                         <td class="sr-col-source">@SourceCell(member.DeclaredIn, member.NamespaceUri, member.InheritedFrom, member.TypeDeclaredIn)</td>
                                     </tr>
                                     @foreach (var attr in member.Attributes ?? [])
@@ -121,7 +121,7 @@
                                             <td>@P.AttributeUseLabel(attr)</td>
                                             <td>@P.TypeLabel(attr)<small class="sr-sub sr-mono">@(attr.Type ?? "inline")</small></td>
                                             <td>@FacetCell(attr.Facets)</td>
-                                            <td>@if (attr.Documentation is { } attributeDoc) { <span class="sr-doc">@P.Normalize(attributeDoc)</span> } else { <span class="sr-muted">—</span> }</td>
+                                            <td>@if (attr.Documentation is { } attributeDoc) { @DocBlock(P.Normalize(attributeDoc), "Show full documentation") } else { <span class="sr-muted">—</span> }</td>
                                             <td class="sr-col-source">@SourceCell(attr.DeclaredIn, "", attr.InheritedFrom, null)</td>
                                         </tr>
                                     }
@@ -134,7 +134,7 @@
                     <p class="sr-note">The resolved structure with types, occurrence and origin. Inherited fields are shown where they actually occur.</p>
                     @TreeToolbar
                     <ul class="sr-tree" data-testid="sr-structure" @key="_treeGeneration">
-                        <li><span class="sr-name">@root.Name</span> <small>top-level element · @(root.Type ?? "inline") · declared in @S.FileName(root.DeclaredIn)</small>@StructureTree((root, 0))</li>
+                        <li><span class="sr-name">@root.Name</span> <small>Top-level message element · @(root.Type ?? "inline") · declared in @S.FileName(root.DeclaredIn)</small>@StructureTree((root, 0))</li>
                     </ul>
                     break;
             }
@@ -197,7 +197,7 @@
     private static RenderFragment SourceCell(string declaredIn, string? namespaceUri, string? inheritedFrom, string? typeDeclaredIn) => __builder =>
     {
         <span class="sr-file" title="@declaredIn">@S.FileName(declaredIn)</span>
-        <details class="sr-source-details"><summary>Provenance<span class="visually-hidden"> of the source</span></summary>
+        <details class="sr-source-details"><summary>View provenance<span class="visually-hidden"> of the source</span></summary>
             <small class="sr-sub">Declared in @declaredIn</small>
             @if (!string.IsNullOrEmpty(namespaceUri)) { <small class="sr-sub">Namespace: @namespaceUri</small> }
             @if (inheritedFrom is not null) { <small class="sr-sub">Inherited from @inheritedFrom</small> }
@@ -225,15 +225,15 @@
                     @if (child.Children.Count > 0)
                     {
                         <details class="sr-node" open="@SchemaTreeFilter.IsOpen(context.Depth, _expandAll, Filtering)">
-                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child) · @S.Count(child.Children.Count, "field", "fields")</small></summary>
-                            @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
+                            <summary><span class="sr-name">@child.Name</span> <small class="sr-occ" data-testid="sr-occurrence">@P.CardinalityLabel(child)</small> <small class="sr-count">@S.Count(child.Children.Count, "field", "fields")</small></summary>
+                            @if (child.Documentation is { Length: > 0 } doc) { @DocBlock(P.Normalize(doc), "Show full description") }
                             @BusinessTree((child, context.Path + "/" + child.Name, context.Depth + 1))
                         </details>
                     }
                     else
                     {
-                        <span class="sr-name">@child.Name</span> <small class="sr-occ">@P.CardinalityLabel(child)</small>
-                        @if (child.Documentation is { Length: > 0 } doc) { <p class="sr-doc">@P.Normalize(doc)</p> }
+                        <span class="sr-name">@child.Name</span> <small class="sr-occ" data-testid="sr-occurrence">@P.CardinalityLabel(child)</small>
+                        @if (child.Documentation is { Length: > 0 } doc) { @DocBlock(P.Normalize(doc), "Show full description") }
                     }
                 </li>
             }
@@ -264,10 +264,31 @@
 
     private RenderFragment RulesCell(EffectiveMember member) => FacetCell(member.Facets);
 
+    /// <summary>Allowed values up to this many are listed inline; longer lists are one disclosure ("9 allowed values").</summary>
+    private const int CompactValues = 5;
+
+    /// <summary>Schema documentation, verbatim: a short excerpt by default and the full text one disclosure away when it is long.</summary>
+    private static RenderFragment DocBlock(string text, string expandLabel) => __builder =>
+    {
+        var (preview, truncated) = S.DocumentationPreview(text, 160);
+        if (!truncated) { <p class="sr-doc">@text</p> }
+        else
+        {
+            <p class="sr-doc sr-doc-excerpt" data-testid="sr-doc-excerpt">@preview</p>
+            <details class="sr-doc-details"><summary>@expandLabel</summary><p class="sr-doc">@text</p></details>
+        }
+    };
+
     private RenderFragment FacetCell(IReadOnlyList<SchemaFacet> facets) =>
         @<div class="sr-rules">
             @{ var values = P.AllowedValues(facets); var rules = P.Rules(facets); }
-            @if (values.Count > 0)
+            @if (values.Count > CompactValues)
+            {
+                <details class="sr-values-details" data-testid="sr-allowed-values"><summary>@S.Count(values.Count, "allowed value", "allowed values")<span class="visually-hidden"> — view values</span></summary>
+                    <ul class="sr-values">@foreach (var value in values) { <li><code>@value.Value</code>@if (value.Documentation is { } meaning) { <span> — @P.Normalize(meaning)</span> }</li> }</ul>
+                </details>
+            }
+            else if (values.Count > 0)
             {
                 <div><span class="sr-label">Allowed values:</span>
                     <ul class="sr-values">@foreach (var value in values) { <li><code>@value.Value</code>@if (value.Documentation is { } meaning) { <span> — @P.Normalize(meaning)</span> }</li> }</ul>

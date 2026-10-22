@@ -51,10 +51,11 @@
                 <g class="ss-graph-node @(node.Id == _selectedNodeId ? "selected" : "") @(node.IsUnresolved ? "unresolved" : "")"
                    transform="translate(@node.X @node.Y)" role="button" tabindex="0" aria-label="@NodeDescription(node)" aria-pressed="@(node.Id == _selectedNodeId)"
                    @onclick="() => SelectNode(node)" @onkeydown="args => OnNodeKeyDown(args, node)">
+                    <title>@node.Label</title>
                     <rect width="@NodeWidth" height="@NodeHeight" rx="8" />
-                    <text class="ss-graph-label" x="12" y="23">@ShortLabel(node.Label)</text>
+                    <text class="ss-graph-label" x="12" y="23" data-testid="ss-graph-node-label">@ShortLabel(DisplayLabel(node))</text>
                     <text class="ss-graph-kind" x="12" y="44">@node.Kind</text>
-                    <text class="ss-graph-namespace" x="12" y="64">@(string.IsNullOrWhiteSpace(node.Namespace) ? "" : ShortLabel(node.Namespace))</text>
+                    <text class="ss-graph-namespace" x="12" y="64">@(string.IsNullOrWhiteSpace(node.Namespace) || node.Kind == "Namespace" ? "" : ShortLabel(SchemaStudioPresentation.ShortNamespace(node.Namespace)))</text>
                 </g>
             }
         </svg>
@@ -217,6 +218,23 @@
         "declaration:" + file + ":" + declaration.Kind + ":" + declaration.Name + ":" + declaration.Path;
     private static string NodeDescription(GraphNode node) => node.IsUnresolved ? $"Unresolved: {node.Label}" : $"{node.Kind}: {node.Label}; {node.FileName}; namespace {node.Namespace ?? "none"}";
     private static string ShortLabel(string value) => value.Length > 27 ? value[..24] + "…" : value;
+
+    /// <summary>A readable node label: a file by its own name without folders and ".xsd" ("applikasjonskvittering v2 schema"), a namespace by its
+    /// short name. The full identifier stays in the node's tooltip and details.</summary>
+    private static string DisplayLabel(GraphNode node) => node.Kind switch
+    {
+        "XSD file" => HumanFileName(node.Label) + " schema",
+        "Namespace" => SchemaStudioPresentation.ShortNamespace(node.Label),
+        _ => node.Label,
+    };
+
+    private static string HumanFileName(string path)
+    {
+        var name = SchemaStudioPresentation.FileName(path);
+        if (name.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        name = System.Text.RegularExpressions.Regex.Replace(name, @"[._\-]+", " ", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50)).Trim();
+        return name.Length == 0 ? path : char.ToUpperInvariant(name[0]) + name[1..];
+    }
     private GraphNode? SelectedNode(GraphData graph) => graph.Nodes.FirstOrDefault(n => n.Id == _selectedNodeId);
     private void SelectNode(GraphNode node) => _selectedNodeId = node.Id;
     private void OnNodeKeyDown(KeyboardEventArgs args, GraphNode node)

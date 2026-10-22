@@ -19,6 +19,50 @@ public static class SchemaStudioPresentation
     public const string LibraryStructureHeadline = "This XSD does not define a complete message hierarchy.";
     public const string LibraryTechnical = "Technical detail: no global root element is declared.";
     public const string ValidityScope = "The XSD itself is structurally valid. Business rules and runtime integration behavior are not verified here.";
+
+    /// <summary>What Schema Studio checks itself — shown next to the package status so "valid" never reads as "the integration is valid".</summary>
+    public static readonly IReadOnlyList<string> VerifiedHere = ["XSD structure", "imports/includes", "schema-defined rules", "local XML validation"];
+
+    /// <summary>What a valid XSD package does not prove.</summary>
+    public static readonly IReadOnlyList<string> NotVerifiedHere = ["business rules", "producer/consumer compatibility", "runtime integration behavior", "deployed schema version", "live message delivery"];
+
+    /// <summary>"All imports/includes resolved", "2 of 3 imports/includes resolved" or "No imports/includes" — resolution within this imported package only.</summary>
+    public static string ResolutionLine(SchemaPackage package)
+    {
+        var links = package.Files.Sum(file => file.Links.Count);
+        var unresolved = package.Files.Sum(file => file.Links.Count(link => link.ResolvedFile is null));
+        return links == 0 ? "No imports/includes" : unresolved == 0 ? "All imports/includes resolved" : $"{links - unresolved} of {links} imports/includes resolved";
+    }
+
+    /// <summary>The file holding the (first) top-level message element: the entry schema. Null for a library package.</summary>
+    public static SchemaFile? EntrySchema(SchemaPackage package) => package.Files.FirstOrDefault(f => f.Declarations.Any(d => d.Kind == "element"));
+
+    /// <summary>Files other than the entry schema: imported/included reusable schemas.</summary>
+    public static int SupportingSchemas(SchemaPackage package) => EntrySchema(package) is null ? package.Files.Count : package.Files.Count - 1;
+
+    /// <summary>The distinct target namespaces of the package, in file order.</summary>
+    public static IReadOnlyList<string> Namespaces(SchemaPackage package) =>
+        [.. package.Files.Select(f => f.TargetNamespace).OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// A short readable name for a namespace URI, derived only from its own last segments: "urn:x:applikasjonskvittering:v2" or
+    /// ".../applikasjonskvittering/v2" → "Applikasjonskvittering v2". Returns the URI unchanged when no safe short form exists.
+    /// </summary>
+    public static string ShortNamespace(string uri)
+    {
+        var segments = uri.Split(['/', ':', '#'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(s => !s.Contains('.') || System.Text.RegularExpressions.Regex.IsMatch(s, @"^v?\d+(\.\d+)*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)).ToList();
+        if (segments.Count == 0) return uri;
+        var last = segments[^1];
+        static bool IsVersion(string s) => System.Text.RegularExpressions.Regex.IsMatch(s, @"^v?\d+([._]\d+)*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        string name;
+        if (IsVersion(last) && segments.Count >= 2 && !IsVersion(segments[^2])) name = $"{segments[^2]} {(last.StartsWith('v') ? last : "v" + last)}";
+        else if (!IsVersion(last)) name = last;
+        else return uri;
+        if (name.Length < 3 || name.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return uri;
+        name = name.Replace('_', ' ').Replace('-', ' ');
+        return char.ToUpperInvariant(name[0]) + name[1..];
+    }
     public const string TestScope = "These tests check schema rules locally. They do not test business logic, external integrations or runtime delivery.";
 
     /// <summary>A package without a global root element: it defines reusable types and fields, not a complete message.</summary>
@@ -30,8 +74,8 @@ public static class SchemaStudioPresentation
     public static string LibraryExplanation(SchemaPackage package) =>
         $"It contains {Count(Definitions(package), "reusable schema definition", "reusable schema definitions")} that other XSDs can use, but no top-level message element.";
 
-    /// <summary>"Schema valid" for a valid package; otherwise the validator's own label (never implies the integration is valid).</summary>
-    public static string ValidityHeadline(string validation) => validation switch { "Valid" => "Schema valid", "Partial" => "Schema partly resolved", _ => "Schema not valid" };
+    /// <summary>The package's structural status in words that never imply the integration is valid.</summary>
+    public static string ValidityHeadline(string validation) => validation switch { "Valid" => "XSD package structurally valid", "Partial" => "XSD package partly resolved", _ => "XSD package not structurally valid" };
 
     /// <summary>The top-level message element(s) — "None" for a library XSD.</summary>
     public static string MessageRoot(SchemaPackage package) => package.EffectiveSchema.Count switch
@@ -57,7 +101,7 @@ public static class SchemaStudioPresentation
     {
         "complexType" => "Reusable object",
         "simpleType" => BuiltInLabel(declaration.BaseType ?? declaration.Type) is { } builtIn ? $"{builtIn} type" : "Restricted value type",
-        "element" => "Top-level element",
+        "element" => "Top-level message element",
         "attribute" => "Attribute",
         _ => declaration.Kind,
     };
@@ -93,17 +137,19 @@ public static class SchemaStudioPresentation
     public static string BaseLabel(SchemaDeclaration declaration) =>
         BuiltInLabel(declaration.BaseType ?? declaration.Type) ?? XmlSchemaPackageAnalyzer.LocalName(declaration.BaseType ?? declaration.Type) ?? "—";
 
-    /// <summary>Required/optional/repeated in normal words, from minOccurs/maxOccurs.</summary>
+    /// <summary>Required/optional/repeated in normal words, from minOccurs/maxOccurs — the one wording every Schema Studio view uses
+    /// (the exact "1..1" stays available as technical detail).</summary>
     public static string Occurrence(string min, string max) => (min, max) switch
     {
         ("1", "1") => "Required once",
-        ("0", "1") => "Optional",
-        ("0", "unbounded") => "Any number",
-        ("1", "unbounded") => "At least one",
-        (var lower, "unbounded") => $"At least {lower}",
-        ("0", var upper) => $"Optional, up to {upper}",
-        (var lower, var upper) when lower == upper => $"Exactly {lower}",
-        (var lower, var upper) => $"Between {lower} and {upper}",
+        ("0", "1") => "Optional, max once",
+        ("0", "0") => "Not allowed",
+        ("0", "unbounded") => "Optional, repeating",
+        ("1", "unbounded") => "Required, repeating",
+        (var lower, "unbounded") => $"At least {lower} times",
+        ("0", var upper) => $"Optional, up to {upper} times",
+        (var lower, var upper) when lower == upper => $"Exactly {lower} times",
+        (var lower, var upper) => $"{lower}–{upper} times",
     };
 
     /// <summary>Exact occurrence as written ("1..1", "0..*").</summary>
@@ -126,6 +172,28 @@ public static class SchemaStudioPresentation
         "fractionDigits" => "Maximum decimals",
         "whiteSpace" => "Whitespace handling",
         _ => facetKind,
+    };
+
+    /// <summary>The Constraints summary label of a category, saying what is counted: allowed values are counted per value, not per field.</summary>
+    public static string SummaryLabel(string category) => category switch
+    {
+        "Occurrence" => "Occurrence rules",
+        "Length" => "Length rules",
+        "Pattern" => "Pattern rules",
+        "Enumeration" => "Allowed-value entries",
+        "Numeric bounds" => "Numeric bounds",
+        _ => CategoryLabel(category),
+    };
+
+    /// <summary>The plain meaning of one facet value: "1 character" for a length, the recognized pattern meaning, the value otherwise.
+    /// The exact facet value stays available next to it.</summary>
+    public static string RuleMeaning(string facetKind, string value) => facetKind switch
+    {
+        "minLength" or "maxLength" or "length" => SchemaReadablePresentation.Characters(value),
+        "pattern" => SchemaReadablePresentation.PatternLabel(value),
+        "totalDigits" => Count(int.TryParse(value, out var digits) ? digits : 0, "digit", "digits"),
+        "fractionDigits" => Count(int.TryParse(value, out var decimals) ? decimals : 0, "decimal", "decimals"),
+        _ => value,
     };
 
     /// <summary>The tester-facing name of a rule category (the Constraints summary and filter).</summary>
@@ -171,7 +239,8 @@ public static class SchemaStudioPresentation
     /// <summary>"12-digit pattern" for digit-count patterns; every other pattern is reported neutrally as "pattern rule".</summary>
     public static string PatternSummary(string pattern) =>
         System.Text.RegularExpressions.Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50))
-            is { Success: true } digits ? $"{digits.Groups[1].Value}-digit pattern" : "pattern rule";
+            is { Success: true } digits ? $"{digits.Groups[1].Value}-digit pattern"
+            : SchemaPatternMeaning.Recognize(pattern) ?? "pattern rule";
 
     /// <summary>"Type / Field" — the last two segments of a schema path, for compact tables (the full path stays in the evidence detail).</summary>
     public static string ShortPath(string path)

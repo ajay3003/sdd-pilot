@@ -65,7 +65,8 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
         markup.Should().NotContain("Schema packages and versions");
         page.FindAll("[data-testid=ss-package-switcher]").Should().BeEmpty("one package needs no package list");
         page.Find("[data-testid=ss-validity]").TextContent.Should().Be("Valid");
-        page.Find("[data-testid=ss-validity-headline]").TextContent.Should().Be("Schema valid");
+        page.Find("[data-testid=ss-validity-headline]").TextContent.Should().Be("XSD package structurally valid");
+        page.Find("[data-testid=ss-not-verified]").TextContent.Should().Contain("business rules").And.Contain("runtime integration behavior", "structural validity never reads as integration validity");
         page.Find("[data-testid=ss-validity-scope]").TextContent.Should().Be(SchemaStudioPresentation.ValidityScope, "the scope says the integration is not verified");
         page.Find("[data-testid=ss-source-kind]").TextContent.Should().Be("Source: imported XSD files", "the archive and identifiers are provenance, not the primary line");
         var actions = page.Find("[data-testid=ss-package-actions]");

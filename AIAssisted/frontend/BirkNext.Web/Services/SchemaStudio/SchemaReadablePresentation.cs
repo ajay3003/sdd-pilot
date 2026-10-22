@@ -58,22 +58,16 @@ public static class SchemaReadablePresentation
     /// <summary>Exact occurrence as written in the schema: "1..1", "0..*".</summary>
     public static string ExactCardinality(EffectiveMember member) => $"{member.MinOccurs}..{(member.MaxOccurs == "unbounded" ? "*" : member.MaxOccurs)}";
 
-    /// <summary>Readable occurrence. Members inside a real xs:choice are described as alternatives; naming conventions are never used.</summary>
+    /// <summary>Readable occurrence — the same wording as every other Schema Studio view (<see cref="SchemaStudioPresentation.Occurrence"/>).
+    /// Members inside a real xs:choice are described as alternatives; naming conventions are never used.</summary>
     public static string CardinalityLabel(EffectiveMember member)
     {
-        var text = (member.MinOccurs, member.MaxOccurs) switch
-        {
-            ("1", "1") => "Required",
-            ("0", "1") => "Optional",
-            ("0", "unbounded") => "Optional, can repeat",
-            ("1", "unbounded") => "At least one, can repeat",
-            (var min, "unbounded") => $"At least {min}, can repeat",
-            ("0", var max) => $"Optional, at most {max} times",
-            (var min, var max) when min == max => $"Exactly {min} times",
-            (var min, var max) => $"Between {min} and {max} times",
-        };
+        var text = SchemaStudioPresentation.Occurrence(member.MinOccurs, member.MaxOccurs);
         return member.InChoice ? text + " · one of the alternatives (xs:choice)" : text;
     }
+
+    /// <summary>"1 character", "36 characters".</summary>
+    public static string Characters(string count) => count == "1" ? "1 character" : $"{count} characters";
 
     public static string AttributeUseLabel(EffectiveAttribute attribute) => attribute.Use switch
     {
@@ -93,12 +87,12 @@ public static class SchemaReadablePresentation
         var result = new List<(string, string?)>();
         var min = list.FirstOrDefault(f => f.Kind == "minLength")?.Value;
         var max = list.FirstOrDefault(f => f.Kind == "maxLength")?.Value;
-        if (list.FirstOrDefault(f => f.Kind == "length") is { } exact) result.Add(($"Exactly {exact.Value} characters", "length=" + exact.Value));
-        else if (min is not null && min == max) result.Add(($"Exactly {min} characters", $"minLength={min}, maxLength={max}"));
+        if (list.FirstOrDefault(f => f.Kind == "length") is { } exact) result.Add(($"Exactly {Characters(exact.Value)}", "xs:length=" + exact.Value));
+        else if (min is not null && min == max) result.Add(($"Exactly {Characters(min)}", $"xs:minLength={min}, xs:maxLength={max}"));
         else
         {
-            if (min is not null) result.Add(($"Minimum length {min}", "minLength=" + min));
-            if (max is not null) result.Add(($"Maximum length {max}", "maxLength=" + max));
+            if (min is not null) result.Add(($"Minimum length {Characters(min)}", "xs:minLength=" + min));
+            if (max is not null) result.Add(($"Maximum length {Characters(max)}", "xs:maxLength=" + max));
         }
         foreach (var facet in list)
         {
@@ -113,19 +107,20 @@ public static class SchemaReadablePresentation
                 "fractionDigits" => $"At most {facet.Value} decimals",
                 _ => null,
             };
-            if (text is not null) result.Add((text, facet.Kind + "=" + facet.Value));
+            if (text is not null) result.Add((text, "xs:" + facet.Kind + "=" + facet.Value));
         }
         return result;
     }
 
-    /// <summary>Translates only digit-count patterns (\d{n}, \d{n,m}, [0-9]{n}); every other pattern is reported neutrally.</summary>
+    /// <summary>Translates digit-count patterns (\d{n}, \d{n,m}, [0-9]{n}) and behaviourally recognized formats (UUID, version number —
+    /// <see cref="SchemaPatternMeaning"/>); every other pattern is reported neutrally.</summary>
     public static string PatternLabel(string pattern)
     {
         var exact = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
         if (exact.Success) return $"Exactly {exact.Groups[1].Value} digits";
         var range = Regex.Match(pattern, @"^(?:\\d|\[0-9\])\{(\d+),(\d+)\}$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
         if (range.Success) return $"Between {range.Groups[1].Value} and {range.Groups[2].Value} digits";
-        return "Pattern rule defined";
+        return SchemaPatternMeaning.Recognize(pattern) ?? "Pattern rule defined";
     }
 
     public static string CompositorLabel(string? compositor) => compositor switch

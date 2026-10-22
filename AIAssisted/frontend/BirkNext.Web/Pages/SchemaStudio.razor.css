@@ -209,3 +209,13 @@ small.ss-tech-term.ss-inline, .ss-inline .ss-tech-term { display: inline; }
     .ss-upload { display: flex; margin-right: 0; }
     .ss-steps { display: block; }
 }
+
+/* Status scope: what this package status verifies and what it does not. */
+.ss-verification { display: grid; gap: .15rem; margin: .35rem 0 0; font-size: .82rem; min-width: 0; }
+.ss-verification > div { display: flex; flex-wrap: wrap; gap: 0 .5rem; min-width: 0; }
+.ss-verification dt { font-weight: 600; }
+.ss-verification dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ss-save-help { flex-basis: 100%; font-size: .8rem; margin: .25rem 0 0; }
+.ss-effective-options { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem; margin: .4rem 0 .6rem; font-size: .85rem; }
+.ss-overview-primary-ns { display: block; }
+.ss-profile-summary { display: grid; gap: .6rem; min-width: 0; }
