@@ -13,6 +13,18 @@ public interface ITestDataApiService
     Task<(TestDataAssetDetail? Detail, string? Error)> AssetAsync(string id, CancellationToken ct = default);
     /// <summary>Structural candidates of one exact snapshot (GET api/test-data/candidates); never approved by listing.</summary>
     Task<IReadOnlyList<TestDataCandidate>?> CandidatesAsync(Guid snapshotId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TestDataCandidate>?>(null);
+
+    // Catalog actions Test Data owns. Each returns an error text or null; none sends or receives a value.
+    Task<(TestDataConsumerView? View, string? Error)> ConsumersAsync(CancellationToken ct = default) => Task.FromResult<(TestDataConsumerView?, string?)>((null, Unavailable));
+    Task<(string? AssetId, string? Error)> RegisterAsync(TestDataRegistrationRequest request, CancellationToken ct = default) => Task.FromResult<(string?, string?)>((null, Unavailable));
+    Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
+    Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
+    Task<(ConsumerTestDataRequirement? Requirement, string? Error)> AddRequirementAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) =>
+        Task.FromResult<(ConsumerTestDataRequirement?, string?)>((null, Unavailable));
+    Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) => Task.FromResult<(List<TestDataMatch>?, string?)>((null, Unavailable));
+    Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default) => Task.FromResult<(TestDataUsageReference?, string?)>((null, Unavailable));
+
+    const string Unavailable = "This Test Data action is not available in this host.";
 }
 
 public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
@@ -48,6 +60,58 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
         try { return (await http.GetFromJsonAsync<TestDataCatalogView>("api/test-data", Json, ct), null); }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
         { return (null, BackendRequestClassifier.FromException(Title, e, "GET api/test-data", ct).UserMessage); }
+    }
+
+    public async Task<(TestDataConsumerView? View, string? Error)> ConsumersAsync(CancellationToken ct = default)
+    {
+        try { return (await http.GetFromJsonAsync<TestDataConsumerView>("api/test-data/consumers", Json, ct), null); }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, BackendRequestClassifier.FromException(Title, e, "GET api/test-data/consumers", ct).UserMessage); }
+    }
+
+    public async Task<(string? AssetId, string? Error)> RegisterAsync(TestDataRegistrationRequest request, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/registrations", request, ct);
+        return error is not null ? (null, error) : (body is { } b && b.TryGetProperty("assetId", out var id) ? id.GetString() : null, null);
+    }
+
+    public async Task<string?> ApproveAsync(string assetId, CancellationToken ct = default) =>
+        (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/approve", new { }, ct)).Error;
+
+    public async Task<string?> DeprecateAsync(string assetId, CancellationToken ct = default) =>
+        (await PostAsync($"api/test-data/assets/{Uri.EscapeDataString(assetId)}/deprecate", new { }, ct)).Error;
+
+    public async Task<(ConsumerTestDataRequirement? Requirement, string? Error)> AddRequirementAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/requirements", requirement, ct);
+        return (body?.Deserialize<ConsumerTestDataRequirement>(Json), error);
+    }
+
+    public async Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/matches", requirement, ct);
+        return (body?.Deserialize<List<TestDataMatch>>(Json), error);
+    }
+
+    public async Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default)
+    {
+        var (body, error) = await PostAsync("api/test-data/usages", usage, ct);
+        return (body?.Deserialize<TestDataUsageReference>(Json), error);
+    }
+
+    /// <summary>POST with the backend's own refusal text (400/409 "message") surfaced as the error.</summary>
+    private async Task<(JsonElement? Body, string? Error)> PostAsync(string path, object payload, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync(path, payload, Json, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            JsonElement? body = text.Length == 0 ? null : JsonSerializer.Deserialize<JsonElement>(text, Json);
+            if (response.IsSuccessStatusCode) return (body, null);
+            return (null, body is { ValueKind: JsonValueKind.Object } b && b.TryGetProperty("message", out var m) ? m.GetString() : $"The request failed ({(int)response.StatusCode}).");
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, BackendRequestClassifier.FromException(Title, e, $"POST {path}", ct).UserMessage); }
     }
 
     public async Task<(TestDataAssetDetail? Detail, string? Error)> AssetAsync(string id, CancellationToken ct = default)

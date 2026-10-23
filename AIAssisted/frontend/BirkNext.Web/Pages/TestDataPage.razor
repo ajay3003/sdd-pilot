@@ -6,16 +6,18 @@
 
 <PageTitle>Test Data</PageTitle>
 
-@* Test Data: the one catalog of reusable approved typed data — values, payloads, files, entity references, data sets and expected results —
-   used to prepare, execute or verify a test. Read-only safe summaries: aliases and metadata; a sensitive value never reaches the browser.
-   Approval, validation and intent are three separate facts. Provider-specific explanation lives in each source's details. *@
+@* Test Data: the authoritative catalog of reusable test data — values, payloads, files, entity references, data sets and expected results.
+   Test Data owns the assets (type, status, scope, provenance, contract linkage); consumers own how they use them. Consumers are generic: a
+   type, a stable id and a display name — this page knows no list of them. Safe summaries only: a sensitive value never reaches the browser.
+   Order: what exists → what needs review → who needs Test Data → candidates → sources and configuration. *@
 <div class="td-page" data-testid="td-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Test Data" Description="Reusable approved test data for test execution and verification." />
-    <p class="td-lead" data-testid="td-lead">Values, payloads, files, entity references, data sets and expected results come from configured sources.</p>
-    <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs.</p>
+    <PageHeader Title="Test Data" Description="Reusable approved test data assets, owned centrally and referenced by every consumer." />
+    <p class="td-lead" data-testid="td-lead">Test Data owns reusable assets — values, payloads, files, entity references and expected results — with type, status, scope and provenance. Consumers reference assets; they never copy values.</p>
+    <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs. BirkNext never generates identities or business data.</p>
+
     @if (Consumer is { Length: > 0 })
     {
-        @* A consumer opened Test Data with an exact requirement. Matching is a suggestion only: the consumer maps (binds) the asset itself. *@
+        @* A consumer opened Test Data with an exact requirement. Matching is a suggestion only; binding is an explicit choice. *@
         var requested = RequestedType;
         <section class="td-card td-request" aria-labelledby="td-request-heading" data-testid="td-request" data-consumer="@Consumer">
             <h2 id="td-request-heading">Requested by @ConsumerLabel</h2>
@@ -27,19 +29,43 @@
                 @if (Schema is { Length: > 0 }) { <div><dt>Schema</dt><dd>@Schema</dd></div> }
                 @if (RequestEnvironment is { Length: > 0 }) { <div><dt>Environment</dt><dd>@RequestEnvironment</dd></div> }
             </dl>
-            @if (_catalog is { } requestCatalog && requested is { } type)
+            @if (requested is not null && _catalog is { } requestCatalog && DeepLinkRequirement is { } deepLink)
             {
-                var matching = requestCatalog.Assets.Where(a => a.Approval == TestDataApproval.Approved && TestDataDataTypes.Of(a) == type
-                    && (a.Environment is null || RequestEnvironment is null || string.Equals(a.Environment, RequestEnvironment, StringComparison.OrdinalIgnoreCase))).ToList();
-                @if (matching.Count == 0)
-                {
-                    <p data-testid="td-request-none"><strong>No approved @TestDataDataTypes.Label(type) asset matches yet.</strong> Add or approve one in a configured source; it then appears here and in the consumer's mapping.</p>
-                }
-                else
-                {
-                    <p data-testid="td-request-matches">Approved assets of this data type (choose one in @ConsumerLabel — nothing is bound from here):</p>
-                    <ul class="sd-list">@foreach (var a in matching) { <li data-testid="td-request-match">@a.Alias@(a.Label is { } label ? $" · {label}" : "") · @a.Source</li> }</ul>
-                }
+                @* Matching Test Data, computed with the shared deterministic matcher. Suggestions only: nothing is bound from here until a choice is made. *@
+                var matches = TestDataCatalogRules.Match(deepLink, requestCatalog.Assets);
+                <h3 class="td-subheading">Matching Test Data</h3>
+                    @if (matches.Count == 0)
+                    {
+                        <p data-testid="td-request-none"><strong>No @TestDataDataTypes.Label(requested.Value) asset matches yet.</strong> Register one from a source candidate or a configured source, approve it, then bind it here.</p>
+                    }
+                    else
+                    {
+                        <p class="td-note">Suggestions only — nothing is bound from here until you choose “Use for this requirement”, and @ConsumerLabel maps the asset to its own inputs.</p>
+                        <ul class="td-matches" data-testid="td-request-matches">
+                            @foreach (var m in matches)
+                            {
+                                var match = m;
+                                <li data-testid="td-request-match" data-state="@m.State">
+                                    <span class="td-mono">@m.Alias</span> · <strong>@TestDataCatalogRules.Label(m.State)</strong> <span class="td-note">— @m.Reason</span>
+                                    @if (m.State is TestDataMatchState.Exact or TestDataMatchState.Compatible or TestDataMatchState.Possible)
+                                    {
+                                        @if (m.State == TestDataMatchState.Possible && _confirmed != m.AssetId)
+                                        {
+                                            <button type="button" class="btn-link" data-testid="td-request-confirm" @onclick="() => _confirmed = match.AssetId">Confirm it fits</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn-secondary btn-small" data-testid="td-request-bind" disabled="@_busy" @onclick="() => BindRequestAsync(match)">Use for this requirement</button>
+                                        }
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                <div class="td-actions">
+                    <button type="button" class="btn-secondary td-action" data-testid="td-request-register" disabled="@_busy" @onclick="RegisterRequestAsync">Add to requested Test Data</button>
+                </div>
+                @if (_requestStatus is { } requestStatus) { <p role="status" class="td-note" data-testid="td-request-status">@requestStatus</p> }
             }
         </section>
     }
@@ -54,36 +80,60 @@
     }
     else if (_catalog is { } catalog)
     {
+        @if (_actionStatus is { } actionStatus) { <p role="status" class="td-note" data-testid="td-action-status">@actionStatus</p> }
+
+        @* Test-lead overview: counts, from the enriched catalog and the registered consumer requirements. *@
+        @if (_consumers?.Overview is { } o)
+        {
+            <section class="td-card td-overview" aria-label="Test Data overview" data-testid="td-overview">
+                <dl class="td-overview-list">
+                    <div><dt>Approved</dt><dd data-testid="td-overview-approved">@o.Approved</dd></div>
+                    <div><dt>Needs review</dt><dd data-testid="td-overview-review">@o.NeedsReview</dd></div>
+                    <div><dt>Draft</dt><dd>@o.Draft</dd></div>
+                    <div><dt>Deprecated</dt><dd>@o.Deprecated</dd></div>
+                    <div><dt>Open consumer requirements</dt><dd data-testid="td-overview-open">@o.OpenRequirements</dd></div>
+                    <div><dt>Required needs resolved</dt><dd data-testid="td-overview-coverage">@o.RequiredResolved of @o.RequiredTotal</dd></div>
+                    <div><dt>Environment mismatches</dt><dd>@o.EnvironmentMismatches</dd></div>
+                    <div><dt>Contract mismatches</dt><dd>@o.ContractMismatches</dd></div>
+                </dl>
+                <p class="td-note">Requirement resolved is Test Data readiness only — each consumer decides whether it is ready to run.</p>
+            </section>
+        }
+
         @if (catalog.Assets.Count == 0)
         {
             var empty = P.Empty(catalog);
             <section class="td-card td-empty" aria-labelledby="td-empty-heading" data-testid="td-empty" data-kind="@empty">
-                <h2 id="td-empty-heading">@(empty switch { P.EmptyKind.ConfiguredButEmpty => "Configured sources contain no assets yet", P.EmptyKind.SourcesUnavailable => "Test data sources could not be read", _ => "No test data available yet" })</h2>
+                <h2 id="td-empty-heading">@(empty == P.EmptyKind.SourcesUnavailable ? "Test data sources could not be read" : "No reusable Test Data assets yet")</h2>
                 <p>@(empty switch
                 {
-                    P.EmptyKind.ConfiguredButEmpty => "A source is configured, but it currently supplies no assets. Add assets to that source, or register a fixture from a supported workflow.",
-                    P.EmptyKind.SourcesUnavailable => "No assets could be listed because a source is unavailable; its card below says why.",
-                    _ => "Reusable test data appears here when a configured source supplies it, or when you register a fixture from a supported workflow.",
+                    P.EmptyKind.ConfiguredButEmpty => "A source is configured, but it currently supplies no assets.",
+                    P.EmptyKind.SourcesUnavailable => "No assets could be listed because a source is unavailable; its card under Sources & configuration says why.",
+                    _ => "Reusable assets appear here when you register a reviewed source candidate, configure the catalog, approve a local reference or register a Schema Studio fixture.",
                 })</p>
-                <p class="td-note">Possible sources: @string.Join(", ", catalog.Sources.Select(source => source.Label)).@if (catalog.Sources.Any(source => source.Id == "schema-studio")) { <text> Schema Studio can generate XML that you save and register as reusable Test Data.</text> } BirkNext never generates identities or business data.</p>
                 <div class="td-actions">
-                    <a class="btn-primary td-action" href="@P.UserGuideHref" data-testid="td-empty-configure">How to configure Test Data</a>
+                    <a class="btn-primary td-action" href="test-data#td-candidates-heading" data-testid="td-empty-candidates">Review source candidates</a>
+                    <a class="btn-secondary td-action" href="@P.UserGuideHref" data-testid="td-empty-configure">Configure catalog</a>
+                    <a class="btn-secondary td-action" href="@P.UserGuideHref" data-testid="td-empty-local">Register approved local reference</a>
                     @if (catalog.Sources.Any(source => source.Id == "schema-studio")) { <a class="btn-secondary td-action" href="@P.SchemaStudioHref" data-testid="td-empty-schema-studio">Open Schema Studio</a> }
                 </div>
             </section>
         }
         else
         {
-            var shown = Filtered(catalog);
+            var usages = _consumers?.Usages ?? [];
+            var shown = Filtered(catalog, usages);
             <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
-                <h2 id="td-assets-heading">Assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
+                <h2 id="td-assets-heading">Reusable Test Data <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
-                    @Filter("Data kind", "td-filter-kind", _kind, v => _kind = v, catalog.Assets.Select(a => a.Kind).Distinct().Order().Select(k => (k.ToString(), P.KindLabel(k))))
-                    @Filter("Environment", "td-filter-environment", _environment, v => _environment = v, catalog.Assets.Select(P.EnvironmentLabel).Distinct().Order().Select(e => (e, e)))
-                    @Filter("Approval", "td-filter-approval", _approval, v => _approval = v, catalog.Assets.Select(a => a.Approval).Distinct().Order().Select(a => (a.ToString(), P.ApprovalLabel(a))))
-                    @Filter("Validation", "td-filter-validation", _validation, v => _validation = v, catalog.Assets.Select(P.ValidationLabel).Distinct().Order().Select(v => (v, v)))
-                    @Filter("Intent", "td-filter-intent", _intent, v => _intent = v, catalog.Assets.Select(P.IntentLabel).Distinct().Order().Select(v => (v, v)))
+                    <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>
+                    @Filter("Data type", "td-filter-type", _type, v => _type = v, catalog.Assets.Select(P.DataType).Distinct().Order().Select(t => (t.ToString(), TestDataDataTypes.Label(t))))
+                    @Filter("Status", "td-filter-status", _status, v => _status = v, catalog.Assets.Select(P.Status).Distinct().Order().Select(s => (s.ToString(), TestDataCatalogRules.Label(s))))
+                    @Filter("Scope", "td-filter-scope", _scope, v => _scope = v, catalog.Assets.Select(P.Scope).Distinct().Order().Select(s => (s, s)))
                     @Filter("Source", "td-filter-source", _source, v => _source = v, catalog.Assets.Select(a => a.Source).Distinct().Order().Select(s => (s, s)))
+                    @Filter("Contract", "td-filter-contract", _contract, v => _contract = v, catalog.Assets.Select(P.ContractLabel).Distinct().Order().Select(c => (c, c)))
+                    @Filter("Usage", "td-filter-usage", _usage, v => _usage = v, [("used", "Used by a consumer"), ("unused", "Not used")])
+                    @Filter("Consumer", "td-filter-consumer", _consumer, v => _consumer = v, usages.Select(u => P.Consumer(u.Consumer)).Distinct().Order().Select(c => (c, c)))
                     @if (FiltersActive) { <button type="button" class="btn-secondary td-clear" data-testid="td-clear-filters" @onclick="ClearFilters">Clear filters</button> }
                 </div>
                 @if (shown.Count == 0)
@@ -93,21 +143,23 @@
                 else
                 {
                     <table class="td-table" data-testid="td-asset-table">
-                        <caption class="visually-hidden">Test data assets: approval, validation and intent are separate columns</caption>
-                        <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Environment</th><th scope="col">Approval</th><th scope="col">Validation</th><th scope="col">Intent</th><th scope="col">Source</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                        <caption class="visually-hidden">Reusable Test Data assets with type, status, scope, source, contract status and consumers</caption>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Data type</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Source</th><th scope="col">Contract</th><th scope="col">Consumers</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
                         <tbody>
                             @foreach (var asset in shown)
                             {
                                 var open = _openId == asset.Id;
                                 var detailId = $"td-detail-{Slug(asset.Id)}";
-                                <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind">
+                                var status = P.Status(asset);
+                                var assetUsages = usages.Where(u => u.AssetId == asset.Id).ToList();
+                                <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status">
                                     <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }</th>
-                                    <td data-label="Kind" data-testid="td-kind">@P.KindLabel(asset.Kind)</td>
-                                    <td data-label="Environment">@P.EnvironmentLabel(asset)</td>
-                                    <td data-label="Approval"><span class="td-pill td-pill-@P.ApprovalTone(asset.Approval)" data-testid="td-approval">@P.ApprovalLabel(asset.Approval)</span></td>
-                                    <td data-label="Validation"><span class="td-pill td-pill-@P.ValidationTone(asset)" data-testid="td-validation">@P.ValidationLabel(asset)</span></td>
-                                    <td data-label="Intent"><span class="td-intent" data-testid="td-intent">@P.IntentLabel(asset)</span></td>
+                                    <td data-label="Data type" data-testid="td-data-type">@TestDataDataTypes.Label(P.DataType(asset))</td>
+                                    <td data-label="Status"><span class="td-pill td-pill-@P.StatusTone(status)" data-testid="td-status">@TestDataCatalogRules.Label(status)</span></td>
+                                    <td data-label="Scope" data-testid="td-scope">@P.Scope(asset)</td>
                                     <td data-label="Source" data-testid="td-asset-source">@asset.Source</td>
+                                    <td data-label="Contract"><span class="td-pill td-pill-@P.ContractTone(asset)" data-testid="td-contract">@P.ContractLabel(asset)</span></td>
+                                    <td data-label="Consumers" data-testid="td-consumers">@P.UsedBy(asset.Consumers)</td>
                                     <td class="td-row-action"><button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
                                                 aria-label="@($"{(open ? "Hide" : "Show")} details for {asset.Alias}")" data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button></td>
                                 </tr>
@@ -116,23 +168,27 @@
                                         <div class="td-detail" data-testid="td-detail">
                                             <section aria-label="Asset facts">
                                                 <dl class="td-facts">
-                                                    <div><dt>Type</dt><dd data-testid="td-type">@P.TypeLabel(asset)</dd></div>
+                                                    <div><dt>Data type</dt><dd data-testid="td-type">@TestDataDataTypes.Label(P.DataType(asset)) · @P.TypeLabel(asset)</dd></div>
                                                     <div><dt>Value</dt><dd data-testid="td-value">@P.ValueLabel(asset)</dd></div>
                                                     <div><dt>Sensitivity</dt><dd data-testid="td-sensitivity">@asset.Sensitivity</dd></div>
                                                     @if (asset.EntityType is { } entity) { <div><dt>Refers to</dt><dd>@entity</dd></div> }
-                                                    @if (asset.Fingerprint is { } fingerprint) { <div><dt>Fingerprint</dt><dd class="td-mono">@fingerprint[..12]…</dd></div> }
+                                                    @if (TestDataCatalogRules.Version(asset) is { } version) { <div><dt>Version</dt><dd class="td-mono" data-testid="td-version">@version[..12]…</dd></div> }
                                                     @if (asset.ExpiresAt is { } expires) { <div><dt>Expires</dt><dd>@expires.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd></div> }
                                                     @if (asset.IsDefault) { <div><dt>Default</dt><dd>Yes — chosen when several qualify</dd></div> }
+                                                    @if (asset.Tags is { Count: > 0 } tags) { <div><dt>Tags</dt><dd>@string.Join(", ", tags)</dd></div> }
                                                 </dl>
                                             </section>
-                                            <section aria-label="Approval, validation and intent">
+                                            <section aria-label="Status, approval and contract">
                                                 <dl class="td-facts td-status-facts">
-                                                    <div><dt>Approval</dt><dd data-testid="td-approval-detail">@P.ApprovalLabel(asset.Approval)@(asset.ApprovalDetail is { } why ? $" — {why}" : "")</dd></div>
-                                                    <div><dt>Validation</dt><dd data-testid="td-validation-detail">@P.ValidationLabel(asset)@(asset.ValidationDetail is { } detail ? $" — {detail}" : "")</dd></div>
-                                                    <div><dt>Intent</dt><dd data-testid="td-intent-detail">@P.IntentLabel(asset) — @P.IntentHelp(asset)</dd></div>
+                                                    <div><dt>Status</dt><dd data-testid="td-status-detail">@TestDataCatalogRules.Label(status)@(asset.ApprovedAt is { } approvedAt ? $" · approved in Test Data {approvedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "")</dd></div>
+                                                    <div><dt>Approval</dt><dd data-testid="td-approval-detail"><span class="td-pill td-pill-@P.ApprovalTone(asset.Approval)" data-testid="td-approval">@P.ApprovalLabel(asset.Approval)</span>@(asset.ApprovalDetail is { } why ? $" — {why}" : "")</dd></div>
+                                                    <div><dt>Validation</dt><dd data-testid="td-validation-detail"><span class="td-pill td-pill-@P.ValidationTone(asset)" data-testid="td-validation">@P.ValidationLabel(asset)</span>@(asset.ValidationDetail is { } detail ? $" — {detail}" : "")</dd></div>
+                                                    <div><dt>Intent</dt><dd data-testid="td-intent-detail"><span data-testid="td-intent">@P.IntentLabel(asset)</span> — @P.IntentHelp(asset)</dd></div>
+                                                    <div><dt>Contract</dt><dd data-testid="td-contract-detail">@P.ContractLabel(asset)@(asset.ContractNote is { } contractNote ? $" — {contractNote}" : "")</dd></div>
+                                                    @if (asset.SchemaRef is { } schemaRef) { <div><dt>Contract / schema</dt><dd class="td-mono" data-testid="td-schema-ref">@schemaRef</dd></div> }
                                                     @if (asset.Schema is { } schema)
                                                     {
-                                                        <div><dt>Schema</dt><dd data-testid="td-schema">@(schema.Label ?? schema.SchemaPath)@(asset.SchemaCheck?.SchemaVersion is { } version ? $" {version}" : "")</dd></div>
+                                                        <div><dt>Schema</dt><dd data-testid="td-schema">@(schema.Label ?? schema.SchemaPath)@(asset.SchemaCheck?.SchemaVersion is { } schemaVersion ? $" {schemaVersion}" : "")</dd></div>
                                                         <div><dt>Schema validation</dt><dd data-testid="td-schema-status">@P.ValidationLabel(asset)</dd></div>
                                                     }
                                                     @if (asset.SchemaCheck is { } check)
@@ -141,7 +197,41 @@
                                                         @if (check.ContractRules is { } contractRules) { <div class="td-wide"><dt>Contract rules</dt><dd data-testid="td-contract-rules">@contractRules@if (check.SourceSnapshotId is { } ruleSnapshot && asset.Schema is { } ruleSchema && ruleSchema.SchemaPath.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)) { <text> · </text><a href="@($"schema-studio?snapshot={ruleSnapshot}&contract={Uri.EscapeDataString(ruleSchema.SchemaPath)}")" data-testid="td-view-contract">View contract</a> }</dd></div> }
                                                     }
                                                 </dl>
-                                                <p class="td-note">Approval is independent: an approved negative fixture can be deliberately invalid, and revalidation never changes approval.</p>
+                                                <p class="td-note">Approval is independent: an approved negative fixture can be deliberately invalid, and revalidation never changes approval. Provenance is not approval either — approval is explicit and applies to this version; a changed asset needs review again.</p>
+                                                <div class="td-actions" data-testid="td-lifecycle-actions">
+                                                    @if (status is TestDataAssetStatus.Draft or TestDataAssetStatus.NeedsReview)
+                                                    {
+                                                        <button type="button" class="btn-primary btn-small" data-testid="td-approve" disabled="@_busy" aria-describedby="@($"{detailId}-approve-help")" @onclick="() => ApproveAsync(asset)">Approve @asset.Alias</button>
+                                                        <span class="td-note" id="@($"{detailId}-approve-help")">Approves @TestDataDataTypes.Label(P.DataType(asset)) · scope @P.Scope(asset) · source @asset.Source — the current version only.</span>
+                                                    }
+                                                    @if (status != TestDataAssetStatus.Deprecated)
+                                                    {
+                                                        <button type="button" class="btn-secondary btn-small" data-testid="td-deprecate" disabled="@_busy" @onclick="() => DeprecateAsync(asset)">Deprecate</button>
+                                                    }
+                                                </div>
+                                            </section>
+                                            @if (asset.Fields is { Count: > 0 } fields)
+                                            {
+                                                <section aria-label="Safe structure" data-testid="td-structure">
+                                                    <h3 class="td-subheading">Structure</h3>
+                                                    <ul class="td-structure">@foreach (var field in fields.Take(60)) { <li class="td-mono">@field</li> }</ul>
+                                                    <p class="td-note">Field and parameter names only — never values.</p>
+                                                </section>
+                                            }
+                                            <section aria-label="Used by" data-testid="td-used-by">
+                                                <h3 class="td-subheading">Used by</h3>
+                                                @if (assetUsages.Count == 0)
+                                                {
+                                                    <p class="td-note">No consumer references this asset yet.</p>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var group in assetUsages.GroupBy(u => u.Consumer.Parent ?? u.Consumer.ConsumerType))
+                                                    {
+                                                        <p class="td-note"><strong>@group.Key</strong></p>
+                                                        <ul class="td-usages">@foreach (var u in group) { <li data-testid="td-usage">@u.Consumer.DisplayName → @u.Usage@(u.Mapping is { } mapping ? $" ({mapping})" : "")@(u.EnvironmentId is { } env ? $" · {env}" : "") · <span class="td-pill td-pill-@(u.Status == TestDataUsageStatus.Resolved ? "ready" : "attention")">@(u.Status == TestDataUsageStatus.Resolved ? "Resolved" : "Needs review")</span>@(u.StatusReason is { } reason ? $" — {reason}" : "")</li> }</ul>
+                                                    }
+                                                }
                                             </section>
                                             <section aria-label="Provenance" data-testid="td-provenance">
                                                 <h3 class="td-subheading">Provenance</h3>
@@ -178,11 +268,99 @@
                     </table>
                 }
             </section>
+        }
 
-            @if (catalog.Sets.Count > 0)
+        @* Inbound needs registered by consumers. Test Data shows whether each is resolved; it never decides whether the consumer can run. *@
+        <section class="td-card" aria-labelledby="td-requested-heading" data-testid="td-requested">
+            <h2 id="td-requested-heading">Requested Test Data</h2>
+            @if (_consumers is not { Requirements.Count: > 0 } consumerView)
             {
-                <section class="td-card" aria-labelledby="td-sets-heading" data-testid="td-sets">
-                    <h2 id="td-sets-heading">Data sets <span class="td-count">(@catalog.Sets.Count)</span></h2>
+                <p class="td-note" data-testid="td-requested-none">No consumer has registered a Test Data requirement yet. Consumers (reviews, test packs, journeys, flows, extensions) register needs here or open Test Data with their requirement.</p>
+            }
+            else
+            {
+                var requirements = consumerView.Requirements.Where(r => _reqStatus.Length == 0 || r.Status.ToString() == _reqStatus)
+                    .Where(r => _reqConsumer.Length == 0 || P.Consumer(r.Consumer) == _reqConsumer).ToList();
+                <div class="td-filters" role="group" aria-label="Filter requested Test Data">
+                    @Filter("Status", "td-req-filter-status", _reqStatus, v => _reqStatus = v, consumerView.Requirements.Select(r => r.Status).Distinct().Order().Select(s => (s.ToString(), s == TestDataRequirementStatus.NeedsReview ? "Needs review" : s.ToString())))
+                    @Filter("Consumer", "td-req-filter-consumer", _reqConsumer, v => _reqConsumer = v, consumerView.Requirements.Select(r => P.Consumer(r.Consumer)).Distinct().Order().Select(c => (c, c)))
+                </div>
+                <ul class="td-requirements">
+                    @foreach (var r in requirements)
+                    {
+                        var requirement = r;
+                        <li class="td-requirement" data-testid="td-requirement" data-status="@r.Status" data-consumer="@r.Consumer.Key">
+                            <div class="td-requirement-head">
+                                <strong>@P.Consumer(r.Consumer)</strong> <span class="td-note">· @r.Consumer.ConsumerType</span>
+                                <span class="td-pill td-pill-@(r.Status == TestDataRequirementStatus.Resolved ? "ready" : "attention")" data-testid="td-requirement-status">@(r.Status == TestDataRequirementStatus.NeedsReview ? "Needs review" : r.Status.ToString())</span>
+                            </div>
+                            <p class="td-note">Needs @TestDataDataTypes.Label(r.RequestedDataType) for @r.Usage@(r.RequestedFields.Count > 0 ? $" ({string.Join(", ", r.RequestedFields)})" : "") · @(r.Required ? "required" : "optional") · @TestDataCatalogRules.ScopeLabel(r.EnvironmentId)@(r.BoundAssetId is { } bound ? $" · bound to {bound}" : "")</p>
+                            <button type="button" class="btn-secondary btn-small" data-testid="td-requirement-find" aria-expanded="@(_matchesFor == r.Id ? "true" : "false")" @onclick="() => FindMatchesAsync(requirement)">@(_matchesFor == r.Id ? "Hide matches" : "Find matching Test Data")</button>
+                            @if (_matchesFor == r.Id && _matches is { } found)
+                            {
+                                @if (found.Count == 0) { <p class="td-note" data-testid="td-requirement-no-match">No match. Register and approve an asset of this type.</p> }
+                                <ul class="td-matches">
+                                    @foreach (var m in found)
+                                    {
+                                        var match = m;
+                                        <li data-testid="td-match" data-state="@m.State"><span class="td-mono">@m.Alias</span> · <strong>@TestDataCatalogRules.Label(m.State)</strong> <span class="td-note">— @m.Reason</span>
+                                            @if (m.State is TestDataMatchState.Exact or TestDataMatchState.Compatible || m.State == TestDataMatchState.Possible && _confirmed == m.AssetId)
+                                            {
+                                                <button type="button" class="btn-secondary btn-small" data-testid="td-bind" disabled="@_busy" @onclick="() => BindAsync(requirement, match)">Bind to this requirement</button>
+                                            }
+                                            else if (m.State == TestDataMatchState.Possible)
+                                            {
+                                                <button type="button" class="btn-link" data-testid="td-confirm" @onclick="() => _confirmed = match.AssetId">Confirm it fits</button>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="td-card" aria-labelledby="td-candidates-heading" data-testid="td-candidates-section">
+            <h2 id="td-candidates-heading">Candidates from source evidence</h2>
+            <p class="td-note">Proposed from a Source Analysis snapshot's contracts (OpenAPI, GraphQL, XSD, JSON Schema), enum reference data and data model — each with the reason it was proposed. Review → register as reusable Test Data → approve; nothing is approved automatically.</p>
+            <ReviewDisclosure Text="Review candidates" CollapseText="Hide candidates" TestId="td-candidates" Class="disclosure-inline">
+                <TestDataCandidatesPanel Scopes="_scopes" OnRegistered="ReloadAsync" />
+            </ReviewDisclosure>
+        </section>
+
+        @* Sources & configuration: where assets come from. Useful plumbing, not the primary goal of the page. *@
+        <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
+            <h2 id="td-sources-heading">Sources & configuration</h2>
+            <ReviewDisclosure Text="Show asset sources" CollapseText="Hide asset sources" TestId="td-sources-disclosure" Class="disclosure-inline">
+                <ul class="td-source-grid">
+                    @foreach (var source in catalog.Sources)
+                    {
+                        var action = P.SourceAction(source);
+                        <li class="td-source-card" data-testid="td-source" data-source="@source.Id" data-status="@source.Status">
+                            <div class="td-source-head">
+                                <h3 id="@($"td-source-{source.Id}")">@source.Label</h3>
+                                <span class="td-pill td-pill-@P.SourceTone(source)" data-testid="td-source-status"><span class="visually-hidden">Status: </span>@P.SourceStatusLabel(source)</span>
+                            </div>
+                            <p class="td-source-count" data-testid="td-source-count">@source.AssetCount @(source.AssetCount == 1 ? "asset" : "assets")@(source.SetCount > 0 ? $" · {source.SetCount} data {(source.SetCount == 1 ? "set" : "sets")}" : "")</p>
+                            <p class="td-note">@source.Description</p>
+                            @if (source.Problem is { } problem) { <p class="td-source-problem" role="alert" data-testid="td-source-problem">Source unavailable: @problem</p> }
+                            <div class="td-source-actions">
+                                @if (source.Detail is { } detail)
+                                {
+                                    <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="@($"td-source-details-{source.Id}")" Class="disclosure-inline disclosure-small">
+                                        <p class="td-note" data-testid="td-source-detail">@detail</p>
+                                    </ReviewDisclosure>
+                                }
+                                @if (action is { } a) { <a class="td-source-action" href="@a.Href" data-testid="td-source-action" aria-describedby="@($"td-source-{source.Id}")">@a.Label</a> }
+                            </div>
+                        </li>
+                    }
+                </ul>
+                @if (catalog.Sets.Count > 0)
+                {
+                    <h3 class="td-subheading" data-testid="td-sets">Data sets (@catalog.Sets.Count)</h3>
                     <ul class="td-sets">
                         @foreach (var set in catalog.Sets)
                         {
@@ -193,57 +371,24 @@
                             </li>
                         }
                     </ul>
-                </section>
-            }
-        }
-
-        <section class="td-card" aria-labelledby="td-sources-heading" data-testid="td-sources">
-            <h2 id="td-sources-heading">Sources</h2>
-            <ul class="td-source-grid">
-                @foreach (var source in catalog.Sources)
-                {
-                    var action = P.SourceAction(source);
-                    <li class="td-source-card" data-testid="td-source" data-source="@source.Id" data-status="@source.Status">
-                        <div class="td-source-head">
-                            <h3 id="@($"td-source-{source.Id}")">@source.Label</h3>
-                            <span class="td-pill td-pill-@P.SourceTone(source)" data-testid="td-source-status"><span class="visually-hidden">Status: </span>@P.SourceStatusLabel(source)</span>
-                        </div>
-                        <p class="td-source-count" data-testid="td-source-count">@source.AssetCount @(source.AssetCount == 1 ? "asset" : "assets")@(source.SetCount > 0 ? $" · {source.SetCount} data {(source.SetCount == 1 ? "set" : "sets")}" : "")</p>
-                        <p class="td-note">@source.Description</p>
-                        @if (source.Problem is { } problem) { <p class="td-source-problem" role="alert" data-testid="td-source-problem">Source unavailable: @problem</p> }
-                        <div class="td-source-actions">
-                            @if (source.Detail is { } detail)
-                            {
-                                <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="@($"td-source-details-{source.Id}")" Class="disclosure-inline disclosure-small">
-                                    <p class="td-note" data-testid="td-source-detail">@detail</p>
-                                </ReviewDisclosure>
-                            }
-                            @if (action is { } a) { <a class="td-source-action" href="@a.Href" data-testid="td-source-action" aria-describedby="@($"td-source-{source.Id}")">@a.Label</a> }
-                        </div>
-                    </li>
                 }
-            </ul>
-        </section>
-
-        <section class="td-card" aria-labelledby="td-candidates-heading" data-testid="td-candidates">
-            <h2 id="td-candidates-heading">Candidates from source evidence</h2>
-            <p class="td-note">Structure, rules and expected outcomes proposed from a Source Analysis snapshot's contracts and data model. Candidates are never approved automatically.</p>
-            <ReviewDisclosure Text="Review candidates" CollapseText="Hide candidates" TestId="td-candidates" Class="disclosure-inline">
-                <TestDataCandidatesPanel />
+                @if (catalog.Assets.Count > 0)
+                {
+                    <ReviewDisclosure Text="Documentation (metadata only)" CollapseText="Hide documentation" TestId="td-documentation" Class="disclosure-inline">
+                        <pre class="td-preview" tabindex="0" aria-label="Test data documentation" data-testid="td-documentation-text">@TestDataLifecycle.Documentation(catalog.Assets)</pre>
+                    </ReviewDisclosure>
+                }
             </ReviewDisclosure>
-            @if (catalog.Assets.Count > 0)
-            {
-                <ReviewDisclosure Text="Documentation (metadata only)" CollapseText="Hide documentation" TestId="td-documentation" Class="disclosure-inline">
-                    <pre class="td-preview" tabindex="0" aria-label="Test data documentation" data-testid="td-documentation-text">@TestDataLifecycle.Documentation(catalog.Assets)</pre>
-                </ReviewDisclosure>
-            }
+            <p class="td-note" data-testid="td-how">How Test Data works: Test Data owns reusable assets (JSON payloads, simple values, XML payloads, file fixtures, expected/reference data) with an explicit status (Draft → Needs review → Approved → Deprecated) and scope (an environment or Shared). Source candidates and Schema Studio propose; approval is always explicit. Consumers register what they need and bind approved assets by reference; sensitive values stay in the backend. <a href="@P.UserGuideHref">User guide</a></p>
         </section>
     }
 </div>
 
 @code {
-    // Consumer requirement context from a deep link (/test-data?consumer=…&variable=…&dataType=…).
+    // Consumer requirement context from a deep link (/test-data?consumer=…&variable=…&dataType=…). Generic: any consumer id and type.
     [SupplyParameterFromQuery(Name = "consumer")] public string? Consumer { get; set; }
+    [SupplyParameterFromQuery(Name = "consumerType")] public string? ConsumerType { get; set; }
+    [SupplyParameterFromQuery(Name = "consumerName")] public string? ConsumerName { get; set; }
     [SupplyParameterFromQuery(Name = "operation")] public string? Operation { get; set; }
     [SupplyParameterFromQuery(Name = "variable")] public string? Variable { get; set; }
     [SupplyParameterFromQuery(Name = "in")] public string? In { get; set; }
@@ -253,37 +398,54 @@
     [SupplyParameterFromQuery(Name = "environment")] public string? RequestEnvironment { get; set; }
 
     private TestDataDataType? RequestedType => Enum.TryParse<TestDataDataType>(DataType, out var t) ? t : null;
-    /// <summary>Generic: the consumer id as words ("performance-test-review" → "Performance test review"); Test Data keeps no consumer list.</summary>
-    private string ConsumerLabel => Consumer is { Length: > 0 } c ? char.ToUpperInvariant(c[0]) + c[1..].Replace('-', ' ') : "a consumer";
+    /// <summary>Generic: the consumer's own name, or its id as words ("performance-test-review" → "Performance test review"); Test Data keeps no consumer list.</summary>
+    private string ConsumerLabel => ConsumerName is { Length: > 0 } name ? name : Consumer is { Length: > 0 } c ? char.ToUpperInvariant(c[0]) + c[1..].Replace('-', ' ') : "a consumer";
 
     private ITestDataApiService? _api;
     private TestDataCatalogView? _catalog;
+    private TestDataConsumerView? _consumers;
     private TestDataAssetDetail? _detail;
-    private string? _error, _detailError, _openId;
-    private bool _loading = true;
-    private string _kind = "", _environment = "", _approval = "", _validation = "", _intent = "", _source = "";
+    private List<TestDataMatch>? _matches;
+    private IReadOnlyList<(string Id, string Label)> _scopes = [];
+    private string? _error, _detailError, _openId, _matchesFor, _confirmed, _actionStatus, _requestStatus;
+    private bool _loading = true, _busy;
+    private string _query = "", _type = "", _status = "", _scope = "", _source = "", _contract = "", _usage = "", _consumer = "", _reqStatus = "", _reqConsumer = "";
 
-    private bool FiltersActive => (_kind + _environment + _approval + _validation + _intent + _source).Length > 0;
-    private void ClearFilters() { _kind = _environment = _approval = _validation = _intent = _source = ""; }
+    private bool FiltersActive => (_query + _type + _status + _scope + _source + _contract + _usage + _consumer).Length > 0;
+    private void ClearFilters() { _query = _type = _status = _scope = _source = _contract = _usage = _consumer = ""; }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             _api = TestDataApiService.Resolve(Services);
-            (_catalog, _error) = await _api.CatalogAsync();
+            await ReloadAsync(null);
+            if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts
+                && (await contexts.GetActiveContextAsync()).ActiveProfileOrNull is { } profile)
+                _scopes = [(profile.Id, $"{profile.Name} ({profile.EnvironmentType})")];
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { _error = "The Test Data catalog could not be reached: the backend address is not configured."; }
         finally { _loading = false; }
     }
 
-    private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog) => catalog.Assets
-        .Where(asset => _kind.Length == 0 || asset.Kind.ToString() == _kind)
-        .Where(asset => _environment.Length == 0 || P.EnvironmentLabel(asset) == _environment)
-        .Where(asset => _approval.Length == 0 || asset.Approval.ToString() == _approval)
-        .Where(asset => _validation.Length == 0 || P.ValidationLabel(asset) == _validation)
-        .Where(asset => _intent.Length == 0 || P.IntentLabel(asset) == _intent)
-        .Where(asset => _source.Length == 0 || asset.Source == _source).ToList();
+    private async Task ReloadAsync(string? _)
+    {
+        if (_api is null) return;
+        (_catalog, _error) = await _api.CatalogAsync();
+        (_consumers, _) = await _api.ConsumersAsync();
+    }
+
+    private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog, IReadOnlyList<TestDataUsageReference> usages) => catalog.Assets
+        .Where(asset => P.Matches(asset, _query, usages))
+        .Where(asset => _type.Length == 0 || P.DataType(asset).ToString() == _type)
+        .Where(asset => _status.Length == 0 || P.Status(asset).ToString() == _status)
+        .Where(asset => _scope.Length == 0 || P.Scope(asset) == _scope)
+        .Where(asset => _source.Length == 0 || asset.Source == _source)
+        .Where(asset => _contract.Length == 0 || P.ContractLabel(asset) == _contract)
+        .Where(asset => _usage.Length == 0 || (_usage == "used") == (asset.Consumers > 0))
+        .Where(asset => _consumer.Length == 0 || usages.Any(u => u.AssetId == asset.Id && P.Consumer(u.Consumer) == _consumer))
+        // Deprecated assets stay visible (history), after the rest.
+        .OrderBy(asset => P.Status(asset) == TestDataAssetStatus.Deprecated).ThenBy(asset => asset.Alias, StringComparer.Ordinal).ToList();
 
     /// <summary>One labelled filter; options are only the values that occur, so no filter can select nothing by construction.</summary>
     private RenderFragment Filter(string label, string testId, string value, Action<string> set, IEnumerable<(string Value, string Label)> options) => __builder =>
@@ -303,6 +465,97 @@
         if (_api is null) return;
         var (detail, error) = await _api.AssetAsync(asset.Id);
         _detail = detail; _detailError = error;
+    }
+
+    private async Task ApproveAsync(TestDataAssetSummary asset)
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var error = await _api.ApproveAsync(asset.Id);
+            _actionStatus = error ?? $"{asset.Alias} approved (this version, scope {P.Scope(asset)}).";
+            if (error is null) await ReloadAsync(null);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DeprecateAsync(TestDataAssetSummary asset)
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var error = await _api.DeprecateAsync(asset.Id);
+            _actionStatus = error ?? $"{asset.Alias} deprecated: kept for history and existing references, no longer offered for new usage.";
+            if (error is null) await ReloadAsync(null);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task FindMatchesAsync(ConsumerTestDataRequirement requirement)
+    {
+        if (_matchesFor == requirement.Id) { _matchesFor = null; _matches = null; return; }
+        _matchesFor = requirement.Id; _confirmed = null;
+        // The shared deterministic matcher over the catalog on screen: side-effect free, nothing is bound.
+        _matches = TestDataCatalogRules.Match(requirement, _catalog?.Assets ?? []);
+        await Task.CompletedTask;
+    }
+
+    private async Task BindAsync(ConsumerTestDataRequirement requirement, TestDataMatch match)
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var (_, error) = await _api.BindAsync(new TestDataUsageReference { AssetId = match.AssetId, Consumer = requirement.Consumer, Usage = requirement.Usage, RequirementId = requirement.Id });
+            _actionStatus = error ?? $"{match.Alias} bound to {P.Consumer(requirement.Consumer)} ({requirement.Usage}). The consumer maps it to its own inputs.";
+            if (error is null) { _matchesFor = null; await ReloadAsync(null); }
+        }
+        finally { _busy = false; }
+    }
+
+    // ── Deep-link requirement from a consumer ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private ConsumerTestDataRequirement? DeepLinkRequirement => RequestedType is { } type && Consumer is { Length: > 0 } consumer ? new()
+    {
+        Consumer = new TestDataConsumer { ConsumerType = ConsumerType is { Length: > 0 } ct ? ct : "Consumer", ConsumerId = consumer, DisplayName = ConsumerLabel },
+        EnvironmentId = RequestEnvironment is { Length: > 0 } env ? env : null,
+        Usage = In switch { "body" => "Request body", "path" => "Path parameter", "query" => "Query parameter", "variable" => "Variable", { Length: > 0 } other => other, _ => "Unspecified" },
+        RequestedDataType = type, SchemaRef = Schema is { Length: > 0 } s ? s : null,
+        RequestedFields = Variable is { Length: > 0 } v && In != "body" ? [v] : [],
+        Description = Operation,
+    } : null;
+
+    private async Task<ConsumerTestDataRequirement?> RegisterDeepLinkAsync()
+    {
+        if (_api is null || DeepLinkRequirement is not { } requirement) return null;
+        var (stored, error) = await _api.AddRequirementAsync(requirement);
+        _requestStatus = error;
+        return stored;
+    }
+
+    private async Task RegisterRequestAsync()
+    {
+        _busy = true;
+        try
+        {
+            if (await RegisterDeepLinkAsync() is { } stored) { _requestStatus = $"Added to requested Test Data for {P.Consumer(stored.Consumer)}."; await ReloadAsync(null); }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task BindRequestAsync(TestDataMatch match)
+    {
+        _busy = true;
+        try
+        {
+            if (await RegisterDeepLinkAsync() is not { } stored || _api is null) return;
+            var (_, error) = await _api.BindAsync(new TestDataUsageReference { AssetId = match.AssetId, Consumer = stored.Consumer, Usage = stored.Usage, RequirementId = stored.Id });
+            _requestStatus = error ?? $"{match.Alias} bound to this requirement. Map it to your inputs in {ConsumerLabel}.";
+            await ReloadAsync(null);
+        }
+        finally { _busy = false; }
     }
 
     private static string Slug(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());

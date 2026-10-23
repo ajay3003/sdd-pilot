@@ -123,6 +123,27 @@ public sealed record TestDataAssetSummary
     public TestDataSchemaReference? Schema { get; init; }
     /// <summary>Shared-validator result for <see cref="Schema"/>; null until checked or when no schema is declared.</summary>
     public TestDataSchemaCheck? SchemaCheck { get; init; }
+
+    // ── Catalog facts (set by the catalog view; null in summaries built before them) ─────────────────────────────────────────────
+    /// <summary>The asset-level data type (JSON payload, simple values, XML payload, file fixture, expected result).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataDataType? DataType { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataAssetStatus? Status { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataContractStatus? ContractStatus { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ContractNote { get; init; }
+    /// <summary>A contract/schema reference for non-XSD assets (OpenAPI schema, GraphQL input type, data model entity …).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SchemaRef { get; init; }
+    /// <summary>Safe structure: field / parameter names (and types), never values.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Fields { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? Tags { get; init; }
+    /// <summary>How many consumers reference the asset (explicit usage references).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int Consumers { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ApprovedAt { get; init; }
+    /// <summary>The fingerprint the approval was given for; a different current fingerprint means the asset changed after approval.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ApprovedFingerprint { get; init; }
+    /// <summary>The source candidate this asset was registered from (lineage), when it was.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CandidateId { get; init; }
+    /// <summary>The asset can be approved or deprecated in Test Data (its source does not own approval exclusively).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Reviewable { get; init; }
 }
 
 public sealed record TestDataRoleBinding(string Role, string AssetAlias);

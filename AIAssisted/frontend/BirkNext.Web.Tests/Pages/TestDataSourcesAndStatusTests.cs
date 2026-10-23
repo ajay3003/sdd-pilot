@@ -75,11 +75,11 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
         var page = Page(new([], [], [Configured, Local, Studio]));
         var empty = page.Find("[data-testid=td-empty]");
         empty.GetAttribute("data-kind").Should().Be("NoSources");
-        empty.QuerySelector("h2")!.TextContent.Should().Be("No test data available yet");
-        empty.TextContent.Should().Contain("Possible sources: Configured catalog, Local approved configuration, Schema Studio")
-            .And.Contain("register as reusable Test Data").And.Contain("never generates").And.NotContain("Schema Studio Test Data catalog");
+        empty.QuerySelector("h2")!.TextContent.Should().Be("No reusable Test Data assets yet");
+        empty.TextContent.Should().Contain("register a reviewed source candidate").And.Contain("configure the catalog").And.Contain("Schema Studio fixture");
+        page.Find("[data-testid=td-safety]").TextContent.Should().Contain("never generates");
+        page.Find("[data-testid=td-empty-candidates]").ClassList.Should().Contain("btn-primary", "the first route is reviewing source candidates — Schema Studio is not the only one");
         page.Find("[data-testid=td-empty-configure]").GetAttribute("href").Should().Be("user-guide#test-data");
-        page.Find("[data-testid=td-empty-configure]").ClassList.Should().Contain("btn-primary");
         page.Find("[data-testid=td-empty-schema-studio]").GetAttribute("href").Should().Be("schema-studio");
         page.FindAll("[data-testid=td-filters]").Should().BeEmpty("filters are useless without assets");
         page.FindAll("[data-testid=td-assets]").Should().BeEmpty();
@@ -91,7 +91,7 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     {
         var page = Page(new([], [], [Configured with { Status = TestDataSourceStatus.Empty, StatusLabel = "Configured catalog · 0 assets" }, Local]));
         page.Find("[data-testid=td-empty]").GetAttribute("data-kind").Should().Be("ConfiguredButEmpty");
-        page.Find("[data-testid=td-empty] h2").TextContent.Should().Be("Configured sources contain no assets yet");
+        page.Find("[data-testid=td-empty] p").TextContent.Should().Be("A source is configured, but it currently supplies no assets.");
         page.FindAll("[data-testid=td-empty-schema-studio]").Should().BeEmpty("no Schema Studio source, so no Schema Studio action");
         page.Find("[data-testid=td-source][data-source=configured] [data-testid=td-source-status]").TextContent.Should().Contain("Configured catalog · 0 assets");
     }
@@ -141,10 +141,11 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     [InlineData("no-record", "Approved", "Not verified", "Expected result")]
     public void ApprovalValidationAndIntent_AreThreeIndependentColumns(string alias, string approval, string validation, string intent)
     {
-        var row = Rows(Page(Populated()))[alias];
-        row.QuerySelector("[data-testid=td-approval]")!.TextContent.Should().Be(approval);
-        row.QuerySelector("[data-testid=td-validation]")!.TextContent.Should().Be(validation);
-        row.QuerySelector("[data-testid=td-intent]")!.TextContent.Should().Be(intent);
+        // Approval, validation and intent stay three separate facts, in the asset's detail; the row leads with the lifecycle status.
+        var detail = Rows(Page(Populated()))[alias].NextElementSibling!;
+        detail.QuerySelector("[data-testid=td-approval]")!.TextContent.Should().Be(approval);
+        detail.QuerySelector("[data-testid=td-validation]")!.TextContent.Should().Be(validation);
+        detail.QuerySelector("[data-testid=td-intent]")!.TextContent.Should().Be(intent);
     }
 
     [Fact]
@@ -152,9 +153,10 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     {
         var page = Page(Populated());
         var row = Rows(page)["missing-startdato"];
-        row.QuerySelector("[data-testid=td-validation]")!.ClassList.Should().Contain("td-pill-neutral", "invalid is what a negative fixture is for");
-        row.QuerySelector("[data-testid=td-approval]")!.ClassList.Should().Contain("td-pill-ready");
         var detail = row.NextElementSibling!;
+        detail.QuerySelector("[data-testid=td-validation]")!.ClassList.Should().Contain("td-pill-neutral", "invalid is what a negative fixture is for");
+        detail.QuerySelector("[data-testid=td-approval]")!.ClassList.Should().Contain("td-pill-ready");
+        row.QuerySelector("[data-testid=td-status]")!.TextContent.Should().Be("Approved");
         detail.QuerySelector("[data-testid=td-intent-detail]")!.TextContent.Should().Contain("deliberately invalid");
         detail.QuerySelector("[data-testid=td-schema-detail]")!.TextContent.Should().Contain("StartDato");
         detail.TextContent.Should().Contain("revalidation never changes approval");
@@ -164,26 +166,26 @@ public sealed class TestDataSourcesAndStatusTests : BunitContext
     // ── Filters ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Filters_ByApprovalValidationIntentEnvironmentAndSource_WithClearAndAnEmptyResult()
+    public void Filters_ByStatusScopeSourceTypeAndSearch_WithClearAndAnEmptyResult()
     {
         var page = Page(Populated());
         page.Find("[data-testid=td-count]").TextContent.Should().Be("(5 of 5)");
-        page.Find("[data-testid=td-filter-approval]").Change(nameof(TestDataApproval.Unapproved));
+        page.Find("[data-testid=td-filter-status]").Change(nameof(TestDataAssetStatus.Draft));
         Rows(page).Keys.Should().Equal("draft-report");
         page.Find("[data-testid=td-count]").TextContent.Should().Be("(1 of 5)");
         page.Find("[data-testid=td-clear-filters]").Click();
-        page.Find("[data-testid=td-filter-validation]").Change("Invalid");
-        Rows(page).Keys.Should().Equal("missing-startdato");
-        page.Find("[data-testid=td-filter-validation]").Change("");
-        page.Find("[data-testid=td-filter-intent]").Change("Negative test");
-        Rows(page).Keys.Should().BeEquivalentTo(["missing-startdato", "orphan-report"]);
-        page.Find("[data-testid=td-filter-environment]").Change("QA");
+        page.Find("[data-testid=td-search]").Input("orphan");
+        Rows(page).Keys.Should().Equal("orphan-report");
+        page.Find("[data-testid=td-clear-filters]").Click();
+        page.Find("[data-testid=td-filter-scope]").Change("QA");
+        Rows(page).Keys.Should().Equal("no-record");
+        page.Find("[data-testid=td-filter-source]").Change("Schema Studio");
         page.Find("[data-testid=td-no-match]").TextContent.Should().Contain("No test data matches the selected filters");
         page.Find("[data-testid=td-clear-filters]").Click();
         page.Find("[data-testid=td-filter-source]").Change("Schema Studio");
         Rows(page).Should().HaveCount(3);
-        page.Find("[data-testid=td-filter-kind]").Change(nameof(TestDataKind.ExpectedResult));
-        page.FindAll("[data-testid=td-asset]").Should().BeEmpty();
+        page.Find("[data-testid=td-filter-type]").Change(nameof(TestDataDataType.XmlPayload));
+        Rows(page).Should().HaveCount(3);
     }
 
     // ── Provenance ────────────────────────────────────────────────────────────────────────────────────────────────────────

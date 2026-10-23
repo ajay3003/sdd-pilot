@@ -46,6 +46,16 @@ public sealed record TestDataAsset
     public TestDataValue? Value { get; init; }
     /// <summary>For an XML asset: the XSD it is validated against through the shared XSD capability.</summary>
     public TestDataSchemaReference? Schema { get; init; }
+    /// <summary>Safe structure (field / parameter names and types), never values.</summary>
+    public List<string> Fields { get; init; } = [];
+    public List<string> Tags { get; init; } = [];
+    /// <summary>A non-XSD contract reference (OpenAPI schema, GraphQL type, data model entity).</summary>
+    public string? SchemaRef { get; init; }
+    public string? CandidateId { get; init; }
+    /// <summary>Came from a candidate review (or changed): an unapproved asset is then "Needs review" rather than "Draft".</summary>
+    public bool ReviewRequested { get; init; }
+    /// <summary>Deprecated in Test Data: kept for history and existing references, never offered for new usage by default.</summary>
+    public bool Deprecated { get; init; }
 }
 
 /// <summary>A data set: role → asset alias bindings chosen together for one purpose.</summary>

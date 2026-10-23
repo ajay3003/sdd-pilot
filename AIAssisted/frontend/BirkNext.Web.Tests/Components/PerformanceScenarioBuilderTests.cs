@@ -193,6 +193,6 @@ public sealed class PerformanceScenarioBuilderTests : BunitContext
         cut.Find("[data-testid=td-request-operation]").TextContent.Should().Be("GET /api/person/{personId}");
         cut.Find("[data-testid=td-request-type]").TextContent.Should().Be("Simple values / parameters");
         cut.FindAll("[data-testid=td-request-match]").Select(m => m.TextContent).Should().ContainSingle(m => m.StartsWith("person-id-baseline"));
-        cut.Find("[data-testid=td-request-matches]").TextContent.Should().Contain("nothing is bound from here");
+        cut.Find("[data-testid=td-request]").TextContent.Should().Contain("nothing is bound from here");
     }
 }

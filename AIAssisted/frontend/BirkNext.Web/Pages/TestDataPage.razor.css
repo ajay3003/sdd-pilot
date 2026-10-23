@@ -81,3 +81,22 @@
 
 /* The sensitive-value note is a quiet note, not a banner. */
 .td-safety-compact { background: none; border: 0; padding: 0; margin: 0; color: #475467; font-size: .84rem; }
+/* Overview, requested Test Data, matches, structure and usages. Statuses are words; colour only supports them. */
+.td-overview-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .4rem .75rem; margin: 0; }
+.td-overview-list > div { border: 1px solid var(--clr-border, #ddd); border-radius: 6px; padding: .35rem .55rem; min-width: 0; }
+.td-overview-list dt { font-size: .75rem; color: var(--clr-text-subtle, #64748b); }
+.td-overview-list dd { margin: 0; font-weight: 700; font-size: 1.05rem; }
+.td-requirements, .td-matches, .td-usages { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .45rem; }
+.td-requirement { border: 1px solid var(--clr-border, #ddd); border-radius: 6px; padding: .5rem .65rem; min-width: 0; overflow-wrap: anywhere; }
+.td-requirement-head { display: flex; flex-wrap: wrap; gap: .35rem .6rem; align-items: center; }
+.td-matches li, .td-usages li { overflow-wrap: anywhere; }
+.td-structure { margin: .25rem 0; padding-left: 1.1rem; columns: 2 16rem; font-size: .82rem; }
+::deep .td-candidate-review { display: grid; gap: .4rem; }
+::deep .td-structure { margin: .25rem 0; padding-left: 1.1rem; columns: 2 16rem; font-size: .82rem; }
+::deep .td-register-form { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-end; }
+::deep .td-register-form label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; font-weight: 600; min-width: 0; }
+
+/* Consumer-supplied facts (schema paths, operations) can be long unbroken strings: wrap them instead of widening the page. */
+.td-request-facts dd { overflow-wrap: anywhere; min-width: 0; }
+/* Link buttons in the candidates table need the darker primary for AA contrast on the table background. */
+::deep [data-testid=td-candidates-panel] .btn-link { color: var(--clr-primary-hover, #1d4ed8); }

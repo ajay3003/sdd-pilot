@@ -2,9 +2,10 @@
 @using BirkNext.TestData
 @using BirkNext.Web.Services
 
-@* Structural Test Data candidates of one Source Analysis snapshot the reader chooses (never the newest automatically), proposed from shared
-   contract and data model evidence. A candidate carries structure, rules and an expected outcome — never values for identities, never secrets —
-   and is never approved, stored or used by listing it here. *@
+@* Test Data candidates of one Source Analysis snapshot the reader chooses (never the newest automatically), proposed from shared contract and
+   data model evidence: contract structures, operation requirements (OpenAPI bodies and parameters, GraphQL inputs, variables and result types),
+   enum reference data and data model entities. Each says why it was proposed. A candidate carries structure — never values for identities,
+   never secrets — and is never approved: Review → Register as reusable Test Data (Draft / Needs review) → Approve, each step explicit. *@
 <div class="sd-source-contracts" data-testid="td-candidates-panel">
     @if (_error is { } error) { <p class="sd-muted" role="status" data-testid="td-candidates-error">@error</p> }
     else if (_snapshots is null) { <p class="sd-muted" role="status">Loading Source Analysis snapshots…</p> }
@@ -21,21 +22,57 @@
     @if (_loadingCandidates) { <p class="sd-muted" role="status">Loading candidates…</p> }
     else if (_candidates is { } candidates)
     {
-        <p class="sd-muted" data-testid="td-candidates-note">@candidates.Count candidate(s) — structure and rules only. A candidate is never approved automatically and is not used by any test until it is approved in the catalog. Identity fields are controlled references and are never generated.</p>
-        @if (candidates.Count > 0)
+        var shown = candidates.Where(c => !_dismissed.Contains(c.Id)).ToList();
+        <p class="sd-muted" data-testid="td-candidates-note">@candidates.Count candidate(s) — structure only. A candidate is never approved automatically: review it, register it as reusable Test Data, then approve it explicitly. Identity fields are controlled references and are never generated.@(_dismissed.Count > 0 ? $" {_dismissed.Count} dismissed in this session." : "")</p>
+        @if (_status is { } status) { <p class="sd-muted" role="status" data-testid="td-candidates-status">@status</p> }
+        @if (shown.Count > 0)
         {
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Test data candidates"><table data-testid="td-candidates-table">
-                <thead><tr><th scope="col">Candidate</th><th scope="col">Origin</th><th scope="col">Intent</th><th scope="col">Expected outcome</th><th scope="col">State</th></tr></thead>
+                <thead><tr><th scope="col">Candidate</th><th scope="col">Why proposed</th><th scope="col">Suggested data type</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                 <tbody>
-                    @foreach (var c in candidates)
+                    @foreach (var c in shown)
                     {
-                        <tr data-testid="td-candidate" data-origin="@c.Origin" data-intent="@c.Intent">
-                            <td data-label="Candidate"><span class="sd-provenance">@c.Label</span><br /><span class="sd-context">@c.DerivedFrom · @c.Structure.Count field(s) · @c.Rules.Count rule(s)</span></td>
-                            <td data-label="Origin">@(c.Origin == TestDataCandidateOrigin.ContractEvidence ? "Contract evidence" : c.Origin == TestDataCandidateOrigin.DataModelEvidence ? "Data model evidence" : c.Origin.ToString())</td>
-                            <td data-label="Intent">@c.Intent</td>
-                            <td data-label="Expected outcome">@(c.ExpectedOutcome ?? "Not stated")</td>
-                            <td data-label="State"><span class="sd-pill sd-pill-muted" data-testid="td-candidate-state">Candidate — not approved</span></td>
+                        var candidate = c;
+                        var reviewing = _reviewing == c.Id;
+                        <tr data-testid="td-candidate" data-origin="@c.Origin" data-intent="@c.Intent" data-candidate="@c.Id">
+                            <td data-label="Candidate"><span class="sd-provenance">@c.Label</span><br /><span class="sd-context">@c.DerivedFrom · @c.Structure.Count field(s) · @c.Intent</span></td>
+                            <td data-label="Why proposed" data-testid="td-candidate-reason">@(c.Reason.Length > 0 ? c.Reason : "Proposed from source evidence.")@if (c.Intent == TestDataIntent.Negative) { <br /><span class="sd-context">Negative case — a rejection is the expected, passing outcome.</span> }</td>
+                            <td data-label="Suggested data type" data-testid="td-candidate-type">@TestDataDataTypes.Label(c.DataType)</td>
+                            <td data-label="Status"><span class="sd-pill sd-pill-muted" data-testid="td-candidate-state">@c.Status</span></td>
+                            <td data-label="Actions">
+                                @if (c.ExistingAssetId is null)
+                                {
+                                    <button type="button" class="btn-secondary btn-small" data-testid="td-candidate-review" aria-expanded="@(reviewing ? "true" : "false")" @onclick="() => Review(candidate)">@(reviewing ? "Close review" : "Review")</button>
+                                    <button type="button" class="btn-link" data-testid="td-candidate-dismiss" @onclick="() => _dismissed.Add(candidate.Id)">Dismiss</button>
+                                }
+                            </td>
                         </tr>
+                        @if (reviewing)
+                        {
+                            <tr data-testid="td-candidate-review-row"><td colspan="5">
+                                <div class="td-candidate-review">
+                                    <p class="sd-muted">Structure (field and parameter names only):</p>
+                                    <ul class="td-structure" data-testid="td-candidate-structure">@foreach (var field in c.Structure.Take(40)) { <li class="td-mono">@field</li> }</ul>
+                                    @if (c.Structure.Count > 40) { <p class="sd-muted">…and @(c.Structure.Count - 40) more</p> }
+                                    <div class="td-register-form">
+                                        <label>Alias <input data-testid="td-register-alias" @bind="_alias" @bind:event="oninput" aria-describedby="td-register-help" /></label>
+                                        <label>Data type
+                                            <select data-testid="td-register-type" value="@_type" @onchange="TypeChanged">
+                                                @foreach (var type in Enum.GetValues<TestDataDataType>()) { <option value="@type">@TestDataDataTypes.Label(type)</option> }
+                                            </select>
+                                        </label>
+                                        <label>Scope
+                                            <select data-testid="td-register-scope" value="@_scope" @onchange="ScopeChanged">
+                                                <option value="">Shared (any environment)</option>
+                                                @foreach (var scope in Scopes) { <option value="@scope.Id">@scope.Label</option> }
+                                            </select>
+                                        </label>
+                                        <button type="button" class="btn-primary btn-small" data-testid="td-register" disabled="@(_busy || _alias.Trim().Length == 0)" @onclick="() => RegisterAsync(candidate)">Register as reusable Test Data</button>
+                                    </div>
+                                    <p class="sd-muted" id="td-register-help">Registered assets start as Needs review with this provenance; approve them explicitly in the catalog. No value is generated.</p>
+                                </div>
+                            </td></tr>
+                        }
                     }
                 </tbody>
             </table></div>
@@ -45,11 +82,16 @@
 </div>
 @code {
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
+    /// <summary>Environment scopes the reader can register for (Target Environment ids and names). Shared is always offered.</summary>
+    [Parameter] public IReadOnlyList<(string Id, string Label)> Scopes { get; set; } = [];
+    [Parameter] public EventCallback<string> OnRegistered { get; set; }
     private IReadOnlyList<IqrSourceSnapshot>? _snapshots;
     private IReadOnlyList<TestDataCandidate>? _candidates;
-    private string _selected = "";
-    private string? _error;
-    private bool _loadingCandidates;
+    private readonly HashSet<string> _dismissed = [];
+    private string _selected = "", _alias = "", _scope = "";
+    private string? _reviewing, _error, _status;
+    private TestDataDataType _type;
+    private bool _loadingCandidates, _busy;
 
     protected override async Task OnInitializedAsync()
     {
@@ -67,10 +109,41 @@
     private async Task SelectAsync(ChangeEventArgs e)
     {
         _selected = e.Value?.ToString() ?? string.Empty;
-        _candidates = null;
+        _candidates = null; _reviewing = null; _status = null;
         if (!Guid.TryParse(_selected, out var id) || Api() is not { } testData) return;
         _loadingCandidates = true;
         try { _candidates = await testData.CandidatesAsync(id); }
         finally { _loadingCandidates = false; }
+    }
+
+    private void Review(TestDataCandidate candidate)
+    {
+        if (_reviewing == candidate.Id) { _reviewing = null; return; }
+        _reviewing = candidate.Id;
+        _alias = TestDataPresentation.SuggestAlias(candidate.Label);
+        _type = candidate.DataType;
+        _scope = "";
+    }
+
+    private void TypeChanged(ChangeEventArgs e) => _type = Enum.TryParse<TestDataDataType>(e.Value?.ToString(), out var t) ? t : _type;
+    private void ScopeChanged(ChangeEventArgs e) => _scope = e.Value?.ToString() ?? "";
+
+    private async Task RegisterAsync(TestDataCandidate candidate)
+    {
+        if (!Guid.TryParse(_selected, out var snapshot) || Api() is not { } testData) return;
+        _busy = true;
+        try
+        {
+            var (assetId, error) = await testData.RegisterAsync(new TestDataRegistrationRequest
+            {
+                Alias = _alias.Trim(), Label = candidate.Label, DataType = _type, EnvironmentId = _scope.Length == 0 ? null : _scope, SnapshotId = snapshot, CandidateId = candidate.Id,
+            });
+            if (error is not null) { _status = error; return; }
+            _status = $"{_alias.Trim()} registered (Needs review). Approve it in the catalog before consumers use it.";
+            _reviewing = null;
+            _candidates = await testData.CandidatesAsync(snapshot);
+            await OnRegistered.InvokeAsync(assetId);
+        }
+        finally { _busy = false; }
     }
 }

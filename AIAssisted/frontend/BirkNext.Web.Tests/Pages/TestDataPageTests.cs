@@ -58,10 +58,13 @@ public sealed class TestDataPageTests : BunitContext
         // Value and type are detail facts: each asset's detail row follows its summary row.
         var details = rows.ToDictionary(row => row.Key, row => row.Value.NextElementSibling!);
         details["period-lock-day"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("10");
-        details["period-lock-day"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("Integer");
-        details["normal-report"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("application/xml");
-        rows["expected-record"].QuerySelector("[data-testid=td-kind]")!.TextContent.Should().Be("Expected result");
-        rows["reporter-a"].QuerySelector("[data-testid=td-kind]")!.TextContent.Should().Be("Entity reference");
+        details["period-lock-day"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("Simple values / parameters · Integer");
+        details["normal-report"].QuerySelector("[data-testid=td-type]")!.TextContent.Should().Be("XML payload · application/xml");
+        rows["expected-record"].QuerySelector("[data-testid=td-data-type]")!.TextContent.Should().Be("Expected result / reference data");
+        rows["reporter-a"].QuerySelector("[data-testid=td-data-type]")!.TextContent.Should().Be("Simple values / parameters");
+        rows["reporter-a"].QuerySelector("[data-testid=td-status]")!.TextContent.Should().Be("Approved");
+        rows["normal-report"].QuerySelector("[data-testid=td-scope]")!.TextContent.Should().Be("TT02");
+        rows["expected-record"].QuerySelector("[data-testid=td-scope]")!.TextContent.Should().Be("Shared");
         details["reporter-a"].QuerySelector("[data-testid=td-value]")!.TextContent.Should().Be("Available securely");
         page.Markup.Should().NotContain(RawIdentifier);
         page.FindAll("[data-testid=td-set]").Should().ContainSingle().Which.TextContent.Should().Contain("Reporter").And.Contain("reporter-a");
@@ -84,18 +87,20 @@ public sealed class TestDataPageTests : BunitContext
     }
 
     [Fact]
-    public void Filters_NarrowByKind()
+    public void Filters_NarrowByDataType()
     {
         var page = Render<TestDataPage>();
-        page.Find("[data-testid=td-filter-kind]").Change(nameof(TestDataKind.EntityReference));
-        page.FindAll("[data-testid=td-asset]").Select(row => row.GetAttribute("data-alias")).Should().Equal("reporter-a");
+        page.Find("[data-testid=td-filter-type]").Change(nameof(TestDataDataType.ExpectedResult));
+        page.FindAll("[data-testid=td-asset]").Select(row => row.GetAttribute("data-alias")).Should().Equal("expected-record");
     }
 
     [Fact]
     public void EmptyLoadingAndErrorStates_AreExplicit()
     {
         _api.Catalog = new([], [], [new("configured", "Configured catalog", "Declared in configuration.", 0, 0)]);
-        Render<TestDataPage>().Find("[data-testid=td-empty]").TextContent.Should().Contain("never generates");
+        var empty = Render<TestDataPage>();
+        empty.Find("[data-testid=td-empty]").TextContent.Should().Contain("No reusable Test Data assets yet");
+        empty.Find("[data-testid=td-safety]").TextContent.Should().Contain("never generates");
 
         _api.Hold = true;
         var loading = Render<TestDataPage>();

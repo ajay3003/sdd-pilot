@@ -129,8 +129,12 @@ public sealed class TestDataSchemaValidationTests
         (await source.FindAsync(new("schemas/report.xsd", SnapshotId), default)).Should().BeNull("the exact snapshot does not retain that path; no other snapshot is substituted");
         (await source.FindAsync(new("schemas/report.xsd"), default))!.SnapshotId.Should().Be(older, "the newest snapshot that contains the path");
 
-        var service = new TestDataSchemaValidationService(new TestDataCatalog([new StaticProvider(Xml("valid-report", Valid, schema: new("schemas/report.xsd")))]), source);
-        var view = await new TestDataController(service).Catalog(default);
+        var catalog = new TestDataCatalog([new StaticProvider(Xml("valid-report", Valid, schema: new("schemas/report.xsd")))]);
+        var service = new TestDataSchemaValidationService(catalog, source);
+        var registry = new TestDataRegistryStore(Path.Combine(Path.GetTempPath(), "td-registry-" + Guid.NewGuid().ToString("N")), Microsoft.Extensions.Logging.Abstractions.NullLogger<TestDataRegistryStore>.Instance);
+        var provider = new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(new IqrSourceStore(db));
+        var catalogService = new TestDataCatalogService(service, catalog, registry, new TestDataCandidateService(provider, registry), provider, TimeProvider.System);
+        var view = await new TestDataController(service, catalogService).Catalog(default);
         var summary = ((Microsoft.AspNetCore.Mvc.OkObjectResult)view.Result!).Value.Should().BeOfType<TestDataCatalogView>().Which.Assets.Single();
         summary.SchemaCheck!.Status.Should().Be(TestDataSchemaStatus.Validated);
         summary.SchemaCheck.SourceSnapshotId.Should().Be(older);

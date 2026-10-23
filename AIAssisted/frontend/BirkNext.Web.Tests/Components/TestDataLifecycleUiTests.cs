@@ -61,7 +61,7 @@ public sealed class TestDataLifecycleUiTests : BunitContext
 
         api.Requested.Should().Equal(Older);
         cut.FindAll("[data-testid=td-candidate]").Should().HaveCount(2);
-        cut.FindAll("[data-testid=td-candidate-state]").Should().OnlyContain(s => s.TextContent == "Candidate — not approved");
+        cut.FindAll("[data-testid=td-candidate-state]").Should().OnlyContain(s => s.TextContent == "Proposed from source evidence", "a candidate is never shown as approved");
         cut.Find("[data-testid=td-candidates-note]").TextContent.Should().Contain("never approved automatically").And.Contain("never generated");
         cut.Markup.Should().Contain("a rejection is the expected, passing outcome");
     }

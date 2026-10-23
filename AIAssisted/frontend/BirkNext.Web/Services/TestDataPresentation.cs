@@ -74,7 +74,8 @@ public static class TestDataPresentation
 
     /// <summary>A non-sensitive scalar shows its value; anything else only says whether a value is available — never the value.</summary>
     public static string ValueLabel(TestDataAssetSummary asset) =>
-        asset.DisplayValue is { } value ? value
+        // A sensitive asset's value is never shown, even if a summary carried one.
+        asset.DisplayValue is { } value && asset.Sensitivity != TestDataSensitivity.Sensitive ? value
         : asset.ExpectsAbsence ? "Nothing expected"
         : asset.Sensitivity == TestDataSensitivity.Sensitive ? (asset.ValueAvailable ? "Available securely" : "Not available")
         : asset.ValueAvailable ? "Available (see details)" : "Not available";
@@ -118,4 +119,53 @@ public static class TestDataPresentation
             : catalog.Sources.Any(source => source.Status == TestDataSourceStatus.Empty) ? EmptyKind.ConfiguredButEmpty : EmptyKind.NoSources;
 
     public static string? SourceAnalysisHref(Guid? snapshot) => snapshot is { } id ? $"source-analysis?snapshot={id:D}" : null;
+
+    // ── Catalog view (status, scope, data type, contract, consumers) ─────────────────────────────────────────────────────────────
+
+    public static TestDataAssetStatus Status(TestDataAssetSummary asset) => asset.Status ?? TestDataCatalogRules.Status(asset.Approval, false, null, null, false);
+
+    public static string StatusTone(TestDataAssetStatus status) => status switch
+    {
+        TestDataAssetStatus.Approved => "ready",
+        TestDataAssetStatus.Deprecated => "neutral",
+        _ => "attention",
+    };
+
+    public static string Scope(TestDataAssetSummary asset) => TestDataCatalogRules.ScopeLabel(asset.Environment);
+
+    public static TestDataDataType DataType(TestDataAssetSummary asset) => asset.DataType ?? TestDataDataTypes.Of(asset);
+
+    public static string ContractLabel(TestDataAssetSummary asset) => TestDataCatalogRules.Label(asset.ContractStatus ?? TestDataContractStatus.NotApplicable);
+
+    public static string ContractTone(TestDataAssetSummary asset) => asset.ContractStatus switch
+    {
+        TestDataContractStatus.Valid or TestDataContractStatus.Compatible => "ready",
+        TestDataContractStatus.NeedsReview or TestDataContractStatus.Invalid => "attention",
+        _ => "neutral",
+    };
+
+    /// <summary>"Skolenærvær Testing › Rapportmottak" — the consumer's own display hierarchy (Test Data keeps no list of consumers).</summary>
+    public static string Consumer(TestDataConsumer consumer) =>
+        string.IsNullOrWhiteSpace(consumer.Parent) ? consumer.DisplayName : $"{consumer.Parent} › {consumer.DisplayName}";
+
+    public static string UsedBy(int consumers) => consumers switch { 0 => "Not used", 1 => "Used by 1 consumer", _ => $"Used by {consumers} consumers" };
+
+    /// <summary>A proposed alias from a candidate label ("CreatePersonRequest request body" → "createpersonrequest-request-body"); the person edits it.</summary>
+    public static string SuggestAlias(string label)
+    {
+        var chars = label.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray();
+        var alias = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        return alias.Length > 64 ? alias[..64].TrimEnd('-') : alias.Length == 0 ? "asset" : alias;
+    }
+
+    /// <summary>Search: alias, label, data type, contract/schema, consumer names, field/parameter names, provenance labels — never values.</summary>
+    public static bool Matches(TestDataAssetSummary asset, string? query, IEnumerable<TestDataUsageReference> usages)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return true;
+        var q = query.Trim();
+        bool Has(string? text) => text?.Contains(q, StringComparison.OrdinalIgnoreCase) == true;
+        return Has(asset.Alias) || Has(asset.Label) || Has(TestDataDataTypes.Label(DataType(asset))) || Has(asset.SchemaRef) || Has(asset.Schema?.SchemaPath) || Has(asset.Source)
+            || (asset.Fields ?? []).Any(Has) || asset.Provenance.Any(f => Has(f.Label) || Has(f.Value) && f.Label is "Contract" or "Source" or "Registered as")
+            || usages.Where(u => u.AssetId == asset.Id).Any(u => Has(Consumer(u.Consumer)) || Has(u.Usage));
+    }
 }

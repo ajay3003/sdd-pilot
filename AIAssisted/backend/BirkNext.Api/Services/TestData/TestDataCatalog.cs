@@ -9,7 +9,7 @@ namespace BirkNext.Api.Services.TestData;
 /// an alias offered by more than one asset is disabled until it is unique, never picked arbitrarily. Summaries respect sensitivity — a
 /// sensitive value never leaves this class except through <see cref="Reveal"/>, which execution code uses transiently.
 /// </summary>
-public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, TimeProvider? clock = null)
+public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, TimeProvider? clock = null, TestDataRegistryStore? registry = null)
 {
     private const int PreviewLimit = 16 * 1024;
     private readonly IReadOnlyList<ITestDataProvider> _providers = [.. providers];
@@ -18,7 +18,31 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
     public IReadOnlyList<ITestDataProvider> Providers => _providers;
 
     /// <summary>Every asset, with an alias configured more than once disabled (no arbitrary pick).</summary>
-    public IReadOnlyList<TestDataAsset> Assets() => Unique([.. _providers.SelectMany(provider => provider.Assets().Select(asset => asset with { SourceId = provider.Id }))]);
+    public IReadOnlyList<TestDataAsset> Assets() => Unique([.. _providers.SelectMany(provider => provider.Assets().Select(asset => Overlay(asset with { SourceId = provider.Id })))]);
+
+    public TestDataRegistryStore? Registry => registry;
+
+    /// <summary>
+    /// Lifecycle decisions made in Test Data: an explicit approval applies to exactly the version it was given for (a changed asset is no
+    /// longer approved by it), and deprecation keeps the asset for history while it is no longer offered for new usage.
+    /// </summary>
+    private TestDataAsset Overlay(TestDataAsset asset)
+    {
+        if (registry?.Lifecycle(asset.Id) is not { } decision) return asset;
+        var approved = decision.ApprovedFingerprint is { } fingerprint && fingerprint == ApprovalFingerprint(asset);
+        return asset with
+        {
+            Approval = approved && asset.Approval == TestDataApproval.Unapproved ? TestDataApproval.Approved : asset.Approval,
+            ApprovalDetail = approved ? null : asset.ApprovalDetail,
+            ReviewRequested = asset.ReviewRequested || decision.ApprovedFingerprint is not null && !approved,
+            Deprecated = decision.Deprecated,
+        };
+    }
+
+    /// <summary>The version an approval is given for: the value's fingerprint when the backend holds one, else the asset's metadata and structure.</summary>
+    public static string ApprovalFingerprint(TestDataAsset asset) => TestDataCatalogRules.Fingerprint(asset.Value is { } value
+        ? value.Reveal()
+        : string.Join("|", asset.Alias, asset.Kind, asset.MediaType, asset.Environment, asset.Schema?.SchemaPath, asset.SchemaRef, string.Join(",", asset.Fields)));
 
     private static IReadOnlyList<TestDataAsset> Unique(List<TestDataAsset> all)
     {
@@ -49,7 +73,7 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
         {
             try
             {
-                var providerAssets = provider.Assets().Select(asset => asset with { SourceId = provider.Id }).ToList();
+                var providerAssets = provider.Assets().Select(asset => Overlay(asset with { SourceId = provider.Id })).ToList();
                 var providerSets = provider.Sets().ToList();
                 return (Provider: provider, Assets: providerAssets, Sets: providerSets, Configured: provider.Configured, Problem: (string?)null);
             }
@@ -109,6 +133,15 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
             Fingerprint = structured ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(asset.Value!.Reveal()))).ToLowerInvariant() : null,
             DisplayValue = asset.Kind == TestDataKind.Scalar && asset.Sensitivity != TestDataSensitivity.Sensitive ? asset.Value?.Reveal() : null,
             Schema = asset.Schema,
+            DataType = TestDataDataTypes.Of(asset.Kind, asset.MediaType),
+            Status = TestDataCatalogRules.Status(approval, asset.Deprecated, registry?.Lifecycle(asset.Id)?.ApprovedFingerprint, ApprovalFingerprint(asset), asset.ReviewRequested),
+            ApprovedAt = registry?.Lifecycle(asset.Id)?.ApprovedAt,
+            ApprovedFingerprint = registry?.Lifecycle(asset.Id)?.ApprovedFingerprint,
+            SchemaRef = asset.SchemaRef ?? asset.Schema?.SchemaPath,
+            Fields = asset.Fields.Count > 0 ? [.. asset.Fields] : null,
+            Tags = asset.Tags.Count > 0 ? [.. asset.Tags] : null,
+            CandidateId = asset.CandidateId,
+            Reviewable = true,
         };
     }
 }

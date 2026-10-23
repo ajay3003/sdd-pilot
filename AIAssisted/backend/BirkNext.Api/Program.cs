@@ -581,7 +581,11 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
     return scope.ServiceProvider.GetRequiredService<AppDbContext>().SavedWorkspaceArtifacts.AsNoTracking()
         .Where(artifact => artifact.ArtifactType == BirkNext.Api.Models.ArtifactType.SchemaStudioGeneratedXml).Select(artifact => artifact.Content).ToList();
 }));
-builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>()));
+// Test Data registry: registered asset metadata, lifecycle decisions, consumer requirements and usage references (workstation-local JSON, no values).
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataRegistryStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.RegisteredTestDataProvider(sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null, sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
+builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCatalogService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.ITestDataSchemaSource, BirkNext.Api.Services.TestData.SourceAnalysisTestDataSchemaSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataSchemaValidationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestData.TestDataCandidateService>();

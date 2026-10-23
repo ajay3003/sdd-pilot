@@ -46,7 +46,7 @@ public static class TestDataResolver
             var candidates = Candidates(assets, requirement, at);
             if (selections?.GetValueOrDefault(requirement.Role) is { Length: > 0 } selected)
             {
-                var pick = candidates.FirstOrDefault(asset => string.Equals(asset.Alias, selected, StringComparison.Ordinal));
+                var pick = Candidates(assets, requirement, at, allowDeprecated: true).FirstOrDefault(asset => string.Equals(asset.Alias, selected, StringComparison.Ordinal));
                 if (pick is not null) chosen[requirement.Role] = pick;
                 roles.Add(pick is not null
                     ? new(requirement.Role, TestDataResolutionState.Selected, pick.Alias, [], "Chosen explicitly.", pick.Source, requirement.Optional)
@@ -72,12 +72,14 @@ public static class TestDataResolver
     }
 
     /// <summary>The assets that satisfy a requirement now, in alias order.</summary>
-    public static List<TestDataAsset> Candidates(IReadOnlyList<TestDataAsset> assets, TestDataRequirement requirement, DateTimeOffset now) =>
-        [.. assets.Where(asset => Exclusion(asset, requirement, now) is null).OrderBy(asset => asset.Alias, StringComparer.Ordinal)];
+    public static List<TestDataAsset> Candidates(IReadOnlyList<TestDataAsset> assets, TestDataRequirement requirement, DateTimeOffset now, bool allowDeprecated = false) =>
+        [.. assets.Where(asset => Exclusion(asset, requirement, now, allowDeprecated) is null).OrderBy(asset => asset.Alias, StringComparer.Ordinal)];
 
-    /// <summary>Why an asset does not satisfy a requirement, or null when it does.</summary>
-    public static string? Exclusion(TestDataAsset asset, TestDataRequirement requirement, DateTimeOffset now)
+    /// <summary>Why an asset does not satisfy a requirement, or null when it does. A deprecated asset is never chosen automatically; an
+    /// explicit existing choice of it still resolves (history is not broken), and the consumer shows the deprecation.</summary>
+    public static string? Exclusion(TestDataAsset asset, TestDataRequirement requirement, DateTimeOffset now, bool allowDeprecated = false)
     {
+        if (asset.Deprecated && !allowDeprecated) return "is deprecated (not offered for new usage)";
         if (asset.Kind != requirement.Kind) return $"is {asset.Kind}, not {requirement.Kind}";
         if (requirement.SourceIds.Count > 0 && !requirement.SourceIds.Contains(asset.SourceId, StringComparer.Ordinal)) return $"comes from source {asset.SourceId}, not {string.Join(" or ", requirement.SourceIds)}";
         if (requirement.ValueType is { } type && asset.ValueType != type) return $"is {asset.ValueType}, not {type}";
