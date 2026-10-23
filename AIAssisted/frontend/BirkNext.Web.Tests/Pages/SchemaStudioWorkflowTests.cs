@@ -139,12 +139,12 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     {
         ImportOrder(out _);
         var page = Render<SchemaStudio>();
-        var shell = page.Find("main").ClassName;
+        var shell = page.Find("[data-testid=ss-page]").ClassName;
 
         foreach (var view in SchemaStudioNavigation.AllViews)
         {
             OpenView(page, view);
-            Assert.Equal(shell, page.Find("main").ClassName);
+            Assert.Equal(shell, page.Find("[data-testid=ss-page]").ClassName);
             Assert.Single(page.FindAll("[data-testid=ss-workspace]"));
             Assert.Single(page.FindAll("[data-testid=ss-view-content]"));
         }
@@ -234,19 +234,22 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         var page = Render<SchemaStudio>();
         OpenView(page, "Generated Tests");
 
-        Assert.Contains($"Showing first {Math.Min(100, package.GeneratedTests.Count)} of {package.GeneratedTests.Count}", page.Find("[data-testid=ss-candidates-shown]").TextContent);
-        Assert.True(page.Find("[data-testid=ss-generated-tests]").QuerySelectorAll("tbody tr").Length <= 100);
+        // Grouped by rule family: totals equal the case count, and each group lists a bounded page of rows.
+        var groups = page.FindAll("[data-testid=ss-case-group]");
+        Assert.Equal(package.GeneratedTests.Count, groups.Sum(g => int.Parse(g.GetAttribute("data-count")!)));
+        Assert.All(page.FindAll("[data-testid=ss-generated-tests]"), table => Assert.True(table.QuerySelectorAll("tbody tr").Length <= 25));
+        Assert.Contains($"{package.GeneratedTests.Count} total candidates", page.Find("[data-testid=ss-candidates-total]").TextContent);
         Assert.Equal(package.GeneratedTests.Count.ToString(), page.Find("[data-testid=ss-test-count]").TextContent);
         Assert.Contains("do not test business logic", page.Find("[data-testid=ss-test-scope]").TextContent);
 
         page.Find("[data-testid=ss-run-tests]").Click();
         var results = page.Find("[data-testid=ss-test-results]");
-        Assert.Equal(["Path", "Expected", "Derived case", "Validator", "Result", "Diagnostic"], results.QuerySelectorAll("th").Select(th => th.TextContent));
+        Assert.Equal(["Path", "Rule category", "Derived case", "Expected", "Actual", "Result", "Diagnostic"], results.QuerySelectorAll("th").Select(th => th.TextContent));
         var summary = page.Find("[data-testid=ss-test-summary]").QuerySelectorAll("dt").Select(dt => dt.TextContent);
-        Assert.Equal(["Pass", "Fail", "Not evaluated"], summary);
-        var invalidRow = results.QuerySelectorAll("tbody tr").First(tr => tr.Children[1].TextContent == "Invalid");
-        Assert.Contains(invalidRow.Children[3].TextContent, new[] { "Accepted", "Rejected", "Not evaluated" });
-        Assert.DoesNotContain(results.QuerySelectorAll("tbody tr"), tr => tr.Children[3].TextContent is "Valid" or "Invalid");
+        Assert.Equal(["Cases run", "Pass", "Fail", "Not evaluated", "Generator defect candidates", "Mutation defects", "Additional violations", "Validator mismatches"], summary);
+        var invalidRow = results.QuerySelectorAll("tbody tr").First(tr => tr.Children[3].TextContent == "Invalid");
+        Assert.Contains(invalidRow.Children[4].TextContent, new[] { "Accepted", "Rejected", "Not evaluated" });
+        Assert.DoesNotContain(results.QuerySelectorAll("tbody tr"), tr => tr.Children[4].TextContent is "Valid" or "Invalid");
     }
 
     [Fact]

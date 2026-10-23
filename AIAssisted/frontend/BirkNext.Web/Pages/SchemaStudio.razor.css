@@ -219,3 +219,33 @@ small.ss-tech-term.ss-inline, .ss-inline .ss-tech-term { display: inline; }
 .ss-effective-options { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem; margin: .4rem 0 .6rem; font-size: .85rem; }
 .ss-overview-primary-ns { display: block; }
 .ss-profile-summary { display: grid; gap: .6rem; min-width: 0; }
+
+/* Validate & Test: coverage, generation profile, run controls, grouped cases, self-validated generation and caller context. */
+.ss-coverage, .ss-gen-profile, .ss-run, .ss-generation, .ss-caller { padding: .75rem 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); margin: .75rem 0; }
+.ss-coverage h4, .ss-gen-profile h4, .ss-generation h5 { margin: 0 0 .4rem; }
+.ss-run { display: grid; gap: .5rem; }
+.ss-run legend { font-weight: 600; padding: 0 .25rem; }
+.ss-family-checks { display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
+.ss-family-checks label { display: inline-flex; gap: .35rem; align-items: center; }
+.ss-filters { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: flex-end; margin: .5rem 0; }
+.ss-filters .ss-field { min-width: 0; flex: 1 1 12rem; }
+.ss-filters input, .ss-filters select { width: 100%; }
+.ss-case-group, .ss-failure-group { border: 1px solid var(--clr-border); border-radius: var(--radius-md); margin: .4rem 0; padding: .35rem .75rem; background: var(--clr-surface); }
+.ss-case-group > summary, .ss-failure-group > summary { cursor: pointer; padding: .25rem 0; overflow-wrap: anywhere; }
+.ss-case-group[open] > summary { margin-bottom: .4rem; }
+.ss-generation-schemavalid { border-left: 4px solid var(--clr-success-border, #2e7d32); }
+.ss-generation-failedvalidation, .ss-generation-blocked { border-left: 4px solid var(--clr-danger, #9b1c1c); }
+.ss-notice { padding: .5rem .75rem; border-left: 4px solid var(--clr-info-border, #2563eb); background: var(--clr-info-bg, #eff6ff); border-radius: var(--radius-md); }
+.ss-caller { border-left: 4px solid var(--clr-info-border, #2563eb); }
+.ss-caller p { margin: 0 0 .35rem; }
+.ss-issues { margin: .4rem 0 0; padding-left: 1.25rem; overflow-wrap: anywhere; }
+.ss-generation ul, .ss-failure-group ul { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.ss-generation code, .ss-caller code, .ss-facts dd { overflow-wrap: anywhere; }
+/* Saved XML rows and the registration form wrap at narrow widths: long names and option texts never widen the page. */
+.ss-package > div { flex-basis: min(16rem, 100%); }
+.ss-package > div span, .ss-testdata { overflow-wrap: anywhere; }
+.ss-testdata-form, .ss-run { min-width: 0; min-inline-size: 0; max-width: 100%; }
+.ss-testdata-form { display: grid; gap: .5rem; }
+.ss-testdata-form label { display: grid; gap: .2rem; min-width: 0; }
+.ss-testdata-form select, .ss-testdata-form input { width: 100%; min-width: 0; }
+.ss-field select { max-width: 100%; }

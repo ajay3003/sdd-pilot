@@ -367,8 +367,11 @@ public sealed class SchemaStudioPageTests : BunitContext
         firstPage.Find("[data-testid=ss-xml-paste]").Click();
         var xmlInput = firstPage.Find("textarea[aria-label='XML instance to validate']");
         xmlInput.Change("<Root>synthetic value</Root>");
-        await firstPage.FindAll("button").Single(button => button.TextContent == "Save XML artifact").ClickAsync();
-        Assert.Contains("XML artifact saved", firstPage.Markup);
+        await firstPage.Find("[data-testid=ss-xml-save]").ClickAsync();
+        Assert.Equal("Save to workspace", firstPage.Find("[data-testid=ss-xml-save]").TextContent);
+        Assert.Contains("Saved to workspace with its schema", firstPage.Markup);
+        Assert.Contains("It is not registered as Test Data", firstPage.Markup);
+        Assert.Null(Assert.Single(store.Documents).TestData);
         Assert.Equal(1, store.Documents.Count);
         Assert.Equal("<Root>synthetic value</Root>", Assert.Single(store.Documents).Xml);
         Assert.Contains("synthetic value", repository.Get(WorkspaceArtifactType.SchemaStudioGeneratedXml)!.Text);

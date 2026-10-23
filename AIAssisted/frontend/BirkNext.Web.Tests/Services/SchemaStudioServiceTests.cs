@@ -362,8 +362,9 @@ public sealed class SchemaStudioServiceTests
     {
         var studio = new SchemaStudioService();
         var first = studio.Import(new Dictionary<string, string> { ["contract.xsd"] = Basic }, "contract.xsd");
-        var xml = SchemaStudioService.GenerateMinimumXml(first.Files[0]);
-        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(first, "contract.xsd", xml));
+        var generated = SchemaStudioService.GenerateMinimumValid(first, "contract.xsd");
+        Assert.Equal(SchemaGenerationState.SchemaValid, generated.State);
+        Assert.StartsWith("Valid against", SchemaStudioService.ValidateXml(first, "contract.xsd", generated.Xml));
         var second = studio.Import(new Dictionary<string, string> { ["contract.xsd"] = Basic.Replace("value=\"B\"", "value=\"C\"", StringComparison.Ordinal) }, "contract.xsd");
         Assert.NotEqual(first.Id, second.Id);
         Assert.Equal(2, studio.Packages.Count);

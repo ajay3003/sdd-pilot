@@ -217,10 +217,12 @@ public sealed class SchemaStudioReadableFirstTests : BunitContext
         var page = Render<SchemaStudio>();
         OpenView(page, "Generated Tests");
         var count = int.Parse(page.Find("[data-testid=ss-test-count]").TextContent);
-        page.Find("[data-testid=ss-run-tests]").TextContent.Should().Be(count > 100 ? "Run first 100 cases" : $"Run all {count} cases");
-        if (count > 100) page.Find("[data-testid=ss-run-scope]").TextContent.Should().Be($"100 of {count} cases per run");
-        var profile = page.Find("[data-testid=ss-tests-profile]").TextContent;
-        profile.Should().StartWith("Generated using:");
+        page.Find("[data-testid=ss-run-tests]").TextContent.Should().Be(count > 100 ? "Run representative 100" : $"Run all {count} cases", "never \"first 100\" by list order");
+        if (count > 100) page.Find("[data-testid=ss-run-scope]").TextContent.Should().StartWith($"100 of {count} cases selected across ");
+        page.Find("[data-testid=ss-tests-profile] h4").TextContent.Should().Be("Generation profile");
+        var profile = page.Find("[data-testid=ss-gen-profile-name]").TextContent;
+        page.Find("[data-testid=ss-gen-profile-source]").TextContent.Should().Be("Built-in");
+        page.Find("[data-testid=ss-gen-profile-version]").TextContent.Should().Contain(SchemaTestDesign.GeneratorVersion);
         page.Find("[data-testid=ss-validate-xml] h4").TextContent.Should().Be("Validate an XML document");
 
         page.Find("[data-testid=ss-tests-open-profile]").Click();

@@ -16,11 +16,32 @@
 @* One stable workspace shell for every view: the same max-width whatever the view shows. Wide tables, code and forms scroll inside their own
    regions (ss-table-wrap, ss-code-scroll), so no view can widen the page. Shared BirkNext styles throughout (buttons, status chips, empty states,
    disclosures, Export/More menu, sub-navigation); plain language first, exact XSD terms as secondary detail. *@
-<main class="ss-page" data-testid="ss-page">
+<div class="ss-page" data-testid="ss-page">
     <PageHeader Title="Schema Studio" Description="Explore, compare and test XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
     @if (_handoffRequested && _handoffFailed is { } failed)
     {
-        <div class="ss-error" role="alert" data-testid="ss-handoff-not-found"><strong>Artifact not found.</strong> @failed No other schema was opened.</div>
+        <div class="ss-error" role="alert" data-testid="ss-handoff-not-found"><strong>Requested contract not found in this snapshot.</strong> @failed No other schema was opened.
+            <div class="ss-actions">
+                <button type="button" class="btn-secondary" data-testid="ss-handoff-choose" @onclick="ChooseAnotherSchema">Choose another</button>
+                @if (ReturnHref is { } back) { <a class="btn-secondary" data-testid="ss-handoff-return" href="@back">Return to caller</a> }
+            </div>
+        </div>
+    }
+    @if (CallerLabel is { } caller && !_callerDismissed)
+    {
+        @* Who sent the reader here and for which exact contract. Context only: it never changes which schema is authoritative. *@
+        <aside class="ss-caller" aria-label="Caller context" data-testid="ss-caller-context">
+            <p><strong>@caller</strong></p>
+            <dl class="ss-facts">
+                @if (IntegrationParameter is { Length: > 0 } integration) { <div><dt>Integration</dt><dd data-testid="ss-caller-integration">@integration</dd></div> }
+                @if (ContractParameter is { Length: > 0 } requested) { <div><dt>Requested contract</dt><dd data-testid="ss-caller-contract"><code>@requested</code>@(SnapshotParameter is { Length: > 0 } requestedSnapshot ? $" · snapshot {requestedSnapshot}" : "")</dd></div> }
+            </dl>
+            @if (ConsumerParameter is { Length: > 0 }) { <p class="ss-muted">Generate or validate XML here, then register it as Test Data; the consumer still chooses and binds the asset in Test Data.</p> }
+            <div class="ss-actions">
+                @if (ReturnHref is { } back) { <a class="ss-text-button" data-testid="ss-caller-return" href="@back">Return to caller</a> }
+                <button type="button" class="ss-text-button" data-testid="ss-caller-dismiss" @onclick="() => _callerDismissed = true">Dismiss</button>
+            </div>
+        </aside>
     }
     @if (_pair is { } pair)
     {
@@ -580,42 +601,130 @@
                     }
                     else
                     {
-                        <dl class="ss-stats ss-stats-compact" data-testid="ss-test-candidates">
-                            <div><dt>Candidate cases</dt><dd data-testid="ss-test-count">@package.GeneratedTests.Count</dd></div>
-                            <div><dt>Valid cases</dt><dd>@package.GeneratedTests.Count(t => t.ExpectedValid)</dd></div>
-                            <div><dt>Invalid (negative) cases</dt><dd>@package.GeneratedTests.Count(t => !t.ExpectedValid)</dd></div>
-                        </dl>
+                        var coverage = SchemaTestDesign.Coverage(package, _testResults);
+                        var testProfile = SelectedProfile();
+                        var selection = RunSelection(package);
+                        <section class="ss-card ss-coverage" aria-labelledby="ss-coverage-title" data-testid="ss-coverage-summary">
+                            <h4 id="ss-coverage-title">Schema test coverage</h4>
+                            <dl class="ss-stats ss-stats-compact" data-testid="ss-test-candidates">
+                                <div><dt>Rules discovered</dt><dd data-testid="ss-cov-discovered">@coverage.Sum(c => c.Discovered)</dd></div>
+                                <div><dt>Rule families covered</dt><dd data-testid="ss-cov-families">@coverage.Count(c => c.Covered > 0) of @coverage.Count(c => c.Discovered > 0)</dd></div>
+                                <div><dt>Generated cases</dt><dd data-testid="ss-test-count">@package.GeneratedTests.Count</dd></div>
+                                <div><dt>Executed</dt><dd data-testid="ss-cov-executed">@coverage.Sum(c => c.Executed)</dd></div>
+                                <div><dt>Passed</dt><dd data-testid="ss-cov-passed">@coverage.Sum(c => c.Passed)</dd></div>
+                                <div><dt>Failed</dt><dd data-testid="ss-cov-failed">@coverage.Sum(c => c.Failed)</dd></div>
+                                <div><dt>Unsupported generation rules</dt><dd data-testid="ss-cov-unsupported">@coverage.Sum(c => c.Unsupported)</dd></div>
+                            </dl>
+                            <p class="ss-muted">Discovered rules come from the effective schema; generated, executed and confirmed are separate counts. A rule without a generated case is a test-generation gap, not a schema failure.</p>
+                        </section>
                         @if (package.GeneratedTestsTruncated) { <p class="ss-warning" role="status">Only the first 5,000 derived test candidates are available here; some candidate tests were omitted. Effective structure and Constraints still show the analyzed XSD evidence.</p> }
-                        <p class="ss-muted" data-testid="ss-tests-profile">Generated using: <strong>@(SelectedProfile()?.Name ?? "Generic valid")</strong> <button type="button" class="ss-text-button" data-testid="ss-tests-open-profile" @onclick='() => _tab = "Generation Profile"'>Change generation profile</button></p>
-                        <div class="ss-actions"><button type="button" class="btn-primary" data-testid="ss-run-tests" @onclick="RunGeneratedTests">@(package.GeneratedTests.Count > RunLimit ? $"Run first {RunLimit} cases" : $"Run all {SchemaStudioPresentation.Count(package.GeneratedTests.Count, "case", "cases")}")</button>@if (package.GeneratedTests.Count > RunLimit) { <span class="ss-muted" data-testid="ss-run-scope">@RunLimit of @package.GeneratedTests.Count cases per run</span> }</div>
-                        <p class="ss-muted" data-testid="ss-test-semantics">A test passes when the local validator behaves as the XSD expects.</p>
+                        <section class="ss-card ss-gen-profile" aria-labelledby="ss-gen-profile-title" data-testid="ss-tests-profile">
+                            <h4 id="ss-gen-profile-title">Generation profile</h4>
+                            <dl class="ss-facts">
+                                <div><dt>Name</dt><dd data-testid="ss-gen-profile-name">@(testProfile?.Name ?? "Generic schema-valid")</dd></div>
+                                <div><dt>Purpose</dt><dd data-testid="ss-gen-profile-purpose">@ProfilePurpose(testProfile?.Kind ?? SchemaGenerationProfileKind.GenericValid)</dd></div>
+                                <div><dt>Source</dt><dd data-testid="ss-gen-profile-source">@(testProfile is { IsBuiltIn: false } ? "User-defined" : "Built-in")</dd></div>
+                                <div><dt>Status</dt><dd>Active</dd></div>
+                                <div><dt>Version</dt><dd data-testid="ss-gen-profile-version">@ProfileVersion(testProfile)@(testProfile is { } seeded ? $" · seed {seeded.Seed}" : "") · @SchemaTestDesign.GeneratorVersion</dd></div>
+                            </dl>
+                            <p class="ss-muted">Values are synthetic schema-valid placeholders. Domain-aware and consumer-compatible generation are not available here: they would need approved Test Data or reference evidence, and contract-derived values are never runtime-verified.</p>
+                            <button type="button" class="ss-text-button" data-testid="ss-tests-open-profile" @onclick='() => _tab = "Generation Profile"'>Change generation profile</button>
+                        </section>
+                        <fieldset class="ss-run" data-testid="ss-run-controls">
+                            <legend>Run generated tests</legend>
+                            <label class="ss-field">Run mode
+                                <select data-testid="ss-run-mode" value="@_runMode" @onchange="RunModeChanged">
+                                    <option value="@SchemaRunMode.Representative">Representative sample (@SchemaTestDesign.RepresentativeSize)</option>
+                                    <option value="@SchemaRunMode.All">All cases</option>
+                                    <option value="@SchemaRunMode.Families">Selected rule categories</option>
+                                    @if (_testResults.Any(r => r.Outcome != "Pass")) { <option value="@SchemaRunMode.Failed">Failed and not evaluated cases</option> }
+                                </select>
+                            </label>
+                            @if (_runMode == SchemaRunMode.Families)
+                            {
+                                <div class="ss-family-checks" role="group" aria-label="Rule categories to run" data-testid="ss-run-families">
+                                    @foreach (var group in package.GeneratedTests.GroupBy(SchemaRuleFamilies.Of).OrderBy(g => g.Key))
+                                    {
+                                        var family = group.Key;
+                                        <label><input type="checkbox" checked="@_runFamilies.Contains(family)" @onchange="e => ToggleRunFamily(family, e)" /> @SchemaRuleFamilies.Label(family) (@group.Count())</label>
+                                    }
+                                </div>
+                            }
+                            <p class="ss-muted" role="status" data-testid="ss-run-scope">@SchemaTestDesign.SampleSummary(selection, package.GeneratedTests.Count)</p>
+                            <div class="ss-actions"><button type="button" class="btn-primary" data-testid="ss-run-tests" disabled="@(selection.Count == 0)" @onclick="RunGeneratedTests">@RunLabel(package, selection.Count)</button></div>
+                        </fieldset>
+                        <p class="ss-muted" data-testid="ss-test-semantics">A positive test passes when Expected = Valid and the local validator accepts it; a negative test passes when Expected = Invalid and the validator rejects it.</p>
                         <ReviewDisclosure Text="How generated tests work" CollapseText="Hide how generated tests work" TestId="ss-test-how" Class="disclosure-small">
-                            <p class="ss-muted"><strong>Expected</strong> is what the XSD should do with the case. <strong>Validator</strong> is what the local XSD validator did. <strong>Result</strong> is Pass when they agree — an invalid case that the validator rejects is a passing negative test.</p>
+                            <p class="ss-muted"><strong>Expected</strong> is what the XSD should do with the case. <strong>Actual</strong> is what the local XSD validator did. <strong>Result</strong> is Pass when they agree. The schema is the oracle: a valid case the validator rejects is a generator defect candidate, not an application or schema defect; an invalid case the validator accepts means the mutation did not break its rule. The representative sample is deterministic for the same schema, profile, size and generator version.</p>
                         </ReviewDisclosure>
                         @if (_testResults.Count > 0)
                         {
+                            var classified = _testResults.Select(r => (Result: r, Class: SchemaTestDesign.Classify(r))).ToList();
                             <h4>Test results</h4>
                             <dl class="ss-stats ss-stats-compact" data-testid="ss-test-summary">
+                                <div><dt>Cases run</dt><dd>@_testResults.Count</dd></div>
                                 <div><dt>Pass</dt><dd>@_testResults.Count(r => r.Outcome == "Pass")</dd></div>
                                 <div><dt>Fail</dt><dd>@_testResults.Count(r => r.Outcome == "Fail")</dd></div>
                                 <div><dt>Not evaluated</dt><dd>@_testResults.Count(r => r.Outcome == "Not evaluated")</dd></div>
+                                <div><dt>Generator defect candidates</dt><dd data-testid="ss-generator-defects">@classified.Count(c => c.Class == SchemaResultClass.GeneratorDefect)</dd></div>
+                                <div><dt>Mutation defects</dt><dd data-testid="ss-mutation-defects">@classified.Count(c => c.Class == SchemaResultClass.MutationDefect)</dd></div>
+                                <div><dt>Additional violations</dt><dd data-testid="ss-additional-violations">@classified.Count(c => c.Class == SchemaResultClass.PassWithAdditionalViolations)</dd></div>
+                                <div><dt>Validator mismatches</dt><dd data-testid="ss-validator-mismatches">Not assessed</dd></div>
                             </dl>
-                            <p class="ss-muted">Showing @_testResults.Count result(s) of @package.GeneratedTests.Count candidate case(s).</p>
-                            <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Test results"><table class="ss-table" data-testid="ss-test-results"><thead><tr><th class="ss-col-path">Path</th><th class="ss-col-compact">Expected</th><th class="ss-col-flex">Derived case</th><th class="ss-col-compact">Validator</th><th class="ss-col-compact">Result</th><th class="ss-col-flex">Diagnostic</th></tr></thead><tbody>
-                            @foreach (var result in _testResults)
+                            <p class="ss-muted">@_lastRunSummary Validator mismatches are not assessed: no independent reference validator is compared, so a disagreement is never concluded to be a validator bug.</p>
+                            @foreach (var failure in classified.Where(c => c.Class is SchemaResultClass.GeneratorDefect or SchemaResultClass.MutationDefect or SchemaResultClass.NotEvaluated).GroupBy(c => c.Class).OrderBy(g => g.Key))
                             {
-                                <tr data-outcome="@result.Outcome"><td><code>@SchemaText.Breakable(result.Path)</code></td><td class="ss-nowrap">@(result.ExpectedValid ? "Valid" : "Invalid")</td><td>@result.Rule</td><td class="ss-nowrap">@ValidatorLabel(result.Actual)</td><td class="ss-nowrap"><span class="ss-outcome ss-outcome-@result.Outcome.Replace(" ", "-").ToLowerInvariant()">@result.Outcome</span></td>
+                                <details class="ss-failure-group" data-testid="ss-failure-group" data-class="@failure.Key">
+                                    <summary>@SchemaTestDesign.Label(failure.Key) · @failure.Count()</summary>
+                                    <ul>@foreach (var item in failure.Take(50)) { <li><code>@SchemaText.Breakable(item.Result.Path)</code> · @item.Result.Rule</li> }</ul>
+                                </details>
+                            }
+                            <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Test results"><table class="ss-table" data-testid="ss-test-results"><thead><tr><th scope="col" class="ss-col-path">Path</th><th scope="col" class="ss-col-compact">Rule category</th><th scope="col" class="ss-col-flex">Derived case</th><th scope="col" class="ss-col-compact">Expected</th><th scope="col" class="ss-col-compact">Actual</th><th scope="col" class="ss-col-compact">Result</th><th scope="col" class="ss-col-flex">Diagnostic</th></tr></thead><tbody>
+                            @foreach (var (result, resultClass) in classified)
+                            {
+                                var resultCase = package.GeneratedTests.FirstOrDefault(t => t.Id == result.TestId);
+                                <tr data-outcome="@result.Outcome" data-class="@resultClass"><td><code>@SchemaText.Breakable(result.Path)</code></td><td>@(resultCase is null ? "" : SchemaRuleFamilies.Label(SchemaRuleFamilies.Of(resultCase)))</td><td>@result.Rule</td><td class="ss-nowrap">@(result.ExpectedValid ? "Valid" : "Invalid")</td><td class="ss-nowrap">@SchemaTestDesign.Actual(result)</td><td><span class="ss-outcome ss-outcome-@result.Outcome.Replace(" ", "-").ToLowerInvariant()">@result.Outcome</span>@if (resultClass != SchemaResultClass.Pass) { <small class="ss-tech-term">@SchemaTestDesign.Label(resultClass)</small> }</td>
                                     <td><details class="ss-tech"><summary>Diagnostic and XML<span class="visually-hidden"> for @result.Path</span></summary><p>@result.Diagnostic</p>@if (!string.IsNullOrWhiteSpace(result.BaselineId)) { <p>Baseline: @result.BaselineId</p> }@if (result.BaselineXml.Length > 0) { <h5>Valid baseline XML</h5><pre class="ss-raw ss-code-scroll"><code>@result.BaselineXml</code></pre> }@if (result.Xml.Length > 0) { <h5>Mutated XML</h5><pre class="ss-raw ss-code-scroll"><code>@result.Xml</code></pre> }</details></td></tr>
                             }
                             </tbody></table></div>
                         }
-                        <ReviewDisclosure Text="@($"View candidate cases ({package.GeneratedTests.Count})")" CollapseText="Hide candidate cases" TestId="ss-candidates" Class="disclosure-small">
-                            <p class="ss-muted" data-testid="ss-candidates-shown">Showing first @Math.Min(_testsShown, package.GeneratedTests.Count) of @package.GeneratedTests.Count</p>
-                            <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Generated test cases"><table class="ss-table" data-testid="ss-generated-tests"><thead><tr><th class="ss-col-path">Path</th><th class="ss-col-compact">Expected</th><th class="ss-col-flex">Derived case</th><th class="ss-col-value">Value / mutation</th><th class="ss-col-file">Source XSD</th><th class="ss-col-compact">Action</th></tr></thead><tbody>
-                            @foreach (var test in package.GeneratedTests.Take(_testsShown)) { <tr><td><code>@SchemaText.Breakable(test.Path)</code></td><td class="ss-nowrap">@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.Rule</td><td><code class="ss-value">@test.Value</code></td><td title="@test.SourceFile">@SchemaStudioPresentation.FileName(test.SourceFile)</td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML<span class="visually-hidden"> for @test.Path</span></button></td></tr> }
+                        <section aria-labelledby="ss-coverage-table-title" data-testid="ss-rule-coverage">
+                            <h4 id="ss-coverage-table-title">Schema rule coverage</h4>
+                            <div class="ss-table-wrap" tabindex="0" role="region" aria-label="Schema rule coverage"><table class="ss-table" data-testid="ss-coverage-table"><thead><tr><th scope="col">Rule category</th><th scope="col">Rules discovered</th><th scope="col">Rules covered</th><th scope="col">Cases generated</th><th scope="col">Executed</th><th scope="col">Passed</th><th scope="col">Failed</th><th scope="col" class="ss-col-flex">Status</th></tr></thead><tbody>
+                            @foreach (var row in coverage)
+                            {
+                                <tr data-testid="ss-coverage-row" data-family="@row.Family"><th scope="row">@SchemaRuleFamilies.Label(row.Family)</th><td>@row.Discovered</td><td>@row.Covered/@row.Discovered</td><td>@row.Generated</td><td>@row.Executed</td><td>@row.Passed</td><td>@row.Failed</td><td data-testid="ss-coverage-status">@CoverageStatus(row)</td></tr>
+                            }
                             </tbody></table></div>
-                            @if (package.GeneratedTests.Count > _testsShown) { <button type="button" class="btn-secondary" data-testid="ss-candidates-more" @onclick="() => _testsShown += 100">Show 100 more</button> }
-                        </ReviewDisclosure>
+                        </section>
+                        <section class="ss-cases" aria-labelledby="ss-candidates-title" data-testid="ss-candidates">
+                            <h4 id="ss-candidates-title">Candidate cases</h4>
+                            @{ var caseGroups = package.GeneratedTests.GroupBy(SchemaRuleFamilies.Of).OrderBy(g => g.Key).ToList(); }
+                            <p class="ss-muted" data-testid="ss-candidates-total">@package.GeneratedTests.Count total candidates in @caseGroups.Count rule categories. Filters narrow what is listed; they never change the case count.</p>
+                            <div class="ss-filters" role="group" aria-label="Filter candidate cases">
+                                <label class="ss-field">Search <input type="search" data-testid="ss-case-search" @bind="_caseQuery" @bind:event="oninput" placeholder="Path, source XSD, rule or mutation" /></label>
+                                <label class="ss-field">Expected <select data-testid="ss-case-expected" @bind="_caseExpected"><option value="">All</option><option value="valid">Valid</option><option value="invalid">Invalid</option></select></label>
+                                <label class="ss-field">Rule category <select data-testid="ss-case-family" @bind="_caseFamily"><option value="">All</option>@foreach (var g in caseGroups) { <option value="@g.Key">@SchemaRuleFamilies.Label(g.Key)</option> }</select></label>
+                            </div>
+                            @foreach (var group in caseGroups)
+                            {
+                                var family = group.Key;
+                                var matching = group.Where(CaseMatches).ToList();
+                                if (_caseFamily.Length > 0 && _caseFamily != family.ToString()) continue;
+                                var shown = _familyShown.GetValueOrDefault(family, 25);
+                                <details class="ss-case-group" data-testid="ss-case-group" data-family="@family" data-count="@group.Count()">
+                                    <summary><strong>@SchemaRuleFamilies.Label(family) · @group.Count()</strong> <span class="ss-muted">Valid @group.Count(t => t.ExpectedValid) · Invalid @group.Count(t => !t.ExpectedValid)@(matching.Count != group.Count() ? $" · {matching.Count} match the filters" : "")</span></summary>
+                                    @if (matching.Count == 0) { <p class="ss-muted">No case in this category matches the filters.</p> }
+                                    else
+                                    {
+                                        <div class="ss-table-wrap" tabindex="0" role="region" aria-label="@($"{SchemaRuleFamilies.Label(family)} cases")"><table class="ss-table" data-testid="ss-generated-tests"><thead><tr><th scope="col" class="ss-col-path">Path</th><th scope="col" class="ss-col-compact">Expected</th><th scope="col" class="ss-col-flex">Derived case</th><th scope="col" class="ss-col-value">Value / mutation</th><th scope="col" class="ss-col-file">Source XSD</th><th scope="col" class="ss-col-compact">Action</th></tr></thead><tbody>
+                                        @foreach (var test in matching.Take(shown)) { <tr data-testid="ss-case" data-case="@test.Id"><td><code>@SchemaText.Breakable(test.Path)</code></td><td class="ss-nowrap">@(test.ExpectedValid ? "Valid" : "Invalid")</td><td>@test.Rule</td><td><code class="ss-value">@test.Value</code></td><td title="@test.SourceFile">@SchemaStudioPresentation.FileName(test.SourceFile)@if (!IsEntrySchema(package, test.SourceFile)) { <small class="ss-tech-term">imported supporting schema</small> }</td><td><button class="ss-text-button" @onclick="() => GenerateXml(test)">Generate XML<span class="visually-hidden"> for @test.Path</span></button> <button class="ss-text-button" data-testid="ss-case-run" @onclick="() => RunSingle(test)">Run<span class="visually-hidden"> @test.Rule for @test.Path</span></button></td></tr> }
+                                        </tbody></table></div>
+                                        @if (matching.Count > shown) { <button type="button" class="btn-secondary" data-testid="ss-candidates-more" @onclick="() => _familyShown[family] = shown + 100">Show 100 more (@(matching.Count - shown) remaining)</button> }
+                                    }
+                                </details>
+                            }
+                        </section>
                     }
                     @if (testRuns.Length > 0)
                     {
@@ -641,30 +750,69 @@
                     <section class="ss-xml" aria-labelledby="ss-xml-title" data-testid="ss-validate-xml">
                         <h4 id="ss-xml-title">Validate an XML document</h4>
                         <p class="ss-muted">Check an XML document against this schema package locally; nothing is sent anywhere.</p>
-                        @if (!XmlEditorVisible)
+                        <div class="ss-actions">
+                            @if (!XmlEditorVisible) { <button type="button" class="btn-secondary" data-testid="ss-xml-paste" @onclick="PasteXml">Paste XML</button> }
+                            <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" aria-describedby="@(library ? "ss-xml-generate-help" : null)" @onclick="GenerateXml">Generate minimum schema-valid example</button>
+                        </div>
+                        @if (library) { <p class="ss-muted" id="ss-xml-generate-help">A minimum example needs a top-level message element; this library XSD has none.</p> }
+                        @if (_generation is { } generation)
                         {
-                            <div class="ss-actions">
-                                <button type="button" class="btn-secondary" data-testid="ss-xml-paste" @onclick="() => _xmlEditorOpen = true">Paste XML</button>
-                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" aria-describedby="@(library ? "ss-xml-generate-help" : null)" @onclick="GenerateXml">Generate minimum valid example</button>
+                            <div class="ss-generation ss-generation-@generation.State.ToString().ToLowerInvariant()" role="status" data-testid="ss-generation" data-state="@generation.State">
+                                <h5 data-testid="ss-generation-heading">@generation.Heading</h5>
+                                @if (generation.IsSchemaValid)
+                                {
+                                    <p>Generated and immediately validated against <code>@SchemaStudioPresentation.FileName(generation.Provenance.SourceXsd)</code> with the same local validator as Validate XML. Not business-approved and not reusable Test Data until registered and approved in Test Data.</p>
+                                }
+                                else
+                                {
+                                    <ul data-testid="ss-generation-reasons">@foreach (var reason in generation.Reasons) { <li>@reason</li> }</ul>
+                                    @if (generation.Xml.Length > 0) { <p class="ss-warning" data-testid="ss-generation-partial">@generation.XmlLabel — it is shown for inspection and debugging only and cannot be registered as a positive fixture.</p> }
+                                }
+                                @if (generation.Choices.Count > 0)
+                                {
+                                    <details class="ss-tech" data-testid="ss-generation-choices"><summary>Generation choices (@generation.Choices.Count)</summary><ul>@foreach (var choice in generation.Choices) { <li>@choice</li> }</ul></details>
+                                }
+                                <details class="ss-tech" data-testid="ss-generation-provenance"><summary>Generation provenance</summary>
+                                    <dl class="ss-facts">
+                                        <div><dt>Package</dt><dd>@ShortFingerprint(generation.Provenance.PackageFingerprint)</dd></div>
+                                        <div><dt>Source snapshot</dt><dd>@(generation.Provenance.SourceSnapshotId?.ToString() ?? "Not from Source Analysis")</dd></div>
+                                        <div><dt>Source XSD</dt><dd><code>@generation.Provenance.SourceXsd</code> @(generation.Provenance.IsEntrySchema(package) ? "(entry schema)" : "(supporting schema)")</dd></div>
+                                        <div><dt>Schema fingerprint</dt><dd>@(generation.Provenance.SchemaFingerprint is { } schemaFingerprint ? ShortFingerprint(schemaFingerprint) : "Unknown")</dd></div>
+                                        <div><dt>Root element</dt><dd>@generation.Provenance.RootElement</dd></div>
+                                        <div><dt>Profile</dt><dd>@generation.Provenance.ProfileName (@generation.Provenance.ProfileVersion)</dd></div>
+                                        <div><dt>Generator</dt><dd>@generation.Provenance.GeneratorVersion</dd></div>
+                                        <div><dt>Generated</dt><dd>@generation.Provenance.GeneratedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</dd></div>
+                                        <div><dt>Local validation</dt><dd>@generation.Provenance.Validation</dd></div>
+                                    </dl>
+                                </details>
                             </div>
-                            @if (library) { <p class="ss-muted" id="ss-xml-generate-help">A minimum example needs a top-level message element; this library XSD has none.</p> }
                         }
-                        else
+                        @if (XmlEditorVisible)
                         {
                             <label class="ss-field">Validate against <select @bind="_fileName">@foreach (var f in package.Files) { <option value="@f.Name">@SchemaStudioPresentation.FileName(f.Name)</option> }</select></label>
-                            <textarea class="ss-editor ss-xml ss-code-scroll" @bind="_xml" aria-label="XML instance to validate" data-testid="ss-xml-editor"></textarea>
+                            <textarea class="ss-editor ss-xml ss-code-scroll" @bind="_xml" @bind:after="XmlEdited" aria-label="XML instance to validate" data-testid="ss-xml-editor"></textarea>
+                            @if (!string.IsNullOrWhiteSpace(_xml))
+                            {
+                                <p class="ss-notice" data-testid="ss-schema-only-notice">@SchemaTestDesign.SchemaOnlyNotice Generated values are synthetic placeholders (for example "aaaa" or zero-filled identifiers), not realistic business data.</p>
+                            }
                             <div class="ss-actions">
                                 <button type="button" class="btn-primary" data-testid="ss-xml-validate" @onclick="ValidateXml">Validate XML</button>
-                                <button type="button" class="btn-secondary" data-testid="ss-xml-generate" disabled="@library" @onclick="GenerateXml">Generate minimum valid example</button>
                                 @if (!string.IsNullOrWhiteSpace(_xml))
                                 {
-                                    <button type="button" class="ss-text-button" data-testid="ss-xml-save" @onclick="SaveCurrentXml">Save XML artifact</button>
-                                    <a class="ss-text-button" download="schema-studio.xml" href="@Download(_xml, "application/xml")">Export XML</a>
+                                    <button type="button" class="btn-secondary" data-testid="ss-xml-save" @onclick="SaveCurrentXml">Save to workspace</button>
+                                    <a class="ss-text-button" data-testid="ss-xml-export" download="schema-studio.xml" href="@Download(_xml, "application/xml")">Export XML</a>
                                 }
                             </div>
-                            @if (!string.IsNullOrWhiteSpace(_xml)) { <p class="ss-muted" data-testid="ss-xml-save-note">Saving XML stores its content in this BirkNext workspace. Review user-entered values before saving.</p> }
+                            @if (!string.IsNullOrWhiteSpace(_xml)) { <p class="ss-muted" data-testid="ss-xml-save-note">Save to workspace stores this XML with its schema, snapshot, profile and generation provenance in this BirkNext workspace — it does not register Test Data, approve it or verify runtime behavior. Register a saved document as Test Data below. Export only downloads the XML and changes nothing.</p> }
                         }
-                        @if (_validationMessage is not null) { <p role="status" class="ss-result">@_validationMessage</p> }
+                        @if (_validation is { } validation)
+                        {
+                            <div class="ss-validation" role="status" data-testid="ss-validation-result" data-status="@validation.Status">
+                                <p class="ss-result"><strong>@(validation.Status == XmlSchemaValidationStatus.Valid ? "Valid" : validation.Status == XmlSchemaValidationStatus.Invalid ? "Invalid" : "Not evaluated")</strong> · @validation.Message</p>
+                                @if (validation.Issues.Count > 0) { <ul class="ss-issues" data-testid="ss-validation-issues">@foreach (var issue in validation.Issues.Take(50)) { <li>@issue</li> }</ul> }
+                            </div>
+                        }
+                        else if (_validationMessage is not null) { <p role="status" class="ss-result">@_validationMessage</p> }
                         @if (!string.IsNullOrWhiteSpace(_xmlArtifactStatus)) { <p role="status" class="ss-result">@_xmlArtifactStatus</p> }
                         @if (!string.IsNullOrWhiteSpace(_xmlArtifactError)) { <p role="alert" class="ss-error">@_xmlArtifactError</p> }
                     </section>
@@ -678,7 +826,7 @@
                                 <button class="ss-text-button" @onclick="() => RemoveXml(saved.Id)">Remove XML artifact</button>
                                 @if (saved.TestData is { } registration)
                                 {
-                                    <p class="ss-testdata" data-testid="ss-testdata-registered">Registered as Test Data: <strong>@registration.Alias</strong> · @(registration.Intent == SchemaXmlTestDataRegistration.NegativeTest ? "Negative test" : "Positive fixture") · @(registration.Approved ? "Approved" : "Draft")
+                                    <p class="ss-testdata" data-testid="ss-testdata-registered">Registered as Test Data: <strong>@registration.Alias</strong> · @(registration.Intent == SchemaXmlTestDataRegistration.NegativeTest ? "Negative XML fixture (expected invalid)" : "Positive XML fixture") · @(registration.Approved ? "Approved (registered before approval moved to Test Data)" : "Needs review — approve it in Test Data")
                                         <a class="ss-text-button" href="test-data" data-testid="ss-testdata-open">Open in Test Data</a>
                                         <button class="ss-text-button" @onclick="() => UnregisterXml(saved.Id)" data-testid="ss-testdata-unregister">Remove from Test Data</button></p>
                                 }
@@ -688,9 +836,10 @@
                                         <legend>Register as reusable Test Data</legend>
                                         <label>Alias <input @bind="_registerAlias" maxlength="64" data-testid="ss-testdata-alias" aria-describedby="ss-testdata-alias-help" /></label>
                                         <span class="ss-help" id="ss-testdata-alias-help">Lowercase letters, digits and hyphens. Consumers refer to the fixture by this alias.</span>
-                                        <label>Intent <select @bind="_registerIntent" data-testid="ss-testdata-intent"><option value="@SchemaXmlTestDataRegistration.Positive">Positive fixture</option><option value="@SchemaXmlTestDataRegistration.NegativeTest">Negative test (expected to be invalid)</option></select></label>
-                                        <label class="ss-check"><input type="checkbox" @bind="_registerApproved" data-testid="ss-testdata-approved" /> Approved for test use</label>
-                                        <div class="ss-actions"><button class="btn-primary" @onclick="() => RegisterXml(saved.Id)" data-testid="ss-testdata-register">Register</button><button class="ss-text-button" @onclick="() => _registeringXml = null">Cancel</button></div>
+                                        <label>Register as <select @bind="_registerIntent" data-testid="ss-testdata-intent"><option value="@SchemaXmlTestDataRegistration.Positive">Positive XML fixture (expected valid)</option><option value="@SchemaXmlTestDataRegistration.NegativeTest">Negative XML fixture (intentionally invalid test data)</option></select></label>
+                                        <label>Scope <select @bind="_registerScope" data-testid="ss-testdata-scope"><option value="">Shared (any environment)</option>@foreach (var (scopeId, scopeLabel) in _registerScopes) { <option value="@scopeId">@scopeLabel</option> }</select></label>
+                                        <p class="ss-help" data-testid="ss-testdata-approval-note">Registers an XML payload asset in Test Data as Needs review, with its exact schema, generation profile, case or mutation and expected schema result. Approval happens in Test Data; Schema Studio never approves. The XML is validated again before registering: XML that fails validation can never become a positive fixture.</p>
+                                        <div class="ss-actions"><button class="btn-primary" @onclick="() => RegisterXml(saved.Id)" data-testid="ss-testdata-register">Register as Test Data</button><button class="ss-text-button" @onclick="() => _registeringXml = null">Cancel</button></div>
                                     </fieldset>
                                 }
                                 else { <button class="ss-text-button" @onclick="() => StartRegistering(saved)" data-testid="ss-testdata-start">Register as Test Data</button> }
@@ -788,7 +937,7 @@
             </div>
         </section>
     }
-</main>
+</div>
 
 @code {
     private static IReadOnlyList<string> Tabs => SchemaStudioNavigation.AllViews;
@@ -803,6 +952,16 @@
     [SupplyParameterFromQuery(Name = "environment")] public string? EnvironmentParameter { get; set; }
     [SupplyParameterFromQuery(Name = "producerSnapshot")] public string? ProducerSnapshotParameter { get; set; }
     [SupplyParameterFromQuery(Name = "producerContract")] public string? ProducerContractParameter { get; set; }
+    /// <summary>The caller ("iqr", or any consumer id) and, for a consumer request, its display name. Context only, never schema authority.</summary>
+    [SupplyParameterFromQuery(Name = "from")] public string? FromParameter { get; set; }
+    [SupplyParameterFromQuery(Name = "consumer")] public string? ConsumerParameter { get; set; }
+
+    private string? CallerLabel => ConsumerParameter is { Length: > 0 } consumer ? $"Requested by {consumer}"
+        : FromParameter == "iqr" || IntegrationParameter is { Length: > 0 } ? "Opened from Integration Quality Review" : null;
+    private string? ReturnHref => FromParameter == "iqr" || IntegrationParameter is { Length: > 0 }
+        ? "integration-quality-review" + (IntegrationParameter is { Length: > 0 } id ? "?integration=" + Uri.EscapeDataString(id) : "")
+        : null;
+    private void ChooseAnotherSchema() { _changeSourceOpen = true; _importOpen = false; _handoffFailed = null; }
     private bool _handoffRequested;
     private string? _handoffFailed;
     private BirkNext.ContractSchemaEvidence.ContractRelationshipReview? _pair;
@@ -833,15 +992,22 @@
     private SchemaTreeFilterKind _effectiveFilter = SchemaTreeFilterKind.All;
     /// <summary>Effective structure detail beyond the readable default (all off by default).</summary>
     private bool _effShowTypes, _effShowOrigin, _effShowTechnical;
-    /// <summary>Cases per generated-test run (the service clamps any request to 1..500).</summary>
-    private const int RunLimit = 100;
+    private SchemaRunMode _runMode = SchemaRunMode.Representative;
+    private readonly HashSet<SchemaRuleFamily> _runFamilies = [];
+    private readonly Dictionary<SchemaRuleFamily, int> _familyShown = [];
+    private string _caseQuery = "", _caseExpected = "", _caseFamily = "";
+    private string? _lastRunSummary;
+    /// <summary>The self-validated minimum example, and what the XML in the editor is (null = pasted or edited by hand).</summary>
+    private SchemaGenerationResult? _generation;
+    private SchemaXmlRegistrationFacts? _xmlFacts;
+    private XmlSchemaValidationResult? _validation;
+    private bool _callerDismissed;
     private string _effectiveSearch = "", _constraintFilter = "", _constraintSearch = "", _rawSearch = "", _rawStatus = "";
     private bool _rawExpanded;
     /// <summary>The XML editor opens on request (Paste XML) or when XML exists (generated, reopened); it never occupies the page by default.</summary>
     private bool _xmlEditorOpen;
     private bool XmlEditorVisible => _xmlEditorOpen || !string.IsNullOrEmpty(_xml);
     private string? _compareId;
-    private int _testsShown = 100;
     /// <summary>The saved profile currently loaded into the profile form; null = the form holds values for a NEW profile.</summary>
     private string? _editingProfileId;
 
@@ -1558,19 +1724,82 @@
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or XmlException or System.Xml.Schema.XmlSchemaException or InvalidOperationException) { _error = e.Message; }
     }
-    private void GenerateXml() { if (CurrentFile is { } file && Current is { } package && !SchemaStudioPresentation.IsLibrary(package)) { _xml = SchemaStudioService.GenerateMinimumXml(file); _xmlEditorOpen = true; _validationMessage = null; } }
+    /// <summary>Generate → serialize → validate against the exact selected XSD → only then call it schema-valid (never root-only output).</summary>
+    private void GenerateXml()
+    {
+        if (CurrentFile is not { } file || Current is not { } package || SchemaStudioPresentation.IsLibrary(package)) return;
+        var generation = SchemaStudioService.GenerateMinimumValid(package, file.Name);
+        _generation = generation;
+        _xml = generation.Xml; _fileName = file.Name; _xmlEditorOpen = true; _validation = null; _validationMessage = null;
+        _xmlFacts = new(SchemaXmlRegistrationFacts.Valid, generation.IsSchemaValid ? SchemaXmlRegistrationFacts.Valid : SchemaXmlRegistrationFacts.Invalid,
+            null, "Minimum schema-valid example", null, generation.Provenance.ProfileId, generation.Provenance.ProfileVersion, SchemaTestDesign.GeneratorVersion,
+            generation.Provenance.RootElement);
+    }
     private void GenerateXml(SchemaTestCase test)
     {
         if (Current is not { } package) return;
-        try { _xml = SchemaStudioService.GenerateTestXml(package, test, ProfileValues()); _fileName = test.SourceFile; _validationMessage = null; }
-        catch (InvalidDataException e) { _xml = ""; _validationMessage = "Not evaluated: " + e.Message; }
+        _generation = null; _validation = null;
+        try
+        {
+            _xml = SchemaStudioService.GenerateTestXml(package, test, ProfileValues()); _fileName = test.SourceFile; _validationMessage = null;
+            var profile = SelectedProfile();
+            _xmlFacts = new(test.ExpectedValid ? SchemaXmlRegistrationFacts.Valid : SchemaXmlRegistrationFacts.Invalid, "Not evaluated", SchemaRuleFamilies.Mutation(test),
+                $"{SchemaRuleFamilies.Label(SchemaRuleFamilies.Of(test))}: {test.Rule}", test.Path, profile?.Id.ToString("D"), ProfileVersion(profile), SchemaTestDesign.GeneratorVersion,
+                test.Path.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
+        }
+        catch (InvalidDataException e) { _xml = ""; _xmlFacts = null; _validationMessage = "Not evaluated: " + e.Message; }
     }
-    private void ValidateXml() { _validationMessage = Current is { } p && _xml is not null && _fileName is not null ? SchemaStudioService.ValidateXml(p, _fileName, _xml) : "Not evaluated: select a schema and enter XML."; }
-    private async Task RunGeneratedTests()
+    private void PasteXml() { _xmlEditorOpen = true; _xml = ""; _xmlFacts = null; _generation = null; _validation = null; }
+    /// <summary>Hand-edited XML is the user's XML: generation provenance and the earlier result no longer describe it.</summary>
+    private void XmlEdited() { _xmlFacts = null; _generation = null; _validation = null; }
+    private void ValidateXml()
     {
-        if (Current is not { } package || package.GeneratedTests.Count == 0) return;
-        var results = SchemaStudioService.RunGeneratedTests(package, ProfileValues(), RunLimit);
-        _testResults.AddRange(results.Where(r => _testResults.All(existing => existing.TestId != r.TestId)));
+        if (Current is { } p && !string.IsNullOrWhiteSpace(_xml) && _fileName is not null) { _validation = SchemaStudioService.Validate(p, _fileName, _xml); _validationMessage = null; }
+        else { _validation = null; _validationMessage = "Not evaluated: select a schema and enter XML."; }
+    }
+    private IReadOnlyList<SchemaTestCase> RunSelection(SchemaPackage package) =>
+        SchemaTestDesign.Select(package, _runMode, SchemaTestDesign.SampleKey(package, SelectedProfile(), SchemaTestDesign.RepresentativeSize), _runFamilies, _testResults);
+    private string RunLabel(SchemaPackage package, int count) => _runMode switch
+    {
+        SchemaRunMode.Representative when count < package.GeneratedTests.Count => $"Run representative {count}",
+        SchemaRunMode.Families => $"Run {SchemaStudioPresentation.Count(count, "case", "cases")} in selected categories",
+        SchemaRunMode.Failed => $"Re-run {SchemaStudioPresentation.Count(count, "case", "cases")}",
+        _ => $"Run all {SchemaStudioPresentation.Count(count, "case", "cases")}",
+    };
+    private void RunModeChanged(ChangeEventArgs e) => _runMode = Enum.TryParse<SchemaRunMode>(e.Value?.ToString(), out var mode) ? mode : SchemaRunMode.Representative;
+    private void ToggleRunFamily(SchemaRuleFamily family, ChangeEventArgs e) { if (e.Value is true) _runFamilies.Add(family); else _runFamilies.Remove(family); }
+    private bool CaseMatches(SchemaTestCase test) =>
+        (_caseExpected.Length == 0 || (_caseExpected == "valid") == test.ExpectedValid)
+        && (_caseQuery.Trim() is not { Length: > 0 } q || test.Path.Contains(q, StringComparison.OrdinalIgnoreCase) || test.SourceFile.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || test.Rule.Contains(q, StringComparison.OrdinalIgnoreCase) || test.Value.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || SchemaRuleFamilies.Label(SchemaRuleFamilies.Of(test)).Contains(q, StringComparison.OrdinalIgnoreCase));
+    private static bool IsEntrySchema(SchemaPackage package, string sourceFile) =>
+        package.Provenance?.SelectedContractPath is not { } entry || string.Equals(entry, sourceFile, StringComparison.OrdinalIgnoreCase);
+    private static string CoverageStatus(SchemaRuleCoverage row) =>
+        row.Unsupported > 0 ? $"Detected · generation unsupported for {row.Unsupported} — {row.UnsupportedReason}"
+        : row.Executed == 0 ? "Generated · not executed yet"
+        : row.Failed > 0 ? $"{row.Failed} failed"
+        : row.Executed < row.Generated ? "Executed cases confirmed · not all cases run" : "Expected behavior confirmed";
+    private static string ProfilePurpose(SchemaGenerationProfileKind kind) => kind switch
+    {
+        SchemaGenerationProfileKind.Boundary => "Values at the schema's minimum and maximum boundaries",
+        SchemaGenerationProfileKind.ControlledInvalid => "Deliberately invalid values for negative tests",
+        SchemaGenerationProfileKind.Minimal => "Required content only",
+        SchemaGenerationProfileKind.MaximumComplexity => "All optional content, up to bounded occurrences",
+        _ => "Generate structurally valid schema-derived values",
+    };
+    private static string ProfileVersion(SchemaGenerationProfile? profile) =>
+        profile is null or { IsBuiltIn: true } ? "built-in" : "v" + profile.UpdatedAt.ToUniversalTime().ToString("yyyyMMddHHmmss");
+    private void RunSingle(SchemaTestCase test) => _ = RunCasesAsync([test]);
+    private Task RunGeneratedTests() => Current is { } package ? RunCasesAsync(RunSelection(package)) : Task.CompletedTask;
+    private async Task RunCasesAsync(IReadOnlyList<SchemaTestCase> cases)
+    {
+        if (Current is not { } package || cases.Count == 0) return;
+        var results = SchemaStudioService.RunCases(package, cases, ProfileValues());
+        // The latest result per case replaces an earlier one (re-running failed cases updates them).
+        _testResults.RemoveAll(existing => results.Any(r => r.TestId == existing.TestId));
+        _testResults.AddRange(results);
+        _lastRunSummary = $"Last run: {SchemaTestDesign.SampleSummary(cases, package.GeneratedTests.Count)}.";
         // A run that validated nothing is not a validation run: it is never saved to history.
         if (results.Count == 0 || TestRuns is not { } history || ServiceProvider.GetService<IWorkspaceArtifactRepository>() is not { } repository) return;
         try
@@ -1597,13 +1826,14 @@
             if (profile is { IsBuiltIn: false } && ProfileCatalog is { } catalog)
                 repository.Set(WorkspaceArtifactType.SchemaStudio, catalog.SnapshotJson(ProjectScope()),
                     "schema-studio-profiles.json", "Schema Studio generation profiles");
-            store.Save(package, file.Name, profile?.Name ?? "User XML", profile?.Seed, _xml, ProjectScope(), profile?.Id);
+            store.Save(package, file.Name, _xmlFacts is null ? profile?.Name ?? "User XML" : _generation is not null ? "Minimum valid" : profile?.Name ?? "Generic schema-valid",
+                profile?.Seed, _xml, ProjectScope(), profile?.Id, _xmlFacts);
             repository.Set(WorkspaceArtifactType.SchemaStudioGeneratedXml, store.SnapshotJson(ProjectScope()),
                 "schema-studio-generated-xml.json", "Schema Studio saved XML artifacts");
             var autoSave = ServiceProvider.GetService<IWorkspaceAutoSaveService>();
             if (autoSave is null || !await autoSave.SaveNowAsync())
                 throw new InvalidOperationException("XML is held in this session, but durable workspace save could not be confirmed.");
-            _xmlArtifactError = ""; _xmlArtifactStatus = "XML artifact saved with its schema, source snapshot and profile identity.";
+            _xmlArtifactError = ""; _xmlArtifactStatus = "Saved to workspace with its schema, source snapshot and profile identity. It is not registered as Test Data.";
         }
         catch (Exception e) when (e is InvalidDataException or InvalidOperationException or HttpRequestException)
         { _xmlArtifactError = e.Message; }
@@ -1619,21 +1849,35 @@
         _xmlArtifactError = ""; _xmlArtifactStatus = "Reopened XML artifact. Validate it again against the active schema before use.";
     }
     private Guid? _registeringXml;
-    private string _registerAlias = "", _registerIntent = SchemaXmlTestDataRegistration.Positive;
-    private bool _registerApproved;
-    private void StartRegistering(SavedSchemaXml saved)
+    private string _registerAlias = "", _registerIntent = SchemaXmlTestDataRegistration.Positive, _registerScope = "";
+    private IReadOnlyList<(string Id, string Label)> _registerScopes = [];
+    private async Task StartRegistering(SavedSchemaXml saved)
     {
-        _registeringXml = saved.Id; _registerIntent = SchemaXmlTestDataRegistration.Positive; _registerApproved = false;
+        _registeringXml = saved.Id; _registerScope = "";
+        _registerIntent = saved.Generation?.ExpectedResult == SchemaXmlRegistrationFacts.Invalid ? SchemaXmlTestDataRegistration.NegativeTest : SchemaXmlTestDataRegistration.Positive;
+        if (ServiceProvider.GetService<IFrontendAnalysisContextFactory>() is { } contexts && (await contexts.GetActiveContextAsync()).ActiveProfileOrNull is { } environment)
+            _registerScopes = [(environment.Id, $"{environment.Name} ({environment.EnvironmentType})")];
         _registerAlias = new string(System.IO.Path.GetFileNameWithoutExtension(saved.FileName).ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray()).Trim('-');
     }
-    /// <summary>Explicit registration only: a saved document becomes reusable Test Data with the alias, intent and approval the user chose.</summary>
+    /// <summary>
+    /// Explicit registration only: a saved document becomes a Test Data XML payload (Needs review) with the alias, intent and scope the user
+    /// chose and its generation facts. The XML is validated again here with the same local validator; the store refuses a positive fixture
+    /// that does not validate. Approval happens in Test Data.
+    /// </summary>
     private async Task RegisterXml(Guid id)
     {
-        if (SavedXml is not { } store) return;
-        try { store.Register(id, ProjectScope(), _registerAlias, _registerIntent, _registerApproved); }
+        if (SavedXml is not { } store || Current is not { } package || store.Documents.FirstOrDefault(d => d.Id == id) is not { } saved) return;
+        var validation = SchemaStudioService.Validate(package, saved.FileName, saved.Xml);
+        var status = validation.Status switch { XmlSchemaValidationStatus.Valid => SchemaXmlRegistrationFacts.Valid, XmlSchemaValidationStatus.Invalid => SchemaXmlRegistrationFacts.Invalid, _ => "Not evaluated" };
+        var facts = (saved.Generation ?? new SchemaXmlRegistrationFacts("", status, GeneratorVersion: null)) with
+        {
+            ExpectedResult = _registerIntent == SchemaXmlTestDataRegistration.Positive ? SchemaXmlRegistrationFacts.Valid : SchemaXmlRegistrationFacts.Invalid,
+            ValidationStatus = status, EnvironmentId = _registerScope.Length == 0 ? null : _registerScope,
+        };
+        try { store.Register(id, ProjectScope(), _registerAlias, _registerIntent, facts: facts); }
         catch (InvalidDataException e) { _xmlArtifactError = e.Message; return; }
         _registeringXml = null;
-        await PersistSavedXml("Registered as Test Data. Test Data validates it against its schema and shows it under the Schema Studio source.",
+        await PersistSavedXml("Registered as Test Data (Needs review). Review and approve it in Test Data; consumers reference it there.",
             "The registration is held in this session, but durable workspace save could not be confirmed.");
     }
     private async Task UnregisterXml(Guid id)

@@ -9,7 +9,7 @@ namespace BirkNext.Web.Services.SchemaStudio;
 
 public sealed record SchemaTestCase(string Id, string Path, string Rule, string Value, bool ExpectedValid, string SourceFile);
 public sealed record SchemaTestResult(string TestId, string Path, string Rule, bool ExpectedValid, string Actual,
-    string Outcome, string Diagnostic, string Xml, string BaselineXml = "", string BaselineId = "");
+    string Outcome, string Diagnostic, string Xml, string BaselineXml = "", string BaselineId = "", int IssueCount = 0);
 public sealed record SchemaProvenance(string SourceKind, string SourceArchiveName, Guid? SourceSnapshotId,
     string? SourceSnapshotFingerprint, DateTimeOffset? SourceAnalyzedAt, string? SelectedContractPath, string ContractFingerprint,
     bool SourceCaptureComplete = true, int OmittedSourceFiles = 0, string? ProjectImportId = null, string? SourceProjectName = null);
@@ -123,17 +123,47 @@ public sealed class SchemaStudioService
     public static XmlSchemaValidationResult Validate(SchemaPackage package, string? fileName, string xml, string? expectedRoot = null) =>
         XmlSchemaPackageAnalyzer.ValidateXml(package.Files, package.Validation, fileName, xml, expectedRoot);
 
-    public static string GenerateMinimumXml(SchemaFile file)
+    /// <summary>
+    /// The minimum schema-valid example for the exact entry XSD: built recursively from the effective schema (required elements in sequence
+    /// order, nested and named types, the first declared branch of each required choice, minimum occurrences, required attributes and
+    /// facet-satisfying synthetic values — identifiers stay synthetic zeros) with the built-in Minimal profile, then validated immediately by the
+    /// same local validator as Validate XML. Only a document that validates is SchemaValid; anything else says why and is never called
+    /// minimum-valid. An unresolved schema dependency blocks generation instead of emitting a supposedly valid document.
+    /// </summary>
+    public static SchemaGenerationResult GenerateMinimumValid(SchemaPackage package, string fileName, string? rootName = null, DateTimeOffset? now = null)
     {
-        var root = file.Declarations.FirstOrDefault(d => d.Kind == "element");
-        if (root is null) return "<!-- No global root element was found. -->";
-        var ns = file.TargetNamespace;
-        var elementName = root.Name;
-        var qname = string.IsNullOrWhiteSpace(ns) ? elementName : $"tns:{elementName}";
-        var content = string.Concat(root.Children.Where(e => e.MinOccurs != "0").Select(e => BuildElement(e)));
-        return string.IsNullOrWhiteSpace(ns)
-            ? $"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<{qname}>{content}</{qname}>"
-            : $"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<{qname} xmlns:tns=\"{Escape(ns)}\" xmlns=\"{Escape(ns)}\">{content}</{qname}>";
+        var profile = SchemaGenerationProfilesService.BuiltIns(package.Fingerprint).Single(p => p.Kind == SchemaGenerationProfileKind.Minimal);
+        var file = package.Files.FirstOrDefault(f => string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase));
+        var root = package.EffectiveSchema.FirstOrDefault(r => rootName is not null ? r.Name == rootName : string.Equals(r.DeclaredIn, fileName, StringComparison.OrdinalIgnoreCase))
+            ?? (rootName is null && package.EffectiveSchema.Count == 1 ? package.EffectiveSchema[0] : null);
+        SchemaGenerationProvenance Provenance(string validation) => new(package.Id, package.Fingerprint, package.Provenance?.SourceSnapshotId,
+            package.Provenance?.SourceSnapshotFingerprint, file?.Name ?? fileName, file?.Fingerprint, root?.Name ?? "", profile.Id.ToString("D"), "Minimum valid",
+            "built-in", SchemaTestDesign.GeneratorVersion, null, true, now ?? DateTimeOffset.UtcNow, validation);
+        if (file is null) return new(SchemaGenerationState.Blocked, "", ["The selected XSD is not part of this schema package."], [], Provenance("Not evaluated"));
+        if (root is null) return new(SchemaGenerationState.Blocked, "", ["This XSD declares no top-level message element to generate."], [], Provenance("Not evaluated"));
+        if (package.UnresolvedReferences is { Count: > 0 } unresolved)
+            return new(SchemaGenerationState.Blocked, "", ["Generation blocked · required schema dependency unresolved",
+                .. unresolved.Take(10).Select(u => $"{u.Kind} {u.QualifiedName} (used in {u.UsedIn})")], [], Provenance("Not evaluated"));
+        string xml;
+        try { xml = GenerateProfileXml(package, root.Name, new SchemaGenerationProfilesService().GenerateValues(package, profile), profile); }
+        catch (Exception e) when (e is InvalidDataException or InvalidOperationException)
+        { return new(SchemaGenerationState.FailedValidation, "", ["Internal generation mismatch: " + SafeDiagnostic(e.Message)], [], Provenance("Not evaluated")); }
+        var validation = Validate(package, file.Name, xml, root.Name);
+        var choices = ChoiceSelections(root, "/" + root.Name);
+        return validation.Status == XmlSchemaValidationStatus.Valid
+            ? new(SchemaGenerationState.SchemaValid, xml, [], choices, Provenance(validation.Message))
+            : new(SchemaGenerationState.FailedValidation, xml, ["Generation failed validation", .. validation.Issues.Take(20)], choices, Provenance(validation.Message));
+    }
+
+    /// <summary>"choice branch selected: /A/B/C (first declared of C | D)" for every required choice the minimum example materializes.</summary>
+    private static IReadOnlyList<string> ChoiceSelections(EffectiveMember member, string path)
+    {
+        var result = new List<string>();
+        foreach (var group in member.Children.Where(c => c.Compositor == "choice").GroupBy(c => c.CompositorGroup).Where(g => g.Count() > 1 && g.First().MinOccurs != "0"))
+            result.Add($"choice branch selected: {path}/{group.First().Name} (first declared of {string.Join(" | ", group.Select(c => c.Name))})");
+        var materialized = member.Children.Where(c => c.MinOccurs != "0" && (c.Compositor != "choice" || member.Children.First(m => m.Compositor == "choice" && m.CompositorGroup == c.CompositorGroup) == c));
+        foreach (var child in materialized) result.AddRange(ChoiceSelections(child, path + "/" + child.Name));
+        return [.. result.Take(50)];
     }
 
     public static string GenerateProfileXml(SchemaPackage package, string rootName, IReadOnlyDictionary<string, string> profileValues, SchemaGenerationProfile? profile = null)
@@ -152,6 +182,7 @@ public sealed class SchemaStudioService
         var schemaRoot = package.EffectiveSchema.FirstOrDefault(r => pathParts.Length == 0 || r.Name == pathParts[0]) ?? package.EffectiveSchema[0];
         var budget = new XmlGenerationBudget();
         var root = BuildInstanceElement(schemaRoot, package, profileValues, "/" + schemaRoot.Name, 0, null, budget);
+        Materialize(root, schemaRoot, pathParts, test.Rule, package, profileValues, budget);
         if (test.Rule == "malformed XML") return SerializeGeneratedXml(root) + "<broken";
         if (test.Rule == "wrong namespace")
         {
@@ -198,9 +229,13 @@ public sealed class SchemaStudioService
             var branch = parentModel?.Children.FirstOrDefault(m => m.Name == test.Value && m.Compositor == "choice");
             if (parent is not null && parentModel is not null && branch is not null)
             {
+                // The chosen branch takes the group's place in the sequence (never appended after later siblings).
                 var groupNames = parentModel.Children.Where(m => m.CompositorGroup == branch.CompositorGroup).Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
-                parent.Elements().Where(e => groupNames.Contains(e.Name.LocalName)).Remove();
-                parent.Add(BuildInstanceElement(branch, package, profileValues, test.Path, 0, null, budget));
+                var existing = parent.Elements().Where(e => groupNames.Contains(e.Name.LocalName)).ToList();
+                var replacement = BuildInstanceElement(branch, package, profileValues, test.Path, 0, null, budget);
+                if (existing.Count > 0) existing[0].AddBeforeSelf(replacement);
+                else parent.Add(replacement);
+                existing.ForEach(e => e.Remove());
             }
         }
         else
@@ -244,6 +279,44 @@ public sealed class SchemaStudioService
         return SerializeGeneratedXml(root);
     }
 
+    /// <summary>
+    /// Makes the case's target exist in the valid baseline before it is mutated: an element inside a choice branch that is not the default
+    /// branch, or inside (or itself) an optional element, is built and inserted in its sequence position (a choice branch replaces its group).
+    /// Without this a mutation of an absent element is a no-op and the "invalid" case silently stays valid.
+    /// </summary>
+    private static void Materialize(XElement root, EffectiveMember schemaRoot, string[] pathParts, string rule, SchemaPackage package,
+        IReadOnlyDictionary<string, string>? profileValues, XmlGenerationBudget budget)
+    {
+        var parts = pathParts.Skip(1).TakeWhile(part => !part.StartsWith('@')).ToList();
+        var count = rule is "optional element omitted" or "choice branch" && !pathParts[^1].StartsWith('@') ? parts.Count - 1 : parts.Count;
+        var element = root;
+        var model = schemaRoot;
+        var path = "/" + schemaRoot.Name;
+        foreach (var part in parts.Take(Math.Max(0, count)))
+        {
+            var childModel = model.Children.FirstOrDefault(c => c.Name == part);
+            if (childModel is null) return;
+            path += "/" + part;
+            var existing = element.Elements().FirstOrDefault(e => e.Name.LocalName == part);
+            if (existing is null)
+            {
+                existing = BuildInstanceElement(childModel, package, profileValues, path, 0, null, budget);
+                var siblings = model.Children;
+                var displaced = childModel.Compositor == "choice"
+                    ? element.Elements().Where(e => siblings.Any(m => m.Name == e.Name.LocalName && m.Compositor == "choice" && m.CompositorGroup == childModel.CompositorGroup)).ToList()
+                    : [];
+                var order = siblings.Select(c => c.Name).ToList();
+                var index = order.IndexOf(part);
+                var next = displaced.FirstOrDefault() ?? element.Elements().FirstOrDefault(e => order.IndexOf(e.Name.LocalName) > index);
+                if (next is not null) next.AddBeforeSelf(existing);
+                else element.Add(existing);
+                displaced.ForEach(e => e.Remove());
+            }
+            element = existing;
+            model = childModel;
+        }
+    }
+
     private static string SafeDiagnostic(string value) => value.Length > 300 ? value[..300] : value;
 
     private static string SerializeGeneratedXml(XElement root)
@@ -255,13 +328,18 @@ public sealed class SchemaStudioService
     }
 
     public static IReadOnlyList<SchemaTestResult> RunGeneratedTests(SchemaPackage package,
-        IReadOnlyDictionary<string, string>? profileValues = null, int maxTests = 100)
+        IReadOnlyDictionary<string, string>? profileValues = null, int maxTests = 100) =>
+        RunCases(package, [.. package.GeneratedTests.Take(Math.Clamp(maxTests, 1, 500))], profileValues);
+
+    /// <summary>Runs exactly the given cases (any run mode's selection) with the one local validator; each result records its issue count.</summary>
+    public static IReadOnlyList<SchemaTestResult> RunCases(SchemaPackage package, IReadOnlyList<SchemaTestCase> cases,
+        IReadOnlyDictionary<string, string>? profileValues = null)
     {
         var results = new List<SchemaTestResult>();
         var baselines = new Dictionary<string, (string Xml, string Validation, string Id)>(StringComparer.Ordinal);
         var baselineShown = new HashSet<string>(StringComparer.Ordinal);
         long baselineBytes = 0;
-        foreach (var test in package.GeneratedTests.Take(Math.Clamp(maxTests, 1, 500)))
+        foreach (var test in cases.Take(SchemaTestDesign.MaxRunCases))
         {
             var rootName = test.Path.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
             var schemaRoot = package.EffectiveSchema.FirstOrDefault(root => root.Name == rootName);
@@ -298,10 +376,13 @@ public sealed class SchemaStudioService
             var includeBaseline = baselineShown.Add(schemaRoot.Name);
             string xml;
             string validation;
+            int issues;
             try
             {
                 xml = GenerateTestXml(package, test, profileValues);
-                validation = ValidateXml(package, test.SourceFile, xml);
+                var structured = Validate(package, test.SourceFile, xml);
+                validation = structured.Message;
+                issues = structured.Issues.Count;
             }
             catch (InvalidDataException e)
             {
@@ -314,7 +395,7 @@ public sealed class SchemaStudioService
             var outcome = actual == "Not evaluated" ? "Not evaluated"
                 : (actual == "Valid") == test.ExpectedValid ? "Pass" : "Fail";
             results.Add(new(test.Id, test.Path, test.Rule, test.ExpectedValid, actual, outcome, validation, xml,
-                includeBaseline ? baseline.Xml : "", baseline.Id));
+                includeBaseline ? baseline.Xml : "", baseline.Id, issues));
         }
         return results;
     }
@@ -464,13 +545,7 @@ public sealed class SchemaStudioService
     private static string DefaultValue(EffectiveMember member)
     {
         if (member.Facets.FirstOrDefault(f => f.Kind == "enumeration") is { } enumeration) return enumeration.Value;
-        var patterns = member.Facets.Where(f => f.Kind == "pattern").ToArray();
-        if (patterns.Length > 0)
-        {
-            var candidate = new[] { "A", "AB", "ABC", "0", "01", "123", "a", "abc", "test", "AA", "A1", "12", "_", "-" }
-                .FirstOrDefault(value => patterns.All(p => PatternMatches(p.Value, value)) && SatisfiesSimpleFacets(member.Facets, value));
-            if (candidate is not null) return candidate;
-        }
+        if (member.Facets.Any(f => f.Kind == "pattern") && PatternValue(member.Facets) is { } patterned) return patterned;
         if (member.Facets.FirstOrDefault(f => f.Kind is "length" or "minLength") is { } length && int.TryParse(length.Value, out var size)) return new string('a', Math.Clamp(size, 0, 512));
         var min = member.Facets.FirstOrDefault(f => f.Kind is "minInclusive" or "minExclusive");
         var max = member.Facets.FirstOrDefault(f => f.Kind is "maxInclusive" or "maxExclusive");
@@ -491,12 +566,35 @@ public sealed class SchemaStudioService
         };
     }
 
+    private static readonly string[] PatternCandidates = ["A", "AB", "ABC", "0", "01", "123", "a", "abc", "test", "AA", "A1", "12", "_", "-"];
+
+    /// <summary>
+    /// A value matching every pattern facet (and the other simple facets): a short fixed candidate when one fits, otherwise the bounded XSD
+    /// pattern generator seeded from the pattern itself (deterministic). Null when no value can be constructed safely — the caller then
+    /// reports the rule as unsupported instead of inventing a value and calling it valid.
+    /// </summary>
+    private static string? PatternValue(IReadOnlyList<SchemaFacet> facets)
+    {
+        var patterns = facets.Where(f => f.Kind == "pattern").Select(f => f.Value).ToArray();
+        var candidate = PatternCandidates.FirstOrDefault(value => patterns.All(p => PatternMatches(p, value)) && SatisfiesSimpleFacets(facets, value));
+        if (candidate is not null) return candidate;
+        var random = new Random(BitConverter.ToInt32(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", patterns))), 0) & int.MaxValue);
+        for (var attempt = 0; attempt < 8; attempt++)
+            if (XsdPatternValueGenerator.TryCreate(patterns[0], random, out var generated) && patterns.All(p => PatternMatches(p, generated)) && SatisfiesSimpleFacets(facets, generated))
+                return generated;
+        return null;
+    }
+
+    /// <summary>XSD patterns match the whole value and use the XSD regex dialect: the anchored, translated matcher (an unsupported construct is no match).</summary>
     private static bool PatternMatches(string pattern, string value)
     {
-        try { return Regex.IsMatch(value, pattern, RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, TimeSpan.FromMilliseconds(20)); }
+        try { return XsdPatternValueGenerator.Matches(pattern, value); }
         catch (ArgumentException) { return false; }
         catch (RegexMatchTimeoutException) { return false; }
     }
+
+    private static bool SatisfiesAll(IReadOnlyList<SchemaFacet> facets, string value) =>
+        SatisfiesSimpleFacets(facets, value) && facets.Where(f => f.Kind == "pattern").All(p => PatternMatches(p.Value, value));
 
     private static bool SatisfiesSimpleFacets(IReadOnlyList<SchemaFacet> facets, string value)
     {
@@ -537,20 +635,6 @@ public sealed class SchemaStudioService
         return current;
     }
 
-    private static string BuildElement(SchemaElement element)
-    {
-        if (element.Children.Count == 0)
-        {
-            var value = element.Facets.FirstOrDefault(f => f.Kind == "enumeration")?.Value;
-            if (value is null && element.Facets.FirstOrDefault(f => f.Kind == "minLength") is { } min && int.TryParse(min.Value, out var count))
-                value = new string('a', Math.Clamp(count, 0, 64));
-            value ??= "value";
-            return $"<{element.Name}>{Escape(value)}</{element.Name}>";
-        }
-        return $"<{element.Name}>" + string.Concat(element.Children.Where(e => e.MinOccurs != "0").Select(BuildElement)) + $"</{element.Name}>";
-    }
-
-
     private const int MaxGeneratedTestCases = 5000;
 
     private static IReadOnlyList<SchemaTestCase> BuildTests(IReadOnlyList<EffectiveMember> roots, out bool truncated)
@@ -582,7 +666,8 @@ public sealed class SchemaStudioService
             foreach (var sequence in members.Where(m => m.Compositor == "sequence").GroupBy(m => m.CompositorGroup))
             {
                 if (didTruncate) return;
-                if (sequence.Count() > 1) Add("order-invalid:" + parentPath + ":" + sequence.Key, parentPath, "wrong element order", "reverse sequence", false, sequence.First().DeclaredIn);
+                // Reversing breaks the order only when the valid baseline holds at least two required elements of the sequence.
+                if (sequence.Count(m => m.MinOccurs != "0") > 1) Add("order-invalid:" + parentPath + ":" + sequence.Key, parentPath, "wrong element order", "reverse sequence", false, sequence.First().DeclaredIn);
             }
             foreach (var choice in members.Where(m => m.Compositor == "choice").GroupBy(m => m.CompositorGroup))
             {
@@ -611,7 +696,7 @@ public sealed class SchemaStudioService
                 var materialized = member.MinOccurs != "0" && (member.Compositor != "choice" || members.FirstOrDefault(m => m.Compositor == "choice" && m.CompositorGroup == member.CompositorGroup) == member);
                 if (materialized && member.Children.Count > 0) Add("parent-missing:" + path, path, "missing parent element", "(parent omitted)", false, member.DeclaredIn);
                 if (materialized) Add("wrong-member-namespace:" + path, path, "wrong element namespace", "urn:schema-studio:wrong-namespace", false, member.DeclaredIn);
-                if (materialized && (LocalName(member.Type) != "string" || member.Facets.Any(f => f.Kind == "minLength" && int.TryParse(f.Value, out var length) && length > 0)))
+                if (materialized && member.Children.Count == 0 && (LocalName(member.Type) != "string" || member.Facets.Any(f => f.Kind == "minLength" && int.TryParse(f.Value, out var length) && length > 0)))
                     Add("empty-required:" + path, path, "empty required value", "(empty)", false, member.DeclaredIn);
                 if (int.TryParse(member.MinOccurs, out var minimum) && minimum > 1) Add("occurs-underflow:" + path, path, "minOccurs - 1", (minimum - 1).ToString(), false, member.DeclaredIn);
                 if (member.MaxOccurs != "1" && member.MaxOccurs != "unbounded" && int.TryParse(member.MaxOccurs, out var max))
@@ -621,48 +706,47 @@ public sealed class SchemaStudioService
                     if (didTruncate) return;
                     if (facet.Kind == "enumeration")
                     {
-                        Add("enum-valid:" + path + ":" + facet.Value, path, "known enumeration", facet.Value, true, member.DeclaredIn);
+                        Add("enum-valid:" + path + ":" + facet.Value, path, "known enumeration", facet.Value, true, member.DeclaredIn, member.Facets);
                         Add("enum-invalid:" + path, path, "unknown enumeration", "__unknown_value__", false, member.DeclaredIn);
                     }
                     if (facet.Kind == "length" && int.TryParse(facet.Value, out var exactLength) && exactLength >= 0)
                     {
                         if (exactLength <= MaxGeneratedBoundaryCharacters)
-                            Add("length-boundary:" + path + facet.Kind, path, "length boundary", new string('a', exactLength), true, member.DeclaredIn);
+                            Add("length-boundary:" + path + facet.Kind, path, "length boundary", new string('a', exactLength), true, member.DeclaredIn, member.Facets);
                         if (exactLength < MaxGeneratedBoundaryCharacters)
                             Add("length-outside:" + path + facet.Kind, path, "length outside boundary", new string('a', exactLength + 1), false, member.DeclaredIn);
                     }
                     if (facet.Kind == "minLength" && int.TryParse(facet.Value, out var lower) && lower >= 0)
                     {
                         if (lower <= MaxGeneratedBoundaryCharacters)
-                            Add("length-boundary:" + path + facet.Kind, path, "minLength boundary", new string('a', lower), true, member.DeclaredIn);
+                            Add("length-boundary:" + path + facet.Kind, path, "minLength boundary", new string('a', lower), true, member.DeclaredIn, member.Facets);
                         if (lower > 0 && lower - 1 <= MaxGeneratedBoundaryCharacters)
                             Add("length-outside:" + path + facet.Kind, path, "below minLength", new string('a', lower - 1), false, member.DeclaredIn);
                     }
                     if (facet.Kind == "maxLength" && int.TryParse(facet.Value, out var upper) && upper >= 0)
                     {
                         if (upper <= MaxGeneratedBoundaryCharacters)
-                            Add("length-boundary:" + path + facet.Kind, path, "maxLength boundary", new string('a', upper), true, member.DeclaredIn);
+                            Add("length-boundary:" + path + facet.Kind, path, "maxLength boundary", new string('a', upper), true, member.DeclaredIn, member.Facets);
                         if (upper < MaxGeneratedBoundaryCharacters)
                             Add("length-outside:" + path + facet.Kind, path, "above maxLength", new string('a', upper + 1), false, member.DeclaredIn);
                     }
                     if (facet.Kind is "minInclusive" or "minExclusive" or "maxInclusive" or "maxExclusive")
                     {
                         var inclusive = facet.Kind.EndsWith("Inclusive", StringComparison.Ordinal);
-                        Add("numeric-boundary:" + path + facet.Kind, path, facet.Kind + " boundary", facet.Value, inclusive, member.DeclaredIn);
+                        Add("numeric-boundary:" + path + facet.Kind, path, facet.Kind + " boundary", facet.Value, inclusive, member.DeclaredIn, member.Facets);
                         if (decimal.TryParse(facet.Value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var bound))
                         {
                             var delta = Math.Max(Math.Abs(bound) * 0.01m, 0.01m);
                             var isMinimum = facet.Kind.StartsWith("min", StringComparison.Ordinal);
                             var outside = isMinimum ? bound - delta : bound + delta;
                             Add("numeric-outside:" + path + facet.Kind, path, facet.Kind + " outside boundary", outside.ToString(System.Globalization.CultureInfo.InvariantCulture), false, member.DeclaredIn);
-                            if (!inclusive) Add("numeric-inside:" + path + facet.Kind, path, facet.Kind + " adjacent valid value", (isMinimum ? bound + delta : bound - delta).ToString(System.Globalization.CultureInfo.InvariantCulture), true, member.DeclaredIn);
+                            if (!inclusive) Add("numeric-inside:" + path + facet.Kind, path, facet.Kind + " adjacent valid value", (isMinimum ? bound + delta : bound - delta).ToString(System.Globalization.CultureInfo.InvariantCulture), true, member.DeclaredIn, member.Facets);
                         }
                     }
                     if (facet.Kind == "pattern")
                     {
-                        var candidates = new[] { "A", "AB", "ABC", "0", "01", "123", "a", "abc", "test", "AA", "A1", "12", "_", "-" };
-                        var validPatternValue = candidates.FirstOrDefault(value => PatternMatches(facet.Value, value) && SatisfiesSimpleFacets(member.Facets, value));
-                        var invalidPatternValue = candidates.FirstOrDefault(value => !PatternMatches(facet.Value, value) && SatisfiesSimpleFacets(member.Facets, value));
+                        var validPatternValue = PatternValue(member.Facets);
+                        var invalidPatternValue = PatternCandidates.FirstOrDefault(value => !PatternMatches(facet.Value, value) && SatisfiesSimpleFacets(member.Facets, value));
                         if (validPatternValue is not null) Add("pattern-valid:" + path + facet.Value, path, "pattern match", validPatternValue, true, member.DeclaredIn);
                         if (invalidPatternValue is not null) Add("pattern-invalid:" + path + facet.Value, path, "pattern non-match", invalidPatternValue, false, member.DeclaredIn);
                     }
@@ -682,9 +766,12 @@ public sealed class SchemaStudioService
             if (HasLexicalTypeMutation(LocalName(attribute.BaseType) ?? typeName))
                 Add("wrong-attribute-type:" + path, path, "wrong datatype", "not-a-valid-" + typeName, false, attribute.DeclaredIn);
         }
-        void Add(string id, string path, string rule, string value, bool expected, string source)
+        // A positive value case must satisfy every facet of its element (a length boundary that breaks a pattern is not a valid case);
+        // when it cannot, no positive case is emitted and the rule shows as not covered instead of as a false "valid" case.
+        void Add(string id, string path, string rule, string value, bool expected, string source, IReadOnlyList<SchemaFacet>? facets = null)
         {
             if (didTruncate) return;
+            if (expected && facets is not null && !SatisfiesAll(facets, value)) return;
             var stableId = StableTestId(id);
             if (identifiers.Contains(stableId)) return;
             if (result.Count >= MaxGeneratedTestCases) { didTruncate = true; return; }
@@ -704,5 +791,4 @@ public sealed class SchemaStudioService
     private static string? LocalName(string? value) => XmlSchemaPackageAnalyzer.LocalName(value);
     private static bool SafeName(string name) => XmlSchemaPackageAnalyzer.SafeName(name);
     private static string Fingerprint(string text) => XmlSchemaPackageAnalyzer.Fingerprint(text);
-    private static string Escape(string value) => System.Security.SecurityElement.Escape(value) ?? "";
 }

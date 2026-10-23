@@ -94,7 +94,8 @@ public sealed class TestDataSourcesTests
 
         var draft = assets.Single(a => a.Alias == "draft-report");
         draft.Approval.Should().Be(TestDataApproval.Unapproved);
-        draft.ApprovalDetail.Should().Contain("draft");
+        draft.ApprovalDetail.Should().Contain("approve it in Test Data", "Schema Studio never approves; Test Data does");
+        draft.ReviewRequested.Should().BeTrue();
         draft.Capabilities.Should().NotContain(SchemaStudioTestDataProvider.NegativeTest);
 
         var view = new TestDataCatalog([provider]).View();
@@ -110,6 +111,26 @@ public sealed class TestDataSourcesTests
         var provider = new SchemaStudioTestDataProvider(() => [Document(Saved("<Report />", null))]);
         provider.Assets().Should().BeEmpty();
         new TestDataCatalog([provider]).View().Sources.Single().Status.Should().Be(TestDataSourceStatus.NotConfigured);
+    }
+
+    [Fact]
+    public void SchemaStudio_RegistrationFacts_BecomeProvenance_ScopeAndNeedsReview()
+    {
+        var facts = new
+        {
+            expectedResult = "Invalid", validationStatus = "Invalid", mutation = "below minLength", targetRule = "Length boundaries: below minLength", path = "/Report/Code",
+            profileId = Guid.NewGuid().ToString("D"), profileVersion = "built-in", generatorVersion = "schema-generator/2", rootElement = "Report", environmentId = "env-qa",
+        };
+        var registration = new { alias = "code-too-short", intent = SchemaStudioTestDataProvider.NegativeTest, approved = false, registeredAt = DateTimeOffset.UtcNow, facts };
+        var provider = new SchemaStudioTestDataProvider(() => [Document(Saved("<Report>x</Report>", registration))]);
+        var asset = provider.Assets().Single();
+
+        asset.Environment.Should().Be("env-qa", "the scope the user chose at registration");
+        asset.Provenance.Should().Contain(new TestDataFact("Expected schema result", "Invalid")).And.Contain(new TestDataFact("Mutation", "below minLength"))
+            .And.Contain(new TestDataFact("Schema rule targeted", "Length boundaries: below minLength")).And.Contain(new TestDataFact("Generator", "schema-generator/2"));
+        var summary = new TestDataCatalog([provider]).View().Assets.Single();
+        summary.Status.Should().Be(TestDataAssetStatus.NeedsReview, "registered from Schema Studio, approved only in Test Data");
+        summary.DataType.Should().Be(TestDataDataType.XmlPayload);
     }
 
     [Fact]

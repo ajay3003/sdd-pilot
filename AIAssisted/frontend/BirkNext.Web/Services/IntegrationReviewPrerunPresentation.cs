@@ -204,7 +204,7 @@ public static class IntegrationReviewPrerunPresentation
     public static string? SchemaStudioHref(BirkNext.ContractSchemaEvidence.ContractRelationshipReview pair, string environmentId)
     {
         if (pair.Consumer is not { } consumer) return null;
-        var href = $"/schema-studio?snapshot={consumer.SnapshotId}&contract={Uri.EscapeDataString(consumer.Path)}&environment={Uri.EscapeDataString(environmentId)}&integration={Uri.EscapeDataString(pair.IntegrationId)}";
+        var href = $"/schema-studio?snapshot={consumer.SnapshotId}&contract={Uri.EscapeDataString(consumer.Path)}&environment={Uri.EscapeDataString(environmentId)}&integration={Uri.EscapeDataString(pair.IntegrationId)}&from=iqr";
         return pair.Producer is { } producer && producer.Key != consumer.Key
             ? $"{href}&producerSnapshot={producer.SnapshotId}&producerContract={Uri.EscapeDataString(producer.Path)}" : href;
     }

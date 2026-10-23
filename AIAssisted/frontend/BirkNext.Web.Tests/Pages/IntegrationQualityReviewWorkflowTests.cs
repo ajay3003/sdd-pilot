@@ -287,6 +287,6 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         cut.Find("[data-testid=iqr-contract-pair-state]").TextContent.Should().Be("Insufficient evidence · not assessable");
         cut.Find("[data-testid=iqr-contract-pair-summary]").TextContent.Should().StartWith("Matching source schema found · relationship not yet confirmed");
         cut.Find("[data-testid=iqr-contract-pair-studio]").GetAttribute("href").Should().Be(
-            $"/schema-studio?snapshot={snapshot}&contract=xsd%2Fportal_report_v2.xsd&environment=dev&integration={Uri.EscapeDataString(IntakeId)}");
+            $"/schema-studio?snapshot={snapshot}&contract=xsd%2Fportal_report_v2.xsd&environment=dev&integration={Uri.EscapeDataString(IntakeId)}&from=iqr");
     }
 }
