@@ -24,7 +24,7 @@ public sealed class OpenApiTopologyProvider(IHttpClientFactory http, IOpenApiExt
         {
             builder.Source(new(TopologySource.OpenApi, TopologySourceState.NotRequested, declared.Count == 0
                 ? "No trusted component declares an OpenAPI document path."
-                : $"{declared.Count} component(s) declare an OpenAPI document; select Discover interfaces to read them."));
+                : $"{declared.Count} component(s) declare an OpenAPI document; select Discover OpenAPI interfaces to read them."));
             return;
         }
         var read = new List<string>();
@@ -78,7 +78,8 @@ public sealed class ProfileTopologyProvider(IEnumerable<ITopologyProfile> profil
 /// sources' own timestamps), so a stale source is visible as such and a resolver improvement applies to existing snapshots without re-import.
 /// </summary>
 public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> providers, IEnumerable<ITopologyProfile> profiles,
-    ITrustedExecutionEnvironmentRegistry environments, IIntegrationCatalogService catalog, IReviewSourceEvidenceProvider sources, TimeProvider clock)
+    ITrustedExecutionEnvironmentRegistry environments, IIntegrationCatalogService catalog, IReviewSourceEvidenceProvider sources, TimeProvider clock,
+    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null)
 {
     public async Task<(IntegrationTopologyView View, TopologyBuilder Builder)> BuildAsync(string environmentId, TopologyRequest request, CancellationToken ct)
     {
@@ -99,15 +100,20 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         return (view, builder, context);
     }
 
-    /// <summary>What "Discover interfaces" would read — computed from configuration only, no network call.</summary>
+    /// <summary>What "Discover OpenAPI interfaces" would read — computed from configuration only, no network call. Targets are deduplicated by
+    /// component and canonical scheme, host, port and document path.</summary>
     public static TopologyDiscoveryPlan DiscoveryPlan(TrustedExecutionEnvironment? trusted)
     {
         var declared = trusted?.Components.Where(component => !string.IsNullOrWhiteSpace(component.OpenApiPath)).ToList() ?? [];
         var eligible = new List<TopologyDiscoveryTarget>();
         var ineligible = new List<TopologyDiscoveryTarget>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var component in declared)
         {
-            if (TrustedComponentPolicy.OpenApiAddress(component) is { } address) eligible.Add(new(component.Name, address.Authority, address.AbsolutePath));
+            if (TrustedComponentPolicy.OpenApiAddress(component) is { } address)
+            {
+                if (seen.Add($"{component.Name}|{address.Scheme}://{address.Authority}{address.AbsolutePath}")) eligible.Add(new(component.Name, address.Authority, address.AbsolutePath));
+            }
             else ineligible.Add(new(component.Name, "", component.OpenApiPath ?? "", "The OpenAPI path is not a relative path on the component's own base address (same scheme, host and port)."));
         }
         return new(eligible, ineligible);
@@ -126,7 +132,9 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
     {
         if (profiles.FirstOrDefault(item => string.Equals(item.Id, profileId, StringComparison.Ordinal)) is not { } profile) return null;
         var (view, builder, context) = await BuildCoreAsync(environmentId, request, ct);
-        return TopologyCoverage.Evaluate(profile, view, builder, context.Snapshots, request, clock.GetUtcNow());
+        // The canonical IQR bindings are read (never written): Bound comes from them only, never from a newest snapshot.
+        var bound = bindings is null ? null : await bindings.ListAsync(environmentId, ct);
+        return TopologyCoverage.Evaluate(profile, view, builder, context.Snapshots, request, clock.GetUtcNow(), bound);
     }
 }
 

@@ -22,10 +22,12 @@ public sealed class SkoleNaervaerTopologyProfile : ITopologyProfile
     [
         new("Altinn", ["Altinn (TT02)", "External reporting party (Altinn)"], "Reports are submitted through the Altinn app."),
         new("MU", ["Meldingsutveksleren", "Buf.Meldingsutveksler.Service"], $"Receives the report from Altinn and hands it to MM ({Docs})."),
-        new("MM", ["Meldingsutvekslermottak", "Skolenærværsmottaket", "M2LB.Meldingsutvekslermottak.Host"], $"Validates and maps the report and calls Skoletjenesten ({Docs})."),
-        new("Skoletjenesten", ["Skole", "Skolenærværsrapport", "Skolenaervaersrapport", "M2LB.Skole.Api"], $"Receives reports and education data ({Docs})."),
+        // Aliases are the exact project identities the M2LB implementation uses (earlier and current names); a Test Pack declaration, never a
+        // similarity match: "M2LB.SkoleService.Api" is Skoletjenesten because the pack says so, not because the names look alike.
+        new("MM", ["Meldingsutvekslermottak", "Skolenærværsmottaket", "M2LB.Meldingsutvekslermottak.Host", "M2LB.MeldingsutvekslerReceiver.Host"], $"Validates and maps the report and calls Skoletjenesten ({Docs})."),
+        new("Skoletjenesten", ["Skole", "Skolenærværsrapport", "Skolenaervaersrapport", "M2LB.Skole.Api", "M2LB.SkoleService.Api"], $"Receives reports and education data ({Docs})."),
         new("Person", ["M2LB.Person.Api"], $"Publishes person events Skoletjenesten consumes ({Docs})."),
-        new("SkoleAdapter", ["M2LB.Skole.BiRK.Worker"], $"Forwards education data from BiRK to Skoletjenesten ({Docs})."),
+        new("SkoleAdapter", ["M2LB.Skole.BiRK.Worker", "M2LB.SkoleAdapter.Worker"], $"Forwards education data from BiRK to Skoletjenesten ({Docs})."),
         new("Bufdata", [], $"Receives the completed dataset after period lock; no delivery exists yet (ADR-028, {Docs})."),
     ];
 
@@ -56,7 +58,8 @@ public sealed class SkoleNaervaerTopologyProfile : ITopologyProfile
         },
         new(M2lb, "M2LB", TopologySourceRequirement.Required)
         {
-            Match = new() { Components = ["Meldingsutvekslermottak", "Skole.Api", "Skole.BiRK"] },
+            // One part per system; '|' lists the system's earlier and current project names (MM, Skoletjenesten, SkoleAdapter).
+            Match = new() { Components = ["Meldingsutvekslermottak|MeldingsutvekslerReceiver", "Skole.Api|SkoleService.Api", "Skole.BiRK|SkoleAdapter.Worker"] },
             Capabilities = [TopologyCapabilities.ApplicationSource, TopologyCapabilities.HttpClient, TopologyCapabilities.HttpServer, TopologyCapabilities.ServiceBus, TopologyCapabilities.EventHub],
             Relationships = ["mu-mm", "mm-skoletjenesten", "eventhub-skoleadapter", "skoleadapter-skoletjenesten", "rapport-servicebus"],
             Guidance = "Application source of Meldingsutvekslermottak (MM), Skoletjenesten and SkoleAdapter: clients, consumers and producers.",
@@ -110,6 +113,7 @@ public sealed class SkoleNaervaerTopologyProfile : ITopologyProfile
         {
             EvidenceRoles = [M2lb, Iac],
             MissingEvidence = "A concrete base address for MM's Skoletjenesten client (environment configuration, deployment settings or an IaC address injection).",
+            ConfigurationResolvable = true,
         },
         new("birk-cdc", "BiRK → CDC (Debezium)", "role:" + Birk, "resource:connector", "CDC", TopologyDimensions.Infrastructure)
         {
@@ -124,12 +128,14 @@ public sealed class SkoleNaervaerTopologyProfile : ITopologyProfile
         new("eventhub-skoleadapter", "Event Hub → SkoleAdapter", "resource:eventhub", "SkoleAdapter", "Event Hub", TopologyDimensions.Messaging)
         {
             EvidenceRoles = [M2lb, Iac],
-            MissingEvidence = "SkoleAdapter consumer configuration naming the CDC Event Hubs.",
+            MissingEvidence = "SkoleAdapter consumer configuration naming the exact CDC Event Hub it consumes.",
+            ConfigurationResolvable = true,
         },
         new("skoleadapter-skoletjenesten", "SkoleAdapter → Skoletjenesten", "SkoleAdapter", "Skoletjenesten", "HTTP", TopologyDimensions.Application)
         {
             EvidenceRoles = [M2lb, Iac],
             MissingEvidence = "A base address for SkoleAdapter's Skoletjenesten client that matches where Skoletjenesten is deployed or launched.",
+            ConfigurationResolvable = true,
         },
         new("rapport-servicebus", "Skolenærværsrapport → Service Bus", "Skoletjenesten", "resource:servicebus", "Service Bus", TopologyDimensions.Messaging)
         {

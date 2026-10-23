@@ -86,8 +86,8 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         interfaces.First(item => item.GetAttribute("data-type") == "Rest").TextContent.Should().Contain("POST /api/reports").And.Contain("OpenAPI").And.Contain("Source Analysis").And.Contain("Browser observation").And.Contain("Observed");
         page.Find("[data-testid=it-location]").TextContent.Should().Be("https://report.example.test/");
         page.Find("[data-testid=it-detail-connection]").TextContent.Should().Contain("Conflict").And.Contain("different addresses");
-        page.FindAll("textarea, select").Should().BeEmpty("the topology is read-only; no endpoint is edited here");
-        page.FindAll("input").Should().OnlyContain(input => input.GetAttribute("type") == "search", "the only input filters the interface list");
+        page.FindAll("textarea").Should().BeEmpty("the topology is read-only; no endpoint is edited here");
+        page.FindAll("input, select").Should().OnlyContain(control => control.Closest(".it-filters") != null, "the only controls filter the interface inventory");
     }
 
     [Fact]
@@ -113,7 +113,8 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         var page = Render<IntegrationTopologyPage>();
         page.Find("[data-testid=it-discover]").Click();
         page.Find("[data-testid=it-discover-run]").HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=it-discovery-none]").TextContent.Should().Contain("nothing to query");
+        page.Find("[data-testid=it-discovery-none]").TextContent.Should().Contain("No additional OpenAPI document targets are currently eligible")
+            .And.Contain("Existing source, runtime and configuration evidence remains available below (3 interfaces)");
     }
 
     private static TopologyCoverageView Coverage() => new()
@@ -133,7 +134,7 @@ public sealed class IntegrationTopologyPageTests : BunitContext
                 Evidence = [new("http-client-target-host", TopologyEvidenceStrength.VeryStrong, "Application source", "Billing sets OrdersApi to host ca-orders.", "b2.zip")] },
             new() { Id = "b", Label = "Service Bus → Ledger", From = "Service Bus", To = "Ledger consumer", Transport = "Service Bus", Dimension = "External consumer",
                 State = TopologyRelationshipState.ExpectedUnresolved, AvailableEvidence = "Orders produces to orders.created.", MissingEvidence = "A Ledger consumer of an entity Orders produces.",
-                SourceRoleId = "ledger", SourceRoleName = "Ledger consumer", SourceRoleState = TopologySourceRoleState.NotProvided, Action = "import-source" },
+                SourceRoleId = "ledger", SourceRoleName = "Ledger consumer", SourceRoleState = TopologySourceRoleState.NotProvided, Action = TopologyGapAction.ImportSource, Owner = "Project Import" },
         ],
         Completeness = [new("Application", TopologyCompletenessState.Complete, "1 resolved."), new("External consumer", TopologyCompletenessState.Partial, "0 of 1 resolved."),
             new("Runtime observation", TopologyCompletenessState.NotObserved, "No runtime observation.")],
@@ -158,7 +159,9 @@ public sealed class IntegrationTopologyPageTests : BunitContext
             .And.Contain("Very strong").And.Contain("What remains unverified");
         page.Find("[data-testid=it-unresolved]").TextContent.Should().Contain("Expected but unresolved").And.Contain("Additional source needed").And.Contain("Ledger consumer");
         page.Find("[data-testid=it-missing]").TextContent.Should().Be("A Ledger consumer of an entity Orders produces.");
-        page.Find("[data-testid=it-import-source]").GetAttribute("href").Should().Be("/project-import");
+        var action = page.Find("[data-testid=it-gap-action]");
+        (action.TextContent, action.GetAttribute("href")).Should().Be(("Import source", "/project-import"));
+        page.Find("[data-testid=it-owner]").TextContent.Should().Be("Project Import");
         page.FindAll("[data-testid=it-dimension]").Select(item => item.GetAttribute("data-state")).Should().Equal("Complete", "Partial", "NotObserved");
         page.Find("[data-testid=it-relationships]").TextContent.Should().NotContain("%", "completeness is categorical, never a percentage");
     }
@@ -168,7 +171,8 @@ public sealed class IntegrationTopologyPageTests : BunitContext
     {
         _api.View = Sample() with { Components = [.. Sample().Components, new() { Id = "resource:servicebus:t", Name = "t", Kind = TopologyComponentKind.Resource, Status = TopologyStatus.Discovered }] };
         var page = Render<IntegrationTopologyPage>();
-        page.FindAll("[data-testid=it-component-group]").Select(group => (group.GetAttribute("data-kind"), group.HasAttribute("open"))).Should().Equal([("Application", true), ("Resource", false)]);
+        page.FindAll("[data-testid=it-component-group]").Select(group => (group.GetAttribute("data-kind"), group.HasAttribute("open"))).Should().Equal([("Application", false), ("Resource", false)],
+            "components are technical inventory, one disclosure away");
         page.Find("[data-testid=it-count-components]").TextContent.Should().Be("2", "resources are not counted as components");
     }
 
@@ -213,5 +217,153 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         snapshot.Shared.Add(new ObservedNetworkEndpoint { Category = ObservedTrafficCategory.StaticAsset, Method = "GET", Host = "cdn.example.test", Path = "/app.js" });
         var observation = TopologyObservations.From(snapshot).Should().ContainSingle().Subject;
         (observation.Method, observation.Host, observation.Path).Should().Be(("GET", "api.example.test", "/api/reports"));
+    }
+
+    // ── Source presence vs binding, state-aware actions, attention, confidence, discovery preflight, inventory filters ──
+
+    private static TopologyCoverageView BindingCoverage() => Coverage() with
+    {
+        CoreSourcesComplete = false,
+        Roles =
+        [
+            new() { RoleId = "mu", DisplayName = "Meldingsutveksleren (MU)", Requirement = TopologySourceRequirement.Required, State = TopologySourceRoleState.Bound,
+                MatchingSources = ["Tiltak 2.zip"], BoundSources = ["Tiltak 2.zip"], Action = TopologyGapAction.ViewEvidence },
+            new() { RoleId = "m2lb", DisplayName = "M2LB", Requirement = TopologySourceRequirement.Required, State = TopologySourceRoleState.AvailableNeedsBinding,
+                MatchingSources = ["M2LB.zip"], Action = TopologyGapAction.BindSource, Detail = "M2LB.zip matches by content but is not bound." },
+            new() { RoleId = "birk", DisplayName = "BiRK application source", Requirement = TopologySourceRequirement.Conditional, State = TopologySourceRoleState.NotProvided, Action = TopologyGapAction.ImportSource },
+            new() { RoleId = "bufdata", DisplayName = "Bufdata consumer evidence", Requirement = TopologySourceRequirement.Conditional, State = TopologySourceRoleState.Ambiguous,
+                MatchingSources = ["a.zip", "b.zip"], Action = TopologyGapAction.ReviewCandidates },
+        ],
+        Relationships =
+        [
+            new() { Id = "r", Label = "SkoleAdapter → Skoletjenesten", Transport = "HTTP", State = TopologyRelationshipState.Resolved, Unverified = "x" },
+            new() { Id = "o", Label = "Altinn → MU", Transport = "Webhook", State = TopologyRelationshipState.Observed, RuntimeObserved = true, Unverified = "x" },
+            new() { Id = "s", Label = "MU → MM", Transport = "Service Bus", State = TopologyRelationshipState.StronglySupported, SourceRoleName = "M2LB",
+                SourceRoleState = TopologySourceRoleState.AvailableNeedsBinding, Action = TopologyGapAction.BindSource, MissingEvidence = "matching queue" },
+            new() { Id = "m", Label = "MM → Skoletjenesten", Transport = "HTTP", State = TopologyRelationshipState.Candidate, SourceRoleName = "M2LB",
+                SourceRoleState = TopologySourceRoleState.AvailableNeedsBinding, Action = TopologyGapAction.BindSource, MissingEvidence = "base address" },
+            new() { Id = "b", Label = "BiRK → CDC", Transport = "CDC", State = TopologyRelationshipState.ExpectedUnresolved, SourceRoleName = "BiRK application source",
+                SourceRoleState = TopologySourceRoleState.NotProvided, Action = TopologyGapAction.ImportSource, MissingEvidence = "BiRK side" },
+        ],
+    };
+
+    [Fact]
+    public void AvailableUnboundSource_ReadsNeedsBinding_AndOffersBindNotImport()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        var m2lb = page.Find("[data-testid=it-role][data-role=m2lb]");
+        m2lb.TextContent.Should().Contain("Available — needs binding").And.Contain("Matching: M2LB.zip").And.NotContain("Not provided");
+        var bind = m2lb.QuerySelector("[data-testid=it-role-action]")!;
+        (bind.TextContent, bind.GetAttribute("href")).Should().Be(("Bind existing source", "/integration-quality-review?view=setup-evidence"));
+        page.Find("[data-testid=it-role][data-role=mu]").TextContent.Should().Contain("Bound").And.Contain("Bound: Tiltak 2.zip");
+        page.Find("[data-testid=it-role][data-role=mu]").QuerySelector("[data-testid=it-role-action]").Should().BeNull("a bound source needs no action");
+        page.Find("[data-testid=it-role][data-role=birk]").QuerySelector("[data-testid=it-role-action]")!.TextContent.Should().Be("Import source");
+        page.Find("[data-testid=it-role][data-role=bufdata]").TextContent.Should().Contain("Ambiguous — several candidates").And.Contain("Review source candidates");
+
+        var actions = page.FindAll("[data-testid=it-unresolved] [data-testid=it-gap-action]");
+        actions.Select(item => item.TextContent).Should().Equal("Bind existing source", "Bind existing source", "Import source");
+        page.FindAll("[data-testid=it-gap-group]").Select(item => item.TextContent).Should().Equal(
+            "2 need M2LB binding (source available)", "1 needs BiRK application source (not provided — import)");
+        page.Find("[data-testid=it-role-row][data-role=m2lb] [data-testid=it-role-binding]").TextContent.Should().Be("Not bound");
+        page.Find("[data-testid=it-role-row][data-role=mu] [data-testid=it-role-binding]").TextContent.Should().Be("Tiltak 2.zip");
+    }
+
+    [Fact]
+    public void Attention_IsCategorized_MutuallyExclusive_NotOneOpaqueNumber()
+    {
+        var view = Sample() with { Profiles = ["skolenaervaer"] };
+        var report = view.Components[0];
+        view = view with { Components = [report with { Interfaces = [.. report.Interfaces,
+            new() { Id = "c1", ComponentId = "report", Type = TopologyInterfaceType.Rest, Direction = TopologyDirection.Calls, Address = "ApiBaseUrl + autorisasjon/graphql", Status = TopologyStatus.NeedsReview, Protocol = "HTTP" },
+            new() { Id = "c2", ComponentId = "report", Type = TopologyInterfaceType.Messaging, Direction = TopologyDirection.Consumes, Address = "q", Status = TopologyStatus.NeedsReview, Protocol = "SB" }] }, view.Components[1]] };
+        _api.View = view;
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        page.FindAll("[data-testid=it-count-attention]").Should().BeEmpty("the single opaque count is gone");
+        page.FindAll("[data-testid=it-attention-category]").Select(item => (item.GetAttribute("data-key"), item.GetAttribute("data-count"))).Should().Equal(
+            [("unresolved", "3"), ("sources", "3"), ("targets", "1"), ("interfaces", "1"), ("ambiguous", "1")]);
+        page.Find("[data-testid=it-attention]").TextContent.Should().Contain("Expected relationships unresolved").And.Contain("Unresolved call targets (relationship candidates)");
+
+        page.Find("[data-testid=it-attention-category][data-key=targets] a").Click();
+        page.Find("[data-testid=it-interfaces]").HasAttribute("open").Should().BeTrue();
+        page.Find("[data-testid=it-candidate]").TextContent.Should().Contain("Relationship candidate").And.Contain("not resolved");
+    }
+
+    [Fact]
+    public void ResolvedAndObserved_AreSeparateDimensions_AndStronglySupportedIsBelowResolved()
+    {
+        _api.View = Sample() with { Profiles = ["skolenaervaer"] };
+        _api.Coverage = BindingCoverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        var resolved = page.FindAll("[data-testid=it-resolved]");
+        resolved.Single(item => item.GetAttribute("data-relationship") == "r").TextContent.Should().Contain("Resolved").And.Contain("Not observed at runtime");
+        resolved.Single(item => item.GetAttribute("data-relationship") == "o").TextContent.Should().Contain("Resolved").And.Contain("Observed at runtime")
+            .And.NotContain("Healthy");
+        page.Find("[data-testid=it-unresolved][data-relationship=s]").TextContent.Should().Contain("Strongly supported · not yet resolved");
+        var legend = page.Find("[data-testid=it-legend]").TextContent;
+        legend.IndexOf("Candidate", StringComparison.Ordinal).Should().BeLessThan(legend.IndexOf("Strongly supported", StringComparison.Ordinal));
+        legend.IndexOf("Strongly supported", StringComparison.Ordinal).Should().BeLessThan(legend.IndexOf("Resolved", StringComparison.Ordinal));
+        legend.Should().Contain("Not observed, healthy, contract-compatible or tested");
+    }
+
+    [Fact]
+    public void ZeroEligibleOpenApiTargets_IsVisibleBeforeClicking_AndInterfacesRemainVisible()
+    {
+        var page = Render<IntegrationTopologyPage>();
+        page.Find("[data-testid=it-discover]").TextContent.Should().Be("Discover OpenAPI interfaces…", "the action names what it reads");
+        page.Find("[data-testid=it-discover]").GetAttribute("aria-describedby").Should().Be("it-discover-state");
+        page.Find("[data-testid=it-discover-state]").TextContent.Should().StartWith("No eligible OpenAPI targets");
+        page.Find("[data-testid=it-count-interfaces]").TextContent.Should().Be("3", "no OpenAPI target is not no interface evidence");
+        page.Find("[data-testid=it-interfaces] summary").TextContent.Should().Contain("Interfaces (3)");
+        _api.Discovers.Should().Be(0);
+    }
+
+    [Fact]
+    public void EligibleOpenApiTargets_ShowComponentsAndHosts_AndStillNeedAnExplicitRun()
+    {
+        _api.View = Sample() with { Discovery = new([new("A", "a.example.test", "/swagger.json"), new("B", "b.example.test", "/openapi.json")], []) };
+        var page = Render<IntegrationTopologyPage>();
+        page.Find("[data-testid=it-discover-state]").TextContent.Should().Be("2 components · 2 hosts eligible");
+        page.Find("[data-testid=it-discover]").Click();
+        _api.Discovers.Should().Be(0, "eligibility never auto-runs discovery");
+    }
+
+    [Fact]
+    public void InterfaceInventory_FiltersByTypeStatusAndSource_AndCountsEachInterfaceOnce()
+    {
+        var page = Render<IntegrationTopologyPage>();
+        page.Find("[data-testid=it-interface-count]").TextContent.Should().StartWith("3 of 3 interfaces match");
+        page.Find("[data-testid=it-interface-type]").Change("Rest");
+        page.FindAll("[data-testid=it-interface-row]").Should().ContainSingle().Which.TextContent.Should().Contain("/api/reports").And.Contain("OpenAPI, Source Analysis, Browser observation",
+            "one interface, several provenance entries");
+        page.Find("[data-testid=it-interface-type]").Change("");
+        page.Find("[data-testid=it-interface-source]").Change("BrowserObservation");
+        page.FindAll("[data-testid=it-interface-row]").Should().ContainSingle();
+        page.Find("[data-testid=it-interface-source]").Change("");
+        page.Find("[data-testid=it-interface-status]").Change("review");
+        page.FindAll("[data-testid=it-interface-row]").Should().BeEmpty();
+        page.Find("[data-testid=it-interface-filter]").Should().NotBeNull();
+        foreach (var id in new[] { "it-interface-filter", "it-interface-type", "it-interface-status", "it-interface-source" })
+            page.Find($"label[for={id}]").TextContent.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void SourcesUsed_CountsProviderCategories_NotSnapshots()
+    {
+        var page = Render<IntegrationTopologyPage>();
+        page.Find("[data-testid=it-sources] summary").TextContent.Should().Be("Sources used (1 of 2 evidence provider categories used)");
+    }
+
+    [Fact]
+    public void RuntimeObservations_SayHowManyWereMergedAndFromWhere()
+    {
+        _api.View = Sample() with { Sources = [.. Sample().Sources, new(TopologySource.BrowserObservation, TopologySourceState.Used, "merged")] };
+        var page = Render<IntegrationTopologyPage>();
+        page.Find("[data-testid=it-count-observations]").TextContent.Should().Contain("runtime observations merged").And.Contain("Endpoint Discovery");
     }
 }

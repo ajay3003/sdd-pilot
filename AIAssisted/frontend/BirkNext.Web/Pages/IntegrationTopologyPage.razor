@@ -16,11 +16,18 @@
     <PageHeader Title="Integration Topology" Description="Components and the connections between them, resolved from application source, Infrastructure as Code, configured integrations, application metadata, OpenAPI documents and runtime observations. Every connection says why BirkNext believes it." />
     @if (_profile is not null)
     {
+        var plan = _view?.Discovery;
+        var eligible = plan?.Eligible.Count ?? 0;
         <div class="it-actions" role="group" aria-label="Topology actions">
             <button type="button" class="btn-secondary" data-testid="it-refresh" disabled="@_loading" @onclick="() => LoadAsync(false)">Refresh view</button>
-            <button type="button" class="btn-secondary" data-testid="it-discover" disabled="@_loading" aria-expanded="@(_discoverOpen ? "true" : "false")" aria-controls="it-discovery"
-                    @onclick="() => _discoverOpen = !_discoverOpen">Discover interfaces…</button>
-            <span class="it-note">Refresh view reloads what is already known. Discover interfaces reads OpenAPI documents over the network, only when you run it.</span>
+            @* Eligibility is computed offline with the view; the button says what it would read before anyone clicks it. With no eligible target
+               it only opens the explanation — nothing runnable is offered. *@
+            <button type="button" class="btn-secondary" data-testid="it-discover" data-eligible="@eligible" disabled="@_loading" aria-expanded="@(_discoverOpen ? "true" : "false")" aria-controls="it-discovery"
+                    aria-describedby="it-discover-state" @onclick="() => _discoverOpen = !_discoverOpen">Discover OpenAPI interfaces…</button>
+            <span class="it-note" id="it-discover-state" data-testid="it-discover-state">@(plan is null ? "" : eligible == 0
+                ? "No eligible OpenAPI targets — no configured component declares a readable OpenAPI document."
+                : $"{eligible} component{(eligible == 1 ? "" : "s")} · {plan.Hosts.Count} host{(plan.Hosts.Count == 1 ? "" : "s")} eligible")</span>
+            <span class="it-note">Refresh view recomputes from already-stored evidence (no network). Discover OpenAPI interfaces reads declared OpenAPI documents over the network, only when you run it.</span>
         </div>
     }
 
@@ -37,11 +44,12 @@
     @if (_view is { } view)
     {
         var counts = P.Counts(view);
+        var attention = P.Attention(view, _coverage);
         @if (_discoverOpen)
         {
             <section class="it-card" id="it-discovery" aria-labelledby="it-discovery-heading" data-testid="it-discovery">
-                <h2 id="it-discovery-heading">Interface discovery</h2>
-                <p>Reads the declared OpenAPI documents of eligible components. This makes read-only HTTP requests to those components' own hosts (one GET each, no redirects followed, no other host). No application data is changed.</p>
+                <h2 id="it-discovery-heading">OpenAPI interface discovery</h2>
+                <p>Reads the declared OpenAPI documents of eligible components with the existing OpenAPI reader. This makes read-only HTTP requests to those components' own approved hosts (one GET each, no redirects followed, no other host). No application data is changed and no source snapshot is touched.</p>
                 <dl class="it-facts">
                     <div><dt>Eligible components</dt><dd data-testid="it-discovery-eligible">@view.Discovery.Eligible.Count</dd></div>
                     <div><dt>Hosts to query</dt><dd data-testid="it-discovery-hosts">@view.Discovery.Hosts.Count</dd></div>
@@ -58,7 +66,7 @@
                 }
                 <div class="it-actions">
                     <button type="button" class="btn-primary" data-testid="it-discover-run" disabled="@(_loading || view.Discovery.Eligible.Count == 0)" @onclick="() => LoadAsync(true)">Run discovery</button>
-                    @if (view.Discovery.Eligible.Count == 0) { <span class="it-note" data-testid="it-discovery-none">No component of this Target Environment declares a readable OpenAPI document path, so there is nothing to query.</span> }
+                    @if (view.Discovery.Eligible.Count == 0) { <span class="it-note" data-testid="it-discovery-none">No additional OpenAPI document targets are currently eligible for network discovery. Existing source, runtime and configuration evidence remains available below (@counts.Interfaces interfaces).</span> }
                 </div>
             </section>
         }
@@ -73,18 +81,29 @@
                 {
                     var open = summaryCoverage.Relationships.Count(item => !P.IsResolved(item.State));
                     <div><dt>Expected but unresolved</dt><dd data-testid="it-count-unresolved">@open of @summaryCoverage.Relationships.Count expected</dd></div>
-                    <div><dt>Source coverage</dt><dd data-testid="it-count-coverage">@(summaryCoverage.CoreSourcesComplete ? "Core sources complete" : "Core sources partial")</dd></div>
+                    <div><dt>Source coverage</dt><dd data-testid="it-count-coverage">@P.CoreSources(summaryCoverage)</dd></div>
                 }
-                <div><dt>Runtime observations</dt><dd data-testid="it-count-observations">@(view.Sources.FirstOrDefault(item => item.Source == TopologySource.BrowserObservation)?.State == TopologySourceState.Used ? "Merged from this browser" : "None")</dd></div>
-                <div><dt>Things needing attention</dt><dd data-testid="it-count-attention">@counts.Attention</dd></div>
+                <div><dt>Runtime observations</dt><dd data-testid="it-count-observations">@(view.Sources.FirstOrDefault(item => item.Source == TopologySource.BrowserObservation)?.State == TopologySourceState.Used
+                    ? $"{_observationCount} runtime observation{(_observationCount == 1 ? "" : "s")} merged · source: Endpoint Discovery (this browser)" : "None")</dd></div>
             </dl>
+            @* Attention by category, mutually exclusive (each item counted once), never one opaque number. *@
+            <h3 class="it-subheading" id="it-attention-heading">Needs attention</h3>
+            <ul class="it-attention" aria-labelledby="it-attention-heading" data-testid="it-attention">
+                @foreach (var category in attention)
+                {
+                    <li data-testid="it-attention-category" data-key="@category.Key" data-count="@category.Count">
+                        <strong>@category.Count</strong> @category.Label
+                        @if (category.Count > 0) { <a href="/integration-topology#@category.Anchor" @onclick:preventDefault @onclick="() => Reveal(category.Anchor)" aria-label="@($"Show {category.Label}")">Show</a> }
+                    </li>
+                }
+            </ul>
             <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · resolver v@(view.ResolverVersion) (rebuilt from stored source facts; snapshots are never changed)</p>
         </section>
 
         @if (_coverage is { } coverage)
         {
             <section class="it-card" aria-labelledby="it-coverage-heading" data-testid="it-coverage">
-                <h2 id="it-coverage-heading">Topology source coverage · @coverage.ProfileLabel</h2>
+                <h2 id="it-coverage-heading" tabindex="-1">Topology source coverage · @coverage.ProfileLabel</h2>
                 <div class="it-role-groups">
                     @foreach (var (title, roles) in P.RoleGroups(coverage))
                     {
@@ -96,9 +115,18 @@
                                     <li class="it-role" data-testid="it-role" data-role="@role.RoleId" data-state="@role.State">
                                         <span class="it-name">@role.DisplayName</span>
                                         <span class="it-pill it-pill-@P.RoleTone(role.State)">@P.RoleState(role.State)</span>
+                                        @if (role.BoundSources.Count > 0) { <span class="it-note" data-testid="it-role-bound">Bound: @string.Join(", ", role.BoundSources)</span> }
+                                        else if (role.State is TopologySourceRoleState.AvailableNeedsBinding or TopologySourceRoleState.Ambiguous && role.MatchingSources.Count > 0)
+                                        {
+                                            <span class="it-note" data-testid="it-role-candidates">Matching: @string.Join(", ", role.MatchingSources)</span>
+                                        }
                                         @if (role.State is TopologySourceRoleState.NotProvided or TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.NeedsAnalysis && role.Consequence.Length > 0)
                                         {
                                             <span class="it-note" data-testid="it-role-consequence">@role.Consequence</span>
+                                        }
+                                        @if (P.SourceGap(role.State) && P.ActionHref(role.Action, _profile?.Id) is { } roleHref)
+                                        {
+                                            <a class="it-role-action" href="@roleHref" data-testid="it-role-action" data-action="@role.Action" aria-label="@($"{P.ActionLabel(role.Action)}: {role.DisplayName}")">@P.ActionLabel(role.Action)</a>
                                         }
                                     </li>
                                 }
@@ -111,22 +139,25 @@
                     <div class="it-table-scroll" tabindex="0" role="region" aria-label="Source coverage details (scrolls horizontally)">
                     <table class="it-table">
                         <caption class="visually-hidden">Source roles, matching sources and capabilities</caption>
-                        <thead><tr><th scope="col">Source role</th><th scope="col">Need</th><th scope="col">State</th><th scope="col">Matching sources</th><th scope="col">Detail</th></tr></thead>
+                        <thead><tr><th scope="col">Source role</th><th scope="col">Need</th><th scope="col">Status</th><th scope="col">Current evidence</th><th scope="col">Binding</th><th scope="col">Analyzed</th><th scope="col">Action</th><th scope="col">Detail</th></tr></thead>
                         <tbody>
                             @foreach (var role in coverage.Roles)
                             {
-                                <tr data-testid="it-role-row">
+                                <tr data-testid="it-role-row" data-role="@role.RoleId">
                                     <th scope="row">@role.DisplayName</th>
                                     <td>@P.Requirement(role.Requirement)</td>
                                     <td>@P.RoleState(role.State)</td>
                                     <td>@(role.MatchingSources.Count == 0 ? "—" : string.Join(", ", role.MatchingSources))</td>
+                                    <td data-testid="it-role-binding">@(role.BoundSources.Count > 0 ? string.Join(", ", role.BoundSources) : role.State is TopologySourceRoleState.AvailableNeedsBinding or TopologySourceRoleState.Ambiguous ? "Not bound" : "—")</td>
+                                    <td>@(role.AnalyzedAt is { } analyzed ? analyzed.UtcDateTime.ToString("yyyy-MM-dd") : "—")</td>
+                                    <td>@if (P.ActionHref(role.Action, _profile?.Id) is { } href) { <a href="@href" aria-label="@($"{P.ActionLabel(role.Action)}: {role.DisplayName}")">@P.ActionLabel(role.Action)</a> } else { <span>—</span> }</td>
                                     <td>@role.Detail @(role.MissingParts.Count > 0 ? $"Missing: {string.Join(", ", role.MissingParts)}." : "") <span class="it-note">@role.Guidance</span></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                     </div>
-                    <p class="it-note">Sources are recognized by their content (components, configuration, infrastructure), never by file name; archive names are shown as provenance only.</p>
+                    <p class="it-note">Sources are recognized by their content (components, configuration, infrastructure), never by file name; archive names are shown as provenance only. Bound comes only from the canonical Integration Quality Review source binding — Topology never binds a source or picks the newest snapshot.</p>
                 </details>
             </section>
 
@@ -135,6 +166,19 @@
             <section class="it-card" aria-labelledby="it-relationships-heading" data-testid="it-relationships">
                 <h2 id="it-relationships-heading">Expected relationships</h2>
                 <p data-testid="it-partial">@coverage.Summary@(unresolved.Count > 0 ? " " : "")@if (unresolved.Count > 0) { <a href="/integration-topology#it-unresolved-heading" @onclick:preventDefault @onclick='() => Focus("it-unresolved-heading")' data-testid="it-view-missing">View missing evidence</a> }</p>
+                @if (unresolved.Count > 0)
+                {
+                    <ul class="it-plain it-gap-groups" data-testid="it-gap-groups" aria-label="What would resolve the unresolved relationships">
+                        @foreach (var group in P.MissingEvidenceGroups(coverage)) { <li data-testid="it-gap-group">@group.Text</li> }
+                    </ul>
+                }
+                <details class="it-disclosure" data-testid="it-legend">
+                    <summary>What the states mean</summary>
+                    <dl class="it-facts">
+                        @foreach (var (state, meaning) in P.ConfidenceLegend) { <div><dt>@state</dt><dd>@meaning</dd></div> }
+                        <div><dt>Runtime</dt><dd>A separate dimension: observed at runtime or not. Resolved ≠ observed ≠ healthy ≠ contract-compatible.</dd></div>
+                    </dl>
+                </details>
                 <dl class="it-facts">
                     @foreach (var dimension in coverage.Completeness)
                     {
@@ -149,7 +193,7 @@
                     {
                         <li data-testid="it-resolved" data-relationship="@item.Id">
                             <details class="it-disclosure">
-                                <summary><span class="it-name">@item.Label</span> <span class="it-pill it-pill-@P.RelationshipTone(item.State)">@P.Relationship(item.State)</span> <span class="it-note">@item.Transport</span></summary>
+                                <summary><span class="it-name">@item.Label</span> <span class="it-pill it-pill-@P.RelationshipTone(item.State)">@P.Relationship(item.State)</span> <span class="it-note" data-testid="it-runtime">@P.Runtime(item.RuntimeObserved)</span> <span class="it-note">@item.Transport</span></summary>
                                 @RelationshipDetail(item)
                             </details>
                         </li>
@@ -169,18 +213,19 @@
                                 @if (item.SourceRoleName is { } roleName)
                                 {
                                     <div>
-                                        <dt>@(item.Action == "import-source" ? "Additional source needed" : "Source with this evidence")</dt>
+                                        <dt>@(item.Action == TopologyGapAction.ImportSource ? "Additional source needed" : "Source with this evidence")</dt>
                                         <dd data-testid="it-source-needed">@roleName · @(item.SourceRoleState is { } roleState ? P.RoleState(roleState) : "")@(item.MatchingSources.Count > 0 ? $" · matching source: {string.Join(", ", item.MatchingSources)}" : "")</dd>
                                     </div>
                                 }
+                                @if (item.Owner is { } owner) { <div><dt>Owner of the fix</dt><dd data-testid="it-owner">@owner</dd></div> }
                             </dl>
-                            @if (item.Action == "import-source")
+                            @if (P.ActionHref(item.Action, _profile?.Id) is { } actionHref)
                             {
-                                <a class="btn-secondary it-action" href="/project-import" data-testid="it-import-source">Import source</a>
-                            }
-                            else if (item.Action == "use-source")
-                            {
-                                <span class="it-note" data-testid="it-use-source">The source is available, but the evidence above is not stated in it. No re-import is needed for resolver improvements. <a href="/source-analysis">Review in Source Analysis</a></span>
+                                <a class="btn-secondary it-action" href="@actionHref" data-testid="it-gap-action" data-action="@item.Action" aria-label="@($"{P.ActionLabel(item.Action)} for {item.Label}")">@P.ActionLabel(item.Action)</a>
+                                @if (item.Action is TopologyGapAction.ViewMissingEvidence or TopologyGapAction.ConfigureIntegration)
+                                {
+                                    <span class="it-note" data-testid="it-use-source">The source is available, but the evidence above is not stated in it. No re-import is needed for resolver improvements.</span>
+                                }
                             }
                             @if (item.Evidence.Count > 0)
                             {
@@ -196,6 +241,7 @@
             <p class="it-note" data-testid="it-coverage-error">Source coverage is not available: @_coverageError</p>
         }
 
+        <h2 class="it-section-heading" id="it-inventory-heading">Technical inventory</h2>
         <section class="it-card" aria-labelledby="it-components-heading" data-testid="it-components">
             <h2 id="it-components-heading">Components</h2>
             @if (view.Components.Count == 0)
@@ -204,7 +250,7 @@
             }
             @foreach (var group in view.Components.GroupBy(item => item.Kind).OrderBy(group => group.Key))
             {
-                <details class="it-disclosure" open="@(group.Key == TopologyComponentKind.Application)" data-testid="it-component-group" data-kind="@group.Key">
+                <details class="it-disclosure" data-testid="it-component-group" data-kind="@group.Key">
                     <summary>@P.Kind(group.Key) (@group.Count())</summary>
                     <ul class="it-components">
                         @foreach (var component in group)
@@ -249,22 +295,59 @@
             </section>
         }
 
-        <details class="it-card it-all" data-testid="it-interfaces">
-            <summary>Interfaces (@counts.Interfaces) · @string.Join(" · ", view.Components.SelectMany(item => item.Interfaces).GroupBy(item => item.Type).Select(g => $"{g.Count()} {P.Type(g.Key)}"))</summary>
-            <div class="it-filter" role="search">
-                <label for="it-interface-filter">Filter interfaces</label>
-                <input id="it-interface-filter" type="search" data-testid="it-interface-filter" placeholder="Component, route, topic…" @bind="_interfaceFilter" @bind:event="oninput" />
+        <details class="it-card it-all" id="it-interfaces" data-testid="it-interfaces" open="@_interfacesOpen">
+            <summary>Interfaces (@counts.Interfaces) · @string.Join(" · ", view.Components.SelectMany(item => item.Interfaces).GroupBy(item => item.Type).OrderByDescending(g => g.Count()).Select(g => $"{g.Count()} {P.Type(g.Key)}"))</summary>
+            <div class="it-filters" role="search" aria-label="Filter interfaces">
+                <div class="it-filter">
+                    <label for="it-interface-filter">Search</label>
+                    <input id="it-interface-filter" type="search" data-testid="it-interface-filter" placeholder="Component, route, topic, operation…" @bind="_interfaceFilter" @bind:event="oninput" />
+                </div>
+                <div class="it-filter">
+                    <label for="it-interface-type">Type</label>
+                    <select id="it-interface-type" data-testid="it-interface-type" @bind="_interfaceType">
+                        <option value="">All types</option>
+                        @foreach (var type in view.Components.SelectMany(item => item.Interfaces).Select(item => item.Type).Distinct().OrderBy(item => item)) { <option value="@type">@P.Type(type)</option> }
+                    </select>
+                </div>
+                <div class="it-filter">
+                    <label for="it-interface-status">Status</label>
+                    <select id="it-interface-status" data-testid="it-interface-status" @bind="_interfaceStatus">
+                        <option value="">All statuses</option>
+                        <option value="review">Needs review only</option>
+                        <option value="targets">Unresolved call targets only</option>
+                        @foreach (var status in view.Components.SelectMany(item => item.Interfaces).Select(item => item.Status).Distinct().OrderBy(item => item)) { <option value="@status">@P.Status(status)</option> }
+                    </select>
+                </div>
+                <div class="it-filter">
+                    <label for="it-interface-source">Source</label>
+                    <select id="it-interface-source" data-testid="it-interface-source" @bind="_interfaceSource">
+                        <option value="">All sources</option>
+                        @foreach (var source in view.Components.SelectMany(item => item.Interfaces).SelectMany(item => item.Provenance).Select(item => item.Source).Distinct().OrderBy(item => item)) { <option value="@source">@P.Source(source)</option> }
+                    </select>
+                </div>
             </div>
             @{ var filtered = view.Components.SelectMany(component => component.Interfaces.Select(item => (Component: component, Interface: item)))
-                   .Where(pair => _interfaceFilter.Length == 0 || pair.Component.Name.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase) || pair.Interface.Address.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase))
-                   .Take(200).ToList(); }
+                   .Where(pair => _interfaceFilter.Length == 0 || pair.Component.Name.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase)
+                       || pair.Interface.Address.Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase) || (pair.Interface.Operation ?? "").Contains(_interfaceFilter, StringComparison.OrdinalIgnoreCase))
+                   .Where(pair => _interfaceType.Length == 0 || pair.Interface.Type.ToString() == _interfaceType)
+                   .Where(pair => _interfaceStatus switch
+                   {
+                       "" => true,
+                       "review" => pair.Interface.Status is TopologyStatus.NeedsReview or TopologyStatus.Conflict,
+                       "targets" => P.UnresolvedTarget(pair.Interface),
+                       var status => pair.Interface.Status.ToString() == status,
+                   })
+                   .Where(pair => _interfaceSource.Length == 0 || pair.Interface.Provenance.Any(item => item.Source.ToString() == _interfaceSource))
+                   .ToList();
+               var shown = filtered.Take(200).ToList(); }
+            <p class="it-note" role="status" data-testid="it-interface-count">@filtered.Count of @counts.Interfaces interfaces match. Each interface is listed once, with every source that stated it.</p>
             <ul class="it-interfaces">
-                @foreach (var pair in filtered) { <li data-testid="it-interface-row"><strong>@pair.Component.Name</strong> @Interface(pair.Interface)</li> }
+                @foreach (var pair in shown) { <li data-testid="it-interface-row"><strong>@pair.Component.Name</strong> @Interface(pair.Interface)@if (P.UnresolvedTarget(pair.Interface)) { <span class="it-note" data-testid="it-candidate">Relationship candidate: @pair.Component.Name calls this address; the called component is not resolved yet.</span> }</li> }
             </ul>
-            @if (filtered.Count == 200) { <p class="it-note">Showing the first 200 matches; narrow the filter to see more.</p> }
+            @if (filtered.Count > shown.Count) { <p class="it-note">Showing the first 200 of @filtered.Count matches; narrow the filters to see more.</p> }
         </details>
 
-        <details class="it-card it-all" data-testid="it-connections">
+        <details class="it-card it-all" id="it-connections" data-testid="it-connections" open="@_connectionsOpen">
             <summary>All connections (@view.Connections.Count) · @counts.Resolved resolved</summary>
             <ul class="it-interfaces">
                 @foreach (var connection in view.Connections)
@@ -281,7 +364,8 @@
         </details>
 
         <details class="it-card it-all" data-testid="it-sources">
-            <summary>Sources used (@view.Sources.Count(item => item.State == TopologySourceState.Used) of @view.Sources.Count)</summary>
+            <summary>Sources used (@P.SourcesUsed(view))</summary>
+            <p class="it-note">One row per evidence provider category; Source Analysis counts once however many snapshots it holds.</p>
             <ul class="it-sources">
                 @foreach (var source in view.Sources)
                 {
@@ -289,7 +373,7 @@
                 }
             </ul>
         </details>
-        <p class="it-note">Configured ≠ discovered ≠ observed. A resolved connection is supported by source evidence; it is not observed, healthy or contract-compatible unless runtime evidence says so. An expected relationship never creates a connection.</p>
+        <p class="it-note">Configured ≠ discovered ≠ observed. A resolved connection is supported by source evidence; it is not observed, healthy or contract-compatible unless runtime evidence says so. An expected relationship never creates a connection, and runtime observations mark interfaces, never connections.</p>
     }
 </div>
 
@@ -299,8 +383,9 @@
     private IntegrationTopologyView? _view;
     private TopologyCoverageView? _coverage;
     private string? _error, _coverageError, _selected;
-    private string _interfaceFilter = "";
-    private bool _loading = true, _discoverOpen;
+    private string _interfaceFilter = "", _interfaceType = "", _interfaceStatus = "", _interfaceSource = "";
+    private bool _loading = true, _discoverOpen, _interfacesOpen, _connectionsOpen;
+    private int _observationCount;
 
     protected override async Task OnInitializedAsync()
     {
@@ -321,6 +406,7 @@
         try
         {
             var observations = Observations();
+            _observationCount = observations.Count;
             var (view, error) = discover ? await _api.DiscoverAsync(_profile.Id, observations) : await _api.GetAsync(_profile.Id, observations);
             if (view is not null) _view = view;
             _error = error;
@@ -348,6 +434,16 @@
         if (_selected is null) return;
         await Task.Yield();
         await Focus("it-detail-heading");
+    }
+
+    /// <summary>Opens the inventory section an attention category points to (filtered to its items) and moves focus there.</summary>
+    private async Task Reveal(string anchor)
+    {
+        if (anchor == "it-interfaces") { _interfacesOpen = true; _interfaceStatus = "review"; }
+        if (anchor == "it-connections") _connectionsOpen = true;
+        StateHasChanged();
+        await Task.Yield();
+        await Focus(anchor);
     }
 
     private async Task Focus(string id)

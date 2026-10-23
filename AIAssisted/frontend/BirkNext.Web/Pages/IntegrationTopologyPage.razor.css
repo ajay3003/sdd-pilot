@@ -48,4 +48,11 @@
 .it-evidence-list li { overflow-wrap: anywhere; }
 .it-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
 .it-filter input { min-width: 0; flex: 1 1 14rem; max-width: 28rem; }
+.it-filters { display: flex; flex-wrap: wrap; gap: 0 1rem; min-width: 0; }
+.it-filters .it-filter select { min-width: 0; max-width: 100%; }
+.it-attention { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; min-width: 0; }
+.it-attention li { overflow-wrap: anywhere; }
+.it-gap-groups { margin: 0.25rem 0 0.5rem; padding-left: 1rem; list-style: disc; }
+.it-role-action { font-size: 0.85rem; }
+.it-section-heading { font-size: 1rem; margin: 0.5rem 0 0; color: var(--text-muted, #57606a); }
 @media (max-width: 480px) { .it-components { grid-template-columns: 1fr; } }

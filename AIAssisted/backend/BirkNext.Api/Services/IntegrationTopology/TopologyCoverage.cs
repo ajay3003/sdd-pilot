@@ -9,17 +9,23 @@ namespace BirkNext.Api.Services.IntegrationTopology;
 /// Topology source coverage for one profile: which declared source roles the current sources cover (by content), how each expected
 /// relationship resolves against the evidence-based topology, what evidence and which source role is missing for each unresolved one, and a
 /// categorical completeness per dimension (never one percentage). Generic: it reads the profile's declarations only.
+/// <para>Source presence and source binding are separate. With the environment's canonical IQR bindings supplied (consumed, never written),
+/// a recognized application source is Bound when a binding points at one of its snapshots, Available — needs binding when exactly one
+/// distinct source is recognized and none is bound, and Ambiguous when several distinct sources are (the newest is never chosen). Not provided
+/// is reserved for no recognized evidence at all. Infrastructure roles are consumed environment-wide from Infrastructure Evidence and need no
+/// binding. Without binding information (null) recognized sources read Available, as before.</para>
 /// </summary>
 public static class TopologyCoverage
 {
     public static TopologyCoverageView Evaluate(ITopologyProfile profile, IntegrationTopologyView view, TopologyBuilder builder, IReadOnlyList<IqrSourceSnapshot> snapshots,
-        TopologyRequest request, DateTimeOffset now)
+        TopologyRequest request, DateTimeOffset now, IReadOnlyList<IntegrationEvidenceBinding>? bindings = null)
     {
         var latest = TopologySnapshots.Latest(snapshots);
-        var roles = profile.SourceRoles.Select(role => Role(role, latest, profile)).ToList();
+        var bound = bindings?.Select(item => item.SnapshotId).ToHashSet();
+        var roles = profile.SourceRoles.Select(role => Bind(Role(role, latest, profile), role, snapshots, bound)).ToList();
         var roleComponents = profile.SourceRoles.ToDictionary(role => role.Id, role => RoleComponents(role, latest, builder), StringComparer.Ordinal);
         var relationships = profile.Relationships.Select(relationship => Relationship(relationship, view, builder, roles, roleComponents)).ToList();
-        var core = roles.Where(role => role.Requirement == TopologySourceRequirement.Required).All(role => role.State == TopologySourceRoleState.Available);
+        var core = roles.Where(role => role.Requirement == TopologySourceRequirement.Required).All(role => role.State is TopologySourceRoleState.Available or TopologySourceRoleState.Bound);
         var resolved = relationships.Count(item => item.State is TopologyRelationshipState.Resolved or TopologyRelationshipState.Observed);
         var open = relationships.Count - resolved;
         return new TopologyCoverageView
@@ -132,7 +138,8 @@ public static class TopologyCoverage
 
     private static List<Part> PartsOf(TopologySourceMatch match) =>
     [
-        .. match.Components.Select(token => new Part(token, component => component.Name.Contains(token, StringComparison.OrdinalIgnoreCase) || component.SourceProject.Contains(token, StringComparison.OrdinalIgnoreCase))),
+        .. match.Components.Select(token => (Label: token.Replace("|", " or ", StringComparison.Ordinal), Alternatives: token.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)))
+            .Select(part => new Part(part.Label, component => part.Alternatives.Any(token => component.Name.Contains(token, StringComparison.OrdinalIgnoreCase) || component.SourceProject.Contains(token, StringComparison.OrdinalIgnoreCase)))),
         .. match.ComponentPrefixes.Select(prefix => new Part(prefix + "*", component => component.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             || TopologySnapshots.ProjectName(component.SourceProject).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))),
     ];
@@ -161,7 +168,7 @@ public static class TopologyCoverage
             var state = best.State;
             result = result with
             {
-                State = state, ConnectionIds = [.. best.Hops.Select(hop => hop.Id)],
+                State = state, ConnectionIds = [.. best.Hops.Select(hop => hop.Id)], RuntimeObserved = best.Hops.All(hop => hop.Status == TopologyStatus.Observed),
                 Route = Route(chains, best, Name),
                 Evidence = evidence, Why = Why(evidence), Unverified = TopologyBuilder.Unverified(state, evidence),
             };
@@ -224,20 +231,82 @@ public static class TopologyCoverage
         return notes.Count == 0 ? null : string.Join("; ", notes) + ".";
     }
 
-    /// <summary>Which source role would provide the missing evidence: the first declared role that is not available (import it), otherwise the
-    /// first role (it is available; the evidence is not in it).</summary>
+    /// <summary>
+    /// Which source role would provide the missing evidence and what resolves the gap, from that role's actual state: the first declared role
+    /// whose source is not settled decides (absent → import, existing but unbound → bind, several candidates → review them); when every role is
+    /// settled (bound, available or a built-in reference) the evidence is simply not in them, so the fix is configuration (for a relationship a
+    /// configured integration can state) or a look at the missing evidence. An existing source is never answered with "import".
+    /// </summary>
     private static TopologyRelationshipResult Guidance(TopologyRelationshipResult result, TopologyExpectedRelationship expected, List<TopologySourceRoleCoverage> roles)
     {
         var candidates = expected.EvidenceRoles.Select(id => roles.FirstOrDefault(role => role.RoleId == id)).OfType<TopologySourceRoleCoverage>().ToList();
-        static bool Present(TopologySourceRoleCoverage role) => role.State is TopologySourceRoleState.Available or TopologySourceRoleState.ReferenceAvailable;
-        var role = candidates.FirstOrDefault(item => !Present(item)) ?? candidates.FirstOrDefault();
+        var role = candidates.FirstOrDefault(item => !Settled(item.State)) ?? candidates.FirstOrDefault();
+        var action = role is null ? TopologyGapAction.None
+            : !Settled(role.State) ? role.Action
+            : expected.ConfigurationResolvable ? TopologyGapAction.ConfigureIntegration : TopologyGapAction.ViewMissingEvidence;
         return result with
         {
             MissingEvidence = expected.MissingEvidence.Length > 0 ? expected.MissingEvidence : "Evidence stating both ends of this relationship.",
             SourceRoleId = role?.RoleId, SourceRoleName = role?.DisplayName, SourceRoleState = role?.State, MatchingSources = role?.MatchingSources ?? [],
-            Action = role is null ? null : Present(role) ? "use-source" : "import-source",
+            Action = action, Owner = Owner(action),
         };
     }
+
+    /// <summary>A source whose presence/binding needs no further action (its evidence may still not state a relationship).</summary>
+    public static bool Settled(TopologySourceRoleState state) => state is TopologySourceRoleState.Available or TopologySourceRoleState.Bound
+        or TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.ReferenceAvailable;
+
+    /// <summary>The canonical feature that owns each fix (Integration Topology owns none of them).</summary>
+    public static string? Owner(TopologyGapAction action) => action switch
+    {
+        TopologyGapAction.ImportSource => "Project Import",
+        TopologyGapAction.BindSource or TopologyGapAction.ReviewCandidates => "Integration Quality Review → Setup & Evidence (canonical source binding)",
+        TopologyGapAction.ReanalyzeSource or TopologyGapAction.ViewMissingEvidence or TopologyGapAction.ViewEvidence => "Source Analysis",
+        TopologyGapAction.ConfigureIntegration => "Target Environment → Integrations",
+        _ => null,
+    };
+
+    /// <summary>Adds binding to a recognized role and picks its action. Infrastructure and built-in reference roles need no binding.</summary>
+    private static TopologySourceRoleCoverage Bind(TopologySourceRoleCoverage coverage, TopologySourceRoleDefinition role, IReadOnlyList<IqrSourceSnapshot> all, HashSet<Guid>? bound)
+    {
+        var matching = all.Where(item => coverage.MatchingSources.Contains(item.Archive.FileName, StringComparer.Ordinal)).ToList();
+        var analyzed = matching.Count == 0 ? (DateTimeOffset?)null : matching.Max(item => item.AnalyzedAt);
+        coverage = coverage with { AnalyzedAt = analyzed };
+        var application = role.Match.InfrastructureFormats.Count == 0 && role.Requirement != TopologySourceRequirement.BuiltInReference;
+        if (!application || bound is null || coverage.State is not (TopologySourceRoleState.Available or TopologySourceRoleState.PartlyAvailable))
+            return coverage with { Action = DefaultAction(coverage.State, role) };
+        var boundArchives = matching.Where(item => bound.Contains(item.Id)).Select(item => item.Archive.FileName).Distinct(StringComparer.Ordinal).ToList();
+        if (boundArchives.Count > 0)
+            return coverage with
+            {
+                BoundSources = boundArchives,
+                State = coverage.State == TopologySourceRoleState.PartlyAvailable ? TopologySourceRoleState.PartlyAvailable : TopologySourceRoleState.Bound,
+                Detail = $"{coverage.Detail} Bound in Integration Quality Review: {string.Join(", ", boundArchives)}.",
+                Action = TopologyGapAction.ViewEvidence,
+            };
+        // Distinct content (archive hash), not distinct uploads: a re-import of the same archive is one candidate.
+        var distinct = matching.Select(item => item.Archive.Sha256 is { Length: > 0 } sha ? sha : item.Archive.FileName).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        return distinct > 1 && coverage.MatchingSources.Count > 1
+            ? coverage with
+            {
+                State = TopologySourceRoleState.Ambiguous, Action = TopologyGapAction.ReviewCandidates,
+                Detail = $"{coverage.MatchingSources.Count} sources match ({string.Join(", ", coverage.MatchingSources)}); none is bound. Review the candidates in Integration Quality Review — the newest is never chosen automatically.",
+            }
+            : coverage with
+            {
+                State = TopologySourceRoleState.AvailableNeedsBinding, Action = TopologyGapAction.BindSource,
+                Detail = $"{string.Join(", ", coverage.MatchingSources)} matches by content but is not bound to any integration in Integration Quality Review. Its facts are already used for topology; binding makes it the canonical source."
+                    + (coverage.MissingParts.Count > 0 ? $" Not found in it: {string.Join(", ", coverage.MissingParts)}." : ""),
+            };
+    }
+
+    private static TopologyGapAction DefaultAction(TopologySourceRoleState state, TopologySourceRoleDefinition role) => state switch
+    {
+        TopologySourceRoleState.NotProvided => TopologyGapAction.ImportSource,
+        TopologySourceRoleState.NeedsAnalysis => TopologyGapAction.ReanalyzeSource,
+        TopologySourceRoleState.Available or TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.Bound => TopologyGapAction.ViewEvidence,
+        _ => TopologyGapAction.None,
+    };
 
     private static string Why(List<TopologyEvidence> evidence)
     {

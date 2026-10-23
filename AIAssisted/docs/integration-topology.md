@@ -60,7 +60,7 @@ It then runs every provider in order and merges their statements in `TopologyBui
 - The default view shows sources and components (status and interface counts).
 - Selecting a component shows its location, interfaces by type with sources, and its connections.
 - All connections sit in a disclosure.
-- *Refresh* re-reads the sources; *Discover interfaces* runs the OpenAPI provider and needs the integration-configuration permission.
+- *Refresh view* recomputes from already-stored evidence (no network); *Discover OpenAPI interfaces* runs the OpenAPI provider and needs the integration-configuration permission.
 
 Audit of existing UI that shows or edits endpoints, interfaces or relationships:
 
@@ -116,7 +116,25 @@ Test Packs declare, generically:
 
 The projection is rebuilt on every read (`ResolverVersion`), so existing snapshots benefit without re-import and are never written. The Terraform analyzer v3 additionally records module deployment names and endpoint injections. Snapshots analyzed earlier lack only those two facts.
 
-**Discover interfaces** has a preview: eligible components and hosts, computed without any network call. Each component gets one GET of its own declared OpenAPI path, which must have the same scheme, host and port. Redirects are not followed, only local `$ref`s are read, and paths with `\`, `@`, `?` or `#` are refused.
+### Source presence vs binding, gap actions, attention
+
+Coverage consumes the canonical IQR source-evidence bindings (`IIntegrationEvidenceBindingStore`, read only). An application source role is:
+
+| State | Meaning | Action |
+|---|---|---|
+| Not provided | No snapshot is recognized by content | Import source (Project Import) |
+| Available — needs binding | Exactly one distinct snapshot is recognized; no IQR binding points at it | Bind existing source (IQR → Setup & Evidence) |
+| Ambiguous | Several distinct snapshots (archive hash) are recognized; none bound | Review source candidates (IQR); the newest is never chosen |
+| Bound | An IQR binding points at a recognized snapshot | View evidence |
+| Partly available | Some expected parts are not found | View evidence |
+
+Infrastructure roles are consumed environment-wide from Infrastructure Evidence and need no binding; built-in references need no import. Binding is provenance for the canonical source — relationships are rebuilt from the same stored facts either way. A role token may list a renamed implementation's names with `|` (`"Skole.Api|SkoleService.Api"`) — exact substrings, never similarity.
+
+Each unresolved expected relationship carries a typed `TopologyGapAction` and owner from its first unsettled source role: import / bind / review candidates; when every role is settled, *Configure integration* (relationships a configured integration can state, `ConfigurationResolvable`) or *View missing evidence*. An existing source is never answered with "Import".
+
+The page splits attention into mutually exclusive categories (expected relationships unresolved, source presence/binding gaps, unresolved call targets = relationship candidates, other interfaces needing review, ambiguous connections) and shows confidence (Expected → Candidate → Strongly supported → Resolved) separately from runtime observation. *Root cause of the earlier "M2LB: Not provided"*: the profile's content tokens named the old M2LB project names (`Meldingsutvekslermottak`, `Skole.Api`, `Skole.BiRK`); the current archive uses `MeldingsutvekslerReceiver.Host`, `SkoleService.Api` and `SkoleAdapter.Worker`, so nothing matched and the role fell through to Not provided.
+
+**Discover OpenAPI interfaces** has a preview: eligible components and hosts, computed without any network call and deduplicated by component, scheme, host, port and path; the toolbar states "No eligible OpenAPI targets" or "N components · M hosts eligible" before anything is clicked, and zero targets never means zero interface evidence. Each component gets one GET of its own declared OpenAPI path, which must have the same scheme, host and port. Redirects are not followed, only local `$ref`s are read, and paths with `\`, `@`, `?` or `#` are refused.
 
 ## Not yet done
 

@@ -31,11 +31,28 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
 
     private sealed class NoHttp : IHttpClientFactory { public HttpClient CreateClient(string name) => throw new InvalidOperationException("No network in topology tests."); }
 
+    /// <summary>The canonical IQR bindings, read only (Topology never writes one). Null = no binding store (legacy "Available").</summary>
+    private sealed class Bindings(List<IntegrationEvidenceBinding> rows) : BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore
+    {
+        public int Writes { get; private set; }
+        public Task<IReadOnlyList<IntegrationEvidenceBinding>> ListAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IntegrationEvidenceBinding>>(rows);
+        public Task<(IntegrationEvidenceBinding? Binding, string? Error)> SetAsync(string environmentId, IntegrationEvidenceBindingRequest request, CancellationToken ct = default)
+        {
+            Writes++;
+            throw new InvalidOperationException("Topology must never bind a source.");
+        }
+    }
+
+    private Bindings? _bindings;
+
     private IntegrationTopologyService Service(ITopologyProfile profile) => new(
         [new ProfileTopologyProvider([profile]), new TargetEnvironmentTopologyProvider(), new SourceArchitectureTopologyProvider(), new IntegrationCatalogTopologyProvider(),
          new OpenApiTopologyProvider(new NoHttp(), new OpenApiExtractor(NullLogger<OpenApiExtractor>.Instance), TimeProvider.System),
          new CrossSourceTopologyProvider([profile]), new ObservationTopologyProvider()],
-        [profile], TrustedExecutionEnvironmentRegistry.From(_harness.Active.Configuration()), _harness.Active.Catalog, _harness.Sources, TimeProvider.System);
+        [profile], TrustedExecutionEnvironmentRegistry.From(_harness.Active.Configuration()), _harness.Active.Catalog, _harness.Sources, TimeProvider.System, _bindings);
+
+    private void Bind(params IqrSourceSnapshot[] snapshots) => _bindings = new([.. snapshots.Select((snapshot, i) =>
+        new IntegrationEvidenceBinding { EnvironmentId = Env, IntegrationId = $"integration-{i}", SnapshotId = snapshot.Id, ArchiveName = snapshot.Archive.FileName })]);
 
     private async Task<TopologyCoverageView> Coverage(ITopologyProfile profile) => (await Service(profile).CoverageAsync(Env, profile.Id, new(null), default))!;
     private async Task<IntegrationTopologyView> View(ITopologyProfile profile) => (await Service(profile).BuildAsync(Env, new(null), default)).View;
@@ -201,7 +218,8 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
 
         var ledger = Rel(coverage, "bus-ledger");
         ledger.State.Should().Be(TopologyRelationshipState.ExpectedUnresolved);
-        (ledger.SourceRoleName, ledger.SourceRoleState, ledger.Action).Should().Be(("Ledger consumer", TopologySourceRoleState.NotProvided, "import-source"));
+        (ledger.SourceRoleName, ledger.SourceRoleState, ledger.Action).Should().Be(("Ledger consumer", TopologySourceRoleState.NotProvided, TopologyGapAction.ImportSource));
+        ledger.Owner.Should().Be("Project Import");
         ledger.MissingEvidence.Should().Be("A Ledger consumer of an entity Orders produces.");
         ledger.AvailableEvidence.Should().Contain("Orders produces to orders.created");
         coverage.Completeness.Single(item => item.Dimension == TopologyDimensions.ExternalConsumer).State.Should().Be(TopologyCompletenessState.Partial);
@@ -219,7 +237,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
 
         Rel(coverage, "billing-orders").State.Should().Be(TopologyRelationshipState.Candidate, "the client name resembles the target, which proves nothing");
         Rel(coverage, "billing-orders").AvailableEvidence.Should().Contain("declares client HttpClient 'OrdersApi', but its target is not resolved");
-        Rel(coverage, "billing-orders").Action.Should().Be("use-source");
+        Rel(coverage, "billing-orders").Action.Should().Be(TopologyGapAction.ViewMissingEvidence, "the source exists; the evidence is not in it — never import again");
         view.Connections.Should().NotContain(item => item.ProducerComponentId == "billing" && item.ConsumerComponentId == "orders");
         view.Connections.SelectMany(item => item.Evidence).Should().NotContain(item => item.Basis.Contains("role", StringComparison.OrdinalIgnoreCase),
             "a role assignment to the topic is not a consumer");
@@ -233,7 +251,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
         coverage.CoreSourcesComplete.Should().BeFalse();
         Role(coverage, "billing").State.Should().Be(TopologySourceRoleState.NotProvided);
         var http = Rel(coverage, "billing-orders");
-        (http.State, http.SourceRoleName, http.Action).Should().Be((TopologyRelationshipState.ExpectedUnresolved, "Billing application", "import-source"));
+        (http.State, http.SourceRoleName, http.Action).Should().Be((TopologyRelationshipState.ExpectedUnresolved, "Billing application", TopologyGapAction.ImportSource));
     }
 
     [Fact]
@@ -328,7 +346,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
         Rel(coverage, "mu-mm").Should().Match<TopologyRelationshipResult>(item => item.State == TopologyRelationshipState.Candidate && item.AvailableEvidence!.Contains("MM consumes m2lb_skolenaervaer"));
 
         var birk = Rel(coverage, "birk-cdc");
-        (birk.State, birk.SourceRoleName, birk.Action).Should().Be((TopologyRelationshipState.ExpectedUnresolved, "BiRK application source", "import-source"));
+        (birk.State, birk.SourceRoleName, birk.Action).Should().Be((TopologyRelationshipState.ExpectedUnresolved, "BiRK application source", TopologyGapAction.ImportSource));
         birk.AvailableEvidence.Should().Contain("Debezium connector", "CDC infrastructure exists without the application side");
         var bufdata = Rel(coverage, "servicebus-bufdata");
         (bufdata.State, bufdata.SourceRoleName).Should().Be((TopologyRelationshipState.ExpectedUnresolved, "Bufdata consumer evidence"));
@@ -341,7 +359,7 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
     {
         CurrentPackages(skoleAdapter: false);
         var role = Role(await Coverage(new SkoleNaervaerTopologyProfile()), SkoleNaervaerTopologyProfile.M2lb);
-        (role.State, role.MissingParts.Single()).Should().Be((TopologySourceRoleState.PartlyAvailable, "Skole.BiRK"));
+        (role.State, role.MissingParts.Single()).Should().Be((TopologySourceRoleState.PartlyAvailable, "Skole.BiRK or SkoleAdapter.Worker"));
     }
 
     [Fact]
@@ -369,5 +387,131 @@ public sealed class TopologyResolutionTests : IAsyncLifetime
         }, null);
         var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
         Rel(coverage, "servicebus-bufdata").Should().Match<TopologyRelationshipResult>(item => item.State == TopologyRelationshipState.Resolved && item.Route!.Contains("skole.rapporter"));
+    }
+
+    // ── Source presence vs canonical binding ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>The M2LB implementation as currently named (MeldingsutvekslerReceiver, SkoleService, SkoleAdapter) — the real M2LB.zip.</summary>
+    private IqrSourceSnapshot RenamedM2lb(string archive = "M2LB.zip", string sha = "sha-m2lb")
+    {
+        var local = new SourceEnvironmentLabel(SourceEnvironmentKind.Local, "Local");
+        var snapshot = Add(archive, new ArchitectureSnapshot
+        {
+            Components =
+            [
+                App("M2LB.MeldingsutvekslerReceiver.Host", "MeldingsutvekslerReceiver/src/M2LB.MeldingsutvekslerReceiver.Host/M2LB.MeldingsutvekslerReceiver.Host.csproj", ArchitectureComponentType.Worker),
+                App("M2LB.SkoleService.Api", "SkoleService/src/M2LB.SkoleService.Api/M2LB.SkoleService.Api.csproj"),
+                App("M2LB.SkoleAdapter.Worker", "SkoleAdapter/src/M2LB.SkoleAdapter.Worker/M2LB.SkoleAdapter.Worker.csproj", ArchitectureComponentType.Worker),
+                App("M2LB.Person.Api", "Person/src/M2LB.Person.Api/M2LB.Person.Api.csproj"),
+            ],
+            Dependencies = [Client("M2LB.SkoleAdapter.Worker", "SkoletjenestenApi")],
+        }, Domains(
+            Entry("http:applicationUrl", "http://localhost:5019", "SkoleService/src/M2LB.SkoleService.Api/Properties/launchSettings.json", "M2LB.SkoleService.Api", environment: local),
+            Entry("SkoletjenestenApi:BaseUrl", "http://localhost:5019", "SkoleAdapter/src/M2LB.SkoleAdapter.Worker/appsettings.Local.json", "M2LB.SkoleAdapter.Worker", environment: local)));
+        _harness.Sources.Snapshots.Remove(snapshot);
+        snapshot = snapshot with { Archive = new SourceArchive(archive, sha, 1) };
+        _harness.Sources.Snapshots.Add(snapshot);
+        return snapshot;
+    }
+
+    [Fact]
+    public async Task M2lbSnapshotPresent_ButUnbound_IsAvailableNeedsBinding_NotNotProvided()
+    {
+        RenamedM2lb();
+        Bind();
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        var m2lb = Role(coverage, SkoleNaervaerTopologyProfile.M2lb);
+        (m2lb.State, m2lb.Action, m2lb.MatchingSources.Single(), m2lb.BoundSources.Count).Should().Be(
+            (TopologySourceRoleState.AvailableNeedsBinding, TopologyGapAction.BindSource, "M2LB.zip", 0),
+            "the renamed implementation is recognized by content; presence is not binding");
+        m2lb.Detail.Should().Contain("not bound");
+        var mm = Rel(coverage, "mm-skoletjenesten");
+        mm.Action.Should().NotBe(TopologyGapAction.ImportSource, "M2LB already exists — no duplicate import is suggested");
+        coverage.Relationships.Where(item => item.SourceRoleId == SkoleNaervaerTopologyProfile.M2lb).Should().OnlyContain(item => item.Action != TopologyGapAction.ImportSource);
+    }
+
+    [Fact]
+    public async Task RenamedM2lbProjects_AreTheProfilesSystems_ByExplicitAlias()
+    {
+        RenamedM2lb();
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        Role(coverage, SkoleNaervaerTopologyProfile.M2lb).State.Should().Be(TopologySourceRoleState.Available, "without a binding store, recognized reads Available as before");
+        Rel(coverage, "skoleadapter-skoletjenesten").State.Should().Be(TopologyRelationshipState.Resolved, "SkoleAdapter.Worker → SkoleService.Api local launch address");
+        var view = await View(new SkoleNaervaerTopologyProfile());
+        view.Components.Should().Contain(item => item.Id == "skoletjenesten").And.NotContain(item => item.Name == "M2LB.SkoleService.Api",
+            "the profile's exact alias merges the renamed project into Skoletjenesten");
+        view.Components.Should().Contain(item => item.Name == "M2LB.Person.Api" || item.Id == "person");
+    }
+
+    [Fact]
+    public async Task M2lbAbsent_IsNotProvided_AndOffersImport()
+    {
+        Bind();
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        var m2lb = Role(coverage, SkoleNaervaerTopologyProfile.M2lb);
+        (m2lb.State, m2lb.Action).Should().Be((TopologySourceRoleState.NotProvided, TopologyGapAction.ImportSource));
+        Rel(coverage, "rapport-servicebus").Action.Should().Be(TopologyGapAction.ImportSource);
+    }
+
+    [Fact]
+    public async Task SeveralDistinctM2lbCandidates_AreAmbiguous_AndTheNewestIsNeverChosen()
+    {
+        RenamedM2lb("M2LB-old.zip", "sha-a");
+        RenamedM2lb("M2LB.zip", "sha-b");
+        Bind();
+        var role = Role(await Coverage(new SkoleNaervaerTopologyProfile()), SkoleNaervaerTopologyProfile.M2lb);
+        (role.State, role.Action, role.BoundSources.Count).Should().Be((TopologySourceRoleState.Ambiguous, TopologyGapAction.ReviewCandidates, 0));
+        role.MatchingSources.Should().BeEquivalentTo(["M2LB-old.zip", "M2LB.zip"]);
+        role.Detail.Should().Contain("never chosen automatically");
+    }
+
+    [Fact]
+    public async Task BoundM2lb_IsBound_RelationshipsRecomputedFromStoredFacts_AndNothingIsWritten()
+    {
+        var snapshot = RenamedM2lb();
+        var unbound = await Coverage(new SkoleNaervaerTopologyProfile());
+        Bind(snapshot);
+        var before = JsonSerializer.Serialize(_harness.Sources.Snapshots);
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        var role = Role(coverage, SkoleNaervaerTopologyProfile.M2lb);
+        (role.State, role.BoundSources.Single(), role.Action).Should().Be((TopologySourceRoleState.Bound, "M2LB.zip", TopologyGapAction.ViewEvidence));
+        coverage.Relationships.Select(item => (item.Id, item.State)).Should().BeEquivalentTo(unbound.Relationships.Select(item => (item.Id, item.State)),
+            "binding is provenance for the canonical source; the projection is rebuilt from the same stored facts");
+        JsonSerializer.Serialize(_harness.Sources.Snapshots).Should().Be(before);
+        _bindings!.Writes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BoundSourcesWithoutTheAddress_PointToConfigureIntegration_NotAnotherSource()
+    {
+        var snapshot = RenamedM2lb();
+        CurrentPackages();
+        Bind(snapshot, _harness.Sources.Snapshots.Single(item => item.Archive.FileName == "u.zip"));
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        var mm = Rel(coverage, "mm-skoletjenesten");
+        mm.State.Should().NotBe(TopologyRelationshipState.Resolved);
+        (mm.Action, mm.Owner).Should().Be((TopologyGapAction.ConfigureIntegration, "Target Environment → Integrations"));
+    }
+
+    [Fact]
+    public async Task InfrastructureRole_NeedsNoBinding_AndAnInfrastructureResourceAloneResolvesNoApplicationConnection()
+    {
+        CurrentPackages();
+        Bind();
+        var coverage = await Coverage(new SkoleNaervaerTopologyProfile());
+        var iac = Role(coverage, SkoleNaervaerTopologyProfile.Iac);
+        (iac.State, iac.Action).Should().Be((TopologySourceRoleState.Available, TopologyGapAction.ViewEvidence), "Infrastructure Evidence is consumed environment-wide");
+        Rel(coverage, "servicebus-bufdata").State.Should().Be(TopologyRelationshipState.ExpectedUnresolved, "a declared resource is not an application relationship");
+    }
+
+    [Fact]
+    public void DiscoveryPlan_DeduplicatesIdenticalTargets()
+    {
+        var plan = IntegrationTopologyService.DiscoveryPlan(new TrustedExecutionEnvironment("dev", "Dev", "Development", true, "https://a.example.test/", [], new Dictionary<string, string>())
+        {
+            Components = [new("A", "https://a.example.test/", "/swagger.json"), new("A", "https://A.example.test/", "/swagger.json"), new("B", "https://a.example.test/", "/swagger.json")],
+        });
+        plan.Eligible.Select(item => item.Component).Should().Equal(["A", "B"]);
+        plan.Hosts.Should().Equal(["a.example.test"]);
     }
 }

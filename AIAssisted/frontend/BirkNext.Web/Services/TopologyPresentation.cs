@@ -56,14 +56,27 @@ public static class TopologyPresentation
         _ => "",
     };
 
+    /// <summary>The confidence label. Observed is a runtime dimension, so a resolved-and-observed relationship reads "Resolved" here and
+    /// "Observed" in <see cref="Runtime"/>. Strongly supported is below Resolved and says so.</summary>
     public static string Relationship(TopologyRelationshipState state) => state switch
     {
-        TopologyRelationshipState.Resolved => "Resolved",
-        TopologyRelationshipState.Observed => "Observed",
-        TopologyRelationshipState.StronglySupported => "Strongly supported",
+        TopologyRelationshipState.Resolved or TopologyRelationshipState.Observed => "Resolved",
+        TopologyRelationshipState.StronglySupported => "Strongly supported · not yet resolved",
         TopologyRelationshipState.Candidate => "Candidate · needs evidence",
         _ => "Expected but unresolved",
     };
+
+    /// <summary>Runtime observation, separate from confidence: never a health or compatibility claim.</summary>
+    public static string Runtime(bool observed) => observed ? "Observed at runtime" : "Not observed at runtime";
+
+    /// <summary>The confidence order, weakest first, with what each state means (shown as the page's legend).</summary>
+    public static readonly IReadOnlyList<(string State, string Meaning)> ConfidenceLegend =
+    [
+        ("Expected but unresolved", "Only a Test Pack expects it; no evidence states it, so no connection exists."),
+        ("Candidate", "Partial evidence: one side, or an unresolved target."),
+        ("Strongly supported", "Several pieces of evidence point to it, but the producer/consumer identity is not yet established."),
+        ("Resolved", "Evidence establishes the producer/consumer identity. Not observed, healthy, contract-compatible or tested unless stated separately."),
+    ];
 
     public static string RelationshipTone(TopologyRelationshipState state) => state switch
     {
@@ -78,6 +91,9 @@ public static class TopologyPresentation
     public static string RoleState(TopologySourceRoleState state) => state switch
     {
         TopologySourceRoleState.Available => "Available",
+        TopologySourceRoleState.Bound => "Bound",
+        TopologySourceRoleState.AvailableNeedsBinding => "Available — needs binding",
+        TopologySourceRoleState.Ambiguous => "Ambiguous — several candidates",
         TopologySourceRoleState.PartlyAvailable => "Partly available",
         TopologySourceRoleState.NeedsAnalysis => "Needs analysis",
         TopologySourceRoleState.ReferenceAvailable => "Reference available",
@@ -87,8 +103,9 @@ public static class TopologyPresentation
 
     public static string RoleTone(TopologySourceRoleState state) => state switch
     {
-        TopologySourceRoleState.Available or TopologySourceRoleState.ReferenceAvailable => "ready",
-        TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.NeedsAnalysis or TopologySourceRoleState.ReferenceUnavailable => "attention",
+        TopologySourceRoleState.Available or TopologySourceRoleState.Bound or TopologySourceRoleState.ReferenceAvailable => "ready",
+        TopologySourceRoleState.PartlyAvailable or TopologySourceRoleState.NeedsAnalysis or TopologySourceRoleState.ReferenceUnavailable
+            or TopologySourceRoleState.AvailableNeedsBinding or TopologySourceRoleState.Ambiguous => "attention",
         _ => "muted",
     };
 
@@ -135,11 +152,104 @@ public static class TopologyPresentation
         _ => "Applications",
     };
 
-    /// <summary>The page's one-line counts: application components, interfaces, resolved connections and things needing attention.</summary>
-    public static (int Components, int Interfaces, int Resolved, int Attention) Counts(IntegrationTopologyView view) => (
+    /// <summary>The page's one-line counts: application components, interfaces (one per normalized identity, however many providers stated it)
+    /// and resolved connections.</summary>
+    public static (int Components, int Interfaces, int Resolved) Counts(IntegrationTopologyView view) => (
         view.Components.Count(item => item.Kind == TopologyComponentKind.Application),
         view.Components.Sum(item => item.Interfaces.Count),
-        view.Connections.Count(item => IsResolved(item.Relationship) && item.Status != TopologyStatus.Conflict),
-        view.Connections.Count(item => item.Status is TopologyStatus.Conflict or TopologyStatus.NeedsReview)
-            + view.Components.SelectMany(item => item.Interfaces).Count(item => item.Status is TopologyStatus.Conflict or TopologyStatus.NeedsReview));
+        view.Connections.Count(item => IsResolved(item.Relationship) && item.Status != TopologyStatus.Conflict));
+
+    /// <summary>A call whose target component is not resolved: a relationship candidate (caller + address), not just an interface warning.</summary>
+    public static bool UnresolvedTarget(TopologyInterface item) => item.Direction == TopologyDirection.Calls && item.Status == TopologyStatus.NeedsReview;
+
+    /// <summary>
+    /// What needs attention, split into mutually exclusive categories (each item is counted once): expected relationships not resolved,
+    /// calls whose target is unresolved (relationship candidates), other interfaces needing review, connections in conflict or review
+    /// (ambiguous correlations), and source roles whose presence or binding needs action.
+    /// </summary>
+    public static IReadOnlyList<TopologyAttentionCategory> Attention(IntegrationTopologyView view, TopologyCoverageView? coverage)
+    {
+        var interfaces = view.Components.SelectMany(item => item.Interfaces).ToList();
+        var targets = interfaces.Count(UnresolvedTarget);
+        var review = interfaces.Count(item => item.Status is TopologyStatus.Conflict or TopologyStatus.NeedsReview && !UnresolvedTarget(item));
+        var ambiguous = view.Connections.Count(item => item.Status is TopologyStatus.Conflict or TopologyStatus.NeedsReview);
+        var list = new List<TopologyAttentionCategory>();
+        if (coverage is not null)
+        {
+            list.Add(new("unresolved", "Expected relationships unresolved", coverage.Relationships.Count(item => !IsResolved(item.State)), "it-unresolved-heading"));
+            list.Add(new("sources", "Source presence/binding gaps", coverage.Roles.Count(item => SourceGap(item.State)), "it-coverage-heading"));
+        }
+        list.Add(new("targets", "Unresolved call targets (relationship candidates)", targets, "it-interfaces"));
+        list.Add(new("interfaces", "Interfaces needing review", review, "it-interfaces"));
+        list.Add(new("ambiguous", "Ambiguous correlations (connections)", ambiguous, "it-connections"));
+        return list;
+    }
+
+    /// <summary>A source role whose presence or binding needs an action (a Conditional role that is not provided counts: it leaves a relationship unprovable).</summary>
+    public static bool SourceGap(TopologySourceRoleState state) => state is TopologySourceRoleState.NotProvided or TopologySourceRoleState.NeedsAnalysis
+        or TopologySourceRoleState.AvailableNeedsBinding or TopologySourceRoleState.Ambiguous or TopologySourceRoleState.ReferenceUnavailable;
+
+    /// <summary>The action label for a gap, named after what is actually missing ("Bind existing source", never "Import" for an existing one).</summary>
+    public static string? ActionLabel(TopologyGapAction action) => action switch
+    {
+        TopologyGapAction.ImportSource => "Import source",
+        TopologyGapAction.BindSource => "Bind existing source",
+        TopologyGapAction.ReviewCandidates => "Review source candidates",
+        TopologyGapAction.ReanalyzeSource => "Re-analyze source",
+        TopologyGapAction.ViewMissingEvidence => "View missing evidence",
+        TopologyGapAction.ConfigureIntegration => "Configure integration",
+        TopologyGapAction.ViewEvidence => "View evidence",
+        _ => null,
+    };
+
+    /// <summary>Where each action is done — always the canonical owner (Topology binds, imports and configures nothing itself).</summary>
+    public static string? ActionHref(TopologyGapAction action, string? profileId = null) => action switch
+    {
+        TopologyGapAction.ImportSource => "/project-import",
+        TopologyGapAction.BindSource or TopologyGapAction.ReviewCandidates => SourceGuidancePresentation.ActionHref("iqr-evidence"),
+        TopologyGapAction.ReanalyzeSource or TopologyGapAction.ViewMissingEvidence or TopologyGapAction.ViewEvidence => "/source-analysis",
+        TopologyGapAction.ConfigureIntegration => IntegrationReviewPresentation.IntegrationsHref(profileId),
+        _ => null,
+    };
+
+    /// <summary>"3 need M2LB binding · 1 needs BiRK application source import · 2 need integration configuration": unresolved expected
+    /// relationships grouped by the action and source that would resolve them.</summary>
+    public static IReadOnlyList<(string Text, int Count)> MissingEvidenceGroups(TopologyCoverageView coverage) =>
+        [.. coverage.Relationships.Where(item => !IsResolved(item.State))
+            .GroupBy(item => (item.Action, Role: item.SourceRoleName ?? ""))
+            .Select(group => (Text: GapPhrase(group.Key.Action, group.Key.Role, group.Count()), Count: group.Count()))
+            .OrderByDescending(group => group.Count)];
+
+    private static string GapPhrase(TopologyGapAction action, string role, int count)
+    {
+        var need = count == 1 ? "needs" : "need";
+        return action switch
+        {
+            TopologyGapAction.ImportSource => $"{count} {need} {role} (not provided — import)",
+            TopologyGapAction.BindSource => $"{count} {need} {role} binding (source available)",
+            TopologyGapAction.ReviewCandidates => $"{count} {need} a {role} source chosen among candidates",
+            TopologyGapAction.ReanalyzeSource => $"{count} {need} {role} re-analyzed",
+            TopologyGapAction.ConfigureIntegration => $"{count} {need} exact configuration mapping",
+            _ => $"{count} {need} evidence not yet stated in {(role.Length > 0 ? role : "the available sources")}",
+        };
+    }
+
+    /// <summary>Core (required) source coverage in one line, keeping presence and binding apart: "Core sources present · 2 need binding" is
+    /// not "partial" — nothing is missing, it is only not canonically bound yet.</summary>
+    public static string CoreSources(TopologyCoverageView coverage)
+    {
+        if (coverage.CoreSourcesComplete) return "Core sources complete";
+        var core = coverage.Roles.Where(role => role.Requirement == TopologySourceRequirement.Required).ToList();
+        var absent = core.Count(role => role.State is TopologySourceRoleState.NotProvided or TopologySourceRoleState.NeedsAnalysis or TopologySourceRoleState.PartlyAvailable);
+        var binding = core.Count(role => role.State is TopologySourceRoleState.AvailableNeedsBinding or TopologySourceRoleState.Ambiguous);
+        return absent > 0 ? $"Core sources partial · {absent} missing or incomplete" + (binding > 0 ? $" · {binding} need binding" : "")
+            : $"Core sources present · {binding} need{(binding == 1 ? "s" : "")} binding";
+    }
+
+    /// <summary>"2 of 6 evidence providers used": the denominator is provider categories, never snapshot files.</summary>
+    public static string SourcesUsed(IntegrationTopologyView view) =>
+        $"{view.Sources.Count(item => item.State == TopologySourceState.Used)} of {view.Sources.Count} evidence provider categories used";
 }
+
+/// <summary>One mutually exclusive attention category and where on the page its items are.</summary>
+public sealed record TopologyAttentionCategory(string Key, string Label, int Count, string Anchor);

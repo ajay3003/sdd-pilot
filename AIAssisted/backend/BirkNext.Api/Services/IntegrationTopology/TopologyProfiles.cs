@@ -36,7 +36,9 @@ public sealed record TopologySourceRoleDefinition(string Id, string DisplayName,
 
 public sealed record TopologySourceMatch
 {
-    /// <summary>Expected parts: each token must be found in a component or project name of some matching source (all = Available, some = Partly available).</summary>
+    /// <summary>Expected parts: each token must be found in a component or project name of some matching source (all = Available, some = Partly
+    /// available). One part may name explicit alternatives separated by '|' ("Receiver|Mottak") when an implementation was renamed — each is
+    /// still an exact substring of a component or project name, never a similarity guess.</summary>
     public IReadOnlyList<string> Components { get; init; } = [];
     /// <summary>Expected parts matched at the start of a component or project name ("Orders." matches Orders.Api but not Shop.Orders.Worker).</summary>
     public IReadOnlyList<string> ComponentPrefixes { get; init; } = [];
@@ -57,6 +59,9 @@ public sealed record TopologyExpectedRelationship(string Id, string Label, strin
     public string? Via { get; init; }
     public IReadOnlyList<string> EvidenceRoles { get; init; } = [];
     public string MissingEvidence { get; init; } = "";
+    /// <summary>The missing evidence is configuration (a base address, a consumer mapping) that a configured integration can state, so once the
+    /// sources are bound the fix is "Configure integration" rather than another source.</summary>
+    public bool ConfigurationResolvable { get; init; }
 }
 
 /// <summary>An external application a Test Pack ships reference metadata for (a built-in reference, no import): its identifiers (e.g. an

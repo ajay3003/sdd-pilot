@@ -96,7 +96,12 @@ public sealed record TopologyConnection
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TopologyEvidenceStrength { Weak, Supporting, Strong, VeryStrong }
 
-/// <summary>Relationship states in increasing certainty. Observed needs runtime evidence; Expected but unresolved is only ever an expectation.</summary>
+/// <summary>
+/// Relationship states in increasing certainty: Expected but unresolved (an expectation only) → Candidate (one side or partial evidence) →
+/// Strongly supported (several strong pieces of evidence, canonical resolution not yet established) → Resolved (the producer/consumer identity
+/// is established by evidence) → Observed (resolved and seen at runtime). Resolved never means observed, healthy, contract-compatible or tested;
+/// runtime observation is a separate dimension the UI shows beside the confidence.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TopologyRelationshipState { ExpectedUnresolved, Candidate, StronglySupported, Resolved, Observed }
 
@@ -126,8 +131,9 @@ public sealed record IntegrationTopologyView
     public TopologyDiscoveryPlan Discovery { get; init; } = new([], []);
 }
 
-/// <summary>Interface discovery before it runs: the components that declare an OpenAPI document and the hosts that would be queried (one GET each,
-/// own host, no redirects). Ineligible components say why.</summary>
+/// <summary>OpenAPI interface discovery before it runs (computed offline, no network call): the components that declare an OpenAPI document and
+/// the hosts that would be queried (one GET each, own host, no redirects), deduplicated by scheme, host, port and document path. Ineligible
+/// components say why. Zero eligible targets means nothing to read over the network — never that no interface evidence exists.</summary>
 public sealed record TopologyDiscoveryPlan(List<TopologyDiscoveryTarget> Eligible, List<TopologyDiscoveryTarget> Ineligible)
 {
     public List<string> Hosts => [.. Eligible.Select(item => item.Host).Where(host => host.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
@@ -143,10 +149,18 @@ public sealed record TopologyDiscoveryTarget(string Component, string Host, stri
 public enum TopologySourceRequirement { Required, Recommended, Optional, Conditional, BuiltInReference }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TopologySourceRoleState { Available, PartlyAvailable, NeedsAnalysis, NotProvided, ReferenceAvailable, ReferenceUnavailable }
+public enum TopologySourceRoleState { Available, PartlyAvailable, NeedsAnalysis, NotProvided, ReferenceAvailable, ReferenceUnavailable, AvailableNeedsBinding, Bound, Ambiguous }
+
+/// <summary>What resolves a source-role or relationship gap, chosen from the actual evidence state (never "import" when the source already
+/// exists): import an absent source, bind an existing one in IQR, review several plausible candidates, look at the missing evidence in a
+/// bound/available source, or configure the integration that would state the relationship.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TopologyGapAction { None, ImportSource, BindSource, ReviewCandidates, ReanalyzeSource, ViewMissingEvidence, ConfigureIntegration, ViewEvidence }
 
 /// <summary>One logical source role and how the current sources cover it. Matching sources are archive names as provenance; the role is
-/// recognized by content (components, configuration, infrastructure), never by file name.</summary>
+/// recognized by content (components, configuration, infrastructure), never by file name. Presence and binding are separate: a recognized
+/// application source is Bound only through the canonical IQR source-evidence binding (consumed, never stored here); otherwise it is
+/// Available — needs binding, or Ambiguous when several distinct snapshots are plausible (the newest is never chosen).</summary>
 public sealed record TopologySourceRoleCoverage
 {
     public string RoleId { get; init; } = "";
@@ -162,6 +176,11 @@ public sealed record TopologySourceRoleCoverage
     /// <summary>What remains unresolved without this source ("the application side of a CDC flow may remain unresolved").</summary>
     public string Consequence { get; init; } = "";
     public string Detail { get; init; } = "";
+    /// <summary>Archives (of matching sources) that a canonical IQR binding of this environment points to.</summary>
+    public List<string> BoundSources { get; init; } = [];
+    /// <summary>When the newest matching snapshot was analyzed (freshness), or null.</summary>
+    public DateTimeOffset? AnalyzedAt { get; init; }
+    public TopologyGapAction Action { get; init; }
 }
 
 /// <summary>A Test Pack's expected relationship, resolved against the evidence. Expected alone never resolves; partial evidence is a candidate.</summary>
@@ -185,9 +204,13 @@ public sealed record TopologyRelationshipResult
     public string? SourceRoleName { get; init; }
     public TopologySourceRoleState? SourceRoleState { get; init; }
     public List<string> MatchingSources { get; init; } = [];
-    /// <summary>"import-source" (the role is not provided), "use-source" (the role is available; the evidence is not in it) or null.</summary>
-    public string? Action { get; init; }
+    /// <summary>What resolves the gap, from the evidence state of the source role (import / bind / review candidates / view missing evidence /
+    /// configure integration), and the feature that owns that fix.</summary>
+    public TopologyGapAction Action { get; init; }
+    public string? Owner { get; init; }
     public string Unverified { get; init; } = "";
+    /// <summary>Runtime observation of the resolved route — a separate dimension from the confidence state.</summary>
+    public bool RuntimeObserved { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
