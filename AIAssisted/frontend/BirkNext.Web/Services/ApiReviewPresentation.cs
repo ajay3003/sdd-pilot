@@ -579,7 +579,7 @@ public static class ApiReviewPresentation
         [
             // Authentication ENFORCEMENT: an anonymous request was refused. Never authorization correctness (Task 10 §32).
             ("authentication", "Authentication enforcement", enforcement.Count == 0 ? "Not applicable — no service requires authentication"
-                : $"{enforcement.Count(t => t == ApiAuthenticationEnforcementStatus.Verified)} of {enforcement.Count} service{(enforcement.Count == 1 ? "" : "s")} verified"
+                : $"Observed on {enforcement.Count(t => t == ApiAuthenticationEnforcementStatus.Verified)} of {enforcement.Count} service{(enforcement.Count == 1 ? "" : "s")} (anonymous request refused; not authorization correctness)"
                   + (enforcement.Count(t => t != ApiAuthenticationEnforcementStatus.Verified) is var other and > 0 ? $" · {Counts(enforcement.Where(t => t != ApiAuthenticationEnforcementStatus.Verified), ApiFuzzingPresentation.EnforcementLabel)}" : "")),
             ("cors", "CORS", cors.Count == 0 ? "No preflights recorded" : $"{report.Targets.Count(t => t.CorsProbes.Count > 0)} service{(report.Targets.Count(t => t.CorsProbes.Count > 0) == 1 ? "" : "s")} observed · " + Counts(cors, o => CorsLabel(o.Assessment))),
             ("headers", "Security headers", headers.Count == 0 ? "Not assessed" : headers.Count(h => h.Result == SecurityHeaderOutcome.Missing) is var missing and > 0

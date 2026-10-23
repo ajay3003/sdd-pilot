@@ -86,8 +86,15 @@ public sealed record ApiReviewDomainCoverageRow(string Key, string Domain, strin
     public string? Detail { get; init; }
 }
 
-/// <summary>A causal limitation: what could not be fully assessed, and why.</summary>
-public sealed record ApiReviewLimitationRow(string Key, string Title, string Reason);
+/// <summary>
+/// A causal coverage limitation: what could not be fully assessed, and why. Coverage, never a finding: it carries no severity and is never
+/// counted with logical issues. <see cref="Category"/> says what kind of gap it is; <see cref="Tab"/> is where its evidence lives.
+/// </summary>
+public sealed record ApiReviewLimitationRow(string Key, string Title, string Reason)
+{
+    public string Category { get; init; } = "Coverage limitation";
+    public string Tab { get; init; } = "Overview";
+}
 
 /// <summary>Execution, assessment, manual review and coverage of one run — four facts, never one badge.</summary>
 public sealed record ApiReviewOutcomeView(
@@ -185,6 +192,11 @@ public static class ApiReviewPostRunPresentation
         rows.Add(errors.Any(Decided) ? new("errors", "Error handling", "Reviewed", null, false, "Errors")
             : new("errors", "Error handling", "Not assessed", "No error response could be requested with a safe request.", true, "Errors"));
 
+        // Authentication enforcement (an anonymous request refused) is not authorization correctness, which needs identity expectations.
+        if (report.Targets.Any(t => t.Target.AuthRequired))
+            rows.Add(new("authorization", "Authorization correctness", "Not assessed — manual / active checks required",
+                "Requires identity expectations and dedicated authorization checks.", true, "Security"));
+
         var measured = Measured(report);
         var legacy = ApiReviewPresentation.Summary(report).Coverage.ToDictionary(r => r.Label, r => string.Join(" · ", new[] { r.Value, r.Detail }.Where(x => !string.IsNullOrWhiteSpace(x))));
         for (var i = 0; i < rows.Count; i++)
@@ -193,29 +205,69 @@ public static class ApiReviewPostRunPresentation
             rows.Add(new("writes", "Write operations", "Observed — not executed", $"{report.Coverage.UnsafeOperationsNotExecuted} write operation{(report.Coverage.UnsafeOperationsNotExecuted == 1 ? "" : "s")} observed; the read-only review policy never executes them.", false, "REST"));
         rows.Add(measured == 0
             ? new("performance", "Performance", "Not assessed", "No review request was measured.", true, "Performance")
-            : new("performance", "Performance", "Observed — limited request sample",
+            : new("performance", "Performance", $"Observed — limited sample ({measured} request{(measured == 1 ? "" : "s")})",
                 $"Only the review's own {measured} read-only request{(measured == 1 ? "" : "s")} {(measured == 1 ? "was" : "were")} measured; this is not load testing.", true, "Performance"));
         return rows;
     }
 
-    /// <summary>The causal limitations, each named exactly once.</summary>
+    public const string NoComparableRuntimeBaseline = "No previous comparable runtime baseline";
+    public const string FirstRuntimeBaseline = "This run recorded the first runtime structural baseline (source: runtime observation). It is not a contract baseline.";
+    public const string AuthorizationNotAssessed = "Authorization correctness not assessed — requires identity expectations and dedicated authorization checks (optional active checks).";
+
+    /// <summary>
+    /// The causal coverage limitations, each named exactly once, classified (contract, schema/compatibility, performance evidence, historical
+    /// comparison, authorization) and linked to the tab that holds the evidence. Coverage gaps, never findings: no severity, never counted
+    /// as logical issues, and a missing contract or a rejected introspection is not an API defect.
+    /// </summary>
     public static IReadOnlyList<ApiReviewLimitationRow> Limitations(ApiReviewReport report)
     {
         var rows = new List<ApiReviewLimitationRow>();
         var restWithout = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.Rest && t.Contract is not { Available: true }).ToList();
         if (restWithout.Count > 0)
             rows.Add(new("rest-contract", "REST contract validation unavailable",
-                $"No OpenAPI contract was configured for {string.Join(", ", restWithout.Select(t => ApiReviewPresentation.DisplayName(t.Target)))}."));
+                $"No OpenAPI contract was configured for {string.Join(", ", restWithout.Select(t => ApiReviewPresentation.DisplayName(t.Target)))}; runtime behaviour was still reviewed.")
+                { Category = "Contract coverage", Tab = "Contracts" });
         var gqlWithout = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl && t.Contract is not { Available: true }
             && t.GraphQlCompatibility?.SchemaSource is null or GraphQlSchemaSource.None).ToList();
         if (gqlWithout.Count > 0)
-            rows.Add(new("graphql-schema", "GraphQL compatibility not assessed", SchemaReason(gqlWithout)));
-        if (Measured(report) > 0)
-            rows.Add(new("performance", "Performance evidence limited", "Only review traffic was measured; this is not load, stress or end-user performance testing."));
+            rows.Add(new("graphql-schema", "GraphQL compatibility not assessed", SchemaReason(gqlWithout) + " The endpoint itself responded; this may be an intentional security posture.")
+                { Category = "Schema / compatibility", Tab = "GraphQL" });
+        if (Measured(report) is var measured and > 0)
+            rows.Add(new("performance", "Performance: limited sample",
+                $"{measured} request{(measured == 1 ? "" : "s")} measured — insufficient for representative performance conclusions; this is not load, stress or end-user performance testing.")
+                { Category = "Performance evidence", Tab = "Performance" });
         if (!DriftCompared(report) && report.Targets.Count > 0)
-            rows.Add(new("baseline", "No baseline comparison", "No previous comparable review exists for these services; this review records the first baseline."));
+            rows.Add(new("baseline", NoComparableRuntimeBaseline, FirstRuntimeBaseline) { Category = "Historical comparison", Tab = "Contracts" });
+        if (report.Targets.Any(t => t.Target.AuthRequired))
+            rows.Add(new("authorization", "Authorization correctness not assessed",
+                "Authentication enforcement was observed; roles, tenants and object-level access need identity expectations and dedicated authorization checks.")
+                { Category = "Authorization coverage", Tab = "Security" });
         return rows;
     }
+
+    /// <summary>"Automated review completed. Issues were identified, and coverage remains limited in contracts, authorization and performance."</summary>
+    public static string Headline(ApiReviewOutcomeView outcome, IReadOnlyList<ApiReviewLimitationRow> limitations)
+    {
+        var areas = limitations.Select(l => l.Key switch
+        {
+            "rest-contract" or "graphql-schema" => "contracts",
+            "performance" => "representative performance",
+            "authorization" => "authorization",
+            "baseline" => "historical comparison",
+            _ => null,
+        }).Where(a => a is not null).Distinct().ToList();
+        var execution = outcome.Execution == "Failed" ? "Automated review failed to run." : "Automated review completed.";
+        var found = outcome.LogicalIssues > 0 ? "Issues were identified" : "No issues were identified";
+        return areas.Count == 0 ? $"{execution} {found}; coverage is complete for the reviewed scope."
+            : $"{execution} {found}, and coverage remains limited in {Join(areas!)}.";
+    }
+
+    private static string Join(IReadOnlyList<string?> parts) => parts.Count switch
+    {
+        1 => parts[0]!,
+        2 => $"{parts[0]} and {parts[1]}",
+        _ => $"{string.Join(", ", parts.Take(parts.Count - 1))} and {parts[^1]}",
+    };
 
     // ── Services ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -266,13 +318,19 @@ public static class ApiReviewPostRunPresentation
         var schema = gql.All(t => t.Contract is { Available: true } || t.GraphQlCompatibility?.SchemaSource is not null and not GraphQlSchemaSource.None);
         var compatibility = gql.Any(t => ApiReviewPresentation.GraphQlCounts(t).CompatibilityAssessed);
         var systemOnly = gql.SelectMany(t => t.Operations.Where(o => o.Executed)).All(o => IsSystemQuery(o));
+        var business = gql.Sum(t => t.Operations.Count(o => o.Executed && !IsSystemQuery(o)));
         return new([
-            ("Operations observed", $"{observed}"),
-            ("Read-only queries executed", $"{executed}"),
+            ("Business operations observed", $"{observed}"),
+            ("Read-only queries executed", $"{executed}" + (executed > business ? $" ({executed - business} lightweight system quer{(executed - business == 1 ? "y" : "ies")})" : "")),
+            ("Business operations executed", $"{business}"),
             ("Runtime schema", schema ? "Available" : "Unavailable"),
             ("Contract compatibility", compatibility ? "Assessed" : "Not assessed"),
             ("Reason", compatibility ? "—" : schema ? "No observed operation document was available to validate." : SchemaReason(gql)),
-        ], executed == 0 ? "Not reviewed" : schema ? "Reviewed" : "Reviewed with schema limitation",
+        ],
+            // Never a bare "Reviewed" that reads as "all observed operations were tested".
+            executed == 0 ? "Not reviewed"
+            : systemOnly ? schema ? "Runtime reachability reviewed · business operations observed only" : "Runtime reachability reviewed · schema unavailable · business operations observed only"
+            : schema ? "Reviewed" : "Reviewed with schema limitation",
             executed > 0 && systemOnly
                 ? "Only a lightweight system query (__typename) was executed. It establishes reachability and error behaviour, not business response performance, business correctness or operation compatibility."
                 : null);
@@ -301,8 +359,12 @@ public static class ApiReviewPostRunPresentation
                 : new("compatibility", "Compatibility", "Compatible", null));
         }
         rows.Add(DriftCompared(report)
-            ? new("drift", "Drift comparison", report.Findings.Any(f => f.Type == ApiReviewFindingType.Drift) ? "Drift detected" : "Compared — no drift in the compared evidence", null)
-            : new("drift", "Drift comparison", "Not available", "No previous comparable baseline."));
+            ? new("drift", "Runtime structural drift", report.Findings.Any(f => f.Type == ApiReviewFindingType.Drift) ? "Drift detected" : "Compared — no drift in the compared runtime structure", null)
+            : new("drift", "Runtime structural drift", NoComparableRuntimeBaseline, FirstRuntimeBaseline));
+        // Contract drift needs comparable contract/schema evidence; it is never inferred from runtime structure.
+        var contractEvidence = report.Targets.Count > 0 && report.Targets.All(t => t.Contract is { Available: true });
+        rows.Add(new("contract-drift", "Contract drift", "Not assessed",
+            contractEvidence ? "No previous comparable contract snapshot." : "Needs comparable contract/schema evidence (OpenAPI or a usable GraphQL schema)."));
         return rows;
     }
 

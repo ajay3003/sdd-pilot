@@ -224,7 +224,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         panel.QuerySelectorAll("[data-testid=aqr-manual-review]").Should().ContainSingle();
         page.FindAll("[data-testid=aqr-manual-review]").Should().ContainSingle();
         page.Find("[data-testid=aqr-manual-review]").TextContent.Should().Contain("not findings");
-        page.FindAll("[data-testid=aqr-coverage-row]").Select(r => r.GetAttribute("data-coverage")).Should().Equal("REST", "GraphQL", "Contracts", "Security", "Error handling", "Performance");
+        page.FindAll("[data-testid=aqr-coverage-row]").Select(r => r.GetAttribute("data-coverage")).Should().Equal("REST", "GraphQL", "Contracts", "Security", "Error handling", "Authorization correctness", "Performance");
         page.FindAll("[data-testid=aqr-result-access]").Should().ContainSingle("access is stated once, in the result — not as a coverage row");
         page.Find("[data-testid=aqr-services-table]");
         page.Find("[data-testid=aqr-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
@@ -351,7 +351,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         var rows = page.FindAll("[data-testid=aqr-contract-status-row]");
         rows.Should().HaveCount(2);
         page.FindAll("[data-testid=aqr-contract-status]").Select(s => s.TextContent).Should().Contain(["Not configured", "Unavailable"]);
-        page.FindAll("[data-testid=aqr-contract-drift]").Should().OnlyContain(d => d.TextContent.Contains("No previous baseline") && d.TextContent.Contains("informational"));
+        page.FindAll("[data-testid=aqr-contract-drift]").Should().OnlyContain(d => d.TextContent.Contains("No previous comparable runtime baseline") && d.TextContent.Contains("informational"));
         page.FindAll("[data-testid=aqr-gql-operations]").Should().BeEmpty("observed operations are listed once, on the GraphQL tab");
     }
 
@@ -362,7 +362,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         Tab(page, "security");
         page.FindAll("[data-testid=aqr-security-summary-item]").Select(i => i.GetAttribute("data-key")).Should().Equal("authentication", "cors", "headers", "technology", "documentation");
         page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dt").TextContent.Should().Be("Authentication enforcement");
-        page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dd").TextContent.Should().Be("1 of 1 service verified");
+        page.Find("[data-testid=aqr-security-summary-item][data-key=authentication] dd").TextContent.Should().Be("Observed on 1 of 1 service (anonymous request refused; not authorization correctness)");
         page.Find("[data-testid=aqr-authorization-correctness]").TextContent.Should().Contain("Not validated");
         page.Find("[data-testid=aqr-security-summary-item][data-key=headers] dd").TextContent.Should().Be("2 expected headers missing");
         page.Find("[data-testid=aqr-security-summary-item][data-key=documentation] dd").TextContent.Should().Be("Not verified");

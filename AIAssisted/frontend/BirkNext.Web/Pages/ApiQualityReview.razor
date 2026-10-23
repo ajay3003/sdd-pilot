@@ -380,6 +380,7 @@
         var summary = result.Metadata;
         var outcome = ApiReviewPostRunPresentation.Outcome(report);
         var issues = ApiReviewPresentation.LogicalIssues(report);
+        var limitationRows = ApiReviewPostRunPresentation.Limitations(report);
         <section class="aqr-results" data-testid="aqr-results" aria-labelledby="aqr-result-heading">
 
             @* ── 1. The result: execution, assessment, manual review and coverage are four facts, never one badge. "Completed" is the
@@ -392,6 +393,24 @@
                     <div data-testid="aqr-result-manual"><dt>Manual review</dt><dd><span class="aqr-pill aqr-pill-@(report.ManualReviewItems.Count > 0 ? "attention" : "muted")">@outcome.ManualReview</span></dd></div>
                     <div data-testid="aqr-outcome-coverage"><dt>Coverage</dt><dd><span class="aqr-pill aqr-pill-@(outcome.CoverageLimited ? "warning" : "muted")">@outcome.Coverage</span></dd></div>
                 </dl>
+                <p class="aqr-result-headline" data-testid="aqr-result-headline"><strong>@ApiReviewPostRunPresentation.Headline(outcome, limitationRows)</strong></p>
+                @* Why coverage is limited, next to the state — coverage gaps, not findings; each links to the tab holding its evidence. *@
+                @if (outcome.CoverageLimited && limitationRows.Count > 0)
+                {
+                    <div class="aqr-coverage-why" data-testid="aqr-coverage-why">
+                        <p class="aqr-coverage-why-title"><strong>Coverage limited because:</strong></p>
+                        <ul>
+                            @foreach (var limitation in limitationRows)
+                            {
+                                <li data-testid="aqr-coverage-reason" data-key="@limitation.Key" data-category="@limitation.Category">
+                                    <span class="aqr-muted">@limitation.Category:</span> @limitation.Title
+                                    <button type="button" class="aqr-link-button" data-testid="aqr-coverage-reason-link" @onclick="() => _tab = limitation.Tab"
+                                            aria-label="@($"View {limitation.Title} in {ApiReviewPresentation.TabLabel(limitation.Tab)}")">View in @ApiReviewPresentation.TabLabel(limitation.Tab)</button>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
                 <p class="aqr-result-summary-text" data-testid="aqr-result-summary-text">@result.Summary</p>
                 <dl class="aqr-result-counts" data-testid="aqr-result-counts">
                     <div><dt>Logical issues</dt><dd data-testid="aqr-count-issues">@outcome.LogicalIssues</dd></div>
@@ -482,13 +501,14 @@
                             </div>
                         }
                     </dl>
-                    @if (ApiReviewPostRunPresentation.Limitations(report) is { Count: > 0 } limitations)
+                    @if (limitationRows.Count > 0)
                     {
-                        <h4 class="aqr-group-title">Main limitations</h4>
+                        <h4 class="aqr-group-title">Coverage gaps</h4>
+                        <p class="aqr-muted">Testability and review-completeness limits — not findings, never counted as issues, and without a severity.</p>
                         <ul class="aqr-limitations" data-testid="aqr-main-limitations">
-                            @foreach (var limitation in limitations)
+                            @foreach (var limitation in limitationRows)
                             {
-                                <li data-testid="aqr-main-limitation-row" data-key="@limitation.Key"><strong>@limitation.Title</strong> <span class="aqr-muted">@limitation.Reason</span></li>
+                                <li data-testid="aqr-main-limitation-row" data-key="@limitation.Key" data-category="@limitation.Category"><span class="aqr-pill aqr-pill-muted">@limitation.Category</span> <strong>@limitation.Title</strong> <span class="aqr-muted">@limitation.Reason</span></li>
                             }
                         </ul>
                     }
@@ -635,6 +655,10 @@
                 }
                 else if (_tab == "Performance")
                 {
+                    @if (limitationRows.FirstOrDefault(l => l.Key == "performance") is { } sample)
+                    {
+                        <p class="aqr-scope-note aqr-scope-note-strong" role="note" data-testid="aqr-performance-sample"><strong>@sample.Reason</strong></p>
+                    }
                     <p class="aqr-scope-note aqr-scope-note-strong" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p>
                     @* The thresholds THIS review was evaluated with, from its own policy snapshot — never today's settings. *@
                     <p class="aqr-muted" data-testid="aqr-performance-thresholds">@ApiReviewPresentation.PerformanceThresholdsNote(report.Policy)</p>
@@ -1425,7 +1449,7 @@
                             <td data-testid="aqr-contract-drift">
                                 @if (driftFindings > 0) { <span class="aqr-state aqr-state-warning">Drift detected</span> <span class="aqr-muted">· @driftFindings @(driftFindings == 1 ? "change" : "changes") (see Findings)</span> }
                                 else if (driftChecks.Count > 0) { <span class="aqr-state">Compared</span> <span class="aqr-muted">· no drift in the compared evidence</span> }
-                                else { <span class="aqr-state aqr-state-muted">No previous baseline</span> <span class="aqr-muted">· informational@(t.Baseline is not null ? "; this review recorded the first structural baseline" : "")</span> }
+                                else { <span class="aqr-state aqr-state-muted">@ApiReviewPostRunPresentation.NoComparableRuntimeBaseline</span> <span class="aqr-muted">· informational@(t.Baseline is not null ? "; this run recorded the first runtime structural baseline (source: runtime observation), not a contract baseline" : "")</span> }
                             </td>
                         </tr>
                     }

@@ -252,7 +252,9 @@ public sealed class ApiReviewTargetResolverTests
         var html = new ReportExportService().ExportApiReview(report, "BirkNext");
         html.Should().Contain("M2LB DEV").And.Contain("Children API").And.Contain("Authenticated HTTP via Local HTTPS Proxy").And.Contain("deadbeef").And.Contain("3.0.3")
             .And.Contain("Blocked").And.Contain("Not tested").And.Contain("Missing required property $.name").And.Contain("Breaking").And.Contain("Write operations").And.Contain("1 / 1");
-        html.Should().NotContainAny("Bearer", "Authorization", "Cookie", "eyJ");
+        // No credential or header leaks. "Authorization correctness" is a coverage term the export states on purpose; a header is "Authorization:".
+        html.Should().NotContainAny("Bearer", "Authorization:", "Authorization=", "Cookie", "eyJ");
+        html.Should().Contain("Authorization correctness not assessed");
     }
 
     [Fact]

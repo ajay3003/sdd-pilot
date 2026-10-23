@@ -29,6 +29,19 @@ public static class ApiReviewExport
             sb.Append($"<dt>Performance policy · {esc(label)}</dt><dd>{esc(value)}</dd>");
         sb.Append($"<dt>Started / generated</dt><dd>{report.StartedAt:u} / {report.GeneratedAt:u}</dd></dl></section>\n");
 
+        // The page's result model: automated review, outcome, coverage (with its classified reasons) and manual review — four facts.
+        var outcome = ApiReviewPostRunPresentation.Outcome(report);
+        var limitations = ApiReviewPostRunPresentation.Limitations(report);
+        sb.Append("<section class=\"block\"><h2>Review result</h2>");
+        sb.Append($"<p><strong>{esc(ApiReviewPostRunPresentation.Headline(outcome, limitations))}</strong></p><dl>");
+        sb.Append($"<dt>Automated review</dt><dd>{esc(outcome.Execution)}</dd>");
+        sb.Append($"<dt>Review outcome</dt><dd>{esc(outcome.Assessment)} ({outcome.LogicalIssues} logical issues · {outcome.SourceFindings} source findings)</dd>");
+        sb.Append($"<dt>Coverage</dt><dd>{esc(outcome.Coverage)}</dd>");
+        foreach (var limitation in limitations)
+            sb.Append($"<dt>Coverage gap · {esc(limitation.Category)}</dt><dd>{esc(limitation.Title)} — {esc(limitation.Reason)}</dd>");
+        sb.Append($"<dt>Manual review</dt><dd>{esc(outcome.ManualReview)} (residual obligations, not findings)</dd>");
+        sb.Append($"<dt>Read-only requests executed</dt><dd>{outcome.RequestsExecuted} across {outcome.ServicesReviewed}/{outcome.Services} services</dd></dl></section>\n");
+
         var c = report.Coverage;
         sb.Append("<div class=\"kpi-row\">");
         sb.Append(Kpi(report.RestServices.ToString(), "REST services")).Append(Kpi(report.GraphQlServices.ToString(), "GraphQL services"));

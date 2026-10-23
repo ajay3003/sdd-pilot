@@ -128,13 +128,42 @@ public sealed class ApiReviewPostRunPresentationTests
         rows["Contracts"].State.Should().Be("Incomplete");
         rows["Security"].State.Should().Be("Reviewed");
         rows["Error handling"].State.Should().Be("Reviewed");
-        rows["Performance"].State.Should().Be("Observed — limited request sample");
+        rows["Performance"].State.Should().Be("Observed — limited sample (3 requests)");
+        rows["Authorization correctness"].State.Should().Be("Not assessed — manual / active checks required");
         rows["Performance"].Reason.Should().Contain("not load testing");
         rows["Write operations"].State.Should().Be("Observed — not executed");
         rows.Values.Should().NotContain(r => r.State.Contains("Blocked"));
 
-        ApiReviewPostRunPresentation.Limitations(Fixture()).Select(l => l.Title).Should().Equal(
-            "REST contract validation unavailable", "GraphQL compatibility not assessed", "Performance evidence limited", "No baseline comparison");
+        var limitations = ApiReviewPostRunPresentation.Limitations(Fixture());
+        limitations.Select(l => l.Title).Should().Equal(
+            "REST contract validation unavailable", "GraphQL compatibility not assessed", "Performance: limited sample",
+            ApiReviewPostRunPresentation.NoComparableRuntimeBaseline, "Authorization correctness not assessed");
+        // Classified coverage gaps, each linked to the tab holding its evidence — never findings.
+        limitations.Select(l => (l.Category, l.Tab)).Should().Equal(
+            ("Contract coverage", "Contracts"), ("Schema / compatibility", "GraphQL"), ("Performance evidence", "Performance"),
+            ("Historical comparison", "Contracts"), ("Authorization coverage", "Security"));
+    }
+
+    /// <summary>Outcome and coverage are independent: no issues can still mean limited coverage, and the headline says both.</summary>
+    [Fact]
+    public void NoIssues_CoverageStillLimited_AndTheHeadlineSaysBoth()
+    {
+        var report = Fixture(findings: false);
+        var outcome = ApiReviewPostRunPresentation.Outcome(report);
+        outcome.Execution.Should().Be("Completed");
+        outcome.Assessment.Should().Be("No automated issues identified");
+        outcome.Coverage.Should().Be("Limited");
+        ApiReviewPostRunPresentation.Headline(outcome, ApiReviewPostRunPresentation.Limitations(report))
+            .Should().Be("Automated review completed. No issues were identified, and coverage remains limited in contracts, representative performance, historical comparison and authorization.");
+    }
+
+    [Fact]
+    public void IssuesIdentified_HeadlineNamesTheLimitedAreas()
+    {
+        var report = Fixture();
+        ApiReviewPostRunPresentation.Headline(ApiReviewPostRunPresentation.Outcome(report), ApiReviewPostRunPresentation.Limitations(report))
+            .Should().StartWith("Automated review completed. Issues were identified, and coverage remains limited in contracts");
+        ApiReviewPostRunPresentation.Limitations(report).Should().NotContain(l => l.Category.Contains("Severity"), "coverage gaps carry no severity");
     }
 
     // §27, §75, §84 Contract causes are separate, and a first review is never "no drift".
@@ -145,10 +174,12 @@ public sealed class ApiReviewPostRunPresentationTests
         causes["rest-contract"].Should().BeEquivalentTo(new { State = "Unavailable", Reason = "No OpenAPI contract configured." });
         causes["graphql-schema"].State.Should().Be("Unavailable");
         causes["compatibility"].Should().BeEquivalentTo(new { State = "Not assessed", Reason = "No usable schema available." });
-        causes["drift"].Should().BeEquivalentTo(new { State = "Not available", Reason = "No previous comparable baseline." });
+        // Runtime structural drift and contract drift are separate facts; neither is a defect on a first run.
+        causes["drift"].Should().BeEquivalentTo(new { Label = "Runtime structural drift", State = ApiReviewPostRunPresentation.NoComparableRuntimeBaseline, Reason = ApiReviewPostRunPresentation.FirstRuntimeBaseline });
+        causes["contract-drift"].State.Should().Be("Not assessed");
         causes.Values.Should().NotContain(c => c.State.Contains("No drift"));
 
-        ApiReviewPostRunPresentation.ContractCauses(Fixture(baseline: true)).Single(c => c.Key == "drift").State.Should().Be("Compared — no drift in the compared evidence");
+        ApiReviewPostRunPresentation.ContractCauses(Fixture(baseline: true)).Single(c => c.Key == "drift").State.Should().Be("Compared — no drift in the compared runtime structure");
     }
 
     // §24–§26, §42, §90, §91 GraphQL: observed ≠ executed; a __typename probe never establishes business performance.
@@ -157,8 +188,10 @@ public sealed class ApiReviewPostRunPresentationTests
     {
         var report = Fixture();
         var summary = ApiReviewPostRunPresentation.GraphQl(report)!;
-        summary.ReviewState.Should().Be("Reviewed with schema limitation");
-        summary.Facts.Should().Contain(("Read-only queries executed", "1")).And.Contain(("Runtime schema", "Unavailable")).And.Contain(("Contract compatibility", "Not assessed"));
+        // Only __typename ran: the state says runtime reachability, never a bare "Reviewed" that reads as "all observed operations were tested".
+        summary.ReviewState.Should().Be("Runtime reachability reviewed · schema unavailable · business operations observed only");
+        summary.Facts.Should().Contain(("Read-only queries executed", "1 (1 lightweight system query)")).And.Contain(("Business operations executed", "0"))
+            .And.Contain(("Runtime schema", "Unavailable")).And.Contain(("Contract compatibility", "Not assessed"));
         summary.Note.Should().Contain("__typename").And.Contain("not business response performance");
 
         ApiReviewPostRunPresentation.GraphQlRepresentative(report).Should().StartWith("Not assessed").And.Contain("representative");
@@ -183,7 +216,7 @@ public sealed class ApiReviewPostRunPresentationTests
     {
         var security = ApiReviewPresentation.SecuritySummary(Fixture()).ToDictionary(s => s.Key);
         security["authentication"].Title.Should().Be("Authentication enforcement");
-        security["authentication"].Value.Should().Be("2 of 2 services verified");
+        security["authentication"].Value.Should().Be("Observed on 2 of 2 services (anonymous request refused; not authorization correctness)");
         security.Values.Should().NotContain(s => s.Value.Contains("authoriz", StringComparison.OrdinalIgnoreCase) && s.Value.Contains("verified"));
         security["technology"].Value.Should().Be("1 observation issue (Info)");
     }

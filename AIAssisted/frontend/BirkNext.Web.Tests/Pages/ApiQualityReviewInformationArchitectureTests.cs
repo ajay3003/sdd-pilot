@@ -112,7 +112,8 @@ public sealed partial class ApiQualityReviewLandingUITests
             .And.Contain("6 observed operations").And.Contain("Compatibility not assessed — schema unavailable").And.NotContain("0 / 6");
         page.Find("[data-testid=aqr-tab-graphql]").Click();
         var summary = page.Find("[data-testid=aqr-protocol-summary]");
-        summary.TextContent.Should().Contain("Operations observed6").And.Contain("Read-only queries executed1").And.Contain("Runtime schemaUnavailable").And.Contain("Contract compatibilityNot assessed");
+        summary.TextContent.Should().Contain("Business operations observed6").And.Contain("Read-only queries executed1").And.Contain("Business operations executed0")
+            .And.Contain("Runtime schemaUnavailable").And.Contain("Contract compatibilityNot assessed");
         page.Find("[data-testid=aqr-protocol-note]").TextContent.Should().Contain("__typename").And.Contain("not business response performance");
     }
 
