@@ -1,0 +1,43 @@
+.psb { display: grid; gap: 0.75rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--clr-border); border-radius: var(--radius-lg); background: var(--clr-surface); }
+.psb h3 { margin: 0; font-size: 1rem; }
+.psb-sources { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.psb-source { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border: 1px solid var(--clr-border); border-radius: 999px; cursor: pointer; font-size: 0.9rem; }
+.psb-source-active { border-color: var(--clr-primary, #2563eb); background: var(--clr-accent-bg, #eff6ff); font-weight: 600; }
+.psb-source:focus-within { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.psb-context { display: grid; gap: 0.5rem; }
+.psb-note, .psb-count, .psb-summary, .psb-because, .psb-why { margin: 0; font-size: 0.85rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.psb-scope { margin: 0; overflow-wrap: anywhere; }
+.psb-contracts { display: grid; gap: 0.3rem; margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md, 6px); }
+.psb-contracts .sd-context { overflow-wrap: anywhere; }
+.psb-search input { max-width: 28rem; width: 100%; }
+.psb-operations { display: grid; gap: 0.6rem; margin: 0; padding: 0; list-style: none; }
+.psb-operation { display: grid; gap: 0.35rem; padding: 0.7rem 0.8rem; border: 1px solid var(--clr-border); border-left: 4px solid var(--clr-border); border-radius: var(--radius-md, 6px); background: var(--clr-surface-raised, #fff); min-width: 0; }
+.psb-level-recommended { border-left-color: var(--clr-success, #15803d); }
+.psb-level-reviewrequired { border-left-color: var(--ptc-amber, #d97706); }
+.psb-level-notrunnable { border-left-color: var(--clr-text-subtle, #94a3b8); }
+.psb-op-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+.psb-op-name { font-family: var(--font-mono, monospace); font-size: 0.9rem; overflow-wrap: anywhere; min-width: 0; }
+.psb-level { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.psb-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.psb-badge { padding: 0.1rem 0.5rem; border: 1px solid var(--clr-border); border-radius: 999px; font-size: 0.78rem; }
+.psb-yes { border-color: var(--clr-success-border, #86efac); }
+.psb-no { color: var(--clr-text-muted); }
+.psb-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.25rem 1rem; margin: 0; font-size: 0.85rem; }
+.psb-facts dt { font-weight: 600; color: var(--clr-text-muted); }
+.psb-facts dd { margin: 0; overflow-wrap: anywhere; }
+.psb-needs { display: grid; gap: 0.3rem; margin: 0; padding: 0; list-style: none; font-size: 0.85rem; }
+.psb-needs li { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: center; }
+.psb-data-ok { font-weight: 600; }
+.psb-data-missing { font-weight: 600; color: var(--ptc-danger-text, #b91c1c); }
+.psb-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0; }
+.psb-message { margin: 0; font-weight: 600; }
+@media (max-width: 480px) {
+    .psb { padding: 0.75rem; }
+    .psb-actions .btn-primary, .psb-actions .btn-secondary { min-height: 2.75rem; }
+}
+/* Long snapshot/option texts never widen the page. */
+.psb select, .psb input[type=search] { max-width: 100%; min-width: 0; }
+.psb-context .sd-field { display: grid; gap: 0.25rem; min-width: 0; }
+.psb-contracts summary { cursor: pointer; font-weight: 600; }
+.psb-contracts fieldset { display: grid; gap: 0.3rem; margin: 0.4rem 0 0; padding: 0; border: 0; min-width: 0; }
+.psb-contracts .sd-check { overflow-wrap: anywhere; }

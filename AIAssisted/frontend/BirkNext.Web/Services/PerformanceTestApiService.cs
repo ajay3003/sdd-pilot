@@ -43,6 +43,10 @@ public interface IPerformanceTestApiService
     Task<List<PerformanceBaseline>> BaselinesAsync(string environmentId, string? definitionId, CancellationToken ct = default);
     Task<PerformanceBaselinePromotionResult> PromoteAsync(string environmentId, PerformanceBaselinePromotion request, CancellationToken ct = default);
     Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots holding API contracts (for an explicit choice; none is selected automatically).</summary>
+    Task<List<ScenarioSourceSnapshot>> ScenarioSourcesAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<List<ScenarioSourceSnapshot>>([]);
+    /// <summary>The stored API contracts of exactly one snapshot.</summary>
+    Task<ScenarioContractCatalog?> ScenarioContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<ScenarioContractCatalog?>(null);
     /// <summary>Validates and previews a Performance setup profile against the current Target Environment (never mutates).</summary>
     Task<PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>> PreviewSetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupProfileRequest request, CancellationToken ct = default) =>
         Task.FromResult(PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>.Fail("Performance setup profiles are not available."));
@@ -160,6 +164,12 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
 
     public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
         Get<PerformanceRunComparison>($"{Base}/compare?{Env(environmentId)}&current={current}{(reference is { } r ? "&reference=" + r : "")}{(baselineId is null ? "" : "&baselineId=" + Uri.EscapeDataString(baselineId))}", ct);
+
+    public async Task<List<ScenarioSourceSnapshot>> ScenarioSourcesAsync(string environmentId, CancellationToken ct = default) =>
+        await Get<List<ScenarioSourceSnapshot>>($"{Base}/scenario-sources?{Env(environmentId)}", ct) ?? [];
+
+    public Task<ScenarioContractCatalog?> ScenarioContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) =>
+        Get<ScenarioContractCatalog>($"{Base}/scenario-contracts?{Env(environmentId)}&snapshotId={snapshotId}", ct);
 
     private static string Target(PerformanceTestDefinition d) =>
         $"targetOrigin={Uri.EscapeDataString(d.TargetOrigin)}&environmentType={Uri.EscapeDataString(d.EnvironmentType)}&environmentName={Uri.EscapeDataString(d.EnvironmentName)}";

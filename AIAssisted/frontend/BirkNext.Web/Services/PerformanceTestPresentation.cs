@@ -27,6 +27,14 @@ public static class PerformanceTestPresentation
         ],
     };
 
+    public static string Selection(TestDataSelection selection) => selection switch
+    {
+        TestDataSelection.RoundRobin => "Round robin",
+        TestDataSelection.Sequential => "Sequential",
+        TestDataSelection.Random => "Random",
+        _ => "Unique per virtual user",
+    };
+
     public static string Tone(PerformanceReadinessState s) => s switch
     {
         PerformanceReadinessState.Ready => "complete",

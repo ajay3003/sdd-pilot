@@ -331,6 +331,49 @@ public static class PerformanceTestReviewDashboard
         return new("Ready to run again.", PtTone.Ready, "run", "Run test");
     }
 
+    /// <summary>"Declared + Observed · OpenAPI · Persons API" / "Modified from declared operation" / "Manual step" — provenance of a step.</summary>
+    public static string StepSource(HttpPerformanceStep step) => step.Source is not { } source || source.Evidence == ScenarioEvidence.Manual && source.Origin == ScenarioOperationOrigin.Manual
+        ? "Manual step"
+        : source.Modified ? $"Modified from declared operation · {source.ContractName ?? source.ContractFile ?? "contract"} (no longer an exact contract match)"
+        : string.Join(" · ", new[]
+        {
+            PerformanceScenarioEngine.EvidenceLabel(source.Evidence),
+            source.Origin switch { ScenarioOperationOrigin.OpenApi => "OpenAPI", ScenarioOperationOrigin.GraphQl => "GraphQL", ScenarioOperationOrigin.Observed => "Live Discovery", _ => "Setup profile reference" },
+            source.ContractName, source.ObservedCount > 0 ? $"observed {source.ObservedCount}× (last {source.ObservedLastSeen?.ToUniversalTime():yyyy-MM-dd HH:mm} UTC)" : null,
+        }.Where(t => !string.IsNullOrEmpty(t)));
+
+    private static readonly System.Text.RegularExpressions.Regex PlaceholderPattern = new(@"\{([A-Za-z_][A-Za-z0-9_]*)\}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>The {placeholders} of a step (path, query values, body, GraphQL variables) with where they go and the data type they need.</summary>
+    public static IReadOnlyList<(string Variable, string Place, BirkNext.TestData.TestDataDataType Type)> StepPlaceholders(HttpPerformanceStep step)
+    {
+        var found = new List<(string, string, BirkNext.TestData.TestDataDataType)>();
+        void Add(string? text, string place, BirkNext.TestData.TestDataDataType type)
+        {
+            foreach (System.Text.RegularExpressions.Match m in PlaceholderPattern.Matches(text ?? ""))
+                if (found.All(f => f.Item1 != m.Groups[1].Value)) found.Add((m.Groups[1].Value, place, type));
+        }
+        Add(step.RelativePath, "path", BirkNext.TestData.TestDataDataType.SimpleValues);
+        foreach (var q in step.QueryParameters) Add(q.Value, "query", BirkNext.TestData.TestDataDataType.SimpleValues);
+        if (step.BodyTemplate is { } body)
+        {
+            var whole = PlaceholderPattern.Match(body.Trim()) is { Success: true } m && m.Value == body.Trim();
+            Add(body, "body", whole ? BirkNext.TestData.TestDataDataTypes.ForMediaType(step.ContentType ?? "application/json") is var t && t == BirkNext.TestData.TestDataDataType.SimpleValues ? BirkNext.TestData.TestDataDataType.JsonPayload : BirkNext.TestData.TestDataDataTypes.ForMediaType(step.ContentType ?? "application/json")
+                : BirkNext.TestData.TestDataDataType.SimpleValues);
+        }
+        Add(step.GraphQlVariablesJson, "variable", BirkNext.TestData.TestDataDataType.SimpleValues);
+        return found;
+    }
+
+    /// <summary>Test Data with the exact requirement when known (consumer, definition, operation, variable, data type, content type, environment).</summary>
+    public static string TestDataHref(PerformanceTestDefinition d, HttpPerformanceStep? step, string? variable, string? place, BirkNext.TestData.TestDataDataType? type)
+    {
+        static string E(string? v) => Uri.EscapeDataString(v ?? "");
+        var href = $"/test-data?consumer=performance-test-review{(d.Id.Length == 0 ? "" : $"&consumerId={E(d.Id)}")}&environment={E(d.EnvironmentName)}";
+        if (step is null || variable is null) return href;
+        return href + $"&operation={E($"{step.Method} {step.RelativePath}")}&variable={E(variable)}&in={E(place)}&dataType={type}{(step.ContentType is { } ct && place == "body" ? $"&contentType={E(ct)}" : "")}";
+    }
+
     /// <summary>Supported target types from the provider capabilities, as chips.</summary>
     public static IReadOnlyList<string> TargetTypes(PerformanceProviderCapabilities? c) =>
         c is null ? [] : [.. (c.Http ? new[] { "REST", "HTTP" } : []), .. (c.GraphQl ? new[] { "GraphQL queries" } : [])];

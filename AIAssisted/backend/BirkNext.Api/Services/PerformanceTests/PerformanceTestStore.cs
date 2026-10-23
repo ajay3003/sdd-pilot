@@ -65,12 +65,17 @@ public sealed class PerformanceTestStore(AppDbContext db)
 
     public static string Fingerprint(object value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, Json)))).ToLowerInvariant()[..32];
 
-    /// <summary>What makes runs comparable: target, type, steps, workload, environment class, test data profile. Not thresholds, drift policies or names.</summary>
-    public static string ComparisonFingerprint(PerformanceTestDefinition d) => Fingerprint(new
+    /// <summary>What makes runs comparable: target, type, executed steps (their data mappings included, their provenance excluded), workload,
+    /// environment class, test data profile and selection. Not thresholds, drift policies or names. A legacy definition keeps its exact value.</summary>
+    public static string ComparisonFingerprint(PerformanceTestDefinition d)
     {
-        Target = d.TargetOrigin.TrimEnd('/').ToLowerInvariant(), d.TargetType, Steps = d.Scenario.Steps, d.Workload, Environment = d.EnvironmentType.Trim().ToLowerInvariant(),
-        d.Scenario.TestDataProfileId,
-    });
+        var legacy = Fingerprint(new
+        {
+            Target = d.TargetOrigin.TrimEnd('/').ToLowerInvariant(), d.TargetType, Steps = d.Scenario.Steps.Where(s => !s.Disabled).Select(s => s with { Source = null }).ToList(), d.Workload,
+            Environment = d.EnvironmentType.Trim().ToLowerInvariant(), d.Scenario.TestDataProfileId,
+        });
+        return d.Scenario.DataSelection is { } selection ? Fingerprint(new { legacy, selection }) : legacy;
+    }
 
     // ── Test data profiles ───────────────────────────────────────────────────────────────────────────────────────────
 

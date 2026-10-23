@@ -57,7 +57,8 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
 /// Readiness of a definition: every prerequisite with an exact, tester-friendly reason. Never "Fail" — nothing has run. Thresholds, baseline
 /// and observability are optional: without thresholds a run is measured, not assessed.
 /// </summary>
-public sealed class PerformanceTestReadinessService(PerformanceTestOptions options, PerformanceTestProviderRegistry providers, Resources.ResourceObservationRegistry? resources = null)
+public sealed class PerformanceTestReadinessService(PerformanceTestOptions options, PerformanceTestProviderRegistry providers, Resources.ResourceObservationRegistry? resources = null,
+    IServiceScopeFactory? scopes = null)
 {
     /// <summary>Resource Stability readiness: provider and target status, policy, and whether the planned duration can give a steady-state trend at all.
     /// Never blocking unless the definition explicitly requires resource evidence — telemetry does not gate the load test.</summary>
@@ -154,9 +155,13 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         Item("scenario", "Scenario", By("scenario", "step-name", "method", "path", "header", "status", "think", "body", "graphql"),
             $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.", Definition, "scenario", PerformanceReadinessActions.EditScenario);
         Item("authentication", "Authentication", By("authentication"), "None — this definition is explicitly unauthenticated.", Definition, "authentication", null);
-        Item("testdata", "Test data", By("testdata", "placeholder"), d.Scenario.TestDataProfileId is null ? "Not used." : $"Approved synthetic profile ({data?.Rows.Count ?? 0} rows).",
-            d.Scenario.TestDataProfileId is null ? Optional : Definition, "test data", PerformanceReadinessActions.EditScenario,
-            d.Scenario.TestDataProfileId is null ? PerformanceReadinessState.Optional : PerformanceReadinessState.Ready);
+        var central = PerformanceTestSafety.UsesCentralTestData(d);
+        Item("testdata", "Test data", By("testdata", "placeholder"),
+            central ? $"{PerformanceCentralTestData.Mappings(d).Count()} mapping(s) to central Test Data (values stay in Test Data; resolved by the backend at run time)."
+                : d.Scenario.TestDataProfileId is null ? "Not used." : $"Legacy local profile ({data?.Rows.Count ?? 0} rows) — not shared; prefer central Test Data.",
+            central || d.Scenario.TestDataProfileId is not null ? Definition : Optional, "test data", PerformanceReadinessActions.EditScenario,
+            central || d.Scenario.TestDataProfileId is not null ? PerformanceReadinessState.Ready : PerformanceReadinessState.Optional);
+        await ScenarioEvidenceItemsAsync(d, items, ct);
         Item("workload", "Workload", By("workload"), $"{d.Workload.Purpose}, {d.Workload.Mode}.", Definition, "workload", PerformanceReadinessActions.EditWorkload);
         Item("limits", "Safety limits", By("limit-duration", "limit-purpose", "limit-vus", "limit-rate", "limit-requests"), "Within the configured safety limits.", Safety, "safety limits", PerformanceReadinessActions.EditWorkload);
         items.Add(d.Thresholds.Count == 0
@@ -180,6 +185,30 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
     }
 
     private const string LocalExecution = "Local execution configuration";
+
+    /// <summary>Central Test Data mappings (approved, right type, right environment) and contract drift of declared steps — exact blockers
+    /// ("Test Data missing for {personId}", "Contract changed · review required: request body changed"), never a generic "needs configuration".</summary>
+    private async Task ScenarioEvidenceItemsAsync(PerformanceTestDefinition d, List<PerformanceReadinessItem> items, CancellationToken ct)
+    {
+        if (scopes is null) return;
+        using var scope = scopes.CreateScope();
+        if (PerformanceTestSafety.UsesCentralTestData(d) && scope.ServiceProvider.GetService<TestData.TestDataCatalog>() is { } catalog)
+        {
+            var issues = PerformanceCentralTestData.Issues(d, catalog, DateTimeOffset.UtcNow);
+            items.Add(issues.Count == 0
+                ? new("central-test-data", "Central Test Data", PerformanceReadinessState.Ready, "Every mapped asset exists, is approved, has the right data type and fits this environment.", false)
+                    { Category = PerformanceReadinessCategories.Definition, Summary = "Test Data" }
+                : new("central-test-data", "Central Test Data", PerformanceReadinessState.NeedsTestData, string.Join(" ", issues), true)
+                    { Category = PerformanceReadinessCategories.Definition, Summary = "Test Data", Headline = issues[0], Action = PerformanceReadinessActions.EditScenario, Owner = "Test Data" });
+        }
+        if (scope.ServiceProvider.GetService<PerformanceScenarioSources>() is { } sources)
+        {
+            var drift = await sources.DriftAsync(d, ct);
+            if (drift.Count > 0)
+                items.Add(new("scenario-contract", "Scenario contract", PerformanceReadinessState.NeedsConfiguration, string.Join(" ", drift.Select(x => x.Text)), true)
+                    { Category = PerformanceReadinessCategories.Definition, Summary = "contract changed", Headline = drift[0].Text, Action = PerformanceReadinessActions.EditScenario });
+        }
+    }
 
     /// <summary>The container network item. Host reachability never counts: only a check made from the load-generator container does.</summary>
     internal static PerformanceReadinessItem NetworkItem(bool checkable, PerformanceReachability? reach, bool fresh, bool sameConfiguration)
@@ -352,8 +381,15 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         if (definition.Archived) return new(null, ["The definition is archived; restore or copy it to run."], null);
         var data = await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct);
         var baseline = await store.ActiveBaselineAsync(environmentId, definition.Id, definition.ComparisonFingerprint, ct);
-        var readiness = await readinessService.EvaluateAsync(definition, data, baseline is not null, ct);
+        var readiness = await readinessService.EvaluateAsync(definition, PerformanceTestSafety.UsesCentralTestData(definition) ? null : data, baseline is not null, ct);
         if (!readiness.Ready) return new(null, readiness.Blockers, null);
+        // Central Test Data: resolved here, by the backend, for this run only (a transient profile); the definition and the run keep aliases only.
+        if (PerformanceTestSafety.UsesCentralTestData(definition))
+        {
+            if (scope.ServiceProvider.GetService<TestData.TestDataCatalog>() is not { } catalog || PerformanceCentralTestData.Resolve(definition, catalog) is not { } resolved)
+                return new(null, ["Central Test Data could not be resolved for this run."], null);
+            data = resolved;
+        }
         await ReconcileAsync(store, environmentId, ct);
         await CleanupOrphansAsync(false, ct);
         if (_activeByEnvironment.ContainsKey(environmentId) || await store.HasActiveRunAsync(environmentId, ct))

@@ -463,9 +463,42 @@ public sealed record XmlSchemaEvidence(string? TargetNamespace, string? Explicit
 public sealed record SourceContractCodeReference(string File, int Line, string Kind, string? Component = null);
 
 public sealed record ContractField(string Name, string Type, bool Required);
-public sealed record ContractTypeShape(string Name, string Kind, List<ContractField> Fields);
-/// <summary>"GET /orders/{id}", "query orders", "rpc GetOrder", "publish orders.created".</summary>
-public sealed record ContractOperation(string Name, string Kind, string? Path, List<string> Parameters);
+public sealed record ContractTypeShape(string Name, string Kind, List<ContractField> Fields)
+{
+    /// <summary>Enum members (GraphQL enum, OpenAPI enum schema). Declared names only.</summary>
+    public List<string> Values { get; init; } = [];
+}
+
+/// <summary>A declared operation parameter: where it goes (path, query, header, cookie, GraphQL argument), whether it is required and its
+/// declared type. Never an example or default VALUE — only whether one is declared.</summary>
+public sealed record ContractParameter(string Name, string In, bool Required, string? Type)
+{
+    public bool HasExample { get; init; }
+}
+
+/// <summary>"GET /orders/{id}", "query orders", "rpc GetOrder", "publish orders.created". The detail properties are recorded by newer analyzers;
+/// older snapshots keep only <see cref="Parameters"/> (names) and are never re-parsed.</summary>
+public sealed record ContractOperation(string Name, string Kind, string? Path, List<string> Parameters)
+{
+    public string? OperationId { get; init; }
+    public string? Summary { get; init; }
+    public List<string> Tags { get; init; } = [];
+    public List<ContractParameter> ParameterDetails { get; init; } = [];
+    /// <summary>Request body media types (application/json, application/xml, multipart/form-data …); empty when there is no body.</summary>
+    public List<string> RequestContentTypes { get; init; } = [];
+    public bool RequestBodyRequired { get; init; }
+    /// <summary>The request body schema/type name (OpenAPI component, GraphQL input type), when declared by reference.</summary>
+    public string? RequestSchema { get; init; }
+    /// <summary>Documented response codes ("200", "404", "default").</summary>
+    public List<string> ResponseCodes { get; init; } = [];
+    /// <summary>Security requirement scheme names (bearer, oauth2 …) — names only, never credentials.</summary>
+    public List<string> Security { get; init; } = [];
+    /// <summary>GraphQL: the field's result type ("Person!", "[Child]").</summary>
+    public string? ResultType { get; init; }
+    public bool HasExamples { get; init; }
+    /// <summary>True when the analyzer recorded the detail properties (absent for older snapshots).</summary>
+    public bool Detailed { get; init; }
+}
 
 public sealed record SourceContract
 {

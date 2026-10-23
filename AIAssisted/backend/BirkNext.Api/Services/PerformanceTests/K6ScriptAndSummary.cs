@@ -19,7 +19,7 @@ public static class K6ScriptGenerator
 
     public static string Generate(PerformanceTestDefinition d, PerformanceTestDataProfile? data, string summaryPath)
     {
-        var steps = d.Scenario.Steps.Select(s => new JsonObject
+        var steps = d.Scenario.Steps.Where(s => !s.Disabled).Select(s => new JsonObject
         {
             ["name"] = s.Name, ["method"] = s.Method.ToUpperInvariant(), ["path"] = s.RelativePath,
             ["query"] = new JsonArray(s.QueryParameters.Select(q => (JsonNode)new JsonArray(q.Name, q.Value)).ToArray()),

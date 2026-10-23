@@ -416,3 +416,14 @@
 @media (max-width: 480px) {
     .ptc-action, .ptc-setup-card .btn-secondary { min-height: 2.75rem; }
 }
+
+/* Scenario steps: provenance, mapping and ordering. */
+.ptc-step-source { margin: 0.25rem 0 0.5rem; font-size: 0.82rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.ptc-step-moves { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.pt-step-disabled { opacity: 0.85; border-style: dashed; }
+.ptc-step-data { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
+.ptc-mapping { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: center; font-size: 0.88rem; }
+.ptc-mapping select { max-width: 100%; }
+.ptc-callout-legacy { display: grid; gap: 0.4rem; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--clr-warning-border, #fcd34d); border-radius: var(--radius-md, 6px); background: var(--clr-warning-bg-light); }
+.ptc-callout-legacy p { margin: 0; }
+.pt-section select { max-width: 100%; }

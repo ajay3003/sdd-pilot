@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 using BirkNext.Applicability;
+using BirkNext.TestData;
 
 namespace BirkNext.PerformanceTests;
 
@@ -84,6 +85,13 @@ public sealed record HttpPerformanceStep
     public string? GraphQlQuery { get; init; }
     public string? GraphQlVariablesJson { get; init; }
     public string? GraphQlOperationName { get; init; }
+    // New properties are omitted when unset so a legacy definition keeps its exact fingerprints (never a silent new version or lost baseline).
+    /// <summary>Where the step came from (declared contract operation, observed operation, manual) — provenance for drift review, not workload.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ScenarioStepSource? Source { get; init; }
+    /// <summary>Placeholder → central Test Data asset aliases. References only: values stay in Test Data and are resolved by the backend at run time.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ScenarioDataMapping>? DataMappings { get; init; }
+    /// <summary>A disabled step stays in the definition but is not executed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Disabled { get; init; }
 }
 
 public sealed record PerformanceScenario
@@ -91,9 +99,38 @@ public sealed record PerformanceScenario
     public string Id { get; init; } = Guid.NewGuid().ToString("N")[..12];
     public string Name { get; init; } = "";
     public List<HttpPerformanceStep> Steps { get; init; } = [];
-    /// <summary>An approved synthetic data profile whose columns resolve <c>{placeholder}</c> values. Null = no parameters.</summary>
+    /// <summary>Legacy: a locally authored data profile (superseded by central Test Data references in <see cref="HttpPerformanceStep.DataMappings"/>).</summary>
     public string? TestDataProfileId { get; init; }
+    /// <summary>How the scenario was created: recommended, openapi, graphql, observed or manual.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SourceKind { get; init; }
+    /// <summary>The Source Analysis snapshot whose contracts the steps were built from (chosen explicitly; never the newest by default).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? ContractSnapshotId { get; init; }
+    /// <summary>Contracts a person selected as this target's (when the target-specific contract was unresolved).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? ContractIds { get; init; }
+    /// <summary>How mapped Test Data values are chosen per iteration (workload usage — owned here, not by Test Data).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public TestDataSelection? DataSelection { get; init; }
 }
+
+/// <summary>Provenance of a scenario step. Observed metadata is counts and timestamps only — never a token, cookie, header value or observed identifier.</summary>
+public sealed record ScenarioStepSource
+{
+    public string OperationKey { get; init; } = "";
+    public ScenarioOperationOrigin Origin { get; init; }
+    public ScenarioEvidence Evidence { get; init; }
+    public string? ContractId { get; init; }
+    public string? ContractName { get; init; }
+    public string? ContractFile { get; init; }
+    public Guid? SnapshotId { get; init; }
+    /// <summary>Hash of the declared operation shape (method, path, parameters, body, responses, security) when the step was created.</summary>
+    public string? OperationFingerprint { get; init; }
+    /// <summary>Edited away from the declared operation (method, path, body or status changed): no longer shown as an exact contract match.</summary>
+    public bool Modified { get; init; }
+    public int ObservedCount { get; init; }
+    public DateTimeOffset? ObservedLastSeen { get; init; }
+}
+
+/// <summary>One placeholder of a step mapped to central Test Data assets (aliases). Several aliases = several values, chosen per <see cref="PerformanceScenario.DataSelection"/>.</summary>
+public sealed record ScenarioDataMapping(string Variable, List<string> AssetAliases, TestDataDataType DataType, string In);
 
 public sealed record PerformanceWorkload
 {
@@ -191,7 +228,7 @@ public sealed record PerformanceTestDefinition
     /// <summary>Delivery pipelines a person confirmed as delivering this target (pipeline ids of a Source Analysis snapshot). Empty = not
     /// confirmed: pipeline gates are then resolved cautiously and an unresolved mapping is shown as unresolved, never as every pipeline.
     /// Not part of the comparison fingerprint.</summary>
-    public List<string> DeliveryPipelineIds { get; init; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? DeliveryPipelineIds { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
     /// <summary>Incremented on every saved change; runs keep the version and a full snapshot.</summary>

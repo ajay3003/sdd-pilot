@@ -104,6 +104,18 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         return Ok(await providers.CheckReachabilityAsync(definition, ct));
     }
 
+    // ── Smart Scenario Engine sources (stored contract evidence; the engine itself runs with the browser's discovery evidence) ──────
+
+    /// <summary>Source Analysis snapshots that hold OpenAPI/GraphQL contracts, newest first, for an explicit choice (none is selected for the user).</summary>
+    [HttpGet("scenario-sources")]
+    public async Task<ActionResult<IReadOnlyList<ScenarioSourceSnapshot>>> ScenarioSources([FromServices] PerformanceScenarioSources sources, [FromQuery] string? environmentId, CancellationToken ct) =>
+        Ok(await sources.SnapshotsAsync(environmentId ?? "", ct));
+
+    /// <summary>The stored API contracts of exactly this snapshot (never the newest instead).</summary>
+    [HttpGet("scenario-contracts")]
+    public async Task<ActionResult<ScenarioContractCatalog>> ScenarioContracts([FromServices] PerformanceScenarioSources sources, [FromQuery] string? environmentId, [FromQuery] Guid snapshotId, CancellationToken ct) =>
+        await sources.ContractsAsync(environmentId ?? "", snapshotId, ct) is { } catalog ? Ok(catalog) : NotFound("The Source Analysis snapshot does not exist or Source Analysis is disabled.");
+
     // ── Safe setup profiles (desired state only: scenario, workload, thresholds, target reference) ─────────────────────────
 
     /// <summary>The current Target Environment the page is on (the target is never taken from a profile); validated like a definition save.</summary>

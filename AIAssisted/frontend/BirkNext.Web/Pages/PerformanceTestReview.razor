@@ -13,6 +13,7 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IServiceProvider ServiceProvider
 @implements IDisposable
 
 <PageTitle>Performance Test Review</PageTitle>
@@ -178,7 +179,7 @@
                 @if (_deliveryExpanded)
                 {
                     <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" ScopeTargetOrigin="@_draft.TargetOrigin"
-                        ScopeEnvironmentName="@_draft.EnvironmentName" ScopeEnvironmentType="@_draft.EnvironmentType" ConfirmedPipelineIds="_draft.DeliveryPipelineIds" OnConfirmPipelines="ConfirmPipelines"
+                        ScopeEnvironmentName="@_draft.EnvironmentName" ScopeEnvironmentType="@_draft.EnvironmentType" ConfirmedPipelineIds="_draft.DeliveryPipelineIds ?? []" OnConfirmPipelines="ConfirmPipelines"
                         Note="Performance gates as the pipelines that deliver this target define them — not every pipeline in the source. Choose the snapshot; none is selected automatically." />
                 }
             </ReviewDisclosure>
@@ -255,11 +256,6 @@
     private string? _promoteReason;
     private bool _promoteAcceptFailures;
     private string? _promoteError;
-    private string _dataName = "";
-    private string _dataColumns = "";
-    private string _dataRows = "";
-    private bool _dataApproved;
-    private TestDataSelection _dataSelection = TestDataSelection.RoundRobin;
     private System.Threading.Timer? _poll;
 
     // The backend refuses Production; the button follows the same rule so it never offers what the backend will reject.
@@ -463,7 +459,7 @@
     {
         // No active Target Environment is the "no performance target" state; it is never sent as an empty environment id.
         _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
-        if (_profile is not null) await ReloadAsync(null);
+        if (_profile is not null) { await ReloadAsync(null); await LoadScenarioEvidenceAsync(); }
         _loaded = true;
     }
 
@@ -603,18 +599,6 @@
         }
         else if (_compareReference.StartsWith("b:", StringComparison.Ordinal)) _comparison = await Api.CompareAsync(_profile!.Id, current, null, _compareReference[2..]);
         else if (Guid.TryParse(_compareReference, out var reference)) _comparison = await Api.CompareAsync(_profile!.Id, current, reference, null);
-    }
-
-    private async Task SaveDataProfileAsync()
-    {
-        var columns = _dataColumns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
-        var rows = _dataRows.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(',', StringSplitOptions.TrimEntries).ToList()).ToList();
-        var result = await Api.SaveDataProfileAsync(_profile!.Id, new PerformanceTestDataProfile { Name = _dataName, Columns = columns, Rows = rows, Selection = _dataSelection, ApprovedSynthetic = _dataApproved });
-        if (result.Value is null) { _message = $"Test data not saved: {result.Error}"; return; }
-        _overview = await Api.OverviewAsync(_profile.Id) ?? _overview;
-        Changed(_draft with { Scenario = _draft.Scenario with { TestDataProfileId = result.Value.Id } });
-        _message = $"Test data profile '{result.Value.Name}' saved and selected. Save the definition to use it.";
-        _dataName = _dataColumns = _dataRows = ""; _dataApproved = false;
     }
 
     private async Task ExportAsync(PerformanceTestRun run) =>
@@ -832,7 +816,7 @@
                 <legend>Configuration</legend>
                 <div class="pt-form">
                     <label>Definition name <input value="@_draft.Name" @onchange="e => Changed(_draft with { Name = Str(e) })" data-testid="pt-name" /></label>
-                    <label>Scenario name <input value="@_draft.Scenario.Name" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { Name = Str(e) } })" /></label>
+                    <label>Scenario name <input value="@_draft.Scenario.Name" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { Name = Str(e) } })" data-testid="pt-scenario-name" /></label>
                     <label>Target type
                         <select value="@_draft.TargetType" @onchange="e => Changed(_draft with { TargetType = Enum.Parse<PerformanceTargetType>(e.Value!.ToString()!) })" data-testid="pt-target-type">
                             <option value="RestHttp">REST over HTTP</option><option value="GraphQlHttp">GraphQL over HTTP (query only)</option><option value="GenericHttp">Generic HTTP</option>
@@ -841,70 +825,168 @@
                 </div>
             </fieldset>
             <section class="ptc-panel ptc-context" aria-labelledby="pt-scenario-context-h" data-testid="pt-scenario-context">
-                <h3 id="pt-scenario-context-h">Context <span class="ptc-readonly-tag">read-only</span></h3>
+                <h3 id="pt-scenario-context-h">Target service <span class="ptc-readonly-tag">read-only</span></h3>
                 <dl class="ptc-context-facts">
-                    <div><dt>Target</dt><dd><strong class="ptc-break" data-testid="pt-target">@(_draft.TargetOrigin.Length == 0 ? "Not configured" : _draft.TargetOrigin)</strong><span class="ptc-sub">From the Target Environment; steps are paths under it.</span></dd></div>
-                    <div><dt>Authentication</dt><dd><strong>None</strong><span class="ptc-sub">Authenticated load tests need an approved non-interactive test credential, which BirkNext does not issue yet.</span></dd></div>
+                    <div><dt>Target</dt><dd><strong class="ptc-break" data-testid="pt-target">@(_draft.TargetOrigin.Length == 0 ? "Not configured" : _draft.TargetOrigin)</strong><span class="ptc-sub">Owned by the Target Environment; steps are relative operations under it (the base URL is never copied into a step).</span></dd></div>
+                    <div><dt>Authentication</dt><dd><strong>@(_draft.AuthenticationReference is null ? "None" : "Referenced")</strong><span class="ptc-sub">Steps reference the approved authentication configuration; no observed token is ever copied.</span></dd></div>
                 </dl>
             </section>
         </div>
+
+        <BirkNext.Web.Components.PerformanceScenarioBuilder Definition="_draft" EnvironmentId="@(_profile?.Id ?? "")" EnvironmentName="@_draft.EnvironmentName"
+            Observations="_observations" Assets="_testDataAssets" OnChange="Changed" />
+
         <h3>Steps</h3>
         @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
+        @if (_draft.Scenario.Steps.Count == 0) { <p class="ptc-inline-empty" data-testid="pt-steps-empty">No steps yet — add an operation from the candidates above, or a manual step.</p> }
         @for (var i = 0; i < _draft.Scenario.Steps.Count; i++)
         {
             var index = i; var s = _draft.Scenario.Steps[i];
-            <fieldset class="sd-panel pt-step" data-testid="pt-step">
+            <fieldset class="sd-panel pt-step @(s.Disabled ? "pt-step-disabled" : "")" data-testid="pt-step" data-disabled="@(s.Disabled ? "true" : "false")">
                 <legend class="visually-hidden">Step @(index + 1)</legend>
                 <div class="ptc-step-head">
-                    <span class="ptc-step-title" aria-hidden="true">Step @(index + 1)</span>
-                    <button type="button" class="ptc-remove" @onclick="() => Changed(_draft with { Scenario = _draft.Scenario with { Steps = _draft.Scenario.Steps.Where((_, j) => j != index).ToList() } })" aria-label="Remove step @(index + 1)" data-testid="pt-remove-step">Remove step</button>
+                    <span class="ptc-step-title" aria-hidden="true">Step @(index + 1)@(s.Disabled ? " · disabled" : "")</span>
+                    <span class="ptc-step-moves">
+                        <button type="button" class="ptc-link" disabled="@(index == 0)" @onclick="() => MoveStep(index, -1)" aria-label="Move step @(index + 1) up" data-testid="pt-step-up">Move up</button>
+                        <button type="button" class="ptc-link" disabled="@(index == _draft.Scenario.Steps.Count - 1)" @onclick="() => MoveStep(index, 1)" aria-label="Move step @(index + 1) down" data-testid="pt-step-down">Move down</button>
+                        <button type="button" class="ptc-remove" @onclick="() => Changed(_draft with { Scenario = _draft.Scenario with { Steps = _draft.Scenario.Steps.Where((_, j) => j != index).ToList() } })" aria-label="Remove step @(index + 1)" data-testid="pt-remove-step">Remove step</button>
+                    </span>
                 </div>
+                <p class="ptc-step-source" data-testid="pt-step-source" data-evidence="@(s.Source?.Evidence.ToString() ?? "Manual")">@D.StepSource(s)</p>
                 <div class="pt-form ptc-step-form">
                     <label>Name <input value="@s.Name" @onchange="e => UpdateStep(index, x => x with { Name = Str(e) })" data-testid="pt-step-name" /></label>
                     <label>Method
-                        <select value="@s.Method" @onchange="e => UpdateStep(index, x => x with { Method = Str(e, Get) })" data-testid="pt-step-method">
+                        <select value="@s.Method" @onchange="e => EditOperation(index, x => x with { Method = Str(e, Get) })" data-testid="pt-step-method">
                             @foreach (var m in new[] { "GET", "HEAD", "OPTIONS", "POST" }) { <option value="@m">@m</option> }
                         </select>
                     </label>
-                    <label>Relative path <input value="@s.RelativePath" @onchange="e => UpdateStep(index, x => x with { RelativePath = Str(e, Slash) })" data-testid="pt-step-path" /></label>
-                    <label>Expected status codes <input value="@string.Join(", ", s.ExpectedStatusCodes)" @onchange="e => UpdateStep(index, x => x with { ExpectedStatusCodes = (Str(e)).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(Int).Where(c => c is not null).Select(c => c!.Value).ToList() })" /></label>
-                    <label>Think time (ms) <input type="number" min="0" max="60000" value="@s.ThinkTimeMs" @onchange="e => UpdateStep(index, x => x with { ThinkTimeMs = Int(e.Value) })" /></label>
+                    <label>Relative path <input value="@s.RelativePath" @onchange="e => EditOperation(index, x => x with { RelativePath = Str(e, Slash) })" data-testid="pt-step-path" /></label>
+                    <label>Expected responses <input value="@string.Join(", ", s.ExpectedStatusCodes)" @onchange="e => SetExpected(index, Str(e))" aria-describedby="@($"pt-step-expected-help-{index}")" data-testid="pt-step-expected" />
+                        <span class="ptc-sub" id="@($"pt-step-expected-help-{index}")">One or more HTTP status codes, comma-separated (e.g. 200 or 200, 204).@(s.Source is { } src && src.Evidence != ScenarioEvidence.Manual ? " Documented responses are suggestions, not all accepted." : "")</span></label>
+                    @if (_statusErrors.GetValueOrDefault(index) is { } statusError) { <p class="ptc-save-error" role="alert" data-testid="pt-step-expected-error">@statusError</p> }
+                    <label>Delay before next step (ms) <input type="number" min="0" max="60000" value="@s.ThinkTimeMs" @onchange="e => UpdateStep(index, x => x with { ThinkTimeMs = Int(e.Value) })" data-testid="pt-step-delay" />
+                        <span class="ptc-sub">User think time after this request — not a request timeout.</span></label>
+                    <label class="sd-check"><input type="checkbox" checked="@(!s.Disabled)" @onchange="e => UpdateStep(index, x => x with { Disabled = e.Value is not true })" data-testid="pt-step-enabled" /> Enabled (a disabled step stays in the definition but does not run)</label>
                     @if (s.Method == "POST" && _draft.TargetType != PerformanceTargetType.GraphQlHttp)
                     {
                         <label class="sd-check"><input type="checkbox" checked="@s.PostIsSafeRead" @onchange="e => UpdateStep(index, x => x with { PostIsSafeRead = e.Value is true })" /> This POST only reads (search/query API)</label>
-                        <label class="pt-wide">Body (JSON; {placeholders} from test data) <textarea rows="3" @onchange="e => UpdateStep(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = JsonType })">@s.BodyTemplate</textarea></label>
+                        <label class="pt-wide">Body (JSON; {placeholders} from Test Data) <textarea rows="3" @onchange="e => EditOperation(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = x.ContentType ?? JsonType })">@s.BodyTemplate</textarea></label>
                     }
                     @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp)
                     {
-                        <label class="pt-wide">GraphQL query <textarea rows="4" @onchange="e => UpdateStep(index, x => x with { GraphQlQuery = e.Value?.ToString(), Method = Post })" data-testid="pt-step-graphql">@s.GraphQlQuery</textarea></label>
-                        <label class="pt-wide">Variables (JSON object) <textarea rows="2" @onchange="e => UpdateStep(index, x => x with { GraphQlVariablesJson = e.Value?.ToString() })">@s.GraphQlVariablesJson</textarea></label>
+                        <label class="pt-wide">GraphQL query <textarea rows="4" @onchange="e => EditOperation(index, x => x with { GraphQlQuery = e.Value?.ToString(), Method = Post })" data-testid="pt-step-graphql">@s.GraphQlQuery</textarea></label>
+                        <label class="pt-wide">Variables (JSON object; values are {placeholders}) <textarea rows="2" @onchange="e => UpdateStep(index, x => x with { GraphQlVariablesJson = e.Value?.ToString() })">@s.GraphQlVariablesJson</textarea></label>
                     }
                 </div>
+                @{ var placeholders = D.StepPlaceholders(s); }
+                @if (placeholders.Count > 0)
+                {
+                    <div class="ptc-step-data" data-testid="pt-step-data">
+                        <p class="ptc-sub">Test Data mapping — references to approved central Test Data; values never enter this definition.</p>
+                        @foreach (var (variable, place, type) in placeholders)
+                        {
+                            var mapping = s.DataMappings?.FirstOrDefault(m => m.Variable == variable);
+                            var selectId = $"pt-map-{index}-{variable}";
+                            var options = _testDataAssets.Where(a => a.Approval == BirkNext.TestData.TestDataApproval.Approved && BirkNext.TestData.TestDataDataTypes.Of(a) == type).Select(a => a.Alias).OrderBy(a => a, StringComparer.Ordinal).ToList();
+                            <div class="ptc-mapping" data-testid="pt-step-mapping" data-variable="@variable" data-state="@(mapping is { AssetAliases.Count: > 0 } ? "mapped" : "missing")">
+                                <label for="@selectId"><code>@(place == "body" ? "request body" : place == "variable" ? "$" + variable : "{" + variable + "}")</code> → @BirkNext.TestData.TestDataDataTypes.Label(type)</label>
+                                <select id="@selectId" value="@(mapping?.AssetAliases.FirstOrDefault() ?? "")" @onchange="e => MapData(index, variable, place, type, e.Value?.ToString())" data-testid="pt-step-mapping-select">
+                                    <option value="">Not mapped</option>
+                                    @foreach (var alias in options.Union(mapping?.AssetAliases ?? []).Distinct()) { <option value="@alias">@alias@(options.Contains(alias) ? "" : " (not approved / other type)")</option> }
+                                </select>
+                                @if (mapping is not { AssetAliases.Count: > 0 }) { <span class="psb-data-missing" data-testid="pt-step-mapping-missing"><span aria-hidden="true">!</span> Test Data missing for @(place == "body" ? "the request body" : "{" + variable + "}")</span> }
+                                <a class="sd-link" href="@D.TestDataHref(_draft, s, variable, place, type)" data-testid="pt-step-open-test-data">@(options.Count == 0 ? "Open Test Data" : "Find matching Test Data")</a>
+                            </div>
+                        }
+                    </div>
+                }
             </fieldset>
         }
-        <button type="button" class="btn-secondary ptc-add" @onclick="AddStep" data-testid="pt-add-step"><span aria-hidden="true">+</span> Add step</button>
+        <button type="button" class="btn-secondary ptc-add" @onclick="AddStep" data-testid="pt-add-step"><span aria-hidden="true">+</span> Add manual step</button>
 
         <section class="ptc-panel" aria-labelledby="pt-testdata-h" data-testid="pt-testdata">
-        <h3 id="pt-testdata-h">Test data</h3>
-        <label class="ptc-inline-field">Profile
-            <select value="@(_draft.Scenario.TestDataProfileId ?? "")" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { TestDataProfileId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString() } })" data-testid="pt-data-select">
-                <option value="">None</option>
-                @foreach (var p in _overview!.DataProfiles) { <option value="@p.Id">@p.Name (@p.Rows.Count rows@(p.ApprovedSynthetic ? "" : ", not approved"))</option> }
-            </select>
-        </label>
-        <details class="pt-details">
-            <summary>Add a synthetic test data profile</summary>
-            <div class="pt-form">
-                <label>Name <input @bind="_dataName" /></label>
-                <label>Columns (comma-separated) <input @bind="_dataColumns" placeholder="personId, caseId" /></label>
-                <label>Selection <select @bind="_dataSelection">@foreach (var sel in Enum.GetValues<TestDataSelection>()) { <option value="@sel">@sel</option> }</select></label>
-                <label class="pt-wide">Rows (one per line, comma-separated) <textarea rows="4" @bind="_dataRows"></textarea></label>
-                <label class="sd-check"><input type="checkbox" @bind="_dataApproved" /> These are synthetic or approved test values (no real identities, no secrets)</label>
-            </div>
-            <button type="button" class="btn-secondary ptc-add" @onclick="SaveDataProfileAsync" data-testid="pt-data-save">Save test data profile</button>
-        </details>
+            <h3 id="pt-testdata-h">Test Data</h3>
+            <p class="sd-muted">Test Data owns the approved data; this scenario owns how it is used (mapping and selection). Values stay in Test Data and are resolved by the backend when a run starts.</p>
+            @{ var used = _draft.Scenario.Steps.SelectMany(st => (st.DataMappings ?? []).SelectMany(m => m.AssetAliases.Select(a => (Alias: a, Step: st.Name, m.DataType)))).GroupBy(x => x.Alias).ToList(); }
+            @if (used.Count == 0) { <p class="ptc-inline-empty" data-testid="pt-testdata-none">No central Test Data mapped yet.</p> }
+            else
+            {
+                <ul class="sd-list" data-testid="pt-testdata-used">
+                    @foreach (var g in used)
+                    {
+                        var asset = _testDataAssets.FirstOrDefault(a => a.Alias == g.Key);
+                        <li data-testid="pt-testdata-asset" data-alias="@g.Key"><strong>@g.Key</strong> · @BirkNext.TestData.TestDataDataTypes.Label(g.First().DataType) · @(asset is null ? "not found in Test Data" : $"{asset.Approval} · {asset.Validation} · {asset.Source}") · used by @string.Join(", ", g.Select(x => x.Step).Distinct())</li>
+                    }
+                </ul>
+            }
+            <label class="ptc-inline-field">Selection strategy
+                <select value="@(_draft.Scenario.DataSelection ?? TestDataSelection.RoundRobin)" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { DataSelection = Enum.Parse<TestDataSelection>(e.Value!.ToString()!) } })" data-testid="pt-data-selection">
+                    @foreach (var sel in Enum.GetValues<TestDataSelection>()) { <option value="@sel">@P.Selection(sel)</option> }
+                </select>
+            </label>
+            <p><a class="sd-link" href="@D.TestDataHref(_draft, null, null, null, null)" data-testid="pt-open-test-data">Open Test Data</a></p>
+            @if (_draft.Scenario.TestDataProfileId is { } legacy)
+            {
+                <div class="ptc-callout-legacy" role="note" data-testid="pt-legacy-profile">
+                    <p><strong>Legacy local test data profile in use</strong> (@(_overview!.DataProfiles.FirstOrDefault(p => p.Id == legacy)?.Name ?? legacy)) · not shared, not part of the central Test Data catalog. Map central Test Data to the placeholders instead; local profiles are no longer authored here.</p>
+                    <button type="button" class="btn-secondary" @onclick="() => Changed(_draft with { Scenario = _draft.Scenario with { TestDataProfileId = null } })" data-testid="pt-legacy-clear">Stop using the legacy profile</button>
+                </div>
+            }
         </section>
     </section>;
+
+    private readonly Dictionary<int, string> _statusErrors = [];
+    private IReadOnlyList<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint> _observations = [];
+    private IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> _testDataAssets = [];
+
+    /// <summary>Discovery observations (this browser's Endpoint Discovery store) and central Test Data summaries for the scenario builder. Both optional.</summary>
+    private async Task LoadScenarioEvidenceAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) is IEndpointDiscoveryService discovery && _profile is not null)
+        {
+            try
+            {
+                await discovery.LoadAsync(JS);
+                var snapshot = discovery.GetSnapshot(_profile.Id);
+                _observations = [.. snapshot.Pages.SelectMany(p => p.Endpoints).Concat(snapshot.Shared)];
+            }
+            catch (Exception ex) when (ex is JSException or InvalidOperationException or System.Text.Json.JsonException) { _observations = []; }
+        }
+        if (ServiceProvider.GetService(typeof(ITestDataApiService)) is ITestDataApiService testData)
+        {
+            try { _testDataAssets = (await testData.CatalogAsync()).Catalog?.Assets ?? []; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _testDataAssets = []; }
+        }
+    }
+
+    private void MoveStep(int index, int delta)
+    {
+        var steps = _draft.Scenario.Steps.ToList();
+        var target = index + delta;
+        if (target < 0 || target >= steps.Count) return;
+        (steps[index], steps[target]) = (steps[target], steps[index]);
+        Changed(_draft with { Scenario = _draft.Scenario with { Steps = steps } });
+    }
+
+    /// <summary>An edit of the operation itself (method, path, body, query document): a declared step is then "Modified from declared operation".</summary>
+    private void EditOperation(int index, Func<HttpPerformanceStep, HttpPerformanceStep> change) =>
+        UpdateStep(index, x => change(x) is var edited && x.Source is { Modified: false } source && source.Evidence != ScenarioEvidence.Manual ? edited with { Source = source with { Modified = true } } : edited);
+
+    private void SetExpected(int index, string text)
+    {
+        var parts = text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var codes = parts.Select(Int).ToList();
+        if (parts.Length == 0 || codes.Any(c => c is null or < 100 or > 599)) { _statusErrors[index] = "Use HTTP status codes 100–599, comma-separated (e.g. 200 or 200, 204). The previous value is kept."; return; }
+        _statusErrors.Remove(index);
+        UpdateStep(index, x => x with { ExpectedStatusCodes = [.. codes.Select(c => c!.Value).Distinct()] });
+    }
+
+    private void MapData(int index, string variable, string place, BirkNext.TestData.TestDataDataType type, string? alias) => UpdateStep(index, x =>
+    {
+        var mappings = (x.DataMappings ?? []).Where(m => m.Variable != variable).ToList();
+        if (!string.IsNullOrEmpty(alias)) mappings.Add(new ScenarioDataMapping(variable, [alias], type, place));
+        return x with { DataMappings = mappings.Count == 0 ? null : mappings };
+    });
 
     private RenderFragment Workload() => @<section class="pt-section" aria-labelledby="pt-workload-h" data-testid="pt-workload">
         <h2 id="pt-workload-h">Workload</h2>

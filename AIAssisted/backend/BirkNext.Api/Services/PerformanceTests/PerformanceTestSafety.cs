@@ -88,20 +88,30 @@ public static partial class PerformanceTestSafety
 
         if (d.Scenario.Steps.Count == 0) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "The scenario has no request steps."));
         if (d.Scenario.Steps.Count > 20) issues.Add(new(PerformanceReadinessState.InvalidScenario, "scenario", "A scenario may contain at most 20 steps."));
-        foreach (var s in d.Scenario.Steps) issues.AddRange(StepIssues(d, s, data));
+        foreach (var s in d.Scenario.Steps.Where(s => !s.Disabled)) issues.AddRange(StepIssues(d, s, data));
 
-        if (d.Scenario.TestDataProfileId is not null)
+        // Central Test Data (step mappings to approved asset aliases) owns the values; a legacy local profile applies only when nothing is mapped.
+        var central = UsesCentralTestData(d);
+        if (d.Scenario.TestDataProfileId is not null && !central)
         {
             if (data is null) issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata", "The selected test data profile does not exist."));
             else issues.AddRange(DataIssues(data, d));
         }
-        else if (d.Scenario.Steps.Any(s => Placeholders(s).Any()))
-            issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata", "The scenario uses {placeholders} but no approved test data profile is selected."));
+        else if (d.Scenario.Steps.Where(s => !s.Disabled).Select(s => (Step: s, Missing: Placeholders(s).Except(Mapped(s), StringComparer.Ordinal).ToList()))
+                     .FirstOrDefault(x => x.Missing.Count > 0) is { Step: { } step, Missing: { } missing })
+            issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata",
+                $"Test Data missing for {string.Join(", ", missing.Select(m => "{" + m + "}"))} (step '{step.Name}'): map approved central Test Data to it."));
 
         issues.AddRange(WorkloadIssues(d, options));
         issues.AddRange(ResourceIssues(d, options));
         return issues;
     }
+
+    /// <summary>True when any executed step maps a placeholder to central Test Data.</summary>
+    public static bool UsesCentralTestData(PerformanceTestDefinition d) => d.Scenario.Steps.Any(s => !s.Disabled && s.DataMappings is { Count: > 0 });
+
+    /// <summary>Placeholders a step maps to central Test Data.</summary>
+    public static IEnumerable<string> Mapped(HttpPerformanceStep s) => s.DataMappings?.Where(m => m.AssetAliases.Count > 0).Select(m => m.Variable) ?? [];
 
     public static IEnumerable<string> Placeholders(HttpPerformanceStep s) =>
         PlaceholderPattern().Matches(string.Join("\n", new[] { s.RelativePath, s.BodyTemplate, s.GraphQlVariablesJson }.Concat(s.QueryParameters.Select(q => q.Value)).Where(t => t is not null)))
@@ -146,8 +156,8 @@ public static partial class PerformanceTestSafety
             yield return new(PerformanceReadinessState.InvalidScenario, "body", $"{label}: the request body is larger than 16 KB.");
         if (d.TargetType == PerformanceTargetType.GraphQlHttp && GraphQlIssue(s) is { } gql)
             yield return new(PerformanceReadinessState.InvalidScenario, "graphql", $"{label}: {gql}");
-        if (data is not null && Placeholders(s).Except(data.Columns, StringComparer.Ordinal).ToList() is { Count: > 0 } missing)
-            yield return new(PerformanceReadinessState.NeedsTestData, "placeholder", $"{label}: the test data profile has no column for {string.Join(", ", missing.Select(m => "{" + m + "}"))}.");
+        if (data is not null && Placeholders(s).Except(data.Columns, StringComparer.Ordinal).Except(Mapped(s), StringComparer.Ordinal).ToList() is { Count: > 0 } missing)
+            yield return new(PerformanceReadinessState.NeedsTestData, "placeholder", $"{label}: Test Data missing for {string.Join(", ", missing.Select(m => "{" + m + "}"))}.");
     }
 
     /// <summary>Query-only GraphQL, decided by parsing the document (Hot Chocolate parser) — never by a text heuristic.</summary>

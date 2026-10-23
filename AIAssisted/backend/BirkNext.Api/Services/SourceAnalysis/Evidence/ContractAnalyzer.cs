@@ -247,7 +247,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                 return Base(file, SourceContractType.OpenApi, "json") with
                 {
                     Name = SourceEvidenceRedaction.SafePath(c.Name), Version = version is null ? null : SourceEvidenceRedaction.SafePath(version),
-                    Operations = c.Operations.Take(MaxOperations).Select(o => new ContractOperation($"{o.Method.ToUpperInvariant()} {SourceEvidenceRedaction.SafePath(o.Path)}", o.Method.ToUpperInvariant(), SourceEvidenceRedaction.SafePath(o.Path), [])).ToList(),
+                    Operations = OpenApiOperations(JsonTree(doc.RootElement, 1)).Take(MaxOperations).ToList(),
                     Types = c.Schemas.Take(MaxTypes).Select(s => new ContractTypeShape(SourceEvidenceRedaction.SafePath(s.Name), s.Type,
                         s.Properties.Select(p => new ContractField(SourceEvidenceRedaction.SafePath(p.Name), SourceEvidenceRedaction.SafePath(p.Type), p.Required || s.Required.Contains(p.Name))).ToList())).ToList(),
                     ParseSupport = DomainSupport.Supported,
@@ -263,17 +263,14 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
 
     private static SourceContract OpenApiTree(EvidenceFile file, YamlNode root, string format)
     {
-        var operations = new List<ContractOperation>();
-        foreach (var (path, item) in root["paths"]?.Entries ?? [])
-            foreach (var method in Methods.Where(m => item.Has(m)))
-                operations.Add(new ContractOperation($"{method.ToUpperInvariant()} {SourceEvidenceRedaction.SafePath(path)}", method.ToUpperInvariant(), SourceEvidenceRedaction.SafePath(path),
-                    item[method]!.List("parameters").Select(p => p.Str("name")).OfType<string>().Select(SourceEvidenceRedaction.SafePath).ToList()));
+        var operations = OpenApiOperations(root);
         var schemas = root["components"]?["schemas"] ?? root["definitions"];
         var types = (schemas?.Entries ?? []).Take(MaxTypes).Select(e =>
         {
             var required = e.Value.Strings("required").ToHashSet(StringComparer.Ordinal);
             return new ContractTypeShape(SourceEvidenceRedaction.SafePath(e.Key), e.Value.Str("type") ?? "object",
-                (e.Value["properties"]?.Entries ?? []).Select(p => new ContractField(SourceEvidenceRedaction.SafePath(p.Key), SourceEvidenceRedaction.SafePath(p.Value.Str("type") ?? (p.Value.Str("$ref") is { } r ? r.Split('/').Last() : "object")), required.Contains(p.Key))).ToList());
+                (e.Value["properties"]?.Entries ?? []).Select(p => new ContractField(SourceEvidenceRedaction.SafePath(p.Key), SourceEvidenceRedaction.SafePath(p.Value.Str("type") ?? (p.Value.Str("$ref") is { } r ? r.Split('/').Last() : "object")), required.Contains(p.Key))).ToList())
+                { Values = [.. e.Value.Strings("enum").Take(100).Select(SourceEvidenceRedaction.SafePath)] };
         }).ToList();
         return Base(file, SourceContractType.OpenApi, format) with
         {
@@ -282,6 +279,102 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             Operations = operations.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Partial,
             Limitations = [root.Has("swagger") ? "Swagger 2 document read generically." : "YAML OpenAPI read by the subset reader; $ref chains are not resolved."],
         };
+    }
+
+    /// <summary>The declared operations of one OpenAPI/Swagger document (JSON or YAML) — the same walker Source Analysis uses (tests, tooling).</summary>
+    internal static List<ContractOperation> ReadOpenApiOperations(string path, string content)
+    {
+        if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return MiniYaml.Parse(content) is { } yaml ? OpenApiOperations(yaml) : [];
+        using var json = JsonDocument.Parse(content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        return OpenApiOperations(JsonTree(json.RootElement, 1));
+    }
+
+    /// <summary>One GraphQL document as Source Analysis stores it (schema or client operations).</summary>
+    internal static SourceContract? ReadGraphQl(string path, string content) =>
+        GraphQl(new EvidenceFile(path, content, SourceFileRole.Contract, "GraphQL"), []);
+
+    /// <summary>
+    /// Declared OpenAPI 3 / Swagger 2 operations with their parameters (path-level and operation-level, local <c>$ref</c> resolved, operation
+    /// overriding path), request body media types and schema, documented response codes, tags, operationId and security scheme names. Names,
+    /// locations and types only — never an example, default or credential value (only whether an example is declared).
+    /// </summary>
+    internal static List<ContractOperation> OpenApiOperations(YamlNode root)
+    {
+        static string Safe(string value) => SourceEvidenceRedaction.SafePath(value);
+        YamlNode? Resolve(string reference)
+        {
+            if (!reference.StartsWith("#/", StringComparison.Ordinal)) return null;
+            var node = (YamlNode?)root;
+            foreach (var part in reference[2..].Split('/')) node = node?[part.Replace("~1", "/").Replace("~0", "~")];
+            return node;
+        }
+        YamlNode Deref(YamlNode node) => node.Str("$ref") is { } r && Resolve(r) is { } target ? target : node;
+        string? TypeOf(YamlNode? schema)
+        {
+            if (schema is null) return null;
+            if (schema.Str("$ref") is { } r) return Safe(r.Split('/').Last());
+            if (schema.Str("type") == "array") return $"[{TypeOf(schema["items"]) ?? "object"}]";
+            return schema.Str("type") is { } t ? Safe(schema.Str("format") is { } f ? $"{t}:{f}" : t) : null;
+        }
+        List<string> Security(YamlNode node)
+        {
+            var schemes = root["components"]?["securitySchemes"] ?? root["securityDefinitions"];
+            return [.. node.List("security").SelectMany(requirement => requirement.Entries.Select(e => e.Key)).Distinct(StringComparer.Ordinal)
+                .Select(name => schemes?[name] is { } scheme ? $"{Safe(name)} ({Safe(scheme.Str("scheme") ?? scheme.Str("type") ?? "scheme")})" : Safe(name))];
+        }
+        var rootSecurity = Security(root);
+        var rootConsumes = root.Strings("consumes").ToList();
+        var operations = new List<ContractOperation>();
+        foreach (var (path, rawItem) in root["paths"]?.Entries ?? [])
+        {
+            var item = Deref(rawItem);
+            var shared = item.List("parameters").Select(Deref).ToList();
+            foreach (var method in Methods.Where(item.Has))
+            {
+                var op = item[method]!;
+                var all = shared.Concat(op.List("parameters").Select(Deref)).Where(p => p.Str("name") is not null && p.Str("in") is not null)
+                    .GroupBy(p => (p.Str("name")!, p.Str("in")!.ToLowerInvariant())).Select(g => g.Last()).ToList();
+                var parameters = all.Where(p => p.Str("in") is not ("body" or "formData"))
+                    .Select(p => new ContractParameter(Safe(p.Str("name")!), p.Str("in")!.ToLowerInvariant(), p.Str("in") == "path" || p.Str("required") == "true", TypeOf(p["schema"] ?? p))
+                    {
+                        HasExample = p.Has("example") || p.Has("examples") || p["schema"]?.Has("example") == true || p["schema"]?.Has("default") == true,
+                    }).ToList();
+                List<string> contentTypes;
+                string? requestSchema;
+                bool bodyRequired;
+                if (op["requestBody"] is { } rawBody)
+                {
+                    var body = Deref(rawBody);
+                    contentTypes = [.. (body["content"]?.Entries ?? []).Select(e => Safe(e.Key))];
+                    requestSchema = (body["content"]?.Entries ?? []).Select(e => TypeOf(e.Value["schema"])).FirstOrDefault(t => t is not null);
+                    bodyRequired = body.Str("required") == "true";
+                }
+                else if (all.FirstOrDefault(p => p.Str("in") == "body") is { } swaggerBody)
+                {
+                    contentTypes = [.. (op.Strings("consumes").Any() ? op.Strings("consumes") : rootConsumes.Count > 0 ? rootConsumes : ["application/json"]).Select(Safe)];
+                    requestSchema = TypeOf(swaggerBody["schema"]);
+                    bodyRequired = swaggerBody.Str("required") == "true";
+                }
+                else if (all.Any(p => p.Str("in") == "formData"))
+                {
+                    contentTypes = [.. (op.Strings("consumes").Any() ? op.Strings("consumes") : ["multipart/form-data"]).Select(Safe)];
+                    requestSchema = null;
+                    bodyRequired = all.Any(p => p.Str("in") == "formData" && p.Str("required") == "true");
+                }
+                else { contentTypes = []; requestSchema = null; bodyRequired = false; }
+                var verb = method.ToUpperInvariant();
+                operations.Add(new ContractOperation($"{verb} {Safe(path)}", verb, Safe(path), [.. parameters.Select(p => p.Name)])
+                {
+                    OperationId = op.Str("operationId") is { } id ? Safe(id) : null,
+                    Summary = op.Str("summary") is { } summary ? Safe(summary.Length > 160 ? summary[..160] : summary) : null,
+                    Tags = [.. op.Strings("tags").Take(10).Select(Safe)], ParameterDetails = parameters, RequestContentTypes = contentTypes, RequestBodyRequired = bodyRequired,
+                    RequestSchema = requestSchema, ResponseCodes = [.. (op["responses"]?.Entries ?? []).Select(e => Safe(e.Key))],
+                    Security = op.Has("security") ? Security(op) : rootSecurity,
+                    HasExamples = parameters.Any(p => p.HasExample) || op["requestBody"]?.Has("examples") == true, Detailed = true,
+                });
+            }
+        }
+        return operations;
     }
 
     /// <summary>JSON as the same tree shape the YAML reader produces, so one OpenAPI/AsyncAPI walker serves both formats.</summary>
@@ -526,11 +619,17 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             foreach (var t in schema.Types.Where(t => !t.Name.StartsWith("__", StringComparison.Ordinal)).Take(MaxTypes))
             {
                 var fields = t.Kind == "INPUT_OBJECT" ? t.InputFields ?? [] : t.Fields;
-                types.Add(new ContractTypeShape(t.Name, t.Kind.ToLowerInvariant(), fields.Select(f => new ContractField(f.Name, TypeText(f.Type), f.Type?.Kind == "NON_NULL")).ToList()));
+                types.Add(new ContractTypeShape(t.Name, t.Kind.ToLowerInvariant(), fields.Select(f => new ContractField(f.Name, TypeText(f.Type), f.Type?.Kind == "NON_NULL")).ToList())
+                    { Values = [.. (t.EnumValues ?? []).Take(100).Select(v => v.Name)] });
             }
             foreach (var (root, kind) in new[] { (schema.QueryTypeName, "query"), (schema.MutationTypeName, "mutation"), (schema.SubscriptionTypeName, "subscription") })
                 if (root is not null && schema.Types.FirstOrDefault(t => t.Name == root) is { } rootType)
-                    ops.AddRange(rootType.Fields.Select(f => new ContractOperation($"{kind} {f.Name}", kind, null, f.Arguments.Select(a => a.Name).ToList())));
+                    ops.AddRange(rootType.Fields.Select(f => new ContractOperation($"{kind} {f.Name}", kind, null, f.Arguments.Select(a => a.Name).ToList())
+                    {
+                        OperationId = f.Name, Summary = f.Description is { } d ? SourceEvidenceRedaction.SafePath(d.Length > 160 ? d[..160] : d) : null,
+                        ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null })],
+                        ResultType = TypeText(f.Type), Detailed = true,
+                    }));
         }
         else
         {

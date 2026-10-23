@@ -9,6 +9,47 @@ namespace BirkNext.TestData;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestDataKind { Scalar, Structured, File, EntityReference, Message, ExpectedResult, ReferenceData, Other }
 
+/// <summary>
+/// What shape of data a consumer needs (and an asset offers): the five reusable data types every consumer (Performance, API Quality Review,
+/// IQR, Schema Studio, E2E) speaks. Derived from the asset's kind and media type — one generic model, not five stores.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestDataDataType { SimpleValues, JsonPayload, XmlPayload, FileFixture, ExpectedResult }
+
+public static class TestDataDataTypes
+{
+    public static string Label(TestDataDataType type) => type switch
+    {
+        TestDataDataType.SimpleValues => "Simple values / parameters",
+        TestDataDataType.JsonPayload => "JSON payload",
+        TestDataDataType.XmlPayload => "XML payload",
+        TestDataDataType.FileFixture => "File / binary fixture",
+        _ => "Expected result / reference data",
+    };
+
+    /// <summary>The data type an asset offers (an expected result is never an input payload).</summary>
+    public static TestDataDataType Of(TestDataKind kind, string? mediaType) => kind switch
+    {
+        TestDataKind.File => TestDataDataType.FileFixture,
+        TestDataKind.ExpectedResult or TestDataKind.ReferenceData => TestDataDataType.ExpectedResult,
+        TestDataKind.Structured or TestDataKind.Message => ForMediaType(mediaType) is var t && t == TestDataDataType.SimpleValues ? TestDataDataType.JsonPayload : t,
+        _ => TestDataDataType.SimpleValues,
+    };
+
+    public static TestDataDataType Of(TestDataAssetSummary asset) => Of(asset.Kind, asset.MediaType);
+
+    /// <summary>The data type a request body of this media type needs: JSON, XML, multipart/binary = file; anything else is simple values.</summary>
+    public static TestDataDataType ForMediaType(string? mediaType)
+    {
+        var media = (mediaType ?? "").Split(';')[0].Trim().ToLowerInvariant();
+        return media.Contains("json") ? TestDataDataType.JsonPayload
+            : media.Contains("xml") ? TestDataDataType.XmlPayload
+            : media.StartsWith("multipart/", StringComparison.Ordinal) || media == "application/octet-stream" || media.StartsWith("image/", StringComparison.Ordinal)
+                || media == "application/pdf" ? TestDataDataType.FileFixture
+            : TestDataDataType.SimpleValues;
+    }
+}
+
 /// <summary>The type of a scalar value (or of an expected scalar). <see cref="None"/> for non-scalar data.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestDataValueType { None, String, Integer, Decimal, Boolean, Date, DateTime, Guid, Other }

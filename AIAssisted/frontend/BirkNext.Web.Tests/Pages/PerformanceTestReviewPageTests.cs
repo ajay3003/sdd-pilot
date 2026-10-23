@@ -1049,4 +1049,74 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
         Status(cut, "pt-status").Should().Be("Draft", "an available engine does not make an unsaved draft ready");
     }
+
+    // ── Smart Scenario: steps reference central Test Data; inline authoring is gone ────────────────────────────────────────────────
+
+    private static PerformanceTestDefinition Mapped() => Definition with
+    {
+        Scenario = new PerformanceScenario
+        {
+            Name = "Person lookup baseline", TestDataProfileId = "legacy-1",
+            Steps =
+            [
+                new HttpPerformanceStep { Name = "getperson", RelativePath = "/api/person/{personId}", Source = new ScenarioStepSource { OperationKey = "openapi:persons#GET /api/person/{personId}",
+                    Origin = ScenarioOperationOrigin.OpenApi, Evidence = ScenarioEvidence.DeclaredAndObserved, ContractName = "Persons API", ObservedCount = 44, ObservedLastSeen = new DateTimeOffset(2026, 10, 23, 8, 54, 0, TimeSpan.Zero) },
+                    DataMappings = [new ScenarioDataMapping("personId", ["person-id-baseline"], BirkNext.TestData.TestDataDataType.SimpleValues, "path")] },
+                new HttpPerformanceStep { Name = "health", RelativePath = "/health" },
+            ],
+        },
+    };
+
+    [Fact]
+    public void ScenarioTab_ShowsTargetServiceAndStepProvenance_WithoutInlineTestDataAuthoring()
+    {
+        Register(definitions: [Mapped()]);
+        _api.Overview = _api.Overview! with { DataProfiles = [new PerformanceTestDataProfile { Id = "legacy-1", Name = "Old local rows" }] };
+        var cut = Page();
+        Tab(cut, "scenario");
+        cut.Find("#pt-scenario-context-h").TextContent.Should().StartWith("Target service");
+        cut.Find("[data-testid=psb]");
+        var sources = cut.FindAll("[data-testid=pt-step-source]").Select(e => e.TextContent).ToList();
+        sources[0].Should().Be("Declared + Observed · OpenAPI · Persons API · observed 44× (last 2026-10-23 08:54 UTC)");
+        sources[1].Should().Be("Manual step");
+        cut.FindAll("[data-testid=pt-data-save]").Should().BeEmpty("Performance Review no longer authors reusable Test Data");
+        cut.Markup.Should().NotContain("Rows (one per line");
+        cut.Find("[data-testid=pt-legacy-profile]").TextContent.Should().Contain("Old local rows").And.Contain("not shared");
+        cut.Find("[data-testid=pt-step-mapping][data-variable=personId]").GetAttribute("data-state").Should().Be("mapped");
+        cut.Find("[data-testid=pt-testdata-asset]").TextContent.Should().StartWith("person-id-baseline · Simple values / parameters").And.Contain("used by getperson");
+        cut.Find("[data-testid=pt-step-delay]").ParentElement!.TextContent.Should().Contain("Delay before next step").And.Contain("not a request timeout");
+    }
+
+    [Fact]
+    public void ScenarioSteps_ValidateExpectedResponses_ReorderAndMarkEditedDeclaredSteps()
+    {
+        Register(definitions: [Mapped()]);
+        var cut = Page();
+        Tab(cut, "scenario");
+        cut.FindAll("[data-testid=pt-step-expected]")[0].Change("200, abc");
+        cut.Find("[data-testid=pt-step-expected-error]").TextContent.Should().Contain("previous value is kept");
+        cut.FindAll("[data-testid=pt-step-expected]")[0].Change("200, 204");
+        cut.FindAll("[data-testid=pt-step-expected-error]").Should().BeEmpty();
+        cut.FindAll("[data-testid=pt-step-expected]")[0].GetAttribute("value").Should().Be("200, 204");
+        cut.FindAll("[data-testid=pt-step-path]")[0].Change("/api/person/{personId}/details");
+        cut.FindAll("[data-testid=pt-step-source]")[0].TextContent.Should().StartWith("Modified from declared operation");
+        cut.FindAll("[data-testid=pt-step-down]")[0].Click();
+        cut.FindAll("[data-testid=pt-step-name]").Select(e => e.GetAttribute("value")).Should().Equal("health", "getperson");
+        cut.FindAll("[data-testid=pt-step-enabled]")[1].Change(false);
+        cut.FindAll("[data-testid=pt-step]")[1].GetAttribute("data-disabled").Should().Be("true");
+        Status(cut, "pt-definition-state").Should().Be("Unsaved changes to v2");
+    }
+
+    [Fact]
+    public void ScenarioStep_UnmappedPlaceholder_SaysTestDataMissing_AndLinksToTestDataWithContext()
+    {
+        Register(definitions: [Definition with { Scenario = new PerformanceScenario { Steps = [new HttpPerformanceStep { Name = "lookup", RelativePath = "/api/person/{personId}" }] } }]);
+        var cut = Page();
+        Tab(cut, "scenario");
+        var mapping = cut.Find("[data-testid=pt-step-mapping][data-variable=personId]");
+        mapping.GetAttribute("data-state").Should().Be("missing");
+        cut.Find("[data-testid=pt-step-mapping-missing]").TextContent.Should().Contain("Test Data missing for {personId}");
+        cut.Find("[data-testid=pt-step-open-test-data]").GetAttribute("href").Should()
+            .Be("/test-data?consumer=performance-test-review&consumerId=def-1&environment=PaymentHub%20QA&operation=GET%20%2Fapi%2Fperson%2F%7BpersonId%7D&variable=personId&in=path&dataType=SimpleValues");
+    }
 }

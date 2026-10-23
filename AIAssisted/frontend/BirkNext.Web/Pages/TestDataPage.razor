@@ -13,6 +13,36 @@
     <PageHeader Title="Test Data" Description="Reusable approved test data for test execution and verification." />
     <p class="td-lead" data-testid="td-lead">Values, payloads, files, entity references, data sets and expected results come from configured sources.</p>
     <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs.</p>
+    @if (Consumer is { Length: > 0 })
+    {
+        @* A consumer opened Test Data with an exact requirement. Matching is a suggestion only: the consumer maps (binds) the asset itself. *@
+        var requested = RequestedType;
+        <section class="td-card td-request" aria-labelledby="td-request-heading" data-testid="td-request" data-consumer="@Consumer">
+            <h2 id="td-request-heading">Requested by @ConsumerLabel</h2>
+            <dl class="td-request-facts">
+                @if (Operation is { Length: > 0 }) { <div><dt>Operation</dt><dd data-testid="td-request-operation">@Operation</dd></div> }
+                @if (Variable is { Length: > 0 }) { <div><dt>Needs</dt><dd data-testid="td-request-variable">@(In == "body" ? "request body" : "{" + Variable + "}")@(In is { Length: > 0 } ? $" ({In})" : "")</dd></div> }
+                @if (requested is { } t) { <div><dt>Data type</dt><dd data-testid="td-request-type">@TestDataDataTypes.Label(t)</dd></div> }
+                @if (ContentType is { Length: > 0 }) { <div><dt>Content type</dt><dd>@ContentType</dd></div> }
+                @if (Schema is { Length: > 0 }) { <div><dt>Schema</dt><dd>@Schema</dd></div> }
+                @if (RequestEnvironment is { Length: > 0 }) { <div><dt>Environment</dt><dd>@RequestEnvironment</dd></div> }
+            </dl>
+            @if (_catalog is { } requestCatalog && requested is { } type)
+            {
+                var matching = requestCatalog.Assets.Where(a => a.Approval == TestDataApproval.Approved && TestDataDataTypes.Of(a) == type
+                    && (a.Environment is null || RequestEnvironment is null || string.Equals(a.Environment, RequestEnvironment, StringComparison.OrdinalIgnoreCase))).ToList();
+                @if (matching.Count == 0)
+                {
+                    <p data-testid="td-request-none"><strong>No approved @TestDataDataTypes.Label(type) asset matches yet.</strong> Add or approve one in a configured source; it then appears here and in the consumer's mapping.</p>
+                }
+                else
+                {
+                    <p data-testid="td-request-matches">Approved assets of this data type (choose one in @ConsumerLabel — nothing is bound from here):</p>
+                    <ul class="sd-list">@foreach (var a in matching) { <li data-testid="td-request-match">@a.Alias@(a.Label is { } label ? $" · {label}" : "") · @a.Source</li> }</ul>
+                }
+            }
+        </section>
+    }
 
     @if (_loading)
     {
@@ -212,6 +242,20 @@
 </div>
 
 @code {
+    // Consumer requirement context from a deep link (/test-data?consumer=…&variable=…&dataType=…).
+    [SupplyParameterFromQuery(Name = "consumer")] public string? Consumer { get; set; }
+    [SupplyParameterFromQuery(Name = "operation")] public string? Operation { get; set; }
+    [SupplyParameterFromQuery(Name = "variable")] public string? Variable { get; set; }
+    [SupplyParameterFromQuery(Name = "in")] public string? In { get; set; }
+    [SupplyParameterFromQuery(Name = "dataType")] public string? DataType { get; set; }
+    [SupplyParameterFromQuery(Name = "contentType")] public string? ContentType { get; set; }
+    [SupplyParameterFromQuery(Name = "schema")] public string? Schema { get; set; }
+    [SupplyParameterFromQuery(Name = "environment")] public string? RequestEnvironment { get; set; }
+
+    private TestDataDataType? RequestedType => Enum.TryParse<TestDataDataType>(DataType, out var t) ? t : null;
+    /// <summary>Generic: the consumer id as words ("performance-test-review" → "Performance test review"); Test Data keeps no consumer list.</summary>
+    private string ConsumerLabel => Consumer is { Length: > 0 } c ? char.ToUpperInvariant(c[0]) + c[1..].Replace('-', ' ') : "a consumer";
+
     private ITestDataApiService? _api;
     private TestDataCatalogView? _catalog;
     private TestDataAssetDetail? _detail;

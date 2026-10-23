@@ -160,8 +160,10 @@ public static class SetupProfileSchema
         ["securityClassification.personGraphql"] = ["endpointRef"],
         ["performance"] = ["targetRef", "definition", "scenario", "workload", "thresholds", "resourceObservation", "localExecution"],
         ["performance.definition"] = ["name", "description"],
-        ["performance.scenario"] = ["type", "name", "steps"],
-        ["performance.scenario.steps[]"] = ["name", "method", "path", "expectedStatusCodes", "thinkTimeMs", "graphqlQuery"],
+        ["performance.scenario"] = ["type", "name", "steps", "selection"],
+        ["performance.scenario.steps[]"] = ["name", "method", "path", "expectedStatusCodes", "thinkTimeMs", "graphqlQuery", "operationRef", "testDataRef"],
+        ["performance.scenario.steps[].operationRef"] = ["type", "operationId", "method", "path", "field", "contract"],
+        ["performance.scenario.steps[].testDataRef"] = ["profile", "mappings", "selection"],
         ["performance.workload"] = ["purpose", "mode", "virtualUsers", "requestsPerSecond", "warmUpSeconds", "rampUpSeconds", "steadyStateSeconds", "rampDownSeconds"],
         ["performance.thresholds[]"] = ["metric", "operator", "value", "unit", "severity"],
         ["performance.resourceObservation"] = ["enabled"],
@@ -205,6 +207,8 @@ public static class SetupProfileSchema
             { issues.Add(new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported: trust, approval, confirmation and verification state is decided by people and evidence, never by a profile.")); continue; }
             // Journey ids are the only free keys; each journey is validated against the journey schema.
             if (pattern == "journeys") { Walk(value, "journeys.*", issues); continue; }
+            // Test Data mappings: placeholder → central Test Data alias (free keys; values are aliases, still checked for secret/identity look).
+            if (pattern == "performance.scenario.steps[].testDataRef.mappings") { Walk(value, pattern + ".*", issues); continue; }
             if (!Known.TryGetValue(pattern, out var known) || !known.Contains(key, StringComparer.OrdinalIgnoreCase))
             { issues.Add(new(path, SetupIssueSeverity.Warning, $"Unsupported property \"{key}\" is ignored.")); continue; }
             Walk(value, SetupProfileParser.Join(pattern, key), issues);

@@ -3,6 +3,7 @@ using System.Text.Json;
 using BirkNext.Api.Services.PerformanceTests;
 using BirkNext.Integrations;
 using BirkNext.PerformanceTests;
+using BirkNext.TestData;
 
 namespace BirkNext.Api.Services.SetupProfiles;
 
@@ -159,16 +160,39 @@ public sealed class PerformanceSetupProfileService(PerformanceTestStore store, P
         if (scenario?.Str("type") is { } unknownType && !Types.ContainsKey(unknownType))
             issues.Add(new("performance.scenario.type", SetupIssueSeverity.Warning, $"Unknown scenario type \"{SetupProfileSchema.Safe(unknownType)}\"; rest-http is used."));
         var steps = new List<HttpPerformanceStep>();
-        foreach (var step in scenario?["steps"]?.Items ?? [])
+        foreach (var (step, index) in (scenario?["steps"]?.Items ?? []).Select((n, i) => (n, i)))
         {
             if (!step.IsMap || !Ok(step)) continue;
             var codes = step["expectedStatusCodes"]?.Items?.Select(n => int.TryParse(n.Scalar, out var code) ? code : 0).Where(c => c > 0).ToList();
+            // An operation reference is resolved only when it carries the declared method + path (or GraphQL field); otherwise the step is not
+            // imported and is reported "Requires review" — it is never silently turned into an arbitrary manual path.
+            var reference = step["operationRef"] is { IsMap: true } r && Ok(r) ? r : null;
+            var method = (step.Str("method") ?? reference?.Str("method") ?? "GET").ToUpperInvariant();
+            var path = step.Str("path") ?? reference?.Str("path");
+            if (reference is not null && path is null && reference.Str("field") is null)
+            {
+                issues.Add(new($"performance.scenario.steps[{index}].operationRef", SetupIssueSeverity.Warning,
+                    $"Requires review: operation {SetupProfileSchema.Safe(reference.Str("operationId") ?? "(unnamed)")} cannot be resolved without its declared method and path; the step is not imported."));
+                continue;
+            }
+            var origin = reference?.Str("type")?.ToLowerInvariant() switch { "openapi" => ScenarioOperationOrigin.OpenApi, "graphql" => ScenarioOperationOrigin.GraphQl, "observed" => ScenarioOperationOrigin.Observed, _ => ScenarioOperationOrigin.Manual };
+            var data = step["testDataRef"] is { IsMap: true } dataRef && Ok(dataRef) ? dataRef : null;
+            var mappings = (data?["mappings"]?.Map ?? []).Where(m => m.Value.Scalar is { Length: > 0 } && Ok(m.Value))
+                .Select(m => new ScenarioDataMapping(m.Key, [.. m.Value.Scalar!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)], m.Key == "body" ? TestDataDataType.JsonPayload : TestDataDataType.SimpleValues, m.Key == "body" ? "body" : origin == ScenarioOperationOrigin.GraphQl ? "variable" : (path ?? "").Contains($"{{{m.Key}}}", StringComparison.Ordinal) ? "path" : "query"))
+                .ToList();
             steps.Add(new HttpPerformanceStep
             {
-                Name = step.Str("name") ?? $"step-{steps.Count + 1}", Method = (step.Str("method") ?? "GET").ToUpperInvariant(), RelativePath = step.Str("path") ?? "/",
+                Name = step.Str("name") ?? $"step-{steps.Count + 1}", Method = method, RelativePath = path ?? "/graphql",
                 ExpectedStatusCodes = codes is { Count: > 0 } ? codes : [200], ThinkTimeMs = Int(step, "thinkTimeMs"), GraphQlQuery = Ok(step["graphqlQuery"]) ? step.Str("graphqlQuery") : null,
+                Source = reference is null ? null : new ScenarioStepSource
+                {
+                    OperationKey = $"profile:{origin.ToString().ToLowerInvariant()}#{reference.Str("operationId") ?? reference.Str("field") ?? $"{method} {path}"}",
+                    Origin = origin, Evidence = ScenarioEvidence.Manual, ContractName = reference.Str("contract"),
+                },
+                DataMappings = mappings.Count == 0 ? null : mappings,
             });
         }
+        var selection = scenario?.Str("selection") is { } sel && Enum.TryParse<TestDataSelection>(sel.Replace("-", ""), true, out var parsedSelection) ? parsedSelection : (TestDataSelection?)null;
         var w = p["workload"];
         var defaults = new PerformanceWorkload();
         var workload = new PerformanceWorkload
@@ -200,7 +224,7 @@ public sealed class PerformanceSetupProfileService(PerformanceTestStore store, P
         {
             Id = Guid.NewGuid().ToString("N"), EnvironmentId = environmentId, Name = p["definition"]?.Str("name") is { Length: > 0 } name ? name.Trim()[..Math.Min(120, name.Trim().Length)] : "Imported performance test",
             Description = p["definition"]?.Str("description"), TargetType = type, TargetOrigin = target.TargetOrigin, EnvironmentType = target.EnvironmentType, EnvironmentName = target.EnvironmentName,
-            Scenario = new PerformanceScenario { Name = scenario?.Str("name") ?? "Main scenario", Steps = steps }, Workload = workload, Thresholds = thresholds, ResourceObservation = resources,
+            Scenario = new PerformanceScenario { Name = scenario?.Str("name") ?? "Main scenario", Steps = steps, DataSelection = selection }, Workload = workload, Thresholds = thresholds, ResourceObservation = resources,
         };
     }
 
@@ -209,7 +233,8 @@ public sealed class PerformanceSetupProfileService(PerformanceTestStore store, P
     {
         static object Shape(PerformanceTestDefinition d) => new
         {
-            d.TargetType, Steps = d.Scenario.Steps.Select(s => new { s.Name, s.Method, s.RelativePath, Codes = string.Join(",", s.ExpectedStatusCodes), s.ThinkTimeMs, s.GraphQlQuery }).ToList(),
+            d.TargetType, Steps = d.Scenario.Steps.Select(s => new { s.Name, s.Method, s.RelativePath, Codes = string.Join(",", s.ExpectedStatusCodes), s.ThinkTimeMs, s.GraphQlQuery,
+                Data = string.Join(";", (s.DataMappings ?? []).Select(m => $"{m.Variable}={string.Join(",", m.AssetAliases)}")) }).ToList(), d.Scenario.DataSelection,
             d.Workload.Purpose, d.Workload.Mode, d.Workload.VirtualUsers, d.Workload.RequestsPerSecond, d.Workload.WarmupSeconds, d.Workload.RampUpSeconds, d.Workload.SteadyStateSeconds, d.Workload.RampDownSeconds,
             Thresholds = d.Thresholds.Select(t => new { t.Metric, t.Operator, t.Value, t.Severity }).ToList(), Resources = d.ResourceObservation?.Enabled == true,
         };
@@ -241,15 +266,26 @@ public sealed class PerformanceSetupProfileService(PerformanceTestStore store, P
         {
             ["targetRef"] = environmentId,
             ["definition"] = SetupProfileService.Compact(new Dictionary<string, object?> { ["name"] = d.Name, ["description"] = d.Description }),
-            ["scenario"] = new Dictionary<string, object?>
+            ["scenario"] = SetupProfileService.Compact(new Dictionary<string, object?>
             {
                 ["type"] = Types.First(t => t.Value == d.TargetType).Key, ["name"] = d.Scenario.Name,
-                ["steps"] = d.Scenario.Steps.Select(s => (object?)SetupProfileService.Compact(new Dictionary<string, object?>
+                ["selection"] = d.Scenario.DataSelection is { } selection ? selection.ToString() : null,
+                ["steps"] = d.Scenario.Steps.Where(s => !s.Disabled).Select(s => (object?)SetupProfileService.Compact(new Dictionary<string, object?>
                 {
                     ["name"] = s.Name, ["method"] = s.Method, ["path"] = s.RelativePath, ["expectedStatusCodes"] = s.ExpectedStatusCodes.Cast<object?>().ToList(),
                     ["thinkTimeMs"] = s.ThinkTimeMs, ["graphqlQuery"] = s.GraphQlQuery,
+                    // References only: the declared operation and the central Test Data aliases — never a Test Data value.
+                    ["operationRef"] = s.Source is { } source && source.Origin != ScenarioOperationOrigin.Manual ? SetupProfileService.Compact(new Dictionary<string, object?>
+                    {
+                        ["type"] = source.Origin.ToString().ToLowerInvariant(), ["operationId"] = source.OperationKey[(source.OperationKey.IndexOf('#') + 1)..],
+                        ["method"] = s.Method, ["path"] = s.RelativePath, ["contract"] = source.ContractName,
+                    }) : null,
+                    ["testDataRef"] = s.DataMappings is { Count: > 0 } mappings ? new Dictionary<string, object?>
+                    {
+                        ["mappings"] = mappings.ToDictionary(m => m.Variable, m => (object?)string.Join(",", m.AssetAliases)),
+                    } : null,
                 })).ToList(),
-            },
+            }),
             ["workload"] = SetupProfileService.Compact(new Dictionary<string, object?>
             {
                 ["purpose"] = d.Workload.Purpose.ToString().ToLowerInvariant(), ["mode"] = d.Workload.Mode == WorkloadMode.VirtualUsers ? "virtual-users" : "arrival-rate",

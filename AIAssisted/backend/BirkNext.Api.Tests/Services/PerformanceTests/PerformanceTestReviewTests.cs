@@ -156,7 +156,7 @@ public sealed class PerformanceTestReviewTests
         Issues(Definition(), Data() with { ApprovedSynthetic = false }).Should().Contain(i => i.State == PerformanceReadinessState.NeedsTestData && i.Message.Contains("not confirmed"));
         Issues(Definition(), Data() with { Rows = [["01019912345"]] }).Should().Contain(i => i.Message.Contains("national identity number"));
         Issues(Definition(), Data() with { Rows = [["\";alert(1);//"]] }).Should().Contain(i => i.Message.Contains("may contain"));
-        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Message.Contains("no approved test data profile"));
+        Issues(Definition(d => d with { Scenario = d.Scenario with { TestDataProfileId = null } })).Should().Contain(i => i.Message.StartsWith("Test Data missing for {paymentId}"), "the exact placeholder is named, not a generic \"incomplete\"");
         Issues(Definition(), Data() with { Columns = ["otherId"] }).Should().Contain(i => i.Key == "placeholder");
     }
 
@@ -492,7 +492,7 @@ public sealed class PerformanceTestReviewTests
         public ServiceProvider Services { get; }
         public PerformanceTestExecutionService Execution => Services.GetRequiredService<PerformanceTestExecutionService>();
 
-        public Harness(PerformanceTestOptions? options = null, FakeRuntime? runtime = null, IContainerExecutionRuntime? custom = null)
+        public Harness(PerformanceTestOptions? options = null, FakeRuntime? runtime = null, IContainerExecutionRuntime? custom = null, Action<IServiceCollection>? configure = null)
         {
             Runner = runtime ?? new FakeRuntime();
             var name = Guid.NewGuid().ToString();
@@ -507,6 +507,7 @@ public sealed class PerformanceTestReviewTests
             services.AddSingleton<PerformanceTestExecutionService>();
             services.AddScoped<PerformanceTestStore>();
             services.AddScoped<IqrSourceStore>();
+            configure?.Invoke(services);
             Services = services.BuildServiceProvider();
         }
 
@@ -1134,6 +1135,54 @@ public sealed class PerformanceTestReviewTests
         (await store.SaveDefinitionAsync("pay-qa", v2 with { DeliveryPipelineIds = ["pipe-web"] }, DateTimeOffset.UtcNow)).ComparisonFingerprint.Should().Be(v2.ComparisonFingerprint,
             "a confirmed pipeline mapping is not part of run comparability");
     }
+
+    // ── Central Test Data in a run ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private sealed class CatalogProvider(params Api.Services.TestData.TestDataAsset[] assets) : Api.Services.TestData.ITestDataProvider
+    {
+        public string Id => "configured";
+        public string Label => "Configured";
+        public string Description => "";
+        public IReadOnlyList<Api.Services.TestData.TestDataAsset> Assets() => assets;
+    }
+
+    [Fact]
+    public async Task Run_ResolvesCentralTestDataOnTheBackend_AndNeverStoresTheValue()
+    {
+        var catalog = new Api.Services.TestData.TestDataCatalog([new CatalogProvider(new Api.Services.TestData.TestDataAsset
+        {
+            Id = "pay-1", Alias = "pay-1", Kind = BirkNext.TestData.TestDataKind.Scalar, Approval = BirkNext.TestData.TestDataApproval.Approved,
+            Value = new Api.Services.TestData.TestDataValue("PAY-SECRET-1"), Source = "Configured",
+        })]);
+        await using var h = new Harness(configure: services => services.AddSingleton(catalog));
+        var d = await h.SeedAsync(Definition(x => x with { Scenario = x.Scenario with { TestDataProfileId = null,
+            Steps = [x.Scenario.Steps[0] with { DataMappings = [new ScenarioDataMapping("paymentId", ["pay-1"], BirkNext.TestData.TestDataDataType.SimpleValues, "path")] }] } }));
+        var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, null, false);
+        readiness.Items.Single(i => i.Key == "central-test-data").State.Should().Be(PerformanceReadinessState.Ready);
+        var run = await h.RunToEndAsync(d.Id);
+        run.State.Should().Be(PerformanceRunState.Completed);
+        h.Runner.LastScript.Should().Contain("PAY-SECRET-1", "the backend resolves the value for the provider at run time");
+        JsonSerializer.Serialize(run).Should().NotContain("PAY-SECRET-1", "the run keeps the alias, never the value");
+        JsonSerializer.Serialize(await h.Store().DefinitionAsync("pay-qa", d.Id)).Should().NotContain("PAY-SECRET-1");
+        run.DefinitionSnapshot.Scenario.Steps[0].DataMappings!.Single().AssetAliases.Should().Equal("pay-1");
+    }
+
+    [Fact]
+    public async Task Readiness_NamesUnapprovedCentralTestData_AsTheExactBlocker()
+    {
+        var catalog = new Api.Services.TestData.TestDataCatalog([new CatalogProvider(new Api.Services.TestData.TestDataAsset
+        {
+            Id = "pay-1", Alias = "pay-1", Kind = BirkNext.TestData.TestDataKind.Scalar, Approval = BirkNext.TestData.TestDataApproval.Unapproved, Value = new Api.Services.TestData.TestDataValue("x"), Source = "Configured",
+        })]);
+        await using var h = new Harness(configure: services => services.AddSingleton(catalog));
+        var d = await h.SeedAsync(Definition(x => x with { Scenario = x.Scenario with { TestDataProfileId = null,
+            Steps = [x.Scenario.Steps[0] with { DataMappings = [new ScenarioDataMapping("paymentId", ["pay-1"], BirkNext.TestData.TestDataDataType.SimpleValues, "path")] }] } }));
+        await h.Registry.CheckReachabilityAsync(d);
+        var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, null, false);
+        readiness.Items.Single(i => i.Key == "central-test-data").Should().Match<PerformanceReadinessItem>(i => i.Blocking && i.Headline == "Test Data review required: pay-1 (for {paymentId}) is unapproved.");
+        readiness.Ready.Should().BeFalse();
+    }
+
 }
 
 /// <summary>Runs only when Podman is reachable and the pinned k6 and busybox images are present locally; otherwise skipped with the reason.</summary>
