@@ -51,6 +51,7 @@ public static class FrontendQualityReviewScopes
     public const string NotConfiguredDetail = "Sign-in is required, but no sign-in provider is configured for this Target Environment.";
     public const string AvailableDetail = "Authenticated browser session available for signed-in pages.";
     public const string NotIncludedDetail = "Authentication is not used in this review. Choose Change scope to include authenticated coverage.";
+    public const string ApiContextOnlyDetail = "Authenticated API testing context ready. Signed-in browser pages require a separate supported browser context.";
     public const string NoAuthenticatedEngineDetail = "No active engine reviews signed-in pages. Accessibility and Browser Runtime are the engines that use the authenticated browser session.";
 
     /// <summary>"Authentication configured" value: the provider, or "Not configured" — never "None", which read as a value.</summary>
@@ -293,7 +294,7 @@ public static class FrontendQualityReviewScopes
         if (!access.RequiresAuthentication) return (FrontendQualityAccessPathState.NotIncluded, NotIncludedDetail);
         if (access.AuthenticationType == FrontendAuthenticationType.None) return (FrontendQualityAccessPathState.NotConfigured, NotConfiguredDetail);
         if (access.ReviewScope is not null && access.AuthenticatedApiAvailable)
-            return (FrontendQualityAccessPathState.Available, "Authenticated API testing context ready. Signed-in browser pages require a separate supported browser context.");
+            return (FrontendQualityAccessPathState.Available, ApiContextOnlyDetail);
         return access.Method switch
         {
             AuthenticatedTestingMethod.LocalHttpsProxy => (FrontendQualityAccessPathState.Unavailable, ProxyApiOnlyDetail),

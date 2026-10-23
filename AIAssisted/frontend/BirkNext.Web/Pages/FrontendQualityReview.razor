@@ -122,7 +122,9 @@
                 @* 1. Review access — which surfaces of the target this review can reach. *@
                 @if (_access is { } landingAccess)
                 {
-                    var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps, landing.Scope);
+                    var semanticCapabilities = SemanticCapabilities(landingAccess);
+                    var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps, landing.Scope, semanticCapabilities);
+                    var renderedDom = FrontendQualityCapabilityResolver.RenderedDom(semanticCapabilities, landingAccess.RequiresAuthentication);
                     @* Open by default (it answers "can this review reach what it needs?"), bound so a rerender never
                        re-opens it after the reader closes it. *@
                     <ReviewDisclosure Text="Review access" CollapseText="Hide review access"
@@ -131,6 +133,16 @@
                         <FrontendQualityCoverageSummary Rows="coverageRows">
                             <TechnicalDetails>
                                 <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
+                                @* Every rendered-DOM provider considered, live state only; the chosen one is named in the row above. *@
+                                <dl class="fqr-dom-candidates" data-testid="fqr-dom-candidates">
+                                    @foreach (var candidate in renderedDom.Candidates)
+                                    {
+                                        <div data-testid="fqr-dom-candidate" data-kind="@candidate.Kind">
+                                            <dt>@(candidate.Provider ?? FrontendQualityExecutionPlanner.CapabilityLabel(candidate.Kind))</dt>
+                                            <dd>@(candidate.Provider is null ? "" : $"{FrontendQualityExecutionPlanner.CapabilityLabel(candidate.Kind)} · ")@CandidateState(candidate.State)@(candidate.Provider == renderedDom.Provider && renderedDom.Available ? " · selected" : "") — @candidate.Reason</dd>
+                                        </div>
+                                    }
+                                </dl>
                             </TechnicalDetails>
                         </FrontendQualityCoverageSummary>
                     </ReviewDisclosure>
@@ -954,6 +966,26 @@
 
     private string ScopeVerification => FrontendQualityReviewScopes.VerificationLabel(_access);
     private string ScopeTestingContext => FrontendQualityReviewScopes.TestingContextLabel(_access);
+
+    /// <summary>
+    /// The shared capabilities the planner resolves, for the landing view: the same resolver over the same live Browser Companion session
+    /// Browser Discovery owns (only when an engine consumes a live DOM, exactly as the orchestrator asks). No second browser state.
+    /// </summary>
+    private IReadOnlyList<FrontendQualityCapability> SemanticCapabilities(FrontendQualityTargetAccessContext access)
+    {
+        var live = _context is { } c && c.FeatureToggles.EnableAccessibilityEngine && _companionRuntime is not null && c.ActiveTargetError is null
+            ? _companionRuntime.For(c.ActiveProfile.Id).EffectiveLive : null;
+        return FrontendQualityCapabilityResolver.Resolve(_context!, access, live,
+            live is null ? null : BrowserCompanionScope.ApprovedOrigins(_context!.ActiveProfile));
+    }
+
+    private static string CandidateState(FrontendQualityCapabilityAvailability state) => state switch
+    {
+        FrontendQualityCapabilityAvailability.Available => "Available now",
+        FrontendQualityCapabilityAvailability.CheckedAtRun => "Checked when the review runs",
+        FrontendQualityCapabilityAvailability.Unsupported => "Not supported here",
+        _ => "Not available now",
+    };
 
     /// <summary>The latest recommendation, for the profile it was computed for. Never saved: it only fills in when nothing was chosen.</summary>
     private FrontendQualityScopeRecommendation? _recommendation;

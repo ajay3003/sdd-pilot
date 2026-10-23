@@ -133,9 +133,31 @@ public static class FrontendReviewEnginePresentation
         id != FrontendQualityEngineId.PassiveSecurity || status is null ? null
         : !status.Layer1Allowed ? "Installation policy does not allow container security engines."
         : !status.Layer2Enabled ? "Passive Web Security is disabled in System Settings."
-        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.ProductionBlocked) ? "Passive Web Security is blocked for Production targets."
-        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted) ? "This target is not registered for passive scanning by the server."
-        : status.Layer3Readiness?.IsAvailable == false ? status.Layer3Readiness.StatusReason ?? "The ZAP runtime is unavailable on the server."
+        : PassiveWebSecurityUnavailable(status) is { } reason ? reason.Summary
+        : null;
+
+    public const string PassiveWebSecurityTrustOwner =
+        "Passive Web Security trust is owned by the BirkNext server configuration (FrontendPassiveSecurity:TrustedProfiles), one registered origin per Target Environment; it is never extended to other hosts, subdomains or ports.";
+    public const string ApiReviewSecurityIsNotZap =
+        "API Quality Review's security checks are BirkNext's own read-only header and response checks; they do not use this engine, so their availability says nothing about it.";
+
+    /// <summary>
+    /// The one phrasing of why Passive Web Security (OWASP ZAP) cannot run for the target, from the server's typed reasons: not
+    /// registered, registered for another origin, Production, or the provider itself unavailable. Null when none applies. Each case
+    /// needs a different action, so they are never collapsed into one generic "unavailable".
+    /// </summary>
+    public static (string Summary, string Technical)? PassiveWebSecurityUnavailable(FrontendQualityEngineStatusDto status) =>
+        status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.ProductionBlocked)
+            ? ("Passive Web Security is blocked for Production targets.", PassiveWebSecurityTrustOwner)
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetOriginNotTrusted)
+            ? ("Target not trusted for Passive Web Security: the BirkNext server registered this Target Environment for a different origin than this frontend URL.",
+               $"{PassiveWebSecurityTrustOwner} {ApiReviewSecurityIsNotZap}")
+        : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted)
+            ? ("Target not trusted for Passive Web Security: the BirkNext server has not registered this Target Environment for passive scanning.",
+               $"{PassiveWebSecurityTrustOwner} Every scan of an unregistered target would be skipped. {ApiReviewSecurityIsNotZap}")
+        : status.Layer3Readiness?.IsAvailable == false
+            ? ($"Passive Web Security provider unavailable: {status.Layer3Readiness.StatusReason ?? "the OWASP ZAP runtime is not ready on the server."}",
+               "The target trust check passed or was not reached; the provider (OWASP ZAP container runtime) is what is missing.")
         : null;
 
     /// <summary>Applies a toggle change for one engine to the draft. Mirrors <see cref="FrontendQualityActiveEngines.IsEnabled"/>.</summary>

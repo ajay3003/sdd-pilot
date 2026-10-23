@@ -295,7 +295,7 @@ public static class FrontendQualityTargetAccess
     public static string BrowserDomLabel(FrontendQualityTargetAccessContext access) =>
         !access.RequiresAuthentication ? "Available (public)"
         : access.AuthenticatedBrowserDomAvailable ? "Available — authenticated browser session"
-        : access.Method == AuthenticatedTestingMethod.LocalHttpsProxy ? "Not available with Local HTTPS Proxy"
+        : access.Method == AuthenticatedTestingMethod.LocalHttpsProxy ? "Not provided by the Local HTTPS proxy (API context only)"
         : access.Method == AuthenticatedTestingMethod.ManualOnly ? "Not available — manual verification only"
         : access.EnterpriseBlocked ? "Not available — blocked by enterprise browser protection"
         : "Not available — sign in for review";
@@ -313,7 +313,7 @@ public static class FrontendQualityTargetAccess
     public static string AutomatedAccessLabel(FrontendQualityTargetAccessContext access) => access.Mode switch
     {
         FrontendQualityTargetAccessMode.PublicDirect => "Available — public scope",
-        FrontendQualityTargetAccessMode.LocalHttpsProxy => "Available — authenticated API context (no DOM)",
+        FrontendQualityTargetAccessMode.LocalHttpsProxy => "Available — authenticated API context (this method provides no DOM)",
         FrontendQualityTargetAccessMode.ManagedEdgeCdp => "Available — authenticated browser session",
         FrontendQualityTargetAccessMode.ManualOnly => "Unavailable — manual verification only",
         FrontendQualityTargetAccessMode.EnterpriseBlocked => "Unavailable — blocked by enterprise browser protection",

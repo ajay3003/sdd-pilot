@@ -14,6 +14,8 @@ public enum FrontendQualityEngineUnavailableReason
     /// <summary>The target is not a server-registered trusted profile (Passive Web Security: FrontendPassiveSecurity:TrustedProfiles).</summary>
     TargetNotTrusted,
     ProductionBlocked,
+    /// <summary>Passive Web Security: the profile is registered, but for a different origin than this review's target.</summary>
+    TargetOriginNotTrusted,
 }
 
 public sealed record FrontendQualityEngineStatus(

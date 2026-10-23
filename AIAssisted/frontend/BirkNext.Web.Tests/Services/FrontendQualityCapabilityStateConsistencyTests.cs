@@ -199,12 +199,11 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
             new("Authenticated frontend", FrontendQualityCoverageState.NotIncluded, null),
             new("Browser-rendered DOM", FrontendQualityCoverageState.Available, null),
             new("Authenticated API traffic", FrontendQualityCoverageState.NotIncluded, null),
-            new("Automatic engines", FrontendQualityCoverageState.Available, null),
         };
 
         var summary = FrontendQualityLandingPresentation.CoverageSummary(rows);
 
-        summary.AvailableCount.Should().Be(3);
+        summary.AvailableCount.Should().Be(2);
         summary.NotIncludedCount.Should().Be(2);
         summary.NotAvailableCount.Should().Be(0);
         // 18, 39. The exact case from the screenshot: 3 available + 2 not required. Nothing is missing, so the line
@@ -226,8 +225,8 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
 
         var summary = FrontendQualityLandingPresentation.CoverageSummary(rows);
 
-        // 20. Something genuinely unavailable is still reported as unavailable, and is what the line leads with.
-        summary.Headline.Should().Be("1 access path not available");
+        // 20. Something genuinely unavailable is still reported as unavailable, and is what the line leads with — by name, not by count.
+        summary.Headline.Should().Be("Browser-rendered DOM not available");
         summary.NotAvailableCount.Should().Be(1);
         summary.NotIncludedCount.Should().Be(1);
     }
@@ -258,9 +257,12 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         var rows = new List<FrontendQualityCoverageRow>
         {
             new("Public frontend", FrontendQualityCoverageState.Available, null),
-            new("Automatic engines", FrontendQualityCoverageState.Available, null),
+            new("Authenticated frontend", FrontendQualityCoverageState.Available, null),
+            new("Browser-rendered DOM", FrontendQualityCoverageState.Available, null),
+            new("Authenticated API traffic", FrontendQualityCoverageState.Available, null),
         };
 
-        FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().Be("All required access paths available");
+        // All four access capabilities available: never "1 access path not available" or any count.
+        FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().Be("All configured review access paths are available");
     }
 }

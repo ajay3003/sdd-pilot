@@ -260,9 +260,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         Row(page, "Public frontend").Should().Be("Available");
         Row(page, "Authenticated frontend").Should().Be("Not included in this review");
         Row(page, "Browser-rendered DOM").Should().Be("Available");
-        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Public pages, rendered in an anonymous browser.");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent
+            .Should().Be($"Via {FrontendQualityCapabilityResolver.PlaywrightProvider}. Public pages, rendered in an anonymous browser.");
         page.FindAll("[data-testid=fqr-coverage-row][data-coverage='Authenticated API traffic']").Should().BeEmpty("no engine in a public review reads it");
-        Row(page, "Automatic engines").Should().Be("Available");
+        page.FindAll("[data-testid=fqr-coverage-row][data-coverage='Automatic engines']").Should().BeEmpty("engines are not access capabilities");
         // Scope-relative throughout: nothing claims the target has no signed-in areas, or that the whole application is reached.
         var coverage = page.Find("[data-testid=fqr-coverage]").TextContent;
         coverage.Should().NotContain("This target does not require sign-in").And.NotContain("All required access paths available");
@@ -282,7 +283,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         Row(page, "Authenticated frontend").Should().Be("Not available");
         Row(page, "Browser-rendered DOM").Should().Be("Not available");
         page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Contain("Sign in for review");
-        Row(page, "Automatic engines").Should().Be("Public frontend only");
+        page.Find("[data-testid=fqr-coverage-disclosure-toggle] .disclosure-hint").TextContent.Should().Be("Not available: Authenticated frontend and Browser-rendered DOM");
     }
 
     [Fact]
@@ -302,9 +303,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         Row(page, "Authenticated frontend").Should().Be("Not available");
         page.Find("[data-testid=fqr-coverage-row][data-coverage='Authenticated frontend'] .fqr-coverage-detail").TextContent
             .Should().Be(FrontendQualityReviewScopes.ProxyApiOnlyDetail);
+        // No live browser provider here (no Companion page): DOM is unavailable for a semantic reason, never "because of the proxy".
         Row(page, "Browser-rendered DOM").Should().Be("Not available");
-        Row(page, "Authenticated API traffic").Should().Be("Available");
-        Row(page, "Automatic engines").Should().Be("Public frontend only");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent
+            .Should().StartWith(FrontendQualityCapabilityResolver.NoRenderedBrowserContext).And.NotContain("Not available with the Local HTTPS proxy method");
+        Row(page, "Authenticated API traffic").Should().Be("Available", "API traffic and rendered DOM are independent capabilities");
     }
 
     private static string Row(IRenderedComponent<FrontendQualityReview> page, string label) =>

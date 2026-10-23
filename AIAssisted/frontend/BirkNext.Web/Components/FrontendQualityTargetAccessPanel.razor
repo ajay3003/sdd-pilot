@@ -51,7 +51,9 @@
         <div class="fqr-target-access-group" data-testid="fqr-access-group-testing">
             <h3>Testing access</h3>
             <dl class="fqr-target-access-list">
-                <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
+                @* What the authenticated testing METHOD provides. The review's rendered-DOM capability may come from another
+                   provider (Browser Companion live page); that answer is the Browser-rendered DOM access row. *@
+                <div><dt>Browser DOM from testing method</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
                 <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
                 <div><dt>@(ShowActions ? "Authenticated testing method" : "Testing method")</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)@(ShowActions && !Access.RequiresAuthentication ? " — not used in a public-only review" : "")</dd></div>
                 @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)

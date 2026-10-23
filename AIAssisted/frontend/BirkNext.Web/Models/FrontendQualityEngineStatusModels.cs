@@ -64,6 +64,8 @@ public enum FrontendQualityEngineUnavailableReasonDto
     /// <summary>Passive Web Security: the target is not a server-registered trusted profile, so every scan would be skipped.</summary>
     TargetNotTrusted = 8,
     ProductionBlocked = 9,
+    /// <summary>Passive Web Security: the profile is registered by the server, but for another origin than this review's target.</summary>
+    TargetOriginNotTrusted = 10,
 }
 
 /// <summary>Layer 3 runtime readiness status for one engine.</summary>

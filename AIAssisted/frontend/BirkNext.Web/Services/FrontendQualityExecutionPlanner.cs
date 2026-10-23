@@ -298,6 +298,45 @@ public static class FrontendQualityCapabilityResolver
         _ => new(FrontendQualityCapabilityKind.NodeRuntime, FrontendQualityCapabilityAvailability.CheckedAtRun, NodeProvider, "Checked when the review runs."),
     };
 
+    public const string NoRenderedBrowserContext = "No current supported rendered-browser context is available for signed-in pages.";
+
+    /// <summary>
+    /// The review's rendered-DOM capability, asked semantically: every provider that can supply a rendered DOM is a candidate, and the
+    /// first available one in a fixed preference order is chosen — the authenticated review browser, then a live approved Browser
+    /// Companion page (the user's managed Edge or the BirkNext-launched dedicated Edge), then, for public pages only, the backend's
+    /// anonymous browser. The authenticated testing method is never the question: the Local HTTPS proxy supplies API traffic, so its
+    /// lack of a DOM says nothing about whether another provider has one. Only LIVE providers count; recorded Companion evidence is
+    /// historical and never makes a DOM available now.
+    /// </summary>
+    public static FrontendQualityRenderedDom RenderedDom(IReadOnlyList<FrontendQualityCapability> capabilities, bool includesAuthenticated)
+    {
+        FrontendQualityCapability? Of(FrontendQualityCapabilityKind kind) => capabilities.FirstOrDefault(c => c.Kind == kind);
+        var authenticated = Of(FrontendQualityCapabilityKind.AuthenticatedBrowserDom);
+        var companion = Of(FrontendQualityCapabilityKind.CompanionLiveDom);
+        var anonymous = Of(FrontendQualityCapabilityKind.BrowserDom);
+        var candidates = new[] { authenticated, companion, anonymous }.OfType<FrontendQualityCapability>().ToList();
+
+        if (includesAuthenticated)
+        {
+            if (authenticated is { State: FrontendQualityCapabilityAvailability.Available })
+                return new(FrontendQualityCapabilityAvailability.Available, authenticated.Provider, "Signed-in pages, in the authenticated review browser.", candidates);
+            if (companion is { State: FrontendQualityCapabilityAvailability.Available })
+                return new(FrontendQualityCapabilityAvailability.Available, companion.Provider, $"{companion.Reason} {FrontendQualityExecutionPlanner.CompanionPageNote}", candidates);
+            // Only what someone can act on (open the application in the Companion, sign in for review). A provider the method does not
+            // support at all is listed with the candidates in technical details, not repeated here.
+            var why = string.Join(" ", new[] { companion, authenticated }.OfType<FrontendQualityCapability>()
+                .Where(c => c.State == FrontendQualityCapabilityAvailability.Unavailable)
+                .Select(c => $"{c.Provider ?? FrontendQualityExecutionPlanner.CapabilityLabel(c.Kind)}: {c.Reason}"));
+            return new(FrontendQualityCapabilityAvailability.Unavailable, null,
+                string.Join(" ", new[] { NoRenderedBrowserContext, why, "Public pages still render in the backend's anonymous browser." }.Where(t => t.Length > 0)), candidates);
+        }
+        if (anonymous is { Usable: true })
+            return new(FrontendQualityCapabilityAvailability.Available, anonymous.Provider, "Public pages, rendered in an anonymous browser.", candidates);
+        return companion is { State: FrontendQualityCapabilityAvailability.Available }
+            ? new(FrontendQualityCapabilityAvailability.Available, companion.Provider, $"{companion.Reason} {FrontendQualityExecutionPlanner.CompanionPageNote}", candidates)
+            : new(FrontendQualityCapabilityAvailability.Unavailable, null, "No current supported rendered-browser context is available.", candidates);
+    }
+
     private static FrontendQualityCapability Cdp(FrontendQualityRuntimeFacts? runtime) => runtime?.CdpTargetAvailable switch
     {
         true => new(FrontendQualityCapabilityKind.CdpTarget, FrontendQualityCapabilityAvailability.Available, runtime.CdpTargetProvider ?? BundledChromiumProvider,

@@ -407,11 +407,16 @@ public sealed record FrontendQualityCoverageSummaryModel(
     /// that is available is public access — never "all" access, which read as the whole application being reachable.
     /// </remarks>
     public string Headline =>
-        NotAvailableCount > 0
-            ? $"{NotAvailableCount} access path{(NotAvailableCount == 1 ? "" : "s")} not available"
-            : PublicOnlyCount > 0
-                ? "Automated review limited to the public frontend"
-                : NotIncludedCount > 0
-                    ? "Public review access available"
-                    : "All required access paths available";
+        NotAvailable.Count switch
+        {
+            1 => $"{NotAvailable[0]} not available",
+            > 1 => $"Not available: {string.Join(", ", NotAvailable.Take(NotAvailable.Count - 1))} and {NotAvailable[^1]}",
+            _ when NotAvailableCount > 0 => $"{NotAvailableCount} access capabilit{(NotAvailableCount == 1 ? "y" : "ies")} not available",
+            _ when PublicOnlyCount > 0 => "Automated review limited to the public frontend",
+            _ when NotIncludedCount > 0 => "Public review access available",
+            _ => "All configured review access paths are available",
+        };
+
+    /// <summary>The access capabilities that are not available, by name: the headline names them instead of counting them.</summary>
+    public IReadOnlyList<string> NotAvailable { get; init; } = [];
 }

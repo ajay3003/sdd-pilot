@@ -117,7 +117,9 @@
         FrontendQualityEngineUnavailableReasonDto.RuntimeStatusUnknown => "Status check timed out or is unknown",
         FrontendQualityEngineUnavailableReasonDto.NotApplicableToReview => "Not applicable to this review",
         FrontendQualityEngineUnavailableReasonDto.AuthenticationModeUnsupported => "Not supported for authenticated reviews",
-        FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted => "Target not registered as trusted on the server",
+        FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted => "Target not registered for passive scanning on the server",
+        FrontendQualityEngineUnavailableReasonDto.TargetOriginNotTrusted => "Target origin differs from the origin registered on the server",
+        FrontendQualityEngineUnavailableReasonDto.ProductionBlocked => "Blocked for Production targets",
         _ => reason.ToString(),
     };
 

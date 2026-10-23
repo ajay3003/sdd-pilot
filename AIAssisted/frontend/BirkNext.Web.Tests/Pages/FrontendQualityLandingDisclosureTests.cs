@@ -257,7 +257,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         body.HasAttribute("hidden").Should().BeFalse();
         body.QuerySelectorAll("[data-testid=fqr-coverage-row]").Select(r => r.GetAttribute("data-coverage"))
             // No "Authenticated API traffic" row for a public review: nothing in it reads that context.
-            .Should().Equal("Public frontend", "Authenticated frontend", "Browser-rendered DOM", "Automatic engines");
+            .Should().Equal("Public frontend", "Authenticated frontend", "Browser-rendered DOM");
         // The exact access panel is still nested one level deeper, unchanged.
         body.QuerySelector("[data-testid=fqr-coverage-technical-body] [data-testid=fqr-target-access]").Should().NotBeNull();
     }

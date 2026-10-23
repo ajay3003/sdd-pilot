@@ -211,7 +211,7 @@ public sealed class FrontendQualityTargetAccessDecisionTests
     {
         var proxy = FrontendQualityTargetAccess.Build(Context(true, AuthenticatedTestingMethod.LocalHttpsProxy), ProxyCaps(AuthenticatedApiContextStatus.Available), false, null, null);
         FrontendQualityTargetAccess.ApiContextLabel(proxy).Should().Be("Available — memory only");
-        FrontendQualityTargetAccess.BrowserDomLabel(proxy).Should().Be("Not available with Local HTTPS Proxy");
+        FrontendQualityTargetAccess.BrowserDomLabel(proxy).Should().Be("Not provided by the Local HTTPS proxy (API context only)");
         FrontendQualityTargetAccess.AutomatedAccessLabel(proxy).Should().Contain("no DOM");
 
         var missing = FrontendQualityTargetAccess.Build(Context(true, AuthenticatedTestingMethod.LocalHttpsProxy), ProxyCaps(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic), false, null, null);

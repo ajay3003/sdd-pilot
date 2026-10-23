@@ -58,7 +58,7 @@ public sealed class FrontendQualityTargetAccessExportTests
         var html = new ReportExportService().ExportFrontendQualityReview(Report(), null);
 
         html.Should().Contain("Target environment access").And.Contain("M2LB DEV").And.Contain("Local HTTPS proxy")
-            .And.Contain("Available — memory only").And.Contain("Not available with Local HTTPS Proxy")
+            .And.Contain("Available — memory only").And.Contain("Not provided by the Local HTTPS proxy (API context only)")
             .And.Contain("Manual sign-in check:").And.Contain("Completed (recorded manually)").And.Contain("Automated engine access:").And.Contain("no DOM");
         html.Should().NotContainAny("Authorization", "Bearer ", "Cookie", "Set-Cookie", "eyJ");
     }

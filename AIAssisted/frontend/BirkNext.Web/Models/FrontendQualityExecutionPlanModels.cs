@@ -45,6 +45,16 @@ public sealed record FrontendQualityCapability(
     [JsonIgnore] public bool Usable => State is FrontendQualityCapabilityAvailability.Available or FrontendQualityCapabilityAvailability.CheckedAtRun;
 }
 
+/// <summary>One rendered-DOM answer for a review: the chosen provider (null when none), why, and every candidate provider considered.</summary>
+public sealed record FrontendQualityRenderedDom(
+    FrontendQualityCapabilityAvailability State,
+    string? Provider,
+    string Detail,
+    IReadOnlyList<FrontendQualityCapability> Candidates)
+{
+    public bool Available => State == FrontendQualityCapabilityAvailability.Available;
+}
+
 /// <summary>The application surface an engine assesses. A Browser Companion page is its own surface: its sign-in state is not recorded, so it never counts as public or authenticated coverage.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FrontendQualityReviewSurface { Public, Authenticated, CompanionPage }

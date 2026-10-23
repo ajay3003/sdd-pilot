@@ -26,7 +26,8 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         cut.Find("[data-testid=fqr-access-proxy]").TextContent.Should().Be("Not used in a public-only review");
         var coverage = FrontendQualityLandingPresentation.Coverage(access, null);
         coverage.Single(r => r.Label == "Public frontend").Detail.Should().Contain("HTTP(S)");
-        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Be("Active engines can run for the public scope.");
+        coverage.Should().NotContain(r => r.Label == "Automatic engines", "engines are counted in the engine summary, not as an access path");
+        coverage.Single(r => r.Label == "Browser-rendered DOM").State.Should().Be(FrontendQualityCoverageState.Available);
     }
 
     private static FrontendAnalysisContext Context(AuthenticatedTestingMethod method, bool requiresAuth = true)
@@ -77,7 +78,7 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         page.Find("[data-testid='fqr-access-scope']").TextContent.Should().Be("Public + authenticated");
         page.Find("[data-testid='fqr-access-method']").TextContent.Should().Be(AuthenticatedTestingMethodLabels.ProxyOption);
         page.Find("[data-testid='fqr-access-context']").TextContent.Should().Be("Available — memory only");
-        page.Find("[data-testid='fqr-access-dom']").TextContent.Should().Be("Not available with Local HTTPS Proxy");
+        page.Find("[data-testid='fqr-access-dom']").TextContent.Should().Be("Not provided by the Local HTTPS proxy (API context only)");
         page.Find("[data-testid='fqr-access-proxy']").TextContent.Should().Be("Ready");
         page.Find("[data-testid='fqr-access-automated']").TextContent.Should().Contain("no DOM");
         page.FindAll("[data-testid='fqr-proxy-method-note']").Should().ContainSingle();

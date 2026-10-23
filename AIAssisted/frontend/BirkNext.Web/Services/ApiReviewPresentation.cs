@@ -84,7 +84,7 @@ public static class ApiReviewPresentation
     public const string PerformanceScopeNote = "API response timing from the review's own requests (backend gateway to the API). This is not a load test. Not end-user or production performance.";
 
     /// <summary>The short Security tab lead; the full scope (<see cref="SecurityScopeNote"/>) is one disclosure away.</summary>
-    public const string SecurityLead = "Passive, read-only security checks on the assessed targets. No findings here does not establish that the API is secure.";
+    public const string SecurityLead = "BirkNext's own passive, read-only header and response checks on the assessed targets (not the Passive Web Security / OWASP ZAP engine of Frontend Quality Review). No findings here does not establish that the API is secure.";
 
     /// <summary>
     /// The one source of what a person still has to review. The summary said three areas and the limitations said five,

@@ -107,13 +107,18 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
         var targetTrusted = true;
         if (engineId == FrontendQualityEngineId.PassiveSecurity && query.Selection?.Target is { } target && _passiveSecurityAuthorizer is not null)
         {
-            var authorization = _passiveSecurityAuthorizer.Authorize(new FrontendPassiveSecurity.PassiveSecurityReviewRequest(
-                target.TargetUrl, target.ProfileId, target.TargetUrl, target.EnvironmentType ?? ""));
+            var request = new FrontendPassiveSecurity.PassiveSecurityReviewRequest(target.TargetUrl, target.ProfileId, target.TargetUrl, target.EnvironmentType ?? "");
+            var authorization = _passiveSecurityAuthorizer.Authorize(request);
             targetTrusted = authorization.IsValid;
+            // The same trust source the scan uses, as a typed state: "not registered" and "registered for another origin" need different actions.
             if (!targetTrusted)
-                reasons.Add(authorization.BlockReason?.Contains("Production", StringComparison.OrdinalIgnoreCase) == true
-                    ? FrontendQualityEngineUnavailableReason.ProductionBlocked
-                    : FrontendQualityEngineUnavailableReason.TargetNotTrusted);
+                reasons.Add(_passiveSecurityAuthorizer.Trust(request).State switch
+                {
+                    FrontendPassiveSecurity.PassiveWebSecurityTrustState.ProductionBlocked => FrontendQualityEngineUnavailableReason.ProductionBlocked,
+                    FrontendPassiveSecurity.PassiveWebSecurityTrustState.OriginNotTrusted => FrontendQualityEngineUnavailableReason.TargetOriginNotTrusted,
+                    _ when authorization.BlockReason?.Contains("Production", StringComparison.OrdinalIgnoreCase) == true => FrontendQualityEngineUnavailableReason.ProductionBlocked,
+                    _ => FrontendQualityEngineUnavailableReason.TargetNotTrusted,
+                });
         }
 
         var available = layer1Allowed && layer2Enabled && layer3Available && authSupported && targetTrusted;

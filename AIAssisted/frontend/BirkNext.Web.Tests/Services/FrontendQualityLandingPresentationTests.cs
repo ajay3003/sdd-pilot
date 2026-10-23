@@ -128,6 +128,28 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.CanRun.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Only Passive Web Security unavailable (target not registered): the review runs with limitations, the banner names the engine and
+    /// its exact trust reason, the optional-unavailable count is one, and nothing suggests browser coverage is missing.
+    /// </summary>
+    [Fact]
+    public void Readiness_OnlyPassiveWebSecurityUntrusted_SaysExactlyThat()
+    {
+        var context = Context();
+        var untrusted = Engine(FrontendQualityEngineIdDto.PassiveSecurity);
+        untrusted.Available = false;
+        untrusted.Reasons = [FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted];
+        var rows = Capabilities(context, Status(Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), untrusted));
+        var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
+
+        readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
+        readiness.CanRun.Should().BeTrue("Passive Web Security is optional");
+        readiness.Message.Should().StartWith("Passive Web Security is currently unavailable.");
+        readiness.Details.Should().Contain(d => d.StartsWith("Passive Web Security: Unavailable — Target not trusted for Passive Web Security"));
+        readiness.Details.Concat([readiness.Message]).Should().NotContain(d => d.Contains("DOM") || d.Contains("signed-in") || d.Contains("authenticated browser"));
+        new FrontendQualityPreRunEngineSummary(rows).Limitations.Should().ContainSingle(r => r.EngineId == FrontendQualityEngineId.PassiveSecurity);
+    }
+
     // 1, 3. A switched-off engine never appears as an unavailable capability, nor in the count of them.
     [Fact]
     public void Readiness_DoesNotCountOrNameADisabledEngineAmongTheUnavailable()
@@ -230,8 +252,9 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var passive = Row(rows, FrontendQualityEngineId.PassiveSecurity);
         passive.State.Should().Be(FrontendQualityCapabilityState.Unavailable);
-        passive.Summary.Should().Be("The Passive Web Security engine is not available in this environment.");
-        passive.TechnicalReason.Should().Be("Container runtime is unavailable.");
+        // A missing provider is said as such — never as an untrusted target, which needs a different action.
+        passive.Summary.Should().Be("Passive Web Security provider unavailable: Container runtime is unavailable.");
+        passive.TechnicalReason.Should().Contain("provider (OWASP ZAP container runtime) is what is missing");
     }
 
     [Fact]
@@ -243,8 +266,13 @@ public sealed class FrontendQualityLandingPresentationTests
         untrusted.Reasons = [FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted];
         var passive = Row(Capabilities(context, Status(untrusted)), FrontendQualityEngineId.PassiveSecurity);
         passive.State.Should().Be(FrontendQualityCapabilityState.Unavailable, "runtime readiness alone is not enough: ZAP only scans a server-registered trusted target");
-        passive.Summary.Should().Contain("Not enabled for this target on the server");
-        passive.TechnicalReason.Should().Contain("FrontendPassiveSecurity:TrustedProfiles");
+        passive.Summary.Should().Be("Target not trusted for Passive Web Security: the BirkNext server has not registered this Target Environment for passive scanning.");
+        passive.TechnicalReason.Should().Contain("FrontendPassiveSecurity:TrustedProfiles").And.Contain(FrontendReviewEnginePresentation.ApiReviewSecurityIsNotZap);
+
+        // Registered for another origin (e.g. the API origin) is its own reason, with its own wording.
+        untrusted.Reasons = [FrontendQualityEngineUnavailableReasonDto.TargetOriginNotTrusted];
+        Row(Capabilities(context, Status(untrusted)), FrontendQualityEngineId.PassiveSecurity).Summary
+            .Should().Contain("registered this Target Environment for a different origin than this frontend URL");
     }
 
     [Fact]
@@ -406,11 +434,11 @@ public sealed class FrontendQualityLandingPresentationTests
     public void Coverage_PublicTarget()
     {
         var rows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.FromContext(Context()), null);
-        rows.Select(r => r.Label).Should().Equal("Public frontend", "Authenticated frontend", "Browser-rendered DOM", "Automatic engines");
-        rows.Select(r => r.State).Should().Equal(FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotIncluded, FrontendQualityCoverageState.Available, FrontendQualityCoverageState.Available);
+        // Access capabilities only: engines are counted in the engine summary, never as an access row.
+        rows.Select(r => r.Label).Should().Equal("Public frontend", "Authenticated frontend", "Browser-rendered DOM");
+        rows.Select(r => r.State).Should().Equal(FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotIncluded, FrontendQualityCoverageState.Available);
         rows[1].Detail.Should().Be(FrontendQualityReviewScopes.NotIncludedDetail);
-        rows[2].Detail.Should().Be("Public pages, rendered in an anonymous browser.");
-        rows[3].Detail.Should().Be("Active engines can run for the public scope.");
+        rows[2].Detail.Should().Be($"Via {FrontendQualityCapabilityResolver.PlaywrightProvider}. Public pages, rendered in an anonymous browser.");
         FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().Be("Public review access available");
         FrontendQualityCoverageStates.Label(FrontendQualityCoverageState.NotIncluded).Should().Be("Not included in this review");
     }
@@ -432,14 +460,13 @@ public sealed class FrontendQualityLandingPresentationTests
         var context = Context(requiresAuth: true);
         var without = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, null, false, null, null), null);
         without.Single(r => r.Label == "Authenticated frontend").State.Should().Be(FrontendQualityCoverageState.NotAvailable);
-        without.Single(r => r.Label == "Browser-rendered DOM").Detail.Should().Contain("Sign in for review");
-        without.Single(r => r.Label == "Automatic engines").State.Should().Be(FrontendQualityCoverageState.PublicOnly);
+        without.Single(r => r.Label == "Browser-rendered DOM").Detail.Should().Contain("Sign in for review").And.Contain(FrontendQualityCapabilityResolver.NoRenderedBrowserContext);
 
         var with = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, null, true, ManagedEdgeState.ConnectedAuthenticated, null), null);
         with.Single(r => r.Label == "Authenticated frontend").State.Should().Be(FrontendQualityCoverageState.Available);
         with.Single(r => r.Label == "Browser-rendered DOM").State.Should().Be(FrontendQualityCoverageState.Available);
+        with.Single(r => r.Label == "Browser-rendered DOM").Detail.Should().StartWith($"Via {FrontendQualityCapabilityResolver.AuthenticatedBrowserProvider}");
         with.Should().NotContain(r => r.Label == "Authenticated API traffic", "no FQR engine reads an API context the browser method does not provide");
-        with.Single(r => r.Label == "Automatic engines").State.Should().Be(FrontendQualityCoverageState.Available);
     }
 
     [Fact]
@@ -450,12 +477,15 @@ public sealed class FrontendQualityLandingPresentationTests
         var available = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, caps, false, null, LocalHttpsProxyState.Ready), caps);
         available.Single(r => r.Label == "Authenticated API traffic").State.Should().Be(FrontendQualityCoverageState.Available);
         available.Single(r => r.Label == "Authenticated API traffic").Detail.Should().Contain("REST and GraphQL query traffic observed");
+        // No live browser provider: the DOM is unavailable for a semantic reason, never "because of the proxy method".
         available.Single(r => r.Label == "Browser-rendered DOM").State.Should().Be(FrontendQualityCoverageState.NotAvailable);
+        available.Single(r => r.Label == "Browser-rendered DOM").Detail.Should().StartWith(FrontendQualityCapabilityResolver.NoRenderedBrowserContext)
+            .And.NotContain("Not available with the Local HTTPS proxy method");
 
         var expired = new AuthenticatedReviewCapabilities { Method = AuthenticatedTestingMethod.LocalHttpsProxy, ContextStatus = AuthenticatedApiContextStatus.Expired };
         var expiredRows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, expired, false, null, LocalHttpsProxyState.Listening), expired);
         expiredRows.Single(r => r.Label == "Authenticated API traffic").Detail.Should().Contain("expired");
-        expiredRows.Single(r => r.Label == "Automatic engines").State.Should().Be(FrontendQualityCoverageState.PublicOnly);
+        expiredRows.Single(r => r.Label == "Authenticated frontend").State.Should().Be(FrontendQualityCoverageState.NotAvailable);
     }
 
     [Fact]
@@ -463,8 +493,9 @@ public sealed class FrontendQualityLandingPresentationTests
     {
         var context = Context(requiresAuth: true, method: AuthenticatedTestingMethod.ManualOnly);
         var rows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, null, false, null, null), null);
-        rows.Single(r => r.Label == "Automatic engines").State.Should().Be(FrontendQualityCoverageState.PublicOnly);
+        rows.Single(r => r.Label == "Authenticated frontend").State.Should().Be(FrontendQualityCoverageState.NotAvailable);
         rows.Single(r => r.Label == "Authenticated frontend").Detail.Should().Contain("Manual verification only");
+        rows.Single(r => r.Label == "Public frontend").State.Should().Be(FrontendQualityCoverageState.Available, "manual-only sign-in is not a public-review failure");
     }
 
     // ── Authenticated review ────────────────────────────────────────────────────────────────────────────────────────

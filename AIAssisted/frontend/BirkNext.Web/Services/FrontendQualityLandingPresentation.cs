@@ -56,7 +56,10 @@ public static class FrontendQualityLandingPresentation
         AvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.Available),
         NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable),
         NotIncludedCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotIncluded),
-        PublicOnlyCount: rows.Count(r => r.State is FrontendQualityCoverageState.PublicOnly));
+        PublicOnlyCount: rows.Count(r => r.State is FrontendQualityCoverageState.PublicOnly))
+    {
+        NotAvailable = rows.Where(r => r.State is FrontendQualityCoverageState.NotAvailable).Select(r => r.Label).ToList(),
+    };
 
     /// <summary>
     /// What the automated and passive part of this review covers, named rather than counted.
@@ -173,7 +176,11 @@ public static class FrontendQualityLandingPresentation
         var details = (accessibility is { } coverage
                 ? [$"Automated accessibility coverage: {(coverage == FrontendQualityAutomatedAccessibilityCoverage.Limited ? "Available but limited" : "Unavailable")}"]
                 : new List<string>())
-            .Concat(named.Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}")).ToList();
+            // Passive Web Security's reason is target-specific (not registered, other origin, provider missing), so it is said here;
+            // without it the banner read as a generic gap and was easily taken for missing browser coverage.
+            .Concat(named.Select(c => c.EngineId == FrontendQualityEngineId.PassiveSecurity && c.Summary is { Length: > 0 } why
+                ? $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)} — {why}"
+                : $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}")).ToList();
         details.AddRange(context.ValidationWarnings);
         if (details.Count > 0)
         {
@@ -301,9 +308,8 @@ public static class FrontendQualityLandingPresentation
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.", "Blocked by deployment policy.");
                 if (!record.Layer2Enabled)
                     return Build(FrontendQualityCapabilityState.DisabledInSystemSettings, "Disabled in System Settings.", null, "Open System Settings", SystemSettingsHref);
-                if (record.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted))
-                    return Build(FrontendQualityCapabilityState.Unavailable, "Not enabled for this target on the server: Passive Web Security (ZAP) only scans a target the BirkNext server has registered as trusted.",
-                        "The target is not registered in the server configuration (FrontendPassiveSecurity:TrustedProfiles), so every scan would be skipped.");
+                if (engine.EngineId == FrontendQualityEngineId.PassiveSecurity && FrontendReviewEnginePresentation.PassiveWebSecurityUnavailable(record) is { } zap)
+                    return Build(FrontendQualityCapabilityState.Unavailable, zap.Summary, zap.Technical);
                 if (record.Layer3Readiness is { IsAvailable: false } readiness)
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.",
                         readiness.StatusReason is { Length: > 0 } reason ? reason : "Runtime unavailable.");
@@ -578,9 +584,20 @@ public static class FrontendQualityLandingPresentation
     /// scope, and says so.
     /// </summary>
     /// <param name="scope">The resolved scope. When given, the Automatic engines row states what the runnable engines cover.</param>
+    /// <param name="semantic">
+    /// The shared capabilities (<see cref="FrontendQualityCapabilityResolver.Resolve"/>) the planner uses. Browser-rendered DOM is read from
+    /// them, from whichever provider supplies it, never from the authenticated testing method. Null resolves them without a live
+    /// Browser Companion session.
+    /// </param>
+    /// <remarks>
+    /// Rows are ACCESS capabilities only. Engines are counted in the engine summary; an engine row here made an unavailable DOM and an
+    /// unavailable optional engine read as two unavailable engines.
+    /// </remarks>
     public static IReadOnlyList<FrontendQualityCoverageRow> Coverage(
-        FrontendQualityTargetAccessContext access, AuthenticatedReviewCapabilities? capabilities, FrontendQualityReviewScope? scope = null)
+        FrontendQualityTargetAccessContext access, AuthenticatedReviewCapabilities? capabilities, FrontendQualityReviewScope? scope = null,
+        IReadOnlyList<FrontendQualityCapability>? semantic = null)
     {
+        semantic ??= FrontendQualityCapabilityResolver.Resolve(new FrontendAnalysisContext { AuthenticationType = access.AuthenticationType }, access);
         var rows = new List<FrontendQualityCoverageRow>
         {
             new(PublicFrontendRow, FrontendQualityCoverageState.Available, "Public pages and static assets can be reviewed over HTTP(S)."),
@@ -595,26 +612,21 @@ public static class FrontendQualityLandingPresentation
                 access.AuthenticatedBrowserSessionAvailable
                     ? "An authenticated browser session exists, but this Target Environment is reviewed without sign-in."
                     : FrontendQualityReviewScopes.NotIncludedDetail));
-            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Public pages, rendered in an anonymous browser."));
-            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available, EnginesDetail(scope, "Active engines can run for the public scope.")));
+            rows.Add(DomRow(FrontendQualityCapabilityResolver.RenderedDom(semantic, includesAuthenticated: false)));
             return rows;
         }
 
         var path = FrontendQualityReviewScopes.AuthenticatedPath(access);
         var authenticated = scope?.AuthenticatedAccess ?? path.State;
+        var dom = FrontendQualityCapabilityResolver.RenderedDom(semantic, includesAuthenticated: true);
+        var authenticatedDetail = scope?.AuthenticatedDetail ?? path.Detail;
+        // The API-only sentence names a missing browser context; when another provider supplies rendered pages it is stale.
+        if (authenticatedDetail == FrontendQualityReviewScopes.ApiContextOnlyDetail && dom.Available)
+            authenticatedDetail = $"Authenticated API testing context ready. Rendered pages are available through the {dom.Provider}; their sign-in state is not recorded.";
         rows.Add(new(AuthenticatedFrontendRow,
             authenticated == FrontendQualityAccessPathState.Available ? FrontendQualityCoverageState.Available : FrontendQualityCoverageState.NotAvailable,
-            scope?.AuthenticatedDetail ?? path.Detail));
-
-        rows.Add(access.AuthenticatedBrowserDomAvailable
-            ? new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Signed-in pages, in the authenticated browser session.")
-            : access.Method switch
-            {
-                AuthenticatedTestingMethod.LocalHttpsProxy => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Not available with the Local HTTPS proxy method."),
-                AuthenticatedTestingMethod.ManualOnly => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Not available with manual verification only."),
-                _ when access.EnterpriseBlocked => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Blocked by enterprise browser protection."),
-                _ => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Requires an authenticated browser session (Sign in for review)."),
-            });
+            authenticatedDetail));
+        rows.Add(DomRow(dom));
 
         // Authenticated API traffic is FQR-relevant only with the Local HTTPS proxy: the HTTP engines consume it through the
         // authenticated API-surface probes. With any other method nothing in this review reads it, so no row is shown.
@@ -626,31 +638,18 @@ public static class FrontendQualityLandingPresentation
                         ? "The authenticated session expired. Continue using the target application in the proxy-configured browser."
                         : "Requires an authenticated session through the Local HTTPS proxy."));
 
-        rows.Add(authenticated == FrontendQualityAccessPathState.Available
-            ? new("Automatic engines", FrontendQualityCoverageState.Available, EnginesDetail(scope, "Public frontend and signed-in pages."))
-            : new("Automatic engines", FrontendQualityCoverageState.PublicOnly, EnginesDetail(scope, "Automated engines review the public frontend.")));
-
         return rows;
     }
 
+    public const string BrowserDomRow = "Browser-rendered DOM";
+
+    private static FrontendQualityCoverageRow DomRow(FrontendQualityRenderedDom dom) =>
+        dom.Available
+            ? new(BrowserDomRow, FrontendQualityCoverageState.Available, $"Via {dom.Provider}. {dom.Detail}")
+            : new(BrowserDomRow, FrontendQualityCoverageState.NotAvailable, dom.Detail);
+
     public const string PublicFrontendRow = "Public frontend";
     public const string AuthenticatedFrontendRow = "Authenticated frontend";
-
-    /// <summary>Which engines cover which path, from the resolved scope; the fallback sentence until it is resolved.</summary>
-    private static string EnginesDetail(FrontendQualityReviewScope? scope, string fallback)
-    {
-        if (scope is null) return fallback;
-        var runnable = scope.Engines.Where(e => e.Available).ToList();
-        string? Part(FrontendQualityEngineAccessPath path, string label) =>
-            runnable.Where(e => e.Path == path).Select(e => e.DisplayName).ToList() is { Count: > 0 } names ? $"{label}: {Join(names)}" : null;
-        var parts = new[]
-        {
-            Part(FrontendQualityEngineAccessPath.Public, "Public"),
-            Part(FrontendQualityEngineAccessPath.Authenticated, "Authenticated"),
-            Part(FrontendQualityEngineAccessPath.CompanionEvidence, "Browser Companion evidence (sign-in state not recorded)"),
-        }.Where(p => p is not null).ToList();
-        return parts.Count == 0 ? "No active engine can run for this scope." : string.Join(". ", parts) + ".";
-    }
 
     private static string ApiTrafficDetail(AuthenticatedReviewCapabilities? capabilities)
     {

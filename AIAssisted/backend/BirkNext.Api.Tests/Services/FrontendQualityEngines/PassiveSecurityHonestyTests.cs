@@ -110,8 +110,11 @@ public sealed class PassiveSecurityHonestyTests
         var otherProfile = await PassiveStatus(Config(true, true), Query(profileId: "some-ui-created-profile"));
         Assert.Contains(FrontendQualityEngineUnavailableReason.TargetNotTrusted, otherProfile.Reasons);
 
+        // Registered for another origin is its own reason: the fix is a registration for this origin, not "register the profile".
         var otherOrigin = await PassiveStatus(Config(true, true), Query(url: "http://localhost:6000/"));
-        Assert.Contains(FrontendQualityEngineUnavailableReason.TargetNotTrusted, otherOrigin.Reasons);
+        Assert.False(otherOrigin.Available);
+        Assert.Contains(FrontendQualityEngineUnavailableReason.TargetOriginNotTrusted, otherOrigin.Reasons);
+        Assert.DoesNotContain(FrontendQualityEngineUnavailableReason.TargetNotTrusted, otherOrigin.Reasons);
     }
 
     [Fact]
