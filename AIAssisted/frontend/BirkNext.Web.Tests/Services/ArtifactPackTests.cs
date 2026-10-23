@@ -178,6 +178,34 @@ public sealed class ArtifactPackTests : BunitContext
     }
 
     [Fact]
+    public async Task The_spec_kit_constitution_wins_over_a_governance_document_and_real_ambiguity_still_asks()
+    {
+        // Seen in a real repository: the project's .specify/memory/constitution.md next to a governance document that reads like one.
+        Import((".specify/memory/constitution.md", Constitution), ("docs/governance.md", Constitution.Replace("Test first", "Shared libraries")),
+            ("specs/001-cart/spec.md", Spec));
+        var constitution = await State(WorkspaceArtifactType.Constitution);
+        constitution.Should().Match<ArtifactExplorerState>(s => s.Status == ExplorerArtifactStatus.Loaded && s.Reason == ExplorerSelectionReason.SharedArtifact);
+        constitution.Selected!.SourcePath.Should().Be(".specify/memory/constitution.md");
+        constitution.Artifacts.Should().HaveCount(2, "the governance document stays selectable");
+    }
+
+    [Fact]
+    public async Task Without_packs_the_spec_kit_constitution_also_resolves()
+    {
+        Import((".specify/memory/constitution.md", Constitution), ("docs/governance.md", Constitution.Replace("Test first", "Shared libraries")));
+        var constitution = await State(WorkspaceArtifactType.Constitution);
+        constitution.Should().Match<ArtifactExplorerState>(s => s.Status == ExplorerArtifactStatus.Loaded && s.Reason == ExplorerSelectionReason.PackFile);
+        constitution.Selected!.SourcePath.Should().Be(".specify/memory/constitution.md");
+    }
+
+    [Fact]
+    public async Task Two_constitutions_outside_spec_kit_locations_still_ask_the_user()
+    {
+        Import(("a/docs/constitution.md", Constitution), ("b/docs/constitution.md", Constitution.Replace("Test first", "Review first")));
+        (await State(WorkspaceArtifactType.Constitution)).Status.Should().Be(ExplorerArtifactStatus.SelectionRequired);
+    }
+
+    [Fact]
     public async Task A_selection_saved_before_packs_migrates_to_its_pack_and_the_focus_survives_a_restore()
     {
         ImportThreePacks();

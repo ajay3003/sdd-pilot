@@ -54,7 +54,17 @@ public static partial class ArtifactPacks
     /// candidates include exactly one Spec-Kit feature file for the role (<see cref="IsPackFile"/>) is not ambiguous: that file is the pack's.
     /// </summary>
     public static bool AmbiguousWithinPack(IEnumerable<string?> paths, IReadOnlySet<string> roots, WorkspaceArtifactType role) =>
-        paths.GroupBy(p => PathKey(p, roots), StringComparer.Ordinal).Any(g => g.Count() > 1 && g.Count(p => IsPackFile(p, role)) != 1);
+        paths.GroupBy(p => PathKey(p, roots), StringComparer.Ordinal).Any(g => g.Count() > 1 && g.Count(p => IsSpecKitFile(p, role)) != 1);
+
+    /// <summary>
+    /// The role's Spec-Kit location: its feature file in a pack (<see cref="IsPackFile"/>), or for the constitution
+    /// <c>.specify/memory/constitution.md</c> (of the project or a module). Other documents of the role are supporting material.
+    /// </summary>
+    public static bool IsSpecKitFile(string? path, WorkspaceArtifactType role) =>
+        IsPackFile(path, role)
+        || role == WorkspaceArtifactType.Constitution && path is not null
+           && (path.Replace('\\', '/').Equals(".specify/memory/constitution.md", StringComparison.OrdinalIgnoreCase)
+               || path.Replace('\\', '/').EndsWith("/.specify/memory/constitution.md", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The Spec-Kit file of a role in a feature folder (<c>spec.md</c>, <c>plan.md</c>, <c>tasks.md</c>, <c>data-model.md</c>).</summary>
     public static string? PackFileName(WorkspaceArtifactType role) => role switch

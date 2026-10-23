@@ -103,7 +103,7 @@ public enum ExplorerSelectionReason
     PackArtifact,
     /// <summary>The viewed pack has no artifact of the role; the module's (or project's) shared artifact applies.</summary>
     SharedArtifact,
-    /// <summary>Several candidates in the pack; the role's Spec-Kit feature file (e.g. <c>specs/002-x/spec.md</c>) is the pack's artifact.</summary>
+    /// <summary>Several candidates; the role's Spec-Kit file (e.g. <c>specs/002-x/spec.md</c>, <c>.specify/memory/constitution.md</c>) is the artifact.</summary>
     PackFile,
 }
 
@@ -526,6 +526,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var authoritative = shared.Where(e => e.Artifact.IsAuthoritative).ToList();
         if (shared.Count == 1 || authoritative.Count == 1)
             return State(ExplorerArtifactStatus.Loaded, listed, shared.Count == 1 ? shared[0] : authoritative[0], ExplorerSelectionReason.SharedArtifact);
+        var sharedSpecKit = shared.Where(e => ArtifactPacks.IsSpecKitFile(e.Artifact.SourcePath ?? e.Artifact.FileName, role)).ToList();
+        if (sharedSpecKit.Count == 1) return State(ExplorerArtifactStatus.Loaded, listed, sharedSpecKit[0], ExplorerSelectionReason.SharedArtifact);
         return State(ExplorerArtifactStatus.SelectionRequired, shared.Select(e => e.Artifact).ToList(), ambiguous: true);
     }
 
@@ -702,7 +704,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var authoritative = entries.Where(a => a.Artifact.IsAuthoritative).Select(a => a.Artifact.Id).ToList();
         if (authoritative.Count == 1) return (authoritative[0], ExplorerSelectionReason.Authoritative);
 
-        return entries.Count == 1 ? (entries[0].Artifact.Id, ExplorerSelectionReason.OnlyArtifact) : (null, null);
+        if (entries.Count == 1) return (entries[0].Artifact.Id, ExplorerSelectionReason.OnlyArtifact);
+        // Spec-Kit structure decides between a role's own file (e.g. .specify/memory/constitution.md) and supporting documents.
+        var specKit = entries.Where(e => ArtifactPacks.IsSpecKitFile(e.Artifact.SourcePath ?? e.Artifact.FileName, role)).ToList();
+        return specKit.Count == 1 ? (specKit[0].Artifact.Id, ExplorerSelectionReason.PackFile) : (null, null);
     }
 
     /// <summary>
