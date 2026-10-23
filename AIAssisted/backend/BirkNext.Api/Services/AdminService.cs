@@ -63,7 +63,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("TraceabilitySuggestions", "Traceability Suggestions"),
         ("CodeTraceability",    "Code Traceability"),
         ("ImpactAnalysis",      "Impact Analysis"),
-        ("SpecDrift",           "Spec Drift"),
+        ("SpecDrift",           "Documentation Drift"),
         ("AiChangeReview",      "AI Change Review")
     ];
 

@@ -112,7 +112,7 @@
                 <span>Comparison does not modify saved QA artifacts until a comparison is accepted or saved.</span>
             </div>
             <div class="comparison-action-buttons">
-                <a href="spec-drift?tab=changes" class="btn-secondary">Cancel</a>
+                <a href="documentation-drift?tab=changes" class="btn-secondary">Cancel</a>
                 <button type="button"
                         class="btn-primary"
                         @onclick="RunComparison"
@@ -144,7 +144,7 @@
             @if (_saveSuccess)
             {
                 <p class="save-review-success" data-testid="save-review-success">
-                    Saved. <a href="spec-drift?tab=changes">View all comparisons -></a>
+                    Saved. <a href="documentation-drift?tab=changes">View all comparisons -></a>
                 </p>
             }
             else

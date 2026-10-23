@@ -30,7 +30,7 @@ public class AnalysisNavigationTests : BunitContext
         var cut = Render<NavMenu>();
         var nav = cut.Find("nav").TextContent;
 
-        nav.Should().Contain("Spec Drift");
+        nav.Should().Contain("Documentation Drift");
         nav.Should().Contain("Impact Analysis");
         nav.Should().Contain("Implementation Review");
         nav.Should().Contain("Task Explorer");
@@ -39,7 +39,7 @@ public class AnalysisNavigationTests : BunitContext
         nav.Should().NotContain("Specification Deltas");
         nav.Should().NotContain("Task Deltas");
 
-        cut.FindAll("a[href='spec-drift']").Should().HaveCount(1);
+        cut.FindAll("a[href='documentation-drift']").Should().HaveCount(1);
         cut.FindAll("a[href='impact-analysis']").Should().HaveCount(1);
         cut.FindAll("a[href='task-alignment']").Should().HaveCount(1);
         cut.FindAll("a[href='task-explorer']").Should().HaveCount(1);
@@ -60,7 +60,7 @@ public class AnalysisNavigationTests : BunitContext
         Render<CompareSpecs>();
 
         var nav = Services.GetRequiredService<NavigationManager>();
-        nav.Uri.Should().Contain("/spec-drift");
+        nav.Uri.Should().Contain("/documentation-drift");
         nav.Uri.Should().Contain("tab=changes");
     }
 
@@ -106,8 +106,8 @@ public class AnalysisNavigationTests : BunitContext
         nav.IndexOf("Implementation Review", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Implementation Traceability", StringComparison.Ordinal));
         nav.IndexOf("Implementation Traceability", StringComparison.Ordinal)
-            .Should().BeLessThan(nav.IndexOf("Spec Drift", StringComparison.Ordinal));
-        nav.IndexOf("Spec Drift", StringComparison.Ordinal)
+            .Should().BeLessThan(nav.IndexOf("Documentation Drift", StringComparison.Ordinal));
+        nav.IndexOf("Documentation Drift", StringComparison.Ordinal)
             .Should().BeLessThan(nav.IndexOf("Impact Analysis", StringComparison.Ordinal));
     }
 
@@ -116,7 +116,7 @@ public class AnalysisNavigationTests : BunitContext
     {
         var cut = Render<NavMenu>();
 
-        cut.FindAll("a[href='spec-drift']").Should().HaveCount(1);
+        cut.FindAll("a[href='documentation-drift']").Should().HaveCount(1);
         cut.FindAll("a[href='impact-analysis']").Should().HaveCount(1);
         cut.FindAll("a[href='task-alignment']").Should().HaveCount(1);
         cut.FindAll("a[href='task-explorer']").Should().HaveCount(1);
@@ -152,7 +152,7 @@ public class AnalysisNavigationTests : BunitContext
     [Fact]
     public void Navigation_AllRoutesResolveToNewModel()
     {
-        RoutesFor<SpecDrift>().Should().Contain("/spec-drift");
+        RoutesFor<SpecDrift>().Should().Contain("/documentation-drift");
         RoutesFor<ImpactAnalysis>().Should().Contain("/impact-analysis");
         RoutesFor<TaskToSpecAlignment>().Should().Contain("/task-alignment");
         RoutesFor<TaskExplorer>().Should().Contain("/task-explorer");
@@ -163,10 +163,10 @@ public class AnalysisNavigationTests : BunitContext
     {
         var cut = Render<NavMenu>();
 
-        cut.FindAll("a[href='spec-drift']").Should().HaveCount(1);
+        cut.FindAll("a[href='documentation-drift']").Should().HaveCount(1);
         cut.FindAll("a[href='compare']").Should().BeEmpty();
         cut.FindAll("a[href='compare/reviews']").Should().BeEmpty();
-        cut.Find("nav").TextContent.Should().Contain("Spec Drift");
+        cut.Find("nav").TextContent.Should().Contain("Documentation Drift");
         cut.Find("nav").TextContent.Should().NotContain("Specification Deltas");
         cut.Find("nav").TextContent.Should().NotContain("Spec Comparison");
     }

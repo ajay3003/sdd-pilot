@@ -222,7 +222,7 @@ public static class DocumentationCatalog
             ("artifact-traceability","Requirements Traceability","/artifact-traceability","traceability","Traceability",null,null),
             ("task-alignment","Implementation Review","/task-alignment","traceability","Traceability",null,null),
             ("implementation-traceability","Implementation Traceability","/implementation-traceability","traceability","Traceability",null,null),
-            ("spec-drift","Spec Drift","/spec-drift","traceability","Traceability",null,null),
+            ("documentation-drift","Documentation Drift","/documentation-drift","traceability","Traceability",null,null),
             ("impact-analysis","Impact Analysis","/impact-analysis","traceability","Traceability",null,null),
             ("traceability","Traceability & Coverage","/traceability","traceability","Traceability",null,null),
             ("traceability/suggestions","Traceability Suggestions","/traceability/suggestions","traceability","Traceability",null,null),

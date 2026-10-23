@@ -1,3 +1,4 @@
+@page "/documentation-drift"
 @page "/spec-drift"
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Components
@@ -7,20 +8,25 @@
 @inject NavigationManager NavigationManager
 @inject IWorkspaceSessionService Workspace
 
-<PageTitle>Spec Drift</PageTitle>
+<PageTitle>Documentation Drift</PageTitle>
 
 <div class="drift-page">
-    <PageHeader Title="Spec Drift"
-                Description="The single entry point for specification changes, change history, and drift analysis — all in one place." />
+    <PageHeader Title="Documentation Drift"
+                Description="@DocumentationDrift.Description" />
 
     <div class="sd-tab-strip" role="tablist">
+        <button class='sd-tab @(_activeTab == "documents" ? "is-active" : "")' @onclick='() => SetTab("documents")' role="tab" data-testid="dd-documents-tab-btn">Documents</button>
         <button class='sd-tab @(_activeTab == "overview" ? "is-active" : "")' @onclick='() => SetTab("overview")' role="tab">Overview</button>
         <button class='sd-tab @(_activeTab == "changes" ? "is-active" : "")' @onclick='() => SetTab("changes")' role="tab" data-testid="sd-changes-tab-btn">Changes</button>
         <button class='sd-tab @(_activeTab == "drift" ? "is-active" : "")' @onclick='() => SetTab("drift")' role="tab">Drift</button>
         <button class='sd-tab @(_activeTab == "actions" ? "is-active" : "")' @onclick='() => SetTab("actions")' role="tab">Actions</button>
     </div>
 
-    @if (_activeTab == "changes")
+    @if (_activeTab == "documents")
+    {
+        <DocumentationDriftPanel />
+    }
+    else if (_activeTab == "changes")
     {
         <SpecChangesPanel />
     }
@@ -41,7 +47,7 @@
         <div class="drift-empty-state" role="status">
             <p class="section-kicker">Nothing to analyse yet</p>
             <h2 class="drift-empty-state-heading">No Requirements Found</h2>
-            <p class="drift-empty-state-desc">Spec Drift requires requirements and traceability data before drift can be evaluated.</p>
+            <p class="drift-empty-state-desc">Coverage drift requires requirements and traceability data before it can be evaluated.</p>
             <div class="drift-empty-state-btns">
                 <a href="/traceability" class="drift-link-btn drift-link-btn--primary">Go to Traceability &amp; Coverage</a>
             </div>
@@ -252,7 +258,9 @@
     private string? _notice;
     private IGetSpecDriftReport_SpecDriftReport? _report;
     private string? _activeFilter;
-    private string _activeTab = "overview";
+    /// <summary>Documents (comparison of documentation artifacts) is the default; the coverage tabs load their report on first use.</summary>
+    private string _activeTab = "documents";
+    private bool _reportRequested;
 
     private string? SelectedProjectSlug => Workspace.CurrentProject;
 
@@ -265,10 +273,18 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (_activeTab is "documents" or "changes") { _isLoading = false; return; }
+        await EnsureReportAsync();
+    }
+
+    private async Task EnsureReportAsync()
+    {
+        if (_reportRequested) return;
+        _reportRequested = true;
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
             _isLoading = false;
-            _notice = SampleProjectStoreNotice.Message("Spec Drift", Workspace);
+            _notice = SampleProjectStoreNotice.Message("Documentation Drift", Workspace);
             StateHasChanged();
             return;
         }
@@ -276,13 +292,17 @@
         await LoadAsync();
     }
 
-    private void SetTab(string tab) => _activeTab = tab;
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        if (tab is not ("documents" or "changes")) await EnsureReportAsync();
+    }
 
     private async Task LoadAsync()
     {
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {
-            _notice = SampleProjectStoreNotice.Message("Spec Drift", Workspace);
+            _notice = SampleProjectStoreNotice.Message("Documentation Drift", Workspace);
             _isLoading = false;
             StateHasChanged();
             return;

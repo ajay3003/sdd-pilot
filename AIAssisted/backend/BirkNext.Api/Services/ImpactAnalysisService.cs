@@ -57,7 +57,7 @@ public class ImpactSummary
 /// <summary>
 /// The impact engine: computes risk levels and regression recommendations
 /// from trace links. Designed as the central place for future impact features
-/// (AI Change Auditor, Spec Drift Detection, AI QA Auditor).
+/// (AI Change Auditor, Documentation Drift coverage detection, AI QA Auditor).
 /// </summary>
 public sealed class ImpactAnalysisService
 {

@@ -72,7 +72,7 @@ Section IDs are stable, and order is deterministic:
 | Getting Started (`getting-started`) | Recommended Workflow, User Guide, Dashboard (cross-cutting, so it sits here rather than under document review) |
 | Project Inputs (`project-inputs`) | Import Project (primary: one ZIP → project artifacts + source snapshot), Sample Projects (optional examples), Target Environments (runtime configuration of the deployed system, not a document input) |
 | Document Review (`document-review`) | Specification, Constitution, Data Model, Plan, Task Explorer, Document Quality Review |
-| Traceability (`traceability`) | Requirements Traceability, Implementation Review, Implementation Traceability, Spec Drift, Impact Analysis (+ legacy rows behind the legacy flag) |
+| Traceability (`traceability`) | Requirements Traceability, Implementation Review, Implementation Traceability, Documentation Drift, Impact Analysis (+ legacy rows behind the legacy flag) |
 | Source Review (`source-review`) | Source Analysis (inspects the current source snapshot), Technology Coverage, Dependency Review, Pipeline Review, Environment Analysis |
 | Quality & Testing (`quality-testing`) | Frontend, API, Integration Quality Review, Performance Test Review, Critical E2E Regression |
 | Extensions (`extensions`) | M01 – Gradert tilgang (Kode 6/7), formerly Security Classification (badge *Extension* when enabled, otherwise *N/A*) |

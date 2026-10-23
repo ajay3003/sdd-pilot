@@ -76,6 +76,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.AmbiguousRoles = discovery.AmbiguousRoles.Select(r => r.Role.ToString()).ToList();
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
         ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
+        RecordGeneratedSet(preview.ImportId, commit?.Source, preview.Documents);
 
         lifecycle.CurrentProjectImportId = preview.ImportId;
         var scope = ProjectImportScope.For(preview.ImportId)!;
@@ -101,6 +102,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     {
         if (repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is not { } record) return;
         ApplySource(record, source, sourceDetected: true, stagingId ?? record.SourceStagingId, stagedUntil);
+        RecordGeneratedSet(importId, source, documents: null);
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
     }
@@ -132,6 +134,36 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         repository.RefreshSessionArtifacts();
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
+    }
+
+    public const int MaxGeneratedDocumentBytes = 512 * 1024;
+
+    /// <summary>
+    /// The import's Generated Documentation Set, derived from the same import (no separate autodoc import): references to the generated
+    /// documents the import's source snapshot identified, linked to the import and the snapshot. Markdown text the import carried is kept once
+    /// per fingerprint so later imports can be compared with it; the snapshot keeps fingerprints only. Without a snapshot the set is
+    /// NotEvaluated; with one that holds no generated documents it is NotPresent — never an earlier import's set.
+    /// </summary>
+    private void RecordGeneratedSet(string importId, ProjectImportSourceResult? source, IReadOnlyList<ProjectImportDocument>? documents)
+    {
+        var lifecycle = repository.SddLifecycle;
+        var setId = DocumentationDrift.SetIdFor(importId);
+        var set = lifecycle.GeneratedDocumentationSets.FirstOrDefault(s => s.SetId == setId);
+        if (set is null) lifecycle.GeneratedDocumentationSets.Add(set = new SddGeneratedDocumentationSet { SetId = setId, ProjectImportId = importId });
+        set.SourceSnapshotId = source?.SnapshotId;
+        set.State = source?.SnapshotId is null || source.GeneratedDocuments is null ? "NotEvaluated" : source.GeneratedDocuments.Count == 0 ? "NotPresent" : "Present";
+        var previous = set.Artifacts.ToDictionary(a => a.RelativePath, StringComparer.Ordinal);
+        set.Artifacts = [.. (source?.GeneratedDocuments ?? []).Select(d =>
+        {
+            var text = documents?.FirstOrDefault(p => string.Equals(p.RelativePath, d.RelativePath, StringComparison.Ordinal))?.Content;
+            var captured = text is not null && DocumentationDrift.IsMarkdown(d.RelativePath) && System.Text.Encoding.UTF8.GetByteCount(text) <= MaxGeneratedDocumentBytes;
+            if (captured) lifecycle.GeneratedDocumentContents[d.Fingerprint] = text!;
+            return new SddGeneratedDocumentArtifact
+            {
+                ModuleId = d.ModuleId, ModuleRoot = d.ModuleRoot, RelativePath = d.RelativePath, Kind = d.Kind.ToString(), Fingerprint = d.Fingerprint, Generator = d.Generator,
+                ContentCaptured = captured || previous.TryGetValue(d.RelativePath, out var known) && known.Fingerprint == d.Fingerprint && known.ContentCaptured,
+            };
+        })];
     }
 
     private static void ApplySource(SddProjectImportRecord record, ProjectImportSourceResult? source, bool sourceDetected, Guid? stagingId, DateTimeOffset? stagedUntil)

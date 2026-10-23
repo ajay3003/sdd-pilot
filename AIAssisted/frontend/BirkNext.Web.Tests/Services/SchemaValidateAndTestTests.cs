@@ -335,6 +335,14 @@ public sealed class SchemaValidateAndTestTests
         restored.Documents.Single(d => d.Id == saved.Id).TestData!.Facts!.ProfileVersion.Should().Be("built-in");
     }
 
+    [Theory]
+    [InlineData("The 'Kode' element is invalid - The value 'ABC' is invalid according to its datatype.", "The 'Kode' element is invalid - The value is invalid according to its datatype.")]
+    [InlineData("The Value   'x y' failed.", "The value failed.")]
+    [InlineData("Identifier 12345678901 and code 12345 remain safe.", "Identifier [number] and code 12345 remain safe.")]
+    [InlineData("invalue 'kept' because not a word boundary", "invalue 'kept' because not a word boundary")]
+    public void Validator_messages_are_redacted_deterministically_without_timed_regexes(string message, string expected) =>
+        XmlSchemaPackageAnalyzer.SafeIssue(message).Should().Be(expected);
+
     [Fact]
     public void Synthetic_identifiers_only()
     {

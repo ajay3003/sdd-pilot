@@ -36,7 +36,7 @@ public class UxConsistencyTests : BunitContext
 
         cut.Markup.Should().NotContain("Review Progress");
         cut.Markup.Should().Contain("Coverage Requirements");
-        cut.Find("[data-testid='dashboard-nav-links'] a[href='spec-drift']").Should().NotBeNull();
+        cut.Find("[data-testid='dashboard-nav-links'] a[href='documentation-drift']").Should().NotBeNull();
     }
 
     [Fact]

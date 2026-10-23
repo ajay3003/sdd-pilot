@@ -44,13 +44,13 @@ public class AnalysisPageModelService : IAnalysisPageModelService
     {
         try
         {
-            _logger.LogInformation("Building Spec Drift page model");
+            _logger.LogInformation("Building Documentation Drift page model");
             return await _specDriftBuilder.BuildPageModelAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error building Spec Drift model");
-            return ErrorModel("Spec Drift", "Failed to build page model");
+            _logger.LogError(ex, "Error building Documentation Drift model");
+            return ErrorModel("Documentation Drift", "Failed to build page model");
         }
     }
 

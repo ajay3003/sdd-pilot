@@ -107,7 +107,17 @@ public sealed record ProjectImportSourceResult
     public string? Message { get; init; }
     /// <summary>The staged archive is kept so the source part can be retried without choosing the ZIP again.</summary>
     public bool CanRetry { get; init; }
+    /// <summary>
+    /// The generated documents the snapshot's own generated-documentation evidence identified (origin Generated), as references: path, module,
+    /// kind, content fingerprint and generator when proven. Null when the snapshot holds no generated-documentation evidence. The browser
+    /// groups them into the import's Generated Documentation Set; the snapshot keeps fingerprints only, never document text.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<ProjectImportGeneratedDocument>? GeneratedDocuments { get; init; }
 }
+
+/// <summary>One generated document of an imported project's source snapshot: identity and provenance only (no content).</summary>
+public sealed record ProjectImportGeneratedDocument(string RelativePath, string ModuleId, string ModuleRoot, BirkNext.GeneratedDocumentation.GeneratedDocumentKind Kind,
+    string Fingerprint, string? Generator);
 
 /// <summary>Commit result: the source part only. Documents are activated by the frontend from the preview (the repository is frontend-owned).</summary>
 public sealed record ProjectImportCommitResult

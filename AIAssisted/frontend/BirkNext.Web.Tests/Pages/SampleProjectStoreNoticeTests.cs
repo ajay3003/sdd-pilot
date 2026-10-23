@@ -12,7 +12,7 @@ using System.Text;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Spec Drift and Impact Analysis read the backend's per-Sample-Project requirement/test store, which Project Import does not write.
+/// Documentation Drift and Impact Analysis read the backend's per-Sample-Project requirement/test store, which Project Import does not write.
 /// Found by real-project acceptance: with an imported project they told the user to select a Sample Project (replacing their project).
 /// They now say the workspace is not assessed by them, and only fall back to the import/sample choice when nothing is loaded.
 /// </summary>
@@ -44,6 +44,8 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
         });
         _workspace.Set(WorkspaceArtifactType.Specification, "# Spec\n\n- FR-001: The system shall work.");
 
+        // The coverage report is the Overview tab (Documents, the comparison of documentation artifacts, is the default tab).
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/documentation-drift?tab=overview");
         var specDriftMarkup = Render<SpecDrift>().Markup;
         specDriftMarkup.Should().Contain("data-testid=\"sample-store-notice\"").And.Contain("Not assessed for this workspace");
         specDriftMarkup.Should().NotContain("Select a Sample Project").And.NotContain("notification-error");
@@ -65,7 +67,7 @@ public sealed class SampleProjectStoreNoticeTests : BunitContext
     public void Empty_workspace_offers_import_or_sample_project()
     {
         SampleProjectStoreNotice.HasNonSampleWorkspace(_workspace).Should().BeFalse();
-        SampleProjectStoreNotice.Message("Spec Drift", _workspace).Should().Be("No project loaded. Import a project or select a Sample Project to use Spec Drift.");
+        SampleProjectStoreNotice.Message("Documentation Drift", _workspace).Should().Be("No project loaded. Import a project or select a Sample Project to use Documentation Drift.");
     }
 
     [Fact]

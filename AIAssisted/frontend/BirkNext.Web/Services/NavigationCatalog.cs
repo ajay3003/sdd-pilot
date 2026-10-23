@@ -105,7 +105,7 @@ public static class NavigationCatalog
                 Hint: "tasks checked against the specification"),
             new("implementation-traceability", "Implementation Traceability", "nav-icon-task-alignment", f => f.ImplementationTraceability,
                 Hint: "work items linked to pull requests and changed files"),
-            new("spec-drift", "Spec Drift", "nav-icon-spec-drift", f => f.SpecDrift),
+            new("documentation-drift", "Documentation Drift", "nav-icon-spec-drift", f => f.SpecDrift),
             new("impact-analysis", "Impact Analysis", "nav-icon-impact-analysis", f => f.ImpactAnalysis),
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),
             new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilitySuggestions, OptionalByDefault: true),

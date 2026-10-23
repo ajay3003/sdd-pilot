@@ -33,13 +33,13 @@ public class AnalysisPageModelService : IAnalysisPageModelService
     {
         try
         {
-            _logger.LogInformation("Loading Spec Drift page model");
+            _logger.LogInformation("Loading Documentation Drift page model");
             return await _httpClient.GetFromJsonAsync<AnalysisPageModel>(
                 "api/analysis-page-model/spec-drift");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error loading Spec Drift page model");
+            _logger.LogError(ex, "Error loading Documentation Drift page model");
             return null;
         }
     }

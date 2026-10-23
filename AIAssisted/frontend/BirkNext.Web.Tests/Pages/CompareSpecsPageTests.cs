@@ -15,7 +15,7 @@ public class CompareSpecsPageTests : BunitContext
 
         Render<CompareSpecs>();
 
-        nav.Uri.Should().Contain("/spec-drift");
+        nav.Uri.Should().Contain("/documentation-drift");
         nav.Uri.Should().Contain("tab=changes");
     }
 }

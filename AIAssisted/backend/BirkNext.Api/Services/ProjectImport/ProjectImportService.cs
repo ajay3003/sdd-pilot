@@ -158,6 +158,11 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         FilesAnalyzed = snapshot.Archive.FilesAnalyzed,
         Technologies = snapshot.TechnologyCoverage is { } coverage ? Technologies(coverage) : [],
         Limitations = snapshot.TechnologyCoverage?.Limitations.Take(10).ToList() ?? [],
+        GeneratedDocuments = snapshot.GeneratedDocumentation is { } generated
+            ? [.. generated.Documents.Where(d => d.Origin == BirkNext.GeneratedDocumentation.DocumentationOrigin.Generated)
+                .Select(d => new ProjectImportGeneratedDocument(d.SafeRelativePath, d.ModuleId, generated.Modules.FirstOrDefault(m => m.ModuleId == d.ModuleId)?.RootPath ?? "",
+                    d.DocumentKind, d.ContentFingerprint, d.Provenance.GeneratorName))]
+            : null,
     };
 
     private static ProjectImportSourceResult NotCreated(ProjectImportSourceDetection detection, string code, string message, bool canRetry) => new()

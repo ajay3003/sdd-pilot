@@ -1824,7 +1824,7 @@ else if (_settings is not null)
         ("Code Traceability",       "CodeTraceability"),
 
         // Analysis
-        ("Spec Drift",              "SpecDrift"),
+        ("Documentation Drift",              "SpecDrift"),
         ("Impact Analysis",         "ImpactAnalysis"),
         ("Requirements Traceability",   "ArtifactTraceability"),
         ("Implementation Review",   "ImplementationReview"),
@@ -2223,7 +2223,7 @@ else if (_settings is not null)
             // Both pages query the backend's requirements and trace links for the selected project; neither reads a
             // document or a session artifact slot, so the selected project is their only client-side prerequisite.
             yield return BackendProjectAnalysisRow("Impact Analysis");
-            yield return BackendProjectAnalysisRow("Spec Drift");
+            yield return BackendProjectAnalysisRow("Documentation Drift");
         }
     }
 
@@ -3286,7 +3286,7 @@ else if (_settings is not null)
     {
         "/", "/dashboard", "/specification-explorer", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
         "/task-explorer", "/demo-projects", "/sample-projects", "/traceability",
-        "/traceability/suggestions", "/code-traceability", "/spec-drift",
+        "/traceability/suggestions", "/code-traceability", "/documentation-drift",
         "/impact-analysis", "/artifact-traceability", "/task-alignment",
         "/implementation-traceability", "/quality-review",
         "/wasm-performance-review", "/ai-change-auditor", "/admin/system-settings",
@@ -3319,7 +3319,7 @@ else if (_settings is not null)
         ("Traceability & Coverage",      "traceability"),
         ("Traceability Suggestions",     "traceability/suggestions"),
         ("Code Traceability",            "code-traceability"),
-        ("Spec Drift",                   "spec-drift"),
+        ("Documentation Drift",                   "documentation-drift"),
         ("Impact Analysis",              "impact-analysis"),
         ("Requirements Traceability",        "artifact-traceability"),
         ("Implementation Review",        "task-alignment"),
@@ -3353,7 +3353,7 @@ else if (_settings is not null)
         ("User Guide", "/specification-explorer",               "Specification Explorer link"),
         ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
         ("User Guide", "/task-explorer",                        "Task Explorer link"),
-        ("User Guide", "/spec-drift",                           "Spec Drift link"),
+        ("User Guide", "/documentation-drift",                           "Documentation Drift link"),
         ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
         ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
         ("User Guide", "/task-alignment",                       "Implementation Review link"),

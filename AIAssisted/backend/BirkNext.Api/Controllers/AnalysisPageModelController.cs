@@ -23,14 +23,14 @@ public class AnalysisPageModelController : ControllerBase
     }
 
     /// <summary>
-    /// Get structured page model for Spec Drift page.
+    /// Get structured page model for Documentation Drift page.
     /// Returns artifact prerequisites, readiness status, and missing inputs.
     /// </summary>
     [HttpGet("spec-drift")]
     [ProducesResponseType(typeof(AnalysisPageModel), StatusCodes.Status200OK)]
     public async Task<ActionResult<AnalysisPageModel>> GetSpecDriftModel()
     {
-        _logger.LogInformation("Building Spec Drift page model");
+        _logger.LogInformation("Building Documentation Drift page model");
         var model = await _modelService.BuildSpecDriftModelAsync();
         return Ok(model);
     }

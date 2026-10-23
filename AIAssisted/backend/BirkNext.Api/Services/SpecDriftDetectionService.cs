@@ -195,7 +195,7 @@ public sealed class SpecDriftDetectionService
             actions.Add("Open Impact Analysis for each at-risk requirement to see its regression recommendation before accepting any change.");
 
         if (actions.Count == 0)
-            actions.Add("Coverage is healthy. Re-run Spec Drift Detection after each sprint to catch regressions early.");
+            actions.Add("Coverage is healthy. Re-run Documentation Drift coverage detection after each sprint to catch regressions early.");
 
         return actions;
     }

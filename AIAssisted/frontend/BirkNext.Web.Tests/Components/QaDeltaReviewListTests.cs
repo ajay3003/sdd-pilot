@@ -22,7 +22,7 @@ public class QaDeltaReviewListTests : BunitContext
 
         cut.Find("[data-testid='review-list-empty']").Should().NotBeNull();
         cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("No Comparisons Yet");
-        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("Open Spec Drift");
+        cut.Find("[data-testid='review-list-empty']").TextContent.Should().Contain("Open Documentation Drift");
         cut.FindAll("[data-testid='review-card']").Should().BeEmpty();
     }
 

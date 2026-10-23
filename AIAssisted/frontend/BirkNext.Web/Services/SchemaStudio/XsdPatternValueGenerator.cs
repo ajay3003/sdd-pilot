@@ -31,13 +31,13 @@ internal static class XsdPatternValueGenerator
         catch (ArgumentException) { return false; }
     }
 
-    /// <summary>Anchored match in the XSD dialect. The engine is linear-time (NonBacktracking); the timeout is only a safety net, generous enough
-    /// that CPU load never turns a real match into "no match" (which would make generation non-deterministic).</summary>
+    /// <summary>Anchored match in the XSD dialect. The engine is linear-time (NonBacktracking) and pattern and value are length-bounded, so no
+    /// timeout is needed — a timeout would only let CPU load turn a real match into "no match" and make generation non-deterministic.</summary>
     public static bool Matches(string pattern, string value)
     {
         if (pattern.Length is 0 or > MaxPatternLength || value.Length > MaxOutputLength) return false;
         var regex = Translate(pattern);
-        return regex is not null && Regex.IsMatch(value, "\\A(?:" + regex + ")\\z", Options, TimeSpan.FromMilliseconds(250));
+        return regex is not null && Regex.IsMatch(value, "\\A(?:" + regex + ")\\z", Options, Regex.InfiniteMatchTimeout);
     }
 
     private static string? Translate(string pattern)

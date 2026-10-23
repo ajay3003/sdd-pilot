@@ -27,6 +27,82 @@ public sealed class SddLifecycleState
     public List<SddProjectImportRecord> ProjectImports { get; set; } = [];
     /// <summary>The imported project the workspace currently shows (artifact scope <c>import:{id}</c>), or null. Mutually exclusive with a selected Sample Project.</summary>
     public string? CurrentProjectImportId { get; set; }
+    /// <summary>One Generated Documentation Set per Project Import: references to the generated documents of the import's source snapshot.</summary>
+    public List<SddGeneratedDocumentationSet> GeneratedDocumentationSets { get; set; } = [];
+    /// <summary>Generated-document text keyed by content fingerprint: stored once however many imports carry the same document.</summary>
+    public Dictionary<string, string> GeneratedDocumentContents { get; set; } = [];
+    /// <summary>Saved Documentation Drift comparisons: exact references and the result as computed (immutable).</summary>
+    public List<SddDocumentationDriftComparison> DocumentationDriftComparisons { get; set; } = [];
+}
+
+/// <summary>
+/// The generated documentation that arrived with one Project Import (a logical set, not an independent snapshot): the import revision, the
+/// source snapshot whose generated-documentation evidence identified the documents, and one reference per document. Present = documents were
+/// identified; NotPresent = the snapshot was evaluated and holds none; NotEvaluated = no snapshot (no source, Source Analysis off, failed).
+/// An earlier import's set is never reused for a later import.
+/// </summary>
+public sealed class SddGeneratedDocumentationSet
+{
+    public string SetId { get; set; } = "";
+    public string ProjectImportId { get; set; } = "";
+    public Guid? SourceSnapshotId { get; set; }
+    public string State { get; set; } = "NotEvaluated";
+    public List<SddGeneratedDocumentArtifact> Artifacts { get; set; } = [];
+}
+
+/// <summary>A generated document of a set: module, path, kind, fingerprint, generator (only when proven). Text lives in the content store by fingerprint.</summary>
+public sealed class SddGeneratedDocumentArtifact
+{
+    public string ModuleId { get; set; } = "";
+    public string ModuleRoot { get; set; } = "";
+    public string RelativePath { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Fingerprint { get; set; } = "";
+    public string? Generator { get; set; }
+    /// <summary>False when the import did not carry the document text (e.g. a retried source part): the reference stays, comparison is unavailable.</summary>
+    public bool ContentCaptured { get; set; }
+}
+
+/// <summary>One side of a saved Documentation Drift comparison: exact identity as it was compared.</summary>
+public sealed class SddDriftSide
+{
+    public string DocumentId { get; set; } = "";
+    public string Origin { get; set; } = "";
+    public string LogicalKey { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string Fingerprint { get; set; } = "";
+    public Guid? RevisionId { get; set; }
+    public string? ProjectImportId { get; set; }
+    public string? ProjectRevision { get; set; }
+    public string? GeneratedSetId { get; set; }
+    public Guid? SourceSnapshotId { get; set; }
+    public string? Generator { get; set; }
+}
+
+public sealed class SddDriftItem
+{
+    public string Kind { get; set; } = "";
+    public string Section { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public List<string> Left { get; set; } = [];
+    public List<string> Right { get; set; } = [];
+}
+
+public sealed class SddDocumentationDriftComparison
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public DateTimeOffset CreatedAt { get; set; }
+    public string Intent { get; set; } = "";
+    public string Scope { get; set; } = "Whole document";
+    public string RevisionContext { get; set; } = "";
+    public SddDriftSide Left { get; set; } = new();
+    public SddDriftSide Right { get; set; } = new();
+    public string Outcome { get; set; } = "";
+    public Dictionary<string, int> Counts { get; set; } = [];
+    public List<SddDriftItem> Items { get; set; } = [];
+    public int AnalysisVersion { get; set; }
+    public string? WorkspaceScope { get; set; }
 }
 
 /// <summary>

@@ -17,7 +17,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
     [Fact]
     public void SourceAnalysisIsAProjectInput_AndItsConsumersFormTheSourceReviewGroup_EachAppearingOnce()
     {
-        // The backend's default configuration: Impact Analysis and Spec Drift are disabled.
+        // The backend's default configuration: Impact Analysis and Documentation Drift are disabled.
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImpactAnalysis = false, SpecDrift = false });
         var cut = Render<NavMenu>();
         var entries = Entries(cut);

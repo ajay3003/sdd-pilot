@@ -2,7 +2,7 @@ namespace BirkNext.Api.Services.Analysis;
 
 /// <summary>
 /// Builds structured page models for Analysis pages.
-/// Each analysis page (Spec Drift, Impact Analysis, etc.) has a specialized builder.
+/// Each analysis page (Documentation Drift, Impact Analysis, etc.) has a specialized builder.
 /// </summary>
 public interface IAnalysisPageModelBuilder
 {

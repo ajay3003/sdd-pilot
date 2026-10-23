@@ -107,7 +107,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        NavigationManager.NavigateTo("/spec-drift?tab=changes", replace: true);
+        NavigationManager.NavigateTo("/documentation-drift?tab=changes", replace: true);
 
         if (string.IsNullOrWhiteSpace(SelectedProjectSlug))
         {

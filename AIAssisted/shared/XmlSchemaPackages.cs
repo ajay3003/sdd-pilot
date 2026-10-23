@@ -296,10 +296,33 @@ public static class XmlSchemaPackageAnalyzer
     }
 
     /// <summary>Validator messages without instance values (for example "The value '12345678901' is invalid" loses the value).</summary>
+    /// <remarks>Plain character scanning, not a timed regex: the result never depends on machine load.</remarks>
     public static string SafeIssue(string message)
     {
-        var safe = Regex.Replace(message, @"(?i)\bvalue\s+'[^']*'", "value", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
-        safe = Regex.Replace(safe, @"(?<!\d)\d{6,}(?!\d)", "[number]", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
+        var builder = new System.Text.StringBuilder(message.Length);
+        for (var i = 0; i < message.Length; i++)
+        {
+            // "value '...'" (any case, word boundary before, whitespace before the quote) → "value".
+            if ((i == 0 || !char.IsLetterOrDigit(message[i - 1]) && message[i - 1] != '_') && i + 5 <= message.Length
+                && string.Compare(message, i, "value", 0, 5, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                var j = i + 5;
+                while (j < message.Length && char.IsWhiteSpace(message[j])) j++;
+                var close = j > i + 5 && j < message.Length && message[j] == '\'' ? message.IndexOf('\'', j + 1) : -1;
+                if (close > 0) { builder.Append("value"); i = close; continue; }
+            }
+            // Runs of six or more digits → "[number]".
+            if (char.IsAsciiDigit(message[i]))
+            {
+                var end = i;
+                while (end < message.Length && char.IsAsciiDigit(message[end])) end++;
+                builder.Append(end - i >= 6 ? "[number]" : message[i..end]);
+                i = end - 1;
+                continue;
+            }
+            builder.Append(message[i]);
+        }
+        var safe = builder.ToString();
         return safe.Length > 300 ? safe[..300] : safe;
     }
 

@@ -30,12 +30,12 @@ public enum AnalysisSeverity
 }
 
 /// <summary>
-/// Structured model for an analysis page (Spec Drift, Impact Analysis, etc.).
+/// Structured model for an analysis page (Documentation Drift, Impact Analysis, etc.).
 /// All pages must follow this contract.
 /// </summary>
 public class AnalysisPageModel
 {
-    /// <summary>Page title (e.g., "Spec Drift")</summary>
+    /// <summary>Page title (e.g., "Documentation Drift")</summary>
     public required string Title { get; set; }
 
     /// <summary>Page description/subtitle</summary>

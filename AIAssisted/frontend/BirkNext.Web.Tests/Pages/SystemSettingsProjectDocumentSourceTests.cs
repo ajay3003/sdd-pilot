@@ -130,7 +130,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         Text(cut).Should().NotContain("No workspace loaded");
     }
 
-    // Impact Analysis and Spec Drift query the backend for the selected project; they read no document and no session
+    // Impact Analysis and Documentation Drift query the backend for the selected project; they read no document and no session
     // slot. A sample project with an empty session therefore meets their prerequisite.
     [Fact]
     public void ImpactAnalysisAndSpecDriftFollowTheSelectedProject_NotTheEmptySession()
@@ -142,7 +142,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         cut.WaitForAssertion(() => Text(cut).Should().Contain("Reads the backend requirements and trace links for project 'autorisasjon'"));
         Text(cut).Should().NotContain("no workspace is loaded").And.NotContain("spec.md is not loaded");
         AnalysisRow(cut, "Impact Analysis").Should().NotContain("Unavailable");
-        AnalysisRow(cut, "Spec Drift").Should().NotContain("Unavailable");
+        AnalysisRow(cut, "Documentation Drift").Should().NotContain("Unavailable");
     }
 
     // Imported session documents with a selected project: the same project-scoped prerequisite, met.
@@ -154,7 +154,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         var cut = Open("Runtime Diagnostics");
 
         cut.WaitForAssertion(() => Text(cut).Should().Contain("for project 'imported-project'"));
-        AnalysisRow(cut, "Spec Drift").Should().NotContain("Unavailable");
+        AnalysisRow(cut, "Documentation Drift").Should().NotContain("Unavailable");
     }
 
     // No project: the one missing prerequisite is named, even when session artifacts exist (the pages need a slug).
@@ -165,7 +165,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         var cut = Open("Runtime Diagnostics");
 
         cut.WaitForAssertion(() => AnalysisRow(cut, "Impact Analysis").Should().Contain("No project is selected."));
-        AnalysisRow(cut, "Spec Drift").Should().Contain("No project is selected.");
+        AnalysisRow(cut, "Documentation Drift").Should().Contain("No project is selected.");
         Text(cut).Should().NotContain("spec.md is not loaded");
     }
 
@@ -182,7 +182,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         cut.Render();
 
         cut.WaitForAssertion(() => AnalysisRow(cut, "Impact Analysis").Should().Contain("for project 'other-project'"));
-        AnalysisRow(cut, "Spec Drift").Should().NotContain("autorisasjon");
+        AnalysisRow(cut, "Documentation Drift").Should().NotContain("autorisasjon");
     }
 
     private static string AnalysisRow(IRenderedComponent<SystemSettings> cut, string name) =>

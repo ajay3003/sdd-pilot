@@ -27,7 +27,7 @@ public class CompareReviewsPageTests : BunitContext
         Render<CompareReviews>();
 
         var nav = Services.GetRequiredService<NavigationManager>();
-        nav.Uri.Should().Contain("/spec-drift");
+        nav.Uri.Should().Contain("/documentation-drift");
         nav.Uri.Should().Contain("tab=changes");
     }
 }

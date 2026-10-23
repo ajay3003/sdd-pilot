@@ -90,7 +90,7 @@ public class ArchitectureViewTests : BunitContext
 
         cut.Find("[data-testid='av-link-spec-drift']")
             .GetAttribute("href")
-            .Should().Contain("spec-drift");
+            .Should().Contain("documentation-drift");
     }
 
     [Fact]

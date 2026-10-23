@@ -92,7 +92,7 @@ public class SpecComparisonPanelSaveTests : BunitContext
         cut.Find("[data-testid='save-review-success']").TextContent
             .Should().Contain("Saved");
         cut.Find("[data-testid='save-review-success'] a")
-            .GetAttribute("href").Should().Contain("spec-drift?tab=changes");
+            .GetAttribute("href").Should().Contain("documentation-drift?tab=changes");
     }
 
     [Fact]

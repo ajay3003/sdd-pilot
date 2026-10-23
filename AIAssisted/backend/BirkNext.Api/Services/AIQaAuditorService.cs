@@ -173,9 +173,9 @@ public sealed class AIQaAuditorService
         int medDrift = drift.Findings.Count(f => f.Severity == RiskLevel.Medium);
 
         if (highDrift > 0)
-            Deduct(deductions, "Spec Drift", $"{highDrift} high-risk drift finding(s)", Math.Min(highDrift * 15, 30));
+            Deduct(deductions, "Documentation Drift", $"{highDrift} high-risk drift finding(s)", Math.Min(highDrift * 15, 30));
         if (medDrift > 0)
-            Deduct(deductions, "Spec Drift", $"{medDrift} medium-risk drift finding(s)", Math.Min(medDrift * 5, 10));
+            Deduct(deductions, "Documentation Drift", $"{medDrift} medium-risk drift finding(s)", Math.Min(medDrift * 5, 10));
 
         // Orphan test deductions
         if (drift.OrphanTestCount > 0)

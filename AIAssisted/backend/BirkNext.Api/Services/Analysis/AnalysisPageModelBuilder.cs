@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace BirkNext.Api.Services.Analysis;
 
 /// <summary>
-/// Builds structured page models for Spec Drift analysis page.
+/// Builds structured page models for Documentation Drift analysis page.
 /// Requires: specification and at least one comparison source/change input.
 /// </summary>
 public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
@@ -35,7 +35,7 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
             {
                 return new AnalysisPageModel
                 {
-                    Title = "Spec Drift",
+                    Title = "Documentation Drift",
                     Description = "Track specification changes and drift in coverage over time.",
                     ReadinessStatus = AnalysisStatus.Blocked,
                     RequiredInputs = ["Specification", "Change Input"],
@@ -50,12 +50,12 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
 
             var artifactStatus = await _artifactStatus.GetStatusAsync(workspaceId);
 
-            // Spec Drift requires specification
+            // Documentation Drift requires specification
             var missingInputs = new List<string>();
             if (!artifactStatus.HasSpecification)
                 missingInputs.Add("specification");
 
-            // Spec Drift requires some comparison source (for now, just requires plan or tasks)
+            // Documentation Drift requires some comparison source (for now, just requires plan or tasks)
             if (!artifactStatus.HasPlan && !artifactStatus.HasTasks && !artifactStatus.HasConstitution)
                 missingInputs.Add("change source (plan, tasks, or constitution)");
 
@@ -63,7 +63,7 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
             {
                 return new AnalysisPageModel
                 {
-                    Title = "Spec Drift",
+                    Title = "Documentation Drift",
                     Description = "Track specification changes and drift in coverage over time.",
                     ReadinessStatus = AnalysisStatus.Blocked,
                     RequiredInputs = ["Specification", "Change Input (Plan/Tasks/Constitution)"],
@@ -78,7 +78,7 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
 
             return new AnalysisPageModel
             {
-                Title = "Spec Drift",
+                Title = "Documentation Drift",
                 Description = "Track specification changes and drift in coverage over time.",
                 ReadinessStatus = AnalysisStatus.Ready,
                 RequiredInputs = ["Specification", "Change Input (Plan/Tasks/Constitution)"],
@@ -92,8 +92,8 @@ public class SpecDriftPageModelBuilder : ISpecDriftPageModelBuilder
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error building Spec Drift page model");
-            return ErrorModel("Spec Drift", "Failed to build analysis page: " + ex.Message);
+            _logger.LogError(ex, "Error building Documentation Drift page model");
+            return ErrorModel("Documentation Drift", "Failed to build analysis page: " + ex.Message);
         }
     }
 
