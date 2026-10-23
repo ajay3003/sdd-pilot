@@ -25,27 +25,57 @@
     </PageHeader>
     <p class="sc-muted" role="note" data-testid="sc-domain-extension">M01-specific review of graded access and Kode 6 / Kode 7 handling in M2LB (BiRK → M2LB). The underlying classification and authorization evidence is reusable by other domain extensions, including Skolenærvær. It is not a generic security review; see Technology Coverage for the reviews that apply to your project.</p>
 
-    @if (_profile is null)
+    @if (_contextError is not null)
     {
-        @if (_contextError is not null)
-        {
-            <BackendRequestNotice Error="_contextError" OnRetry="InitializeAsync" TestId="sc-context-error" />
-        }
-        else if (_noTarget)
-        {
-            @* A configuration state, not a backend failure: nothing is requested without an environment. *@
-            <p class="sc-muted" role="status" data-testid="sc-no-target">No Target Environment is selected. Classification source evidence is already captured on the source snapshot in <a href="source-analysis">Source Analysis</a> without one; reviews and the test context belong to a Target Environment — choose one in <a href="@NavigationCatalog.TargetEnvironmentsRoute">Target Environments</a>.</p>
-        }
-        else
-        {
-            <p class="sc-muted" role="status" data-testid="sc-loading">Loading the active Target Environment…</p>
-        }
+        <BackendRequestNotice Error="_contextError" OnRetry="InitializeAsync" TestId="sc-context-error" />
+    }
+    else if (_target is null)
+    {
+        <p class="sc-muted" role="status" data-testid="sc-loading">Loading the active Target Environment…</p>
     }
     else
     {
+        @* The platform's active Target Environment (Target Environments owns selection; this page only consumes it). Each state says
+           exactly what is true: none configured, configured but none active, an active one that cannot be resolved, or the active one.
+           Resolving it never calls an endpoint, probe or test. *@
+        <section class="sc-card sc-target" aria-labelledby="sc-target-heading" data-testid="sc-target" data-state="@_target.State">
+            <h2 id="sc-target-heading" class="sc-visually-hidden">Target Environment</h2>
+            @switch (_target.State)
+            {
+                case TargetEnvironmentResolutionState.Active:
+                    <p data-testid="sc-target-active"><strong>Target Environment: @_profile!.Name</strong> <span class="sc-muted">· @_profile.EnvironmentType · @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production — never tested" : "Non-production")</span></p>
+                    <p class="sc-muted">Source evidence is evaluated from the selected source snapshot; runtime and test evidence are evaluated in this environment.</p>
+                    <p><a class="sc-link" data-testid="sc-target-link" href="@TargetHref(_profile.Id)">View Target Environment</a></p>
+                    break;
+                case TargetEnvironmentResolutionState.NoneSelected:
+                    <p data-testid="sc-no-target"><strong>No Target Environment is currently selected.</strong></p>
+                    <p class="sc-muted">@_target.ConfiguredCount Target @(_target.ConfiguredCount == 1 ? "Environment is" : "Environments are") configured, but none is active. Opening one in Target Environments only shows it; choose <strong>Set as Active</strong> there to make it the environment every review uses.</p>
+                    <p><a class="sc-link" data-testid="sc-target-link" href="@TargetHref(null)">Select Target Environment</a></p>
+                    break;
+                case TargetEnvironmentResolutionState.NoneConfigured:
+                    <p data-testid="sc-no-target"><strong>No Target Environment is configured.</strong></p>
+                    <p><a class="sc-link" data-testid="sc-target-link" href="@TargetHref(null)">Configure Target Environment</a></p>
+                    break;
+                default:
+                    <p data-testid="sc-target-unresolved"><strong>The selected Target Environment could not be resolved.</strong></p>
+                    <p class="sc-muted" data-testid="sc-target-detail">@_target.Detail No other environment is used instead.</p>
+                    <p><a class="sc-link" data-testid="sc-target-link" href="@TargetHref(null)">Select Target Environment</a></p>
+                    break;
+            }
+            @* Three independent facts: source evidence, the environment, runtime/test evidence. Configured never means verified. *@
+            <dl class="sc-status" data-testid="sc-evidence-status">
+                <div><dt>Source evidence</dt><dd data-testid="sc-evidence-source">@SourceStatus</dd></div>
+                <div><dt>Target Environment</dt><dd data-testid="sc-evidence-target">@TargetStatus</dd></div>
+                <div><dt>Runtime / test evidence</dt><dd data-testid="sc-evidence-runtime">@RuntimeStatus</dd></div>
+            </dl>
+        </section>
+
         @* Stored reviews and the temporary test context come from one request; source evidence is loaded separately and stays usable if it fails. *@
-        <BackendRequestNotice Error="_overviewError" OnRetry="LoadOverviewAsync" TestId="sc-overview-error"
-                              Hint="Stored reviews and the temporary test context could not be read. Source evidence below is loaded separately." />
+        @if (_profile is not null)
+        {
+            <BackendRequestNotice Error="_overviewError" OnRetry="LoadOverviewAsync" TestId="sc-overview-error"
+                                  Hint="Stored reviews and the temporary test context could not be read. Source evidence below is loaded separately." />
+        }
         <section class="sc-card sc-source" aria-labelledby="sc-source-heading" data-testid="sc-source-evidence">
             <h2 id="sc-source-heading" tabindex="-1" @ref="_sourceHeading">Source evidence</h2>
             <p class="sc-muted">Security source analysis uses snapshots managed by Source Analysis — one primary snapshot plus any related source you include, each kept with its own fingerprint. Nothing is uploaded here, and choosing a snapshot only reads Source Analysis (no runtime, Azure, database or GraphQL call).</p>
@@ -99,6 +129,8 @@
             </SourceEvidencePrerequisite>
         </section>
 
+        @if (_profile is not null)
+        {
         <section class="sc-card" aria-labelledby="sc-setup-heading" data-testid="sc-setup">
             <h2 id="sc-setup-heading">Runtime test context</h2>
             <p class="sc-muted">Target Environment <strong>@_profile.Name</strong> (@_profile.EnvironmentType). @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production is never tested — only source and configuration checks run." : "Live checks run only in an approved DEV/QA test context.")</p>
@@ -395,6 +427,7 @@
                 @if (_consumersExpanded) { <SecurityConsumerProjection EnvironmentId="@(_profile?.Id ?? "")" RunId="@(_overview?.Latest?.RunId)" /> }
             </ReviewDisclosure>
         </section>
+        }
     }
 </div>
 
@@ -413,7 +446,7 @@
     private string? _sourceError;
     private BackendRequestError? _overviewError;
     private BackendRequestError? _contextError;
-    private bool _noTarget;
+    private TargetEnvironmentResolution? _target;
     private bool _editing;
     private string? _formError;
     private string? _unauthorizedToken;
@@ -463,10 +496,11 @@
 
     private async Task LoadScopeAsync()
     {
-        if (_profile is null || !FeatureViz.SourceAnalysis) return; // feature visibility is respected: hidden Source Analysis offers no snapshots here
+        if (!FeatureViz.SourceAnalysis) return; // feature visibility is respected: hidden Source Analysis offers no snapshots here
         try
         {
-            _options = await Api.SourceScopeAsync(_profile.Id, _scope.Request);
+            // Source snapshots are not scoped by Target Environment: without one the same evidence is read.
+            _options = await Api.SourceScopeAsync(_profile?.Id ?? "", _scope.Request);
             _scope.Options = _options;
             _sourceError = null;
         }
@@ -619,6 +653,27 @@
 
     protected override Task OnInitializedAsync() => InitializeAsync();
 
+    private static string TargetHref(string? profileId) =>
+        NavigationCatalog.TargetEnvironmentsRoute + (profileId is { Length: > 0 } id ? "&profile=" + Uri.EscapeDataString(id) : "");
+
+    private string SourceStatus => !FeatureViz.SourceAnalysis ? "Not available · Source Analysis is hidden"
+        : _sourceError is not null ? "Not available · could not be read"
+        : _options?.Evidence is not null ? "Available · from the selected source snapshot"
+        : "Not available · no source snapshot selected";
+
+    private string TargetStatus => _target?.State switch
+    {
+        TargetEnvironmentResolutionState.Active => $"{_profile!.Name} · configured (not a runtime result)",
+        TargetEnvironmentResolutionState.NoneSelected => "Not selected",
+        TargetEnvironmentResolutionState.NoneConfigured => "Not configured",
+        _ => "Could not be resolved",
+    };
+
+    /// <summary>Runtime and test evidence belong to the environment they ran in: only this environment's stored runs are read.</summary>
+    private string RuntimeStatus => _profile is null ? "Not assessed · no Target Environment"
+        : _overview?.Latest is not { } latest ? "Not assessed in this environment"
+        : $"Last review {latest.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC · {ClassificationLabels.Overall(latest.Overall)} · live checks {latest.Live.State}";
+
     /// <summary>
     /// No active Target Environment is a configuration state: nothing is requested (an empty environment id is a 400,
     /// which used to read as "backend not reachable"). The overview and the source scope are separate requests that fail
@@ -627,15 +682,24 @@
     private async Task InitializeAsync()
     {
         _contextError = null;
-        try { _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull; }
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            _profile = context.ActiveProfileOrNull;
+            // A resolved profile is the active environment; a context that claims Active without one is unresolved, never "none selected".
+            _target = context.TargetEnvironment with
+            {
+                State = _profile is not null ? TargetEnvironmentResolutionState.Active
+                    : context.TargetEnvironment.State == TargetEnvironmentResolutionState.Active ? TargetEnvironmentResolutionState.Unresolved : context.TargetEnvironment.State,
+            };
+        }
         catch (Exception ex)
         {
             _contextError = BackendRequestClassifier.FromException("Target Environment settings", ex);
             return;
         }
-        _noTarget = _profile is null;
-        if (_profile is null) return;
-        await LoadOverviewAsync();
+        // Stored reviews and the test context belong to an environment; source evidence belongs to the snapshot and loads without one.
+        if (_profile is not null) await LoadOverviewAsync();
         await LoadScopeAsync();
     }
 
@@ -759,7 +823,7 @@
         {
             _result = await Api.RunAsync(_profile.Id, new ClassificationRunRequest
             {
-                EnvironmentType = _profile.EnvironmentType.ToString(), UnauthorizedToken = _unauthorizedToken, AuthorizedToken = _authorizedToken,
+                EnvironmentType = _profile.EnvironmentType.ToString(), EnvironmentName = _profile.Name, UnauthorizedToken = _unauthorizedToken, AuthorizedToken = _authorizedToken,
                 SourceCounts = _sourceCounts.ToEvidence(), TargetCounts = _targetCounts.ToEvidence(), SourceScope = RunScope,
             });
             _unauthorizedToken = null;

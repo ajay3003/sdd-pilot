@@ -336,6 +336,8 @@ public sealed record ClassificationContextSummary
 public sealed record ClassificationRunRequest
 {
     public string? EnvironmentType { get; init; }
+    /// <summary>Display name of the Target Environment at run time (provenance only; the id remains the identity).</summary>
+    public string? EnvironmentName { get; init; }
     public string? UnauthorizedToken { get; init; }
     public string? AuthorizedToken { get; init; }
     /// <summary>Optional, operator-supplied classification count evidence (timestamped observations, never expectations).</summary>
@@ -461,6 +463,9 @@ public sealed record ClassificationReviewResult
 {
     public Guid RunId { get; init; }
     public string EnvironmentId { get; init; } = "";
+    /// <summary>The Target Environment's display name when the run was recorded (snapshot; null for older runs). Identity is <see cref="EnvironmentId"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? EnvironmentName { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset CompletedAt { get; init; }
     public ClassificationOverall Overall { get; init; }

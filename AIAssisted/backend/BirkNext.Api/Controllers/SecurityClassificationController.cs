@@ -19,12 +19,12 @@ public sealed class SecurityClassificationController(IClassificationReviewServic
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await reviews.OverviewAsync(environmentId, ct));
 
     /// <summary>Source Analysis snapshots for this review and, for a primary (+ related) selection, its candidates and combined source evidence.
-    /// Read-only: nothing is uploaded, stored or called at runtime.</summary>
+    /// Read-only: nothing is uploaded, stored or called at runtime. Source evidence belongs to the source snapshot, not to a Target Environment,
+    /// so environmentId is optional here (as for Dependency Review): without one, the same snapshots and evidence are returned.</summary>
     [HttpGet("source-scope")]
-    public async Task<ActionResult<ClassificationScopeOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
+    public async Task<ActionResult<ClassificationScopeOptions>> SourceScope([FromQuery] string? environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
         [FromQuery] string[]? excluded, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
-            : Ok(await reviews.SourceScopeAsync(environmentId, primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
+        Ok(await reviews.SourceScopeAsync(environmentId?.Trim() ?? "", primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
 
     [HttpPut("context")]
     public async Task<ActionResult<ClassificationTestContext>> SaveContext([FromQuery] string environmentId, [FromBody] ClassificationTestContext context, CancellationToken ct)

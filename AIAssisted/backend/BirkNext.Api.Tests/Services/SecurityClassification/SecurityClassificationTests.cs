@@ -956,4 +956,41 @@ public sealed class SecurityClassificationTests
         result.Findings.Should().Contain(f => f.RuleId == "cdc-classification-constant");
         JsonSerializer.Serialize(evidence).Should().NotContain("@example.com");
     }
+
+    // ── M01-BUG-01: Target Environment context ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RunsBelongToTheirTargetEnvironment_AndRecordItsNameSnapshot()
+    {
+        await using var db = Db();
+        var (service, _) = Service(db, new ClassificationTestContextStore());
+        var scope = await SnapshotAsync(db);
+
+        var run = await service.RunAsync("env-a", new ClassificationRunRequest { EnvironmentType = "Development", EnvironmentName = "Development A", SourceScope = scope });
+
+        run.EnvironmentId.Should().Be("env-a");
+        run.EnvironmentName.Should().Be("Development A", "the display name is a provenance snapshot; the id stays the identity");
+        (await service.OverviewAsync("env-a")).Latest!.RunId.Should().Be(run.RunId);
+        (await service.OverviewAsync("env-b")).Latest.Should().BeNull("environment A's runtime evidence never appears as environment B's");
+        (await service.GetRunAsync(run.RunId))!.EnvironmentName.Should().Be("Development A");
+    }
+
+    [Fact]
+    public async Task SourceEvidenceDoesNotNeedATargetEnvironment()
+    {
+        await using var db = Db();
+        var (service, _) = Service(db, new ClassificationTestContextStore());
+        var scope = await SnapshotAsync(db);
+
+        var withEnvironment = await service.SourceScopeAsync("dev", scope);
+        var withoutEnvironment = await service.SourceScopeAsync("", scope);
+
+        withoutEnvironment.Snapshots.Select(x => x.SnapshotId).Should().Equal(withEnvironment.Snapshots.Select(x => x.SnapshotId));
+        withoutEnvironment.Evidence.Should().NotBeNull();
+        withoutEnvironment.Evidence!.Facts.Select(f => f.Id).Should().Equal(withEnvironment.Evidence!.Facts.Select(f => f.Id));
+
+        var controller = new BirkNext.Api.Controllers.SecurityClassificationController(service);
+        var response = await controller.SourceScope(environmentId: null, primary: scope.PrimarySnapshotId, related: null, excluded: null, CancellationToken.None);
+        ((Microsoft.AspNetCore.Mvc.OkObjectResult)response.Result!).Value.Should().BeOfType<ClassificationScopeOptions>("a missing environment id is not a bad request for source evidence");
+    }
 }

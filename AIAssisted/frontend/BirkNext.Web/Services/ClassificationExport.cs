@@ -72,6 +72,6 @@ public static class ClassificationExport
         sb.Append("</ul><h2>Limitations</h2><ul>");
         foreach (var l in r.Limitations) sb.Append($"<li>{esc(l)}</li>");
         sb.Append("</ul></section>\n");
-        return buildHtml("M01 – Gradert tilgang (Kode 6/7)", null, $"Environment {r.EnvironmentId} · run {r.RunId}", sb.ToString());
+        return buildHtml("M01 – Gradert tilgang (Kode 6/7)", null, $"Target Environment {(r.EnvironmentName is { Length: > 0 } name ? $"{name} ({r.EnvironmentId})" : r.EnvironmentId)} · run {r.RunId}", sb.ToString());
     }
 }

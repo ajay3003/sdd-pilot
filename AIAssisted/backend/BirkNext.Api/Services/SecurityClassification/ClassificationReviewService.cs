@@ -113,7 +113,8 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
         }
         var context = ActiveContext(environmentId);
         var live = await probe.ProbeAsync(context, request, source?.Levels ?? [], ct);
-        var result = ClassificationEvaluator.Evaluate(environmentId, source, context, live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow);
+        var result = ClassificationEvaluator.Evaluate(environmentId, source, context, live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow)
+            with { EnvironmentName = string.IsNullOrWhiteSpace(request.EnvironmentName) ? null : request.EnvironmentName.Trim() };
         await StoreAsync(environmentId, RunKind, result.CompletedAt, result, result.RunId, ct);
         logger.LogInformation("Security classification review for {EnvironmentId}: {Overall}, live {Live} ({Observations} observation(s)), {Findings} finding(s), source scope {Scope}.",
             environmentId, result.Overall, live.State, live.Observations.Count, result.Findings.Count,

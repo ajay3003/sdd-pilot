@@ -197,13 +197,16 @@ public sealed class BackendConnectivityPageTests : BunitContext
     }
 
     [Fact]
-    public void SecurityClassification_NoTargetEnvironmentRequestsNothingAndSaysSo()
+    public void SecurityClassification_NoTargetEnvironmentRequestsNothingEnvironmentScopedAndSaysSo()
     {
+        ScopeAnswers();
         var cut = SecurityClassification(profileId: "");
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=sc-no-target]"));
-        cut.Find("[data-testid=sc-no-target]").TextContent.Should().Contain("No Target Environment is selected");
-        _backend.Requests.Should().BeEmpty("an empty environment id is a 400, which used to read as 'backend not reachable'");
+        // This context has no environments configured: said as such, never as "none selected".
+        cut.Find("[data-testid=sc-no-target]").TextContent.Should().Be("No Target Environment is configured.");
+        // Source evidence belongs to the snapshot and is still read; nothing environment-scoped (reviews, context, runs) is requested.
+        _backend.Requests.Should().OnlyContain(r => r.Contains("api/security-classification/source-scope"), "only the environment-independent source scope is read");
         cut.Markup.Should().NotContainEquivalentOf("not reachable");
     }
 

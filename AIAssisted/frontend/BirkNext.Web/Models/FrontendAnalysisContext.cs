@@ -14,6 +14,8 @@ public sealed class FrontendAnalysisContext
         return copy;
     }
     public string? ActiveTargetError { get; init; }
+    /// <summary>Which state the active Target Environment is in (active, none selected, none configured, unresolved). Built once, by the factory.</summary>
+    public TargetEnvironmentResolution TargetEnvironment { get; init; } = new();
     public FrontendAnalysisProfile           ActiveProfile              { get; set; } = new();
 
     /// <summary>

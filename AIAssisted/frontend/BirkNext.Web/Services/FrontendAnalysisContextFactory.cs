@@ -34,6 +34,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
         await _settings.LoadAsync(_js);
 
         var profile       = _settings.ActiveProfile;
+        var resolution    = TargetEnvironmentResolution.From(_settings.Settings, profile);
         if (profile is null)
         {
             var error = _settings.Settings.ActiveResolutionError ??
@@ -43,6 +44,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             return new FrontendAnalysisContext
             {
                 ActiveTargetError = error,
+                TargetEnvironment = resolution,
                 ValidationWarnings = [error],
                 ValidationErrors = [error]
             };
@@ -70,6 +72,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
         return new FrontendAnalysisContext
         {
             ActiveProfile               = CreateSafeProfileSnapshot(profile),
+            TargetEnvironment           = resolution,
             TargetUrl                   = profile.TargetUrl?.Trim() ?? "",
             RestBaseUrl                 = profile.RestBaseUrl?.Trim(),
             HealthEndpoint              = profile.HealthEndpoint?.Trim(),
