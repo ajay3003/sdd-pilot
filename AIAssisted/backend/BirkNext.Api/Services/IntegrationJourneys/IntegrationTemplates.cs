@@ -58,10 +58,16 @@ public static class IntegrationTemplates
         };
     }
 
-    /// <summary>XML schemas named exactly <paramref name="name"/> (case-insensitive) in each snapshot recognized as the evidence source — what the
-    /// source contains, in the candidates' order. Never a fuzzy match, never chosen automatically.</summary>
-    private static IReadOnlyList<IntegrationTemplateSchemaCandidate> Schemas(JourneyPackContext context, TestPackSourceStatus evidence, string name) =>
-        [.. evidence.Candidates.SelectMany(candidate => (context.SourceSnapshots.FirstOrDefault(snapshot => snapshot.Id == candidate.SnapshotId)?.EvidenceDomains?.Contracts.Contracts ?? [])
-            .Where(contract => contract.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema && string.Equals(contract.Name, name, StringComparison.OrdinalIgnoreCase))
-            .Select(contract => new IntegrationTemplateSchemaCandidate(candidate.SnapshotId, candidate.ArchiveFileName, contract.Name, contract.File) { Version = contract.Version }))];
+    /// <summary>XML schemas named exactly <paramref name="name"/> (declared name or file stem, case-insensitive) in each snapshot recognized as the
+    /// evidence source AND in every snapshot an IQR binding points at (a re-import gives the recognized source a new snapshot id; the bound one is
+    /// still where the integration's evidence lives). Never a fuzzy match, never chosen automatically.</summary>
+    private static IReadOnlyList<IntegrationTemplateSchemaCandidate> Schemas(JourneyPackContext context, TestPackSourceStatus evidence, string name)
+    {
+        var scanned = evidence.Candidates.Select(candidate => (candidate.SnapshotId, candidate.ArchiveFileName))
+            .Concat(context.Bindings.Select(binding => (SnapshotId: binding.SnapshotId, ArchiveFileName: binding.ArchiveName)))
+            .DistinctBy(item => item.SnapshotId);
+        return [.. scanned.SelectMany(item => (context.SourceSnapshots.FirstOrDefault(snapshot => snapshot.Id == item.SnapshotId)?.EvidenceDomains?.Contracts.Contracts ?? [])
+            .Where(contract => contract.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema && BirkNext.ContractSchemaEvidence.ContractArtifactPaths.NamedExactly(contract, name))
+            .Select(contract => new IntegrationTemplateSchemaCandidate(item.SnapshotId, item.ArchiveFileName, contract.Name, contract.File) { Version = contract.Version }))];
+    }
 }

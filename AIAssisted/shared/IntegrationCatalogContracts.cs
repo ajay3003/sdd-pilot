@@ -584,6 +584,14 @@ public sealed record IntegrationSystemScope
 public sealed record IntegrationReviewReadiness
 {
     public List<IqrSourceSnapshot> SourceSnapshots { get; init; } = [];
+    /// <summary>The integration this readiness is scoped to (Domains, Systems, Reasons and source evidence are for it alone), or null for the
+    /// explicit environment-wide mode. <see cref="Subjects"/> always lists every enabled integration so one can be selected.</summary>
+    public string? ScopeIntegrationId { get; init; }
+    /// <summary>Per integration in scope: bound snapshot, integration-specific evidence resolved or not, repository context.</summary>
+    public List<IntegrationSourceEvidenceScope> SourceScopes { get; init; } = [];
+    /// <summary>Every stored Source Analysis snapshot (newest first) a person may choose to bind — availability only, never evidence for an
+    /// integration. <see cref="SourceSnapshots"/> holds the integration-specific (correlated) evidence of the bound snapshots.</summary>
+    public List<IqrSourceSnapshot> AvailableSourceSnapshots { get; init; } = [];
     public string EnvironmentId { get; init; } = "";
     public List<IntegrationSystemScope> Systems { get; init; } = [];
     public int ConfiguredIntegrations { get; init; }
@@ -888,6 +896,9 @@ public sealed record IntegrationSystemResult
 public sealed record IntegrationReviewResult
 {
     public List<IqrSourceSnapshot> SourceSnapshots { get; init; } = [];
+    /// <summary>The integration the run was scoped to, or null for an environment-wide run.</summary>
+    public string? ScopeIntegrationId { get; init; }
+    public List<IntegrationSourceEvidenceScope> SourceScopes { get; init; } = [];
     public Guid RunId { get; init; }
     public string EnvironmentId { get; init; } = "";
     public string EnvironmentName { get; init; } = "";
@@ -945,6 +956,8 @@ public sealed record IntegrationReviewResult
 public sealed record IntegrationReviewRunRequest
 {
     public List<IqrSourceSelection> SourceSelections { get; init; } = [];
+    /// <summary>Review only this configured integration (its transport's checks, its source evidence). Null = explicit environment-wide review.</summary>
+    public string? IntegrationId { get; init; }
     public string EnvironmentId { get; init; } = "";
     public string EnvironmentName { get; init; } = "";
     /// <summary>The Target Environment type (Development, QA, Production …). Runtime checks that contact an endpoint refuse Production and unknown types.</summary>

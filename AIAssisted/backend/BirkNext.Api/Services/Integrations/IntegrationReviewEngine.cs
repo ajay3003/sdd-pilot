@@ -75,6 +75,17 @@ public sealed class IntegrationReviewEngine(
         };
     }
 
+    /// <summary>Every enabled integration as a selectable review subject (the selector lists them all, whatever the scope).</summary>
+    public static List<IntegrationReviewSubject> Subjects(IntegrationCatalog catalog, IReadOnlyList<IntegrationReviewEvidenceFacts> facts)
+    {
+        var factsById = facts.GroupBy(f => f.IntegrationId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        return [.. catalog.Integrations.Where(i => i.Enabled).Select(i => new IntegrationReviewSubject(i.Id, i.DisplayName, i.Kind, IntegrationReviewProfiles.Capability(i.Kind))
+        {
+            Producer = i.Producer, Consumer = i.Consumer.DisplayName, EndpointOrTopic = i.EndpointOrTopic, MappingState = i.Consumer.MappingState,
+            Facts = factsById.GetValueOrDefault(i.Id),
+        })];
+    }
+
     private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging,
         IReadOnlyList<ServiceBusReadiness> serviceBusSummaries, IReadOnlyList<IntegrationReviewEvidenceFacts> facts)
     {
@@ -218,11 +229,7 @@ public sealed class IntegrationReviewEngine(
             profiles.Add((IntegrationReviewCapability.MessageBroker, IntegrationReviewProfiles.ServiceBus(brokers, catalog.Platforms, serviceBusSummaries, contracts)));
         if (byCapability.TryGetValue(IntegrationReviewCapability.ConfigurationOnly, out var others)) profiles.Add((IntegrationReviewCapability.ConfigurationOnly, IntegrationReviewProfiles.ConfigurationOnly(others)));
         var domains = profiles.Count == 0 ? eventStreamDomains : IntegrationReviewProfiles.Combine(profiles);
-        var subjects = enabled.Select(i => new IntegrationReviewSubject(i.Id, i.DisplayName, i.Kind, IntegrationReviewProfiles.Capability(i.Kind))
-        {
-            Producer = i.Producer, Consumer = i.Consumer.DisplayName, EndpointOrTopic = i.EndpointOrTopic, MappingState = i.Consumer.MappingState,
-            Facts = factsById.GetValueOrDefault(i.Id),
-        }).ToList();
+        var subjects = Subjects(catalog, facts);
 
         var canRun = enabled.Count > 0;
         var limited = domains.Any(d => d.Readiness is IntegrationDomainReadiness.Limited or IntegrationDomainReadiness.NotAssessable or IntegrationDomainReadiness.Partial);

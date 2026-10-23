@@ -879,6 +879,13 @@
     {
         if (_catalog is null || Focus is not { Length: > 0 } focus || _appliedFocus == focus) return;
         _appliedFocus = focus;
+        // "integration:{id}": a journey/IQR link to one existing integration — opened for review, never a new (duplicate) one.
+        if (focus.StartsWith(IntegrationReviewPresentation.IntegrationFocusPrefix, StringComparison.Ordinal))
+        {
+            var id = focus[IntegrationReviewPresentation.IntegrationFocusPrefix.Length..];
+            if (_catalog.Integrations.FirstOrDefault(i => i.Id == id) is { } existing) _ = InvokeAsync(async () => { await BeginEdit(existing); StateHasChanged(); });
+            return;
+        }
         switch (focus)
         {
             case IntegrationReviewPrerunPresentation.FocusMappings:

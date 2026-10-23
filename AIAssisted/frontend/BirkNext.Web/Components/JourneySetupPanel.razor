@@ -1,0 +1,78 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
+@inject IJSRuntime JS
+
+@* Guided Setup for one journey: the shared step model over the journey's authoritative readiness. Stateless — reopening recomputes it from the
+   owners; viewing it saves nothing. Each step keeps expected / configured / source verified / runtime verified apart and opens its owner with the
+   exact context. "Continue setup" moves to the first required step that is not ready. *@
+@if (Setup is { } setup)
+{
+    <section class="js-setup" aria-labelledby="@($"{Id}-heading")" data-testid="js-setup" data-journey="@setup.JourneyId" data-complete="@(setup.SetupComplete ? "true" : "false")">
+        <h3 id="@($"{Id}-heading")" tabindex="-1">Prepare @setup.JourneyName</h3>
+        <p class="js-progress" data-testid="js-progress">@JourneySetupPresentation.Progress(setup)</p>
+        <p class="js-next" data-testid="js-next" role="status">@JourneySetupPresentation.Completion(setup)</p>
+        <dl class="js-separate">
+            <div><dt>Setup</dt><dd data-testid="js-setup-state">@(setup.SetupComplete ? "Ready" : "Incomplete")</dd></div>
+            <div><dt>Execution</dt><dd data-testid="js-execution-state">@setup.Execution</dd></div>
+        </dl>
+        @if (setup.NextStep is { } next)
+        {
+            <button type="button" class="btn-primary" data-testid="js-continue" @onclick="() => ContinueAsync(next)">Continue setup</button>
+        }
+        <ol class="js-steps" data-testid="js-steps">
+            @foreach (var step in setup.Steps)
+            {
+                var action = JourneySetupPresentation.Action(step, View!, ProfileId);
+                <li class="js-step" id="@JourneySetupPresentation.StepId(setup.JourneyId, step.Kind)" tabindex="-1" data-testid="js-step" data-kind="@step.Kind" data-status="@step.Status" data-required="@(step.Required ? "true" : "false")">
+                    <div class="js-step-head"><strong>@step.Title</strong> <span class="js-pill js-pill-@JourneySetupPresentation.Tone(step.Status)" data-testid="js-step-status">@JourneySetupPresentation.Status(step.Status)</span>
+                        @if (!step.Required) { <span class="js-muted">optional</span> }
+                        @if (step.ManualOnly) { <span class="js-pill js-pill-muted" data-testid="js-step-manual">Manual requirement</span> }</div>
+                    @if (step.Blocker.Length > 0) { <p class="js-blocker" data-testid="js-step-blocker">@step.Blocker</p> }
+                    <dl class="js-facts" data-testid="js-step-facts">
+                        <div><dt>Configured</dt><dd>@JourneySetupPresentation.YesNo(step.Facts.Configured)</dd></div>
+                        <div><dt>Source verified</dt><dd>@JourneySetupPresentation.YesNo(step.Facts.SourceVerified)</dd></div>
+                        <div><dt>Runtime verified</dt><dd>@JourneySetupPresentation.YesNo(step.Facts.RuntimeVerified)</dd></div>
+                    </dl>
+                    <p class="js-muted" data-testid="js-step-owner">Owner: @step.Owner</p>
+                    @if (step.Status != JourneySetupStepStatus.Ready)
+                    {
+                        @if (action.Href is { } href) { <a class="btn-secondary js-action" href="@href" data-testid="js-step-action" aria-label="@($"{action.Label}: {step.Title}")">@action.Label</a> }
+                        @if (action.Note is { } note) { <p class="js-muted" data-testid="js-step-note">@note</p> }
+                    }
+                    <ReviewDisclosure Text="Provenance" CollapseText="Hide provenance" TestId="js-step-provenance" Class="disclosure-inline">
+                        <p class="js-muted">Requires: @step.Requirement</p>
+                        <p class="js-muted">Resolved from: @(step.Provenance.Length > 0 ? step.Provenance : "the journey's readiness")</p>
+                        <p class="js-muted">Checks: @step.OpenChecks open of @step.Checks.Count</p>
+                    </ReviewDisclosure>
+                </li>
+            }
+        </ol>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public string PackId { get; set; } = "";
+    [Parameter, EditorRequired] public IntegrationJourneyView? View { get; set; }
+    [Parameter] public string? ProfileId { get; set; }
+    /// <summary>Move focus to the first unresolved required step when first shown (deep link "?setup=continue").</summary>
+    [Parameter] public bool FocusNext { get; set; }
+
+    private JourneySetupView? Setup => View is null ? null : JourneySetupModel.Build(PackId, View);
+    private string Id => $"js-{View?.Journey.JourneyId}";
+    private bool _focused;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (FocusNext && !_focused && Setup?.NextStep is { } next)
+        {
+            _focused = true;
+            await ContinueAsync(next);
+        }
+    }
+
+    private async Task ContinueAsync(JourneySetupStepKind next)
+    {
+        try { await JS.InvokeVoidAsync("birknextFocusElement", JourneySetupPresentation.StepId(View!.Journey.JourneyId, next)); } catch (JSException) { }
+    }
+}

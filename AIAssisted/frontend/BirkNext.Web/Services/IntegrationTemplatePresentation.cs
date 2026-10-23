@@ -101,6 +101,10 @@ public static class IntegrationTemplatePresentation
         _ => "Missing",
     };
 
+    /// <summary>IQR Setup &amp; Evidence scoped to this integration with the binding editor open — never a generic page that needs reselection.</summary>
+    public static string ChangeEvidenceHref(string integrationId) =>
+        $"/integration-quality-review?view=setup-evidence&integration={Uri.EscapeDataString(integrationId)}&evidence=bind";
+
     public static string Meaning(TemplateEvidenceState state) => state switch
     {
         TemplateEvidenceState.NotRequired => "This integration does not require source evidence.",

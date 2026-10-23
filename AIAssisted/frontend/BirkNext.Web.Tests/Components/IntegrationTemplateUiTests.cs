@@ -364,7 +364,7 @@ public sealed class IntegrationTemplateUiTests : BunitContext
         cut.Find("[data-testid=ip-edit-contract-reference] h6").TextContent.Should().Be("Declared submission contract");
         cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().Contain("application/xml").And.Contain("Task_1").And.Contain("Fill in")
             .And.Contain("does not prove which downstream schema the receiving side actively validates");
-        cut.Find("[data-testid=ip-edit-contract-schema-summary]").TextContent.Should().Be("Matching schema found in MU (Meldingsutveksleren) source");
+        cut.Find("[data-testid=ip-edit-contract-schema-summary]").TextContent.Should().Be("Matching source schema found · relationship not yet confirmed");
         cut.Find("[data-testid=ip-edit-contract-schema-state]").TextContent.Should().Be("Review required", "an exact name match is evidence to review, not a confirmed relationship");
         cut.Find("[data-testid=ip-edit-contract-schema-file]").TextContent.Should().Be("Schemas/portal_report_v2.xsd");
         cut.Find("[data-testid=ip-edit-contract-reference]").TextContent.Should().NotContain("verified");

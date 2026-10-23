@@ -29,6 +29,15 @@ public interface IIntegrationJourneysApiService
     /// <summary>Every pack's Add-integration templates resolved for one environment (read-only guidance; nothing is created or bound).</summary>
     Task<ActiveEventApiResult<IReadOnlyList<IntegrationTemplateView>>> IntegrationTemplatesAsync(string? environmentId, string? environmentType, CancellationToken ct = default) =>
         Task.FromResult(new ActiveEventApiResult<IReadOnlyList<IntegrationTemplateView>>(null, "Integration templates are not available.", null));
+    /// <summary>Validates and previews a setup profile against the current owners (read-only; nothing is changed).</summary>
+    Task<ActiveEventApiResult<SetupProfilePreview>> PreviewSetupProfileAsync(string environmentId, string packId, SetupProfileRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<SetupProfilePreview>(null, "Setup profiles are not available.", null));
+    /// <summary>Applies only the selected safe changes of a profile (explicit; needs the configuration permission).</summary>
+    Task<ActiveEventApiResult<SetupApplyResult>> ApplySetupProfileAsync(string environmentId, string packId, SetupApplyRequest request, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<SetupApplyResult>(null, "Setup profiles are not available.", null));
+    /// <summary>The environment's safe setup as a sanitized profile (or, with no environment, the placeholder example).</summary>
+    Task<ActiveEventApiResult<SetupProfileExport>> ExportSetupProfileAsync(string? environmentId, string packId, SetupProfileFormat format, CancellationToken ct = default) =>
+        Task.FromResult(new ActiveEventApiResult<SetupProfileExport>(null, "Setup profiles are not available.", null));
     Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default);
     /// <summary>Validates a run without executing it (the backend makes no external call and records nothing).</summary>
     Task<ActiveEventApiResult<JourneyRunValidation>> ValidateAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default) =>
@@ -67,6 +76,25 @@ public sealed class IntegrationJourneysApiService(HttpClient http) : IIntegratio
     {
         using var response = await http.PostAsync($"api/integration-journeys/packs/{E(packId)}/source-guidance/apply?environmentId={E(environmentId)}", null, ct);
         return await ReadAsync<BirkNext.SourceDomains.SourceConfigurationApplyResult>(response, ct);
+    }
+
+    public async Task<ActiveEventApiResult<SetupProfilePreview>> PreviewSetupProfileAsync(string environmentId, string packId, SetupProfileRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/setup-profiles/{E(packId)}/preview?environmentId={E(environmentId)}", request, Json, ct);
+        return await ReadAsync<SetupProfilePreview>(response, ct);
+    }
+
+    public async Task<ActiveEventApiResult<SetupApplyResult>> ApplySetupProfileAsync(string environmentId, string packId, SetupApplyRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/setup-profiles/{E(packId)}/apply?environmentId={E(environmentId)}", request, Json, ct);
+        return await ReadAsync<SetupApplyResult>(response, ct);
+    }
+
+    public async Task<ActiveEventApiResult<SetupProfileExport>> ExportSetupProfileAsync(string? environmentId, string packId, SetupProfileFormat format, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync(string.IsNullOrWhiteSpace(environmentId) ? $"api/setup-profiles/{E(packId)}/example"
+            : $"api/setup-profiles/{E(packId)}/export?environmentId={E(environmentId)}&format={format}", ct);
+        return await ReadAsync<SetupProfileExport>(response, ct);
     }
 
     public async Task<ActiveEventApiResult<IntegrationJourneyRun>> StartAsync(IntegrationJourneyRunRequest request, CancellationToken ct = default)

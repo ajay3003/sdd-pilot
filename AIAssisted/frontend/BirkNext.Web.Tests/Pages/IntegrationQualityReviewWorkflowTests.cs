@@ -151,7 +151,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
     {
         Arrange();
         var cut = Open("review");
-        cut.Find("[data-testid=iqr-review-profiles]").TextContent.Should().Contain("HTTP/API (1)");
+        cut.Find("[data-testid=iqr-review-scope]").TextContent.Should().Contain("HTTP/API");
         cut.FindAll("[data-testid=iqr-domain-status]").Select(s => s.TextContent).Should().Equal("Reviewable", "Partially reviewable", "Not assessable");
         cut.Find("[data-testid=iqr-run-from-review]").TextContent.Trim().Should().Be("Run review");
         cut.Find("[data-testid=iqr-group-coverage]").TextContent.Should().Contain("No messages are published, consumed or changed.");
@@ -198,8 +198,95 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         var second = new IntegrationReviewSubject("dev:sb:closed", "Period closed", IntegrationKind.ServiceBus, IntegrationReviewCapability.MessageBroker) { MappingState = ConsumerMappingState.Confirmed, EndpointOrTopic = "period-closed" };
         _api.Readiness = _api.Readiness! with { Subjects = [.. _api.Readiness!.Subjects, second] };
         var cut = Open();
-        cut.FindAll("[data-testid=iqr-subject-select] option").Select(o => o.TextContent).Should().Equal("Portal – report intake", "Period closed");
+        // Each integration with its type, and the environment-wide review only as an explicit last choice.
+        cut.FindAll("[data-testid=iqr-subject-select] option").Select(o => o.TextContent).Should().Equal("Portal – report intake · HTTP/API", "Period closed · Service Bus", "All enabled integrations (environment-wide review)");
         cut.Find("[data-testid=iqr-subject-select] select").Change("dev:sb:closed");
         cut.Find("[data-testid=iqr-subject-name]").TextContent.Should().Be("Period closed");
+    }
+
+    // ── The selected integration IS the review scope ────────────────────────────────────────────────────────────────
+
+    private static readonly IntegrationReviewSubject Closed = new("dev:sb:closed", "Period closed", IntegrationKind.ServiceBus, IntegrationReviewCapability.MessageBroker)
+        { MappingState = ConsumerMappingState.Confirmed, EndpointOrTopic = "skole.reports" };
+
+    private void ArrangeScoped()
+    {
+        Arrange();
+        var all = _api.Readiness!;
+        _api.ScopedReadiness = id => id switch
+        {
+            IntakeId => all with { ScopeIntegrationId = IntakeId, Subjects = [.. all.Subjects, Closed] },
+            "dev:sb:closed" => all with
+            {
+                ScopeIntegrationId = "dev:sb:closed", Subjects = [.. all.Subjects, Closed],
+                Systems = [new IntegrationSystemScope { SystemName = "Skole → Bufdata", Kind = IntegrationKind.ServiceBus, Topics = 1, Enabled = 1, DomainReviewSupported = true }],
+                Domains = [new(IntegrationReviewDomain.MessageFlow, IntegrationDomainReadiness.Partial, "Service Bus topology from configuration.")],
+            },
+            _ => all with { Subjects = [.. all.Subjects, Closed] },
+        };
+    }
+
+    [Fact]
+    public void SelectingAnIntegration_RecomputesTheReviewPlanForIt_AndTheRunIsScoped()
+    {
+        ArrangeScoped();
+        var cut = Open();
+        _api.ScopeRequests.Last().Should().Be(IntakeId, "without a choice the first integration is reviewed — never a silent environment-wide mix");
+        cut.Find("[data-testid=iqr-review-scope]").TextContent.Should().StartWith("Review scope: Portal – report intake · HTTP/API").And.NotContain("Service Bus");
+
+        cut.Find("[data-testid=iqr-subject-select] select").Change("dev:sb:closed");
+        _api.ScopeRequests.Last().Should().Be("dev:sb:closed", "switching recomputes the plan from the backend");
+        cut.Find("[data-testid=iqr-review-scope]").TextContent.Should().StartWith("Review scope: Period closed · Service Bus").And.NotContain("HTTP/API");
+        cut.Find("[data-testid=iqr-review-scope]").GetAttribute("data-scope").Should().Be("dev:sb:closed");
+
+        cut.Find("[data-testid=iqr-subject-select] select").Change("all");
+        _api.ScopeRequests.Last().Should().BeNull("the environment-wide review is an explicit choice");
+        cut.Find("[data-testid=iqr-review-scope]").TextContent.Should().StartWith("Review scope: all 2 enabled integrations (environment-wide review)");
+
+        cut.Find("[data-testid=iqr-subject-select] select").Change("dev:sb:closed");
+        cut.Find("[data-testid=iqr-run]").Click();
+        _api.RunScopes.Last().Should().Be("dev:sb:closed", "the run reviews the selected integration only");
+    }
+
+    [Fact]
+    public void SourceEvidence_ShowsTheSelectedIntegrationsOwnBinding_BoundIsNotResolved_OthersSecondary()
+    {
+        ArrangeScoped();
+        var all = _api.ScopedReadiness!;
+        _api.ScopedReadiness = id => all(id) with
+        {
+            SourceScopes = [new IntegrationSourceEvidenceScope(IntakeId) { SnapshotBound = true, ArchiveName = "hub.zip", EvidenceResolved = false,
+                Summary = "Source bound · integration-specific evidence unresolved: nothing in hub.zip correlates with this integration's producer, consumer, channel or source resource." }],
+        };
+        _api.EvidenceBindings = [.. _api.EvidenceBindings, new IntegrationEvidenceBinding { EnvironmentId = "dev", IntegrationId = "dev:sb:closed", SnapshotId = Guid.NewGuid(), ArchiveName = "M2LB.zip" }];
+        _api.Catalog = _api.Catalog! with { Integrations = [.. _api.Catalog!.Integrations, new IntegrationDefinition { Id = "dev:sb:closed", EnvironmentId = "dev", DisplayName = "Period closed", Kind = IntegrationKind.ServiceBus, Enabled = true }] };
+        var cut = Open(IntegrationReviewPrerunPresentation.SetupView);
+
+        var own = cut.Find("[data-testid=iqr-own-evidence]");
+        own.GetAttribute("data-integration").Should().Be(IntakeId);
+        own.TextContent.Should().Contain("Canonical source evidence for Portal – report intake");
+        cut.Find("[data-testid=iqr-own-binding]").TextContent.Should().Contain("hub.zip").And.Contain("bound");
+        cut.Find("[data-testid=iqr-own-correlation]").TextContent.Should().Be("Unresolved — source bound · integration-specific evidence not resolved", "bound ≠ resolved");
+        cut.Find("[data-testid=iqr-other-bindings]").TextContent.Should().Contain("Other Development integration bindings (1)");
+    }
+
+    [Fact]
+    public void ContractPair_ShowsBothExactSides_AndDeepLinksTheExactArtifacts()
+    {
+        ArrangeScoped();
+        var snapshot = Guid.NewGuid();
+        _api.Pair = new BirkNext.ContractSchemaEvidence.ContractRelationshipReview
+        {
+            IntegrationId = IntakeId, State = BirkNext.ContractSchemaEvidence.ContractRelationshipResultState.NotAssessable,
+            ProducerReference = "portal_report_v2", Consumer = new(snapshot, "hub.zip", "xsd/portal_report_v2.xsd", "portal_report_v2", "2"),
+            Summary = "Matching source schema found · relationship not yet confirmed (the producer artifact is not available for a structural comparison).",
+        };
+        var cut = Open(IntegrationReviewPrerunPresentation.SetupView);
+        cut.Find("[data-testid=iqr-contract-pair-consumer]").TextContent.Should().Be("xsd/portal_report_v2.xsd · hub.zip");
+        cut.Find("[data-testid=iqr-contract-pair-producer]").TextContent.Should().Be("portal_report_v2 · no exact artifact");
+        cut.Find("[data-testid=iqr-contract-pair-state]").TextContent.Should().Be("Insufficient evidence · not assessable");
+        cut.Find("[data-testid=iqr-contract-pair-summary]").TextContent.Should().StartWith("Matching source schema found · relationship not yet confirmed");
+        cut.Find("[data-testid=iqr-contract-pair-studio]").GetAttribute("href").Should().Be(
+            $"/schema-studio?snapshot={snapshot}&contract=xsd%2Fportal_report_v2.xsd&environment=dev&integration={Uri.EscapeDataString(IntakeId)}");
     }
 }

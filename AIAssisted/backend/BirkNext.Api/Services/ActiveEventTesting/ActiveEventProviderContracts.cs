@@ -38,6 +38,9 @@ public interface IActiveEventScenarioProvider
     /// <summary>Every scenario the provider declares, independent of configuration (display only; execution uses <see cref="GetScenarios"/>).</summary>
     IReadOnlyList<ActiveEventScenarioDescriptor> CatalogScenarios { get; }
     bool CanApply(ActiveEventProjectEvidenceContext context);
+    /// <summary>The provider resource (one of <see cref="Resources"/>) the integration in the context covers, or null. Resource-level readiness
+    /// reads this, so a provider covering several resources reports each one instead of one combined "not configured".</summary>
+    string? ResourceOf(ActiveEventProjectEvidenceContext context) => CanApply(context) ? Resources.FirstOrDefault() : null;
     IReadOnlyList<ActiveEventScenarioDescriptor> GetScenarios(ActiveEventProjectEvidenceContext context);
     Task<ActiveEventScenarioPreparation> PrepareAsync(string scenarioId, ActiveEventProjectEvidenceContext context, Guid? sourceSnapshotId, CancellationToken ct);
     Task<ActiveEventScenarioGeneration> GenerateAsync(string scenarioId, Guid runId, ActiveEventTrustedTarget target,

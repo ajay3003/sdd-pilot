@@ -64,6 +64,9 @@
     <Compile Include="../../shared/StandardsReferenceContracts.cs" Link="Models/StandardsReferenceContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
     <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
+    <Compile Include="../../shared/IntegrationIdentityContracts.cs" Link="Models/IntegrationIdentityContracts.cs" />
+    <Compile Include="../../shared/JourneySetupContracts.cs" Link="Models/JourneySetupContracts.cs" />
+    <Compile Include="../../shared/SetupProfileContracts.cs" Link="Models/SetupProfileContracts.cs" />
     <Compile Include="../../shared/IntegrationFieldRules.cs" Link="Models/IntegrationFieldRules.cs" />
     <Compile Include="../../shared/IntegrationReadinessRules.cs" Link="Models/IntegrationReadinessRules.cs" />
     <Compile Include="../../shared/IntegrationContractDiscoveryContracts.cs" Link="Models/IntegrationContractDiscoveryContracts.cs" />
@@ -115,6 +118,7 @@
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/DependencyEvidenceContracts.cs" Link="Models/DependencyEvidenceContracts.cs" />
     <Compile Include="../../shared/ContractEvidenceContracts.cs" Link="Models/ContractEvidenceContracts.cs" />
+    <Compile Include="../../shared/ContractRelationshipContracts.cs" Link="Models/ContractRelationshipContracts.cs" />
     <Compile Include="../../shared/DeliveryEvidenceContracts.cs" Link="Models/DeliveryEvidenceContracts.cs" />
     <Compile Include="../../shared/TestEvidenceQueries.cs" Link="Models/TestEvidenceQueries.cs" />
     <Compile Include="../../shared/QualityEvidenceContracts.cs" Link="Models/QualityEvidenceContracts.cs" />

@@ -390,9 +390,12 @@ public sealed class AltinnTestingPolicy(AltinnTestingOptions options)
         var confirmation = candidates.Where((_, index) => problems[index] is null).FirstOrDefault();
         detail = confirmation is null && problems.OfType<string>().FirstOrDefault() is { } invalid
             ? $"App authorization policy not confirmed: {invalid} Real submissions stay disabled."
+            : confirmation is null && string.IsNullOrWhiteSpace(appId)
+            ? $"App authorization policy not confirmed: no Altinn app id is saved for the run, and confirmations ({AltinnTestingOptions.Section}:ConfirmedAppPolicies) are looked up by app id. Real submissions stay disabled."
             : confirmation is null
             ? $"App authorization policy not confirmed: no service-owner confirmation that {appId ?? "the app"}'s XACML policy lets the synthetic TEST reporter instantiate, write and complete (backend {AltinnTestingOptions.Section}:ConfirmedAppPolicies). Real submissions stay disabled."
-            : $"App authorization policy confirmed ({confirmation.ConfirmedOn:yyyy-MM-dd}, {confirmation.ConfirmedBy}, reference {confirmation.Reference})"
+            // Provenance first: a person recorded this in backend configuration (before and independently of any setup action); matched by app id.
+            : $"App authorization policy confirmed in backend configuration {AltinnTestingOptions.Section}:ConfirmedAppPolicies for app {appId} ({confirmation.ConfirmedOn:yyyy-MM-dd}, {confirmation.ConfirmedBy}, reference {confirmation.Reference}) — a recorded human confirmation, never derived from source evidence or applied configuration"
               + (confirmation.EndUserRoles.Count > 0 ? $"; end-user roles {string.Join(", ", confirmation.EndUserRoles)}" : "")
               + (confirmation.EndUserActions.Count > 0 ? $"; end-user actions {string.Join(", ", confirmation.EndUserActions)}" : "")
               + (confirmation.MinimumAuthenticationLevel is { } level ? $"; minimum authentication level {level}" : "")

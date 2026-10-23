@@ -120,7 +120,9 @@ public sealed class SkoleNaervaerJourneyPackTests
         var closure = views["periodeavslutning"];
         closure.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == PeriodClosed.Id);
         closure.Prerequisites.Single(item => item.Key == "domain-trigger").State.Should().Be(JourneyReadinessState.NotReady);
-        closure.Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().Contain("not source verified");
+        // Channel and contract are separate facts: the channel is looked up by the integration's own topic, the contract as a contract.
+        closure.Prerequisites.Single(item => item.Key == "event-channel").Detail.Should().Contain("not source verified");
+        closure.Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().Contain("separate fact");
         closure.CanRun.Should().BeFalse();
 
         var cdc = views["utdanningsdata"];
@@ -175,7 +177,8 @@ public sealed class SkoleNaervaerJourneyPackTests
             Architecture = new ArchitectureSnapshot
             {
                 Components = [new() { Id = "c-mm", Name = "Skolenaervaer.MM.Worker" }, new() { Id = "c-rapport", Name = "Skolenaervaersrapport.Api" }],
-                MessagingChannels = [new() { Id = "ch-1", Name = "SkolenaervaersperiodeLukket", Type = MessagingChannelType.ServiceBusTopic }],
+                // The real shape: the period-closed event is carried on the skole.reports topic; the topic is not named after the event.
+                MessagingChannels = [new() { Id = "ch-1", Name = "skole.reports", EntityName = "skole.reports", Type = MessagingChannelType.ServiceBusTopic, ContractReferences = ["SkolenaervaersperiodeLukket"] }],
             },
         };
         harness.Sources.Snapshots.Add(snapshot);
@@ -185,8 +188,10 @@ public sealed class SkoleNaervaerJourneyPackTests
         // Stored but not bound: found, named, never source verified.
         var unbound = await ViewsAsync();
         unbound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Partial);
-        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").State.Should().Be(JourneyReadinessState.Partial);
-        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().StartWith("Not source verified").And.Contain("not bound");
+        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-channel").State.Should().Be(JourneyReadinessState.Partial);
+        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-channel").Detail.Should().StartWith("Not source verified").And.Contain("not bound");
+        unbound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").State.Should().Be(JourneyReadinessState.Partial,
+            "the event contract is named by the channel's contract references — a separate fact from the channel");
         unbound["periodeavslutning"].Maturity.SourceVerified.Should().BeFalse("an unbound snapshot never makes a journey source verified");
 
         // Bound in IQR: the same evidence is now authoritative.
@@ -194,7 +199,7 @@ public sealed class SkoleNaervaerJourneyPackTests
         var bound = await ViewsAsync();
         bound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MM").State.Should().Be(JourneyReadinessState.Ready);
         bound["rapportmottak"].Prerequisites.Single(item => item.Key == "source:MU").State.Should().Be(JourneyReadinessState.NotReady);
-        bound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-contract").Detail.Should().StartWith("Source verified").And.Contain("bound in Integration Quality Review");
+        bound["periodeavslutning"].Prerequisites.Single(item => item.Key == "event-channel").Detail.Should().StartWith("Source verified").And.Contain("bound in Integration Quality Review");
     }
 
     [Fact]
@@ -316,5 +321,48 @@ public sealed class SkoleNaervaerJourneyPackTests
             "without Source Analysis evidence SkoleAdapter and Utdanning are not source verified");
         education.Maturity.SourceVerified.Should().BeFalse();
         education.Maturity.Configured.Should().BeFalse();
+    }
+
+    // ── Canonical identity: an existing technical integration is the journey's integration ─────────────────────────────
+
+    [Fact]
+    public async Task Periodeavslutning_FindsTheExistingSkoleReportsIntegration_MappingIncomplete_NeverMissing()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.Active.Catalog.Extra.Add(new IntegrationDefinition
+        {
+            Id = "dev:servicebus:skole-reports", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "skole.reports", Kind = IntegrationKind.ServiceBus, Enabled = true,
+            EndpointOrTopic = "skole.reports", Producer = "M2LB.SkoleService.Api",
+        });
+        var closure = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "periodeavslutning");
+
+        closure.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == "dev:servicebus:skole-reports" && item.MatchState == IntegrationMatchState.MappingIncomplete);
+        closure.Prerequisites.Should().NotContain(item => item.Category == JourneyPrerequisiteCategory.Integration && item.State == JourneyReadinessState.NotConfigured,
+            "the integration exists; requiring a duplicate is the defect");
+        var mapping = closure.Prerequisites.Single(item => item.Key == "integration:period-closed:mapping");
+        (mapping.State, mapping.Mandatory).Should().Be((JourneyReadinessState.Partial, false));
+        mapping.Detail.Should().StartWith("Integration found: skole.reports").And.Contain("Consumer Bufdata not configured").And.Contain("not source verified");
+        mapping.Diagnostics.Should().Contain("integration-id:dev:servicebus:skole-reports");
+        closure.Prerequisites.Single(item => item.Key == "event-channel").Label.Should().Be("Service Bus channel skole.reports", "the channel is the integration's topic, never the event name");
+        closure.Prerequisites.Single(item => item.Key == "domain-trigger").Detail.Should().Contain("never publishes the event directly");
+        closure.Prerequisites.Single(item => item.Key == "bufdata-verifier").State.Should().Be(JourneyReadinessState.NotAvailable, "no Bufdata evidence is fabricated");
+    }
+
+    [Fact]
+    public async Task ApplyingSafeAltinnValues_NeverConfirmsTheAuthorizationPolicy()
+    {
+        await using var harness = new IntegrationJourneyHarness();
+        harness.MessageFlows.Configuration = harness.MessageFlows.Configuration with { Environment = ExternalTestEnvironment.Unknown, AppIdentifier = null, BaseUrlReference = null };
+        var pack = Pack(harness);
+        var context = new JourneyPackContext(ActiveEventTestHarness.Env, null, "", new IntegrationCatalog(), []);
+        var applied = await pack.ApplyConfigurationAsync(context, new Dictionary<string, string>
+        {
+            ["altinn-environment"] = "Test", ["altinn-app-route"] = AltinnTestKit.AppId, ["altinn-base-url"] = AltinnTestKit.AppBase,
+            ["app-policy"] = "confirmed", ["authorization"] = "true",
+        }, default);
+        applied.Should().BeEquivalentTo(["altinn-environment", "altinn-app-route", "altinn-base-url"], "only safe run values exist as apply keys; a policy confirmation is not one");
+        var policy = AltinnTestKit.DefaultPolicy.AppPolicy(AltinnTestKit.AppId, null, out var detail);
+        policy.Should().BeNull("a confirmation exists only in backend configuration, recorded by a person");
+        detail.Should().Contain("not confirmed");
     }
 }

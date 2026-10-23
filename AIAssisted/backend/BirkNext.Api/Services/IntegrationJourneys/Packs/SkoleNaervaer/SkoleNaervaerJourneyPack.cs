@@ -138,7 +138,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     /// <summary>
     /// Add-integration templates, one per pack integration requirement whose shape the pack knows (it also recognizes the result through
     /// <see cref="Matches"/>). Only deterministic, non-secret values: the report intake webhook is MU's known endpoint (never offered for a
-    /// production environment), the period-closed topic is the pack's event name; the CDC Event Hub name and source table vary per environment
+    /// production environment), the period-closed topic is the skole.reports channel (its event contract is separate); the CDC Event Hub name and source table vary per environment
     /// and are left for the tester. No MU → MM or MM → Skoletjenesten template: the pack has no integration requirement for them.
     /// </summary>
     public IReadOnlyList<IntegrationTemplateDefinition> IntegrationTemplates { get; } =
@@ -168,7 +168,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new("skolenaervaer-period-closed", "Skolenærvær – Period closed → Bufdata", $"Skolenærværsrapport publishes {PeriodClosedEvent} on Service Bus when a reporting period closes; Bufdata consumes it.", IntegrationKind.ServiceBus)
         {
             RequirementKey = PeriodClosed, SystemName = "Skolenærværsrapport → Bufdata", Producer = "Skolenærværsrapport", Consumer = "Bufdata",
-            SourceSystem = "Skolenærværsrapport", DestinationSystem = "Bufdata", EndpointOrTopic = PeriodClosedEvent, EvidenceSourceRoleKey = M2lbSource,
+            SourceSystem = "Skolenærværsrapport", DestinationSystem = "Bufdata", EndpointOrTopic = PeriodClosedChannel, EvidenceSourceRoleKey = M2lbSource,
         },
     ];
 
@@ -297,6 +297,23 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     /// <summary>Stores safe source-derived values into EMPTY Altinn test-configuration fields only (IQR → Extensions → Altinn), through the
     /// normal message-flow save (credential protection included). Environment is only ever set to Test; nothing else is touched.</summary>
+    public IReadOnlyList<SetupRunField> SetupRunFields { get; } =
+    [
+        new(RapportmottakId, "altinn.environment", "altinn-environment", "Altinn environment") { AllowedValues = [nameof(ExternalTestEnvironment.Test)] },
+        new(RapportmottakId, "altinn.appId", "altinn-app-route", "Altinn app id"),
+        new(RapportmottakId, "altinn.baseUrl", "altinn-base-url", "Altinn app base URL") { Url = true },
+    ];
+
+    public async Task<IReadOnlyDictionary<string, string?>> CurrentRunValuesAsync(JourneyPackContext context, CancellationToken ct)
+    {
+        var config = (await messageFlows.GetAsync(context.EnvironmentId, ct)).AltinnConfiguration ?? new AltinnTestConfiguration();
+        return new Dictionary<string, string?>
+        {
+            ["altinn-environment"] = config.Environment == ExternalTestEnvironment.Unknown ? null : config.Environment.ToString(),
+            ["altinn-app-route"] = config.AppIdentifier, ["altinn-base-url"] = config.BaseUrlReference,
+        };
+    }
+
     public async Task<IReadOnlyList<string>> ApplyConfigurationAsync(JourneyPackContext context, IReadOnlyDictionary<string, string> values, CancellationToken ct)
     {
         var package = await messageFlows.GetAsync(context.EnvironmentId, ct);
@@ -355,7 +372,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             PackId = Id, JourneyId = UtdanningsdataId, DisplayName = "Utdanningsdata", Flow = "BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning", Order = 1, ExecutionMode = JourneyExecutionMode.DelegatedToActiveEvent,
             DelegatedProviderId = SkoleNaervaerScenarioProvider.Id,
             Description = "BiRK education data (Utdanning, ManglendeSkoletilbud) captured by Debezium, delivered through Event Hub to SkoleAdapter, which forwards the education data and the external child reference to Utdanning. Utdanning links the record to the child through Person.",
-            Integrations = [new(EducationCdc, "Skolenærvær – Education CDC", IntegrationKind.EventHub, "Debezium", "SkoleAdapter", "CDC of dbo.Utdanning / dbo.ManglendeSkoletilbud")],
+            Integrations = [new(EducationCdc, "Skolenærvær – Education CDC", IntegrationKind.EventHub, "Debezium", "SkoleAdapter", "CDC of dbo.Utdanning / dbo.ManglendeSkoletilbud") { Identity = EducationCdcIdentity }],
             Steps =
             [
                 new("cdc-capture", "BiRK row change captured by Debezium", JourneyStepKind.SourceChange, "Debezium", "Table is in the CDC source-table configuration", FromComponent: "BiRK", ToComponent: "Debezium"),
@@ -373,7 +390,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         {
             PackId = Id, JourneyId = RapportmottakId, DisplayName = "Rapportmottak", Flow = "Altinn → MU → MM → Skolenærværsrapport", Order = 2, ExecutionMode = JourneyExecutionMode.JourneyRunner,
             Description = "A private institution or foster home submits a school-attendance report through Altinn; MU receives and stores the encrypted message; MM retrieves, decrypts, validates (XSD) and maps it — transport/intake only, no Person lookup; Skolenærværsrapport receives the report and performs the Person lookup.",
-            Integrations = [new(ReportIntake, "Skolenærvær – Altinn report intake", IntegrationKind.HttpApi, "External reporting party (Altinn)", "MU", "Report submission through the configured Altinn test environment")],
+            Integrations = [new(ReportIntake, "Skolenærvær – Altinn report intake", IntegrationKind.HttpApi, "External reporting party (Altinn)", "MU", "Report submission through the configured Altinn test environment") { Identity = ReportIntakeIdentity }],
             Steps =
             [
                 new(SkoleNaervaerAltinnExecutor.AuthStep, "Reporter authenticated with ID-porten TEST; Altinn TT02 token obtained", JourneyStepKind.ExternalAuthentication, "Synthetic reporter (TestID)",
@@ -449,7 +466,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         {
             PackId = Id, JourneyId = PeriodeavslutningId, DisplayName = "Periodeavslutning", Flow = "Skolenærværsrapport → Service Bus → Bufdata", Order = 3, ExecutionMode = JourneyExecutionMode.JourneyRunner,
             Description = "When a reporting period closes, Skolenærværsrapport prepares the completed dataset and publishes SkolenaervaersperiodeLukket on Service Bus; Bufdata consumes the completed reporting data. The Bufdata dataset must not contain fødselsnummer or DUF.",
-            Integrations = [new(PeriodClosed, "Skolenærvær – Period Closed", IntegrationKind.ServiceBus, "Skolenærværsrapport", "Bufdata", $"{PeriodClosedEvent} after period closure")],
+            Integrations = [new(PeriodClosed, "Skolenærvær – Period Closed", IntegrationKind.ServiceBus, "Skolenærværsrapport", "Bufdata", $"{PeriodClosedEvent} after period closure") { Identity = PeriodClosedIdentity }],
             Steps =
             [
                 new("period-close", "Close a synthetic reporting period through the domain workflow", JourneyStepKind.DomainState, "Skolenærværsrapport", "Period closed by the domain workflow", FromComponent: "Skolenærværsrapport", ToComponent: "Skolenærværsrapport"),
@@ -926,17 +943,50 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         return facts;
     }
 
+    // ── Canonical integration identities (Test Pack expectations; aliases are TestPackExpected, never source-proven) ──────────────────────────
+    // The channel and the contract are separate: Period Closed is published on skole.reports (M2LB source) and carries SkolenaervaersperiodeLukket.
+
+    public IReadOnlyList<IntegrationAlias> Aliases => ExpectedAliases;
+
+    /// <summary>The logical ↔ technical aliases this pack expects (the M2LB implementation names of its logical roles).</summary>
+    public static readonly IReadOnlyList<IntegrationAlias> ExpectedAliases =
+    [
+        new("Skolenærværsrapport", "M2LB.SkoleService.Api", IntegrationAliasProvenance.TestPackExpected, "Skoletjenesten implementation in M2LB"),
+        new("Skolenærværsrapport", "SkoleService", IntegrationAliasProvenance.TestPackExpected),
+        new("SkoleAdapter", "M2LB.SkoleAdapter.Worker", IntegrationAliasProvenance.TestPackExpected),
+        new("Utdanning", "M2LB.SkoleAdapter.Worker", IntegrationAliasProvenance.TestPackExpected),
+        new("MU", "Buf.Meldingsutveksler.Service", IntegrationAliasProvenance.TestPackExpected, "Meldingsutveksleren implementation"),
+        new("MM", "M2LB.MeldingsutvekslerReceiver.Host", IntegrationAliasProvenance.TestPackExpected, "Meldingsutvekslermottak implementation in M2LB"),
+    ];
+
+    public static readonly IntegrationRequirementIdentity EducationCdcIdentity = new()
+    {
+        Kind = IntegrationKind.EventHub, LogicalName = "Skolenærvær – Education CDC",
+        SourceResources = [.. SkoleNaervaerFixtures.Tables.Select(table => new SourceResourceIdentity(null, "dbo", table.Table))],
+        Aliases = ExpectedAliases,
+    };
+
+    public static readonly IntegrationRequirementIdentity ReportIntakeIdentity = new()
+    {
+        Kind = IntegrationKind.HttpApi, LogicalName = "Skolenærvær – Altinn report intake",
+        ProducerNames = ["Altinn", "External reporting party (Altinn)"], ConsumerNames = ["MU", "Meldingsutveksleren", "Meldingsutveksleren (MU)"], Aliases = ExpectedAliases,
+    };
+
+    public static readonly IntegrationRequirementIdentity PeriodClosedIdentity = new()
+    {
+        Kind = IntegrationKind.ServiceBus, LogicalName = "Skolenærvær – Period Closed",
+        ProducerNames = ["Skolenærværsrapport", "Skoletjenesten"], ConsumerNames = ["Bufdata"], Channels = [PeriodClosedChannel], ContractIdentities = [PeriodClosedEvent],
+        Aliases = ExpectedAliases,
+    };
+
+    /// <summary>The Service Bus topic Skolenærværsrapport publishes period closure on (named in the M2LB source; Test Pack expectation here).</summary>
+    public const string PeriodClosedChannel = "skole.reports";
+
     public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key switch
     {
-        EducationCdc => integration.Kind == IntegrationKind.EventHub && (integration.SourceResource?.Trim() ?? "").Split('.') is { Length: 3 } parts
-            && SkoleNaervaerFixtures.ForTable(parts[2]) is not null,
-        ReportIntake => integration.Kind == IntegrationKind.HttpApi
-            && ArchitectureRuleEvaluator.MatchesAny(["Altinn"], integration.Producer, integration.SourceSystem, integration.SystemName, integration.DisplayName)
-            && ArchitectureRuleEvaluator.MatchesAny(["MU", "Meldingsutveksleren"], integration.Consumer.DisplayName, integration.Consumer.LogicalName, integration.DestinationSystem),
-        PeriodClosed => integration.Kind == IntegrationKind.ServiceBus
-            && (ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], integration.EndpointOrTopic, integration.DisplayName)
-                || (ArchitectureRuleEvaluator.MatchesAny(["Skolenærværsrapport"], integration.Producer, integration.SourceSystem)
-                    && ArchitectureRuleEvaluator.MatchesAny(["Bufdata"], integration.Consumer.DisplayName, integration.Consumer.LogicalName, integration.DestinationSystem))),
+        EducationCdc => IntegrationIdentityResolver.Match(EducationCdcIdentity, integration).Found,
+        ReportIntake => IntegrationIdentityResolver.Match(ReportIntakeIdentity, integration).Found,
+        PeriodClosed => IntegrationIdentityResolver.Match(PeriodClosedIdentity, integration).Found,
         _ => false,
     };
 
@@ -953,11 +1003,20 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
             var sourceRole = TestPackSources.Role(this, role);
             var authoritative = sourceRole is null ? [] : TestPackSources.Authoritative(this, context, sourceRole).Select(snapshot => snapshot.Id).ToHashSet();
             var trusted = authoritative.Count > 0 ? authoritative : bound;
-            var found = context.SourceSnapshots.OrderBy(snapshot => trusted.Contains(snapshot.Id) ? 0 : 1)
-                .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item)))
-                .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
+            var ordered = context.SourceSnapshots.OrderBy(snapshot => trusted.Contains(snapshot.Id) ? 0 : 1)
+                .SelectMany(snapshot => (snapshot.Architecture?.Components ?? []).Select(item => (Snapshot: snapshot, Component: item))).ToList();
+            var found = ordered.FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny(tokens, pair.Component.Name, pair.Component.LogicalName, pair.Component.SourceProject));
+            // A logical role with no component of its own name is correlated through the pack's expected aliases (exact technical names only).
+            // That is a Test Pack expectation, never source proof: it reads Partial and says so.
+            var technical = ExpectedAliases.Where(alias => tokens.Any(token => IntegrationIdentityResolver.SameName(token, alias.Logical))).Select(alias => alias.Technical).ToList();
+            var viaAlias = found.Component is not null ? default : ordered.FirstOrDefault(pair => technical.Any(name =>
+                IntegrationIdentityResolver.SameName(name, pair.Component.Name) || IntegrationIdentityResolver.SameName(name, BirkNext.Api.Services.IntegrationTopology.TopologySnapshots.ProjectName(pair.Component.SourceProject))));
             var status = sourceRole is null ? null : TestPackSources.Status(this, context, sourceRole);
             var label = sourceRole?.Label ?? component;
+            if (found.Component is null && viaAlias.Component is not null)
+                return new JourneyPrerequisite($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence, JourneyReadinessState.Partial,
+                    $"{viaAlias.Snapshot.Archive.FileName} is {(trusted.Contains(viaAlias.Snapshot.Id) ? "bound" : "available but not bound")}: logical role {component} is correlated to technical implementation "
+                    + $"{viaAlias.Component.Name} by the Test Pack's expected alias only (expected, not confirmed and not source-proven).") { Source = SourceAnalysisSource };
             return new JourneyPrerequisite($"source:{component}", $"{component} source", JourneyPrerequisiteCategory.SourceEvidence,
                 found.Component is null ? JourneyReadinessState.NotReady : trusted.Contains(found.Snapshot.Id) ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
                 found.Component is not null && trusted.Contains(found.Snapshot.Id)
@@ -966,7 +1025,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                         ? $"Needs {label} source evidence: component {found.Component.Name} is in {found.Snapshot.Archive.FileName}, which is available but not bound in Integration Quality Review → Evidence."
                         : status is null ? $"Not source verified: {component} source is not present in Source Analysis."
                         : status.State == TestPackSourceState.Bound
-                            ? $"Not found in the bound {label} source ({string.Join(", ", status.BoundArchives)}): no {component} component."
+                            ? $"{string.Join(", ", status.BoundArchives)} is bound, but logical role {component} is not yet correlated to a technical implementation"
+                                + (technical.Count > 0 ? $" (expected: {string.Join(" / ", technical)})." : ".")
                             : $"Needs {label} source evidence: {(status.State == TestPackSourceState.Missing ? $"no {label} source is imported" : status.Detail.TrimEnd('.'))}.")
                 { Source = SourceAnalysisSource };
         }
@@ -1131,20 +1191,32 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
             case PeriodeavslutningId:
             {
+                // Transport channel and event contract are separate facts: the channel is the configured integration's topic (skole.reports), looked
+                // for by its exact name; the event contract is looked for as a contract/message type — never as a topic named after the event.
                 var boundIds = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
-                var (channelSnapshot, channel) = context.SourceSnapshots.OrderBy(snapshot => boundIds.Contains(snapshot.Id) ? 0 : 1)
-                    .SelectMany(snapshot => (snapshot.Architecture?.MessagingChannels ?? []).Select(item => (Snapshot: snapshot, Channel: item)))
-                    .FirstOrDefault(pair => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], pair.Channel.Name, pair.Channel.EntityName));
+                var configuredChannel = context.Catalog.Integrations.Where(item => item.Enabled && IntegrationIdentityResolver.Match(PeriodClosedIdentity, item).Found)
+                    .Select(item => item.EndpointOrTopic).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? PeriodClosedChannel;
+                var channels = context.SourceSnapshots.OrderBy(snapshot => boundIds.Contains(snapshot.Id) ? 0 : 1)
+                    .SelectMany(snapshot => (snapshot.Architecture?.MessagingChannels ?? []).Select(item => (Snapshot: snapshot, Channel: item))).ToList();
+                var (channelSnapshot, channel) = channels.FirstOrDefault(pair =>
+                    IntegrationIdentityResolver.SameName(configuredChannel, pair.Channel.EntityName) || IntegrationIdentityResolver.SameName(configuredChannel, pair.Channel.Name));
                 var channelBound = channelSnapshot is not null && boundIds.Contains(channelSnapshot.Id);
+                var contractInSource = context.SourceSnapshots.Any(snapshot =>
+                    snapshot.EvidenceDomains?.Contracts.Contracts.Any(contract => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], contract.Name, contract.File)) == true
+                    || (snapshot.Architecture?.MessagingChannels ?? []).Any(item => item.ContractReferences.Any(reference => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], reference))));
                 return
                 [
                     new("domain-trigger", "Safe period-closure trigger", JourneyPrerequisiteCategory.Trigger, JourneyReadinessState.NotReady,
                         $"Operator required. {SkoleLockLifecycle} BirkNext never locks a period and never publishes the event directly."),
-                    new("event-contract", $"{PeriodClosedEvent} contract", JourneyPrerequisiteCategory.Contract,
+                    new("event-channel", $"Service Bus channel {configuredChannel}", JourneyPrerequisiteCategory.SourceEvidence,
                         channel is null ? JourneyReadinessState.NotReady : channelBound ? JourneyReadinessState.Ready : JourneyReadinessState.Partial,
-                        channel is null ? "Documented in the architecture diagram only; no Service Bus channel with this name is present in Source Analysis (not source verified)."
-                            : channelBound ? $"Source verified: Service Bus channel {channel.Name} ({channel.Type}) in snapshot {channelSnapshot!.Archive.FileName} (bound in Integration Quality Review)."
-                            : $"Not source verified: Service Bus channel {channel.Name} ({channel.Type}) is in snapshot {channelSnapshot!.Archive.FileName}, which is not bound in Integration Quality Review → Evidence."),
+                        channel is null ? $"No Service Bus channel named {configuredChannel} is present in Source Analysis (not source verified)."
+                            : channelBound ? $"Source verified: Service Bus channel {channel.EntityName ?? channel.Name} ({channel.Type}) in snapshot {channelSnapshot!.Archive.FileName} (bound in Integration Quality Review)."
+                            : $"Not source verified: Service Bus channel {channel.EntityName ?? channel.Name} ({channel.Type}) is in snapshot {channelSnapshot!.Archive.FileName}, which is not bound in Integration Quality Review → Evidence.")
+                        { Source = SourceAnalysisSource },
+                    new("event-contract", $"{PeriodClosedEvent} contract", JourneyPrerequisiteCategory.Contract, contractInSource ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
+                        contractInSource ? $"{PeriodClosedEvent} is named in source contract evidence; the producer ↔ consumer contract relationship is not reviewed."
+                            : $"Documented in the architecture only: no contract or message type named {PeriodClosedEvent} is in Source Analysis (the channel {configuredChannel} is a separate fact)."),
                     Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"], M2lbSource),
                     Source("Bufdata", ["Bufdata"], null),
                     new("bufdata-verifier", "Bufdata verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,

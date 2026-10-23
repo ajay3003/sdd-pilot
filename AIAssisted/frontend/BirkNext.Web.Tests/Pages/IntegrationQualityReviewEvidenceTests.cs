@@ -78,7 +78,8 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
     [InlineData(1, "Source evidence: Available · needs binding")]
     public void TheBindingStage_SaysAvailableWhenStoredSnapshotsExist_AndMissingOnlyWhenThereIsNothingToBind(int snapshots, string expected)
     {
-        _api.Readiness = _api.Readiness! with { SourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(i => new IqrSourceSnapshot { Archive = new($"repo-{i}.zip", new string('a', 64), 1) })] };
+        // Stored snapshots a person may bind (availability), not evidence: the stage reads Available · needs binding, never Missing.
+        _api.Readiness = _api.Readiness! with { AvailableSourceSnapshots = [.. Enumerable.Range(0, snapshots).Select(i => new IqrSourceSnapshot { Archive = new($"repo-{i}.zip", new string('a', 64), 1) })] };
         var cut = Render<IntegrationQualityReview>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=iqr-stage][data-stage=binding] [data-testid=iqr-stage-status]").TextContent.Should().Be(expected));
     }

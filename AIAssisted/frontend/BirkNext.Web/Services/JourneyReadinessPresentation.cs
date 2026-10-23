@@ -76,9 +76,25 @@ public static class JourneyReadinessPresentation
 
     /// <summary>"6 things need attention: 2 integration, 1 Test Data …" — counted per dimension across journeys, each with its owner.</summary>
     public static IReadOnlyList<AttentionCategory> Attention(IEnumerable<IntegrationJourneyView> journeys) =>
-        [.. journeys.SelectMany(j => j.Dimensions.Where(NeedsAttention).Select(d => (Journey: j.Journey.DisplayName, Dimension: d)))
-            .GroupBy(x => x.Dimension.Dimension).OrderBy(g => g.Key)
-            .Select(g => new AttentionCategory(g.Key, g.First().Dimension.Label, g.Count(), g.First().Dimension.Owner, g.First().Dimension.OwnerKey, [.. g.Select(x => x.Journey)]))];
+        [.. journeys.SelectMany(j => j.Dimensions.Where(NeedsAttention).Select(d => (Journey: j.Journey.DisplayName, Dimension: d, Label: PreciseLabel(j, d))))
+            .GroupBy(x => (x.Dimension.Dimension, x.Label)).OrderBy(g => g.Key.Dimension)
+            .Select(g => new AttentionCategory(g.Key.Dimension, g.Key.Label, g.Count(), g.First().Dimension.Owner, g.First().Dimension.OwnerKey, [.. g.Select(x => x.Journey)]))];
+
+    /// <summary>The precise kind of attention a dimension needs for one journey: an existing integration with an incomplete mapping is never
+    /// "missing", an unresolved provider match is not an integration gap, and a bound source with an uncorrelated role is not a missing source.</summary>
+    public static string PreciseLabel(IntegrationJourneyView view, JourneyReadinessDimension dimension)
+    {
+        var items = view.Prerequisites.Where(item => item.State != JourneyReadinessState.Ready).ToList();
+        return dimension.Dimension switch
+        {
+            JourneyDimension.Integration when items.Any(i => i.Category == JourneyPrerequisiteCategory.Integration && i.State == JourneyReadinessState.NotConfigured) => "Missing integration",
+            JourneyDimension.Integration when items.Any(i => i.Key.EndsWith(":mapping", StringComparison.Ordinal)) => "Integration mapping incomplete",
+            JourneyDimension.Integration => "Integration not enabled for active runs",
+            JourneyDimension.Execution when items.Any(i => i.Key.StartsWith("delegated:", StringComparison.Ordinal)) => "Provider mapping unresolved",
+            JourneyDimension.SourceBindings when items.Any(i => i.Category == JourneyPrerequisiteCategory.SourceEvidence && i.Detail.Contains("not yet correlated", StringComparison.Ordinal)) => "Source correlation unresolved",
+            _ => dimension.Label,
+        };
+    }
 
     public static string AttentionSummary(IReadOnlyList<AttentionCategory> categories) => categories.Count == 0
         ? "Nothing needs attention in the assessed dimensions."

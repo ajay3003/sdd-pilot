@@ -68,6 +68,8 @@ public sealed class SkoleNaervaerScenarioProvider(
 
     public bool CanApply(ActiveEventProjectEvidenceContext context) => Table(context) is not null;
 
+    public string? ResourceOf(ActiveEventProjectEvidenceContext context) => Table(context) is { } table ? $"dbo.{table.Table}" : null;
+
     public IReadOnlyList<ActiveEventScenarioDescriptor> GetScenarios(ActiveEventProjectEvidenceContext context) =>
         Table(context) is { } table ? Definitions.Select(definition => Descriptor(table, definition)).ToArray() : [];
 
@@ -77,8 +79,12 @@ public sealed class SkoleNaervaerScenarioProvider(
             return new() { Compatible = false, Detail = "This scenario is not applicable to the selected integration." };
         var definition = resolved.Definition;
         var integration = context.Integration!;
-        var parts = integration.SourceResource!.Trim().Split('.');
+        var resource = SourceResourceIdentity.Of(integration)!;
         var checks = new List<ActiveEventReadinessCheck>();
+        // The integration IS this provider's resource (typed identity); what execution still needs is stated as its own check, never as "no integration".
+        checks.Add(new("source-database", "Source database of the CDC table", resource.Database is null ? ActiveEventReadinessState.Blocked : ActiveEventReadinessState.Ready,
+            resource.Database is null ? $"The integration names {resource.Qualified} without its database; the Debezium envelope needs database.schema.table (e.g. BirkM2LB.{resource.Qualified})."
+                : $"{resource.Full}.", ActiveEventReadinessCategory.Integration));
 
         var (selected, latestId, problem) = await SourceContractEvaluator.SelectAsync(sources, context.TargetEnvironmentId, integration.Id, sourceSnapshotId, ct);
         var evaluation = SourceContractEvaluator.Evaluate(Requirement(table, definition, integration), selected, latestId);
@@ -88,7 +94,7 @@ public sealed class SkoleNaervaerScenarioProvider(
                 ? $"Source evidence unavailable — SkoleAdapter source is not present in Source Analysis for this integration. {evaluation.Detail}"
                 : $"{evaluation.Label} — {evaluation.Detail}", ActiveEventReadinessCategory.SourceContract));
 
-        var capture = SourceContractEvaluator.CdcCapture(await sources.ListAsync(context.TargetEnvironmentId, ct), parts[1], parts[2]);
+        var capture = SourceContractEvaluator.CdcCapture(await sources.ListAsync(context.TargetEnvironmentId, ct), resource.Schema, resource.Table);
         checks.Add(new("cdc-capture", "CDC capture of the table", capture.Captured ? ActiveEventReadinessState.Ready : ActiveEventReadinessState.Blocked, capture.Detail,
             ActiveEventReadinessCategory.CdcCapture));
 
@@ -116,7 +122,7 @@ public sealed class SkoleNaervaerScenarioProvider(
             Contract = new ActiveEventSourceContractReference
             {
                 SourceSnapshotId = evaluation.SourceSnapshotId, ContractFingerprint = evaluation.Status == SourceContractStatus.NoSourceSnapshot ? null : evaluation.Fingerprint,
-                SourceResource = integration.SourceResource, ContractStatus = evaluation.Label, ExtensionVersion = ExtensionVersion, ScenarioVersion = "1",
+                SourceResource = resource.Database is null ? integration.SourceResource : resource.Full, ContractStatus = evaluation.Label, ExtensionVersion = ExtensionVersion, ScenarioVersion = "1",
             },
             Checks = checks,
             SafeMetadata = new Dictionary<string, string> { ["sourceTable"] = table.Table, ["contractStatus"] = evaluation.Status.ToString() },
@@ -295,10 +301,12 @@ public sealed class SkoleNaervaerScenarioProvider(
         return null;
     }
 
-    /// <summary>The education table the integration's configured CDC source resource names (database.schema.table), or null.</summary>
+    /// <summary>The education table the integration's canonical source resource identity names — "BirkM2LB.dbo.Utdanning", "dbo.Utdanning" or the
+    /// CDC hub name "{prefix}.BirkM2LB.dbo.Utdanning" are the same resource. Whether the destination (namespace) is configured is an execution
+    /// prerequisite checked by the core, never a reason to say the integration does not exist.</summary>
     private static SkoleNaervaerTable? Table(ActiveEventProjectEvidenceContext context) =>
-        context.Integration is { Enabled: true, Kind: IntegrationKind.EventHub } integration && context.Platform is { NamespaceFqdn.Length: > 0 } &&
-        (integration.SourceResource?.Trim() ?? "").Split('.') is { Length: 3 } parts && parts.All(part => part.Length > 0)
-            ? SkoleNaervaerFixtures.ForTable(parts[2])
+        context.Integration is { Enabled: true, Kind: IntegrationKind.EventHub } integration && SourceResourceIdentity.Of(integration) is { Schema: var schema } resource
+            && string.Equals(schema, "dbo", StringComparison.OrdinalIgnoreCase)
+            ? SkoleNaervaerFixtures.ForTable(resource.Table)
             : null;
 }

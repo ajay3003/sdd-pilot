@@ -1,0 +1,18 @@
+.sp-panel { border: 1px solid var(--border-color, #d0d7de); border-radius: 8px; padding: 1rem; margin-top: 0.75rem; min-width: 0; overflow-wrap: anywhere; }
+.sp-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.sp-head h4 { margin: 0; }
+.sp-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.sp-muted { color: var(--text-muted, #57606a); font-size: 0.85rem; }
+.sp-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.sp-warning { color: #6a4b00; }
+.sp-error { color: #a40e26; }
+.sp-file { display: block; font-weight: 600; margin-top: 0.5rem; }
+.sp-summary, .sp-issues { margin: 0.25rem 0; padding-left: 1.25rem; }
+.sp-changes { list-style: none; margin: 0.5rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.sp-change { border: 1px solid var(--border-color, #d0d7de); border-radius: 6px; padding: 0.5rem 0.75rem; }
+.sp-change-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+.sp-pill { border-radius: 999px; padding: 0 0.5rem; font-size: 0.75rem; font-weight: 600; background: #eaeef2; color: #24292f; }
+.sp-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: 0.25rem 1rem; margin: 0.25rem 0; }
+.sp-facts dt { font-size: 0.75rem; color: var(--text-muted, #57606a); }
+.sp-facts dd { margin: 0; }
+.sp-confirm { display: inline-flex; gap: 0.35rem; align-items: center; }

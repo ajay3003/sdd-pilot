@@ -251,7 +251,7 @@ public sealed class ApplicationMessagingUiTests : BunitContext
         cut.Find("[data-testid=am-detection]").TextContent.Should().Be("Likely");
         cut.Find("[data-testid=am-mapping]").TextContent.Should().Be("Not assessed");
         cut.Find("[data-testid=am-meaning]").TextContent.Should().Contain("AddM2LBWolverine").And.Contain("outside the analyzed source");
-        cut.Find("[data-testid=am-detail]").TextContent.Should().Contain("Not linked").And.NotContain("Not bound");
+        cut.Find("[data-testid=am-detail]").TextContent.Should().Contain("Messaging evidence available · no configured integration linked").And.NotContain("Not bound");
         _api.Messaging.Applications[0].BoundConsumer.Should().BeNull();
         cut.Find("[data-testid=am-limitations]").TextContent.Should().Contain("Cross-service message identity");
         cut.Find("[data-testid=am-runtime-evidence]").TextContent.Should().NotContainAny("0 executions", "0 retries", "0 ms");

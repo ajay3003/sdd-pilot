@@ -118,7 +118,7 @@ public static class TestPackPresentation
     /// <summary>The anchor of a page's safe-configuration action (a run-configuration group's action target).</summary>
     public const string SafeConfigurationAnchor = "#safe-configuration";
 
-    private static readonly string[] BlockerGroupOrder = ["active-execution", "integration", "source", "run-configuration", "authentication", "authorization", "test-data", "contract", "verification", "execution"];
+    private static readonly string[] BlockerGroupOrder = ["active-execution", "integration", "integration-mapping", "source", "run-configuration", "authentication", "authorization", "test-data", "contract", "verification", "execution"];
 
     /// <summary>
     /// Unresolved prerequisites as tester-facing action groups (at most ten kinds, typically fewer): a check whose value is already known
@@ -141,6 +141,8 @@ public static class TestPackPresentation
         string KeyOf(JourneyPrerequisite item) => Known(item).Count > 0 ? "run-configuration" : item.Category switch
         {
             JourneyPrerequisiteCategory.TrustedEnvironment => "active-execution",
+            // Found but not fully mapped (canonical identity matched, a declared dimension missing): its own group, never "missing".
+            JourneyPrerequisiteCategory.Integration when item.Key.EndsWith(":mapping", StringComparison.Ordinal) => "integration-mapping",
             // A configured integration that is not enabled for active runs is the same execution-permission fix as the environment gate.
             JourneyPrerequisiteCategory.Integration when item.State != JourneyReadinessState.NotConfigured => "active-execution",
             JourneyPrerequisiteCategory.Integration => "integration",
@@ -166,6 +168,9 @@ public static class TestPackPresentation
                     items.Any(i => i.State == JourneyReadinessState.NotConfigured) ? "Missing integration" : "Not enabled for active runs",
                     items.Any(i => i.State == JourneyReadinessState.NotConfigured) ? "The journey's integration is not configured yet." : "The integration is configured but not enabled for active runs in this environment.",
                     "Target Environment → Integrations", "Configure integration", IntegrationReviewPresentation.IntegrationsHref(profileId), null, items),
+                "integration-mapping" => new BlockerGroup(g.Key, Title(g.Key, "Integration mapping"), "Integration found · mapping incomplete",
+                    items[0].Detail, "Target Environment → Integrations", "Review integration mapping",
+                    MappingIntegrationId(items[0]) is { } mappedId ? IntegrationReviewPresentation.IntegrationHref(profileId, mappedId) : IntegrationReviewPresentation.IntegrationsHref(profileId), null, items),
                 "source" => ambiguous is not null
                     ? new BlockerGroup(g.Key, Title(g.Key, $"{ambiguous.Role.Label} source evidence"), "Review required",
                         $"Several stored {ambiguous.Role.Label} sources match; choose the canonical one — the newest is never chosen for you.", "Integration Quality Review → Setup & Evidence",
@@ -174,6 +179,10 @@ public static class TestPackPresentation
                     ? new BlockerGroup(g.Key, Title(g.Key, unbound is null ? "Source evidence" : $"{unbound.Role.Label} source evidence"), ProjectImport.SourceSetupPresentation.AvailableNeedsBinding,
                         "Matching source evidence exists but is not bound in Integration Quality Review.", "Integration Quality Review → Setup & Evidence",
                         unbound is null ? "Bind source evidence" : $"Bind {unbound.Role.Label} evidence", SourceGuidancePresentation.ActionHref("iqr-evidence"), null, items)
+                    : imported.Any(source => source.State == TestPackSourceState.Bound)
+                    // The source is bound; what is missing is the correlation of a logical role to its technical implementation.
+                    ? new BlockerGroup(g.Key, Title(g.Key, "Source correlation"), "Source bound · component not correlated",
+                        items[0].Detail, "Integration Quality Review → Setup & Evidence", "Review source evidence", SourceGuidancePresentation.ActionHref("iqr-evidence"), null, items)
                     : new BlockerGroup(g.Key, Title(g.Key, "Source evidence"), "Missing", "No matching source has been imported.", "Import Project", "Import source", "/project-import", null, items),
                 "run-configuration" => new BlockerGroup(g.Key, Title(g.Key, "Run configuration"), "Known · not saved for active run",
                     "These values are already known. An active run uses only values you explicitly save for it.", "Test pack run configuration",
@@ -194,6 +203,9 @@ public static class TestPackPresentation
             };
         })];
     }
+
+    /// <summary>The configured integration a mapping prerequisite is about ("integration:{requirement}:mapping" rows name it in their detail).</summary>
+    private static string? MappingIntegrationId(JourneyPrerequisite item) => item.Diagnostics.FirstOrDefault(line => line.StartsWith("integration-id:", StringComparison.Ordinal))?["integration-id:".Length..];
 
     /// <summary>The source a prerequisite was resolved from (metadata), or "BirkNext" when the backend names none.</summary>
     public static string Source(JourneyPrerequisite item) => string.IsNullOrWhiteSpace(item.Source) ? "BirkNext" : item.Source!;

@@ -174,9 +174,17 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
 [Route("api/integration-review")]
 public sealed class IntegrationReviewController(IIntegrationReviewService review) : ControllerBase
 {
+    /// <summary>One integration's producer ↔ consumer contract relationship, each side resolved exactly (read-only; never confirms the relationship).</summary>
+    [HttpGet("contract-relationship")]
+    public async Task<ActionResult<BirkNext.ContractSchemaEvidence.ContractRelationshipReview>> ContractRelationship([FromQuery] string environmentId, [FromQuery] string integrationId,
+        [FromServices] ContractRelationshipReviewService relationships, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId) ? BadRequest("environmentId and integrationId are required.")
+        : await relationships.ReviewAsync(environmentId, integrationId, ct) is { } review ? Ok(review) : NotFound();
+
     [HttpGet("readiness")]
-    public async Task<ActionResult<IntegrationReviewReadiness>> Readiness([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct) =>
-        Ok(await review.ReadinessAsync(environmentId, environmentType, targetUrl, ct));
+    public async Task<ActionResult<IntegrationReviewReadiness>> Readiness([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl,
+        [FromQuery] string? integrationId, CancellationToken ct) =>
+        Ok(await review.ReadinessAsync(environmentId, environmentType, targetUrl, integrationId, ct));
 
     [HttpPost("run")]
     public async Task<ActionResult<IntegrationReviewResult>> Run([FromBody] IntegrationReviewRunRequest request, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct)

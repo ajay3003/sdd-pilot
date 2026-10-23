@@ -18,6 +18,30 @@
    disclosures, Export/More menu, sub-navigation); plain language first, exact XSD terms as secondary detail. *@
 <main class="ss-page" data-testid="ss-page">
     <PageHeader Title="Schema Studio" Description="Explore, compare and test XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
+    @if (_handoffRequested && _handoffFailed is { } failed)
+    {
+        <div class="ss-error" role="alert" data-testid="ss-handoff-not-found"><strong>Artifact not found.</strong> @failed No other schema was opened.</div>
+    }
+    @if (_pair is { } pair)
+    {
+        @* The contract pair the link asked for, each side identified exactly (snapshot + path). A matching name never confirms the relationship. *@
+        <section class="ss-card ss-pair" aria-labelledby="ss-pair-title" data-testid="ss-contract-pair" data-state="@pair.State">
+            <h2 id="ss-pair-title">Contract relationship</h2>
+            <dl class="ss-pair-facts">
+                <div><dt>Producer</dt><dd data-testid="ss-pair-producer">@if (pair.Producer is { } producer) { <span class="ss-mono">@producer.Path</span> <span class="ss-muted">· @producer.ArchiveName</span> } else { <span>@(pair.ProducerReference ?? "Not configured")</span> <span class="ss-muted">· no exact artifact</span> }</dd></div>
+                <div><dt>Consumer</dt><dd data-testid="ss-pair-consumer">@if (pair.Consumer is { } consumer) { <span class="ss-mono">@consumer.Path</span> <span class="ss-muted">· @consumer.ArchiveName</span> } else { <span>@(pair.ConsumerReference ?? "Not configured")</span> <span class="ss-muted">· no exact artifact</span> }</dd></div>
+                <div><dt>Result</dt><dd data-testid="ss-pair-state">@BirkNext.ContractSchemaEvidence.ContractRelationshipComparer.Label(pair.State)</dd></div>
+            </dl>
+            <p data-testid="ss-pair-summary">@pair.Summary</p>
+            @if (pair.Differences.Count > 0)
+            {
+                <details data-testid="ss-pair-differences"><summary>Differences (@pair.Differences.Count)</summary>
+                    <ul>@foreach (var difference in pair.Differences) { <li><span class="ss-mono">@difference.Path</span> · @difference.Kind@(difference.Breaking ? " (breaking)" : "") — @difference.Detail</li> }</ul>
+                </details>
+            }
+            @if (pair.Limitations.Count > 0) { <ul class="ss-muted" data-testid="ss-pair-limitations">@foreach (var limitation in pair.Limitations) { <li>@limitation</li> }</ul> }
+        </section>
+    }
     @* No active package: setup is the page. With an active package, the package and its review come first; source, import, saved analyses
        and provenance are secondary (opened on request). *@
     @if (Current is null)
@@ -773,6 +797,22 @@
     /// <summary><c>?snapshot={id}&amp;contract={path}</c> opens that stored contract of that exact Source Analysis snapshot.</summary>
     [SupplyParameterFromQuery(Name = "snapshot")] public string? SnapshotParameter { get; set; }
     [SupplyParameterFromQuery(Name = "contract")] public string? ContractParameter { get; set; }
+    /// <summary>A contract-relationship deep link: the integration whose producer ↔ consumer pair is shown, and the exact producer artifact (opened
+    /// as the comparison target). Nothing is inferred from names, the newest schema or the previous Schema Studio state.</summary>
+    [SupplyParameterFromQuery(Name = "integration")] public string? IntegrationParameter { get; set; }
+    [SupplyParameterFromQuery(Name = "environment")] public string? EnvironmentParameter { get; set; }
+    [SupplyParameterFromQuery(Name = "producerSnapshot")] public string? ProducerSnapshotParameter { get; set; }
+    [SupplyParameterFromQuery(Name = "producerContract")] public string? ProducerContractParameter { get; set; }
+    private bool _handoffRequested;
+    private string? _handoffFailed;
+    private BirkNext.ContractSchemaEvidence.ContractRelationshipReview? _pair;
+    private string _sourceContractFilter = "";
+    /// <summary>The retained XSDs matching the file-name/path filter, by file name (the primary identity); the directory is shown second.</summary>
+    private List<SourceSchemaFile> ContractChoices(SourceSchemaPackage package) =>
+        [.. package.Files.Where(file => _sourceContractFilter.Length == 0 || file.Path.Contains(_sourceContractFilter, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(file => System.IO.Path.GetFileName(file.Path.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)];
+    private static string DirectoryOf(string path) =>
+        System.IO.Path.GetDirectoryName(path.Replace('\\', '/'))?.Replace('\\', '/') is { Length: > 0 } directory ? directory : "(root)";
     private bool _viewParameterApplied;
     /// <summary>A deep-linked view requested before any package was open; the first package selection opens it instead of Overview.</summary>
     private string? _pendingView;
@@ -924,11 +964,19 @@
                 {
                     <p class="ss-muted">@sourcePackage.Files.Count XSD file(s) bound to @sourcePackage.SourceArchiveName, snapshot @sourcePackage.SnapshotId. Fingerprint <code>@sourcePackage.SnapshotFingerprint</code>.</p>
                     @if (!sourcePackage.IsComplete) { <p class="ss-warning" role="status">This snapshot's schema capture is partial: @sourcePackage.OmittedFiles XSD file(s) were omitted by storage limits. The resulting package will remain Partial.</p> }
-                    <label class="ss-field">Contract XSD
-                        <select @bind="_sourceContractPath" aria-label="Discovered XSD contract">
-                            @foreach (var file in sourcePackage.Files) { <option value="@file.Path">@file.Path · @file.Text.Length.ToString("N0") characters</option> }
+                    <label class="ss-field">Find XSD (file name or path)
+                        <input type="search" @bind="_sourceContractFilter" @bind:event="oninput" data-testid="ss-source-contract-filter" placeholder="e.g. skolenaervaer_v2_0_0" />
+                    </label>
+                    <label class="ss-field">Contract XSD (@ContractChoices(sourcePackage).Count of @sourcePackage.Files.Count)
+                        <select @bind="_sourceContractPath" aria-label="Discovered XSD contract" data-testid="ss-source-contract-select">
+                            @if (ContractChoices(sourcePackage).All(file => file.Path != _sourceContractPath)) { <option value="">Choose an XSD</option> }
+                            @foreach (var file in ContractChoices(sourcePackage)) { <option value="@file.Path">@SchemaStudioPresentation.FileName(file.Path) — @DirectoryOf(file.Path)</option> }
                         </select>
                     </label>
+                    @if (_sourceContractPath.Length > 0)
+                    {
+                        <p class="ss-selected-contract" data-testid="ss-source-contract-selected"><strong>@SchemaStudioPresentation.FileName(_sourceContractPath)</strong> <span class="ss-muted ss-mono">@_sourceContractPath</span></p>
+                    }
                     <button class="btn-primary" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
                 }
             }
@@ -1097,7 +1145,9 @@
         {
             var repository = ServiceProvider.GetService<IWorkspaceArtifactRepository>();
             SavedDrafts?.RestoreJson(repository?.Get(WorkspaceArtifactType.SchemaStudioDrafts)?.Text);
-            if (Studio.Packages.FirstOrDefault() is { } latest) Select(latest.Id);
+            // A deep link names an exact artifact: never open the latest or a restored package in its place.
+            _handoffRequested = !string.IsNullOrWhiteSpace(SnapshotParameter) || !string.IsNullOrWhiteSpace(ContractParameter);
+            if (!_handoffRequested && Studio.Packages.FirstOrDefault() is { } latest) Select(latest.Id);
             if (repository?.Get(WorkspaceArtifactType.SchemaStudio) is { } savedProfiles)
             {
                 ProfileCatalog?.RestoreJson(savedProfiles.Text);
@@ -1116,7 +1166,7 @@
                 {
                     if (Studio.Packages.Any(p => p.Fingerprint == saved.Fingerprint && p.Provenance?.SourceSnapshotId == saved.Provenance?.SourceSnapshotId)) continue;
                     var restored = store.ReopenLocal(saved, Studio);
-                    if (Current is null) Select(restored.Id);
+                    if (Current is null && !_handoffRequested) Select(restored.Id);
                 }
             }
         }
@@ -1134,14 +1184,47 @@
         { _sourceError = "Source Analysis snapshots could not be loaded. Local XSD import remains available."; return; }
         // Handoff from Source Analysis / Integrations: open the stored contract of that exact immutable snapshot (the same retained evidence,
         // verified by fingerprint) — never another or newer snapshot.
+        await LoadPairAsync();
         if (Guid.TryParse(SnapshotParameter, out var handoff) && !string.IsNullOrWhiteSpace(ContractParameter))
         {
             _sourceSnapshotId = handoff.ToString();
             await LoadSourceContracts();
-            if (_sourcePackage?.Files.FirstOrDefault(f => string.Equals(f.Path.Replace('\\', '/'), ContractParameter.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)) is { } file)
-            { _sourceContractPath = file.Path; OpenSourceContract(); }
-            else if (_sourcePackage is not null) _sourceError = $"{ContractParameter} is not among this snapshot's retained XSD files.";
+            if (_sourcePackage?.Files.FirstOrDefault(f => BirkNext.ContractSchemaEvidence.ContractArtifactPaths.SamePath(f.Path, ContractParameter)) is { } file)
+            {
+                _sourceContractPath = file.Path;
+                OpenSourceContract();
+                var consumerPackage = _selectedId;
+                // The producer side of the pair, when it is a distinct exact artifact: loaded as the comparison target, never selected instead.
+                if (Guid.TryParse(ProducerSnapshotParameter, out var producerSnapshot) && !string.IsNullOrWhiteSpace(ProducerContractParameter))
+                {
+                    _sourceSnapshotId = producerSnapshot.ToString();
+                    await LoadSourceContracts();
+                    if (_sourcePackage?.Files.FirstOrDefault(f => BirkNext.ContractSchemaEvidence.ContractArtifactPaths.SamePath(f.Path, ProducerContractParameter)) is { } producerFile)
+                    {
+                        _sourceContractPath = producerFile.Path;
+                        OpenSourceContract();
+                        _compareId = _selectedId;
+                    }
+                    else _handoffFailed = $"The producer contract {ProducerContractParameter} is not among snapshot {producerSnapshot}'s retained XSD files.";
+                    if (consumerPackage is not null) Select(consumerPackage);
+                }
+            }
+            else
+            {
+                _handoffFailed = _sourcePackage is not null ? $"{ContractParameter} is not among this snapshot's retained XSD files." : _sourceError.Length > 0 ? _sourceError : $"Snapshot {handoff} could not be read.";
+                _selectedId = null;
+            }
         }
+        else if (_handoffRequested) _handoffFailed = "The link does not name both an exact snapshot and a contract path.";
+    }
+
+    /// <summary>The backend's review of the linked integration's contract pair (read-only).</summary>
+    private async Task LoadPairAsync()
+    {
+        if (string.IsNullOrWhiteSpace(IntegrationParameter) || string.IsNullOrWhiteSpace(EnvironmentParameter)) return;
+        if (ServiceProvider.GetService<IIntegrationCatalogApiService>() is not { } api) return;
+        try { _pair = await api.ContractRelationshipAsync(EnvironmentParameter, IntegrationParameter); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _pair = null; }
     }
 
     private async Task LoadSourceContracts()

@@ -188,6 +188,34 @@ public static class IntegrationReviewPrerunPresentation
 
     public sealed record StateRow(string Key, string Label, string Value, string Tone);
 
+    /// <summary>"Review scope: Skolenærvær – Altinn report intake · HTTP/API" — the plan below is for that integration only. The environment-wide
+    /// review is an explicit choice and says so.</summary>
+    public static string ReviewScope(IntegrationReviewReadiness readiness)
+    {
+        if (readiness.ScopeIntegrationId is { } id && readiness.Subjects.FirstOrDefault(s => s.IntegrationId == id) is { } subject)
+            return $"Review scope: {subject.DisplayName} · {CapabilityLabel(subject.Capability)}. Only {CapabilityLabel(subject.Capability)} review areas apply; other integrations of this environment are not part of this plan.";
+        var enabled = readiness.Subjects.Count;
+        return $"Review scope: all {enabled} enabled integration{(enabled == 1 ? "" : "s")} (environment-wide review) · "
+            + string.Join(" · ", readiness.Subjects.GroupBy(s => s.Capability).Select(g => $"{CapabilityLabel(g.Key)} ({g.Count()})")) + ". Each integration gets its own type's checks.";
+    }
+
+    /// <summary>Schema Studio on the exact consumer artifact with the pair (and the exact producer artifact as the comparison target); null when the
+    /// consumer side is not an exact artifact — never a generic Schema Studio link that would open some other schema.</summary>
+    public static string? SchemaStudioHref(BirkNext.ContractSchemaEvidence.ContractRelationshipReview pair, string environmentId)
+    {
+        if (pair.Consumer is not { } consumer) return null;
+        var href = $"/schema-studio?snapshot={consumer.SnapshotId}&contract={Uri.EscapeDataString(consumer.Path)}&environment={Uri.EscapeDataString(environmentId)}&integration={Uri.EscapeDataString(pair.IntegrationId)}";
+        return pair.Producer is { } producer && producer.Key != consumer.Key
+            ? $"{href}&producerSnapshot={producer.SnapshotId}&producerContract={Uri.EscapeDataString(producer.Path)}" : href;
+    }
+
+    /// <summary>Bound ≠ resolved: whether the bound snapshot holds evidence that correlates with this integration.</summary>
+    public static string CorrelationLabel(IntegrationSourceEvidenceScope? scope, bool bound) =>
+        !bound ? "Not applicable — no source evidence is bound"
+        : scope is null ? "Not assessed"
+        : scope.EvidenceResolved ? $"Resolved through {string.Join("; ", scope.CorrelatedOn)}"
+        : "Unresolved — source bound · integration-specific evidence not resolved";
+
     /// <summary>
     /// Separate states of one integration in the shared vocabulary: Configured (persisted by its owner), mapping, source evidence (Bound /
     /// Available · needs binding / Review required / Missing), contract/reference (Partial when reference or source evidence exists) and runtime
@@ -197,7 +225,7 @@ public static class IntegrationReviewPrerunPresentation
     {
         var facts = subject.Facts;
         var source = facts?.SourceState is { } state ? ProjectImport.SourceSetupPresentation.StateLabel(state)
-            : hasBinding ? "Bound" : readiness.SourceSnapshots.Count > 0 ? ProjectImport.SourceSetupPresentation.AvailableNeedsBinding : "Missing";
+            : hasBinding ? "Bound" : readiness.AvailableSourceSnapshots.Count > 0 ? ProjectImport.SourceSetupPresentation.AvailableNeedsBinding : "Missing";
         var contract = HasContractEvidence(facts) ? "Partial" : "Not available";
         var (available, total) = RuntimeAvailability(readiness);
         var runtime = total == 0 ? "Not verified" : available == 0 ? "Not configured" : available < total ? "Partially available" : "Available";

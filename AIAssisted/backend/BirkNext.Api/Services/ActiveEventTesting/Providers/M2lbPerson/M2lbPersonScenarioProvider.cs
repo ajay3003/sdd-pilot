@@ -29,9 +29,10 @@ public sealed class M2lbPersonScenarioProvider(
     public IReadOnlyList<ActiveEventScenarioDescriptor> CatalogScenarios => M2lbPersonScenarios.All.Select(Descriptor).ToArray();
 
     public bool CanApply(ActiveEventProjectEvidenceContext context) =>
-        context.Integration is { Enabled: true, Kind: IntegrationKind.EventHub } integration &&
-        context.Platform is { NamespaceFqdn.Length: > 0 } &&
-        SourceParts(integration) is { } parts && string.Equals(parts[2], M2lbPersonScenarios.Table, StringComparison.OrdinalIgnoreCase);
+        context.Integration is { Enabled: true, Kind: IntegrationKind.EventHub } integration
+        && SourceResourceIdentity.Of(integration) is { } resource && string.Equals(resource.Table, M2lbPersonScenarios.Table, StringComparison.OrdinalIgnoreCase);
+
+    public string? ResourceOf(ActiveEventProjectEvidenceContext context) => CanApply(context) ? $"dbo.{M2lbPersonScenarios.Table}" : null;
 
     public IReadOnlyList<ActiveEventScenarioDescriptor> GetScenarios(ActiveEventProjectEvidenceContext context) => CanApply(context) ? CatalogScenarios : [];
 
@@ -45,8 +46,12 @@ public sealed class M2lbPersonScenarioProvider(
         var (selected, latestId, problem) = await SourceContractEvaluator.SelectAsync(sources, context.TargetEnvironmentId, integration.Id, sourceSnapshotId, ct);
         var evaluation = SourceContractEvaluator.Evaluate(Requirement(scenario, integration), selected, latestId);
         if (problem is not null) evaluation = evaluation with { Status = SourceContractStatus.NoSourceSnapshot, Detail = problem };
+        var resource = SourceResourceIdentity.Of(integration)!;
         var checks = new List<ActiveEventReadinessCheck>
         {
+            new("source-database", "Source database of the CDC table", resource.Database is null ? ActiveEventReadinessState.Blocked : ActiveEventReadinessState.Ready,
+                resource.Database is null ? $"The integration names {resource.Qualified} without its database; the Debezium envelope needs database.schema.table." : $"{resource.Full}.",
+                ActiveEventReadinessCategory.Integration),
             new("source-contract", "Source contract", evaluation.Status == SourceContractStatus.Compatible ? ActiveEventReadinessState.Ready : ActiveEventReadinessState.Blocked,
                 $"{evaluation.Label} — {evaluation.Detail}", ActiveEventReadinessCategory.SourceContract),
         };
@@ -227,8 +232,6 @@ public sealed class M2lbPersonScenarioProvider(
     /// <summary>Keys the retired Active CDC runner already used stay used.</summary>
     private async Task<long?> LegacyFloorAsync(string environmentId, SyntheticIdentityRange range, CancellationToken ct) =>
         await legacyRuns.MaxPersonPkAsync(environmentId, (int)Math.Min(range.Min, int.MaxValue), (int)Math.Min(range.Max, int.MaxValue), ct);
-
-    private static string[]? SourceParts(IntegrationDefinition integration) => (integration.SourceResource?.Trim() ?? "").Split('.') is { Length: 3 } parts ? parts : null;
 
     private static string Short(string text) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..16];
 }

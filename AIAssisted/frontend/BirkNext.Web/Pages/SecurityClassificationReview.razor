@@ -9,6 +9,7 @@
 @inject IReportExportService ExportService
 @inject FeatureVisibilityService FeatureViz
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 <PageTitle>M01 – Gradert tilgang (Kode 6/7)</PageTitle>
 
@@ -102,8 +103,29 @@
             <h2 id="sc-setup-heading">Runtime test context</h2>
             <p class="sc-muted">Target Environment <strong>@_profile.Name</strong> (@_profile.EnvironmentType). @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production is never tested — only source and configuration checks run." : "Live checks run only in an approved DEV/QA test context.")</p>
             <div class="sc-actions">
+                <button type="button" class="btn-primary" data-testid="sc-load-context" disabled="@_busy" @onclick="LoadApprovedContextAsync">Load approved test context</button>
                 <button type="button" class="btn-secondary" data-testid="sc-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure test context</button>
             </div>
+            @if (_resolved is { } resolved)
+            {
+                @* Read-only resolution from the owners (Target Environment, Endpoint Discovery, approved Test Data). Nothing is saved or run; approval stays manual. *@
+                <section class="sc-resolved" aria-labelledby="sc-resolved-heading" data-testid="sc-resolved">
+                    <h3 id="sc-resolved-heading">Resolved test context</h3>
+                    <p role="status" data-testid="sc-resolved-summary">@resolved.Summary</p>
+                    <dl class="sc-context">
+                        @foreach (var row in resolved.Rows)
+                        {
+                            <div data-testid="sc-resolved-row" data-key="@row.Key" data-state="@row.State"><dt>@row.Label</dt>
+                                <dd><span class="sc-badge sc-badge-@(row.State == ClassificationContextResolution.RowState.Ready ? "info" : "muted")">@ClassificationContextResolution.Label(row.State)</span>
+                                    @if (row.Display is { } display) { <span class="sc-mono"> @display</span> } <span class="sc-muted"> · @row.Source</span></dd></div>
+                        }
+                    </dl>
+                    <div class="sc-actions">
+                        <button type="button" class="btn-secondary" data-testid="sc-use-resolved" @onclick="UseResolved">Use resolved context</button>
+                    </div>
+                    <p class="sc-muted">Using it fills the form below; nothing is kept until you select Keep in memory. Test-lead approval is never resolved automatically.</p>
+                </section>
+            }
 
             @if (_editing)
             {
@@ -130,7 +152,8 @@
                     @if (Levels.Count == 0) { <p class="sc-muted" data-testid="sc-context-no-levels">Test children are configured per classification level; the levels come from the selected source evidence.</p> }
                     <label class="sc-field">Unauthorized test identity (label) <input class="form-control" @bind="_draft.Unauthorized" data-testid="sc-context-unauthorized" /></label>
                     <label class="sc-field">Authorized graded identity (label) <input class="form-control" @bind="_draft.Authorized" data-testid="sc-context-authorized" /></label>
-                    <label class="sc-check"><input type="checkbox" @bind="_draft.Approved" data-testid="sc-context-approved" /> Approved by the test lead</label>
+                    <label class="sc-check"><input type="checkbox" @bind="_draft.Approved" @bind:after="() => _approvedThisEdit = _draft.Approved" data-testid="sc-context-approved" /> Approved by the test lead</label>
+                    <p class="sc-muted" data-testid="sc-approval-binding">Approval applies to exactly this context: changing the environment, endpoint, test children or identities makes an earlier approval stale.</p>
                     @if (_formError is { } formError) { <p class="sc-error" role="alert" data-testid="sc-context-error">@formError</p> }
                     <div class="sc-actions">
                         <button type="button" class="btn-primary" data-testid="sc-context-save" disabled="@_busy" @onclick="SaveContextAsync">Keep in memory</button>
@@ -300,7 +323,7 @@
                     <ul class="sc-findings">
                         @foreach (var finding in result.Findings)
                         {
-                            <li data-testid="sc-finding" data-rule="@finding.RuleId"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(finding.Severity)">@finding.Severity</span> <strong>@finding.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(finding.Area))</span>
+                            <li data-testid="sc-finding" data-rule="@finding.RuleId" data-category="@ClassificationFindingCategories.Of(finding)"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(finding.Severity)">@finding.Severity</span> <span class="sc-badge sc-badge-muted" data-testid="sc-finding-category">@ClassificationPresentation.Category(finding)</span> <strong>@finding.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(finding.Area))</span>
                                 <p>@finding.Detail</p>
                                 @if (finding.Sources.Count > 0) { <p class="sc-muted" data-testid="sc-finding-source">Source finding — @ClassificationPresentation.Sources(finding.Sources) (selected snapshot evidence, not an observed runtime breach)</p> }
                                 @if (finding.Evidence.Count > 0) { <p class="sc-muted sc-mono">@string.Join(" · ", finding.Evidence)</p> }
@@ -357,7 +380,7 @@
                     @foreach (var p in result.ProposedTests)
                     {
                         <h3>Proposed regression test: <span class="sc-mono">@p.Name</span></h3>
-                        <p class="sc-muted">@p.Purpose Not run by BirkNext.</p>
+                        <p class="sc-muted"><span class="sc-badge sc-badge-muted" data-testid="sc-proposed-status">Proposed</span> @p.Purpose Not added to the repository, not executed and never counted as existing coverage (Proposed → Added → Executed → Passed/Failed is tracked only by real test evidence).</p>
                         <pre class="sc-code" tabindex="0" data-testid="sc-proposed">@p.Code</pre>
                     }
                 </ReviewDisclosure>
@@ -369,7 +392,7 @@
             <h2 id="sc-consumers-heading">Consumers</h2>
             <p class="sc-muted">The same shared evidence is consumed by each domain below; their assessments can differ while the evidence stays the same. Domain rules belong to their consumer.</p>
             <ReviewDisclosure Text="Show consumer assessments" CollapseText="Hide consumer assessments" TestId="sc-consumers-disclosure" Class="disclosure-inline" @bind-Expanded="_consumersExpanded">
-                @if (_consumersExpanded) { <SecurityConsumerProjection EnvironmentId="@(_profile?.Id ?? "")" /> }
+                @if (_consumersExpanded) { <SecurityConsumerProjection EnvironmentId="@(_profile?.Id ?? "")" RunId="@(_overview?.Latest?.RunId)" /> }
             </ReviewDisclosure>
         </section>
     }
@@ -639,8 +662,44 @@
         if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
     }
 
+    private ClassificationContextResolution.Result? _resolved;
+    private bool _approvedThisEdit;
+
+    /// <summary>Read-only: resolves the context from Target Environment, Endpoint Discovery and approved Test Data. Saves and runs nothing.</summary>
+    private async Task LoadApprovedContextAsync()
+    {
+        if (_profile is null) return;
+        IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> assets = [];
+        if (Services.GetService(typeof(ITestDataApiService)) is ITestDataApiService testData)
+        {
+            try { assets = (await testData.CatalogAsync()).Catalog?.Assets ?? []; }
+            catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { assets = []; }
+        }
+        EndpointDiscoverySnapshot? discovery = null;
+        if (Services.GetService(typeof(IEndpointDiscoveryService)) is IEndpointDiscoveryService endpoints)
+        {
+            try { discovery = endpoints.GetSnapshot(_profile.Id); } catch (InvalidOperationException) { discovery = null; }
+        }
+        _resolved = ClassificationContextResolution.Resolve(_profile, discovery, assets, Levels.Select(level => level.Nivaa).ToList());
+    }
+
+    /// <summary>Fills the form with the resolved values (opaque references only); approval is left unticked.</summary>
+    private void UseResolved()
+    {
+        if (_resolved is not { } resolved) return;
+        BeginEdit();
+        _draft.Environment = resolved.Environment ?? _draft.Environment;
+        _draft.Endpoint = resolved.Endpoint ?? _draft.Endpoint;
+        _draft.Unauthorized = resolved.Unauthorized ?? _draft.Unauthorized;
+        _draft.Authorized = resolved.Authorized ?? _draft.Authorized;
+        foreach (var (level, id) in resolved.Children) _draft.Children[level].Id = id;
+        _draft.Approved = false;
+        _approvedThisEdit = false;
+    }
+
     private void BeginEdit()
     {
+        _approvedThisEdit = false;
         _draft = new ContextDraft { Environment = Context.Environment, Endpoint = Context.GraphQlEndpoint, Unauthorized = Context.UnauthorizedIdentityLabel, Authorized = Context.AuthorizedIdentityLabel, Approved = Context.ApprovedByTestLead };
         foreach (var child in Context.TestChildren) { _draft.Children[child.Nivaa].Id = child.BarnRegistreringId?.ToString(); _draft.Children[child.Nivaa].BirkId = child.BirkId; }
         _formError = null;
@@ -664,6 +723,13 @@
             Environment = Clean(_draft.Environment), GraphQlEndpoint = Clean(_draft.Endpoint), UnauthorizedIdentityLabel = Clean(_draft.Unauthorized), AuthorizedIdentityLabel = Clean(_draft.Authorized),
             ApprovedByTestLead = _draft.Approved, TestChildren = children,
         };
+        // Approval is bound to the context it was given for: an approval carried over from another context is not kept.
+        if (context.ApprovedByTestLead && !_approvedThisEdit && ClassificationContextResolution.Fingerprint(context) != ClassificationContextResolution.Fingerprint(Context))
+        {
+            context = context with { ApprovedByTestLead = false };
+            _draft.Approved = false;
+            _status = "Test-lead approval was reset because the context changed; approve this context again.";
+        }
         _formError = context.Validate();
         if (_formError is not null) return;
         _busy = true;

@@ -271,6 +271,27 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         return Task.FromResult(0);
     }
 
+    /// <summary>Per-integration readiness (the scoped review); null = the unscoped <see cref="Readiness"/> for every request.</summary>
+    public Func<string?, IntegrationReviewReadiness>? ScopedReadiness { get; set; }
+    public List<string?> ScopeRequests { get; } = [];
+    public List<string?> RunScopes { get; } = [];
+    public BirkNext.ContractSchemaEvidence.ContractRelationshipReview? Pair { get; set; }
+
+    public Task<IntegrationReviewReadiness> ScopedReadinessAsync(FrontendAnalysisProfile profile, string? integrationId, CancellationToken ct = default)
+    {
+        ScopeRequests.Add(integrationId);
+        return ScopedReadiness is { } scoped ? Task.FromResult(scoped(integrationId)) : ReadinessAsync(profile, ct);
+    }
+
+    public Task<IntegrationReviewResult> RunScopedAsync(FrontendAnalysisProfile profile, string? integrationId, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default)
+    {
+        RunScopes.Add(integrationId);
+        return RunAsync(profile, ct);
+    }
+
+    public Task<BirkNext.ContractSchemaEvidence.ContractRelationshipReview?> ContractRelationshipAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
+        Task.FromResult(Pair is { } pair && pair.IntegrationId == integrationId ? pair : null);
+
     public Task<IntegrationReviewReadiness> ReadinessAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {
         Calls.Add("readiness");

@@ -41,7 +41,12 @@ public enum JourneyPrerequisiteCategory
 }
 
 /// <summary>An integration the journey needs, resolved against the Integration Quality Review catalog — never configured by the journey itself.</summary>
-public sealed record JourneyIntegrationRequirement(string Key, string Label, IntegrationKind Kind, string Producer, string Consumer, string Purpose);
+public sealed record JourneyIntegrationRequirement(string Key, string Label, IntegrationKind Kind, string Producer, string Consumer, string Purpose)
+{
+    /// <summary>The canonical identity the requirement resolves through (logical/technical names, aliases, channel, source resource, contract
+    /// identity). Null for packs that still match by their own rule only.</summary>
+    public IntegrationRequirementIdentity? Identity { get; init; }
+}
 
 /// <summary>One step of a journey. <see cref="Owner"/> is the component the architecture assigns the responsibility to.</summary>
 public sealed record JourneyStepDefinition(
@@ -154,12 +159,20 @@ public sealed record JourneyPrerequisite(string Key, string Label, JourneyPrereq
     /// <summary>Where the value was resolved from (e.g. "Target Environment", "Integration Quality Review", "Local execution config",
     /// "Approved test data", "Live Altinn metadata"). A source, never a value: secrets and identities are not named here.</summary>
     public string? Source { get; init; }
+    /// <summary>Safe diagnostic facts behind the state (identities compared, candidates, the exact reason), shown on request — never secrets.</summary>
+    public IReadOnlyList<string> Diagnostics { get; init; } = [];
 }
 
 /// <summary>Separate maturity levels: a configured integration is not source verified, executable or runtime verified.</summary>
 public sealed record JourneyMaturity(bool Configured, bool SourceVerified, bool Executable, bool RuntimeVerified, string Detail);
 
-public sealed record JourneyMatchedIntegration(string RequirementKey, string? IntegrationId, string? DisplayName, IntegrationKind Kind, bool Enabled, string Detail);
+public sealed record JourneyMatchedIntegration(string RequirementKey, string? IntegrationId, string? DisplayName, IntegrationKind Kind, bool Enabled, string Detail)
+{
+    /// <summary>Matched, or found with a mapping still incomplete ("Integration found · mapping incomplete") — never "missing" when found.</summary>
+    public IntegrationMatchState MatchState { get; init; }
+    public IReadOnlyList<string> MatchedOn { get; init; } = [];
+    public IReadOnlyList<string> Unresolved { get; init; } = [];
+}
 
 /// <summary>Current per-step status before/without a run: what is configured, what an observer could see, what a verifier could assert.</summary>
 public sealed record JourneyStepStatus(string StepId, bool Configured, bool Observable, bool Verifiable, JourneyStepState State, string Limitation);

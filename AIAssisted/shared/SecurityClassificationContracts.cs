@@ -682,3 +682,40 @@ public static class ClassificationLabels
     /// <summary>States that come from a bounded executed runtime check.</summary>
     public static bool IsRuntimeResult(ClassificationState state) => state is ClassificationState.Pass or ClassificationState.Fail or ClassificationState.Observed or ClassificationState.Verified;
 }
+
+/// <summary>
+/// One normalized meaning per finding, so a source-only review never reads as a runtime breach: a concrete security defect in evidence, an
+/// evidence gap (not enough evidence to decide), a review warning (design/consistency), runtime verification pending (source acceptable, runtime
+/// not tested) or informational context.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ClassificationFindingCategory { SecurityFinding, EvidenceGap, ReviewWarning, RuntimeVerificationPending, Informational }
+
+public static class ClassificationFindingCategories
+{
+    private static readonly string[] GapWords = ["not found", "no evidence", "missing evidence", "cannot be assessed", "not declared", "not in this snapshot", "documented only", "not assessed"];
+
+    public static ClassificationFindingCategory Of(ClassificationFinding finding) =>
+        finding.Severity is ClassificationSeverity.Critical or ClassificationSeverity.High ? ClassificationFindingCategory.SecurityFinding
+        : GapWords.Any(word => finding.Title.Contains(word, StringComparison.OrdinalIgnoreCase) || finding.Detail.Contains(word, StringComparison.OrdinalIgnoreCase))
+          || NothingFound(finding.Detail) ? ClassificationFindingCategory.EvidenceGap
+        : finding.Severity == ClassificationSeverity.Info ? ClassificationFindingCategory.Informational
+        : ClassificationFindingCategory.ReviewWarning;
+
+    /// <summary>"No grant operation was found." — the analyzer's wording for an absence it could not decide on.</summary>
+    private static bool NothingFound(string detail) =>
+        detail.StartsWith("No ", StringComparison.OrdinalIgnoreCase) && detail.Contains(" found", StringComparison.OrdinalIgnoreCase);
+
+    public static string Label(ClassificationFindingCategory category) => category switch
+    {
+        ClassificationFindingCategory.SecurityFinding => "Security finding",
+        ClassificationFindingCategory.EvidenceGap => "Evidence gap",
+        ClassificationFindingCategory.ReviewWarning => "Review warning",
+        ClassificationFindingCategory.RuntimeVerificationPending => "Runtime verification pending",
+        _ => "Informational",
+    };
+
+    /// <summary>Areas whose source evidence is acceptable but whose runtime behaviour was not tested in this run.</summary>
+    public static int RuntimePending(ClassificationReviewResult result) =>
+        result.Live.Observations.Count == 0 ? result.Summary.Count(row => row.State == ClassificationState.SourceVerified) : 0;
+}

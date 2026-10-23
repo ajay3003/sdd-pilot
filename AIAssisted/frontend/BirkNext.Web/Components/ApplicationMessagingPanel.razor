@@ -113,7 +113,7 @@
                             <th scope="row"><button type="button" class="am-select" aria-pressed="@(_selected == app.ApplicationId ? "true" : "false")" aria-controls="am-selected-detail" @onclick="() => Select(app)">@app.ApplicationId<span class="am-mobile">View details</span></button></th>
                             <td data-label="Wolverine"><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.Detection)" data-testid="am-detection">@ApplicationMessagingPresentation.Detection(app.Detection)</span></td>
                             <td data-label="Handler evidence"><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.HandlerMapping)" data-testid="am-mapping">@ApplicationMessagingPresentation.HandlerState(app.HandlerMapping)</span></td>
-                            <td data-label="IQR link">@(app.BoundConsumer is null ? "Not linked" : "Linked")</td>
+                            <td data-label="IQR link">@(app.BoundConsumer is null ? "Messaging evidence available · no configured integration linked" : "Linked")</td>
                             <td data-label="Runtime" data-testid="am-runtime">Not assessed</td>
                         </tr>
                     }
@@ -129,7 +129,7 @@
                 <dl class="am-states">
                     <div><dt>Wolverine usage</dt><dd>@ApplicationMessagingPresentation.Detection(selected.Detection)</dd></div>
                     <div><dt>Handler evidence</dt><dd>@ApplicationMessagingPresentation.HandlerState(selected.HandlerMapping)</dd></div>
-                    <div><dt>IQR integration link</dt><dd>@(selected.BoundConsumer ?? "Not linked")</dd></div>
+                    <div><dt>IQR integration link</dt><dd>@(selected.BoundConsumer ?? "Messaging evidence available · no configured integration linked")</dd></div>
                     <div><dt>Runtime processing</dt><dd>Not assessed</dd></div>
                 </dl>
                 @if (View == ApplicationMessagingView.Full)

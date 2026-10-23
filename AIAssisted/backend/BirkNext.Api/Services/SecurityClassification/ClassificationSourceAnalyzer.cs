@@ -562,6 +562,8 @@ public static class ClassificationSourceAnalyzer
         var resolvers = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>()
             .Where(t => t.AttributeLists.ToString().Contains("ExtendObjectType(\"Query\")", StringComparison.Ordinal))
             .SelectMany(t => t.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Modifiers.Any(x => x.IsKind(SyntaxKind.PublicKeyword))).Select(m => (Code: c, Type: t, Method: m)))).ToList();
+        var unprotected = new List<string>();
+        var anonymous = new List<string>();
         foreach (var (c, t, m) in resolvers)
         {
             var text = m.ToString();
@@ -572,6 +574,8 @@ public static class ClassificationSourceAnalyzer
             var operations = Regex.Matches(text, @"KrevOperasjon\(""([^""]+)""").Select(x => x.Groups[1].Value).Concat(policies).Distinct().ToList();
             var touchesChild = Regex.IsMatch(text, @"barnRegistreringId|eksternId|BarnRegistrering|repository\.", RegexOptions.IgnoreCase);
             var field = char.ToLowerInvariant(m.Identifier.Text[0]) + m.Identifier.Text[1..].Replace("Async", "");
+            if (Regex.IsMatch(attributes, @"\bAllowAnonymous\b")) anonymous.Add(field);
+            else if (operations.Count == 0) unprotected.Add(field);
             if (operations.Count == 0 && touchesChild)
                 yield return Fact($"graphql-{field}", ClassificationArea.GraphQL, $"GraphQL {field} has no authorization check", ClassificationState.IssueDetected,
                     $"{t.Identifier.Text}.{m.Identifier.Text} reads child data without any KrevOperasjon call or [Authorize] policy{(authenticatedOnly ? " ([Authorize] without a policy only requires an authenticated caller — authenticated is not authorized)" : "")}{(Regex.Match(text, @"//\s*(.+)") is { Success: true } cm ? $" (\"// {cm.Groups[1].Value.Trim()}\")" : "")}, and the lookup it calls applies no classification filter. It answers whether a registration with a given id exists — also for a graded child — and returns its registration id. The endpoint has no global authorization policy, so reachability decides who can ask.",
@@ -590,6 +594,13 @@ public static class ClassificationSourceAnalyzer
             yield return Fact("graphql-endpoint-auth", ClassificationArea.GraphQL, "GraphQL endpoint has no global authorization", ClassificationState.Warning,
                 "MapGraphQL() is mapped without RequireAuthorization and there is no fallback policy: every resolver must enforce its own checks, so one resolver without a check is reachable by any caller that reaches the endpoint.",
                 [new SourceLocation(map.Path, ScimSourceAnalyzer.Line(map.Text, "MapGraphQL"))]);
+        // The design relies on resolver-level authorization: every query resolver must carry its own check or be declared anonymous explicitly.
+        if (map is not null && !production.Any(c => c.Text.Contains("FallbackPolicy", StringComparison.Ordinal)) && resolvers.Count > 0)
+            yield return Fact("graphql-resolver-coverage", ClassificationArea.GraphQL, "GraphQL resolver authorization coverage",
+                unprotected.Count == 0 ? ClassificationState.SourceVerified : ClassificationState.IssueDetected,
+                $"{resolvers.Count} query resolver(s): {resolvers.Count - unprotected.Count - anonymous.Count} with their own authorization check, {anonymous.Count} declared anonymous ([AllowAnonymous])"
+                + (unprotected.Count == 0 ? ". Every resolver is covered — required because the endpoint has no global authorization." : $", {unprotected.Count} without any check and not declared anonymous: {string.Join(", ", unprotected.Take(12))}. Without global authorization each of these is reachable by any caller that reaches the endpoint; add operation-level authorization or declare it anonymous on purpose."),
+                [new SourceLocation(map.Path, ScimSourceAnalyzer.Line(map.Text, "MapGraphQL"))], ClassificationTestType.Negative);
     }
 
     private static IEnumerable<ClassificationFact> GrantsAndEmergency(List<Code> production, List<SourceFile> documents)

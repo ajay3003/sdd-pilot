@@ -219,7 +219,7 @@
             @if (Binding is { } binding)
             {
                 <p data-testid="ip-edit-evidence-bound">Canonical evidence: <span class="ip-wrap">@binding.ArchiveName</span></p>
-                <p class="ip-muted">@IntegrationTemplatePresentation.Meaning(EvidenceState) <a class="ip-link" href="/integration-quality-review?view=evidence" data-testid="ip-edit-evidence-iqr">Open IQR Evidence</a></p>
+                <p class="ip-muted">@IntegrationTemplatePresentation.Meaning(EvidenceState) <a class="ip-link" href="@IntegrationTemplatePresentation.ChangeEvidenceHref(binding.IntegrationId)" data-testid="ip-edit-evidence-iqr">Change canonical source evidence</a></p>
             }
             else if (EvidenceStatus is not { } status)
             {
@@ -360,14 +360,22 @@
                 var schemaFound = SchemaState is IntegrationTemplatePresentation.SchemaEvidenceState.Available or IntegrationTemplatePresentation.SchemaEvidenceState.Bound or IntegrationTemplatePresentation.SchemaEvidenceState.Ambiguous && schemaFiles.Count > 0;
                 <section class="ip-reference" aria-labelledby="ip-contract-schema-heading" data-testid="ip-edit-contract-schema" data-state="@SchemaState">
                     <h6 id="ip-contract-schema-heading">Source schema evidence</h6>
-                    <p data-testid="ip-edit-contract-schema-summary">@(schemaFound ? $"Matching schema found in {schemaSource.Role.Label} source" : IntegrationTemplatePresentation.SchemaLabel(SchemaState))</p>
+                    <p data-testid="ip-edit-contract-schema-summary">@(schemaFound ? "Matching source schema found · relationship not yet confirmed" : IntegrationTemplatePresentation.SchemaLabel(SchemaState))</p>
                     <dl class="ip-template-facts">
                         <div><dt>Status</dt><dd data-testid="ip-edit-contract-schema-state">@(schemaFound && _model.ContractRelationship != ContractRelationshipState.RelationshipVerified ? "Review required" : IntegrationTemplatePresentation.SchemaLabel(SchemaState))</dd></div>
                         @if (schemaFound) { <div><dt>Why</dt><dd>The source contains a schema named <span class="ip-mono ip-wrap">@schemaName</span>, but the active downstream validation relationship has not been confirmed.</dd></div> }
                         @if (schemaFiles.Count == 1 && SchemaState is IntegrationTemplatePresentation.SchemaEvidenceState.Available or IntegrationTemplatePresentation.SchemaEvidenceState.Bound) { <div><dt>Candidate</dt><dd class="ip-wrap ip-mono" data-testid="ip-edit-contract-schema-file">@schemaFiles[0]</dd></div> }
                         else if (schemaFiles.Count > 1) { <div><dt>Candidates</dt><dd data-testid="ip-edit-contract-schema-count">@schemaFiles.Count matching schema files</dd></div> }
                     </dl>
-                    <p class="ip-editor-actions"><a class="ip-link" href="/schema-studio" data-testid="ip-edit-contract-schema-review">Review schema evidence</a></p>
+                    @* The link names the exact artifact (snapshot + path) and the integration's pair; Schema Studio never opens another schema in its place. *@
+                    @if (SchemaReviewHref is { } schemaHref)
+                    {
+                        <p class="ip-editor-actions"><a class="ip-link" href="@schemaHref" data-testid="ip-edit-contract-schema-review">Review schema evidence</a></p>
+                    }
+                    else if (schemaFiles.Count > 1)
+                    {
+                        <p class="ip-muted" data-testid="ip-edit-contract-schema-manual">Requires manual selection: @schemaFiles.Count schema files match; open the bound snapshot in Schema Studio and choose the exact one.</p>
+                    }
                 </section>
             }
             <section class="ip-reference" aria-labelledby="ip-contract-relationship-heading" data-testid="ip-edit-contract-relationship">
@@ -564,6 +572,17 @@
     private const string TestPackReferenceLabel = "Test Pack reference";
     private IntegrationTemplatePresentation.SchemaEvidenceState SchemaState => IntegrationTemplatePresentation.SchemaEvidence(CurrentTemplate, EvidenceState, Binding?.SnapshotId);
     /// <summary>The distinct schema files in scope: the bound snapshot's when bound, else every matching snapshot's.</summary>
+    /// <summary>Schema Studio on the exact candidate in scope (one file only) and, for a saved integration, its contract pair.</summary>
+    private string? SchemaReviewHref
+    {
+        get
+        {
+            var inScope = (CurrentTemplate?.SchemaCandidates ?? []).Where(c => Binding is null || c.SnapshotId == Binding.SnapshotId).DistinctBy(c => c.File).ToList();
+            if (inScope.Count != 1) return null;
+            var href = $"/schema-studio?snapshot={inScope[0].SnapshotId}&contract={Uri.EscapeDataString(inScope[0].File)}";
+            return IsNew || string.IsNullOrWhiteSpace(EnvironmentId) ? href : $"{href}&environment={Uri.EscapeDataString(EnvironmentId)}&integration={Uri.EscapeDataString(_model.Id)}";
+        }
+    }
     private IReadOnlyList<string> SchemaFiles => (CurrentTemplate?.SchemaCandidates ?? [])
         .Where(c => Binding is null || c.SnapshotId == Binding.SnapshotId).Select(c => c.File).Distinct(StringComparer.Ordinal).ToList();
 

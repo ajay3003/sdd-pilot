@@ -1,0 +1,205 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+@* Import / export of a setup profile: three explicit stages — Validate (on file choice, nothing changes), Preview (a change plan routed to each
+   owner; safe New values preselected, conflicts and anything needing confirmation never), Apply (only what is selected). Export is sanitized:
+   secrets, identities, execution trust, attestations and runtime results are never included. *@
+<section class="sp-panel" aria-labelledby="sp-heading" data-testid="sp-panel" data-mode="@Mode">
+    <div class="sp-head">
+        <h4 id="sp-heading">@(Mode == SetupProfileMode.Import ? "Import setup profile" : "Export safe setup")</h4>
+        <button type="button" class="btn-secondary" data-testid="sp-close" @onclick="Closed">Close</button>
+    </div>
+    @if (Mode == SetupProfileMode.Export)
+    {
+        <p class="sp-muted">Exports the safe declarative setup (integrations, channels/resources, source bindings, contract references, safe run values, aliases).</p>
+        <div class="sp-actions">
+            <button type="button" class="btn-primary" data-testid="sp-export-yaml" disabled="@_busy" @onclick="() => ExportAsync(SetupProfileFormat.Yaml)">Export YAML</button>
+            <button type="button" class="btn-secondary" data-testid="sp-export-json" disabled="@_busy" @onclick="() => ExportAsync(SetupProfileFormat.Json)">Export JSON</button>
+            <button type="button" class="btn-secondary" data-testid="sp-example" disabled="@_busy" @onclick="ExampleAsync">Download example setup profile</button>
+        </div>
+        @if (_export is { } export)
+        {
+            <p role="status" data-testid="sp-export-done"><strong>Safe setup exported</strong> (@export.FileName). Secrets, identities, execution trust, authorization attestations and runtime results are excluded.</p>
+        }
+    }
+    else
+    {
+        <p class="sp-muted">YAML or JSON, version 1, at most 64 KB. Validation and preview change nothing; only the changes you select are applied.</p>
+        <label class="sp-file" for="sp-file-input">Setup profile file</label>
+        <InputFile id="sp-file-input" accept=".yaml,.yml,.json" OnChange="ReadAsync" data-testid="sp-file" disabled="@_busy" aria-describedby="sp-file-help" />
+        <p class="sp-muted" id="sp-file-help">The file name never decides the environment, test pack or trust: only its contents (and your confirmation) do.</p>
+        @if (_preview is { } preview)
+        {
+            <div role="status" data-testid="sp-validation" data-valid="@(preview.Valid ? "true" : "false")">
+                <p><strong>@(preview.Valid ? "Profile valid" : "Profile not valid")</strong>@(preview.ProfileName is { } name ? $" · {name}" : "")</p>
+                @if (preview.Valid)
+                {
+                    <ul class="sp-summary" data-testid="sp-summary">
+                        <li>@preview.Summary.Supported supported settings</li>
+                        <li>@preview.Summary.ReadyToApply ready to apply</li>
+                        <li>@preview.Summary.AlreadyConfigured already configured</li>
+                        <li>@preview.Summary.Conflicts conflicts</li>
+                        <li>@preview.Summary.RequiresConfirmation require confirmation</li>
+                        <li>@preview.Summary.CannotImport cannot import</li>
+                        <li>@preview.Summary.ManualRequirements manual-only requirements</li>
+                        <li>@preview.SecretsAccepted secrets accepted</li>
+                    </ul>
+                }
+            </div>
+            @if (preview.EnvironmentNotice is { } notice) { <p class="sp-warning" role="alert" data-testid="sp-environment-notice">@notice</p> }
+            @if (preview.Issues.Count > 0)
+            {
+                <ul class="sp-issues" data-testid="sp-issues" aria-label="Validation findings">
+                    @foreach (var issue in preview.Issues)
+                    {
+                        <li data-testid="sp-issue" data-severity="@issue.Severity"><strong>@(issue.Severity switch { SetupIssueSeverity.Rejected => "Rejected field", SetupIssueSeverity.Error => "Error", _ => "Warning" })</strong>
+                            @if (issue.Path.Length > 0) { <span class="sp-mono">@issue.Path</span> } — @issue.Message</li>
+                    }
+                </ul>
+            }
+            @if (preview.Valid && preview.Changes.Count > 0)
+            {
+                <ul class="sp-changes" data-testid="sp-changes" aria-label="Proposed changes">
+                    @foreach (var change in preview.Changes)
+                    {
+                        var selectable = change.SafeToApply && change.Classification is SetupChangeClassification.New or SetupChangeClassification.RequiresConfirmation or SetupChangeClassification.Change;
+                        <li class="sp-change" data-testid="sp-change" data-id="@change.Id" data-classification="@change.Classification">
+                            <div class="sp-change-head">
+                                @if (selectable)
+                                {
+                                    <input type="checkbox" id="@($"sp-select-{change.Id}")" checked="@_selected.Contains(change.Id)" @onchange="e => Toggle(change.Id, e)" data-testid="sp-change-select" />
+                                    <label for="@($"sp-select-{change.Id}")"><strong>@change.Setting</strong></label>
+                                }
+                                else { <strong>@change.Setting</strong> }
+                                <span class="sp-pill" data-testid="sp-change-result">@Label(change.Classification)</span>
+                            </div>
+                            <dl class="sp-facts">
+                                <div><dt>Current</dt><dd>@(change.Current ?? "Empty")</dd></div>
+                                <div><dt>Imported</dt><dd>@(change.Proposed ?? "—")</dd></div>
+                                <div><dt>Owner</dt><dd>@change.Owner</dd></div>
+                            </dl>
+                            <p class="sp-muted">@change.Reason</p>
+                            <details><summary>Provenance</summary><p class="sp-muted">@change.Provenance</p></details>
+                            @if (change.RequiresConfirmation && selectable)
+                            {
+                                <label class="sp-confirm"><input type="checkbox" checked="@_confirmed.Contains(change.Id)" @onchange="e => Confirm(change.Id, e)" data-testid="sp-change-confirm" /> I confirm this change</label>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (preview.ManualRequirements.Count > 0)
+                {
+                    <p class="sp-muted" data-testid="sp-manual">Manual requirements (never imported): @string.Join(", ", preview.ManualRequirements)</p>
+                }
+                <div class="sp-actions">
+                    <button type="button" class="btn-primary" data-testid="sp-apply" disabled="@(_busy || _selected.Count == 0)" @onclick="ApplyAsync">Apply @_selected.Count selected change@(_selected.Count == 1 ? "" : "s")</button>
+                </div>
+            }
+        }
+        @if (_result is { } result)
+        {
+            <div role="status" data-testid="sp-apply-result">
+                <p><strong>Setup profile applied</strong></p>
+                <ul>
+                    <li>@result.Applied settings applied</li>
+                    <li>@result.AlreadyMatched already matched</li>
+                    <li>@result.ConflictsLeft conflicts left unchanged</li>
+                    <li>@result.Failed failed</li>
+                    <li>@result.ManualRemaining manual requirements remain</li>
+                    <li>@result.SecretsImported secrets imported</li>
+                    <li>Active execution unchanged</li>
+                </ul>
+                @foreach (var item in result.Items.Where(i => i.Outcome is SetupApplyOutcome.Failed or SetupApplyOutcome.Refused)) { <p class="sp-muted" data-testid="sp-apply-item">@item.Setting: @item.Detail</p> }
+            </div>
+        }
+    }
+    @if (_error is { } error) { <p class="sp-error" role="alert" data-testid="sp-error">@error</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public string PackId { get; set; } = "";
+    [Parameter] public SetupProfileMode Mode { get; set; }
+    [Parameter] public EventCallback Closed { get; set; }
+    /// <summary>After an apply: the page recomputes everything from the owners (nothing is cached from the profile).</summary>
+    [Parameter] public EventCallback Applied { get; set; }
+
+    private IIntegrationJourneysApiService? Api => Services.GetService<IIntegrationJourneysApiService>();
+    private SetupProfilePreview? _preview;
+    private SetupApplyResult? _result;
+    private SetupProfileExport? _export;
+    private string? _error, _fileName, _content;
+    private bool _busy;
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _confirmed = new(StringComparer.Ordinal);
+
+    private static string Label(SetupChangeClassification classification) => classification switch
+    {
+        SetupChangeClassification.New => "New",
+        SetupChangeClassification.Same => "Same",
+        SetupChangeClassification.Change => "Change",
+        SetupChangeClassification.Conflict => "Conflict · manual review required",
+        SetupChangeClassification.CannotImport => "Cannot import",
+        SetupChangeClassification.RequiresConfirmation => "Requires confirmation",
+        _ => "Reference only",
+    };
+
+    private async Task ReadAsync(InputFileChangeEventArgs args)
+    {
+        _error = null; _preview = null; _result = null; _selected.Clear(); _confirmed.Clear();
+        if (Api is null) { _error = "Setup profiles are not available in this session."; return; }
+        try
+        {
+            if (args.File.Size > 64 * 1024) { _error = "The setup profile is larger than 64 KB; a setup profile is a small text file."; return; }
+            using var reader = new StreamReader(args.File.OpenReadStream(64 * 1024));
+            _content = await reader.ReadToEndAsync();
+            _fileName = args.File.Name;
+            _busy = true;
+            var preview = await Api.PreviewSetupProfileAsync(EnvironmentId, PackId, new(_fileName, _content));
+            _preview = preview.Value;
+            _error = preview.Value is null ? preview.Error ?? "The profile could not be validated." : null;
+            foreach (var change in _preview?.Changes.Where(c => c.Preselected) ?? []) _selected.Add(change.Id);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The profile could not be read."; }
+        finally { _busy = false; }
+    }
+
+    private void Toggle(string id, ChangeEventArgs e) { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }
+    private void Confirm(string id, ChangeEventArgs e) { if (e.Value is true) _confirmed.Add(id); else _confirmed.Remove(id); }
+
+    private async Task ApplyAsync()
+    {
+        if (Api is null || _content is null || _fileName is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            var result = await Api.ApplySetupProfileAsync(EnvironmentId, PackId, new(_fileName, _content, [.. _selected], [.. _confirmed]));
+            _result = result.Value;
+            _error = result.Value is null ? result.Error ?? "The profile could not be applied." : null;
+            if (_result is not null) { _preview = null; await Applied.InvokeAsync(); }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The profile could not be applied."; }
+        finally { _busy = false; }
+    }
+
+    private Task ExportAsync(SetupProfileFormat format) => DownloadAsync(EnvironmentId, format);
+    private Task ExampleAsync() => DownloadAsync(null, SetupProfileFormat.Yaml);
+
+    private async Task DownloadAsync(string? environmentId, SetupProfileFormat format)
+    {
+        if (Api is null) { _error = "Setup profiles are not available in this session."; return; }
+        _busy = true; _error = null;
+        try
+        {
+            var result = await Api.ExportSetupProfileAsync(environmentId, PackId, format);
+            if (result.Value is not { } export) { _error = result.Error ?? "The setup could not be exported."; return; }
+            _export = export;
+            try { await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupProfileFormat.Json ? "application/json" : "application/yaml"); }
+            catch (JSException) { }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The setup could not be exported."; }
+        finally { _busy = false; }
+    }
+}

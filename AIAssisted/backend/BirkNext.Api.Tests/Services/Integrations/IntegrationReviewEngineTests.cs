@@ -633,7 +633,7 @@ public sealed class IntegrationReviewEngineTests
 
         run.SourceSnapshots.Should().ContainSingle(s => s.Id == snapshot.Id && s.IntegrationId == integration && s.Archive.Sha256 == snapshot.Archive.Sha256, "bound to the integration it was chosen for");
         await refuse.Should().ThrowAsync<BirkNext.Api.Services.Integrations.SourceEvidence.InvalidSourceSelectionException>().WithMessage("*nothing is substituted*");
-        readiness.SourceSnapshots.Select(s => s.Id).Should().Equal(new[] { snapshot.Id }, "only Source Analysis snapshots are offered");
+        readiness.AvailableSourceSnapshots.Select(s => s.Id).Should().Equal(new[] { snapshot.Id }, "only Source Analysis snapshots are offered");
     }
 
     [Fact]
@@ -650,10 +650,22 @@ public sealed class IntegrationReviewEngineTests
         snapshot!.Observability.Should().NotBeNull();
         var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance,
             source: new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store));
-        var integration = (await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+        var unrelated = (await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+        // An integration whose producer is the analyzed application: its evidence correlates with this snapshot.
+        var shop = (await catalogService.CreateAsync(DevId, new IntegrationDefinition
+        {
+            EnvironmentId = DevId, DisplayName = "Shop API", Kind = IntegrationKind.HttpApi, Producer = "Shop.Api", EndpointOrTopic = "https://shop.example.test/",
+            Consumer = new IntegrationConsumer { DisplayName = "Storefront" },
+        })).Id;
 
-        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "Dev", SourceSelections = [new(integration, snapshot.Id)] }, "Development", DevUrl);
+        // Bound to a snapshot that holds nothing of it, an integration gets none of the repository's observability as support.
+        var other = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "Dev", IntegrationId = unrelated, SourceSelections = [new(unrelated, snapshot.Id)] }, "Development", DevUrl);
+        other.SourceScopes.Single().EvidenceResolved.Should().BeFalse();
+        other.SourceSnapshots.Single().Observability.Should().BeNull("unrelated repository evidence is never presented as the integration's");
 
+        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "Dev", IntegrationId = shop, SourceSelections = [new(shop, snapshot.Id)] }, "Development", DevUrl);
+
+        run.SourceScopes.Single().EvidenceResolved.Should().BeTrue();
         run.SourceSnapshots.Single().Observability!.Id.Should().Be(snapshot.Observability!.Id, "the stored analysis is read, not recomputed");
         var observability = run.Domains.Single(d => d.Domain == IntegrationReviewDomain.Observability);
         observability.Observed.Should().Contain(l => l.StartsWith("Source observability (source snapshot ") && l.Contains("OTLP exporter"));
@@ -874,5 +886,70 @@ public sealed class IntegrationReviewEngineTests
     {
         Enum.GetValues<IntegrationDomainReadiness>().Select(IntegrationReviewLabels.Readiness).Should().NotContain("Ready")
             .And.Contain(["Reviewable", "Partially reviewable", "Limited", "Not assessable"]);
+    }
+
+    // ── Review scoped to one selected integration ─────────────────────────────────────────────────────────────────────
+
+    private static readonly IntegrationDefinition ScopeHttp = new()
+    {
+        Id = "dev:http:altinn-intake", EnvironmentId = DevId, DisplayName = "Skolenærvær – Altinn report intake", Kind = IntegrationKind.HttpApi, Enabled = true,
+        Producer = "Altinn", Consumer = new IntegrationConsumer { DisplayName = "MU" }, EndpointOrTopic = "https://mu.example.test/api/altinn/webhook",
+    };
+
+    private static readonly IntegrationDefinition ScopeBus = new()
+    {
+        Id = "dev:servicebus:skole-reports", EnvironmentId = DevId, DisplayName = "skole.reports", Kind = IntegrationKind.ServiceBus, Enabled = true,
+        EndpointOrTopic = "skole.reports", Producer = "M2LB.SkoleService.Api",
+    };
+
+    private static string DomainText(IntegrationReviewReadiness readiness) =>
+        string.Join(" | ", readiness.Domains.SelectMany(d => new[] { d.Explanation }.Concat(d.Available ?? []).Concat(d.Missing ?? [])).Concat(readiness.Reasons));
+
+    [Fact]
+    public async Task ReviewScope_IsTheSelectedIntegration_NoOtherTransportContributes()
+    {
+        var all = await DevCatalog();
+        all = all with { Integrations = [.. all.Integrations, ScopeHttp, ScopeBus] };
+        var eventHub = all.Integrations.First(i => i.Enabled && i.Kind == IntegrationKind.EventHub);
+
+        var http = Engine().Readiness(IntegrationReviewService.Scope(all, ScopeHttp.Id), IntegrationContractSet.Empty);
+        http.Subjects.Should().ContainSingle().Which.IntegrationId.Should().Be(ScopeHttp.Id);
+        DomainText(http).Should().NotContainAny("checkpoint", "Checkpoint", "consumer group", "Event Hub", "throughput", "RBAC", "Service Bus");
+
+        var hub = Engine().Readiness(IntegrationReviewService.Scope(all, eventHub.Id), IntegrationContractSet.Empty);
+        hub.Subjects.Select(s => s.Capability).Should().OnlyContain(c => c == IntegrationReviewCapability.EventStream);
+        DomainText(hub).Should().NotContainAny("HTTP reachability", "HTTP/API", "OpenAPI", "Service Bus");
+
+        var bus = Engine().Readiness(IntegrationReviewService.Scope(all, ScopeBus.Id), IntegrationContractSet.Empty);
+        bus.Subjects.Select(s => s.Capability).Should().OnlyContain(c => c == IntegrationReviewCapability.MessageBroker);
+        DomainText(bus).Should().NotContainAny("checkpoint", "Event Hub", "HTTP reachability", "OpenAPI");
+
+        // The unscoped (explicit environment-wide) review still covers every transport.
+        Engine().Readiness(all, IntegrationContractSet.Empty).Subjects.Select(s => s.Capability).Distinct().Should().HaveCountGreaterThan(2);
+    }
+
+    [Fact]
+    public async Task ScopedReadiness_ListsEverySubject_ButComputesOnlyTheSelectedOne_AndSwitchingRecomputes()
+    {
+        await using var db = Db();
+        var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
+        await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
+        await catalogService.CreateAsync(DevId, ScopeHttp);
+        var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db,
+            NullLogger<IntegrationReviewService>.Instance);
+        var created = (await catalogService.GetAsync(DevId, "Development", DevUrl)).Integrations.Single(i => i.Kind == IntegrationKind.HttpApi);
+
+        var http = await service.ReadinessAsync(DevId, "Development", DevUrl, created.Id);
+        http.ScopeIntegrationId.Should().Be(created.Id);
+        http.Subjects.Count.Should().BeGreaterThan(1, "the selector still lists every enabled integration");
+        http.Systems.Should().OnlyContain(system => system.Kind == IntegrationKind.HttpApi, "systems are computed for the selected integration only");
+        DomainText(http).Should().NotContain("checkpoint");
+
+        var other = http.Subjects.First(s => s.IntegrationId != created.Id && s.Capability == IntegrationReviewCapability.EventStream).IntegrationId;
+        var hub = await service.ReadinessAsync(DevId, "Development", DevUrl, other);
+        hub.ScopeIntegrationId.Should().Be(other);
+        hub.Systems.Should().OnlyContain(system => system.Kind == IntegrationKind.EventHub, "nothing of the previous selection leaks into the next plan");
+
+        (await service.ReadinessAsync(DevId, "Development", DevUrl, "not-configured")).ScopeIntegrationId.Should().BeNull("an unknown id never scopes to something else");
     }
 }

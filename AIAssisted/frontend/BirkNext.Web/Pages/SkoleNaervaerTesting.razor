@@ -106,13 +106,44 @@
                 var known = configuration.Suggestions.Count(item => item.ResolvedValue is not null);
                 <section class="snt-summary-card" aria-labelledby="snt-configuration-heading" data-testid="snt-configuration">
                     <h3 class="snt-subheading" id="snt-configuration-heading">Configuration</h3>
-                    <p data-testid="snt-config-known"><strong>@known of @configuration.Suggestions.Count known</strong>@if (configuration.Suggestions.Count - known > 0) { <span> · @(configuration.Suggestions.Count - known) need attention</span> }</p>
+                    @* Known values are one fact; integration coverage and execution are separate — "9/9 known" never reads as ready. *@
+                    <dl class="snt-config-facts" data-testid="snt-config-facts">
+                        <div><dt>Configuration values</dt><dd data-testid="snt-config-known">@known of @configuration.Suggestions.Count known@if (configuration.Suggestions.Count - known > 0) { <span> · @(configuration.Suggestions.Count - known) need attention</span> }</dd></div>
+                        <div><dt>Integration coverage</dt><dd data-testid="snt-config-integrations">@IntegrationCoverage</dd></div>
+                        <div><dt>Execution configuration</dt><dd data-testid="snt-config-execution">@ExecutionConfiguration</dd></div>
+                    </dl>
                     <ReviewDisclosure Text="View provenance" CollapseText="Hide provenance" TestId="snt-config-provenance" Class="disclosure-inline">
                         <p class="snt-muted" data-testid="snt-source-requirements-summary">@GuidanceSummary(configuration) Runtime verification is separate.</p>
                     </ReviewDisclosure>
                     <ReviewDisclosure Text="@($"View {configuration.Suggestions.Count} source requirements")" CollapseText="Hide source requirements" TestId="snt-source-values" Class="disclosure-inline">
                         <SourceGuidanceList Suggestions="configuration.Suggestions" TestId="snt-source-guidance" Label="Source requirements" />
                     </ReviewDisclosure>
+                </section>
+            }
+
+            @if (_pack is not null && Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList() is { Count: > 0 } setupViews)
+            {
+                @* Guided Setup: progress per journey from the authoritative readiness (nothing stored); Continue resumes at the first unresolved step. *@
+                var setups = setupViews.Select(v => JourneySetupModel.Build(PackId, v)).ToList();
+                var firstOpen = setups.FirstOrDefault(s => !s.SetupComplete);
+                <section class="snt-summary-card" aria-labelledby="snt-setup-heading" data-testid="snt-journey-setup">
+                    <h3 class="snt-subheading" id="snt-setup-heading">Journey setup</h3>
+                    <ul class="snt-plain" data-testid="snt-setup-progress">
+                        @foreach (var setup in setups)
+                        {
+                            <li data-testid="snt-setup-journey" data-journey="@setup.JourneyId" data-complete="@(setup.SetupComplete ? "true" : "false")">@setup.JourneyName · @setup.RequiredReady/@setup.RequiredSteps ready
+                                <a class="snt-link" href="@SetupHref(setup.JourneyId)" data-testid="snt-setup-prepare" aria-label="@($"Prepare {setup.JourneyName}")">Prepare @setup.JourneyName</a></li>
+                        }
+                    </ul>
+                    <div class="snt-actions">
+                        @if (firstOpen is not null) { <a class="btn-primary" href="@SetupHref(firstOpen.JourneyId)" data-testid="snt-setup-continue">Continue setup</a> }
+                        <button type="button" class="btn-secondary" data-testid="snt-setup-import" @onclick="() => _profilePanel = SetupProfileMode.Import">Import setup profile</button>
+                        <button type="button" class="btn-secondary" data-testid="snt-setup-export" @onclick="() => _profilePanel = SetupProfileMode.Export">Export safe setup</button>
+                    </div>
+                    @if (_profilePanel is { } mode && _profile is not null)
+                    {
+                        <SetupProfilePanel EnvironmentId="@_profile.Id" PackId="@PackId" Mode="mode" Closed="() => _profilePanel = null" Applied="ReloadAfterProfileAsync" />
+                    }
                 </section>
             }
 
@@ -217,6 +248,12 @@
                     </div>
                 }
                 @if (journeyId == RapportmottakId) { @RapportmottakHeader(view) }
+                @if (view is not null)
+                {
+                    <ReviewDisclosure Text="@($"Prepare {journey?.DisplayName ?? journeyId}")" CollapseText="Hide setup" TestId="snt-prepare" Class="disclosure-inline" Expanded="@(SetupParam is not null)">
+                        <JourneySetupPanel PackId="@PackId" View="view" ProfileId="@_profile?.Id" FocusNext="@(SetupParam == "continue")" />
+                    </ReviewDisclosure>
+                }
                 @AttentionSummary(journeyId, view)
                 @if (view.Journey.ExecutionMode == JourneyExecutionMode.DelegatedToActiveEvent)
                 {
@@ -362,6 +399,22 @@
 
     /// <summary>The section to show (?tab=); anything the pack does not declare is the Overview.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    /// <summary>?setup=continue opens a journey's Guided Setup at its first unresolved step.</summary>
+    [SupplyParameterFromQuery(Name = "setup")] public string? SetupParam { get; set; }
+    private SetupProfileMode? _profilePanel;
+    private string SetupHref(string journeyId) => $"{TabHref(journeyId)}&setup=continue";
+
+    /// <summary>After applying a setup profile everything is recomputed from the owners (nothing is cached from the profile).</summary>
+    private async Task ReloadAfterProfileAsync()
+    {
+        if (_profile is null || Services.GetService<IIntegrationJourneysApiService>() is not { } journeys) return;
+        try
+        {
+            _pack = (await journeys.PacksAsync(_profile.Id, _disposed.Token)).Value?.FirstOrDefault(pack => pack.PackId == PackId) ?? _pack;
+            _guidance = (await journeys.SourceGuidanceAsync(_profile.Id, PackId, _disposed.Token)).Value is { } fresh ? SourceGuidancePresentation.Resolved(fresh) : _guidance;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { }
+    }
 
     private readonly CancellationTokenSource _disposed = new();
     private FrontendAnalysisProfile? _profile;
@@ -594,6 +647,13 @@
                                 <span class="snt-row-text"><strong>@item.Label</strong> <span class="snt-source" data-testid="snt-source-badge"><span class="visually-hidden">Source: </span>@TestPackPresentation.Source(item)</span>
                                     <span class="snt-kind" data-testid="snt-kind"><span class="visually-hidden">Needs: </span>@SourceGuidancePresentation.RequirementKind(item, guidance.Count > 0)</span>
                                     <span class="snt-muted snt-row-detail">@item.Detail</span>
+                                    @if (item.Diagnostics.Count > 0)
+                                    {
+                                        @* Diagnostic facts behind the state (identities compared, candidates, exact reason) — a real disclosure, never a dead button. *@
+                                        <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="snt-item-diagnostics" Class="disclosure-inline">
+                                            <ul class="snt-diagnostics" data-testid="snt-item-diagnostics-list" aria-label="@($"Details for {item.Label}")">@foreach (var line in item.Diagnostics) { <li>@line</li> }</ul>
+                                        </ReviewDisclosure>
+                                    }
                                     @if (guidance.Count > 0)
                                     {
                                         <ReviewDisclosure Text="Why is this blocked?" CollapseText="Hide technical details" TestId="snt-blocker-guidance" Class="disclosure-inline">
@@ -601,7 +661,8 @@
                                         </ReviewDisclosure>
                                     }
                                     @if (action.Href is { } href) { <a class="snt-blocker-action" href="@href">@action.Label</a> }
-                                    else if (action.Group is { } detailGroup) { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(detailGroup)">@action.Label</button> }</span></li>
+                                    @* Inside the open check list a generic "View details" would only re-open this list: it is never offered here. *@
+                                    else if (action.Group is { } detailGroup && detailGroup != "advanced") { <button type="button" class="snt-link-button" @onclick="() => OpenGroupAsync(detailGroup)">@action.Label</button> }</span></li>
                         }
                     </ul>
                 </section>
@@ -790,10 +851,33 @@
     {
         if (view.Prerequisites.Any(item => item.Category == JourneyPrerequisiteCategory.Integration && item.Key.StartsWith("integration:", StringComparison.Ordinal)
                 && item.State == JourneyReadinessState.NotConfigured)) return "Missing integration";
+        var mapping = view.Prerequisites.Any(item => item.Key.EndsWith(":mapping", StringComparison.Ordinal) && item.State != JourneyReadinessState.Ready);
         var keys = view.Prerequisites.Select(item => item.Key).ToHashSet(StringComparer.Ordinal);
         var values = _guidance?.Suggestions.Where(item => item.Requirement.PrerequisiteKey is { } key && keys.Contains(key)).ToList() ?? [];
-        return values.Count == 0 ? TestPackPresentation.Configuration(view) : $"{values.Count(item => item.ResolvedValue is not null)}/{values.Count} known";
+        var known = values.Count == 0 ? TestPackPresentation.Configuration(view) : $"{values.Count(item => item.ResolvedValue is not null)}/{values.Count} values known";
+        return mapping ? $"Integration found · mapping incomplete · {known}" : known;
     }
+
+    /// <summary>"Partial: 2 of 3 journey integrations found (1 mapping incomplete)" — configured integrations, never readiness.</summary>
+    private string IntegrationCoverage
+    {
+        get
+        {
+            var views = Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList();
+            var requirements = views.SelectMany(view => view.Journey.Integrations.Select(requirement => (View: view, Requirement: requirement))).ToList();
+            if (requirements.Count == 0) return "Not assessed";
+            var found = requirements.Count(item => item.View.MatchedIntegrations.Any(m => m.RequirementKey == item.Requirement.Key && m.IntegrationId is not null));
+            var incomplete = requirements.Count(item => item.View.MatchedIntegrations.Any(m => m.RequirementKey == item.Requirement.Key && m.MatchState == BirkNext.Integrations.IntegrationMatchState.MappingIncomplete));
+            var state = found == requirements.Count && incomplete == 0 ? "Complete" : found == 0 ? "None found" : "Partial";
+            return $"{state}: {found} of {requirements.Count} journey integration{(requirements.Count == 1 ? "" : "s")} found{(incomplete > 0 ? $" ({incomplete} mapping incomplete)" : "")}";
+        }
+    }
+
+    /// <summary>Whether active execution may start anywhere in this pack: blocked until the environment, integrations and run values allow it.</summary>
+    private string ExecutionConfiguration =>
+        Journeys.Select(j => View(j.JourneyId)).OfType<IntegrationJourneyView>().ToList() is { Count: > 0 } views
+            ? views.Any(view => view.CanRun) ? $"Executable after confirmation for {views.Count(view => view.CanRun)} of {views.Count} journeys" : "Blocked"
+            : "Not assessed";
 
     private sealed record RootCause(int Count, string Reason, IReadOnlyList<string> Matches, string ActionLabel, string ActionHref);
 

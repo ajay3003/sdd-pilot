@@ -127,6 +127,57 @@ public sealed class ActiveEventTestingPanelTests : BunitContext
         html.Should().NotContain("\"payload\"", "the body is never part of a run");
     }
 
+    // ── Opened for one IQR integration: only providers that apply to it are offered; never an unrelated default ──────────
+
+    private static readonly IntegrationDefinition Altinn = new() { Id = "altinn", DisplayName = "Skolenærvær – Altinn report intake", Kind = IntegrationKind.HttpApi, Enabled = true };
+
+    private IRenderedComponent<ActiveEventTestingPanel> RenderScoped(string selected, string name)
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        return Render<ActiveEventTestingPanel>(p => p.Add(c => c.Profile, Profile).Add(c => c.Integrations, [Person, Altinn])
+            .Add(c => c.SelectedIntegrationId, selected).Add(c => c.SelectedIntegrationName, name).Add(c => c.PollInterval, TimeSpan.FromMilliseconds(10)));
+    }
+
+    [Fact]
+    public void ScopedToAnIntegrationNoProviderAppliesTo_NothingIsPreselected_AndOthersAreSecondary()
+    {
+        var cut = RenderScoped("altinn", "Skolenærvær – Altinn report intake");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=act-no-applicable-provider]").TextContent
+            .Should().Be("No Active Event provider applies to Skolenærvær – Altinn report intake."));
+        cut.FindAll("input[type=radio][checked]").Should().BeEmpty("an unrelated provider (Person CDC) is never the default");
+        cut.Find("[data-testid=act-other-providers]").TextContent.Should().Contain("Other providers in this environment (2)");
+        cut.FindAll("[data-testid=act-integration]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ScopedToAnIntegrationAProviderAppliesTo_ItIsTheDefault_AndOnlyThatIntegrationIsOffered()
+    {
+        var cut = RenderScoped("person", "BIRK Person CDC");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=act-providers]").GetAttribute("data-scope").Should().Be("person"));
+        cut.Find("[data-testid=act-providers] input[type=radio]").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=act-other-providers]").TextContent.Should().Contain("Other providers in this environment (1)");
+    }
+
+    [Fact]
+    public void ResourceLevelReadiness_ShowsEachResource_PartialNeverMissing()
+    {
+        _api.ProviderList[1] = _api.ProviderList[1] with
+        {
+            ApplicableIntegrationIds = ["utdanning"], Coverage = ActiveEventProviderCoverage.Partial,
+            ResourceStatuses =
+            [
+                new("dbo.Utdanning", "utdanning", "Utdanning", ActiveEventResourceState.IntegrationFound, "Integration found: Utdanning."),
+                new("dbo.ManglendeSkoletilbud", null, null, ActiveEventResourceState.IntegrationMissing, "No configured Event Hub integration names dbo.ManglendeSkoletilbud."),
+            ],
+        };
+        var cut = Render();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid^=act-provider-]").Count.Should().BeGreaterThan(1));
+        cut.Find($"[data-testid='act-provider-{_api.ProviderList[1].ExtensionId}']").Change(true);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=act-resource]").Select(r => (r.GetAttribute("data-resource"), r.GetAttribute("data-state"))).Should().Equal(
+            [("dbo.Utdanning", "IntegrationFound"), ("dbo.ManglendeSkoletilbud", "IntegrationMissing")]));
+        cut.Find("[data-testid=act-provider-coverage]").TextContent.Should().StartWith("Provider coverage: Partial");
+    }
+
     private sealed class FakeApi : IActiveEventsApiService
     {
         public Guid Snapshot { get; } = Guid.NewGuid();
@@ -141,7 +192,7 @@ public sealed class ActiveEventTestingPanelTests : BunitContext
             ResultDoesNotMean = "Without a downstream verifier it does not mean the record was stored.",
         };
 
-        private static readonly ActiveEventProviderSummary[] ProviderList =
+        public readonly ActiveEventProviderSummary[] ProviderList =
         [
             new() { ExtensionId = "m2lb.person", DisplayName = "M2LB Person CDC", Resources = ["dbo.Person"], ApplicableIntegrationIds = ["person"], Scenarios = [Normal] },
             new()

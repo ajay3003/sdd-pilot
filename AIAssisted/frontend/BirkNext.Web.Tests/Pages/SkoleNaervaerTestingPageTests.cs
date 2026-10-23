@@ -219,7 +219,7 @@ public sealed class SkoleNaervaerTestingPageTests : BunitContext
         string Cell(string label) => State(page.Find($"[data-journey=rapportmottak] td[data-label='{label}']"));
         (Cell("Integration"), Cell("Contract"), Cell("Test Data"), Cell("Verification")).Should().Be(("Partial", "Review required", "Missing", "Partial"));
         page.Find("[data-journey=rapportmottak] [data-testid=snt-matrix-assessment]").TextContent.Should().Be("Last run: Executed · not verified", "executed is not verified");
-        page.Find("[data-testid=snt-attention-summary]").TextContent.Should().Be("5 things need attention: 1 integration, 1 contracts, 1 test data, 1 execution, 1 verification",
+        page.Find("[data-testid=snt-attention-summary]").TextContent.Should().Be("5 things need attention: 1 integration not enabled for active runs, 1 contracts, 1 test data, 1 execution, 1 verification",
             "an optional dimension (delivery) never needs attention");
         page.FindAll("[data-testid=snt-attention-category] a").Select(a => a.GetAttribute("href")).Should().Contain("/test-data")
             .And.Contain("/source-analysis?area=quality-evidence&view=contracts").And.Contain("/admin/system-settings?section=target-environments");

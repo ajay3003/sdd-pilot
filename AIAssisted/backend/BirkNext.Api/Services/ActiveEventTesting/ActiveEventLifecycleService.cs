@@ -49,11 +49,28 @@ public sealed class ActiveEventLifecycleService(
             .ToArray();
         return scenarios.Providers.Select(provider =>
         {
-            var applicable = contexts.Where(provider.CanApply).Select(context => context.Integration!.Id).ToArray();
+            var applicable = contexts.Where(provider.CanApply).ToArray();
+            // Resource-level readiness: each resource the provider covers is matched by typed source-resource identity, so one configured table
+            // and one missing table read "Partial", never "no configured integration".
+            var resources = provider.Resources.Select(resource =>
+            {
+                var covering = applicable.Where(context => string.Equals(provider.ResourceOf(context), resource, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (covering.Length == 0)
+                    return new ActiveEventResourceStatus(resource, null, null, ActiveEventResourceState.IntegrationMissing,
+                        $"No configured Event Hub integration names {resource} as its source resource (database.schema.table or the CDC hub name).");
+                var context = covering[0];
+                var destination = string.IsNullOrWhiteSpace(context.Platform?.NamespaceFqdn) || string.IsNullOrWhiteSpace(context.Integration!.EndpointOrTopic)
+                    ? " · execution destination incomplete (Event Hub namespace or hub name not configured)" : "";
+                return new ActiveEventResourceStatus(resource, context.Integration!.Id, context.Integration.DisplayName, ActiveEventResourceState.IntegrationFound,
+                    $"Integration found: {context.Integration.DisplayName}{destination}. Execution still needs its own prerequisites and confirmation.");
+            }).ToArray();
+            var found = resources.Count(item => item.State == ActiveEventResourceState.IntegrationFound);
             return new ActiveEventProviderSummary
             {
                 ExtensionId = provider.ExtensionId, ExtensionVersion = provider.ExtensionVersion, DisplayName = provider.DisplayName, Description = provider.Description,
-                Resources = provider.Resources, Scenarios = provider.CatalogScenarios, ApplicableIntegrationIds = applicable,
+                Resources = provider.Resources, Scenarios = provider.CatalogScenarios, ApplicableIntegrationIds = [.. applicable.Select(context => context.Integration!.Id)],
+                ResourceStatuses = resources,
+                Coverage = found == 0 ? ActiveEventProviderCoverage.None : found == resources.Length ? ActiveEventProviderCoverage.Complete : ActiveEventProviderCoverage.Partial,
                 NotApplicableReason = applicable.Length > 0 ? ""
                     : $"No configured Event Hub integration was found for this CDC source ({string.Join(" / ", provider.Resources)}). Configure it in Target Environment → Integrations with its database.schema.table source resource.",
             };
@@ -254,7 +271,9 @@ public sealed class ActiveEventLifecycleService(
             : null;
         var resource = integration?.EndpointOrTopic?.Trim();
         var endpoint = platform?.NamespaceFqdn?.Trim();
-        if (integrationProblem is null && (string.IsNullOrWhiteSpace(resource) || string.IsNullOrWhiteSpace(endpoint))) integrationProblem = "The trusted integration destination is incomplete.";
+        if (integrationProblem is null && (string.IsNullOrWhiteSpace(resource) || string.IsNullOrWhiteSpace(endpoint)))
+            integrationProblem = string.IsNullOrWhiteSpace(endpoint) ? "The trusted integration destination is incomplete: the platform's Event Hub namespace (FQDN) is not configured."
+                : "The trusted integration destination is incomplete: the Event Hub name is not configured.";
         Add("integration", "Integration configuration (IQR)", integrationProblem is null ? ActiveEventReadinessState.Ready : ActiveEventReadinessState.Blocked,
             integrationProblem ?? $"{integration!.DisplayName}: source {integration.SourceResource ?? "not set"} → {resource} on {endpoint}.", ActiveEventReadinessCategory.Integration);
 

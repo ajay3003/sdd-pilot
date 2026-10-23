@@ -589,10 +589,27 @@ public sealed class IntegrationJourneyService(
             var enrolled = context.TrustedEnvironment is { } trusted ? enabled.Where(item => trusted.IntegrationIds.Contains(item.Id, StringComparer.Ordinal)).ToArray() : [];
             matched.AddRange(found.Length == 0
                 ? [new JourneyMatchedIntegration(requirement.Key, null, null, requirement.Kind, false, $"No configured {requirement.Kind} integration was found for {requirement.Label}.")]
-                : found.Select(item => new JourneyMatchedIntegration(requirement.Key, item.Id, item.DisplayName, item.Kind, item.Enabled,
+                : found.Select(item =>
+                {
+                    var match = pack.Match(requirement, item);
+                    return new JourneyMatchedIntegration(requirement.Key, item.Id, item.DisplayName, item.Kind, item.Enabled,
                     !item.Enabled ? "Configured in Integration Quality Review but disabled."
                     : context.TrustedEnvironment?.IntegrationIds.Contains(item.Id, StringComparer.Ordinal) == true ? "Configured · enabled for active runs in this environment."
-                    : "Configured in Integration Quality Review · not enabled for active runs in this environment.")));
+                    : "Configured in Integration Quality Review · not enabled for active runs in this environment.")
+                    { MatchState = match.State, MatchedOn = match.Matched, Unresolved = match.Unresolved };
+                }));
+            // Found ≠ fully mapped: an integration correlated through its canonical identity (channel, resource, producer) with a declared dimension
+            // still missing is "Integration found · mapping incomplete" — never "missing", and never a reason to create a duplicate.
+            foreach (var item in found.Where(item => item.Enabled))
+                if (pack.Match(requirement, item) is { State: IntegrationMatchState.MappingIncomplete } incomplete)
+                    prerequisites.Add(new JourneyPrerequisite($"{IntegrationKeyPrefix}{requirement.Key}:mapping", $"{requirement.Label} mapping", JourneyPrerequisiteCategory.Integration,
+                        JourneyReadinessState.Partial,
+                        $"Integration found: {item.DisplayName} ({string.Join(", ", incomplete.Matched)}) · mapping incomplete: {string.Join("; ", incomplete.Unresolved)}. "
+                        + "Expected values come from the Test Pack and are not source verified.", Mandatory: false)
+                        {
+                            Source = "Integration Quality Review + Test Pack expectation",
+                            Diagnostics = [$"integration-id:{item.Id}", .. incomplete.Matched.Select(line => $"Matched: {line}"), .. incomplete.Unresolved.Select(line => $"Unresolved: {line}")],
+                        });
             var (state, detail) = found.Length == 0
                 ? (JourneyReadinessState.NotConfigured, $"No configured {requirement.Kind} integration was found for {requirement.Label} ({requirement.Producer} → {requirement.Consumer}). Configure it in Integration Quality Review.")
                 : enabled.Length == 0 ? (JourneyReadinessState.NotReady, $"{requirement.Label}: the configured integration is disabled.")
@@ -704,7 +721,8 @@ public sealed class IntegrationJourneyService(
                 if (scenario is null)
                 {
                     result.Add(new($"delegated:{integration.Id}", $"Active Event provider for {integration.DisplayName}", JourneyPrerequisiteCategory.Executor,
-                        JourneyReadinessState.NotAvailable, $"Provider {provider} offers no supported scenario for this integration."));
+                        JourneyReadinessState.NotAvailable, $"Provider {provider} offers no supported scenario for this integration.")
+                        { Diagnostics = await ProviderDiagnosticsAsync(context.EnvironmentId, integration, provider, ct) });
                     continue;
                 }
                 var readiness = await activeEvents.ReadinessAsync(context.EnvironmentId, integration.Id, provider, scenario.ScenarioId, null, ct);
@@ -717,6 +735,35 @@ public sealed class IntegrationJourneyService(
             }
         }
         return result;
+    }
+
+    /// <summary>Why a provider does not apply to an integration, as safe facts: the integration's typed identities, what the provider covers,
+    /// which configured integrations it does match and the exact rule that failed.</summary>
+    private async Task<IReadOnlyList<string>> ProviderDiagnosticsAsync(string environmentId, IntegrationDefinition integration, string provider, CancellationToken ct)
+    {
+        var resource = SourceResourceIdentity.Of(integration);
+        var lines = new List<string>
+        {
+            $"Selected integration: {integration.DisplayName} ({integration.Id}) · {integration.Kind}",
+            $"Source resource (normalized): {(resource is null ? "not stated — configure database.schema.table or a CDC hub name {prefix}.{database}.{schema}.{table}" : $"{resource.Full} (also {resource.Qualified})")}",
+            $"Channel: {integration.EndpointOrTopic ?? "not configured"}",
+            $"Provider: {provider}",
+        };
+        try
+        {
+            if ((await activeEvents.ProvidersAsync(environmentId, ct)).FirstOrDefault(item => item.ExtensionId == provider) is { } summary)
+            {
+                lines.Add($"Provider resources: {string.Join(", ", summary.Resources)}");
+                lines.AddRange(summary.ResourceStatuses.Select(status => $"{status.Resource}: {(status.State == ActiveEventResourceState.IntegrationFound ? $"integration found ({status.IntegrationName})" : "integration missing")}"));
+                lines.Add(summary.ApplicableIntegrationIds.Count == 0 ? "Matching configured integrations: none" : $"Matching configured integrations: {string.Join(", ", summary.ApplicableIntegrationIds)}");
+                lines.Add($"Scenarios declared: {summary.Scenarios.Count} ({summary.Scenarios.Count(item => item.Support == ActiveEventScenarioSupport.Supported)} supported)");
+            }
+        }
+        catch (ActiveEventRequestException ex) { lines.Add($"Provider summary unavailable: {ex.Message}"); }
+        lines.Add(resource is null ? "Reason: the integration states no source resource the provider can match."
+            : integration.Kind != IntegrationKind.EventHub ? "Reason: the provider needs an Event Hub integration."
+            : "Reason: the integration's source resource is not one of the provider's resources.");
+        return lines;
     }
 
     /// <summary>
@@ -846,7 +893,7 @@ public sealed class IntegrationJourneyService(
     private static IReadOnlyList<(JourneyIntegrationRequirement Requirement, IntegrationDefinition? Integration)> Matches(IIntegrationJourneyPack pack,
         IntegrationJourneyDefinition journey, IntegrationCatalog configured) =>
         journey.Integrations.SelectMany(requirement => configured.Integrations
-            .Where(integration => integration.Kind == requirement.Kind && pack.Matches(requirement, integration))
+            .Where(integration => integration.Kind == requirement.Kind && pack.Match(requirement, integration).Found)
             .Select(integration => (requirement, (IntegrationDefinition?)integration))).ToArray();
 
     /// <summary>Backend-owned trust only: a trusted record, execution allowed, Development/QA type and no production marker on the target host.</summary>

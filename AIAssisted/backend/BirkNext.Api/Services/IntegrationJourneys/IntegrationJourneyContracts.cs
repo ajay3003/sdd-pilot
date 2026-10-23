@@ -29,6 +29,13 @@ public sealed record JourneyPackContext(
         Bindings.FirstOrDefault(b => b.IntegrationId == integrationId) is { } binding ? SourceSnapshots.FirstOrDefault(s => s.Id == binding.SnapshotId) : null;
 }
 
+/// <summary>One run-configuration value a setup profile may propose: where it sits in the profile, the pack's apply key, and its validation.</summary>
+public sealed record SetupRunField(string JourneyId, string Path, string ApplyKey, string Label)
+{
+    public IReadOnlyList<string> AllowedValues { get; init; } = [];
+    public bool Url { get; init; }
+}
+
 /// <summary>
 /// A project/domain journey pack (an extension). It declares journeys, scenarios, integration requirements, domain prerequisites and
 /// architecture responsibility rules. It owns no configuration, transport, safety, persistence or reporting: those are shared. A pack can
@@ -74,6 +81,23 @@ public interface IIntegrationJourneyPack
     bool SupportsHistory => true;
     /// <summary>Whether a configured IQR integration fulfils one of this pack's integration requirements.</summary>
     bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration);
+
+    /// <summary>The logical ↔ technical aliases the pack expects (provenance TestPackExpected). They widen correlation only; never source proof.</summary>
+    IReadOnlyList<IntegrationAlias> Aliases => [];
+
+    /// <summary>Run-configuration values a setup profile may propose for a journey (profile path under the journey → the key
+    /// <see cref="ApplyConfigurationAsync"/> stores, empty fields only). Never secrets, identities, trust or attestations. Default: none.</summary>
+    IReadOnlyList<SetupRunField> SetupRunFields => [];
+
+    /// <summary>The currently stored run-configuration values by apply key (for the setup change plan). Default: none.</summary>
+    Task<IReadOnlyDictionary<string, string?>> CurrentRunValuesAsync(JourneyPackContext context, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyDictionary<string, string?>>(new Dictionary<string, string?>());
+
+    /// <summary>How a configured integration matches a requirement: through the requirement's canonical identity when it declares one (typed
+    /// resource, channel, aliases — never display-name equality), else through <see cref="Matches"/> as a plain yes/no.</summary>
+    IntegrationIdentityMatch Match(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) =>
+        requirement.Identity is { } identity ? IntegrationIdentityResolver.Match(identity, integration)
+        : Matches(requirement, integration) ? new(IntegrationMatchState.Matched, [], []) : IntegrationIdentityMatch.None;
     Task<IReadOnlyList<JourneyPrerequisite>> PrerequisitesAsync(IntegrationJourneyDefinition journey, JourneyPackContext context, CancellationToken ct);
 
     /// <summary>

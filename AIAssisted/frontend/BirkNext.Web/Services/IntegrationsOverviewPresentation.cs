@@ -79,9 +79,25 @@ public static class IntegrationsOverviewPresentation
     public static IReadOnlyList<SourceIntegrationCandidate> Candidates(SourceIntegrationsReport? report, CandidateFilter filter, string? search = null) =>
         Suggestions(report)
             .Where(c => Strength(filter) is not { } wanted || Strength(c) == wanted)
-            .Where(c => string.IsNullOrWhiteSpace(search) || SearchText(c).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
-            .OrderBy(c => Strength(c) switch { SuggestionStrength.StronglySupported => 0, SuggestionStrength.Suggested => 1, SuggestionStrength.Unassigned => 2, _ => 3 })
+            .Where(c => string.IsNullOrWhiteSpace(search) || SearchRank(c, search) is not null)
+            .OrderBy(c => string.IsNullOrWhiteSpace(search) ? 0 : SearchRank(c, search) ?? 9)
+            .ThenBy(c => Strength(c) switch { SuggestionStrength.StronglySupported => 0, SuggestionStrength.Suggested => 1, SuggestionStrength.Unassigned => 2, _ => 3 })
             .ThenBy(Relationship, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.Id, StringComparer.Ordinal).ToList();
+
+    /// <summary>
+    /// How well a candidate matches a search, best first: 0 exact word ("MU" ↔ "Meldingsutveksleren (MU)"), 1 word prefix, 2 substring of the whole
+    /// text (3+ characters only). A short query never matches inside a word, so "MU" does not find "Kommune". Null: no match.
+    /// </summary>
+    public static int? SearchRank(SourceIntegrationCandidate c, string search)
+    {
+        var query = BirkNext.Integrations.IntegrationIdentityResolver.Fold(search);
+        if (query.Length == 0) return 0;
+        var text = SearchText(c);
+        var words = BirkNext.Integrations.IntegrationIdentityResolver.Words(text);
+        if (words.Contains(query)) return 0;
+        if (query.Length >= 2 && words.Any(word => word.StartsWith(query, StringComparison.Ordinal))) return 1;
+        return query.Length >= 3 && BirkNext.Integrations.IntegrationIdentityResolver.Fold(text).Contains(query, StringComparison.Ordinal) ? 2 : null;
+    }
 
     private static string SearchText(SourceIntegrationCandidate c) =>
         string.Join(" ", new[] { Relationship(c), c.ChannelName, c.ProducerComponent, c.SourceSystem, SuggestionKind(c), c.NamespaceName }.OfType<string>());

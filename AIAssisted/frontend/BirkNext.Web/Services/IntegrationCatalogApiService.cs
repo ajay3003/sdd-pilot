@@ -108,6 +108,14 @@ public interface IIntegrationCatalogApiService
         Task.FromResult<(IntegrationContractArtifact?, string?)>((null, "Selecting a source contract is unavailable."));
     Task<IntegrationReviewReadiness> ReadinessAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
+    /// <summary>One integration's producer ↔ consumer contract relationship, each side resolved exactly (read-only).</summary>
+    Task<BirkNext.ContractSchemaEvidence.ContractRelationshipReview?> ContractRelationshipAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
+        Task.FromResult<BirkNext.ContractSchemaEvidence.ContractRelationshipReview?>(null);
+    /// <summary>Readiness for one integration (its transport's review areas and its own source evidence), or environment-wide when null.</summary>
+    Task<IntegrationReviewReadiness> ScopedReadinessAsync(FrontendAnalysisProfile profile, string? integrationId, CancellationToken ct = default) => ReadinessAsync(profile, ct);
+    /// <summary>A read-only review of one integration (null = explicit environment-wide review) with its selected source evidence.</summary>
+    Task<IntegrationReviewResult> RunScopedAsync(FrontendAnalysisProfile profile, string? integrationId, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default) =>
+        selections.Count == 0 ? RunAsync(profile, ct) : RunWithSourceAsync(profile, selections, ct);
     Task<IReadOnlyList<IntegrationReviewRunSummary>> HistoryAsync(string environmentId, CancellationToken ct = default);
     Task<IntegrationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
     Task<IntegrationMessageFlowPackage> GetMessageFlowReviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(new IntegrationMessageFlowPackage(
@@ -517,7 +525,30 @@ public sealed class IntegrationCatalogApiService : IIntegrationCatalogApiService
     }
 
     public async Task<IntegrationReviewReadiness> ReadinessAsync(FrontendAnalysisProfile profile, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<IntegrationReviewReadiness>($"api/integration-review/readiness?{Scope(profile)}", Json, ct) ?? new IntegrationReviewReadiness { EnvironmentId = profile.Id };
+        await ScopedReadinessAsync(profile, null, ct);
+
+    public async Task<BirkNext.ContractSchemaEvidence.ContractRelationshipReview?> ContractRelationshipAsync(string environmentId, string integrationId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/integration-review/contract-relationship?{Env(environmentId)}&integrationId={Uri.EscapeDataString(integrationId)}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BirkNext.ContractSchemaEvidence.ContractRelationshipReview>(Json, ct);
+    }
+
+    public async Task<IntegrationReviewReadiness> ScopedReadinessAsync(FrontendAnalysisProfile profile, string? integrationId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<IntegrationReviewReadiness>($"api/integration-review/readiness?{Scope(profile)}{(string.IsNullOrWhiteSpace(integrationId) ? "" : $"&integrationId={Uri.EscapeDataString(integrationId)}")}", Json, ct)
+            ?? new IntegrationReviewReadiness { EnvironmentId = profile.Id };
+
+    public async Task<IntegrationReviewResult> RunScopedAsync(FrontendAnalysisProfile profile, string? integrationId, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default)
+    {
+        var request = new IntegrationReviewRunRequest
+        {
+            EnvironmentId = profile.Id, EnvironmentName = profile.Name, IntegrationId = string.IsNullOrWhiteSpace(integrationId) ? null : integrationId,
+            SourceSelections = [.. selections.Where(selection => string.IsNullOrWhiteSpace(integrationId) || selection.IntegrationId == integrationId)],
+        };
+        var scope = $"environmentType={Uri.EscapeDataString(profile.EnvironmentType.ToString())}&targetUrl={Uri.EscapeDataString(profile.TargetUrl ?? "")}";
+        return await Read<IntegrationReviewResult>(await http.PostAsJsonAsync($"api/integration-review/run?{scope}", request, Json, ct), ct);
+    }
 
     public async Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {

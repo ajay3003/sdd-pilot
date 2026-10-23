@@ -288,7 +288,19 @@ public sealed record ActiveEventProviderSummary
     public IReadOnlyList<string> ApplicableIntegrationIds { get; init; } = [];
     /// <summary>Why the provider has no applicable integration in this environment (empty when it has one).</summary>
     public string NotApplicableReason { get; init; } = "";
+    /// <summary>Per resource: whether a configured integration covers it (typed resource identity), so readiness is resource-level.</summary>
+    public IReadOnlyList<ActiveEventResourceStatus> ResourceStatuses { get; init; } = [];
+    public ActiveEventProviderCoverage Coverage { get; init; }
 }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ActiveEventResourceState { IntegrationMissing, IntegrationFound }
+
+/// <summary>None: no resource has an integration; Partial: some do; Complete: every resource does (still not "executable").</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ActiveEventProviderCoverage { None, Partial, Complete }
+
+public sealed record ActiveEventResourceStatus(string Resource, string? IntegrationId, string? IntegrationName, ActiveEventResourceState State, string Detail);
 
 /// <summary>The backend's view of whether an environment may execute active events. Client labels are never authoritative.</summary>
 public sealed record ActiveEventEnvironmentTrust

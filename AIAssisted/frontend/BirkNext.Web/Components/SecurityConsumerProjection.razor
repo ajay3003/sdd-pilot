@@ -45,6 +45,9 @@
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
     /// <summary>One consumer's projection (e.g. a test pack); null lists every consumer (the standalone review's Consumers section).</summary>
     [Parameter] public string? ConsumerId { get; set; }
+    /// <summary>The latest stored run: a new run reloads the assessments (a projection never shows an older review than the one just recorded).</summary>
+    [Parameter] public Guid? RunId { get; set; }
+    private string? _loadedFor;
     [Inject] private IServiceProvider ServiceProvider { get; set; } = default!;
     private IReadOnlyList<SecurityClassificationConsumerAssessment>? _assessments;
     private string? _error;
@@ -61,6 +64,9 @@
     {
         if (ServiceProvider.GetService(typeof(IClassificationReviewApiService)) is not IClassificationReviewApiService api) { _error = "Security Classification is unavailable in this session."; return; }
         if (string.IsNullOrWhiteSpace(EnvironmentId)) { _error = "Select a Target Environment to see the security assessment."; return; }
+        var key = $"{EnvironmentId}|{RunId}";
+        if (key == _loadedFor && _assessments is not null) return;
+        _loadedFor = key;
         _assessments = await api.ConsumersAsync(EnvironmentId);
         _error = _assessments is null ? "The shared security assessment could not be loaded." : null;
     }

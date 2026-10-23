@@ -61,11 +61,23 @@ public static class ClassificationPresentation
     public static string LevelName(ClassificationLevel level) =>
         $"Level {level.Nivaa} — {level.Verdi}" + (level.BiRKKode is not null ? $" / {level.BiRKKode}" : "") + (level.ElementsKode is not null ? $" / {level.ElementsKode}" : "");
 
+    /// <summary>
+    /// "Source security review completed · 1 security concern · 3 evidence gaps · 2 review warnings · runtime: not tested · 0 live observations":
+    /// a source-only review never reads as a runtime breach, and its categories are never merged into one finding count.
+    /// </summary>
     public static string Headline(ClassificationReviewResult result)
     {
-        var high = result.Findings.Count(f => f.Severity is ClassificationSeverity.Critical or ClassificationSeverity.High);
-        return $"{ClassificationLabels.Overall(result.Overall)} · {result.Live.Observations.Count(o => ClassificationLabels.IsRuntimeResult(o.State))} live observation(s) · {result.Findings.Count} finding(s){(high > 0 ? $", {high} high or critical" : "")}";
+        var live = result.Live.Observations.Count(o => ClassificationLabels.IsRuntimeResult(o.State));
+        var counts = result.Findings.GroupBy(ClassificationFindingCategories.Of).ToDictionary(g => g.Key, g => g.Count());
+        int Count(ClassificationFindingCategory category) => counts.GetValueOrDefault(category);
+        static string N(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+        return $"{(live == 0 ? "Source security review completed" : "Security review completed")} · {N(Count(ClassificationFindingCategory.SecurityFinding), "security concern", "security concerns")}"
+            + $" · {N(Count(ClassificationFindingCategory.EvidenceGap), "evidence gap", "evidence gaps")} · {N(Count(ClassificationFindingCategory.ReviewWarning), "review warning", "review warnings")}"
+            + $" · runtime: {(live == 0 ? "not tested" : "tested on observed surfaces only")} · {N(live, "live observation", "live observations")}";
     }
+
+    /// <summary>The finding's normalized category label (shown beside its severity; never replacing it).</summary>
+    public static string Category(ClassificationFinding finding) => ClassificationFindingCategories.Label(ClassificationFindingCategories.Of(finding));
 
     /// <summary>Test-lead orientation line: findings, runtime checks and missing evidence (never merged into the finding count).</summary>
     public static string Orientation(ClassificationReviewResult result, int missing)

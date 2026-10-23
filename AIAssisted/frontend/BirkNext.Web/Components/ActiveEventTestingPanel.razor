@@ -33,25 +33,54 @@
     <div id="@_runnerId" class="act-runner" hidden="@(SummaryFirst && !_open)" data-testid="act-runner">
         <p class="act-notice" role="note" data-testid="act-notice"><strong>Active tests send synthetic events to a real non-production Event Hub. Every safety check is enforced by the backend; this page only shows its decision. Event Hub acceptance is never a pass on its own.</strong></p>
 
-        @if (_providers.Count > 0)
+        @if (_providers.Count > 0 && Scoped)
+        {
+            @* Launched for one integration: only providers that apply to it are offered by default; the others stay visible, separately, and are
+               never preselected. *@
+            var applicable = _providers.Where(AppliesToSelected).ToList();
+            <fieldset class="act-scenarios" data-testid="act-providers" data-scope="@SelectedIntegrationId" disabled="@Busy">
+                <legend>Applicable to @(SelectedIntegrationName ?? "the selected integration")</legend>
+                @if (applicable.Count == 0)
+                {
+                    <p class="act-empty" data-testid="act-no-applicable-provider">No Active Event provider applies to @(SelectedIntegrationName ?? "this integration").</p>
+                }
+                @foreach (var provider in applicable) { @ProviderOption(provider) }
+            </fieldset>
+            @if (_providers.Any(p => !AppliesToSelected(p)))
+            {
+                <details class="act-other-providers" data-testid="act-other-providers">
+                    <summary>Other providers in this environment (@_providers.Count(p => !AppliesToSelected(p)))</summary>
+                    <fieldset class="act-scenarios" disabled="@Busy">
+                        <legend class="visually-hidden">Other providers in this environment</legend>
+                        @foreach (var provider in _providers.Where(p => !AppliesToSelected(p))) { @ProviderOption(provider) }
+                    </fieldset>
+                </details>
+            }
+        }
+        else if (_providers.Count > 0)
         {
             <fieldset class="act-scenarios" data-testid="act-providers" disabled="@Busy">
                 <legend>Scenario provider</legend>
-                @foreach (var provider in _providers)
-                {
-                    <label class="act-scenario">
-                        <input type="radio" name="act-provider-@_runnerId" value="@provider.ExtensionId" checked="@(provider.ExtensionId == _providerId)"
-                               data-testid="@($"act-provider-{provider.ExtensionId}")" @onchange="() => SelectProviderAsync(provider.ExtensionId)" />
-                        <span>@provider.DisplayName</span>
-                        <span class="act-muted">@string.Join(", ", provider.Resources)</span>
-                    </label>
-                }
+                @foreach (var provider in _providers) { @ProviderOption(provider) }
             </fieldset>
         }
 
         @if (SelectedProvider is { } selectedProvider)
         {
             <p class="act-muted" data-testid="act-provider-description">@selectedProvider.Description</p>
+            @if (selectedProvider.ResourceStatuses.Count > 1 || selectedProvider.Coverage == ActiveEventProviderCoverage.Partial)
+            {
+                @* Resource-level readiness: one configured table and one missing table is Partial, never "no integration". *@
+                <ul class="act-resources" data-testid="act-resources" data-coverage="@selectedProvider.Coverage" aria-label="@($"{selectedProvider.DisplayName} resources")">
+                    @foreach (var resource in selectedProvider.ResourceStatuses)
+                    {
+                        <li data-testid="act-resource" data-resource="@resource.Resource" data-state="@resource.State"><span class="act-mono">@resource.Resource</span>
+                            <span class="act-pill act-pill-@(resource.State == ActiveEventResourceState.IntegrationFound ? "ready" : "neutral")">@(resource.State == ActiveEventResourceState.IntegrationFound ? "Integration found" : "Integration missing")</span>
+                            <span class="act-muted">@resource.Detail</span></li>
+                    }
+                </ul>
+                <p class="act-muted" data-testid="act-provider-coverage">Provider coverage: @(selectedProvider.Coverage switch { ActiveEventProviderCoverage.Complete => "Complete", ActiveEventProviderCoverage.Partial => "Partial", _ => "None" }) · integration found ≠ executable.</p>
+            }
             @if (ProviderIntegrations.Count == 0)
             {
                 <p class="act-empty" data-testid="act-no-integration">@(selectedProvider.NotApplicableReason.Length > 0 ? selectedProvider.NotApplicableReason : "No configured integration applies to this provider.")</p>
@@ -277,6 +306,10 @@
     [Parameter] public bool SummaryFirst { get; set; }
     /// <summary>The IQR source selections: a snapshot chosen there for this integration is the one the fixture is bound to (else the latest).</summary>
     [Parameter] public IReadOnlyList<IqrSourceSelection> Selections { get; set; } = [];
+    /// <summary>The integration the panel was opened for (IQR's selected integration). Set: providers that apply to it are offered, others are
+    /// listed separately and never preselected, and the integration selector is that integration only.</summary>
+    [Parameter] public string? SelectedIntegrationId { get; set; }
+    [Parameter] public string? SelectedIntegrationName { get; set; }
     /// <summary>Poll interval while a run is in flight (tests shorten it).</summary>
     [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -312,8 +345,17 @@
     private DateOnly? _filterFrom;
 
     private ActiveEventProviderSummary? SelectedProvider => _providers.FirstOrDefault(p => p.ExtensionId == _providerId);
+    private bool Scoped => !string.IsNullOrWhiteSpace(SelectedIntegrationId);
+    private bool AppliesToSelected(ActiveEventProviderSummary provider) => provider.ApplicableIntegrationIds.Contains(SelectedIntegrationId ?? "", StringComparer.Ordinal);
     private IReadOnlyList<IntegrationDefinition> ProviderIntegrations => SelectedProvider is { } provider
-        ? Integrations.Where(i => provider.ApplicableIntegrationIds.Contains(i.Id)).ToList() : [];
+        ? Integrations.Where(i => provider.ApplicableIntegrationIds.Contains(i.Id) && (!Scoped || !AppliesToSelected(provider) || i.Id == SelectedIntegrationId)).ToList() : [];
+
+    private RenderFragment ProviderOption(ActiveEventProviderSummary provider) => @<label class="act-scenario">
+        <input type="radio" name="act-provider-@_runnerId" value="@provider.ExtensionId" checked="@(provider.ExtensionId == _providerId)"
+               data-testid="@($"act-provider-{provider.ExtensionId}")" @onchange="() => SelectProviderAsync(provider.ExtensionId)" />
+        <span>@provider.DisplayName</span>
+        <span class="act-muted">@string.Join(", ", provider.Resources)</span>
+    </label>;
     private IReadOnlyList<ActiveEventScenarioDescriptor> ScenarioOptions => _scenarios.Count > 0 ? _scenarios : SelectedProvider?.Scenarios ?? [];
     private IReadOnlyList<ActiveEventScenarioDescriptor> SupportedScenarios => ScenarioOptions.Where(s => s.Support == ActiveEventScenarioSupport.Supported).ToList();
     private ActiveEventScenarioDescriptor? SelectedScenario => ScenarioOptions.FirstOrDefault(s => s.ScenarioId == _scenarioId);
@@ -364,7 +406,7 @@
     protected override async Task OnParametersSetAsync()
     {
         if (Api is null || Profile is null) return;
-        var key = $"{Profile.Id}|{string.Join(",", Integrations.Select(i => i.Id))}";
+        var key = $"{Profile.Id}|{SelectedIntegrationId}|{string.Join(",", Integrations.Select(i => i.Id))}";
         if (key == _loadedFor) return;
         _loadedFor = key;
         await LoadAccessAsync();
@@ -376,7 +418,11 @@
             var providers = await Api.ProvidersAsync(Profile.Id, _disposed.Token);
             if (providers.Error is { } providerError) { _error = providerError; return; }
             _providers = providers.Value ?? [];
-            _providerId = _providers.FirstOrDefault(p => p.ApplicableIntegrationIds.Any(id => Integrations.Any(i => i.Id == id)))?.ExtensionId ?? _providers.FirstOrDefault()?.ExtensionId ?? "";
+            // Scoped: only a provider that applies to the selected integration is ever the default; none applies → none is selected.
+            _providerId = Scoped ? _providers.FirstOrDefault(AppliesToSelected)?.ExtensionId ?? ""
+                : _providers.FirstOrDefault(p => p.ApplicableIntegrationIds.Any(id => Integrations.Any(i => i.Id == id)))?.ExtensionId ?? _providers.FirstOrDefault()?.ExtensionId ?? "";
+            _readiness = null;
+            _scenarios = [];
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
