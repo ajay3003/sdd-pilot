@@ -92,3 +92,12 @@
     .gdh ::deep .gdh-binding > div,
     .gdh ::deep .gdh-facts > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
 }
+
+/* Autodoc diagnostics (child component; shares the rules above through ::deep). */
+.gdh ::deep .gdh-autodoc { margin-top: 1rem; padding-top: .25rem; border-top: 1px solid var(--clr-border, #e2e8f0); }
+.gdh ::deep .gdh-autodoc-disclaimer { color: var(--clr-text-body, #1e293b); }
+.gdh ::deep .gdh-autodoc-quick { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+.gdh ::deep .gdh-autodoc-scope { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .35rem; font-size: .875rem; }
+.gdh ::deep .gdh-autodoc-scope select { max-width: 100%; }
+.gdh ::deep .gdh-h4 { font-size: 1rem; font-weight: 700; margin: 1rem 0 .4rem; }
+.gdh ::deep .gdh-autodoc .btn-link { color: var(--clr-primary-hover, #1d4ed8); }

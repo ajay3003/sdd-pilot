@@ -4,6 +4,7 @@ using System.Text;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.GeneratedDocumentation;
 using BirkNext.Integrations;
+using BirkNext.SourceArchitecture;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation;
@@ -64,7 +65,7 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
         if (cache.TryGetValue(key, out GeneratedDocumentationDiagnosticRun? cached) && cached is not null)
             return cached with { RunId = Guid.NewGuid(), StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, DurationMilliseconds = watch.ElapsedMilliseconds, FromCache = true };
         var run = Finish(started, watch, generated.Documents.Count == 0 ? GeneratedDocumentationRunState.NoGeneratedDocumentation : GeneratedDocumentationRunState.Ready,
-            generated.Documents.Count == 0 ? GeneratedDocumentationText.EmptyState : "Generated documentation evaluated for this snapshot.", binding, generated, request, authoredAllowed);
+            generated.Documents.Count == 0 ? GeneratedDocumentationText.EmptyState : "Generated documentation evaluated for this snapshot.", binding, generated, request, authoredAllowed, snapshot);
         cache.Set(key, run, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromMinutes(10), Size = null });
         return run;
     }
@@ -78,7 +79,8 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
     }
 
     internal static GeneratedDocumentationDiagnosticRun Finish(DateTimeOffset started, Stopwatch watch, GeneratedDocumentationRunState state, string message,
-        GeneratedDocumentationSnapshotBinding? binding, GeneratedDocumentationSnapshot? generated, GeneratedDocumentationDiagnosticRequest request, bool authoredAllowed)
+        GeneratedDocumentationSnapshotBinding? binding, GeneratedDocumentationSnapshot? generated, GeneratedDocumentationDiagnosticRequest request, bool authoredAllowed,
+        IqrSourceSnapshot? source = null)
     {
         var drift = new List<CrossArtifactDriftCandidate>(generated?.Drift ?? []);
         var authoredArtifacts = request.AuthoredArtifacts.Where(a => !string.IsNullOrWhiteSpace(a.Content)).ToList();
@@ -100,6 +102,7 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
             StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, DurationMilliseconds = watch.ElapsedMilliseconds, State = state, StateMessage = message,
             Snapshot = binding, Modules = modules, Generators = generated?.Generators ?? [], Drift = drift, Authored = authored, Limitations = limitations,
             AnalyzerVersion = generated?.AnalyzerVersion ?? 0,
+            Autodoc = source is not null && generated is not null ? Autodoc(source, generated, modules, drift) : null,
             Summary = new GeneratedDocumentationSummary
             {
                 ModulesWithGeneratedDocs = modules.Count(m => m.GeneratedDocsDetected),
@@ -113,6 +116,125 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
                 CrossArtifactDriftCandidates = drift.Count(d => d.DriftType != CrossArtifactDriftType.DocumentationDrift),
                 StructuralFailures = generated?.Documents.Count(d => d.StructurallyInvalid) ?? 0,
             },
+        };
+    }
+
+    /// <summary>
+    /// Autodoc diagnostics over the same stored evidence: the complete module inventory of the snapshot (architecture components, else the
+    /// non-test projects — never derived from autodoc folders), each matched to the module-scoped generated output whose root contains it.
+    /// Usage comes only from that module-specific output; a repository-level workflow (e.g. a maintain-docs skill) is reported on its own and
+    /// never implies module usage. Repository-root output is listed separately and is never a module or API in the denominators. Not
+    /// configured is neutral; freshness and health are the existing per-module results, unchanged.
+    /// </summary>
+    internal static AutodocDiagnostics Autodoc(IqrSourceSnapshot source, GeneratedDocumentationSnapshot generated, IReadOnlyList<GeneratedDocumentationHealthResult> health,
+        IReadOnlyList<CrossArtifactDriftCandidate> drift)
+    {
+        var scoped = generated.Modules.Where(m => m.Scope != "Repository" && m.RootPath.Trim('/').Length > 0)
+            .OrderByDescending(m => m.RootPath.Length).ToList();
+        var inventory = new List<(string Name, string Identity, string Path, string Type, string Basis, bool Api)>();
+        string basis;
+        if (source.Architecture is { Components.Count: > 0 } architecture)
+        {
+            basis = "Source Analysis architecture components";
+            foreach (var component in architecture.Components.Where(c => c.ComponentType != ArchitectureComponentType.ExternalSystem))
+            {
+                var inbound = architecture.Interfaces.Where(i => i.ComponentId == component.Id && string.Equals(i.Direction, "Inbound", StringComparison.OrdinalIgnoreCase)).ToList();
+                var rest = inbound.Any(i => i.Type.Contains("REST", StringComparison.OrdinalIgnoreCase) || i.Protocol.Equals("HTTP", StringComparison.OrdinalIgnoreCase) && !i.Type.Contains("GraphQL", StringComparison.OrdinalIgnoreCase) && !i.Type.Contains("Health", StringComparison.OrdinalIgnoreCase));
+                var graphQl = inbound.Any(i => i.Type.Contains("GraphQL", StringComparison.OrdinalIgnoreCase));
+                var api = component.ComponentType is ArchitectureComponentType.Api or ArchitectureComponentType.Gateway || rest || graphQl;
+                var type = rest && graphQl ? "REST/GraphQL API" : graphQl ? "GraphQL API" : rest ? "REST API"
+                    : api ? "API"
+                    : component.ComponentType switch
+                    {
+                        ArchitectureComponentType.Worker or ArchitectureComponentType.BackgroundService or ArchitectureComponentType.ScheduledJob or ArchitectureComponentType.Function
+                            or ArchitectureComponentType.Adapter => "Worker/service",
+                        ArchitectureComponentType.Frontend => "Web/UI",
+                        ArchitectureComponentType.Library => "Library",
+                        _ => "Unknown",
+                    };
+                var typeBasis = $"{component.ComponentType} component ({component.EvidenceState}{(component.RuntimeType.Length > 0 ? $", {component.RuntimeType}" : "")})"
+                    + (inbound.Count > 0 ? $"; inbound: {string.Join(", ", inbound.Select(i => i.Type).Distinct())}" : "");
+                inventory.Add((component.Name, component.Id, component.SourceProject, type, typeBasis, api));
+            }
+        }
+        else
+        {
+            basis = "Source Analysis projects";
+            foreach (var project in source.Projects.Where(p => !p.IsTest))
+                inventory.Add((project.Name, project.Path, project.Path, "Unknown", $"Project only ({project.Classification}); no architecture evidence for this snapshot.", false));
+        }
+
+        GeneratedDocumentationModule? Owner(string path)
+        {
+            var normalized = path.Replace('\\', '/').TrimStart('/');
+            return scoped.FirstOrDefault(m => normalized.StartsWith(m.RootPath.Trim('/') + "/", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, m.RootPath.Trim('/'), StringComparison.OrdinalIgnoreCase));
+        }
+
+        AutodocModuleInventory Row(string name, string identity, string path, string type, string typeBasis, bool api, GeneratedDocumentationModule? module, bool docsOnly)
+        {
+            var result = module is null ? null : health.FirstOrDefault(h => h.ModuleId == module.ModuleId);
+            var documents = module is null ? [] : generated.Documents.Where(d => d.ModuleId == module.ModuleId && d.Origin != DocumentationOrigin.Authored).ToList();
+            if (module is null || result is null || documents.Count == 0)
+                return new()
+                {
+                    Name = name, Identity = identity, ProjectPath = path, ModuleType = type, TypeBasis = typeBasis, ApiCapable = api, Usage = AutodocUsage.NotConfigured,
+                    UsageReason = "No module-specific generated documentation output was detected for this module.", FromGeneratedDocumentationOnly = docsOnly,
+                };
+            var generators = module.GeneratorIds.Select(id => generated.Generators.FirstOrDefault(g => g.Id == id)).OfType<GeneratorWorkflowEvidence>().ToList();
+            var invalid = documents.Count(d => d.StructurallyInvalid);
+            var (usage, reason) =
+                invalid > 0 ? (AutodocUsage.Error, $"{invalid} generated artifact(s) could not be parsed.")
+                : generators.Count == 0 ? (AutodocUsage.Partial, "Generated output present; the generator/workflow for this module could not be traced.")
+                : module.MissingExpectedDocs.Count > 0 ? (AutodocUsage.Partial, $"Generated output present; {module.MissingExpectedDocs.Count} declared output(s) absent.")
+                : (AutodocUsage.Configured, "Module-specific generated output with a traced generator.");
+            return new()
+            {
+                Name = name, Identity = identity, ProjectPath = path, ModuleType = type, TypeBasis = typeBasis, ApiCapable = api, Usage = usage, UsageReason = reason,
+                GeneratedOutputPresent = true, ArtifactCount = documents.Count, ArtifactKinds = [.. documents.Select(d => d.DocumentKind).Distinct().Order()],
+                GeneratedModuleId = module.ModuleId, OutputPath = module.GeneratedDirectory,
+                Generator = generators.Count == 0 ? "Unknown generator" : string.Join(", ", generators.Select(g => g.GeneratorName ?? "Unknown generator").Distinct()),
+                WorkflowSources = [.. generators.Select(g => g.Path).Distinct()], Freshness = module.Freshness, Health = result.Status, ParseErrors = invalid,
+                MissingExpectedDocs = module.MissingExpectedDocs.Count, DiscrepancyCandidates = result.SourceDiscrepancies.Count,
+                LastGenerated = module.LatestGeneratedEvidence, FromGeneratedDocumentationOnly = docsOnly,
+            };
+        }
+
+        var rows = inventory.Select(i => Row(i.Name, i.Identity, i.Path, i.Type, i.Basis, i.Api, Owner(i.Path), false)).ToList();
+        // Generated-documentation modules no detected project/component matched stay visible (type Unknown), never dropped.
+        var matched = rows.Select(r => r.GeneratedModuleId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        rows.AddRange(scoped.Where(m => !matched.Contains(m.ModuleId)).OrderBy(m => m.RootPath, StringComparer.Ordinal)
+            .Select(m => Row(m.DisplayName, m.ModuleId, m.RootPath, "Unknown", "Generated-documentation module; no Source Analysis project or component matched its root.", false, m, true)));
+        rows = [.. rows.OrderBy(r => r.Usage == AutodocUsage.NotConfigured).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)];
+
+        var using_ = rows.Where(r => r.Usage != AutodocUsage.NotConfigured).ToList();
+        var repositoryDocuments = generated.Modules.Where(m => m.Scope == "Repository" || m.RootPath.Trim('/').Length == 0)
+            .SelectMany(m => generated.Documents.Where(d => d.ModuleId == m.ModuleId && d.Origin != DocumentationOrigin.Authored)).Select(d => d.SafeRelativePath).ToList();
+        var maintainDocs = generated.Generators.Where(g => (g.GeneratorName ?? "").Contains("maintain-docs", StringComparison.OrdinalIgnoreCase)
+            || g.Path.Contains("maintain-docs", StringComparison.OrdinalIgnoreCase)).ToList();
+        // Module-level counts come from the distinct generated modules behind the rows (several projects may share one module output).
+        var outputs = using_.Select(r => r.GeneratedModuleId).Distinct().Select(id => generated.Modules.First(m => m.ModuleId == id)).ToList();
+        return new AutodocDiagnostics
+        {
+            MaintainDocsWorkflowDetected = maintainDocs.Count > 0, WorkflowSources = [.. generated.Generators.Select(g => g.Path).Distinct()], InventoryBasis = basis,
+            DetectedModules = rows.Count, ApiModules = rows.Count(r => r.ApiCapable),
+            ModulesUsingAutodoc = using_.Count, ModulesWithoutAutodoc = rows.Count - using_.Count, ModulesPartial = rows.Count(r => r.Usage == AutodocUsage.Partial),
+            ApisUsingAutodoc = using_.Count(r => r.ApiCapable), ApisWithoutAutodoc = rows.Count(r => r.ApiCapable && r.Usage == AutodocUsage.NotConfigured),
+            GeneratedArtifacts = outputs.Sum(m => generated.Documents.Count(d => d.ModuleId == m.ModuleId && d.Origin != DocumentationOrigin.Authored)),
+            Fresh = outputs.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Current),
+            PotentiallyStale = outputs.Count(m => m.Freshness == GeneratedDocumentationFreshnessStatus.Stale),
+            FreshnessUnknown = outputs.Count(m => m.Freshness is GeneratedDocumentationFreshnessStatus.Unknown or GeneratedDocumentationFreshnessStatus.NotEnoughEvidence),
+            MissingExpectedDocs = outputs.Sum(m => m.MissingExpectedDocs.Count),
+            DiscrepancyCandidates = drift.Count(d => d.DriftType == CrossArtifactDriftType.DocumentationDrift),
+            ParseErrors = generated.Documents.Count(d => d.StructurallyInvalid),
+            Modules = rows, RepositoryLevelDocuments = repositoryDocuments,
+            Limitations =
+            [
+                "Not configured is neutral: no repository or project policy requiring generated documentation was found, and none is assumed.",
+                "A repository-level workflow (for example a maintain-docs skill) does not mean every module uses it; usage counts only module-specific generated output.",
+                "API capability comes from Source Analysis architecture evidence (component type and inbound REST/GraphQL interfaces); Unknown where evidence is insufficient.",
+                "Generated documentation is derived evidence: raw source remains stronger implementation evidence, and nothing here verifies runtime behavior.",
+            ],
         };
     }
 

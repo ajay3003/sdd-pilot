@@ -40,6 +40,8 @@
                 <h3 id="gdh-state-title">@GeneratedDocumentationPresentation.StateTitle(run.State)</h3>
                 <p>@run.StateMessage</p>
             </section>
+            @* With no generated documentation at all, the inventory still answers which modules/APIs exist and that none is configured (neutral). *@
+            @if (run.Autodoc is { } noDocsAutodoc) { <AutodocDiagnosticsSection Diagnostics="noDocsAutodoc" Snapshot="run.Snapshot" /> }
         }
         else
         {
@@ -80,6 +82,8 @@
                     </div>
                 </section>
             }
+
+            @if (run.Autodoc is { } autodoc) { <AutodocDiagnosticsSection Diagnostics="autodoc" Snapshot="run.Snapshot" /> }
 
             <section aria-labelledby="gdh-modules-title" data-testid="gdh-modules">
                 <h3 id="gdh-modules-title" class="gdh-h3">Modules</h3>

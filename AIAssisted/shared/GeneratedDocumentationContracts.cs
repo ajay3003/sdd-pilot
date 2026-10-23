@@ -334,10 +334,94 @@ public sealed record GeneratedDocumentationDiagnosticRun
     public List<string> Limitations { get; init; } = [];
     public bool FromCache { get; init; }
     public int AnalyzerVersion { get; init; }
+    /// <summary>Autodoc diagnostics: which modules/APIs of the snapshot have module-specific generated output. Null when the snapshot holds no
+    /// generated-documentation evidence at all (analyzed before it existed).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public AutodocDiagnostics? Autodoc { get; init; }
+}
+
+// ── Autodoc diagnostics (a presentation of the same evidence: no parser, no store, no policy) ───────────────────────────────
+
+/// <summary>
+/// Module-level autodoc usage — separate from freshness and health. Configured = module-specific generated output with a traced generator and
+/// every declared output present; Partial = output exists but the generator is not traced or a declared output is absent; NotConfigured =
+/// no module-specific generated output (neutral: nothing requires autodoc); Error = a generated artifact of the module could not be parsed.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AutodocUsage { Configured, Partial, NotConfigured, Error }
+
+/// <summary>One detected module/project of the snapshot and its autodoc state. The inventory comes from Source Analysis (never from autodoc folders).</summary>
+public sealed record AutodocModuleInventory
+{
+    public string Name { get; init; } = "";
+    /// <summary>Stable identity: the architecture component id, else the project path.</summary>
+    public string Identity { get; init; } = "";
+    public string ProjectPath { get; init; } = "";
+    /// <summary>"REST API", "GraphQL API", "REST/GraphQL API", "API", "Worker/service", "Web/UI", "Library", "Unknown".</summary>
+    public string ModuleType { get; init; } = "Unknown";
+    public string TypeBasis { get; init; } = "";
+    public bool ApiCapable { get; init; }
+    public AutodocUsage Usage { get; init; } = AutodocUsage.NotConfigured;
+    public string UsageReason { get; init; } = "";
+    public bool GeneratedOutputPresent { get; init; }
+    public int ArtifactCount { get; init; }
+    /// <summary>The existing generated-document classification of this module's artifacts (types present), never a second classifier.</summary>
+    public List<GeneratedDocumentKind> ArtifactKinds { get; init; } = [];
+    public string? GeneratedModuleId { get; init; }
+    public string? OutputPath { get; init; }
+    /// <summary>The generator name only when a workflow names it; "Unknown generator" when output exists without one; null when not configured.</summary>
+    public string? Generator { get; init; }
+    public List<string> WorkflowSources { get; init; } = [];
+    public GeneratedDocumentationFreshnessStatus Freshness { get; init; } = GeneratedDocumentationFreshnessStatus.NotApplicable;
+    /// <summary>Health of the module's generated documentation; null when not configured (neutral, never unhealthy).</summary>
+    public GeneratedDocumentationHealthStatus? Health { get; init; }
+    public int ParseErrors { get; init; }
+    public int MissingExpectedDocs { get; init; }
+    public int DiscrepancyCandidates { get; init; }
+    /// <summary>Only from trustworthy dated evidence; never the archive import time.</summary>
+    public DatedEvidence? LastGenerated { get; init; }
+    /// <summary>True when the row is a generated-documentation module no Source Analysis project/component matched (kept visible, type Unknown).</summary>
+    public bool FromGeneratedDocumentationOnly { get; init; }
+}
+
+public sealed record AutodocDiagnostics
+{
+    /// <summary>A repository-level maintain-docs workflow (skill/hook) exists. Never implies module usage.</summary>
+    public bool MaintainDocsWorkflowDetected { get; init; }
+    public List<string> WorkflowSources { get; init; } = [];
+    /// <summary>"Source Analysis architecture components" or "Source Analysis projects".</summary>
+    public string InventoryBasis { get; init; } = "";
+    public int DetectedModules { get; init; }
+    public int ApiModules { get; init; }
+    public int ModulesUsingAutodoc { get; init; }
+    public int ModulesWithoutAutodoc { get; init; }
+    public int ModulesPartial { get; init; }
+    public int ApisUsingAutodoc { get; init; }
+    public int ApisWithoutAutodoc { get; init; }
+    public int GeneratedArtifacts { get; init; }
+    public int Fresh { get; init; }
+    public int PotentiallyStale { get; init; }
+    public int FreshnessUnknown { get; init; }
+    public int MissingExpectedDocs { get; init; }
+    public int DiscrepancyCandidates { get; init; }
+    public int ParseErrors { get; init; }
+    public List<AutodocModuleInventory> Modules { get; init; } = [];
+    /// <summary>Repository-root generated documentation: shown separately, never a module or API in coverage.</summary>
+    public List<string> RepositoryLevelDocuments { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
 }
 
 public static class GeneratedDocumentationText
 {
+    public const string AutodocDisclaimer = "Autodoc diagnostics shows coverage and health of generated documentation. It does not determine source correctness, runtime behavior, or whether a module must use autodoc.";
+
+    public static string Label(AutodocUsage usage) => usage switch
+    {
+        AutodocUsage.Configured => "Configured",
+        AutodocUsage.Partial => "Partial",
+        AutodocUsage.Error => "Error",
+        _ => "Not configured",
+    };
+
     public const string Description = "Checks whether generated project documentation is detected, traceable to its generation workflow, fresh relative to relevant source evidence, and consistent enough to flag potential drift for review.";
     public const string EmptyState = "No generated documentation detected in the current source snapshot.";
     public const string NoGenerator = "Generated documentation detected. Generator provenance could not be established.";
