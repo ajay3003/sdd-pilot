@@ -37,7 +37,8 @@ public static class TaskExplorerService
         RegexOptions.Compiled);
 
     private static readonly Regex TestKeywordRe = new(
-        @"\b(?:test|spec|assert|xunit|nunit|mstest|shouldly|testcontainer|bunit|webapplicationfactory|test[\s-]?(?:case|task)|integration[\s-]?test|unit[\s-]?test)\b",
+        // Plurals count ("Write unit tests", "Testcontainers"): "\btest\b" alone missed them, so such tasks raised TASK-002 "No testing tasks".
+        @"\b(?:tests?|spec|asserts?|xunit|nunit|mstest|shouldly|testcontainers?|bunit|webapplicationfactory|test[\s-]?(?:cases?|tasks?)|integration[\s-]?tests?|unit[\s-]?tests?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex SecurityKeywordRe = new(
@@ -255,8 +256,20 @@ public static class TaskExplorerService
         var dependencies = ExtractDependencies(markdown, allNodes);
         ApplyDependenciesToNodes(roots, dependencies);
 
+        // The rule packs (QA Auditor TASK-002/TASK-003, Delivery Readiness) read these from the parsed tree. They were only set by the Task
+        // Explorer's enriched health, so a parsed task list always reported 0 testing and 0 unlinked tasks: TASK-002 fired for every task list.
+        var taskNodes = new List<TaskNode>();
+        CollectTaskNodes(roots, null, taskNodes);
+        taskNodes = taskNodes.Where(n => n.NodeType == TaskNodeType.Task).ToList();
+
         var health = new TaskHealth
         {
+            TestingTasks = taskNodes.Count(t => t.IsTestingTask),
+            SecurityTasks = taskNodes.Count(t => t.IsSecurityTask),
+            FrLinkedTasks = taskNodes.Count(t => t.ReferencedFrIds.Count > 0),
+            ScLinkedTasks = taskNodes.Count(t => t.ReferencedScIds.Count > 0),
+            LinkedTasks = taskNodes.Count(t => HasTraceabilityLinks(t, linkedTaskIds)),
+            UnlinkedTasks = taskNodes.Count(t => HasNoTraceabilityLinks(t, linkedTaskIds)),
             TotalTasks = hTasks,
             CompletedTasks = hCompleted,
             TotalPhases = hPhases,

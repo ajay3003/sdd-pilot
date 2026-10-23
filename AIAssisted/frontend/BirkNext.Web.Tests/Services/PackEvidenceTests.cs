@@ -231,6 +231,87 @@ public sealed class PackEvidenceTests
         state.Links.Should().OnlyContain(l => l.RequirementScope == "w||002-refund");
     }
 
+    // ── Rule re-evaluation per pack (TASK-002, SPEC-002) ─────────────────────
+
+    // Same shapes as QaAuditorServiceTests' FullSpec/FullPlan/FullTasks (no TASK-002/SPEC-002 on their own).
+    private const string SpecWithTwo = """
+        # Feature Spec
+
+        ## Functional Requirements
+        ### FR-001 Authentication
+        AC: Given a valid token, user is authenticated.
+
+        ### FR-002 Logging
+        AC: Given an action, a log entry is created.
+
+        ## Edge Cases
+        - Expired tokens return 401.
+        """;
+
+    private const string PlanCoveringBoth = """
+        # Plan
+
+        ## Summary
+        Implements auth and logging.
+
+        ## Risks
+        - Risk: Token expiry edge cases. Severity: Medium.
+
+        ## Implementation Phases
+        ### Phase 1: Core Auth
+        - Implement FR-001 authentication
+        - FR-002: Add logging
+
+        ## Testing
+        - Unit tests for auth service
+        """;
+
+    private const string TasksWithTests = """
+        # Tasks
+
+        ## Phase 1
+        ### Implementation
+        - [ ] T001 Implement auth [Status: Todo]
+        - [ ] T002 Add logging [Status: Todo]
+        ### Testing
+        - [ ] T003 Write unit tests [Status: Todo]
+        """;
+
+    private const string TasksWithoutTests = """
+        # Tasks
+
+        ## Phase 1
+        ### Implementation
+        - [ ] T001 Implement refunds [Status: Todo]
+        """;
+
+    private async Task<QaAuditReport> AuditPackAsync(string pack)
+    {
+        await _explorers.SelectPackAsync(pack);
+        string? Text(ArtifactExplorerState s) => s.Status == ExplorerArtifactStatus.Loaded ? s.Content : null;
+        var spec = Text(await State(WorkspaceArtifactType.Specification));
+        var plan = Text(await State(WorkspaceArtifactType.Plan));
+        var tasks = Text(await State(WorkspaceArtifactType.Tasks));
+        var auditor = new QaAuditorService(new ArtifactTraceabilityService(), new ConstitutionComplianceService());
+        return auditor.Audit(null, spec is null ? null : SpecExplorerService.Parse(spec), plan is null ? null : new PlanAnalysisService().Parse(plan),
+            tasks is null ? null : TaskExplorerService.Parse(tasks));
+    }
+
+    [Fact]
+    public async Task Task_and_plan_coverage_rules_are_evaluated_per_pack_and_never_against_a_sibling_pack()
+    {
+        Import(("specs/001-cart/spec.md", SpecWithTwo), ("specs/001-cart/plan.md", PlanCoveringBoth), ("specs/001-cart/tasks.md", TasksWithTests),
+            ("specs/002-refund/spec.md", SpecB), ("specs/002-refund/tasks.md", TasksWithoutTests));
+
+        var cart = await AuditPackAsync("001-cart");
+        var refund = await AuditPackAsync("002-refund");
+
+        cart.Findings.Should().NotContain(f => f.RuleCode == "TASK-002", "pack 001 has its own testing task");
+        refund.Findings.Should().Contain(f => f.RuleCode == "TASK-002", "pack 002 has no testing task — pack 001's test task never covers it");
+        refund.Findings.Should().NotContain(f => f.RuleCode == "SPEC-002",
+            "pack 002 has no plan: plan coverage is not assessed, and pack 001's plan is never compared with pack 002's requirements");
+    }
+
     // ── Review provenance, readiness, dashboard ──────────────────────────────
 
     [Fact]
