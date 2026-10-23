@@ -198,7 +198,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: true);
 
         page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 selected");
-        page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL");
+        page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL · 1 authenticated");
         page.Find("[data-testid=aqr-decision-counts]").TextContent.Should().Be("2 API targets selected · 2/2 access ready");
         page.FindAll("[data-testid=aqr-target-review]").Select(r => r.QuerySelector("[data-testid=aqr-target-review-access]")!.TextContent.Trim())
             .Should().BeEquivalentTo(["Authenticated", "Public"], "access requirements are stated per target");

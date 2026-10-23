@@ -34,7 +34,24 @@ public sealed record ApiReviewTargetReview(
         ApiReviewTargetReviewState.Limited => "Limited",
         _ => "Blocked",
     };
+
+    /// <summary>Whether the read-only runtime review of this target can run. Independent of its contract/schema evidence path.</summary>
+    public string RuntimeLabel => AccessReady ? "Runtime review ready" : "Runtime review blocked — access unavailable";
+
+    /// <summary>
+    /// The evidence path for contract/schema checks, said separately from the runtime: a REST target without OpenAPI is "Contract
+    /// limited", a GraphQL target reads its schema at runtime. Neither says one target is better than the other.
+    /// </summary>
+    public string EvidencePathLabel => Type == "GraphQL"
+        ? State == ApiReviewTargetReviewState.Limited ? "Runtime schema · limited (unavailable previously)" : FallbackValue == "Configured" ? "Runtime schema · fallback configured" : "Runtime schema"
+        : ContractValue == "Configured" ? "Contract configured" : "Contract limited";
+
+    /// <summary>"Runtime ready · Contract limited", "Runtime ready · Runtime schema", or the access blocker.</summary>
+    public string StatusLine => AccessReady ? $"Runtime ready · {EvidencePathLabel}" : "Blocked · access unavailable";
 }
+
+/// <summary>One known limitation of the planned read-only review, its area, and whether it blocks (it never does for optional checks).</summary>
+public sealed record ApiReviewKnownLimitation(string Area, string Text);
 
 /// <summary>
 /// The readiness-first pre-run of API Quality Review: one run decision, a compact target/scope/access line, and per-target review states.
@@ -102,36 +119,78 @@ public static class ApiReviewPreRunPresentation
             contract ? ApiReviewTargetAction.None : ApiReviewTargetAction.ConfigureContract, null);
     }
 
+    /// <summary>"2 selected · 1 REST · 1 GraphQL · 2 authenticated" — explicit target coverage, actual values.</summary>
+    public static string TargetCoverage(IReadOnlyList<ApiReviewTargetReview> reviews)
+    {
+        var rest = reviews.Count(r => r.Type == "REST");
+        var graphQl = reviews.Count(r => r.Type == "GraphQL");
+        var authenticated = reviews.Count(r => r.Access == "Authenticated");
+        return string.Join(" · ", new[]
+        {
+            $"{reviews.Count} selected",
+            rest > 0 ? $"{rest} REST" : null,
+            graphQl > 0 ? $"{graphQl} GraphQL" : null,
+            authenticated > 0 ? $"{authenticated} authenticated" : null,
+        }.Where(p => p is not null));
+    }
+
+    /// <summary>
+    /// Every known limitation of the planned review, in one list: target evidence paths (no REST contract, runtime-only GraphQL schema) and
+    /// optional active checks that are blocked. None of them blocks the read-only review; access blockers are reported as blockers instead.
+    /// </summary>
+    public static IReadOnlyList<ApiReviewKnownLimitation> KnownLimitations(IReadOnlyList<ApiReviewTargetReview> reviews, AuthorizationCheckSummary authorization)
+    {
+        var limitations = new List<ApiReviewKnownLimitation>();
+        foreach (var review in reviews.Where(r => r.AccessReady))
+        {
+            if (review.Type == "REST" && review.ContractValue != "Configured")
+                limitations.Add(new($"{review.Name} REST contract", "Contract validation unavailable — no OpenAPI contract is configured. Runtime security, error-handling and performance checks still run."));
+            else if (review.Type == "GraphQL")
+                limitations.Add(new(review.Name.EndsWith("GraphQL", StringComparison.OrdinalIgnoreCase) ? $"{review.Name} schema" : $"{review.Name} GraphQL schema",
+                    review.State == ApiReviewTargetReviewState.Limited
+                    ? review.Limitation ?? "Schema unavailable previously; schema-dependent checks need introspection or a fallback schema."
+                    : "Will be obtained at runtime (introspection) rather than from a configured contract; schema availability is not contract validation."));
+        }
+        if (authorization.Available > 0 && authorization.Ready < authorization.Available)
+            limitations.Add(new("Authorization checks", AuthorizationBlockerSummary(authorization)));
+        return limitations;
+    }
+
+    /// <summary>
+    /// Why authorization checks are not ready, grouped by the shared catalog's readiness with its exact reason:
+    /// "2 checks blocked — approved authorization test identities are missing." Never just a count.
+    /// </summary>
+    public static string AuthorizationBlockerSummary(AuthorizationCheckSummary authorization)
+    {
+        var notReady = authorization.Items
+            .Where(i => i.Readiness is not AuthorizationCheckReadiness.Ready and not AuthorizationCheckReadiness.NotApplicable)
+            .GroupBy(i => i.Readiness)
+            .Select(g => g.Select(i => i.Reason).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)) is { } why
+                ? $"{g.Count()} {AuthorizationCheckCatalog.ReadinessLabel(g.Key).ToLowerInvariant()} — {why.TrimEnd('.')}"
+                : $"{g.Count()} {AuthorizationCheckCatalog.ReadinessLabel(g.Key).ToLowerInvariant()}")
+            .ToList();
+        return notReady.Count == 0 ? "All available checks are ready." : string.Join("; ", notReady) + ".";
+    }
+
+    /// <summary>The run decision's one summary sentence: what is ready, and how much needs attention — details live below.</summary>
+    public static string ReadinessSummary(IReadOnlyList<ApiReviewTargetReview> reviews, IReadOnlyList<ApiReviewKnownLimitation> limitations)
+    {
+        var ready = reviews.Count(r => r.AccessReady);
+        var targets = $"{ready} API target{(ready == 1 ? " is" : "s are")} ready for read-only review.";
+        var targetLimits = limitations.Count(l => l.Area != "Authorization checks");
+        var optional = limitations.Any(l => l.Area == "Authorization checks");
+        var attention = new[]
+        {
+            targetLimits > 0 ? $"{targetLimits} known limitation{(targetLimits == 1 ? "" : "s")}" : null,
+            optional ? "optional authorization checks" : null,
+        }.Where(p => p is not null).ToList();
+        return attention.Count == 0 ? targets
+            : $"{targets} Needs attention: {string.Join(" and ", attention)} — none of them blocks the read-only review.";
+    }
+
     /// <summary>"2 API targets selected · 2/2 access ready".</summary>
     public static string Counts(IReadOnlyList<ApiReviewTargetReview> reviews) =>
         $"{reviews.Count} API target{(reviews.Count == 1 ? "" : "s")} selected · {reviews.Count(r => r.AccessReady)}/{reviews.Count} access ready";
-
-    /// <summary>The first limitation that changes what runs, named exactly (blocked targets are blockers, not limitations).</summary>
-    public static string? MainLimitation(IReadOnlyList<ApiReviewTargetReview> reviews)
-    {
-        var limited = reviews.Where(r => r.State == ApiReviewTargetReviewState.Limited).ToList();
-        var rest = limited.Where(r => r.Type == "REST").Select(r => r.Name).ToList();
-        if (rest.Count > 0) return $"REST contract validation unavailable for {Join(rest)}.";
-        return limited.FirstOrDefault()?.Limitation;
-    }
-
-    /// <summary>What the review still does despite the main limitation — said once, under it.</summary>
-    public static string? MainLimitationDetail(IReadOnlyList<ApiReviewTargetReview> reviews) =>
-        reviews.Any(r => r.State == ApiReviewTargetReviewState.Limited && r.Type == "REST")
-            ? "The review can still perform structural response, security, error-handling and performance checks."
-            : reviews.Any(r => r.State == ApiReviewTargetReviewState.Limited)
-                ? "Observed operations, security, error handling and performance are still reviewed."
-                : null;
-
-    /// <summary>"Will be inspected at runtime" for GraphQL targets; null without one.</summary>
-    public static string? GraphQlSchema(IReadOnlyList<ApiReviewTargetReview> reviews)
-    {
-        var gql = reviews.Where(r => r.Type == "GraphQL" && r.AccessReady).ToList();
-        if (gql.Count == 0) return null;
-        return gql.All(r => r.FallbackValue == "Configured") ? "Will be inspected at runtime; fallback schema configured"
-            : gql.Any(r => r.State == ApiReviewTargetReviewState.Limited) ? "Will be inspected at runtime (unavailable previously)"
-            : "Will be inspected at runtime";
-    }
 
     /// <summary>Exact blockers: one line per target that cannot be reached.</summary>
     public static IReadOnlyList<string> Blockers(IReadOnlyList<ApiReviewTargetReview> reviews) =>

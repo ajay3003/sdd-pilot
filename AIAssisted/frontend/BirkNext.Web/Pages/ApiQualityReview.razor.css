@@ -754,3 +754,21 @@
 /* Fact lists are label/value cards in a responsive grid, not the two-column technical rows. */
 .aqr-page .aqr-protocol-facts > div { display: block; padding: 0.3rem 0; }
 .aqr-page .aqr-protocol-facts dd { margin-top: 0.1rem; }
+
+/* ── Pre-run: compact reading width; active checks and limitations as cards, two-up on wide screens ─────────────────────── */
+.aqr-decide { max-width: 76rem; }
+.aqr-known-limitations .aqr-limitation-list { display: grid; gap: .4rem; margin: .5rem 0 0; }
+.aqr-known-limitations .aqr-limitation-list > div { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); gap: .2rem 1rem; padding: .5rem .65rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); }
+.aqr-known-limitations dt { font-weight: 600; }
+.aqr-known-limitations dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.aqr-active-check-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr)); gap: .75rem; margin: .5rem 0 .75rem; }
+.aqr-active-check { padding: .75rem .9rem; border: 1px solid var(--clr-border); border-left-width: 4px; border-radius: var(--radius-md); background: var(--clr-surface); min-width: 0; }
+.aqr-active-check h3 { margin: 0 0 .25rem; font-size: 1rem; }
+.aqr-active-check p { margin: .2rem 0; overflow-wrap: anywhere; }
+.aqr-active-check-neutral { border-left-color: var(--clr-border-strong, #94a3b8); background: var(--clr-surface-muted, var(--clr-surface)); }
+.aqr-active-check-warning { border-left-color: var(--clr-warning, #b45309); }
+.aqr-active-check-ready { border-left-color: var(--clr-success, #15803d); }
+.aqr-active-check-active { border-left-color: var(--clr-primary, #2563eb); }
+@media (max-width: 760px) {
+    .aqr-known-limitations .aqr-limitation-list > div { grid-template-columns: 1fr; }
+}

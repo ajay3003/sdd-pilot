@@ -48,7 +48,7 @@
 
     @if (_report is null)
     {
-        <div data-testid="aqr-decide">
+        <div class="aqr-decide" data-testid="aqr-decide">
         @*
             Readiness first. The pre-run answers four questions before anything else: can it run, what will be reviewed, what will not be fully
             reviewed and why, and which optional active checks are on. Configuration and diagnostics are one collapsed section at the end.
@@ -57,9 +57,8 @@
             var ready = readiness.Items.Where(i => i.State == ApiReviewReadinessItemState.Ok).ToList();
             var limits = readiness.Items.Where(i => i.State == ApiReviewReadinessItemState.Warning).ToList();
             var info = readiness.Items.Where(i => i.State == ApiReviewReadinessItemState.Missing).ToList();
-            var mainLimitation = ApiReviewPreRunPresentation.MainLimitation(targetReviews);
             var blocked = readiness.Level == ApiReviewReadinessLevel.Blocked;
-            var graphQlSchema = ApiReviewPreRunPresentation.GraphQlSchema(targetReviews);
+            var knownLimitations = ApiReviewPreRunPresentation.KnownLimitations(targetReviews, _authorizationChecks);
         }
         <section class="aqr-card aqr-decision aqr-readiness aqr-readiness-@readiness.Level.ToString().ToLowerInvariant()" data-testid="aqr-readiness" data-readiness="@readiness.Level" aria-labelledby="aqr-readiness-heading" role="@(blocked ? "alert" : "status")">
             <div class="aqr-decision-status">
@@ -73,21 +72,16 @@
                 {
                     <p class="aqr-readiness-message" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</p>
                 }
-                else if (mainLimitation is not null)
+                else if (targetReviews.Count > 0)
                 {
-                    <div class="aqr-main-limitation" data-testid="aqr-main-limitation">
-                        <p><strong>Main limitation</strong> @mainLimitation</p>
-                        @if (ApiReviewPreRunPresentation.MainLimitationDetail(targetReviews) is { } detail) { <p class="aqr-muted">@detail</p> }
-                    </div>
+                    @* Execution readiness only: can the read-only review run now. What is limited is summarised in one sentence here
+                       and listed once, under Known limitations; optional active checks never change this answer. *@
+                    <p class="aqr-readiness-message" data-testid="aqr-readiness-summary">@ApiReviewPreRunPresentation.ReadinessSummary(targetReviews, knownLimitations)</p>
                     <span class="aqr-visually-hidden" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</span>
                 }
                 else
                 {
                     <p class="aqr-readiness-message" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</p>
-                }
-                @if (graphQlSchema is not null)
-                {
-                    <p class="aqr-decision-line" data-testid="aqr-decision-graphql"><strong>GraphQL schema</strong> @graphQlSchema</p>
                 }
             </div>
 
@@ -118,7 +112,7 @@
                         @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
                         @(_running ? "Reviewing..." : "Run API Quality Review")
                     </PrimaryButton>
-                    <span class="aqr-muted aqr-run-note">Read-only automated review · safe requests only</span>
+                    <span class="aqr-muted aqr-run-note" data-testid="aqr-run-note">Runs the read-only review (safe requests only). Optional active checks run only when explicitly enabled and ready.</span>
                     @if (_running) { <p class="aqr-progress" role="status" aria-live="polite">@_progressMessage</p> }
                 </div>
                 @if (readiness.ActionText is not null && readiness.ActionHref is not null) { <a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a> }
@@ -160,7 +154,7 @@
                 </div>
                 <div data-testid="aqr-scope">
                     <dt>API targets</dt>
-                    <dd><strong data-testid="aqr-scope-headline">@(scope.Selected == 0 ? "None selected" : $"{scope.Selected} selected")</strong>@if (scope.Selected > 0) {<span> · </span><span data-testid="aqr-scope-protocols">@scope.Protocols</span>}</dd>
+                    <dd><strong data-testid="aqr-scope-headline">@(scope.Selected == 0 ? "None selected" : $"{scope.Selected} selected")</strong>@if (targetReviews.Count > 0) {<span> · </span><span data-testid="aqr-scope-protocols">@ApiReviewPreRunPresentation.TargetCoverage(targetReviews).Split(" · ", 2).ElementAtOrDefault(1)</span>}</dd>
                 </div>
                 <div data-testid="aqr-access">
                     <dt>Access</dt>
@@ -185,11 +179,12 @@
                     <li class="aqr-card aqr-target-review" data-testid="aqr-target-review" data-target-id="@review.Target.TargetId" data-type="@review.Type" data-state="@review.State">
                         <div class="aqr-target-review-head">
                             <h3>@review.Name</h3>
-                            <span class="aqr-pill aqr-pill-@StateTone(review.State)" data-testid="aqr-target-review-state">@review.StateLabel</span>
+                            <span class="aqr-pill aqr-pill-@StateTone(review.State)" data-testid="aqr-target-review-state">@review.StatusLine</span>
                         </div>
                         <p class="aqr-mono aqr-target-review-endpoint" data-testid="aqr-target-review-endpoint">@(ApiReviewPresentation.SafeEndpointUrl(review.Target) ?? ApiReviewPresentation.SafeEndpointPath(review.Target))</p>
                         <dl class="aqr-target-facts">
                             <div><dt>Type</dt><dd>@review.Type</dd></div>
+                            <div><dt>Runtime review</dt><dd data-testid="aqr-target-review-runtime">@(review.AccessReady ? "Ready" : "Blocked — access unavailable")</dd></div>
                             <div><dt>Access</dt><dd data-testid="aqr-target-review-access">@review.Access@(review.AccessReady ? "" : " · unavailable")</dd></div>
                             <div><dt>Operations</dt><dd>@review.Operations</dd></div>
                             <div><dt>@review.ContractLabel</dt><dd data-testid="aqr-target-review-contract">@review.ContractValue</dd></div>
@@ -246,9 +241,9 @@
                     </div>
                 }
             </dl>
-            @if (domains.FirstOrDefault(d => d.State == ApiReviewDomainState.Limited && d.Limitation is not null) is { } limitedDomain)
+            @if (targetReviews.Count > 0)
             {
-                <p class="aqr-muted" data-testid="aqr-coverage-limitation"><strong>Main limitation</strong> @(mainLimitation ?? limitedDomain.Limitation)</p>
+                <p class="aqr-muted" data-testid="aqr-target-coverage"><strong>Targets</strong> @ApiReviewPreRunPresentation.TargetCoverage(targetReviews)</p>
             }
             <ReviewDisclosure Text="View coverage details" CollapseText="Hide coverage details" Class="disclosure-inline disclosure-small" TestId="aqr-coverage-details">
                 <ul class="aqr-domain-list">
@@ -263,34 +258,51 @@
             </ReviewDisclosure>
         </section>
 
-        @* ── Optional active checks: state only until expanded; neither blocks the read-only review ── *@
+        @* ── Known limitations: everything that limits the planned review, once, in one place. None blocks the read-only review. ── *@
+        @if (knownLimitations.Count > 0)
+        {
+            <section class="aqr-section aqr-known-limitations" data-testid="aqr-known-limitations" aria-labelledby="aqr-limitations-heading">
+                <div class="aqr-card-head"><h2 id="aqr-limitations-heading">Known limitations</h2><span class="aqr-muted">Do not block the read-only review</span></div>
+                <dl class="aqr-limitation-list">
+                    @foreach (var limitation in knownLimitations)
+                    {
+                        <div data-testid="aqr-known-limitation"><dt>@limitation.Area</dt><dd>@limitation.Text</dd></div>
+                    }
+                </dl>
+            </section>
+        }
+
+        @* ── Optional active checks: each card says its state, why, and the one thing to do. Neither blocks the read-only review. ── *@
         <section class="aqr-section aqr-additional-checks" data-testid="aqr-additional-checks" aria-labelledby="aqr-additional-heading">
-            <div class="aqr-card-head"><h2 id="aqr-additional-heading">Optional active checks</h2><span class="aqr-muted">Do not block the read-only review</span></div>
-            <dl class="aqr-active-checks">
-                <div data-testid="aqr-fuzzing-summary">
-                    <dt>Safe fuzzing</dt>
-                    <dd>
-                        <strong data-testid="aqr-fuzzing-state">@ApiFuzzingPresentation.LevelLabel(_fuzzingLevel)</strong>
-                        @if (_fuzzingLevel == ApiFuzzingLevel.Off) { <span class="aqr-muted" data-testid="aqr-fuzzing-off">No active fuzz requests will be sent.</span> }
-                    </dd>
-                </div>
-                <div class="aqr-check-card" data-testid="aqr-authorization-card">
-                    <dt>Authorization checks</dt>
-                    <dd>
-                        <strong data-testid="aqr-authorization-summary">@_authorizationChecks.Headline</strong>
-                        <span class="aqr-muted" data-testid="aqr-authorization-impact">@AuthorizationImpact</span>
-                        @if (_context?.ActiveProfileOrNull is { } profile)
-                        {
-                            <a class="aqr-link" data-testid="aqr-configure-authorization" href="@AuthorizationConfigurationHref(profile.Id)" @onclick="RememberSelection">Review authorization checks</a>
-                        }
-                        else { <span class="aqr-muted" data-testid="aqr-configure-authorization-disabled">Select a Target Environment to configure authorization checks.</span> }
-                    </dd>
-                </div>
-            </dl>
-            <ReviewDisclosure Text="Configure active checks" CollapseText="Hide active checks" Class="disclosure-inline disclosure-small" TestId="aqr-active-checks-details">
+            <div class="aqr-card-head"><h2 id="aqr-additional-heading">Optional active checks</h2><span class="aqr-muted">These checks can send bounded requests. Review or enable them before running if you want them included.</span></div>
+            <div class="aqr-active-check-cards">
+                <section class="aqr-active-check aqr-active-check-@(_fuzzingLevel == ApiFuzzingLevel.Off ? "neutral" : "active")" data-testid="aqr-fuzzing-summary" aria-labelledby="aqr-fuzzing-card-heading">
+                    <h3 id="aqr-fuzzing-card-heading">Safe fuzzing</h3>
+                    <p><strong data-testid="aqr-fuzzing-state">@ApiFuzzingPresentation.LevelLabel(_fuzzingLevel)</strong></p>
+                    @if (_fuzzingLevel == ApiFuzzingLevel.Off) { <p class="aqr-muted" data-testid="aqr-fuzzing-off">No active fuzz requests will be sent. Optional — the read-only API review can still run.</p> }
+                    else { <p class="aqr-muted" data-testid="aqr-fuzzing-on">Bounded, deterministic invalid/boundary requests to this non-production API. Not a penetration test.</p> }
+                    <button type="button" class="btn-secondary fa-btn-sm" data-testid="aqr-configure-fuzzing" aria-controls="aqr-fuzzing-config" @onclick="OpenFuzzingConfiguration">Configure safe fuzzing</button>
+                </section>
+                <section class="aqr-active-check aqr-active-check-@AuthorizationTone" data-testid="aqr-authorization-card" aria-labelledby="aqr-authorization-card-heading">
+                    <h3 id="aqr-authorization-card-heading">Authorization checks</h3>
+                    <p><strong data-testid="aqr-authorization-summary">@_authorizationChecks.Headline</strong></p>
+                    @if (_authorizationChecks.Available > 0 && _authorizationChecks.Ready < _authorizationChecks.Available)
+                    {
+                        <p class="aqr-muted" data-testid="aqr-authorization-blockers">@ApiReviewPreRunPresentation.AuthorizationBlockerSummary(_authorizationChecks)</p>
+                    }
+                    <p class="aqr-muted" data-testid="aqr-authorization-impact">@AuthorizationImpact</p>
+                    @if (_context?.ActiveProfileOrNull is { } profile)
+                    {
+                        <a class="aqr-link" data-testid="aqr-configure-authorization" href="@AuthorizationConfigurationHref(profile.Id)" @onclick="RememberSelection">Review authorization checks</a>
+                    }
+                    else { <span class="aqr-muted" data-testid="aqr-configure-authorization-disabled">Select a Target Environment to configure authorization checks.</span> }
+                </section>
+            </div>
+            <ReviewDisclosure Text="Configure active checks" CollapseText="Hide active checks" Class="disclosure-inline disclosure-small" TestId="aqr-active-checks-details" @bind-Expanded="_activeChecksExpanded">
                 <div class="aqr-check-grid">
-                    <ReviewDisclosure Text="Safe fuzzing" CollapseText="Safe fuzzing" Hint="@FuzzingHint" TestId="aqr-fuzzing-disclosure" Class="aqr-check-disclosure">
-                        <p class="aqr-check-summary">Bounded non-production fuzzing with predefined request limits.</p>
+                    <div id="aqr-fuzzing-config" tabindex="-1" @ref="_fuzzingConfigElement"></div>
+                    <ReviewDisclosure Text="Safe fuzzing" CollapseText="Safe fuzzing" Hint="@FuzzingHint" TestId="aqr-fuzzing-disclosure" Class="aqr-check-disclosure" @bind-Expanded="_fuzzingExpanded">
+                        <p class="aqr-check-summary">Safe fuzzing sends a bounded set of deterministic invalid/boundary requests to non-production APIs. It is not a penetration test. REST GET/HEAD/OPTIONS only for operations from the published OpenAPI contract · GraphQL queries from the schema only · no GraphQL mutations · no attack dictionaries · never Production.</p>
                         <ApiSafeFuzzingPanel Context="_context" BuildReviewRequest="FuzzingReviewRequest" ProjectName="@Workspace.ProjectName" LevelChanged="OnFuzzingLevelChanged" />
                     </ReviewDisclosure>
                     <ReviewDisclosure Text="Authorization checks" CollapseText="Authorization checks" Hint="@_authorizationChecks.Headline" TestId="aqr-authorization-disclosure" Class="aqr-check-disclosure">
@@ -703,6 +715,23 @@
     private bool _focusSchemaArtifacts;
     private ElementReference _schemaArtifactsElement;
     private ApiFuzzingLevel _fuzzingLevel = ApiFuzzingLevel.Off;
+    private bool _activeChecksExpanded;
+    private bool _fuzzingExpanded;
+    private bool _focusFuzzing;
+    private ElementReference _fuzzingConfigElement;
+
+    /// <summary>Opens the ONE safe fuzzing configuration (the panel below) and moves focus to it; the card holds no second setting.</summary>
+    private void OpenFuzzingConfiguration()
+    {
+        _activeChecksExpanded = true;
+        _fuzzingExpanded = true;
+        _focusFuzzing = true;
+    }
+
+    /// <summary>Warning when checks exist but are not ready; ready when some can run; neutral when none apply. Text always carries it.</summary>
+    private string AuthorizationTone => _authorizationChecks.Available == 0 ? "neutral"
+        : _authorizationChecks.Ready == _authorizationChecks.Available ? "ready"
+        : _authorizationChecks.Ready > 0 ? "ready" : "warning";
     private string FuzzingHint => $"{ApiFuzzingPresentation.LevelLabel(_fuzzingLevel)} · optional";
     /// <summary>Configured and suggested authorization checks for the selected targets, with per-check readiness (recomputed on every render).</summary>
     private AuthorizationCheckSummary _authorizationChecks => AuthorizationCheckCatalog.Build(
@@ -847,6 +876,11 @@
         {
             _focusSchemaArtifacts = false;
             await _schemaArtifactsElement.FocusAsync();
+        }
+        if (_focusFuzzing)
+        {
+            _focusFuzzing = false;
+            try { await _fuzzingConfigElement.FocusAsync(); } catch (Microsoft.JSInterop.JSException) { }
         }
     }
 

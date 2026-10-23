@@ -322,8 +322,11 @@ public static class AuthorizationCheckCatalog
         if (string.IsNullOrWhiteSpace(alias))
             return (AuthorizationCheckReadiness.NeedsIdentity, "Map this role to a test identity in the Target Environment.");
         if (executionPermitted != true)
+            // A blank reason is no reason: say whether permission is refused or simply could not be confirmed.
             return (AuthorizationCheckReadiness.BlockedByExecutionPermission,
-                executionReason ?? "Active authorization checks are not permitted for this Target Environment.");
+                !string.IsNullOrWhiteSpace(executionReason) ? executionReason
+                : executionPermitted is null ? "Execution permission could not be confirmed: the backend security execution status is unavailable."
+                : "Active authorization checks are not permitted for this Target Environment.");
         return (AuthorizationCheckReadiness.Ready, "Will run with the next authorization check run.");
     }
 

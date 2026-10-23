@@ -22,11 +22,14 @@ public sealed partial class ApiQualityReviewLandingUITests
 
         page.Find("#aqr-readiness-heading").TextContent.Trim().Should().EndWith("Ready to run with limitations");
         page.Find("[data-testid=aqr-decision-counts]").TextContent.Should().Be("2 API targets selected · 2/2 access ready");
-        page.Find("[data-testid=aqr-main-limitation]").TextContent.Should().Contain("REST contract validation unavailable for Autorisasjon API.")
-            .And.Contain("structural response, security, error-handling and performance checks");
-        page.Find("[data-testid=aqr-decision-graphql]").TextContent.Should().Contain("Will be inspected at runtime");
+        // Execution readiness says only whether the read-only review can run; limitations are listed once, under Known limitations.
+        page.Find("[data-testid=aqr-readiness-summary]").TextContent.Should().StartWith("2 API targets are ready for read-only review.")
+            .And.Contain("none of them blocks the read-only review");
+        var limitations = page.FindAll("[data-testid=aqr-known-limitation]").Select(l => l.TextContent).ToList();
+        limitations.Should().Contain(l => l.Contains("REST contract") && l.Contains("Contract validation unavailable") && l.Contains("Runtime security, error-handling and performance checks still run"));
+        limitations.Should().Contain(l => l.Contains("GraphQL schema") && l.Contains("obtained at runtime"));
         page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 selected");
-        page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL");
+        page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL · 2 authenticated");
         page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2/2 ready");
 
         // §48: one strong primary action on the whole pre-run, and it is Run.
@@ -45,13 +48,15 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-target-review]").Should().HaveCount(2));
 
         var rest = page.Find("[data-testid=aqr-target-review][data-type=REST]");
-        rest.QuerySelector("[data-testid=aqr-target-review-state]")!.TextContent.Should().Be("Limited");
+        // Two dimensions, never one badge: the runtime review is ready even though contract validation is not available.
+        rest.QuerySelector("[data-testid=aqr-target-review-state]")!.TextContent.Should().Be("Runtime ready · Contract limited");
+        rest.QuerySelector("[data-testid=aqr-target-review-runtime]")!.TextContent.Should().Be("Ready");
         rest.QuerySelector("[data-testid=aqr-target-review-contract]")!.TextContent.Should().Be("Not configured");
         rest.QuerySelector("[data-testid=aqr-target-review-not-runs]")!.TextContent.Should().Contain("Contract compatibility validation");
         rest.QuerySelector("[data-testid=aqr-target-configure-contract]")!.GetAttribute("href").Should().Contain("tab=target").And.Contain("profile=dev");
 
         var gql = page.Find("[data-testid=aqr-target-review][data-type=GraphQL]");
-        gql.QuerySelector("[data-testid=aqr-target-review-state]")!.TextContent.Should().Be("Ready");
+        gql.QuerySelector("[data-testid=aqr-target-review-state]")!.TextContent.Should().Be("Runtime ready · Runtime schema", "a runtime schema is not a validated contract");
         gql.QuerySelector("[data-testid=aqr-target-review-contract]")!.TextContent.Should().Be("Runtime introspection");
         gql.QuerySelector("[data-testid=aqr-target-review-note]")!.TextContent.Should().Be("The GraphQL schema will be retrieved through introspection during the review.");
         gql.QuerySelector("[data-testid=aqr-target-review-fallback]")!.TextContent.Should().Be("Not configured");

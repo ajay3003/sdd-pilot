@@ -20,7 +20,9 @@
     <p class="asf-muted" data-testid="aqr-fuzzing-scope">@ApiFuzzingPresentation.ScopeNote</p>
 
     <dl class="asf-dl">
-        <div><dt>Environment</dt><dd data-testid="aqr-fuzzing-environment">@(Context?.ActiveProfile.Name ?? "No active Target Environment") <span class="asf-pill asf-pill-muted">@(Context?.ActiveProfile.EnvironmentType.ToString() ?? "Unknown")</span></dd></div>
+        @* The environment once. The type is shown beside the name only when it adds something ("QA" next to "M2LB test"),
+           never as "Development Development". Eligibility is still decided from the classification, never from this text. *@
+        <div><dt>Environment</dt><dd data-testid="aqr-fuzzing-environment">@(Context?.ActiveProfile.Name ?? "No active Target Environment")@if (EnvironmentTypeBadge is { } badge) {<span> </span><span class="asf-pill asf-pill-muted" data-testid="aqr-fuzzing-environment-type">@badge</span>}</dd></div>
         <div><dt>Limits</dt><dd class="asf-muted" data-testid="aqr-fuzzing-limits">@ApiFuzzingPresentation.LimitsText(Settings)</dd></div>
     </dl>
 
@@ -201,6 +203,11 @@
     [Parameter] public Func<ApiReviewRunRequest?>? BuildReviewRequest { get; set; }
     [Parameter] public string? ProjectName { get; set; }
     [Parameter] public EventCallback<ApiFuzzingLevel> LevelChanged { get; set; }
+
+    /// <summary>The environment type, or null when it would only repeat the name (or there is no environment).</summary>
+    private string? EnvironmentTypeBadge => Context?.ActiveProfile is { } profile
+        && !string.Equals(profile.Name.Trim(), profile.EnvironmentType.ToString(), StringComparison.OrdinalIgnoreCase)
+        ? profile.EnvironmentType.ToString() : null;
     /// <summary>Poll interval of a running fuzz run (tests use a short one).</summary>
     [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 

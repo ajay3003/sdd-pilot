@@ -162,7 +162,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         page.Find("[data-testid=aqr-decision-group][data-group=limitation]").TextContent.Should().Contain("REST contract validation unavailable");
         page.Find("[data-testid=aqr-decision-group][data-group=ready]").TextContent.Should().Contain("selected");
         page.Find("[data-testid=aqr-readiness] [data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
-        page.Find("[data-testid=aqr-run-row]").TextContent.Should().Contain("Read-only automated review");
+        page.Find("[data-testid=aqr-run-row]").TextContent.Should().Contain("Runs the read-only review").And.Contain("Optional active checks run only when explicitly enabled and ready");
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public sealed class ApiQualityReviewSimplificationTests : BunitContext
         body.HasAttribute("hidden").Should().BeTrue();
         foreach (var id in new[] { "aqr-contracts-disclosure", "aqr-schema-artifacts-disclosure", "aqr-access-details", "aqr-readonly-disclosure", "aqr-target-details" })
             body.QuerySelector($"[data-testid={id}]").Should().NotBeNull($"{id} lives inside Diagnostics & setup");
-        page.Find("[data-testid=aqr-additional-checks]").TextContent.Should().Contain("Optional active checks").And.Contain("Do not block the read-only review");
+        page.Find("[data-testid=aqr-additional-checks]").TextContent.Should().Contain("Optional active checks").And.Contain("the read-only API review can still run");
     }
 
     [Fact]
