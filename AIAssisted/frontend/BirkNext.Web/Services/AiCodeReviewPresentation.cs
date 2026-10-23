@@ -4,7 +4,7 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Pure presentation for the AI-Generated Code Review page, plus the client-side summary of workspace evidence the review needs.
+/// Pure presentation for the Code Risk Review page, plus the client-side summary of workspace evidence the review needs.
 /// The summary is read from the existing requirement graph (<see cref="SddEvidenceGraphService"/>) and the Tasks artifact — it never
 /// links requirements by text similarity and never treats a checked task box as implementation.
 /// </summary>

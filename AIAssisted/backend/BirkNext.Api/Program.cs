@@ -516,7 +516,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.PipelineReview.IPipelineMet
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewService, BirkNext.Api.Services.PipelineReview.PipelineReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.DeliveryEvidenceService>();
-// AI-Generated Code Review: deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
+// Code Risk Review (formerly AI-Generated Code Review): deterministic rules over Source Analysis snapshots (shared source-evidence provider; no upload, no model).
 builder.Services.AddScoped<BirkNext.Api.Services.AiCodeReview.IAiCodeReviewService, BirkNext.Api.Services.AiCodeReview.AiCodeReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestCoverage.ITestCoverageReviewService, BirkNext.Api.Services.TestCoverage.TestCoverageReviewService>();
 // Active Event Testing: one generic lifecycle and runner for every scenario provider; the only Event Hub SEND path. Off unless

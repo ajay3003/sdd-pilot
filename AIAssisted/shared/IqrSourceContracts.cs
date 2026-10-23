@@ -69,7 +69,7 @@ public sealed record IqrSourceSnapshot
     /// candidates). Its own evidence type: never authored documentation, never source evidence. Null in snapshots analyzed before it existed.</summary>
     public BirkNext.GeneratedDocumentation.GeneratedDocumentationSnapshot? GeneratedDocumentation { get; init; }
     /// <summary>Code-risk observations (placeholders, error handling, authorization metadata, duplicates, test assertions) captured once at upload
-    /// for the AI-Generated Code Review profile. Facts only; the review decides what they mean. Null in snapshots analyzed before it existed.</summary>
+    /// for the Code Risk Review profile. Facts only; the review decides what they mean. Null in snapshots analyzed before it existed.</summary>
     public BirkNext.AiCodeReview.CodeRiskSourceEvidence? CodeRiskEvidence { get; init; }
     /// <summary>Per-test facts (boundaries, mocks, assertions, targets) the Test Coverage &amp; Overlap Review reads; captured once at upload. Null on
     /// snapshots analyzed before it existed.</summary>

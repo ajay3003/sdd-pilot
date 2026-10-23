@@ -86,7 +86,7 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
         cut.FindAll("input[type=file]").Should().BeEmpty("source comes only from Source Analysis");
         cut.FindAll("[data-testid=aic-run]").Should().BeEmpty();
         cut.Find("[data-testid=aic-ready][data-key=source]").GetAttribute("data-available").Should().Be("false");
-        cut.Find("[data-testid=aic-disclaimer]").TextContent.Should().Contain("does not detect whether code was written by AI");
+        cut.Find("[data-testid=aic-disclaimer]").TextContent.Should().Contain("does not determine whether code was written by AI");
     }
 
     [Fact]
@@ -145,6 +145,8 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
         finding.TextContent.Should().Contain("Shop/Controllers/OrdersController.cs:8").And.Contain("runtime enforcement is not verified").And.Contain("Snapshot diff");
         cut.Find("[data-testid=aic-before-after]").TextContent.Should().Contain("[Authorize] on the type").And.Contain("no authorization metadata");
         cut.Find("[data-testid=aic-changes]").TextContent.Should().Contain("Files");
+        // The rule table defaults to findings and evidence gaps; every rule (skipped ones included) is one filter away.
+        cut.Find("[data-testid=aic-rule-filter]").Change("All");
         cut.Find("[data-testid=aic-rule][data-rule=AIC-TEST-006]").GetAttribute("data-state").Should().Be("Unsupported");
         cut.Find("[data-testid=aic-limitations]").TextContent.Should().Contain("TypeScript");
         cut.Markup.Should().NotMatchRegex(@"\d+\s*%", "there is no score");
@@ -169,8 +171,8 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
         cut.Find("[data-testid=aic-export]").Click();
         var call = JSInterop.Invocations.Single(i => i.Identifier == "downloadHtmlFile");
         var html = (string)call.Arguments[1]!;
-        html.Should().Contain("Contoso Shop").And.Contain(Current.ToString()).And.Contain("AIC-SEC-001").And.Contain("Rule execution").And.Contain("Unsupported")
-            .And.Contain("does not detect whether code was written by AI");
+        html.Should().Contain("Contoso Shop").And.Contain(Current.ToString()).And.Contain("CRR-SEC-001").And.Contain("Rule execution").And.Contain("Unsupported")
+            .And.Contain("does not determine whether code was written by AI");
     }
 
     [Fact]

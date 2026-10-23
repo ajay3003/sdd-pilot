@@ -350,6 +350,7 @@ public static class ReviewCatalog
         new("integration-quality-review", "Integration Quality Review", "integration-quality-review", [Capability.IntegrationCatalog], "Configuration, contracts and runtime evidence of configured integrations."),
         new("performance-test-review", "Performance Test Review", "performance-test-review", [Capability.ApiTarget], "Controlled HTTP/API load tests with explicit latency, throughput and error expectations."),
         new("dependency-review", "Dependency Review", "dependency-review", [Capability.PackageInventory], "Package freshness and advisories."),
+        new("code-risk-review", "Code Risk Review", "code-risk-review", [Capability.SourceCode], "Deterministic implementation risks, evidence gaps and drift in source code and changes."),
         new("pipeline-review", "Pipeline Review", "pipeline-review", [Capability.Pipeline], "Build and deployment pipeline structure."),
         new("azure-environment", "Azure Environment", "azure-environment", [Capability.CloudHosted], "Read-only Azure Resource Manager inventory."),
         new("critical-e2e-regression", "Critical E2E Regression", "critical-e2e-regression", [Capability.BrowserTarget], "Critical user journeys in a browser."),
@@ -383,6 +384,10 @@ public static class ApplicabilityEvaluator
             "performance-test-review" => Performance(review, input),
             "integration-quality-review" => Integration(review, input),
             "dependency-review" => Dependency(review, input),
+            // A baseline is optional: the current-state review runs on one snapshot; change-risk rules wait for a baseline.
+            "code-risk-review" => input.HasSourceSnapshot
+                ? Result(review, ApplicabilityStatus.Applicable, "Source evidence is ready. Run the current-state review now; select a baseline later for change-risk analysis.", input)
+                : Result(review, ApplicabilityStatus.NotEnoughEvidence, "Source evidence required: no source archive has been analyzed.", input, "Open Source Analysis."),
             "pipeline-review" => Pipeline(review, input),
             "azure-environment" => Azure(review, input),
             "security-classification-review" => input.DomainExtensions.Contains(DomainExtensionIds.M2lbChildSecurityClassification)

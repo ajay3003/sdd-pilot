@@ -5,16 +5,16 @@ using Microsoft.Playwright;
 namespace BirkNext.Web.PlaywrightTests.RealProjectAcceptance.Features;
 
 /// <summary>
-/// AI-Generated Code Review over the run's imported snapshot: the page preselects that snapshot, the deterministic review runs, categories are
+/// Code Risk Review (formerly AI-Generated Code Review; feature id kept for stored acceptance results) over the run's imported snapshot: the page preselects that snapshot, the deterministic review runs, categories are
 /// honest (findings / no indicators / not assessed / unsupported / not applicable), findings carry provenance, nothing claims authorship,
 /// export works, and the page holds up at four widths, under axe and with the keyboard.
 /// </summary>
 public sealed class AiGeneratedCodeReviewFeature : AcceptanceFeature
 {
     public override string FeatureId => "ai-generated-code-review";
-    public override string DisplayName => "AI-Generated Code Review";
+    public override string DisplayName => "Code Risk Review";
     public override string Area => "Quality & Testing";
-    public override string Route => "/ai-generated-code-review";
+    public override string Route => "/code-risk-review";
     public override IReadOnlyList<string> RequiredEvidence => ["Source Analysis snapshot"];
     public override IReadOnlyList<string> DependsOn => [ImportFeatureId, "source-analysis"];
 
@@ -25,7 +25,7 @@ public sealed class AiGeneratedCodeReviewFeature : AcceptanceFeature
         await OpenAsync(session, result);
         if (await session.WaitAnyAsync(60_000, "[data-testid=aic-current]", "[data-testid=aic-source-empty]") != "[data-testid=aic-current]")
         {
-            result.Defect("aic-no-snapshot", "AI-Generated Code Review offers no Source Analysis snapshot although the import created one.");
+            result.Defect("aic-no-snapshot", "Code Risk Review offers no Source Analysis snapshot although the import created one.");
             result.Evidence = EvidenceState.NotVerified;
             return;
         }
@@ -51,6 +51,9 @@ public sealed class AiGeneratedCodeReviewFeature : AcceptanceFeature
             return;
         }
 
+        // The rule table is the expert detail (collapsed, filtered to findings and evidence gaps by default): open it and show every rule.
+        await session.Page.Locator("[data-testid=aic-rules] > summary").ClickAsync();
+        await session.Page.Locator("[data-testid=aic-rule-filter]").SelectOptionAsync("All");
         var categories = await session.Page.Locator("[data-testid=aic-category]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-category') + '=' + e.getAttribute('data-status'))");
         var findings = await session.CountAsync("[data-testid=aic-finding]");
         var rules = await session.Page.Locator("[data-testid=aic-rule]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-state'))");
@@ -64,6 +67,8 @@ public sealed class AiGeneratedCodeReviewFeature : AcceptanceFeature
         // Provenance: the first finding's details must name evidence and an affected location or related id.
         if (findings > 0)
         {
+            // Findings are grouped by rule: open the first group, then its first finding.
+            await session.Page.Locator("[data-testid=aic-group] > summary").First.ClickAsync();
             var first = session.Page.Locator("[data-testid=aic-finding]").First;
             await first.Locator("summary").ClickAsync();
             var detail = await first.Locator("[data-testid=aic-finding-detail]").InnerTextAsync();
@@ -117,7 +122,7 @@ public sealed class AiGeneratedCodeReviewFeature : AcceptanceFeature
                 await session.Page.SetViewportSizeAsync(width, 1000);
                 await session.Page.WaitForTimeoutAsync(400);
                 var (client, scroll) = await session.HorizontalExtentAsync();
-                if (scroll > client + 1) { overflowing.Add(width); result.Warn("horizontal-overflow", $"AI-Generated Code Review overflows at {width}px ({scroll}px > {client}px)."); }
+                if (scroll > client + 1) { overflowing.Add(width); result.Warn("horizontal-overflow", $"Code Risk Review overflows at {width}px ({scroll}px > {client}px)."); }
             }
         }
         finally { await session.Page.SetViewportSizeAsync(1440, 1000); }

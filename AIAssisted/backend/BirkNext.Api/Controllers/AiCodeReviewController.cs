@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// AI-Generated Code Review: deterministic risk review over Source Analysis snapshots (current, optionally against a baseline of the same
+/// Code Risk Review: deterministic risk review over Source Analysis snapshots (current, optionally against a baseline of the same
 /// repository). Source comes only from Source Analysis — there is no upload here; no language model is called; authorship is never inferred.
+/// "api/ai-code-review" is the original route and stays valid; "api/code-risk-review" is the same API under the product name.
 /// </summary>
 [ApiController]
 [Route("api/ai-code-review")]
+[Route("api/code-risk-review")]
 public sealed class AiCodeReviewController(IAiCodeReviewService service) : ControllerBase
 {
     [HttpGet("sources")]

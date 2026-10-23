@@ -141,7 +141,7 @@ public class IntegrationMessageFlowRecord
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>A stored AI-Generated Code Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
+/// <summary>A stored Code Risk Review run (formerly AI-Generated Code Review), bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
 /// <summary>One Test Coverage &amp; Overlap Review run, bound to the exact snapshot ids it reviewed (never re-bound to newer snapshots).</summary>
 public class TestCoverageReviewRunRecord
 {

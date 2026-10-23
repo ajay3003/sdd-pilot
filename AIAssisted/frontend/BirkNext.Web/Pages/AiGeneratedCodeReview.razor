@@ -1,7 +1,9 @@
+@page "/code-risk-review"
 @page "/ai-generated-code-review"
 @using BirkNext.AiCodeReview
 @using BirkNext.Web.Components
 @using P = BirkNext.Web.Services.AiCodeReviewPresentation
+@using T = BirkNext.Web.Services.CodeRiskTriage
 @implements IDisposable
 @inject IAiCodeReviewApiService Api
 @inject IWorkspaceSessionService Workspace
@@ -11,8 +13,9 @@
 
 <PageTitle>@AiCodeReviewText.Title</PageTitle>
 
-@* AI-Generated Code Review: a deterministic review profile over the Source Analysis snapshot (no upload here, no model, no score). It reviews
-   risk patterns common after generated or AI-assisted changes; it never determines who or what wrote the code. *@
+@* Code Risk Review (formerly "AI-Generated Code Review"; the old route stays valid): a deterministic review over the Source Analysis snapshot —
+   no upload here, no model, no score, and it never determines who or what wrote the code. After a run the result reads top-down as a decision
+   aid: summary → what to fix first → coverage → grouped findings → change risk → rule details → limitations. *@
 <div class="aic-page" data-testid="aic-page" aria-busy="@(_loaded ? "false" : "true")">
     <PageHeader Title="@AiCodeReviewText.Title" Description="@AiCodeReviewText.Hero">
         @if (_result is not null)
@@ -29,7 +32,7 @@
             <div><dt>Current project</dt><dd data-testid="aic-project">@(_projectName ?? "No project loaded — source rules still run; requirement checks need project documents")</dd></div>
         </dl>
         <SourceEvidencePrerequisite State="_scope" Prefix="aic" SourceAnalysisEnabled="_sources?.SourceAnalysisEnabled != false" ConsumerName="@AiCodeReviewText.Title"
-                                    Title="Source Analysis snapshot" LoadError="_loadError" ReturnTo="ai-generated-code-review"
+                                    Title="Source evidence required" LoadError="_loadError" ReturnTo="code-risk-review"
                                     OtherSectionsNote="Import the project (documents and source in one ZIP) or analyze the source in Source Analysis. This page never uploads source.">
             <div class="aic-selectors">
                 <label class="aic-field">Current source snapshot
@@ -40,8 +43,8 @@
                         }
                     </select>
                 </label>
-                <label class="aic-field">Baseline snapshot <span class="aic-muted">(optional — same repository)</span>
-                    <select class="form-control" data-testid="aic-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="BaselineChanged" disabled="@(_busy || BaselineOptions.Count == 0)">
+                <label class="aic-field">Baseline snapshot <span class="aic-muted">(optional — same repository; enables change-risk rules)</span>
+                    <select id="@T.BaselineAnchor" class="form-control" data-testid="aic-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="BaselineChanged" disabled="@(_busy || BaselineOptions.Count == 0)" @ref="_baselineSelect">
                         <option value="">No baseline — review the current snapshot</option>
                         @foreach (var s in BaselineOptions)
                         {
@@ -50,6 +53,12 @@
                     </select>
                 </label>
             </div>
+            @if (_baselineId is null && CurrentSnapshot is { } cur && T.SuggestedBaseline(Snapshots, cur) is { } suggested)
+            {
+                @* A proposal: the previous snapshot of the same repository. Nothing is selected until the user says so. *@
+                <p class="aic-muted" data-testid="aic-baseline-suggestion">Suggested baseline: previous snapshot of the same repository — @suggested.ArchiveName · @suggested.AnalyzedAt.ToLocalTime().ToString("g") · @T.Short(suggested.Fingerprint). Status: <strong>Not selected</strong>.
+                    <button type="button" class="btn-link" data-testid="aic-baseline-use" disabled="@_busy" @onclick="() => UseBaseline(suggested.SnapshotId)">Use as baseline</button></p>
+            }
             @if (CurrentSnapshot is { HasConsumerEvidence: false } stale)
             {
                 <p class="aic-notice" role="status" data-testid="aic-snapshot-old">@stale.ConsumerEvidenceNote</p>
@@ -59,143 +68,292 @@
                 <p class="aic-mode-value" data-testid="aic-mode-value">@(_baselineId is null ? "Current snapshot review" : "Snapshot change review (baseline → current)")</p>
                 <label><input type="radio" name="aic-scope" checked="@(_scope_ == AiReviewScope.EntireSource)" @onchange="() => _scope_ = AiReviewScope.EntireSource" data-testid="aic-scope-entire" /> Entire source</label>
                 <label class="@(_baselineId is null ? "aic-disabled" : "")"><input type="radio" name="aic-scope" checked="@(_scope_ == AiReviewScope.ChangedFiles)" disabled="@(_baselineId is null)"
-                       @onchange="() => _scope_ = AiReviewScope.ChangedFiles" data-testid="aic-scope-changed" /> Changed files only <span class="aic-muted">(needs a baseline)</span></label>
+                       aria-describedby="aic-scope-changed-help" @onchange="() => _scope_ = AiReviewScope.ChangedFiles" data-testid="aic-scope-changed" /> Changed files only</label>
+                <p class="aic-muted" id="aic-scope-changed-help" data-testid="aic-scope-changed-help">@(_baselineId is null
+                    ? "Changed files only needs a baseline: without one there is nothing to compare, so only the entire source can be reviewed."
+                    : "Changed files only reviews the files whose fingerprints differ between the baseline and the current snapshot.")</p>
             </fieldset>
             <div class="aic-actions">
                 <button type="button" class="btn-primary" data-testid="aic-run" disabled="@(BlockedReason is not null)" aria-describedby="aic-run-help" @onclick="RunAsync">
-                    @(_busy ? "Reviewing…" : "Run AI-Generated Code Review")
+                    @(_busy ? "Reviewing…" : "Run Code Risk Review")
                 </button>
-                <p id="aic-run-help" class="aic-muted" role="status" data-testid="aic-run-help">@(BlockedReason ?? "Deterministic rules over the selected snapshot(s); nothing is uploaded or executed.")</p>
+                <p id="aic-run-help" class="aic-muted" role="status" data-testid="aic-run-help">@(BlockedReason ?? (_baselineId is null
+                    ? "Run the current-state review now; select a baseline later for change-risk analysis. Nothing is uploaded or executed."
+                    : "Deterministic rules over the selected snapshots; nothing is uploaded or executed."))</p>
             </div>
             @if (_runError is not null) { <p class="aic-error" role="alert" data-testid="aic-error">@_runError</p> }
         </SourceEvidencePrerequisite>
     </section>
 
-    <section class="aic-card" aria-labelledby="aic-readiness-heading" data-testid="aic-readiness">
-        <h2 id="aic-readiness-heading">Review readiness</h2>
-        <p class="aic-muted">Missing evidence only blocks the checks that need it.</p>
-        <ul class="aic-readiness">
-            @foreach (var item in Readiness)
-            {
-                <li data-testid="aic-ready" data-key="@item.Key" data-available="@(item.Available ? "true" : "false")">
-                    <span class="aic-dot aic-dot-@(item.Available ? "clear" : "neutral")" aria-hidden="true"></span>
-                    <strong>@item.Label</strong> <span class="visually-hidden">@(item.Available ? "available" : "not available")</span>
-                    <span class="aic-muted">— @item.Detail@(item.Available || item.Blocks is null ? "" : $" (affects: {item.Blocks})")</span>
-                </li>
-            }
-        </ul>
-    </section>
+    @if (_result is null)
+    {
+        <section class="aic-card" aria-labelledby="aic-readiness-heading" data-testid="aic-readiness">
+            <h2 id="aic-readiness-heading">Review readiness</h2>
+            <p class="aic-muted">Missing evidence only blocks the checks that need it; it is never reported as a code finding.</p>
+            <ul class="aic-readiness">
+                @foreach (var item in Readiness)
+                {
+                    <li data-testid="aic-ready" data-key="@item.Key" data-available="@(item.Available ? "true" : "false")">
+                        <span class="aic-dot aic-dot-@(item.Available ? "clear" : "neutral")" aria-hidden="true"></span>
+                        <strong>@item.Label</strong> <span class="aic-status-word">@(item.Available ? "available" : "not available")</span>
+                        <span class="aic-muted">— @item.Detail@(item.Available || item.Blocks is null ? "" : $" (affects: {item.Blocks})")</span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
 
     @if (_result is { } r)
     {
+        var summary = T.Summary(r);
+        var actions = T.Actions(r);
+        var coverage = T.Coverage(r);
         <section class="aic-card" aria-labelledby="aic-result-heading" data-testid="aic-result" data-mode="@r.Mode" data-run="@r.RunId">
-            <h2 id="aic-result-heading" tabindex="-1" @ref="_resultHeading">Review result</h2>
+            @* A. Review summary *@
+            <h2 id="aic-result-heading" tabindex="-1" @ref="_resultHeading">Code Risk Review completed</h2>
             <p class="aic-muted" data-testid="aic-result-provenance">
                 @(r.Mode == AiReviewMode.SnapshotChange ? "Snapshot change review" : "Current snapshot review") · @(r.Scope == AiReviewScope.ChangedFiles ? "changed files only" : "entire source")
-                · current <code title="@r.Current.Fingerprint">@r.Current.ArchiveName · @Short(r.Current.Fingerprint)</code>
-                @if (r.Baseline is { } b) { <text> · baseline <code title="@b.Fingerprint">@b.ArchiveName · @Short(b.Fingerprint)</code></text> }
-                · @r.CompletedAt.ToLocalTime().ToString("g")
+                · current <code title="@r.Current.Fingerprint">@r.Current.ArchiveName · @T.Short(r.Current.Fingerprint)</code>
+                @if (r.Baseline is { } b) { <text> · baseline <code title="@b.Fingerprint">@b.ArchiveName · @T.Short(b.Fingerprint)</code></text> }
+                · @r.CompletedAt.ToLocalTime().ToString("g") · rule set v@(r.EngineVersion)
             </p>
             @if (NewerExists(r))
             {
                 <p class="aic-notice" role="status" data-testid="aic-stale">A newer Source Analysis snapshot of this repository exists. This review stays bound to the snapshot it reviewed; run again to review the newer one.</p>
             }
-            <p data-testid="aic-summary"><strong>@r.Findings.Count</strong> finding(s) from @r.Rules.Count(x => x.State == AiRuleExecutionState.Executed) executed rule(s);
-                @r.Rules.Count(x => x.State == AiRuleExecutionState.NotAssessed) not assessed, @r.Rules.Count(x => x.State == AiRuleExecutionState.Unsupported) unsupported,
-                @r.Rules.Count(x => x.State == AiRuleExecutionState.NotApplicable) not applicable. @(r.Findings.Count == 0 ? AiCodeReviewText.NoIndicators : "")</p>
-            @if (r.Attention is { } attention)
-            {
-                <p class="aic-attention aic-attention-@attention.ToString().ToLowerInvariant()" data-testid="aic-attention">Review attention: <strong>@attention</strong>
-                    <span class="aic-muted">— @r.AttentionBasis</span></p>
-            }
+            <p class="aic-headline" data-testid="aic-headline">@summary.Headline</p>
+            <dl class="aic-metrics" data-testid="aic-summary">
+                <div><dt>Risk findings</dt><dd data-testid="aic-summary-findings">@summary.Findings</dd></div>
+                <div><dt>High</dt><dd>@summary.High</dd></div>
+                <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
+                <div><dt>Low / Info</dt><dd>@(summary.Low + summary.Info)</dd></div>
+                <div><dt>Executed rules</dt><dd data-testid="aic-summary-executed">@summary.Executed</dd></div>
+                <div><dt>Evidence gaps</dt><dd data-testid="aic-summary-gaps">@summary.EvidenceGaps</dd></div>
+                <div><dt>Not assessed</dt><dd data-testid="aic-summary-not-assessed">@summary.NotAssessed</dd></div>
+                <div><dt>Unsupported</dt><dd data-testid="aic-summary-unsupported">@summary.Unsupported</dd></div>
+                <div><dt>Not applicable</dt><dd data-testid="aic-summary-not-applicable">@summary.NotApplicable</dd></div>
+            </dl>
+            <dl class="aic-facts" data-testid="aic-modes-status">
+                <div><dt>Current-state review</dt><dd data-testid="aic-current-state">@summary.CurrentState</dd></div>
+                <div><dt>Change-risk review</dt><dd data-testid="aic-change-state">@summary.ChangeRisk</dd></div>
+            </dl>
+            @if (r.Findings.Count == 0) { <p class="aic-muted" data-testid="aic-summary-none">@AiCodeReviewText.NoIndicators This does not mean the code is correct.</p> }
 
-            <div class="aic-categories" role="group" aria-label="Review categories" data-testid="aic-categories">
-                @foreach (var c in r.Categories)
+            @* B. What should I fix first? *@
+            <section class="aic-subsection" aria-labelledby="aic-actions-heading" data-testid="aic-actions">
+                <h3 id="aic-actions-heading">What should I fix first?</h3>
+                @if (actions.Count == 0)
                 {
-                    var selected = _category == c.Category;
-                    <button type="button" class="aic-category aic-tone-@P.Tone(c.Status) @(selected ? "aic-selected" : "")" aria-pressed="@(selected ? "true" : "false")"
-                            data-testid="aic-category" data-category="@c.Category" data-status="@c.Status" @onclick="() => ToggleCategory(c.Category)">
-                        <span class="aic-category-name">@AiCodeReviewText.Label(c.Category)</span>
-                        <span class="aic-category-status">@AiCodeReviewText.Label(c.Status)@(c.Findings > 0 ? $" · {c.Findings}" : "")</span>
-                        <span class="aic-category-scope">@c.AssessedScope@(c.UnsupportedRules > 0 ? $" · {c.UnsupportedRules} unsupported rule(s)" : "")</span>
-                        @if (c.Status is not AiCategoryStatus.Findings && c.Explanation is not null) { <span class="aic-category-note">@c.Explanation</span> }
-                    </button>
+                    <p class="aic-muted">No recommended actions: no Medium/High finding groups and no missing evidence.</p>
                 }
-            </div>
-
-            <h3 id="aic-findings-heading">Findings@(_category is { } fc ? $" — {AiCodeReviewText.Label(fc)}" : "")</h3>
-            @if (_category is not null) { <button type="button" class="btn-link" data-testid="aic-clear-category" @onclick="() => _category = null">Show all categories</button> }
-            @if (VisibleFindings.Count == 0)
-            {
-                <p class="aic-muted" data-testid="aic-no-findings">@AiCodeReviewText.NoIndicators This does not mean the code is correct.</p>
-            }
-            else
-            {
-                <ul class="aic-findings" aria-labelledby="aic-findings-heading" data-testid="aic-findings">
-                    @foreach (var f in VisibleFindings.Take(_findingLimit))
-                    {
-                        <li class="aic-finding" data-testid="aic-finding" data-rule="@f.RuleId" data-severity="@f.Severity" data-change="@f.Change">
-                            <details>
-                                <summary>
-                                    <span class="aic-sev aic-sev-@P.Tone(f.Severity)">@f.Severity</span>
-                                    <span class="aic-finding-title">@f.Title</span>
-                                    <code class="aic-rule">@f.RuleId</code>
-                                    @if (f.Change is { } ch) { <span class="aic-change">@P.Label(ch)</span> }
-                                </summary>
-                                <div class="aic-finding-body" data-testid="aic-finding-detail">
-                                    <p>@f.Description</p>
-                                    <dl class="aic-facts">
-                                        <div><dt>Why BirkNext flagged it</dt><dd>@f.Rationale</dd></div>
-                                        <div><dt>Evidence</dt><dd>@string.Join(", ", f.EvidenceSources.Select(P.Label))@(f.EvidenceReferences > 1 ? $" · {f.EvidenceReferences} evidence references" : "")</dd></div>
-                                        @if (f.Locations.Count > 0)
-                                        {
-                                            <div><dt>Affected source</dt><dd><ul class="aic-locations">@foreach (var l in f.Locations.Take(15)) { <li><code>@P.Location(l)</code>@(l.Symbol is { Length: > 0 } sym ? $" · {sym}" : "")</li> }</ul>
-                                                @(f.Locations.Count > 15 ? $"…and {f.Locations.Count - 15} more" : "")</dd></div>
-                                        }
-                                        @if (f.RelatedIds.Count > 0) { <div><dt>Related</dt><dd>@string.Join(", ", f.RelatedIds.Take(25))@(f.RelatedIds.Count > 25 ? $" …(+{f.RelatedIds.Count - 25})" : "")</dd></div> }
-                                        @if (f.Change is not null && (f.Baseline is not null || f.Current is not null))
-                                        {
-                                            <div data-testid="aic-before-after"><dt>Baseline → current</dt><dd><span class="aic-before">@(f.Baseline ?? "—")</span> → <span class="aic-after">@(f.Current ?? "—")</span> (@P.Label(f.Change))</dd></div>
-                                        }
-                                        <div><dt>Limitation</dt><dd>@f.Limitation</dd></div>
-                                        <div><dt>Suggested review action</dt><dd>@f.Recommendation</dd></div>
-                                    </dl>
-                                </div>
-                            </details>
-                        </li>
-                    }
-                </ul>
-                @if (VisibleFindings.Count > _findingLimit)
+                else
                 {
-                    <button type="button" class="btn-secondary" data-testid="aic-more" @onclick="() => _findingLimit += 50">Show more (@(VisibleFindings.Count - _findingLimit) remaining)</button>
+                    <ol class="aic-action-list">
+                        @foreach (var action in actions)
+                        {
+                            var current = action;
+                            <li data-testid="aic-action" data-key="@action.Key" data-kind="@(action.IsSetup ? "setup" : "finding")">
+                                @if (action.Href.StartsWith('#'))
+                                {
+                                    <button type="button" class="btn-link" @onclick="() => FollowAsync(current)">@action.Text</button>
+                                }
+                                else
+                                {
+                                    <a href="@action.Href">@action.Text</a>
+                                }
+                                <span class="aic-status-word">@(action.IsSetup ? "· evidence / setup" : "· risk findings")</span>
+                            </li>
+                        }
+                    </ol>
                 }
-            }
+                <p class="aic-muted">Ordered deterministically: severity, security relevance, changed code, count, category. No model ranks these.</p>
+            </section>
 
-            @if (r.Changes.Count > 0)
-            {
-                <h3>Changes between snapshots</h3>
-                <div class="aic-scroll" tabindex="0" role="region" aria-label="Changes between snapshots">
-                    <table class="aic-table" data-testid="aic-changes">
-                        <thead><tr><th scope="col">Area</th><th scope="col">Introduced</th><th scope="col">Removed</th><th scope="col">Changed</th><th scope="col">Unchanged</th></tr></thead>
-                        <tbody>@foreach (var c in r.Changes) { <tr data-testid="aic-change-row" data-area="@c.Area"><th scope="row">@c.Area@if (c.Note is not null) { <span class="aic-muted aic-block">@c.Note</span> }</th><td>@c.Introduced</td><td>@c.Removed</td><td>@c.Changed</td><td>@c.Unchanged</td></tr> }</tbody>
+            @* C. Review coverage *@
+            <section class="aic-subsection" id="@T.CoverageAnchor" aria-labelledby="aic-coverage-heading" data-testid="aic-coverage">
+                <h3 id="aic-coverage-heading">Review coverage</h3>
+                <p class="aic-muted">Coverage limitations are not code defects: they say which checks could not run and what would enable them.</p>
+                <div class="aic-scroll" tabindex="0" role="region" aria-label="Review coverage">
+                    <table class="aic-table">
+                        <thead><tr><th scope="col">Evidence</th><th scope="col">Status</th><th scope="col">Impact</th><th scope="col">Next step</th></tr></thead>
+                        <tbody>
+                            @foreach (var row in coverage)
+                            {
+                                <tr data-testid="aic-coverage-row" data-key="@row.Key" data-status="@row.Status">
+                                    <th scope="row">@row.Evidence<span class="aic-muted aic-block">@row.Detail@(row.Provenance is { } provenance ? $" · {provenance}" : "")</span></th>
+                                    <td><span class="aic-coverage aic-coverage-@row.Status.ToString().ToLowerInvariant()">@T.Label(row.Status)</span></td>
+                                    <td>@row.Impact</td>
+                                    <td>@if (row.Action is { } next)
+                                        {
+                                            if (row.ActionHref!.StartsWith('#')) { <button type="button" class="btn-link" @onclick="FocusBaselineAsync">@next</button> }
+                                            else { <a href="@row.ActionHref">@next</a> }
+                                        }</td>
+                                </tr>
+                            }
+                        </tbody>
                     </table>
                 </div>
-            }
+            </section>
 
+            @* D. Findings by category: grouped by category and rule; individual evidence one disclosure down. *@
+            <section class="aic-subsection" aria-labelledby="aic-findings-heading" data-testid="aic-findings-section">
+                <h3 id="aic-findings-heading">Findings by category@(_category is { } fc ? $" — {AiCodeReviewText.Label(fc)}" : "")</h3>
+                <div class="aic-categories" role="group" aria-label="Filter by category" data-testid="aic-categories">
+                    @foreach (var c in r.Categories.OrderBy(c => T.Priority(c.Category)))
+                    {
+                        var selected = _category == c.Category;
+                        <button type="button" class="aic-category aic-tone-@P.Tone(c.Status) @(selected ? "aic-selected" : "")" aria-pressed="@(selected ? "true" : "false")"
+                                data-testid="aic-category" data-category="@c.Category" data-status="@c.Status" @onclick="() => ToggleCategory(c.Category)">
+                            <span class="aic-category-name">@AiCodeReviewText.Label(c.Category)</span>
+                            <span class="aic-category-status">@AiCodeReviewText.Label(c.Status)@(c.Findings > 0 ? $" · {c.Findings}" : "")</span>
+                            <span class="aic-category-scope">@c.AssessedScope@(c.UnsupportedRules > 0 ? $" · {c.UnsupportedRules} unsupported rule(s)" : "")</span>
+                            @if (c.Status is not AiCategoryStatus.Findings && c.Explanation is not null) { <span class="aic-category-note">@c.Explanation</span> }
+                        </button>
+                    }
+                </div>
+                <div class="aic-filters">
+                    <label class="aic-field">Search findings <input type="search" class="form-control" data-testid="aic-search" placeholder="Rule id, rule, file or category" @bind="_query" @bind:event="oninput" /></label>
+                    @if (_category is not null) { <button type="button" class="btn-link" data-testid="aic-clear-category" @onclick="() => _category = null">Show all categories</button> }
+                </div>
+                @{ var groups = T.Groups(VisibleFindings); }
+                @if (groups.Count == 0)
+                {
+                    <p class="aic-muted" data-testid="aic-no-findings">@AiCodeReviewText.NoIndicators This does not mean the code is correct.</p>
+                }
+                else
+                {
+                    @foreach (var category in groups)
+                    {
+                        <h4 class="aic-group-category" data-testid="aic-group-category" data-category="@category.Category">@category.Label <span class="aic-muted">· @category.Findings</span></h4>
+                        @foreach (var g in category.Rules)
+                        {
+                            <details class="aic-group" id="@g.Anchor" data-testid="aic-group" data-rule="@g.RuleId" open="@_expanded.Contains(g.RuleId)">
+                                <summary @ref="_groupRefs[g.RuleId]">
+                                    <span class="aic-sev aic-sev-@P.Tone(g.MaxSeverity)">@g.MaxSeverity</span>
+                                    <span class="aic-finding-title">@g.Title · @g.Findings.Count</span>
+                                    <code class="aic-rule" data-testid="aic-group-id">@g.DisplayId</code>
+                                </summary>
+                                <ul class="aic-findings" data-testid="aic-findings">
+                                    @foreach (var f in g.Findings)
+                                    {
+                                        <li class="aic-finding" data-testid="aic-finding" data-rule="@f.RuleId" data-display="@AiCodeReviewText.DisplayId(f.RuleId)" data-severity="@f.Severity" data-change="@f.Change">
+                                            <details>
+                                                <summary>
+                                                    <span class="aic-sev aic-sev-@P.Tone(f.Severity)">@f.Severity</span>
+                                                    <span class="aic-finding-title">@f.Title</span>
+                                                    @if (f.Locations.FirstOrDefault() is { } first) { <code class="aic-loc">@P.Location(first)</code> }
+                                                    @if (f.Change is { } ch) { <span class="aic-change">@P.Label(ch)</span> }
+                                                </summary>
+                                                <div class="aic-finding-body" data-testid="aic-finding-detail">
+                                                    <p><span class="aic-status-word">Risk finding</span> — @f.Description</p>
+                                                    <dl class="aic-facts">
+                                                        <div><dt>Why it matters</dt><dd>@f.Rationale</dd></div>
+                                                        <div><dt>Evidence</dt><dd>@string.Join(", ", f.EvidenceSources.Select(P.Label))@(f.EvidenceReferences > 1 ? $" · {f.EvidenceReferences} evidence references" : "") · @(f.Change is null ? "source-only" : "change-derived (baseline → current)") · @RuntimeNote(r)</dd></div>
+                                                        @if (f.Locations.Count > 0)
+                                                        {
+                                                            <div><dt>Affected source</dt><dd><ul class="aic-locations">@foreach (var l in f.Locations.Take(15)) { <li><code>@P.Location(l)</code>@(l.Symbol is { Length: > 0 } sym ? $" · {sym}" : "")</li> }</ul>
+                                                                @(f.Locations.Count > 15 ? $"…and {f.Locations.Count - 15} more" : "")</dd></div>
+                                                        }
+                                                        @if (f.RelatedIds.Count > 0) { <div><dt>Related</dt><dd>@string.Join(", ", f.RelatedIds.Take(25))@(f.RelatedIds.Count > 25 ? $" …(+{f.RelatedIds.Count - 25})" : "")</dd></div> }
+                                                        @if (f.Change is not null && (f.Baseline is not null || f.Current is not null))
+                                                        {
+                                                            <div data-testid="aic-before-after"><dt>Baseline → current</dt><dd><span class="aic-before">@(f.Baseline ?? "—")</span> → <span class="aic-after">@(f.Current ?? "—")</span> (@P.Label(f.Change))</dd></div>
+                                                        }
+                                                        <div><dt>Rule</dt><dd><code>@AiCodeReviewText.DisplayId(f.RuleId)</code></dd></div>
+                                                        <div><dt>Limitation</dt><dd>@f.Limitation</dd></div>
+                                                        <div><dt>Suggested review action</dt><dd>@f.Recommendation</dd></div>
+                                                    </dl>
+                                                </div>
+                                            </details>
+                                        </li>
+                                    }
+                                </ul>
+                            </details>
+                        }
+                    }
+                }
+            </section>
+
+            @* E. Change risk *@
+            <section class="aic-subsection" aria-labelledby="aic-change-heading" data-testid="aic-change-risk">
+                <h3 id="aic-change-heading">Change risk</h3>
+                @if (r.Baseline is null)
+                {
+                    <div class="aic-limited" data-testid="aic-change-limited">
+                        <p><strong>Change-risk coverage: Limited</strong></p>
+                        <p class="aic-muted">Reason: No baseline snapshot selected. Architecture, dependency, contract, configuration and pipeline drift, the snapshot change summary, changed-code test coverage and implementation/test co-change rules need one.</p>
+                        <button type="button" class="btn-secondary" data-testid="aic-select-baseline" @onclick="FocusBaselineAsync">Select baseline snapshot</button>
+                    </div>
+                }
+                else
+                {
+                    <p class="aic-muted" data-testid="aic-change-provenance">Baseline <code>@r.Baseline.ArchiveName · @T.Short(r.Baseline.Fingerprint)</code> → current <code>@r.Current.ArchiveName · @T.Short(r.Current.Fingerprint)</code> · same repository (@r.Current.Repository) · @r.ChangedFiles changed file(s)</p>
+                    @if (r.Attention is { } attention)
+                    {
+                        <p class="aic-attention aic-attention-@attention.ToString().ToLowerInvariant()" data-testid="aic-attention">Review attention: <strong>@attention</strong>
+                            <span class="aic-muted">— @r.AttentionBasis</span></p>
+                    }
+                    @if (r.Changes.Count > 0)
+                    {
+                        <div class="aic-scroll" tabindex="0" role="region" aria-label="Changes between snapshots">
+                            <table class="aic-table" data-testid="aic-changes">
+                                <thead><tr><th scope="col">Area</th><th scope="col">Introduced</th><th scope="col">Removed</th><th scope="col">Changed</th><th scope="col">Unchanged</th></tr></thead>
+                                <tbody>@foreach (var c in r.Changes) { <tr data-testid="aic-change-row" data-area="@c.Area"><th scope="row">@c.Area@if (c.Note is not null) { <span class="aic-muted aic-block">@c.Note</span> }</th><td>@c.Introduced</td><td>@c.Removed</td><td>@c.Changed</td><td>@c.Unchanged</td></tr> }</tbody>
+                            </table>
+                        </div>
+                    }
+                    <ul class="aic-drift" data-testid="aic-drift">
+                        @foreach (var drift in DriftCategories)
+                        {
+                            <li>@AiCodeReviewText.Label(drift) · @r.Findings.Count(f => f.Category == drift && f.Change is not null and not AiChangeKind.Unchanged) changed-code finding(s)</li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            @* F. Rule execution details — the expert view; skipped rules are listed, never hidden. *@
             <details class="aic-rules" data-testid="aic-rules">
-                <summary>Rule execution (@r.Rules.Count rules — skipped rules are listed, never hidden)</summary>
+                <summary>Rule execution details (@r.Rules.Count rules — skipped rules are listed, never hidden)</summary>
+                <dl class="aic-legend" data-testid="aic-legend">
+                    @foreach (var kind in Enum.GetValues<CodeRiskResultKind>())
+                    {
+                        <div><dt>@T.Label(kind)</dt><dd>@T.Help(kind)</dd></div>
+                    }
+                </dl>
+                <label class="aic-field">Show rules
+                    <select class="form-control" data-testid="aic-rule-filter" value="@_ruleFilter" @onchange="RuleFilterChanged">
+                        @foreach (var filter in Enum.GetValues<T.RuleFilter>())
+                        {
+                            <option value="@filter">@T.Label(filter)</option>
+                        }
+                    </select>
+                </label>
                 <div class="aic-scroll" tabindex="0" role="region" aria-label="Rule execution">
                     <table class="aic-table">
-                        <thead><tr><th scope="col">Rule</th><th scope="col">Category</th><th scope="col">State</th><th scope="col">Findings</th><th scope="col">Reason</th></tr></thead>
-                        <tbody>@foreach (var rule in r.Rules) { <tr data-testid="aic-rule" data-rule="@rule.RuleId" data-state="@rule.State"><th scope="row"><code>@rule.RuleId</code> @rule.Title</th><td>@AiCodeReviewText.Label(rule.Category)</td><td><span class="aic-state aic-tone-@P.Tone(rule.State)">@AiCodeReviewText.Label(rule.State)</span></td><td>@rule.Findings</td><td>@rule.Reason</td></tr> }</tbody>
+                        <thead><tr><th scope="col">Rule ID</th><th scope="col">Rule</th><th scope="col">Category</th><th scope="col">State</th><th scope="col">Findings</th><th scope="col">Reason</th></tr></thead>
+                        <tbody>
+                            @foreach (var rule in r.Rules.Where(x => T.Matches(T.Kind(x, r), _ruleFilter)))
+                            {
+                                var kind = T.Kind(rule, r);
+                                <tr data-testid="aic-rule" data-rule="@rule.RuleId" data-state="@rule.State" data-kind="@kind">
+                                    <th scope="row"><code>@AiCodeReviewText.DisplayId(rule.RuleId)</code></th>
+                                    <td>@rule.Title</td>
+                                    <td>@AiCodeReviewText.Label(rule.Category)</td>
+                                    <td><span class="aic-state aic-tone-@T.Tone(kind)">@T.Label(kind)</span></td>
+                                    <td>@rule.Findings</td>
+                                    <td>@rule.Reason</td>
+                                </tr>
+                            }
+                        </tbody>
                     </table>
                 </div>
             </details>
 
+            @* G. Technical limitations *@
             @if (r.Limitations.Count > 0)
             {
                 <details class="aic-limitations" data-testid="aic-limitations">
-                    <summary>Limitations (@r.Limitations.Count)</summary>
+                    <summary>Technical limitations (@r.Limitations.Count)</summary>
                     <ul>@foreach (var l in r.Limitations) { <li>@l</li> }</ul>
                 </details>
             }
@@ -206,7 +364,7 @@
     {
         <section class="aic-card" aria-labelledby="aic-history-heading" data-testid="aic-history">
             <h2 id="aic-history-heading">Previous reviews</h2>
-            <p class="aic-muted">Each review stays bound to the exact snapshots it reviewed.</p>
+            <p class="aic-muted">Each review stays bound to the exact snapshots it reviewed; earlier runs keep their recorded results.</p>
             <ul class="aic-history">
                 @foreach (var h in _history.Take(10))
                 {
@@ -226,27 +384,38 @@
     private AiCodeReviewResult? _result;
     private IReadOnlyList<AiCodeReviewRunSummary> _history = [];
     private AiCodeReviewCategory? _category;
+    private string _query = "";
+    private T.RuleFilter _ruleFilter = T.RuleFilter.FindingsAndGaps;
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ElementReference> _groupRefs = [];
+    private string? _focusGroup;
+    private bool _focusBaseline;
     private bool _busy, _loaded;
-    private int _findingLimit = 50;
-    private ElementReference _resultHeading;
+    private ElementReference _resultHeading, _baselineSelect;
     private readonly CancellationTokenSource _cts = new();
+
+    private static readonly AiCodeReviewCategory[] DriftCategories =
+    [
+        AiCodeReviewCategory.ContractDrift, AiCodeReviewCategory.ConfigurationDrift, AiCodeReviewCategory.ArchitectureConstitution, AiCodeReviewCategory.Dependencies,
+        AiCodeReviewCategory.GeneratedDocumentation, AiCodeReviewCategory.Tests, AiCodeReviewCategory.ChangeRisk,
+    ];
 
     private IReadOnlyList<ReviewSourceSnapshot> Snapshots => _sources?.Snapshots.OrderByDescending(s => s.AnalyzedAt).ToList() ?? [];
     private ReviewSourceSnapshot? CurrentSnapshot => Snapshots.FirstOrDefault(s => s.SnapshotId == _currentId);
     private List<ReviewSourceSnapshot> BaselineOptions => CurrentSnapshot is { } c
         ? Snapshots.Where(s => s.RepositoryKey == c.RepositoryKey && s.SnapshotId != c.SnapshotId).ToList() : [];
     private string? BlockedReason => P.RunBlockedReason(_currentId, _baselineId, _scope_, _busy);
-    private List<AiCodeFinding> VisibleFindings => _result?.Findings.Where(f => _category is null || f.Category == _category).ToList() ?? [];
+    private List<AiCodeFinding> VisibleFindings => _result?.Findings.Where(f => (_category is null || f.Category == _category) && T.Matches(f, _query)).ToList() ?? [];
 
-    private IReadOnlyList<AiReadinessItem> Readiness => _result?.Readiness ??
+    private IReadOnlyList<AiReadinessItem> Readiness =>
     [
-        new("source", "Source snapshot", CurrentSnapshot is not null, CurrentSnapshot is { } c ? $"{c.ArchiveName} · {Short(c.Fingerprint)}" : "Source analysis required — open Source Analysis or Import Project"),
+        new("source", "Source snapshot", CurrentSnapshot is not null, CurrentSnapshot is { } c ? $"{c.ArchiveName} · {T.Short(c.Fingerprint)}" : "Source evidence required — open Source Analysis or Import Project"),
         new("code-risk", "Code-risk observations", CurrentSnapshot?.HasConsumerEvidence == true, CurrentSnapshot?.ConsumerSummary ?? CurrentSnapshot?.ConsumerEvidenceNote ?? "Needs a snapshot", "Source-level rules"),
         new("baseline", "Baseline snapshot", _baselineId is not null, _baselineId is null ? "Not selected (optional)" : "Selected", "Change, contract and configuration drift rules"),
         new("specification", "Specification", Workspace.Specification is not null, Workspace.Specification is null ? "Not loaded" : "Loaded", "Requirements alignment"),
         new("constitution", "Constitution", Workspace.Constitution is not null, Workspace.Constitution is null ? "Not loaded" : "Loaded", "Constitution rules"),
         new("tasks", "Tasks", Workspace.Tasks is not null, Workspace.Tasks is null ? "Not loaded" : "Loaded", "Completed-task checks"),
-        new("execution", "Build / test execution evidence", Workspace.SddLifecycle.TestRuns.Count > 0, Workspace.SddLifecycle.TestRuns.Count > 0 ? $"{Workspace.SddLifecycle.TestRuns.Count} imported run(s)" : "None imported (NotVerified)", "Execution rules"),
+        new("execution", "Build / test execution evidence", Workspace.SddLifecycle.TestRuns.Count > 0, Workspace.SddLifecycle.TestRuns.Count > 0 ? $"{Workspace.SddLifecycle.TestRuns.Count} imported run(s)" : "None imported (Not verified)", "Execution rules"),
     ];
 
     protected override async Task OnInitializedAsync()
@@ -261,8 +430,24 @@
         _loaded = true;
     }
 
-    private static string Short(string fingerprint) => fingerprint.Length > 8 ? fingerprint[..8] + "…" : fingerprint;
-    private static string Option(ReviewSourceSnapshot s) => $"{s.Repository} · {s.ArchiveName} · {s.AnalyzedAt.ToLocalTime():g} · {Short(s.Fingerprint)}{(s.Latest ? " · latest" : "")}{(s.HasConsumerEvidence ? "" : " · needs re-analysis")}";
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusGroup is { } id && _groupRefs.TryGetValue(id, out var summary))
+        {
+            _focusGroup = null;
+            try { await summary.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or JSException) { }
+        }
+        if (_focusBaseline)
+        {
+            _focusBaseline = false;
+            try { await _baselineSelect.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or JSException) { }
+        }
+    }
+
+    private static string Option(ReviewSourceSnapshot s) => $"{s.Repository} · {s.ArchiveName} · {s.AnalyzedAt.ToLocalTime():g} · {T.Short(s.Fingerprint)}{(s.Latest ? " · latest" : "")}{(s.HasConsumerEvidence ? "" : " · needs re-analysis")}";
+
+    private static string RuntimeNote(AiCodeReviewResult r) =>
+        r.Readiness.FirstOrDefault(i => i.Key == "execution") is { Available: true } ? "executed test evidence imported" : "no executed test evidence (not verified)";
 
     private bool NewerExists(AiCodeReviewResult r) => Snapshots.FirstOrDefault(s => s.SnapshotId == r.Current.SnapshotId) is { Latest: false }
         || (Snapshots.All(s => s.SnapshotId != r.Current.SnapshotId) && Snapshots.Count > 0);
@@ -280,7 +465,34 @@
         if (_baselineId is null) _scope_ = AiReviewScope.EntireSource;
     }
 
-    private void ToggleCategory(AiCodeReviewCategory category) { _category = _category == category ? null : category; _findingLimit = 50; }
+    /// <summary>The explicit "Use as baseline": the only way a suggested baseline becomes the baseline.</summary>
+    private void UseBaseline(Guid snapshotId)
+    {
+        if (BaselineOptions.Any(s => s.SnapshotId == snapshotId)) _baselineId = snapshotId;
+    }
+
+    private void ToggleCategory(AiCodeReviewCategory category) => _category = _category == category ? null : category;
+
+    private void RuleFilterChanged(ChangeEventArgs e) => _ruleFilter = Enum.TryParse<T.RuleFilter>(e.Value?.ToString(), out var f) ? f : T.RuleFilter.FindingsAndGaps;
+
+    /// <summary>An in-page action: open the finding group (clearing filters that would hide it) or go to the baseline selector.</summary>
+    private Task FollowAsync(CodeRiskAction action)
+    {
+        if (action.Href == $"#{T.BaselineAnchor}") return FocusBaselineAsync();
+        if (action.Href == $"#{T.CoverageAnchor}") return Task.CompletedTask;
+        var ruleId = action.Key.StartsWith("group:", StringComparison.Ordinal) ? action.Key[6..] : null;
+        if (ruleId is null) return Task.CompletedTask;
+        _category = null; _query = "";
+        _expanded.Add(ruleId);
+        _focusGroup = ruleId;
+        return Task.CompletedTask;
+    }
+
+    private Task FocusBaselineAsync()
+    {
+        _focusBaseline = true;
+        return Task.CompletedTask;
+    }
 
     private async Task RunAsync()
     {
@@ -291,7 +503,7 @@
             var evidence = P.WorkspaceEvidence(Workspace, Graph.Build(Workspace), _projectName);
             var (result, error) = await Api.RunAsync(new AiCodeReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, Scope = _scope_, Workspace = evidence }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
-            _result = result; _category = null; _findingLimit = 50;
+            Show(result);
             _history = await Api.HistoryAsync(_cts.Token);
         }
         finally { _busy = false; }
@@ -299,9 +511,14 @@
         try { await _resultHeading.FocusAsync(); } catch (InvalidOperationException) { } catch (JSException) { }
     }
 
+    private void Show(AiCodeReviewResult result)
+    {
+        _result = result; _category = null; _query = ""; _expanded.Clear(); _groupRefs.Clear(); _ruleFilter = T.RuleFilter.FindingsAndGaps;
+    }
+
     private async Task OpenAsync(Guid runId)
     {
-        if (await Api.GetAsync(runId, _cts.Token) is { } result) { _result = result; _category = null; _findingLimit = 50; }
+        if (await Api.GetAsync(runId, _cts.Token) is { } result) Show(result);
     }
 
     private async Task ExportAsync()

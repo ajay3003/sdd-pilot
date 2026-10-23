@@ -3,6 +3,7 @@ using BirkNext.AiCodeReview;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.SourceAnalysis;
+using BirkNext.Dependencies;
 using BirkNext.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,7 +23,7 @@ public sealed record AiCodeReviewOutcome(AiCodeReviewResult? Result, int Status,
 }
 
 /// <summary>
-/// Runs the AI-Generated Code Review over Source Analysis snapshots through the shared source-evidence provider (no upload, no rescan),
+/// Runs the Code Risk Review over Source Analysis snapshots through the shared source-evidence provider (no upload, no rescan),
 /// stores each run bound to its exact current/baseline snapshot ids, and lists history without re-binding a run to newer snapshots.
 /// </summary>
 public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources) : IAiCodeReviewService
@@ -59,6 +60,8 @@ public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidencePr
                 return AiCodeReviewOutcome.Fail(400, $"The baseline belongs to another repository ({ReviewSourceEvidenceProvider.Identity(baseline).DisplayName}); a change review compares two snapshots of the same repository.");
         }
         var result = AiCodeReviewEngine.Review(current, baseline, request, DateTimeOffset.UtcNow, ct);
+        // Dependency evidence is owned by Dependency Review: its stored runs are consumed (never re-run or re-imported here).
+        result = result with { Readiness = [.. result.Readiness, await DependencyReviewCoverageAsync(current, ct)] };
         var label = $"{result.Current.Repository} · {(baseline is null ? "current snapshot" : "change review")} · {result.Findings.Count} finding(s)";
         db.AiCodeReviewRuns.Add(new AiCodeReviewRunRecord
         {
@@ -67,6 +70,33 @@ public sealed class AiCodeReviewService(AppDbContext db, IReviewSourceEvidencePr
         });
         await db.SaveChangesAsync(ct);
         return new(result, 200, null);
+    }
+
+    /// <summary>
+    /// The latest Dependency Review run that reviewed this exact snapshot (Available), else one that reviewed another snapshot of the same
+    /// repository (Potentially stale), else none. Legacy runs over uploaded archives have no snapshot binding and are not matched.
+    /// </summary>
+    internal async Task<AiReadinessItem> DependencyReviewCoverageAsync(IqrSourceSnapshot current, CancellationToken ct)
+    {
+        const string blocks = "Dependency health and update-policy context";
+        var runs = await db.DependencyReviewRuns.AsNoTracking().OrderByDescending(r => r.CompletedAt).Take(50).Select(r => new { r.CompletedAt, r.ResultJson }).ToListAsync(ct);
+        var repository = ReviewSourceEvidenceProvider.Identity(current).Key;
+        DateTimeOffset? sameRepository = null;
+        foreach (var run in runs)
+        {
+            DependencyReviewResult? result;
+            try { result = JsonSerializer.Deserialize<DependencyReviewResult>(run.ResultJson, Json); } catch (JsonException) { continue; }
+            if (result?.SourceScope is not { } scope) continue;
+            var entries = new[] { scope.Primary }.Concat(scope.Related).ToList();
+            if (entries.Any(e => e.SnapshotId == current.Id))
+                return new("dependency-review", "Dependency Review", true, $"Run {run.CompletedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC reviewed this snapshot", blocks,
+                    $"Dependency Review run {run.CompletedAt.UtcDateTime:yyyy-MM-dd}");
+            if (sameRepository is null && entries.Any(e => e.RepositoryKey == repository)) sameRepository = run.CompletedAt;
+        }
+        return sameRepository is { } at
+            ? new("dependency-review", "Dependency Review", true, $"Latest run {at.UtcDateTime:yyyy-MM-dd HH:mm} UTC reviewed another snapshot of this repository", blocks,
+                $"Dependency Review run {at.UtcDateTime:yyyy-MM-dd}", Stale: true)
+            : new("dependency-review", "Dependency Review", false, "No Dependency Review run for this repository", blocks);
     }
 
     public async Task<IReadOnlyList<AiCodeReviewRunSummary>> HistoryAsync(CancellationToken ct = default)

@@ -19,7 +19,7 @@ public interface IAiCodeRiskAnalyzer
 
 /// <summary>
 /// Records syntax-level code-risk observations for C# source (the only language whose source the Source Analysis reader retains) once at
-/// upload, so the AI-Generated Code Review never re-reads the archive. Observations are facts with file:line and a short redacted detail —
+/// upload, so the Code Risk Review never re-reads the archive. Observations are facts with file:line and a short redacted detail —
 /// never source text, string values or exception messages. Everything is single-pass or hash-indexed (no pairwise file comparison).
 /// Other languages present in the archive are reported as unsupported, never as clean.
 /// </summary>

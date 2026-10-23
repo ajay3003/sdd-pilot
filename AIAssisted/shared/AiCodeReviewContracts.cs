@@ -2,11 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.AiCodeReview;
 
-// ── AI-Generated Code Review: deterministic risk review of generated or heavily AI-assisted source changes ──────────────────────
-// The profile is chosen by the user; it never infers who or what wrote the code. It reads evidence BirkNext already owns (the Source
-// Analysis snapshot and its code-risk observations, contract/configuration/architecture/dependency/test/generated-documentation evidence,
-// and the workspace's SDD graph) and applies a small catalogue of deterministic rules (AIC-*). No language model is called; there is no
-// score. "No indicators observed by the checks executed" never means the code is correct.
+// ── Code Risk Review (formerly "AI-Generated Code Review"): deterministic implementation-risk review of source and changes ─────────
+// It never infers who or what wrote the code. It reads evidence BirkNext already owns (the Source Analysis snapshot and its code-risk
+// observations, contract/configuration/architecture/dependency/test/generated-documentation evidence, and the workspace's SDD graph) and
+// applies a small catalogue of deterministic rules. Rule ids are stored as AIC-* (stable identity, also in historical runs) and displayed
+// as CRR-* (see AiCodeReviewText.DisplayId). No language model is called; there is no score. "No indicators observed by the checks
+// executed" never means the code is correct. Type and API names keep the AiCodeReview prefix for stored-result compatibility.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AiCodeReviewCategory
@@ -164,7 +165,9 @@ public sealed record AiCategoryResult(AiCodeReviewCategory Category, AiCategoryS
 /// <summary>Introduced/removed/changed/unchanged counts for one evidence area of a two-snapshot review.</summary>
 public sealed record AiChangeArea(string Area, int Introduced, int Removed, int Changed, int Unchanged, string? Note = null);
 
-public sealed record AiReadinessItem(string Key, string Label, bool Available, string Detail, string? Blocks = null);
+/// <param name="Provenance">Where the evidence comes from (owner, run, snapshot), when known.</param>
+/// <param name="Stale">The evidence exists but belongs to another snapshot of the repository ("Potentially stale").</param>
+public sealed record AiReadinessItem(string Key, string Label, bool Available, string Detail, string? Blocks = null, string? Provenance = null, bool Stale = false);
 
 public sealed record AiCodeReviewResult
 {
@@ -187,16 +190,30 @@ public sealed record AiCodeReviewResult
     public string? AttentionBasis { get; init; }
     public List<string> Limitations { get; init; } = [];
     public string Disclaimer { get; init; } = AiCodeReviewText.Disclaimer;
+    /// <summary>Per-language analyzer coverage of the current snapshot (null for runs recorded before it was kept).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CodeRiskLanguageCoverage>? Languages { get; init; }
 }
 
 public sealed record AiCodeReviewRunSummary(Guid RunId, DateTimeOffset CompletedAt, AiReviewMode Mode, Guid CurrentSnapshotId, Guid? BaselineSnapshotId, string Label, int Findings);
 
 public static class AiCodeReviewText
 {
-    public const string Title = "AI-Generated Code Review";
-    public const string Hero = "Review source changes for risks commonly seen in generated or heavily AI-assisted code. BirkNext evaluates deterministic project evidence; it does not attempt to determine who or what wrote the code.";
-    public const string Disclaimer = "This review does not detect whether code was written by AI. It applies deterministic checks to project evidence; no language model is used and there is no score.";
+    public const string Title = "Code Risk Review";
+    public const string Hero = "Review source code and changes for deterministic implementation risks, evidence gaps and drift.";
+    public const string Disclaimer = "This review evaluates project evidence and source code deterministically. It does not determine whether code was written by AI. No language model is used for this review and there is no score.";
     public const string NoIndicators = "No indicators observed by the checks executed.";
+
+    /// <summary>The prefix rule ids are stored with (stable identity, historical runs) and the prefix they are shown with.</summary>
+    public const string StoredPrefix = "AIC-", DisplayPrefix = "CRR-";
+
+    /// <summary>"AIC-SEC-003" → "CRR-SEC-003". Stored ids never change, so historical runs, links and history stay intact.</summary>
+    public static string DisplayId(string ruleId) =>
+        ruleId.StartsWith(StoredPrefix, StringComparison.Ordinal) ? DisplayPrefix + ruleId[StoredPrefix.Length..] : ruleId;
+
+    /// <summary>The stored id for a displayed (CRR-) or stored (AIC-) id, so search and deep links accept both.</summary>
+    public static string StoredId(string ruleId) =>
+        ruleId.StartsWith(DisplayPrefix, StringComparison.OrdinalIgnoreCase) ? StoredPrefix + ruleId[DisplayPrefix.Length..].ToUpperInvariant() : ruleId.ToUpperInvariant();
 
     public static string Label(AiCodeReviewCategory category) => category switch
     {

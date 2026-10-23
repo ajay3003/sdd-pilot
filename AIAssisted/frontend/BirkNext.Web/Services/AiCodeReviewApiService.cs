@@ -5,7 +5,7 @@ using BirkNext.SourceEvidence;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>AI-Generated Code Review calls: Source Analysis snapshots (no upload here), run, and run history bound to exact snapshots.</summary>
+/// <summary>Code Risk Review calls (API route api/ai-code-review, also served as api/code-risk-review): Source Analysis snapshots (no upload here), run, and run history bound to exact snapshots.</summary>
 public interface IAiCodeReviewApiService
 {
     Task<(ReviewSourceOptions? Options, string? Error)> SourcesAsync(CancellationToken ct = default);

@@ -9,7 +9,7 @@ using Path = System.IO.Path;
 namespace BirkNext.Api.Services.AiCodeReview;
 
 /// <summary>
-/// The AI-Generated Code Review profile: a deterministic rule catalogue over evidence BirkNext already owns. It reads ONE current Source
+/// The Code Risk Review (formerly AI-Generated Code Review) profile: a deterministic rule catalogue over evidence BirkNext already owns. It reads ONE current Source
 /// Analysis snapshot (plus an optional baseline of the same repository) and the workspace's SDD-graph summary; it never re-reads source,
 /// never calls a language model, never infers authorship and computes no score. Every rule reports how it ran; every finding carries
 /// provenance (evidence sources, snapshot ids, file:line or related ids), a limitation and a suggested review action.
@@ -218,7 +218,7 @@ public static class AiCodeReviewEngine
             if (missing.Count > 0)
                 Add("AIC-REQ-001", "req|missing-implementation", AiFindingSeverity.Low, $"{missing.Count} of {workspace.RequirementCount} requirement(s) have no implementation evidence",
                     "The requirement graph holds no implementation link for these requirements.", "Requirement → implementation links come from the existing SDD graph (CodeLinks and recorded evidence).",
-                    limitation, "Confirm the generated change implements these requirements and record CodeLinks or implementation evidence.", related: missing);
+                    limitation, "Confirm the change implements these requirements and record CodeLinks or implementation evidence.", related: missing);
 
             if (!workspace.TasksAvailable) State("AIC-REQ-002", AiRuleExecutionState.NotAssessed, "No Tasks artifact is loaded.");
             else
@@ -229,7 +229,7 @@ public static class AiCodeReviewEngine
                     Add("AIC-REQ-002", "req|done-tasks-without-evidence", AiFindingSeverity.Low, $"{workspace.CompletedTasksWithoutEvidence.Count} completed task(s) have no implementation evidence",
                         "A checked task box is not implementation evidence; the requirements these tasks reference have no implementation link.",
                         "Task completion state from the Tasks artifact; implementation evidence from the requirement graph.", "Task marked done ≠ implementation verified.",
-                        "Review whether the generated change implements these tasks; record implementation evidence.", related: workspace.CompletedTasksWithoutEvidence.Select(t => t.TaskId));
+                        "Review whether the change implements these tasks; record implementation evidence.", related: workspace.CompletedTasksWithoutEvidence.Select(t => t.TaskId));
             }
 
             var linked = workspace.Requirements.Where(r => r.HasImplementationEvidence).ToList();
@@ -341,7 +341,7 @@ public static class AiCodeReviewEngine
 
         private void Dependencies()
         {
-            State("AIC-DEP-003", AiRuleExecutionState.NotAssessed, "Dependency health (vulnerability) results are not attached to source snapshots; run the dependency health review. No vulnerability is assumed.");
+            State("AIC-DEP-003", AiRuleExecutionState.NotAssessed, "No vulnerability evidence is available for this snapshot (Dependency Review evaluates update policy, not vulnerabilities). No vulnerability is assumed.");
             if (!ChangeMode)
             {
                 State("AIC-DEP-001", AiRuleExecutionState.NotApplicable, "Needs a baseline snapshot.");
@@ -693,6 +693,7 @@ public static class AiCodeReviewEngine
                 Current = Provenance(current), Baseline = baseline is null ? null : Provenance(baseline), Readiness = Readiness(),
                 Categories = categories, Rules = ordered, Findings = list, Changes = changes, ChangedFiles = changedFiles?.Count ?? 0,
                 Attention = attention, AttentionBasis = basis, Limitations = limitations.Distinct().ToList(),
+                Languages = risk?.Languages is { } languages ? [.. languages] : null,
             };
         }
 
@@ -724,6 +725,7 @@ public static class AiCodeReviewEngine
             new("baseline", "Baseline snapshot", baseline is not null, baseline is null ? "Not selected — change rules are not applicable." : $"{baseline.Archive.FileName} · {ReviewSourceEvidenceProvider.ShortFingerprint(baseline)}", "Change, contract and configuration drift rules"),
             new("specification", "Specification", workspace?.SpecificationAvailable == true, workspace?.SpecificationAvailable == true ? $"{workspace.RequirementCount} requirement(s)" : "Not loaded", "Requirements alignment"),
             new("constitution", "Constitution", workspace?.ConstitutionAvailable == true, workspace?.ConstitutionAvailable == true ? "Loaded (prose principles are not evaluated as code rules)" : "Not loaded", "Constitution rules"),
+            new("tasks", "Tasks", workspace?.TasksAvailable == true, workspace?.TasksAvailable == true ? "Loaded" : "Not loaded", "Completed-task checks"),
             new("dependencies", "Dependency evidence", current.DependencyEvidence is not null, current.DependencyEvidence is null ? "Not captured" : $"{current.DependencyEvidence.Dependencies.Count} declared dependenc(ies)", "Dependency rules"),
             new("contracts", "Contracts", current.EvidenceDomains?.Contracts.Contracts.Count > 0, $"{current.EvidenceDomains?.Contracts.Contracts.Count ?? 0} contract(s)", "Contract drift"),
             new("tests", "Tests discovered", current.TestInventory?.Definitions.Count > 0, $"{current.TestInventory?.Definitions.Count ?? 0} test definition(s)", "Test rules"),

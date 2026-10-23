@@ -200,7 +200,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
         await ReportProgressAsync("Discovering test definitions", "Finding test projects and declared test cases in source.");
         snapshot = snapshot with { TestInventory = DiscoverTests(snapshot, repository.DisplayName, workspace, ct) };
-        // Code-risk observations for the AI-Generated Code Review profile (placeholders, error handling, authorization metadata, duplicates,
+        // Code-risk observations for the Code Risk Review profile (placeholders, error handling, authorization metadata, duplicates,
         // test assertions): syntax facts captured once here; the review reads them from the snapshot and never rescans the archive.
         await ReportProgressAsync("Analyzing code-risk evidence", "Extracting source-level code-risk signals.");
         snapshot = snapshot with { CodeRiskEvidence = AnalyzeCodeRisk(snapshot, workspace, ct) };
