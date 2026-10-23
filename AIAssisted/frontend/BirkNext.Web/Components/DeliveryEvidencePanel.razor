@@ -1,6 +1,7 @@
 @using BirkNext.Delivery
 @using BirkNext.PipelineReview
 @using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
 
 @* Shared delivery evidence on consumer pages (quality reviews, Target Environments, Environment Analysis): what a Source Analysis snapshot's
    pipelines DEFINE — gates configured before deployments, post-deploy validation, environment delivery paths. The snapshot is chosen
@@ -35,6 +36,10 @@
                     }
                 </ul>
             }
+            else if (!string.IsNullOrWhiteSpace(ScopeTargetOrigin))
+            {
+                @TargetScope(e)
+            }
             else
             {
                 var gates = e.Deployments.Select(d => (Deployment: d, Before: d.Before.Where(g => Categories.Contains(g.Category)).ToList(), After: d.PostDeploy.Where(g => Categories.Contains(g.Category)).ToList())).ToList();
@@ -55,6 +60,81 @@
 </div>
 @code {
     [Parameter] public string EnvironmentId { get; set; } = "";
+    /// <summary>Target-scoped mode: only pipelines that deliver this target are primary evidence; an unresolved mapping says so (never every pipeline).</summary>
+    [Parameter] public string? ScopeTargetOrigin { get; set; }
+    [Parameter] public string ScopeEnvironmentName { get; set; } = "";
+    [Parameter] public string ScopeEnvironmentType { get; set; } = "";
+    /// <summary>Pipelines a person confirmed for the target (stored by the consumer, e.g. with the performance definition).</summary>
+    [Parameter] public IReadOnlyList<string> ConfirmedPipelineIds { get; set; } = [];
+    /// <summary>Raised when a person confirms which pipelines deliver the target; null hides the mapping editor.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<string>> OnConfirmPipelines { get; set; }
+    private bool _reviewMapping;
+    private HashSet<string> _mappingSelection = new(StringComparer.Ordinal);
+
+    private static string ScopeLabel(DeliveryTargetMappingState state) => state switch
+    {
+        DeliveryTargetMappingState.Confirmed => "Mapped",
+        DeliveryTargetMappingState.StrongCandidate => "Strong candidate · confirm",
+        DeliveryTargetMappingState.Candidate => "Candidate · confirm",
+        DeliveryTargetMappingState.NoPipelines => "No pipelines",
+        _ => "Mapping unresolved",
+    };
+
+    private RenderFragment TargetScope(DeliveryEvidence e) => __builder =>
+    {
+        var scope = DeliveryTargetScope.Resolve(e, ScopeTargetOrigin!, ScopeEnvironmentName, ScopeEnvironmentType, ConfirmedPipelineIds, Categories.FirstOrDefault());
+        <div data-testid="delivery-target-scope" data-state="@scope.State">
+            <p data-testid="delivery-scope-summary"><strong>@ScopeLabel(scope.State)</strong> · @scope.Summary</p>
+            @if (scope.Relevant.Count > 0)
+            {
+                <ul class="sd-list" data-testid="delivery-target-pipelines">
+                    @foreach (var pipeline in scope.Relevant)
+                    {
+                        <li data-testid="delivery-target-pipeline" data-pipeline="@pipeline.PipelineId"><strong>@pipeline.PipelineName</strong> <span class="sd-context">@pipeline.Reason</span>
+                            <span class="sd-context" data-testid="delivery-target-gates">@DeliveryTargetScope.GateSummary(pipeline, scope.Execution)</span></li>
+                    }
+                </ul>
+            }
+            @if (OnConfirmPipelines.HasDelegate && scope.State is not DeliveryTargetMappingState.NoPipelines)
+            {
+                <p>
+                    @if (scope.State is DeliveryTargetMappingState.StrongCandidate or DeliveryTargetMappingState.Candidate)
+                    {
+                        <button type="button" class="btn-secondary" data-testid="delivery-confirm-candidate" @onclick="() => OnConfirmPipelines.InvokeAsync(scope.Relevant.Select(p => p.PipelineId).ToList())">Confirm this pipeline for the target</button>
+                    }
+                    <button type="button" class="@(scope.State is DeliveryTargetMappingState.Ambiguous or DeliveryTargetMappingState.Unresolved ? "btn-primary" : "btn-secondary")" data-testid="delivery-review-mapping" aria-expanded="@(_reviewMapping ? "true" : "false")"
+                        @onclick="() => { _reviewMapping = !_reviewMapping; _mappingSelection = ConfirmedPipelineIds.ToHashSet(StringComparer.Ordinal); }">Review pipeline mapping</button>
+                </p>
+                @if (_reviewMapping)
+                {
+                    <fieldset class="sd-panel" data-testid="delivery-mapping-editor">
+                        <legend>Which pipelines deliver @ScopeTargetOrigin?</legend>
+                        <p class="sd-muted">A person's confirmation, saved by the consumer. Candidates share the component name; nothing is selected for you.</p>
+                        @foreach (var pipeline in scope.Relevant.Concat(scope.Candidates).Concat(scope.Other))
+                        {
+                            var id = $"delivery-map-{pipeline.PipelineId}";
+                            <label for="@id" class="sd-check"><input type="checkbox" id="@id" checked="@_mappingSelection.Contains(pipeline.PipelineId)" data-testid="delivery-mapping-option" data-pipeline="@pipeline.PipelineId"
+                                @onchange="args => { if (args.Value is true) _mappingSelection.Add(pipeline.PipelineId); else _mappingSelection.Remove(pipeline.PipelineId); }" /> @pipeline.PipelineName <span class="sd-context">@pipeline.File</span></label>
+                        }
+                        <button type="button" class="btn-primary" data-testid="delivery-mapping-save" disabled="@(_mappingSelection.Count == 0)"
+                            @onclick="async () => { await OnConfirmPipelines.InvokeAsync(_mappingSelection.ToList()); _reviewMapping = false; }">Use selected pipelines for this target</button>
+                    </fieldset>
+                }
+            }
+            @if (scope.Candidates.Count > 0)
+            {
+                <ReviewDisclosure Text="@($"Possible pipelines ({scope.Candidates.Count}) · shared component name")" CollapseText="Hide possible pipelines" TestId="delivery-candidates" Class="disclosure-inline">
+                    <ul class="sd-list">@foreach (var pipeline in scope.Candidates) { <li data-testid="delivery-candidate" data-pipeline="@pipeline.PipelineId">@pipeline.PipelineName <span class="sd-context">@pipeline.Reason</span></li> }</ul>
+                </ReviewDisclosure>
+            }
+            @if (scope.Other.Count > 0)
+            {
+                <ReviewDisclosure Text="@($"Other pipelines in this source ({scope.Other.Count})")" CollapseText="Hide other pipelines" TestId="delivery-other-pipelines" Class="disclosure-inline">
+                    <ul class="sd-list">@foreach (var pipeline in scope.Other) { <li data-testid="delivery-other-pipeline" data-pipeline="@pipeline.PipelineId">@pipeline.PipelineName <span class="sd-context">@DeliveryTargetScope.GateSummary(pipeline, scope.Execution)</span></li> }</ul>
+                </ReviewDisclosure>
+            }
+        </div>
+    };
     [Parameter] public IReadOnlyList<ValidationCategory> Categories { get; set; } = [];
     /// <summary>Environment mode: pipeline environment labels, their mapping to Target Environments and the evidence ladder.</summary>
     [Parameter] public bool Environments { get; set; }

@@ -23,7 +23,7 @@
         <ol class="js-steps" data-testid="js-steps">
             @foreach (var step in setup.Steps)
             {
-                var action = JourneySetupPresentation.Action(step, View!, ProfileId);
+                var action = Actions?.Invoke(step) ?? JourneySetupPresentation.Action(step, View!, ProfileId);
                 <li class="js-step" id="@JourneySetupPresentation.StepId(setup.JourneyId, step.Kind)" tabindex="-1" data-testid="js-step" data-kind="@step.Kind" data-status="@step.Status" data-required="@(step.Required ? "true" : "false")">
                     <div class="js-step-head"><strong>@step.Title</strong> <span class="js-pill js-pill-@JourneySetupPresentation.Tone(step.Status)" data-testid="js-step-status">@JourneySetupPresentation.Status(step.Status)</span>
                         @if (!step.Required) { <span class="js-muted">optional</span> }
@@ -37,7 +37,8 @@
                     <p class="js-muted" data-testid="js-step-owner">Owner: @step.Owner</p>
                     @if (step.Status != JourneySetupStepStatus.Ready)
                     {
-                        @if (action.Href is { } href) { <a class="btn-secondary js-action" href="@href" data-testid="js-step-action" aria-label="@($"{action.Label}: {step.Title}")">@action.Label</a> }
+                        @if (action.Command is { } command) { <button type="button" class="btn-secondary js-action" data-testid="js-step-action" data-command="@command" aria-label="@($"{action.Label}: {step.Title}")" @onclick="() => OnCommand.InvokeAsync(command)">@action.Label</button> }
+                        else if (action.Href is { } href) { <a class="btn-secondary js-action" href="@href" data-testid="js-step-action" aria-label="@($"{action.Label}: {step.Title}")">@action.Label</a> }
                         @if (action.Note is { } note) { <p class="js-muted" data-testid="js-step-note">@note</p> }
                     }
                     <ReviewDisclosure Text="Provenance" CollapseText="Hide provenance" TestId="js-step-provenance" Class="disclosure-inline">
@@ -52,14 +53,21 @@
 }
 
 @code {
-    [Parameter, EditorRequired] public string PackId { get; set; } = "";
-    [Parameter, EditorRequired] public IntegrationJourneyView? View { get; set; }
+    [Parameter] public string PackId { get; set; } = "";
+    /// <summary>A journey's readiness view (integration journeys): the steps are built from it.</summary>
+    [Parameter] public IntegrationJourneyView? View { get; set; }
+    /// <summary>A precomputed setup view from another consumer of the shared model (e.g. Performance Test Review); wins over <see cref="View"/>.</summary>
+    [Parameter] public JourneySetupView? SetupView { get; set; }
+    /// <summary>The consumer's step actions (owner links or in-page commands); defaults to the journey actions.</summary>
+    [Parameter] public Func<JourneySetupStep, JourneySetupPresentation.StepAction>? Actions { get; set; }
+    /// <summary>Raised for an in-page command action (the host page performs it, e.g. "check-network").</summary>
+    [Parameter] public EventCallback<string> OnCommand { get; set; }
     [Parameter] public string? ProfileId { get; set; }
     /// <summary>Move focus to the first unresolved required step when first shown (deep link "?setup=continue").</summary>
     [Parameter] public bool FocusNext { get; set; }
 
-    private JourneySetupView? Setup => View is null ? null : JourneySetupModel.Build(PackId, View);
-    private string Id => $"js-{View?.Journey.JourneyId}";
+    private JourneySetupView? Setup => SetupView ?? (View is null ? null : JourneySetupModel.Build(PackId, View));
+    private string Id => $"js-{Setup?.JourneyId}";
     private bool _focused;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -73,6 +81,7 @@
 
     private async Task ContinueAsync(JourneySetupStepKind next)
     {
-        try { await JS.InvokeVoidAsync("birknextFocusElement", JourneySetupPresentation.StepId(View!.Journey.JourneyId, next)); } catch (JSException) { }
+        if (Setup is not { } setup) return;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", JourneySetupPresentation.StepId(setup.JourneyId, next)); } catch (JSException) { }
     }
 }

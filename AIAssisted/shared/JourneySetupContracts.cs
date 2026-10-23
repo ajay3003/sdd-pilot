@@ -8,7 +8,9 @@ namespace BirkNext.Integrations;
 
 /// <summary>The shared setup step categories, in the order a journey is prepared.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum JourneySetupStepKind { Integration, SourceEvidence, Contract, Environment, Authentication, Authorization, TestData, ExecutionProvider, RuntimeVerification, ReadyToRun }
+public enum JourneySetupStepKind { Integration, SourceEvidence, Contract, Environment, Authentication, Authorization, TestData, ExecutionProvider, RuntimeVerification, ReadyToRun,
+    // Performance Test Review (same model, its own steps): appended so stored/serialized values keep their meaning.
+    Target, Scenario, ExecutionEngine, ContainerRuntime, NetworkReachability, CaTrust, Workload, Thresholds, ResourceObservation, Baseline }
 
 /// <summary>One status vocabulary for every step.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

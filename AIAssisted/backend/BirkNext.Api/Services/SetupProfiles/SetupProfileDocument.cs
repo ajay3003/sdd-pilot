@@ -130,13 +130,16 @@ public static class SetupProfileSchema
     private static readonly string[] TrustWords =
         ["trusted", "trustedexecution", "executionallowed", "activeexecution", "allowexecution", "approved", "approval", "approvedbytestlead", "testleadapproval", "attestation",
          "authorizationconfirmed", "policyconfirmed", "mappingconfirmed", "confirmed", "sourceverified", "runtimeverified", "verified", "passed", "result", "results",
-         "status", "health", "healthy", "deployed", "contractcompatible", "compatible", "readiness", "ready", "executionpermission"];
+         "status", "health", "healthy", "deployed", "contractcompatible", "compatible", "readiness", "ready", "executionpermission",
+         // Performance: readiness, network/TLS evidence, run results and baseline promotion are evidence, never imported desired state.
+         "readinesspassed", "networkready", "networkreachable", "reachable", "reachability", "tlstrusted", "tlsverified", "tlspassed", "performancepassed",
+         "baselinepromoted", "promoted", "executionapproved"];
     private static readonly string[] IdentityWords = ["fodselsnummer", "fnr", "nationalid", "personnummer", "ssn", "dufnummer", "duf"];
 
     /// <summary>Known properties per path pattern ("journeys.*.integration" …). Anything else is reported as unsupported.</summary>
     private static readonly Dictionary<string, string[]> Known = new(StringComparer.OrdinalIgnoreCase)
     {
-        [""] = ["version", "profile", "environment", "journeys", "aliases", "metadata", "manualRequirements", "securityClassification"],
+        [""] = ["version", "profile", "environment", "journeys", "aliases", "metadata", "manualRequirements", "securityClassification", "performance"],
         ["profile"] = ["name", "description", "testPack", "environment", "environmentType"],
         ["environment"] = ["expectedName"],
         ["journeys.*"] = ["integration", "sourceEvidence", "contracts", "executionProvider", "altinn"],
@@ -155,6 +158,14 @@ public static class SetupProfileSchema
         ["metadata"] = ["generatedBy", "generatedAt", "sanitized", "containsSecrets", "source"],
         ["securityClassification"] = ["environment", "personGraphql", "testData"],
         ["securityClassification.personGraphql"] = ["endpointRef"],
+        ["performance"] = ["targetRef", "definition", "scenario", "workload", "thresholds", "resourceObservation", "localExecution"],
+        ["performance.definition"] = ["name", "description"],
+        ["performance.scenario"] = ["type", "name", "steps"],
+        ["performance.scenario.steps[]"] = ["name", "method", "path", "expectedStatusCodes", "thinkTimeMs", "graphqlQuery"],
+        ["performance.workload"] = ["purpose", "mode", "virtualUsers", "requestsPerSecond", "warmUpSeconds", "rampUpSeconds", "steadyStateSeconds", "rampDownSeconds"],
+        ["performance.thresholds[]"] = ["metric", "operator", "value", "unit", "severity"],
+        ["performance.resourceObservation"] = ["enabled"],
+        ["performance.localExecution"] = ["caBundleRequired"],
         ["securityClassification.testData"] = ["level0ChildAlias", "level1ChildAlias", "level2ChildAlias", "level3ChildAlias", "unauthorizedIdentityAlias", "authorizedIdentityAlias"],
     };
 
@@ -185,6 +196,9 @@ public static class SetupProfileSchema
             var normalized = Normalize(key);
             if (SecretWords.Any(word => normalized == word || normalized.EndsWith(word, StringComparison.Ordinal) && word.Length >= 5))
             { issues.Add(new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported because secrets are not allowed in setup profiles. It is configured in the backend secret store.")); continue; }
+            // CA trust material is local execution configuration (PerformanceTests:Container:CaBundlePath); a profile may only say it is required.
+            if (normalized.Contains("cabundle", StringComparison.Ordinal) && normalized != "cabundlerequired")
+            { issues.Add(new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported: the corporate CA bundle is local execution configuration (PerformanceTests:Container:CaBundlePath). A profile may only declare caBundleRequired.")); continue; }
             if (IdentityWords.Contains(normalized))
             { issues.Add(new(path, SetupIssueSeverity.Rejected, $"Field \"{key}\" cannot be imported: personal identifiers are never part of a setup profile (use approved Test Data aliases).")); continue; }
             if (TrustWords.Contains(normalized))

@@ -7,7 +7,7 @@ using BirkNext.PerformanceTests;
 namespace BirkNext.Api.Services.PerformanceTests;
 
 /// <summary>Resolves the provider for a definition by stable id.</summary>
-public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers)
+public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTestProvider> providers, PerformanceTestOptions? options = null)
 {
     private readonly Dictionary<string, IPerformanceTestProvider> _byId = providers.ToDictionary(p => p.ProviderId, StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, PerformanceProviderStatus Status)> _status = new();
@@ -23,9 +23,17 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
     {
         if (Find(d.ProviderId) is not { } provider)
             return new PerformanceReachability { TargetOrigin = d.TargetOrigin, State = "Unknown", Detail = $"No provider '{d.ProviderId}' is registered.", CheckedAt = DateTimeOffset.UtcNow };
-        var result = await provider.CheckReachabilityAsync(d, ct);
+        // Stamped with the network/TLS configuration it ran with: a later change (CA bundle, proxy, runtime, image, target) makes it stale.
+        var result = await provider.CheckReachabilityAsync(d, ct) with { NetworkFingerprint = NetworkFingerprint(d) };
         _reachability[$"{d.ProviderId}|{d.TargetOrigin}"] = result;
         return result;
+    }
+
+    /// <summary>The current network/TLS configuration fingerprint for a definition (see <see cref="PerformanceCaBundleInspector.NetworkFingerprint"/>).</summary>
+    public string NetworkFingerprint(PerformanceTestDefinition d)
+    {
+        var container = options?.Container ?? new PerformanceContainerOptions();
+        return PerformanceCaBundleInspector.NetworkFingerprint(d, container, PerformanceCaBundleInspector.Inspect(container.CaBundlePath));
     }
 
     public void InvalidateStatus(string providerId) => _status.TryRemove(providerId, out _);
@@ -88,64 +96,173 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         var issues = PerformanceTestSafety.Check(d, data, options);
         var provider = await providers.StatusAsync(d.ProviderId, ct);
         var providerIssues = providers.Find(d.ProviderId)?.Validate(d) ?? [];
+        var ca = PerformanceCaBundleInspector.Inspect(options.Container.CaBundlePath);
         var items = new List<PerformanceReadinessItem>();
-        void Item(string key, string label, IEnumerable<PerformanceTestSafety.Issue> keyed, string okDetail, PerformanceReadinessState okState = PerformanceReadinessState.Ready)
+        const string Definition = PerformanceReadinessCategories.Definition, Setup = PerformanceReadinessCategories.ExecutionSetup,
+            Safety = PerformanceReadinessCategories.Safety, Optional = PerformanceReadinessCategories.Optional;
+        void Item(string key, string label, IEnumerable<PerformanceTestSafety.Issue> keyed, string okDetail, string category, string summary, string? action,
+            PerformanceReadinessState okState = PerformanceReadinessState.Ready)
         {
             var found = keyed.ToList();
-            items.Add(found.Count == 0 ? new(key, label, okState, okDetail, false) : new(key, label, found[0].State, string.Join(" ", found.Select(f => f.Message)), true));
+            var item = found.Count == 0 ? new PerformanceReadinessItem(key, label, okState, okDetail, false) : new(key, label, found[0].State, string.Join(" ", found.Select(f => f.Message)), true);
+            // A production refusal is a safety blocker whatever item reports it.
+            var hard = found.Any(f => f.State == PerformanceReadinessState.UnsafeEnvironment);
+            items.Add(item with
+            {
+                Category = hard ? Safety : category, Summary = hard ? "production refused" : summary, Action = found.Count == 0 || hard ? null : action,
+                Headline = found.Count == 0 ? "" : hard ? "Production target refused" : $"{label} needs attention",
+            });
         }
         IEnumerable<PerformanceTestSafety.Issue> By(params string[] keys) => issues.Where(i => keys.Contains(i.Key));
 
-        Item("target", "Target", By("target"), $"{d.TargetOrigin} (from the Target Environment)");
-        Item("environment", "Environment and production guard", By("environment"), $"{d.EnvironmentName} ({d.EnvironmentType}) — a non-production environment; production is refused by the backend.");
+        Item("target", "Target", By("target"), $"{d.TargetOrigin} (from the Target Environment)", Definition, "target", PerformanceReadinessActions.ConfigureTarget);
+        Item("environment", "Environment and production guard", By("environment"), $"{d.EnvironmentName} ({d.EnvironmentType}) — a non-production environment; production is refused by the backend.",
+            Safety, "production guard", null);
         // Runtime, image and provider: three separate tool states. None of them is a performance result.
         var runtime = provider.Runtime;
         if (runtime is not null)
             items.Add(runtime.Availability == ProviderAvailability.Available
-                ? new("runtime", "Execution runtime", PerformanceReadinessState.Ready, runtime.Detail, false)
-                : new("runtime", "Execution runtime", PerformanceReadinessState.RuntimeUnavailable, $"{runtime.DisplayName}: {runtime.Detail}", true));
+                ? new("runtime", "Execution runtime", PerformanceReadinessState.Ready, runtime.Detail, false) { Category = Setup, Summary = "container runtime" }
+                : new("runtime", "Execution runtime", PerformanceReadinessState.RuntimeUnavailable, $"{runtime.DisplayName}: {runtime.Detail}", true)
+                    { Category = Setup, Summary = "container runtime", Headline = "The container runtime is not available", Action = PerformanceReadinessActions.OpenEngines, Owner = LocalExecution });
         if (provider.Image is not null && runtime?.Availability == ProviderAvailability.Available)
             items.Add(provider.ImagePresent
-                ? new("image", "Provider image", PerformanceReadinessState.Ready, provider.ImageDigest is null ? provider.Image : $"{provider.Image} ({provider.ImageDigest[..Math.Min(19, provider.ImageDigest.Length)]}...)", false)
-                : new("image", "Provider image", PerformanceReadinessState.ImageMissing, provider.Detail, true));
+                ? new("image", "Provider image", PerformanceReadinessState.Ready, provider.ImageDigest is null ? provider.Image : $"{provider.Image} ({provider.ImageDigest[..Math.Min(19, provider.ImageDigest.Length)]}...)", false) { Category = Setup, Summary = "provider image" }
+                : new("image", "Provider image", PerformanceReadinessState.ImageMissing, provider.Detail, true)
+                    { Category = Setup, Summary = "provider image", Headline = "The k6 image is not available locally", Action = PerformanceReadinessActions.OpenEngines, Owner = LocalExecution });
         var toolReady = provider.Availability == ProviderAvailability.Available;
-        if (provider.Availability is not (ProviderAvailability.RuntimeUnavailable or ProviderAvailability.ImageMissing) || providerIssues.Count > 0)
+        // An invalid CA bundle makes the provider "misconfigured"; that is reported once, as Corporate CA trust (its owner and key), not twice.
+        var caBlocksProvider = ca is { Configured: true, Usable: false } && provider.Availability == ProviderAvailability.Misconfigured && providerIssues.Count == 0;
+        if (!caBlocksProvider && (provider.Availability is not (ProviderAvailability.RuntimeUnavailable or ProviderAvailability.ImageMissing) || providerIssues.Count > 0))
             items.Add(toolReady && providerIssues.Count == 0
-                ? new("provider", "Provider", PerformanceReadinessState.Ready, provider.Detail, false)
-                : new("provider", "Provider", PerformanceReadinessState.ProviderUnavailable, string.Join(" ", new[] { toolReady ? null : provider.Detail }.Concat(providerIssues).Where(t => t is not null)), true));
+                ? new("provider", "Provider", PerformanceReadinessState.Ready, provider.Detail, false) { Category = Setup, Summary = "provider" }
+                : new("provider", "Provider", PerformanceReadinessState.ProviderUnavailable, string.Join(" ", new[] { toolReady ? null : provider.Detail }.Concat(providerIssues).Where(t => t is not null)), true)
+                    { Category = toolReady ? Definition : Setup, Summary = "provider", Headline = "The load-test provider cannot run this definition", Action = toolReady ? PerformanceReadinessActions.EditScenario : PerformanceReadinessActions.OpenEngines });
+
         // Container-network reachability: the load generator's own network, not the BirkNext host's (VPN, corporate DNS, private routes).
+        var fingerprint = PerformanceCaBundleInspector.NetworkFingerprint(d, options.Container, ca);
         var reach = providers.LastReachability(d.ProviderId, d.TargetOrigin);
         var fresh = reach is not null && DateTimeOffset.UtcNow - reach.CheckedAt < TimeSpan.FromMinutes(options.Container.NetworkCheckValidMinutes);
-        items.Add(!toolReady
-            ? new("network", "Container network", PerformanceReadinessState.Optional, "Checked once the provider is available.", false)
-            : reach is null || !fresh
-                ? new("network", "Container network", PerformanceReadinessState.NeedsConfiguration, "Not checked yet: check that the k6 container can reach the target (one request). Host reachability does not prove container reachability.", true)
-                : reach.Reachable
-                    ? new("network", "Container network", PerformanceReadinessState.Ready, $"{reach.Detail} Checked {reach.CheckedAt.ToUniversalTime():HH:mm} UTC.", false)
-                    : new("network", "Container network", PerformanceReadinessState.NetworkUnavailable, reach.Detail, true));
-        items.Add(new("tls", "TLS and proxy", PerformanceReadinessState.Ready,
-            (options.Container.CaBundlePath is null ? "System CA roots; TLS verification is always on." : "Configured CA bundle (read-only); TLS verification is always on.")
-            + (options.Container.HttpsProxy is null && options.Container.HttpProxy is null ? " No proxy." : " Allow-listed proxy settings only."), false));
+        // A check made under another network/TLS configuration (CA bundle, proxy, runtime, image, target) is never reused.
+        var sameConfiguration = reach is not null && reach.NetworkFingerprint == fingerprint;
+        items.Add(NetworkItem(toolReady, reach, fresh, sameConfiguration));
+        items.Add(CaTrustItem(ca, reach is not null && sameConfiguration ? reach : null, d));
+        items.Add(new("tls", "TLS verification and proxy", PerformanceReadinessState.Ready,
+            (ca.Usable ? "Configured corporate CA bundle (read-only)" : "Container default CA store")
+            + "; TLS verification is always on and cannot be disabled." + (options.Container.HttpsProxy is null && options.Container.HttpProxy is null ? " No proxy." : " Allow-listed proxy settings only."), false)
+            { Category = Safety, Summary = "TLS verification" });
         Item("scenario", "Scenario", By("scenario", "step-name", "method", "path", "header", "status", "think", "body", "graphql"),
-            $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.");
-        Item("authentication", "Authentication", By("authentication"), "None — the target is tested without authentication.");
+            $"{d.Scenario.Steps.Count} request step(s), read-only methods{(d.TargetType == PerformanceTargetType.GraphQlHttp ? ", GraphQL query only" : "")}.", Definition, "scenario", PerformanceReadinessActions.EditScenario);
+        Item("authentication", "Authentication", By("authentication"), "None — this definition is explicitly unauthenticated.", Definition, "authentication", null);
         Item("testdata", "Test data", By("testdata", "placeholder"), d.Scenario.TestDataProfileId is null ? "Not used." : $"Approved synthetic profile ({data?.Rows.Count ?? 0} rows).",
+            d.Scenario.TestDataProfileId is null ? Optional : Definition, "test data", PerformanceReadinessActions.EditScenario,
             d.Scenario.TestDataProfileId is null ? PerformanceReadinessState.Optional : PerformanceReadinessState.Ready);
-        Item("workload", "Workload", By("workload"), $"{d.Workload.Purpose}, {d.Workload.Mode}.");
-        Item("limits", "Safety limits", By("limit-duration", "limit-purpose", "limit-vus", "limit-rate", "limit-requests"), "Within the configured safety limits.");
+        Item("workload", "Workload", By("workload"), $"{d.Workload.Purpose}, {d.Workload.Mode}.", Definition, "workload", PerformanceReadinessActions.EditWorkload);
+        Item("limits", "Safety limits", By("limit-duration", "limit-purpose", "limit-vus", "limit-rate", "limit-requests"), "Within the configured safety limits.", Safety, "safety limits", PerformanceReadinessActions.EditWorkload);
         items.Add(d.Thresholds.Count == 0
-            ? new("thresholds", "Thresholds", PerformanceReadinessState.Optional, "No thresholds: the run will be measured, not assessed (no quality score).", false)
-            : new("thresholds", "Thresholds", PerformanceReadinessState.Ready, $"{d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Required)} required, {d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Advisory)} advisory.", false));
-        items.Add(new("baseline", "Baseline", PerformanceReadinessState.Optional, hasActiveBaseline ? "An active baseline exists for this scope; drift will be assessed against it." : "Optional — no baseline selected.", false));
-        items.Add(new("observability", "Observability", PerformanceReadinessState.Optional, "Optional — not configured. The run window is recorded so telemetry can be correlated later.", false));
-        if (d.ResourceObservation is { Enabled: true }) Item("resource-config", "Resource configuration", By("resources"), "Resource observation settings are valid.");
-        items.AddRange(await ResourceItemsAsync(d, ct));
+            ? new("thresholds", "Thresholds", PerformanceReadinessState.Optional, "No thresholds: the run will be measured, not assessed (no quality score).", false) { Category = Optional, Summary = "thresholds", Action = PerformanceReadinessActions.EditThresholds }
+            : new("thresholds", "Thresholds", PerformanceReadinessState.Ready, $"{d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Required)} required, {d.Thresholds.Count(t => t.Severity == ThresholdSeverity.Advisory)} advisory (configured expectations, not universal standards).", false) { Category = Definition, Summary = "thresholds" });
+        items.Add(new("baseline", "Baseline", PerformanceReadinessState.Optional, hasActiveBaseline ? "An active baseline exists for this scope; drift will be assessed against it." : "No baseline selected — promote a completed run explicitly to create one.", false) { Category = Optional, Summary = "baseline" });
+        items.Add(new("observability", "Observability", PerformanceReadinessState.Optional, "Optional — not configured. The run window is recorded so telemetry can be correlated later.", false) { Category = Optional, Summary = "observability" });
+        if (d.ResourceObservation is { Enabled: true }) Item("resource-config", "Resource configuration", By("resources"), "Resource observation settings are valid.", Optional, "resource configuration", null);
+        items.AddRange((await ResourceItemsAsync(d, ct)).Select(i => i with { Category = i.Blocking ? Setup : Optional, Summary = "resource observation" }));
         var blockers = items.Where(i => i.Blocking).Select(i => i.Detail).ToList();
         return new PerformanceTestReadiness
         {
+            Identity = new PerformanceReadinessIdentity
+            {
+                DefinitionId = d.Id, DefinitionVersion = d.Version, EnvironmentId = d.EnvironmentId, TargetOrigin = d.TargetOrigin, ProviderId = d.ProviderId, RuntimeId = d.RuntimeId,
+                NetworkFingerprint = fingerprint, EvaluatedAt = DateTimeOffset.UtcNow,
+            },
             Ready = blockers.Count == 0, Items = items, Blockers = blockers, Limits = options.Limits(d.SafetyPolicy), EstimatedDurationSeconds = d.Workload.TotalSeconds,
             EstimatedMaxRequests = PerformanceTestSafety.EstimatedMaxRequests(d), Timeline = PerformanceTestRules.Timeline(d.Workload), Provider = provider,
         };
+    }
+
+    private const string LocalExecution = "Local execution configuration";
+
+    /// <summary>The container network item. Host reachability never counts: only a check made from the load-generator container does.</summary>
+    internal static PerformanceReadinessItem NetworkItem(bool checkable, PerformanceReachability? reach, bool fresh, bool sameConfiguration)
+    {
+        const string Label = "Container network", Summary = "container network", Category = PerformanceReadinessCategories.Reachability;
+        if (!checkable)
+            return new("network", Label, PerformanceReadinessState.Optional, "Checked once the provider is available.", false) { Category = Category, Summary = Summary };
+        if (reach is null || !fresh || !sameConfiguration)
+            return new("network", Label, PerformanceReadinessState.NeedsConfiguration,
+                reach is not null && !sameConfiguration
+                    ? "The network or TLS configuration changed since the last check (target, runtime, image, CA bundle or proxy): check the container network again."
+                    : reach is not null ? "The last container network check has expired: check again before running."
+                    : "The load generator must be able to reach the target independently of the BirkNext host. Host reachability does not prove container reachability.", true)
+            {
+                Category = Category, Summary = Summary, Action = PerformanceReadinessActions.CheckNetwork,
+                Headline = reach is null ? "Container reachability has not been checked" : "Container reachability must be checked again",
+                Status = reach is null ? "Not checked" : "Stale",
+            };
+        if (reach.Reachable)
+            return new("network", Label, PerformanceReadinessState.Ready, $"{reach.Detail} Checked {reach.CheckedAt.ToUniversalTime():HH:mm} UTC.", false)
+                { Category = Category, Summary = Summary, Status = reach.State, Technical = reach.HttpStatus is { } h ? $"{reach.State} · HTTP {h}" : reach.State };
+        // A TLS trust failure is reported by the Corporate CA trust item (an execution-setup blocker owned by local configuration), not as a network fault.
+        var tlsTrust = PerformanceProbeStates.IsTlsTrust(reach);
+        return new("network", Label, tlsTrust ? PerformanceReadinessState.Optional : PerformanceReadinessState.NetworkUnavailable, tlsTrust
+                ? "The k6 container reached the target but cannot validate its certificate chain — resolve Corporate CA trust, then re-check the container network."
+                : reach.Detail, !tlsTrust)
+        {
+            Category = Category, Summary = Summary, Action = PerformanceReadinessActions.CheckNetwork, Status = reach.State,
+            Headline = ProbeHeadline(reach.State), Technical = reach.ErrorCode is { } code ? $"{reach.State} · code {code}" : reach.State,
+        };
+    }
+
+    public static string ProbeHeadline(string state) => state switch
+    {
+        PerformanceProbeStates.DnsFailure => "DNS lookup failed from the k6 container",
+        PerformanceProbeStates.Timeout => "The connection from the k6 container timed out",
+        PerformanceProbeStates.ConnectionRefused => "The target refused the connection from the k6 container",
+        PerformanceProbeStates.ConnectionFailed => "The k6 container could not connect to the target",
+        PerformanceProbeStates.TlsTrustFailure => "Container TLS trust is not configured",
+        PerformanceProbeStates.HostnameMismatch => "The target certificate does not match its host name",
+        PerformanceProbeStates.TlsFailure => "The TLS handshake from the k6 container failed",
+        PerformanceProbeStates.ProxyFailure => "The configured proxy failed for the k6 container",
+        PerformanceProbeStates.RuntimeFailure => "The container runtime could not run the network check",
+        PerformanceProbeStates.RuntimeUnavailable => "The container runtime is not available",
+        PerformanceProbeStates.ImageMissing => "The k6 image is not available locally",
+        _ => "The k6 container got no response from the target",
+    };
+
+    /// <summary>
+    /// Corporate CA trust: Not required (the default store validated the target, or no HTTPS) · Ready (a valid bundle is configured) · Missing (the
+    /// container does not trust the chain) · Invalid (a configured bundle is unusable) · Not assessed (no container check yet). Missing/Invalid
+    /// block execution; there is never an insecure fallback.
+    /// </summary>
+    internal static PerformanceReadinessItem CaTrustItem(PerformanceCaBundleState ca, PerformanceReachability? reach, PerformanceTestDefinition d)
+    {
+        const string Label = "Corporate CA trust", Summary = "container TLS trust", Category = PerformanceReadinessCategories.ExecutionSetup;
+        var https = d.TargetOrigin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        var host = Uri.TryCreate(d.TargetOrigin, UriKind.Absolute, out var uri) ? uri.Host : d.TargetOrigin;
+        var key = PerformanceCaBundleInspector.ConfigurationKey;
+        if (ca is { Configured: true, Usable: false })
+            return new("ca-trust", Label, PerformanceReadinessState.NeedsConfiguration, $"The configured corporate CA bundle cannot be used: {ca.Detail}", true)
+            {
+                Category = Category, Summary = Summary, Status = "Invalid", Headline = "The corporate CA bundle is invalid", Owner = LocalExecution, ConfigurationKey = key,
+                Action = PerformanceReadinessActions.OpenLocalExecutionSetup, Technical = "TLS verification will not be disabled.",
+            };
+        if (reach is not null && PerformanceProbeStates.IsTlsTrust(reach))
+            return new("ca-trust", Label, PerformanceReadinessState.NeedsConfiguration, ca.Usable
+                    ? $"The configured CA bundle does not make the certificate chain for {host} trusted in the k6 container. Add the issuing corporate CA to the bundle."
+                    : $"The k6 container cannot validate the certificate chain for {host}: the target TLS certificate is not trusted by the default k6 container CA store. Configure the corporate CA bundle.", true)
+            {
+                Category = Category, Summary = Summary, Status = "Missing", Headline = "Container TLS trust is not configured", Owner = LocalExecution, ConfigurationKey = key,
+                Action = PerformanceReadinessActions.OpenLocalExecutionSetup, Technical = $"{reach.State} · code {reach.ErrorCode?.ToString() ?? "1310"} · TLS verification will not be disabled.",
+            };
+        if (ca.Usable)
+            return new("ca-trust", Label, PerformanceReadinessState.Ready, ca.Detail, false) { Category = Category, Summary = Summary, Status = "Ready", Owner = LocalExecution, ConfigurationKey = key };
+        if (!https)
+            return new("ca-trust", Label, PerformanceReadinessState.Optional, "Not required: the target does not use HTTPS.", false) { Category = Category, Summary = Summary, Status = "Not required" };
+        if (reach is { Reachable: true })
+            return new("ca-trust", Label, PerformanceReadinessState.Ready, $"Not required: the k6 container validated the certificate chain for {host} with its default CA store.", false)
+                { Category = Category, Summary = Summary, Status = "Not required" };
+        return new("ca-trust", Label, PerformanceReadinessState.Optional,
+            "Not assessed: the container network check shows whether the target certificate chain needs a corporate CA bundle.", false)
+            { Category = Category, Summary = Summary, Status = "Not assessed", Owner = LocalExecution, ConfigurationKey = key };
     }
 }
 

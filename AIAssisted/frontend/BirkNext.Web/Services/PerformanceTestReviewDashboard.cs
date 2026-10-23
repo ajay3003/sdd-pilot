@@ -44,30 +44,106 @@ public static class PerformanceTestReviewDashboard
     public static bool IsProduction(string? environmentType) =>
         environmentType?.Trim().Equals("Production", StringComparison.OrdinalIgnoreCase) == true || environmentType?.Trim().Equals("Prod", StringComparison.OrdinalIgnoreCase) == true;
 
-    /// <summary>Overall status of the selected definition. Readiness comes from the backend; "Draft"/"Unsaved" only describe the editor.</summary>
-    public static PtStatus PageStatus(bool isNew, bool dirty, PerformanceTestReadiness? readiness, PerformanceTestRun? activeRun, string? environmentType)
+    /// <summary>What a new draft still lacks before it can be saved (and so before readiness). Empty = it is saved automatically as v1.</summary>
+    public static IReadOnlyList<string> DraftIssues(PerformanceTestDefinition d)
+    {
+        var issues = new List<string>();
+        if (string.IsNullOrWhiteSpace(d.Name)) issues.Add("a definition name");
+        if (string.IsNullOrWhiteSpace(d.TargetOrigin)) issues.Add("a target (configure the Target Environment)");
+        if (d.Scenario.Steps.Count == 0) issues.Add("at least one request step");
+        if (d.Scenario.Steps.Any(s => string.IsNullOrWhiteSpace(s.Name))) issues.Add("a name for every step");
+        if (d.Scenario.Steps.Any(s => !s.RelativePath.StartsWith('/'))) issues.Add("relative paths that start with /");
+        return issues;
+    }
+
+    /// <summary>
+    /// Overall status of the selected definition. Readiness comes from the backend; an exact blocker is named ("Blocked · container TLS trust"),
+    /// so a local execution problem never reads as a badly configured definition. "Draft"/"Unsaved changes" only describe the editor.
+    /// </summary>
+    public static PtStatus PageStatus(bool isNew, bool dirty, PerformanceTestReadiness? readiness, PerformanceTestRun? activeRun, string? environmentType, bool draftValid = true)
     {
         if (activeRun is { } run)
             return run.State == PerformanceRunState.Cancelling ? new("Cancelling", "◌", PtTone.Running) : new("Running", "▶", PtTone.Running);
         if (IsProduction(environmentType))
             return new("Blocked", "✕", PtTone.Blocked, "Performance tests cannot run against Production.");
-        if (isNew) return new("Needs configuration", "!", PtTone.Attention, "The definition must be saved before execution.");
-        if (dirty) return new("Needs configuration", "!", PtTone.Attention, "Unsaved changes: save to re-evaluate readiness.");
+        if (isNew) return draftValid
+            ? new("Draft", "✎", PtTone.Attention, "Check readiness saves the draft as v1 automatically, then evaluates it.")
+            : new("Draft · incomplete", "!", PtTone.Attention, "Complete the required fields before readiness.");
+        if (dirty) return new("Unsaved changes", "✎", PtTone.Attention, "Save the changes as a new version to re-evaluate readiness.");
         if (readiness is null) return new("Unknown", "○", PtTone.Neutral, "Readiness could not be loaded.");
         if (readiness.Ready) return new("Ready", "✓", PtTone.Ready);
         var blocking = readiness.Items.Where(i => i.Blocking).ToList();
-        if (blocking.Any(i => Hard.Contains(i.State)))
-            return new("Blocked", "✕", PtTone.Blocked, blocking.First(i => Hard.Contains(i.State)).Detail);
-        if (blocking.Count > 0 && blocking.All(i => Tooling.Contains(i.State)))
-            return new("Blocked by tooling", "!", PtTone.Attention, "A tool limitation, not a performance result: " + blocking[0].Detail);
-        return new("Needs configuration", "!", PtTone.Attention, blocking.FirstOrDefault()?.Detail ?? readiness.Blockers.FirstOrDefault());
+        if (blocking.Count == 0) return new("Not ready", "!", PtTone.Attention, readiness.Blockers.FirstOrDefault());
+        var hard = blocking.Any(i => Hard.Contains(i.State));
+        var first = blocking.FirstOrDefault(i => Hard.Contains(i.State)) ?? blocking[0];
+        var reason = Headline(first) is { Length: > 0 } headline ? $"{headline}. {first.Detail}" : first.Detail;
+        if (blocking.Count == 1)
+            return new($"Blocked · {Summary(first)}", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention,
+                Tooling.Contains(first.State) ? "A tool limitation, not a performance result: " + reason : reason);
+        return new($"{blocking.Count} readiness blockers", hard ? "✕" : "!", hard ? PtTone.Blocked : PtTone.Attention, reason);
     }
 
-    /// <summary>Definition state of the editor: Draft (never saved), Unsaved changes, or Saved vN.</summary>
-    public static PtStatus DefinitionState(bool isNew, bool dirty, int version) =>
-        isNew ? new("Draft · not saved", "✎", PtTone.Attention)
-        : dirty ? new("Unsaved changes", "✎", PtTone.Attention)
+    /// <summary>The blocker in a few words (backend summary; older backends: the label).</summary>
+    public static string Summary(PerformanceReadinessItem item) => item.Summary.Length > 0 ? item.Summary : item.Label.ToLowerInvariant();
+
+    public static string Headline(PerformanceReadinessItem item) => item.Headline.Length > 0 ? item.Headline : "";
+
+    /// <summary>Definition state of the editor: a new draft (saved automatically before readiness when complete), unsaved changes to a saved
+    /// version (saved explicitly as a new version), or Saved vN.</summary>
+    public static PtStatus DefinitionState(bool isNew, bool dirty, int version, bool draftValid = true) =>
+        isNew ? draftValid ? new("Draft · will be saved automatically before readiness check", "✎", PtTone.Attention)
+                : new("Draft · complete required fields before readiness", "!", PtTone.Attention)
+        : dirty ? new($"Unsaved changes to v{version}", "✎", PtTone.Attention)
         : new($"Saved · v{version}", "✓", PtTone.Info);
+
+    /// <summary>The label of a readiness action (the same operation wherever it is offered).</summary>
+    public static string ActionLabel(string action, PerformanceReadinessItem? item = null) => action switch
+    {
+        PerformanceReadinessActions.CheckNetwork => item?.Status is null or "Not checked" ? "Check container network" : "Re-check container network",
+        PerformanceReadinessActions.OpenLocalExecutionSetup => "Open local execution setup",
+        PerformanceReadinessActions.ConfigureTarget => "Configure target",
+        PerformanceReadinessActions.EditScenario => "Edit scenario",
+        PerformanceReadinessActions.EditWorkload => "Edit workload",
+        PerformanceReadinessActions.EditThresholds => "Edit thresholds",
+        PerformanceReadinessActions.OpenEngines => "Open Performance Test Engines",
+        "check-readiness" => "Check readiness",
+        "save-version" => "Save changes as new version",
+        "scenario" => "Complete definition",
+        "run" => "Run test",
+        "history" => "Open history",
+        _ => "Review blockers",
+    };
+
+    /// <summary>Actionable title of a container network check result (structured state; the raw detail stays secondary).</summary>
+    public static string ProbeTitle(string state) => state switch
+    {
+        PerformanceProbeStates.Reachable => "Container reachable",
+        PerformanceProbeStates.AuthChallenge => "Container reachable · authentication requested",
+        PerformanceProbeStates.DnsFailure => "DNS lookup failed from the k6 container",
+        PerformanceProbeStates.Timeout => "Connection from the k6 container timed out",
+        PerformanceProbeStates.ConnectionRefused => "Connection refused",
+        PerformanceProbeStates.ConnectionFailed => "Could not connect from the k6 container",
+        PerformanceProbeStates.TlsTrustFailure => "Container TLS trust is not configured",
+        PerformanceProbeStates.HostnameMismatch => "Certificate host name mismatch",
+        PerformanceProbeStates.TlsFailure => "TLS handshake failed",
+        PerformanceProbeStates.ProxyFailure => "Proxy failure",
+        PerformanceProbeStates.RuntimeFailure => "Container runtime failure",
+        PerformanceProbeStates.RuntimeUnavailable => "Container runtime unavailable",
+        PerformanceProbeStates.ImageMissing => "k6 image missing",
+        _ => "No response from the target",
+    };
+
+    /// <summary>Owner pages for link actions (null = an in-page action).</summary>
+    public static string? ActionHref(string action) => action switch
+    {
+        PerformanceReadinessActions.OpenLocalExecutionSetup or PerformanceReadinessActions.OpenEngines => "admin/system-settings?section=performance-test-engines",
+        PerformanceReadinessActions.ConfigureTarget => "admin/system-settings?section=target-environments",
+        _ => null,
+    };
+
+    /// <summary>The blocking items that have a safe action (shown with that action in the readiness list and on Overview).</summary>
+    public static IReadOnlyList<PerformanceReadinessItem> ActionableBlockers(PerformanceTestReadiness? readiness) =>
+        readiness?.Items.Where(i => i.Blocking && i.Action is not null).ToList() ?? [];
 
     /// <summary>Environment safety. The backend guard decides; the type alone never proves safety.</summary>
     public static PtStatus EnvironmentSafety(string? environmentType, PerformanceTestReadiness? readiness)
@@ -86,6 +162,18 @@ public static class PerformanceTestReviewDashboard
     public static string Classification(string? environmentType) =>
         IsProduction(environmentType) ? "Production" : string.IsNullOrWhiteSpace(environmentType) ? "Unclassified" : "Non-production";
 
+    /// <summary>An item's status, using its own vocabulary where it has one (Corporate CA trust: Not required / Missing / Invalid / Not assessed).</summary>
+    public static PtStatus Check(PerformanceReadinessItem item) => item.Status switch
+    {
+        "Not required" => new("Not required", "✓", PtTone.Ready),
+        "Not assessed" => new("Not assessed", "○", PtTone.Neutral),
+        "Missing" => new("Missing", "!", PtTone.Attention),
+        "Invalid" => new("Invalid", "!", PtTone.Attention),
+        "Not checked" => new("Not checked", "!", PtTone.Attention),
+        "Stale" => new("Stale · check again", "!", PtTone.Attention),
+        _ => Check(item.State),
+    };
+
     public static PtStatus Check(PerformanceReadinessState s) => s switch
     {
         PerformanceReadinessState.Ready => new("Ready", "✓", PtTone.Ready),
@@ -96,17 +184,29 @@ public static class PerformanceTestReviewDashboard
 
     private static readonly HashSet<string> SafetyKeys = ["environment", "limits", "tls"];
 
+    /// <summary>Readiness categories in display order: different problems with different owners (never all "Needs configuration").</summary>
+    public static readonly IReadOnlyList<string> CategoryOrder =
+    [
+        PerformanceReadinessCategories.Definition, PerformanceReadinessCategories.ExecutionSetup, PerformanceReadinessCategories.Reachability,
+        PerformanceReadinessCategories.Safety, PerformanceReadinessCategories.Optional,
+    ];
+
     /// <summary>
-    /// Readiness checks grouped as Required / Safety / Optional, from the backend items. "Definition saved" is the one editor-side requirement
-    /// (the backend evaluates only saved definitions). Optional items (baseline, observability, resource observation when off) never block.
+    /// Readiness checks grouped by category (Definition / Execution setup / Reachability / Safety / Optional) from the backend items. "Definition
+    /// version" is the one editor-side requirement (the backend evaluates only saved versions). Optional items never block.
     /// </summary>
     public static IReadOnlyList<PtCheckGroup> Groups(bool isNew, bool dirty, PerformanceTestReadiness? readiness)
     {
-        var required = new List<PtCheck>
+        var saved = new PtCheck("saved", "Definition version", isNew ? new("Draft", "✎", PtTone.Attention) : dirty ? new("Unsaved changes", "✎", PtTone.Attention) : new("Saved", "✓", PtTone.Ready),
+            isNew ? "Saved automatically as v1 when readiness is checked." : dirty ? "Save the changes as a new version to re-evaluate readiness." : null);
+        if (readiness?.Items.Any(i => i.Category.Length > 0) == true)
         {
-            new("saved", "Definition saved", isNew || dirty ? new("Save required", "!", PtTone.Attention) : new("Saved", "✓", PtTone.Ready),
-                isNew ? "Save the definition so the backend can evaluate it." : dirty ? "Save the changes to re-evaluate readiness." : null),
-        };
+            return CategoryOrder.Select(name => new PtCheckGroup(name, [
+                .. name == PerformanceReadinessCategories.Definition ? new[] { saved } : [],
+                .. readiness.Items.Where(i => (i.Category.Length > 0 ? i.Category : PerformanceReadinessCategories.Definition) == name).Select(i => new PtCheck(i.Key, i.Label, Check(i), i.Detail)),
+            ])).Where(g => g.Checks.Count > 0).ToList();
+        }
+        var required = new List<PtCheck> { saved };
         var safety = new List<PtCheck>();
         var optional = new List<PtCheck>();
         foreach (var item in readiness?.Items ?? [])
@@ -119,10 +219,11 @@ public static class PerformanceTestReviewDashboard
         return new List<PtCheckGroup> { new("Required", required), new("Safety", safety), new("Optional", optional) }.Where(g => g.Checks.Count > 0).ToList();
     }
 
-    /// <summary>"n of m required checks ready" over Required + Safety (Optional never counts).</summary>
+    /// <summary>"n of m required checks ready" over every non-optional group (Optional never counts).</summary>
     public static (int Ready, int Total) RequiredCounts(IReadOnlyList<PtCheckGroup> groups)
     {
-        var checks = groups.Where(g => g.Name != "Optional").SelectMany(g => g.Checks).ToList();
+        // Neutral checks (optional, not assessed) are not requirements: they never count as missing.
+        var checks = groups.Where(g => g.Name != "Optional").SelectMany(g => g.Checks).Where(c => c.Status.Tone != PtTone.Neutral).ToList();
         return (checks.Count(c => c.Status.Tone == PtTone.Ready), checks.Count);
     }
 
@@ -202,21 +303,31 @@ public static class PerformanceTestReviewDashboard
         return over.Count == 0 ? new("Within policy", "✓", PtTone.Ready) : new("Exceeds policy", "✕", PtTone.Blocked, string.Join("; ", over));
     }
 
-    /// <summary>What to do next, in priority order.</summary>
-    public static NextStep Next(PtStatus page, bool isNew, bool dirty, PerformanceTestReadiness? readiness, IReadOnlyList<PerformanceTestRun> runs, PerformanceBaseline? baseline)
+    /// <summary>What to do next, in priority order. When the backend knows the exact blocker and it has a safe action, that action is offered
+    /// directly (the same operation as in Readiness). A run is never started from here: Run opens the explicit confirmation.</summary>
+    public static NextStep Next(PtStatus page, bool isNew, bool dirty, PerformanceTestReadiness? readiness, IReadOnlyList<PerformanceTestRun> runs, PerformanceBaseline? baseline, bool draftValid = true)
     {
-        if (page.Tone == PtTone.Running) return new("A performance test is running. Results appear when it finishes.", PtTone.Running, "run", "Open run");
+        if (page.Tone == PtTone.Running) return new("A performance test is running. Results appear when it finishes.", PtTone.Running, "run", "View run");
         if (page.Label == "Blocked") return new($"Execution blocked. {page.Reason}", PtTone.Blocked, "readiness", "View readiness");
-        if (isNew || dirty) return new(isNew ? "Save this test definition to complete readiness." : "Save your changes to re-evaluate readiness.", PtTone.Attention, "save", "Save definition");
+        if (isNew) return draftValid
+            ? new("Check readiness. The prefilled draft is saved as v1 automatically first; nothing runs.", PtTone.Attention, "check-readiness", ActionLabel("check-readiness"))
+            : new("Complete the required fields of the definition before readiness.", PtTone.Attention, "scenario", ActionLabel("scenario"));
+        if (dirty) return new($"You changed the saved definition. Save the changes as a new version to re-evaluate readiness (earlier runs keep their version).", PtTone.Attention, "save-version", ActionLabel("save-version"));
         if (readiness is { Ready: false })
         {
-            var count = readiness.Items.Count(i => i.Blocking);
-            return new($"Resolve {count} required item{(count == 1 ? "" : "s")} before running. {page.Reason}", PtTone.Attention, "readiness", "View readiness");
+            var blocking = readiness.Items.Where(i => i.Blocking).ToList();
+            var actionable = blocking.Where(i => i.Action is not null).ToList();
+            if (blocking.Count == 1 && actionable.Count == 1)
+            {
+                var item = actionable[0];
+                return new($"Resolve: {(Headline(item) is { Length: > 0 } h ? h : item.Label)}.", page.Tone == PtTone.Blocked ? PtTone.Blocked : PtTone.Attention, item.Action, ActionLabel(item.Action!, item));
+            }
+            return new($"Resolve {blocking.Count} readiness blocker{(blocking.Count == 1 ? "" : "s")} before running. {page.Reason}", PtTone.Attention, "readiness", "Review blockers");
         }
         if (readiness is not { Ready: true }) return new("Readiness could not be evaluated.", PtTone.Neutral, "readiness", "View readiness");
-        if (runs.Count == 0) return new("Everything is ready. Run the first test.", PtTone.Ready, "run", "Run test");
+        if (runs.Count == 0) return new("Ready to run. Run the baseline test — it asks for confirmation before sending real load.", PtTone.Ready, "run", "Run baseline test");
         if (baseline is null && runs.Any(r => r.State == PerformanceRunState.Completed && r.Metrics is not null && !r.MetricsPartial))
-            return new("Promote a completed run to baseline to enable drift comparison.", PtTone.Baseline, "history", "Open history");
+            return new("No baseline selected. Promote a completed run to baseline to enable drift comparison.", PtTone.Baseline, "history", "Open history");
         return new("Ready to run again.", PtTone.Ready, "run", "Run test");
     }
 

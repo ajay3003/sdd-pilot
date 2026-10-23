@@ -509,14 +509,14 @@ public sealed class SetupProfileService(IIntegrationJourneyPackRegistry packs, I
           - "approvedTestIdentity"
         """;
 
-    private static Dictionary<string, object?> Compact(Dictionary<string, object?> map) =>
+    internal static Dictionary<string, object?> Compact(Dictionary<string, object?> map) =>
         map.Where(pair => pair.Value is not null && !(pair.Value is string s && s.Length == 0) && !(pair.Value is Dictionary<string, object?> { Count: 0 }))
             .ToDictionary(pair => pair.Key, pair => pair.Value);
 
-    private static string Slug(string value) => new([.. value.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]);
+    internal static string Slug(string value) => new([.. value.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]);
 
     /// <summary>A minimal YAML emitter for export (maps, lists, quoted scalars) that the profile parser reads back.</summary>
-    private static string Yaml(object? value, int indent)
+    internal static string Yaml(object? value, int indent)
     {
         var builder = new StringBuilder();
         void Write(object? node, int level)
@@ -537,7 +537,16 @@ public sealed class SetupProfileService(IIntegrationJourneyPackRegistry packs, I
                         if (item is Dictionary<string, object?> entry)
                         {
                             var first = true;
-                            foreach (var (key, child) in entry) { builder.Append(pad).Append(first ? "- " : "  ").Append(key).Append(": ").Append(Scalar(child)).Append('\n'); first = false; }
+                            foreach (var (key, child) in entry)
+                            {
+                                builder.Append(pad).Append(first ? "- " : "  ").Append(key).Append(':');
+                                first = false;
+                                // Scalar lists inside a list item are written inline ([a, b]); nested maps/lists are indented under their key.
+                                if (child is List<object?> values && values.All(v => v is not (Dictionary<string, object?> or List<object?>)))
+                                    builder.Append(" [").Append(string.Join(", ", values.Select(Scalar))).Append("]\n");
+                                else if (child is Dictionary<string, object?> or List<object?>) { builder.Append('\n'); Write(child, level + 2); }
+                                else builder.Append(' ').Append(Scalar(child)).Append('\n');
+                            }
                         }
                         else builder.Append(pad).Append("- ").Append(Scalar(item)).Append('\n');
                     }
@@ -548,11 +557,13 @@ public sealed class SetupProfileService(IIntegrationJourneyPackRegistry packs, I
         return builder.ToString();
     }
 
-    private static string Scalar(object? value) => value switch
+    internal static string Scalar(object? value) => value switch
     {
         null => "null",
         bool b => b ? "true" : "false",
         int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        double d => d.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
         _ => "\"" + value.ToString()!.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"",
     };
 }

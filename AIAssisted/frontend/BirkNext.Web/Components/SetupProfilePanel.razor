@@ -125,6 +125,8 @@
     [Parameter] public EventCallback Closed { get; set; }
     /// <summary>After an apply: the page recomputes everything from the owners (nothing is cached from the profile).</summary>
     [Parameter] public EventCallback Applied { get; set; }
+    /// <summary>Another consumer's profile endpoints (e.g. Performance Test Review); null = the test-pack profile endpoints.</summary>
+    [Parameter] public ISetupProfileTransport? Transport { get; set; }
 
     private IIntegrationJourneysApiService? Api => Services.GetService<IIntegrationJourneysApiService>();
     private SetupProfilePreview? _preview;
@@ -149,7 +151,7 @@
     private async Task ReadAsync(InputFileChangeEventArgs args)
     {
         _error = null; _preview = null; _result = null; _selected.Clear(); _confirmed.Clear();
-        if (Api is null) { _error = "Setup profiles are not available in this session."; return; }
+        if (Api is null && Transport is null) { _error = "Setup profiles are not available in this session."; return; }
         try
         {
             if (args.File.Size > 64 * 1024) { _error = "The setup profile is larger than 64 KB; a setup profile is a small text file."; return; }
@@ -157,9 +159,10 @@
             _content = await reader.ReadToEndAsync();
             _fileName = args.File.Name;
             _busy = true;
-            var preview = await Api.PreviewSetupProfileAsync(EnvironmentId, PackId, new(_fileName, _content));
-            _preview = preview.Value;
-            _error = preview.Value is null ? preview.Error ?? "The profile could not be validated." : null;
+            var (value, problem) = Transport is { } transport ? await transport.PreviewAsync(new(_fileName, _content))
+                : await Api!.PreviewSetupProfileAsync(EnvironmentId, PackId, new(_fileName, _content)) is var preview ? (preview.Value, preview.Error) : default;
+            _preview = value;
+            _error = value is null ? problem ?? "The profile could not be validated." : null;
             foreach (var change in _preview?.Changes.Where(c => c.Preselected) ?? []) _selected.Add(change.Id);
         }
         catch (Exception ex) when (ex is IOException or HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The profile could not be read."; }
@@ -171,13 +174,15 @@
 
     private async Task ApplyAsync()
     {
-        if (Api is null || _content is null || _fileName is null) return;
+        if (Api is null && Transport is null || _content is null || _fileName is null) return;
         _busy = true; _error = null;
         try
         {
-            var result = await Api.ApplySetupProfileAsync(EnvironmentId, PackId, new(_fileName, _content, [.. _selected], [.. _confirmed]));
-            _result = result.Value;
-            _error = result.Value is null ? result.Error ?? "The profile could not be applied." : null;
+            SetupApplyRequest request = new(_fileName, _content, [.. _selected], [.. _confirmed]);
+            var (value, problem) = Transport is { } transport ? await transport.ApplyAsync(request)
+                : await Api!.ApplySetupProfileAsync(EnvironmentId, PackId, request) is var result ? (result.Value, result.Error) : default;
+            _result = value;
+            _error = value is null ? problem ?? "The profile could not be applied." : null;
             if (_result is not null) { _preview = null; await Applied.InvokeAsync(); }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The profile could not be applied."; }
@@ -189,12 +194,13 @@
 
     private async Task DownloadAsync(string? environmentId, SetupProfileFormat format)
     {
-        if (Api is null) { _error = "Setup profiles are not available in this session."; return; }
+        if (Api is null && Transport is null) { _error = "Setup profiles are not available in this session."; return; }
         _busy = true; _error = null;
         try
         {
-            var result = await Api.ExportSetupProfileAsync(environmentId, PackId, format);
-            if (result.Value is not { } export) { _error = result.Error ?? "The setup could not be exported."; return; }
+            var (value, problem) = Transport is { } transport ? await transport.ExportAsync(environmentId is null, format)
+                : await Api!.ExportSetupProfileAsync(environmentId, PackId, format) is var result ? (result.Value, result.Error) : default;
+            if (value is not { } export) { _error = problem ?? "The setup could not be exported."; return; }
             _export = export;
             try { await JS.InvokeVoidAsync("downloadTextFile", export.FileName, export.Content, format == SetupProfileFormat.Json ? "application/json" : "application/yaml"); }
             catch (JSException) { }

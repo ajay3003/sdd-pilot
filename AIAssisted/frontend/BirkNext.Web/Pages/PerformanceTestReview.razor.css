@@ -390,3 +390,29 @@
     .ptc-tab { min-height: 2.75rem; }
     .ptc-remove, .ptc-add, .ptc-def-save .btn-primary { min-height: 2.75rem; }
 }
+
+/* Readiness: the exact blocker and its action come first; the action is a real primary button, never a faint link. */
+.ptc-blocker-callout { display: grid; gap: 0.35rem; margin: 0.75rem 0 1rem; padding: 0.9rem 1rem; border: 1px solid var(--clr-warning-border, #fcd34d); border-left: 4px solid var(--ptc-amber); border-radius: var(--radius-lg); background: var(--clr-warning-bg-light); }
+.ptc-blocker-callout h3 { margin: 0; font-size: 1rem; color: var(--clr-text-heading); }
+.ptc-blocker-callout p { margin: 0; overflow-wrap: anywhere; }
+.ptc-blocker-callout .ptc-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-top: 0.25rem; }
+.ptc-blocker-callout .ptc-link { padding: 0; }
+.ptc-disclosure { flex-basis: auto; }
+.ptc-item-action { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; flex-basis: 100%; }
+.ptc-group li:focus { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; border-radius: var(--radius-sm, 4px); }
+.ptc-technical-detail { flex-basis: 100%; font-size: 0.8rem; color: var(--clr-text-muted); }
+.ptc-technical-detail summary { cursor: pointer; }
+.ptc-technical-detail code { overflow-wrap: anywhere; }
+.ptc-action { min-height: 2.25rem; }
+
+/* Run: real traffic is disclosed before the explicit Run action. */
+.ptc-callout.ptc-callout-traffic { display: block; margin: 0.5rem 0 1rem; border-color: var(--clr-warning-border, #fcd34d); border-left-color: var(--ptc-amber); background: var(--clr-warning-bg-light); }
+.ptc-callout-traffic h3 { margin: 0 0 0.4rem; font-size: 1rem; color: var(--clr-text-heading); }
+
+/* Overview: shared Guided Setup progress. */
+.ptc-setup-card { margin-top: 1rem; }
+.ptc-setup-card .ptc-tile-actions { flex-wrap: wrap; }
+
+@media (max-width: 480px) {
+    .ptc-action, .ptc-setup-card .btn-secondary { min-height: 2.75rem; }
+}

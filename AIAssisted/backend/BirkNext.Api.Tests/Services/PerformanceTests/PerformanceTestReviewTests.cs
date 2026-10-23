@@ -425,9 +425,15 @@ public sealed class PerformanceTestReviewTests
     [InlineData(200, 0, "Reachable", true)]
     [InlineData(404, 0, "Reachable", true)]
     [InlineData(0, 1101, "DnsFailure", false)]
-    [InlineData(0, 1212, "ConnectionFailed", false)]
-    [InlineData(0, 1310, "TlsFailure", false)]
+    [InlineData(0, 1212, "ConnectionRefused", false)]
+    [InlineData(0, 1213, "ConnectionFailed", false)]
+    [InlineData(0, 1310, "TlsTrustFailure", false)]
+    [InlineData(0, 1311, "HostnameMismatch", false)]
+    [InlineData(0, 1300, "TlsFailure", false)]
     [InlineData(0, 1050, "Timeout", false)]
+    [InlineData(0, 1211, "Timeout", false)]
+    [InlineData(407, 0, "ProxyFailure", false)]
+    [InlineData(401, 0, "AuthChallenge", true)]
     public async Task ContainerNetworkCheck_ClassifiesFromTheContainer(int status, int code, string state, bool reachable)
     {
         var runtime = new FakeRuntime { ProbeStatus = status, ProbeErrorCode = code };
@@ -435,7 +441,17 @@ public sealed class PerformanceTestReviewTests
         r.State.Should().Be(state);
         r.Reachable.Should().Be(reachable);
         runtime.Runs.Single(s => s.Command[^1].EndsWith("probe.js", StringComparison.Ordinal)).Name.Should().StartWith("birknext-k6-probe-");
-        if (state == "TlsFailure") r.Detail.Should().Contain("CaBundlePath").And.Contain("never disabled");
+        if (state is "TlsTrustFailure") r.Detail.Should().Contain("CaBundlePath").And.Contain("never disabled");
+        if (state is "TlsTrustFailure" or "HostnameMismatch" or "TlsFailure") r.Detail.Should().Contain("never disabled", "TLS verification is never relaxed");
+        if (code > 0) r.ErrorCode.Should().Be(code, "the raw code is kept as technical detail");
+    }
+
+    [Fact]
+    public void ContainerNetworkCheck_ConnectFailureThroughAConfiguredProxy_IsAProxyFailure()
+    {
+        var envelope = new PerformanceReachability { TargetOrigin = "https://pay.example.test", ExecutionOrigin = "https://pay.example.test" };
+        K6PerformanceTestProvider.Interpret(envelope, """{"metrics":{"birknext_probe_status":{"values":{"max":0}},"birknext_probe_error":{"values":{"max":1210}}}}""", proxyConfigured: true).State.Should().Be(PerformanceProbeStates.ProxyFailure);
+        K6PerformanceTestProvider.Interpret(envelope, """{"metrics":{"birknext_probe_status":{"values":{"max":0}},"birknext_probe_error":{"values":{"max":1210}}}}""", proxyConfigured: false).State.Should().Be(PerformanceProbeStates.ConnectionFailed);
     }
 
     [Fact]
@@ -569,7 +585,7 @@ public sealed class PerformanceTestReviewTests
         var run = (await h.Store().RunAsync(started.Run!.RunId))!;
         run.State.Should().Be(PerformanceRunState.Blocked);
         run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
-        run.Reachability!.State.Should().Be("ConnectionFailed");
+        run.Reachability!.State.Should().Be("ConnectionRefused");
         h.Runner.Runs.Should().NotContain(s => s.Command.Last() == "/birknext/in/test.js", "no load container is started");
     }
 
@@ -957,6 +973,166 @@ public sealed class PerformanceTestReviewTests
             await Podman("rm", "--force", "--ignore", target);
             await Podman("network", "rm", "--force", network);
         }
+    }
+
+    // ── Readiness remediation: first save, corporate CA trust, structured network results, stale checks ────────────────────────────
+
+    private static string TempDir()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "birknext-ca-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>A throwaway local test CA (never a real corporate CA).</summary>
+    private static (string CertificatePem, string KeyPem) TestCa(string name = "BirkNext Test Root")
+    {
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest($"CN={name}", key, System.Security.Cryptography.HashAlgorithmName.SHA256,
+            System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension(true, false, 0, true));
+        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+        return (certificate.ExportCertificatePem(), key.ExportPkcs8PrivateKeyPem());
+    }
+
+    private static PerformanceTestOptions WithCa(string? path) => new() { Container = new PerformanceContainerOptions { CaBundlePath = path } };
+
+    [Fact]
+    public void CaBundle_IsReadyOnlyWhenItLoads_NeverBecauseAPathExists()
+    {
+        var dir = TempDir();
+        var (pem, keyPem) = TestCa();
+        PerformanceCaBundleInspector.Inspect(null).Status.Should().Be(PerformanceCaBundleState.NotConfigured);
+        PerformanceCaBundleInspector.Inspect(Path.Combine(dir, "missing.pem")).Should().Match<PerformanceCaBundleState>(c => c.Status == PerformanceCaBundleState.Invalid && c.Detail.Contains("does not exist"));
+        File.WriteAllText(Path.Combine(dir, "empty.pem"), "");
+        PerformanceCaBundleInspector.Inspect(Path.Combine(dir, "empty.pem")).Status.Should().Be(PerformanceCaBundleState.Invalid);
+        File.WriteAllText(Path.Combine(dir, "notes.txt"), "corporate root, ask IT");
+        PerformanceCaBundleInspector.Inspect(Path.Combine(dir, "notes.txt")).Detail.Should().Contain("not a PEM certificate bundle");
+        File.WriteAllText(Path.Combine(dir, "with-key.pem"), pem + keyPem);
+        PerformanceCaBundleInspector.Inspect(Path.Combine(dir, "with-key.pem")).Should().Match<PerformanceCaBundleState>(c => c.Status == PerformanceCaBundleState.Invalid && c.Detail.Contains("private key"),
+            "a CA bundle is public trust material; a private key is never mounted");
+        File.WriteAllText(Path.Combine(dir, "corp-roots.pem"), pem);
+        var ready = PerformanceCaBundleInspector.Inspect(Path.Combine(dir, "corp-roots.pem"));
+        ready.Should().Match<PerformanceCaBundleState>(c => c.Status == PerformanceCaBundleState.Ready && c.Certificates == 1 && c.Fingerprint.Length == 16);
+        ready.Detail.Should().Contain("TLS verification stays on").And.NotContain("BEGIN CERTIFICATE");
+        PerformanceCaBundleInspector.Inspect("relative/ca.pem").Detail.Should().Contain("absolute host path");
+    }
+
+    [Fact]
+    public void CaBundle_IsMountedAsTheFileSslCertFileNames_WhateverItIsCalled()
+    {
+        var dir = TempDir();
+        File.WriteAllText(Path.Combine(dir, "corp-roots.pem"), TestCa().CertificatePem);
+        var provider = new K6PerformanceTestProvider(WithCa(Path.Combine(dir, "corp-roots.pem")), new FakeRuntime(), NullLogger<K6PerformanceTestProvider>.Instance);
+        provider.Environment()["SSL_CERT_FILE"].Should().Be("/birknext/ca/ca.pem");
+        provider.Environment().Keys.Should().NotContain(k => k.Contains("INSECURE", StringComparison.OrdinalIgnoreCase) || k.Contains("SKIP_TLS", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void TlsVerification_CannotBeDisabled_NoOptionScriptOrEnvironmentSkipsIt()
+    {
+        typeof(PerformanceContainerOptions).GetProperties().Select(p => p.Name).Should().NotContain(n => n.Contains("Insecure", StringComparison.OrdinalIgnoreCase) || n.Contains("SkipTls", StringComparison.OrdinalIgnoreCase));
+        typeof(PerformanceTestDefinition).GetProperties().Select(p => p.Name).Should().NotContain(n => n.Contains("Insecure", StringComparison.OrdinalIgnoreCase) || n.Contains("Tls", StringComparison.OrdinalIgnoreCase));
+        K6ScriptGenerator.Probe("https://pay.example.test", "/birknext/out/probe.json").Should().NotContainAny("insecureSkipTLSVerify", "insecure");
+        var provider = new K6PerformanceTestProvider(Options, new FakeRuntime(), NullLogger<K6PerformanceTestProvider>.Instance);
+        provider.Environment().Keys.Should().NotContain(k => k.Contains("INSECURE", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CorporateCa_MissingTrust_BlocksAsExecutionSetup_WithOwnerAndKey_NotAsANetworkFault()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var readiness = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+        var before = await readiness.EvaluateAsync(d, Data(), false);
+        before.Items.Single(i => i.Key == "ca-trust").Should().Match<PerformanceReadinessItem>(i => i.Status == "Not assessed" && !i.Blocking, "nothing is known before the container check");
+        before.Identity!.Should().Match<PerformanceReadinessIdentity>(id => id.DefinitionId == d.Id && id.DefinitionVersion == d.Version && id.TargetOrigin == d.TargetOrigin && id.NetworkFingerprint.Length > 0);
+
+        h.Runner.ProbeStatus = 0; h.Runner.ProbeErrorCode = 1310;
+        (await h.Registry.CheckReachabilityAsync(d)).State.Should().Be(PerformanceProbeStates.TlsTrustFailure);
+        var blocked = await readiness.EvaluateAsync(d, Data(), false);
+        var ca = blocked.Items.Single(i => i.Key == "ca-trust");
+        ca.Should().Match<PerformanceReadinessItem>(i => i.Blocking && i.Status == "Missing" && i.Category == PerformanceReadinessCategories.ExecutionSetup
+            && i.Owner == "Local execution configuration" && i.ConfigurationKey == "PerformanceTests:Container:CaBundlePath" && i.Headline == "Container TLS trust is not configured"
+            && i.Action == PerformanceReadinessActions.OpenLocalExecutionSetup && i.Summary == "container TLS trust");
+        ca.Technical.Should().Contain("1310").And.Contain("will not be disabled");
+        blocked.Items.Single(i => i.Key == "network").Blocking.Should().BeFalse("the one blocker is the CA trust, reported once with its owner");
+        blocked.Items.Count(i => i.Blocking).Should().Be(1);
+        blocked.Ready.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CorporateCa_ValidLocalTestCa_AllowsReadiness_AndAChangeInvalidatesTheNetworkCheck()
+    {
+        var dir = TempDir();
+        var ca = Path.Combine(dir, "corp-roots.pem");
+        File.WriteAllText(ca, TestCa("Test Root A").CertificatePem);
+        await using var h = new Harness(WithCa(ca));
+        var d = await h.SeedAsync();
+        var readiness = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+        h.Runner.ProbeStatus = 200; h.Runner.ProbeErrorCode = 0;
+        await h.Registry.CheckReachabilityAsync(d);
+        var ready = await readiness.EvaluateAsync(d, Data(), false);
+        ready.Items.Single(i => i.Key == "ca-trust").Should().Match<PerformanceReadinessItem>(i => i.Status == "Ready" && !i.Blocking);
+        ready.Items.Single(i => i.Key == "network").State.Should().Be(PerformanceReadinessState.Ready);
+        ready.Ready.Should().BeTrue();
+
+        // The CA bundle changes: the earlier container check was made under another TLS configuration and is never reused.
+        File.WriteAllText(ca, TestCa("Test Root B").CertificatePem);
+        var stale = await readiness.EvaluateAsync(d, Data(), false);
+        stale.Identity!.NetworkFingerprint.Should().NotBe(ready.Identity!.NetworkFingerprint);
+        stale.Items.Single(i => i.Key == "network").Should().Match<PerformanceReadinessItem>(i => i.Blocking && i.Status == "Stale" && i.Detail.Contains("CA bundle")
+            && i.Action == PerformanceReadinessActions.CheckNetwork);
+        stale.Ready.Should().BeFalse();
+        await h.Registry.CheckReachabilityAsync(d);
+        (await readiness.EvaluateAsync(d, Data(), false)).Ready.Should().BeTrue("re-checking refreshes readiness without re-saving the definition");
+        (await h.Store().DefinitionAsync("pay-qa", d.Id))!.Version.Should().Be(d.Version);
+    }
+
+    [Fact]
+    public async Task CorporateCa_InvalidBundle_BlocksReadinessOnce_AndIsNeverBypassed()
+    {
+        var dir = TempDir();
+        var bad = Path.Combine(dir, "ca.pem");
+        File.WriteAllText(bad, "not a certificate");
+        await using var h = new Harness(WithCa(bad));
+        var d = await h.SeedAsync();
+        var result = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, Data(), false);
+        result.Items.Single(i => i.Key == "ca-trust").Should().Match<PerformanceReadinessItem>(i => i.Blocking && i.Status == "Invalid" && i.Headline == "The corporate CA bundle is invalid");
+        result.Items.Should().NotContain(i => i.Key == "provider" && i.Blocking, "the misconfigured provider is the same problem, reported once as CA trust");
+        result.Items.Single(i => i.Key == "image").State.Should().Be(PerformanceReadinessState.Ready, "an invalid CA bundle never reads as a missing image");
+        result.Ready.Should().BeFalse();
+        var started = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
+        started.Run.Should().BeNull();
+        h.Runner.Runs.Should().NotContain(s => s.Command.Last() == "/birknext/in/test.js");
+    }
+
+    [Fact]
+    public async Task NetworkCheck_IsOneRequest_NeverALoadRun_AndEveryItemNamesItsCategory()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        await h.Registry.CheckReachabilityAsync(d);
+        h.Runner.Runs.Count(s => s.Command.Last().EndsWith("probe.js", StringComparison.Ordinal)).Should().Be(1);
+        h.Runner.Runs.Should().NotContain(s => s.Command.Last() == "/birknext/in/test.js");
+        (await h.Store().RunsAsync("pay-qa", d.Id, 10)).Should().BeEmpty("a network check is never recorded as a load run");
+        var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, Data(), false);
+        readiness.Items.Should().OnlyContain(i => PerformanceReadinessCategories.Optional == i.Category || new[] { "Definition", "Execution setup", "Reachability", "Safety" }.Contains(i.Category));
+        readiness.Items.Where(i => i.Blocking).Should().OnlyContain(i => i.Summary.Length > 0);
+    }
+
+    [Fact]
+    public async Task DefinitionVersions_FirstSaveIsV1_UnchangedSaveIsNotV2_AnEditIsANewVersion()
+    {
+        await using var h = new Harness();
+        var store = h.Store();
+        var v1 = await store.SaveDefinitionAsync("pay-qa", Definition(), DateTimeOffset.UtcNow);
+        v1.Version.Should().Be(1);
+        (await store.SaveDefinitionAsync("pay-qa", v1, DateTimeOffset.UtcNow)).Version.Should().Be(1, "opening or re-checking an unchanged definition never versions it");
+        var v2 = await store.SaveDefinitionAsync("pay-qa", v1 with { Workload = v1.Workload with { VirtualUsers = 6 } }, DateTimeOffset.UtcNow);
+        v2.Version.Should().Be(2);
+        (await store.SaveDefinitionAsync("pay-qa", v2 with { DeliveryPipelineIds = ["pipe-web"] }, DateTimeOffset.UtcNow)).ComparisonFingerprint.Should().Be(v2.ComparisonFingerprint,
+            "a confirmed pipeline mapping is not part of run comparability");
     }
 }
 

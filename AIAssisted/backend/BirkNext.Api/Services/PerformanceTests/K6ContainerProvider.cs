@@ -48,13 +48,14 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             return status with { Availability = ProviderAvailability.RuntimeUnavailable, Detail = $"{rt.DisplayName}: {rt.Detail}" };
         if (!ContainerArgumentRules.IsImage(C.Image))
             return status with { Availability = ProviderAvailability.Misconfigured, Detail = "PerformanceTests:Container:Image must be a pinned, fully-qualified image reference (no ':latest')." };
-        if (C.CaBundlePath is { } ca && (!ContainerArgumentRules.IsHostPath(ca) || !File.Exists(ca)))
-            return status with { Availability = ProviderAvailability.Misconfigured, Detail = "The configured CA bundle (PerformanceTests:Container:CaBundlePath) does not exist." };
         var image = await runtime.ImageAsync(C.Image, ct);
         if (!image.Present)
             return status with { Availability = ProviderAvailability.ImageMissing,
                 Detail = $"The k6 image {C.Image} is not available locally. {(C.AllowImagePull ? "Pull it from System Settings → Performance Test Engines." : $"Pull it once: podman pull {C.Image}")}" };
         status = status with { ImagePresent = true, ImageDigest = image.Digest };
+        // An invalid CA bundle is never mounted and never bypassed: the provider is misconfigured (after the image is known, so image state stays truthful) until the bundle is fixed (readiness says how).
+        if (PerformanceCaBundleInspector.Inspect(C.CaBundlePath) is { Configured: true, Usable: false } ca)
+            return status with { Availability = ProviderAvailability.Misconfigured, Detail = $"The configured CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}) is invalid: {ca.Detail}" };
         var version = await VersionAsync(image.Digest ?? C.Image, ct);
         if (version is null) return status with { Availability = ProviderAvailability.Misconfigured, Detail = "The k6 container started but did not report a recognisable version." };
         if (version < MinimumVersion)
@@ -128,7 +129,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     private List<ContainerMount> Mounts(string inDir, string outDir)
     {
         var mounts = new List<ContainerMount> { new(inDir, InDir, true), new(outDir, OutDir, false) };
-        if (C.CaBundlePath is { } ca) mounts.Add(new ContainerMount(Path.GetDirectoryName(ca)!, "/birknext/ca", true));
+        // The bundle file itself, read-only, at the path SSL_CERT_FILE names (whatever the host file is called).
+        if (C.CaBundlePath is { } ca) mounts.Add(new ContainerMount(ca, CaFile, true));
         return mounts;
     }
 
@@ -209,26 +211,45 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
                 Labels = Labels(id), Network = target.Network, HostGateway = target.HostGateway, Timeout = TimeSpan.FromSeconds(90), MaxOutputBytes = 16 * 1024, MemoryMegabytes = 256, Cpus = 0.5,
             }, ct);
             var probe = Path.Combine(outDir, "probe.json");
-            if (outcome.TimedOut) return envelope with { State = "Timeout", Detail = "The network check did not finish in time." };
-            if (!File.Exists(probe)) return envelope with { State = "Unknown", Detail = "The network check container produced no result." };
-            return Interpret(envelope, await File.ReadAllTextAsync(probe, ct));
+            if (outcome.TimedOut) return envelope with { State = PerformanceProbeStates.Timeout, Detail = "The network check did not finish in time." };
+            if (!File.Exists(probe))
+                return envelope with { State = PerformanceProbeStates.RuntimeFailure, Detail = outcome.StartError is not null
+                    ? "The container runtime could not start the network check container." : "The network check container produced no result.",
+                    ErrorCode = outcome.ExitCode };
+            return Interpret(envelope, await File.ReadAllTextAsync(probe, ct), !string.IsNullOrWhiteSpace(C.HttpsProxy) || !string.IsNullOrWhiteSpace(C.HttpProxy));
         }
         finally { Cleanup(work); }
     }
 
-    /// <summary>Maps the probe's HTTP status / k6 error code: 11xx DNS, 12xx TCP, 13xx TLS, 1050/1211 timeout.</summary>
-    internal static PerformanceReachability Interpret(PerformanceReachability envelope, string json)
+    /// <summary>
+    /// Maps the probe's HTTP status / k6 error code to a structured state: 11xx DNS, 1212 refused, other 12xx connect, 1310 unknown authority
+    /// (corporate CA), 1311 hostname mismatch, other 13xx TLS, 1050/1211 timeout; 407 or a connect failure through a configured proxy = proxy.
+    /// Any other HTTP status = reachable (401 = reachable, asks for authentication). The raw code is technical detail only.
+    /// </summary>
+    internal static PerformanceReachability Interpret(PerformanceReachability envelope, string json, bool proxyConfigured = false)
     {
         var (status, code) = K6SummaryParser.Probe(json);
-        if (status is > 0) return envelope with { State = "Reachable", Reachable = true, HttpStatus = status, Detail = $"The k6 container reached {envelope.ExecutionOrigin} (HTTP {status})." };
-        return code switch
+        var host = Uri.TryCreate(envelope.ExecutionOrigin, UriKind.Absolute, out var uri) ? uri.Host : envelope.ExecutionOrigin;
+        if (status == 407)
+            return envelope with { State = PerformanceProbeStates.ProxyFailure, HttpStatus = status, Detail = "The configured proxy refused the request from the k6 container (HTTP 407: proxy authentication required)." };
+        if (status == 401)
+            return envelope with { State = PerformanceProbeStates.AuthChallenge, Reachable = true, HttpStatus = status,
+                Detail = $"The k6 container reached {envelope.ExecutionOrigin}; it answered HTTP 401 (authentication required). The network path works; an unauthenticated scenario may need authentication." };
+        if (status is > 0) return envelope with { State = PerformanceProbeStates.Reachable, Reachable = true, HttpStatus = status, Detail = $"The k6 container reached {envelope.ExecutionOrigin} (HTTP {status})." };
+        var result = code switch
         {
-            1050 or 1211 => envelope with { State = "Timeout", Detail = $"The request from the k6 container to {envelope.ExecutionOrigin} timed out (VPN/private route not available to containers?)." },
-            >= 1100 and < 1200 => envelope with { State = "DnsFailure", Detail = $"The k6 container could not resolve {new Uri(envelope.ExecutionOrigin).Host} (corporate DNS/VPN may only be available on the host)." },
-            >= 1200 and < 1300 => envelope with { State = "ConnectionFailed", Detail = $"The k6 container could not connect to {envelope.ExecutionOrigin} (code {code})." },
-            >= 1300 and < 1400 => envelope with { State = "TlsFailure", Detail = $"TLS to {envelope.ExecutionOrigin} failed from the k6 container (code {code}); configure PerformanceTests:Container:CaBundlePath for a corporate CA. Verification is never disabled." },
-            _ => envelope with { State = "Unknown", Detail = $"The k6 container got no HTTP response from {envelope.ExecutionOrigin} (code {code?.ToString() ?? "none"})." },
+            1050 or 1211 => envelope with { State = PerformanceProbeStates.Timeout, Detail = $"The request from the k6 container to {envelope.ExecutionOrigin} timed out (VPN/private route not available to containers?)." },
+            >= 1100 and < 1200 => envelope with { State = PerformanceProbeStates.DnsFailure, Detail = $"The k6 container could not resolve {host} (corporate DNS/VPN may only be available on the host)." },
+            >= 1200 and < 1300 when proxyConfigured => envelope with { State = PerformanceProbeStates.ProxyFailure, Detail = $"The k6 container could not connect through the configured proxy to {envelope.ExecutionOrigin}." },
+            1212 => envelope with { State = PerformanceProbeStates.ConnectionRefused, Detail = $"{envelope.ExecutionOrigin} refused the connection from the k6 container (nothing listens on that port for the container)." },
+            >= 1200 and < 1300 => envelope with { State = PerformanceProbeStates.ConnectionFailed, Detail = $"The k6 container could not connect to {envelope.ExecutionOrigin}." },
+            1310 => envelope with { State = PerformanceProbeStates.TlsTrustFailure,
+                Detail = $"The k6 container cannot validate the certificate chain for {host}: configure the corporate CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}). TLS verification is never disabled." },
+            1311 => envelope with { State = PerformanceProbeStates.HostnameMismatch, Detail = $"The certificate presented by {host} does not match the host name. TLS verification is never disabled." },
+            >= 1300 and < 1400 => envelope with { State = PerformanceProbeStates.TlsFailure, Detail = $"The TLS handshake from the k6 container to {host} failed. TLS verification is never disabled." },
+            _ => envelope with { State = PerformanceProbeStates.Unknown, Detail = $"The k6 container got no HTTP response from {envelope.ExecutionOrigin}." },
         };
+        return result with { ErrorCode = code };
     }
 
     /// <summary>Removes only containers labelled birknext.managed=true + birknext.component=performance-test whose run is not active.</summary>

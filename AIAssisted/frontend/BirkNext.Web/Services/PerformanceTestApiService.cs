@@ -43,6 +43,15 @@ public interface IPerformanceTestApiService
     Task<List<PerformanceBaseline>> BaselinesAsync(string environmentId, string? definitionId, CancellationToken ct = default);
     Task<PerformanceBaselinePromotionResult> PromoteAsync(string environmentId, PerformanceBaselinePromotion request, CancellationToken ct = default);
     Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default);
+    /// <summary>Validates and previews a Performance setup profile against the current Target Environment (never mutates).</summary>
+    Task<PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>> PreviewSetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupProfileRequest request, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>.Fail("Performance setup profiles are not available."));
+    /// <summary>Applies the selected changes (saves a definition version; never runs anything).</summary>
+    Task<PerformanceApiResult<BirkNext.Integrations.SetupApplyResult>> ApplySetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupApplyRequest request, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<BirkNext.Integrations.SetupApplyResult>.Fail("Performance setup profiles are not available."));
+    /// <summary>The definition's safe setup (null environment = the placeholder example).</summary>
+    Task<PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>> ExportSetupAsync(string? environmentId, string? definitionId, BirkNext.Integrations.SetupProfileFormat format, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>.Fail("Performance setup profiles are not available."));
 }
 
 public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTestApiService
@@ -151,6 +160,37 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
 
     public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
         Get<PerformanceRunComparison>($"{Base}/compare?{Env(environmentId)}&current={current}{(reference is { } r ? "&reference=" + r : "")}{(baselineId is null ? "" : "&baselineId=" + Uri.EscapeDataString(baselineId))}", ct);
+
+    private static string Target(PerformanceTestDefinition d) =>
+        $"targetOrigin={Uri.EscapeDataString(d.TargetOrigin)}&environmentType={Uri.EscapeDataString(d.EnvironmentType)}&environmentName={Uri.EscapeDataString(d.EnvironmentName)}";
+
+    public Task<PerformanceApiResult<BirkNext.Integrations.SetupProfilePreview>> PreviewSetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupProfileRequest request, CancellationToken ct = default) =>
+        PostJson<BirkNext.Integrations.SetupProfilePreview>($"{Base}/setup-profile/preview?{Env(environmentId)}&{Target(target)}", request, ct);
+
+    public Task<PerformanceApiResult<BirkNext.Integrations.SetupApplyResult>> ApplySetupAsync(string environmentId, PerformanceTestDefinition target, BirkNext.Integrations.SetupApplyRequest request, CancellationToken ct = default) =>
+        PostJson<BirkNext.Integrations.SetupApplyResult>($"{Base}/setup-profile/apply?{Env(environmentId)}&{Target(target)}", request, ct);
+
+    public async Task<PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>> ExportSetupAsync(string? environmentId, string? definitionId, BirkNext.Integrations.SetupProfileFormat format, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync(environmentId is null ? $"{Base}/setup-profile/example"
+                : $"{Base}/setup-profile/export?{Env(environmentId)}&format={format}{(definitionId is null ? "" : "&definitionId=" + Uri.EscapeDataString(definitionId))}", ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>.Ok((await response.Content.ReadFromJsonAsync<BirkNext.Integrations.SetupProfileExport>(Json, ct))!)
+                : PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<BirkNext.Integrations.SetupProfileExport>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    private async Task<PerformanceApiResult<T>> PostJson<T>(string url, object body, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync(url, body, Json, ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<T>.Ok((await response.Content.ReadFromJsonAsync<T>(Json, ct))!) : PerformanceApiResult<T>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<T>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
 
     public BackendRequestError? LastReadError { get; private set; }
 

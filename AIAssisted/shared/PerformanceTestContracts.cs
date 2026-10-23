@@ -188,6 +188,10 @@ public sealed record PerformanceTestDefinition
     public PerformanceTestSafetyPolicy SafetyPolicy { get; init; } = new();
     /// <summary>Optional Resource Stability observation (approved components, sampling, warm-up, policies). Null = not configured.</summary>
     public ResourceObservationConfiguration? ResourceObservation { get; init; }
+    /// <summary>Delivery pipelines a person confirmed as delivering this target (pipeline ids of a Source Analysis snapshot). Empty = not
+    /// confirmed: pipeline gates are then resolved cautiously and an unresolved mapping is shown as unresolved, never as every pipeline.
+    /// Not part of the comparison fingerprint.</summary>
+    public List<string> DeliveryPipelineIds { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
     /// <summary>Incremented on every saved change; runs keep the version and a full snapshot.</summary>
@@ -218,12 +222,40 @@ public sealed record PerformanceReachability
     /// <summary>The origin as the container addresses it (e.g. loopback rewritten to the container host gateway).</summary>
     public string ExecutionOrigin { get; init; } = "";
     public string? Network { get; init; }
-    /// <summary>Reachable / DnsFailure / ConnectionFailed / TlsFailure / Timeout / RuntimeUnavailable / ImageMissing / Unknown.</summary>
+    /// <summary>See <see cref="PerformanceProbeStates"/>. Older results may carry the legacy TlsFailure / ConnectionFailed states.</summary>
     public string State { get; init; } = "Unknown";
     public bool Reachable { get; init; }
     public int? HttpStatus { get; init; }
     public string Detail { get; init; } = "";
     public DateTimeOffset CheckedAt { get; init; }
+    /// <summary>Provider error code (k6: 11xx DNS, 12xx TCP, 13xx TLS), technical detail only.</summary>
+    public int? ErrorCode { get; init; }
+    /// <summary>The network/TLS configuration the check ran with (<see cref="PerformanceReadinessIdentity.NetworkFingerprint"/>); a different one = stale.</summary>
+    public string NetworkFingerprint { get; init; } = "";
+}
+
+/// <summary>Structured container-network check results; the UI renders actionable copy per state, raw text stays technical detail.</summary>
+public static class PerformanceProbeStates
+{
+    public const string Reachable = "Reachable";
+    /// <summary>An HTTP response that asks for authentication: the network path works; the scenario may need authentication.</summary>
+    public const string AuthChallenge = "AuthChallenge";
+    public const string DnsFailure = "DnsFailure";
+    public const string Timeout = "Timeout";
+    public const string ConnectionRefused = "ConnectionRefused";
+    public const string ConnectionFailed = "ConnectionFailed";
+    /// <summary>The container does not trust the certificate chain (unknown authority): a corporate CA bundle is needed.</summary>
+    public const string TlsTrustFailure = "TlsTrustFailure";
+    public const string HostnameMismatch = "HostnameMismatch";
+    /// <summary>Other TLS handshake failures (legacy results use this for every TLS failure).</summary>
+    public const string TlsFailure = "TlsFailure";
+    public const string ProxyFailure = "ProxyFailure";
+    public const string RuntimeFailure = "RuntimeFailure";
+    public const string RuntimeUnavailable = "RuntimeUnavailable";
+    public const string ImageMissing = "ImageMissing";
+    public const string Unknown = "Unknown";
+
+    public static bool IsTlsTrust(PerformanceReachability r) => r.State == TlsTrustFailure || r.State == TlsFailure && r.ErrorCode is null or 1310;
 }
 
 public sealed record PerformanceProviderCapabilities
@@ -264,10 +296,64 @@ public sealed record PerformanceProviderStatus
     public bool AllowImagePull { get; init; }
 }
 
-public sealed record PerformanceReadinessItem(string Key, string Label, PerformanceReadinessState State, string Detail, bool Blocking);
+public sealed record PerformanceReadinessItem(string Key, string Label, PerformanceReadinessState State, string Detail, bool Blocking)
+{
+    /// <summary>Definition · Execution setup · Reachability · Safety · Optional (see <see cref="PerformanceReadinessCategories"/>): a missing threshold,
+    /// a missing corporate CA, a DNS failure and a production refusal are different problems and are never all "Needs configuration".</summary>
+    public string Category { get; init; } = "";
+    /// <summary>The blocker in a few words ("container TLS trust"), for "Blocked · container TLS trust".</summary>
+    public string Summary { get; init; } = "";
+    /// <summary>Tester-facing headline ("Container TLS trust is not configured").</summary>
+    public string Headline { get; init; } = "";
+    /// <summary>Safe action that resolves the item (see <see cref="PerformanceReadinessActions"/>), or null.</summary>
+    public string? Action { get; init; }
+    public string? Owner { get; init; }
+    /// <summary>Configuration key the owner sets (e.g. PerformanceTests:Container:CaBundlePath) — the key, never the value or file content.</summary>
+    public string? ConfigurationKey { get; init; }
+    /// <summary>Technical detail kept secondary (e.g. "TlsFailure · code 1310").</summary>
+    public string? Technical { get; init; }
+    /// <summary>Finer state than <see cref="State"/> where the item has its own vocabulary (Corporate CA trust: Not required / Ready / Missing / Invalid / Not assessed).</summary>
+    public string? Status { get; init; }
+}
+
+public static class PerformanceReadinessCategories
+{
+    public const string Definition = "Definition";
+    public const string ExecutionSetup = "Execution setup";
+    public const string Reachability = "Reachability";
+    public const string Safety = "Safety";
+    public const string Optional = "Optional";
+}
+
+/// <summary>Safe readiness actions. None of them sends load; "check-network" sends exactly one request from the load-generator container.</summary>
+public static class PerformanceReadinessActions
+{
+    public const string CheckNetwork = "check-network";
+    public const string OpenLocalExecutionSetup = "open-local-execution-setup";
+    public const string ConfigureTarget = "configure-target";
+    public const string EditScenario = "edit-scenario";
+    public const string EditWorkload = "edit-workload";
+    public const string EditThresholds = "edit-thresholds";
+    public const string OpenEngines = "open-engines";
+}
+
+/// <summary>What a readiness evaluation is about. Changing any of these makes an earlier evaluation (and an earlier network check) stale.</summary>
+public sealed record PerformanceReadinessIdentity
+{
+    public string DefinitionId { get; init; } = "";
+    public int DefinitionVersion { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string TargetOrigin { get; init; } = "";
+    public string ProviderId { get; init; } = "";
+    public string RuntimeId { get; init; } = "";
+    /// <summary>Fingerprint of target + runtime + image + CA bundle content + proxy settings: what the container network check depends on.</summary>
+    public string NetworkFingerprint { get; init; } = "";
+    public DateTimeOffset EvaluatedAt { get; init; }
+}
 
 public sealed record PerformanceTestReadiness
 {
+    public PerformanceReadinessIdentity? Identity { get; init; }
     public bool Ready { get; init; }
     public List<PerformanceReadinessItem> Items { get; init; } = [];
     /// <summary>Tester-friendly reasons the run cannot start. Empty when ready.</summary>

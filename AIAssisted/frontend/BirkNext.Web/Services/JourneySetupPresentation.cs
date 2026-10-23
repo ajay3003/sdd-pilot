@@ -9,7 +9,8 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class JourneySetupPresentation
 {
-    public sealed record StepAction(string Label, string? Href, string? Note);
+    /// <summary>What a step offers: a link to the owner (<paramref name="Href"/>) or an in-page command the host page performs (<paramref name="Command"/>).</summary>
+    public sealed record StepAction(string Label, string? Href, string? Note, string? Command = null);
 
     public static string Status(JourneySetupStepStatus status) => status switch
     {
@@ -68,6 +69,16 @@ public static class JourneySetupPresentation
 
     /// <summary>The element id of a step (for Continue setup focus).</summary>
     public static string StepId(string journeyId, JourneySetupStepKind kind) => $"setup-{journeyId}-{kind.ToString().ToLowerInvariant()}";
+}
+
+/// <summary>Where a setup-profile panel sends its requests: the shared panel (validate → preview → apply selected → export) over any consumer's
+/// profile endpoints. Every implementation keeps the same rules: preview never mutates, apply needs explicit selection, export is sanitized.</summary>
+public interface ISetupProfileTransport
+{
+    Task<(SetupProfilePreview? Value, string? Error)> PreviewAsync(SetupProfileRequest request);
+    Task<(SetupApplyResult? Value, string? Error)> ApplyAsync(SetupApplyRequest request);
+    /// <summary><paramref name="example"/>: the placeholder example instead of the current safe setup.</summary>
+    Task<(SetupProfileExport? Value, string? Error)> ExportAsync(bool example, SetupProfileFormat format);
 }
 
 /// <summary>Which half of the setup-profile panel is open.</summary>

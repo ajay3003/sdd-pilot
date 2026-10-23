@@ -80,4 +80,64 @@ public sealed class DeliveryEvidenceUiTests : BunitContext
         rows[1].Should().Contain("Rebuilt for this environment").And.Contain("No validation on the dependency path").And.Contain("No post-deploy validation");
         cut.Find("[data-testid=sd-delivery-doc-text]").TextContent.Should().Contain("## Delivery — shop.zip").And.Contain("nothing here says a stage ran");
     }
+
+    // ── Target-scoped gates (Performance Test Review): a monorepo source is never presented as "every pipeline is this target's" ──────
+
+    private static readonly Guid MonorepoId = Guid.Parse("de000000-0000-0000-0000-000000000099");
+
+    private static DeliveryEvidence Monorepo()
+    {
+        (DeliveryPipeline, DeliveryDeployment) P(string id, string name, bool gate = false) =>
+            (new DeliveryPipeline(id, name, $"pipelines/{id}.yml", PipelinePlatform.AzurePipelines, false, "Delivery", ["main"], ["dev"], "fp"),
+             new DeliveryDeployment($"{id}-dev", id, name, "DeployDev", "deploy", "dev", SourceEnvironmentKind.Development, [name], ArtifactStrategy.BuiltInSameRun, "same run",
+                 gate ? [new(ValidationCategory.Performance, "k6 smoke", GateState.Gates, "Gate configured", Where)] : [], [], "none", null, Where));
+        var all = new[] { P("autorisasjon", "M2LB.Autorisasjon"), P("hendelse", "M2LB.Hendelse"), P("person", "M2LB.Person", gate: true), P("adapters", "M2LB.SkoleAdapter") };
+        return new DeliveryEvidence { SnapshotId = MonorepoId, Archive = "M2LB.zip", Pipelines = [.. all.Select(x => x.Item1)], Deployments = [.. all.Select(x => x.Item2)] };
+    }
+
+    private IRenderedComponent<DeliveryEvidencePanel> Scoped(IReadOnlyList<string> confirmed, Action<IReadOnlyList<string>> onConfirm)
+    {
+        var api = new Mock<IPipelineReviewApiService>();
+        api.Setup(a => a.SourcesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new PipelineReviewSourceList(true,
+            [new(MonorepoId, "M2LB.zip", "fp", DateTimeOffset.Parse("2026-10-22T08:00:00Z"), 4, 4, 0, "m2lb")], MonorepoId));
+        api.Setup(a => a.DeliveryAsync(It.IsAny<string>(), MonorepoId, It.IsAny<CancellationToken>())).ReturnsAsync(Monorepo());
+        Services.AddSingleton(api.Object);
+        var cut = Render<DeliveryEvidencePanel>(p => p.Add(x => x.Categories, [ValidationCategory.Performance]).Add(x => x.ScopeTargetOrigin, "https://m2lbdev.bufetat.no")
+            .Add(x => x.ScopeEnvironmentName, "Development").Add(x => x.ScopeEnvironmentType, "Development").Add(x => x.ConfirmedPipelineIds, confirmed)
+            .Add(x => x.OnConfirmPipelines, onConfirm));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=delivery-snapshot]"));
+        cut.Find("[data-testid=delivery-snapshot]").GetAttribute("value").Should().BeEmpty("no snapshot is chosen for the reader");
+        cut.Find("[data-testid=delivery-snapshot]").Change(MonorepoId.ToString());
+        return cut;
+    }
+
+    [Fact]
+    public void Performance_target_gates_are_unresolved_for_a_monorepo_and_never_list_every_pipeline_as_primary()
+    {
+        IReadOnlyList<string>? confirmed = null;
+        var cut = Scoped([], ids => confirmed = ids);
+        cut.Find("[data-testid=delivery-target-scope]").GetAttribute("data-state").Should().Be("Ambiguous");
+        cut.Find("[data-testid=delivery-scope-summary]").TextContent.Should().Contain("Pipeline source available · target-specific pipeline mapping unresolved");
+        cut.FindAll("[data-testid=delivery-target-pipeline]").Should().BeEmpty("autorisasjon, hendelse, person and adapters are not primary gates for this target");
+        cut.FindAll("[data-testid=delivery-gate]").Should().BeEmpty("the repository-wide list is not shown in target mode");
+        var review = cut.Find("[data-testid=delivery-review-mapping]");
+        review.ClassList.Should().Contain("btn-primary");
+        review.Click();
+        cut.FindAll("[data-testid=delivery-mapping-option]").Should().HaveCount(4);
+        cut.FindAll("[data-testid=delivery-mapping-option][checked]").Should().BeEmpty("nothing is selected for the person");
+        cut.Find("[data-testid=delivery-mapping-option][data-pipeline=person]").Change(true);
+        cut.Find("[data-testid=delivery-mapping-save]").Click();
+        confirmed.Should().Equal(["person"]);
+    }
+
+    [Fact]
+    public void Performance_target_gates_for_a_confirmed_pipeline_read_configured_not_executed()
+    {
+        var cut = Scoped(["person"], _ => { });
+        cut.Find("[data-testid=delivery-target-scope]").GetAttribute("data-state").Should().Be("Confirmed");
+        var pipeline = cut.Find("[data-testid=delivery-target-pipeline]");
+        pipeline.GetAttribute("data-pipeline").Should().Be("person");
+        cut.Find("[data-testid=delivery-target-gates]").TextContent.Should().Contain("k6 smoke — Gate configured").And.Contain("Configured · not executed/observed");
+        cut.Find("[data-testid=delivery-other-pipelines]").TextContent.Should().Contain("Other pipelines in this source (3)");
+    }
 }

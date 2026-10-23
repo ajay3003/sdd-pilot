@@ -90,6 +90,8 @@
     <Compile Include="../../shared/DependencyEvidenceContracts.cs" Link="Models/DependencyEvidenceContracts.cs" />
     <Compile Include="../../shared/ContractEvidenceContracts.cs" Link="Models/ContractEvidenceContracts.cs" />
     <Compile Include="../../shared/ContractRelationshipContracts.cs" Link="Models/ContractRelationshipContracts.cs" />
+    <Compile Include="../../shared/DeliveryTargetScope.cs" Link="Models/DeliveryTargetScope.cs" />
+    <Compile Include="../../shared/PerformanceSetupContracts.cs" Link="Models/PerformanceSetupContracts.cs" />
     <Compile Include="../../shared/DeliveryEvidenceContracts.cs" Link="Models/DeliveryEvidenceContracts.cs" />
     <Compile Include="../../shared/TestEvidenceQueries.cs" Link="Models/TestEvidenceQueries.cs" />
     <Compile Include="../../shared/QualityEvidenceContracts.cs" Link="Models/QualityEvidenceContracts.cs" />

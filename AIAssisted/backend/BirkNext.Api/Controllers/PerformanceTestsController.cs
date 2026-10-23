@@ -104,6 +104,48 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         return Ok(await providers.CheckReachabilityAsync(definition, ct));
     }
 
+    // ── Safe setup profiles (desired state only: scenario, workload, thresholds, target reference) ─────────────────────────
+
+    /// <summary>The current Target Environment the page is on (the target is never taken from a profile); validated like a definition save.</summary>
+    private (Services.SetupProfiles.PerformanceSetupTarget? Target, string? Error) SetupTarget(string? targetOrigin, string? environmentType, string? environmentName)
+    {
+        var (origin, error) = PerformanceTestSafety.Origin(targetOrigin, environmentType, options);
+        return origin is null ? (null, error) : (new(origin.ToString().TrimEnd('/'), environmentType ?? "", environmentName ?? ""), null);
+    }
+
+    [HttpPost("setup-profile/preview")]
+    [RequestSizeLimit(Services.SetupProfiles.SetupProfileParser.MaxBytes * 2)]
+    public async Task<ActionResult<BirkNext.Integrations.SetupProfilePreview>> PreviewSetup([FromServices] Services.SetupProfiles.PerformanceSetupProfileService profiles, [FromQuery] string environmentId,
+        [FromQuery] string? targetOrigin, [FromQuery] string? environmentType, [FromQuery] string? environmentName, [FromBody] BirkNext.Integrations.SetupProfileRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var (target, error) = SetupTarget(targetOrigin, environmentType, environmentName);
+        return target is null ? BadRequest(error) : Ok(await profiles.PreviewAsync(environmentId, request, target, ct));
+    }
+
+    [HttpPost("setup-profile/apply")]
+    [RequestSizeLimit(Services.SetupProfiles.SetupProfileParser.MaxBytes * 2)]
+    public async Task<ActionResult<BirkNext.Integrations.SetupApplyResult>> ApplySetup([FromServices] Services.SetupProfiles.PerformanceSetupProfileService profiles, [FromQuery] string environmentId,
+        [FromQuery] string? targetOrigin, [FromQuery] string? environmentType, [FromQuery] string? environmentName, [FromBody] BirkNext.Integrations.SetupApplyRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var (target, error) = SetupTarget(targetOrigin, environmentType, environmentName);
+        return target is null ? BadRequest(error) : Ok(await profiles.ApplyAsync(environmentId, request, target, ct));
+    }
+
+    [HttpGet("setup-profile/export")]
+    public async Task<ActionResult<BirkNext.Integrations.SetupProfileExport>> ExportSetup([FromServices] Services.SetupProfiles.PerformanceSetupProfileService profiles, [FromQuery] string environmentId,
+        [FromQuery] string? definitionId, [FromQuery] BirkNext.Integrations.SetupProfileFormat format = BirkNext.Integrations.SetupProfileFormat.Yaml, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        return await profiles.ExportAsync(environmentId, definitionId, format, ct) is { } export ? Ok(export) : NotFound("No saved performance definition to export.");
+    }
+
+    [HttpGet("setup-profile/example")]
+    public ActionResult<BirkNext.Integrations.SetupProfileExport> SetupExample() =>
+        Ok(new BirkNext.Integrations.SetupProfileExport(BirkNext.Integrations.SetupProfileFormat.Yaml, "performance-baseline.example.yaml",
+            Services.SetupProfiles.PerformanceSetupProfileService.Example(), Services.SetupProfiles.PerformanceSetupProfileService.ExportExcluded));
+
     /// <summary>Pulls the provider image — only when PerformanceTests:Container:AllowImagePull is true (explicit action; never at run time).</summary>
     [HttpPost("providers/{providerId}/prepare")]
     public async Task<IActionResult> Prepare(string providerId, CancellationToken ct)

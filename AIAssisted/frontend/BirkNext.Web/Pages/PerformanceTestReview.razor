@@ -12,6 +12,7 @@
 @inject IPerformanceTestApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Performance Test Review</PageTitle>
@@ -30,11 +31,16 @@
             <div class="ptc-header-side">
                 <span class="ptc-status-line"><span class="ptc-status-label" aria-hidden="true">Test readiness</span> <span data-testid="pt-status">@Pill(PageState, "Test readiness")</span></span>
                 <div class="ptc-actions" data-testid="pt-definition-bar">
-                    <button type="button" class="btn-primary ptc-run" @onclick="() => _tab = Tab.Run" disabled="@(!CanRun)" data-testid="pt-run-open" aria-describedby="pt-run-reason">Run test</button>
+                    @{ var headerNext = NextStepNow; }
+                    @if (headerNext.Action is { } headerAction && headerAction is not ("run" or "history") && ActiveRun is null)
+                    {
+                        @ActionControl(headerAction, NextItem, true, "pt-primary-action")
+                    }
+                    <button type="button" class="@(CanRun || ActiveRun is not null ? "btn-primary ptc-run" : "btn-secondary")" @onclick="RunTestAsync" disabled="@(!RunEnabled)" data-testid="pt-run-open" aria-describedby="pt-run-reason">@(ActiveRun is not null ? "View run" : "Run test")</button>
                     <button type="button" class="btn-secondary" @onclick="() => _tab = Tab.Scenario" data-testid="pt-configure">Configure test</button>
                     <button type="button" class="ptc-link" @onclick="NewDefinition" data-testid="pt-new">+ New definition</button>
                 </div>
-                @if (!CanRun) { <p class="ptc-run-reason" id="pt-run-reason" data-testid="pt-run-reason">@RunReason</p> }
+                @if (!CanRun && ActiveRun is null) { <p class="ptc-run-reason" id="pt-run-reason" data-testid="pt-run-reason">@RunReason</p> }
             </div>
         }
     </header>
@@ -65,7 +71,7 @@
         var (readyCount, requiredCount) = D.RequiredCounts(groups);
         var envSafety = D.EnvironmentSafety(_draft.EnvironmentType, _readiness);
         var engine = D.Engine(_overview.Provider);
-        var definitionState = D.DefinitionState(_isNew, _dirty, _draft.Version);
+        var definitionState = D.DefinitionState(_isNew, _dirty, _draft.Version, DraftValid);
 
         @if (D.IsProduction(_draft.EnvironmentType))
         {
@@ -95,7 +101,7 @@
             <section class="ptc-card ptc-card-readiness ptc-accent-@PageState.ToneClass" aria-labelledby="pt-card-ready-h" data-testid="pt-card-readiness">
                 <h2 id="pt-card-ready-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">✓</span>Test readiness</h2>
                 <p class="ptc-value" data-testid="pt-hero-readiness">@PageState.Label</p>
-                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null ? "Whether this definition can run safely. The backend evaluates it after saving." : $"{readyCount} of {requiredCount} required checks ready for this definition")</p>
+                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null || _isNew || _dirty ? "Whether this definition can run safely. Check readiness evaluates it (a new draft is saved as v1 first)." : $"{readyCount} of {requiredCount} required checks ready for this definition")</p>
                 @if (PageState.Reason is { } why) { <p class="ptc-reason" data-testid="pt-readiness-reason">@why</p> }
                 <ul class="ptc-mini-checks">
                     @foreach (var c in groups.SelectMany(g => g.Checks.Select(c => (g.Name, c))).Where(x => x.Name != "Optional" || x.c.Key is "resources").Take(7))
@@ -126,7 +132,7 @@
             <label class="ptc-select">Test definition
                 <select value="@(_draft.Id)" @onchange="SelectDefinition" data-testid="pt-definition-select">
                     @foreach (var d in _overview.Definitions) { <option value="@d.Id">@d.Name · v@(d.Version)</option> }
-                    @if (_isNew) { <option value="">@(_draft.Name) (draft, not saved)</option> }
+                    @if (_isNew) { <option value="">@(_draft.Name) (draft, not saved yet)</option> }
                 </select>
             </label>
             <dl class="ptc-def-facts">
@@ -135,8 +141,8 @@
                 <div><dt>Version</dt><dd>@(_isNew ? "—" : $"v{_draft.Version}")</dd></div>
             </dl>
             <div class="ptc-def-save">
-                <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@((!_dirty && !_isNew) || _saving)" aria-describedby="pt-save-hint" data-testid="pt-save">@(_saving ? "Saving…" : _saveFailed ? "Retry save" : "Save definition")</button>
-                <span class="ptc-save-hint" id="pt-save-hint" data-testid="pt-save-hint">@(_saving ? "Saving the definition…" : _isNew ? "Not saved yet — readiness and runs need a saved definition." : _dirty ? "Unsaved changes — saving creates a new version; earlier runs keep theirs." : $"Saved as v{_draft.Version}.")</span>
+                <button type="button" class="@(_dirty && !_isNew ? "btn-primary" : "btn-secondary")" @onclick="SaveAsync" disabled="@((!_dirty && !_isNew) || _saving || _isNew && !DraftValid)" aria-describedby="pt-save-hint" data-testid="pt-save">@(_saving ? "Saving…" : _saveFailed ? "Retry save" : _isNew ? "Save definition" : "Save changes as new version")</button>
+                <span class="ptc-save-hint" id="pt-save-hint" data-testid="pt-save-hint">@(_saving ? "Saving the definition…" : _isNew ? DraftValid ? "Optional: Check readiness saves the draft as v1 automatically." : $"Required before readiness: {string.Join(", ", D.DraftIssues(_draft))}." : _dirty ? $"Unsaved changes to v{_draft.Version} — saving creates v{_draft.Version + 1}; earlier runs keep theirs." : $"Saved as v{_draft.Version}.")</span>
             </div>
             @if (_saveError is { } saveError) { <p class="ptc-save-error" role="alert" data-testid="pt-save-error">Not saved: @saveError Your changes are kept; retry when the cause is fixed.</p> }
         </section>
@@ -168,8 +174,13 @@
         }
 
         <section class="ptc-technical-section" aria-label="Pipeline performance gates" data-testid="pt-delivery-section">
-            <ReviewDisclosure Text="Pipeline performance gates" CollapseText="Hide pipeline performance gates" Hint="Configured in pipeline source · not executed" TestId="pt-delivery-gates" Class="ptc-technical" @bind-Expanded="_deliveryExpanded">
-                @if (_deliveryExpanded) { <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" /> }
+            <ReviewDisclosure Text="Pipeline performance gates" CollapseText="Hide pipeline performance gates" Hint="Pipelines that deliver this target · configured, not executed" TestId="pt-delivery-gates" Class="ptc-technical" @bind-Expanded="_deliveryExpanded">
+                @if (_deliveryExpanded)
+                {
+                    <BirkNext.Web.Components.DeliveryEvidencePanel Categories="@([BirkNext.PipelineReview.ValidationCategory.Performance])" ScopeTargetOrigin="@_draft.TargetOrigin"
+                        ScopeEnvironmentName="@_draft.EnvironmentName" ScopeEnvironmentType="@_draft.EnvironmentType" ConfirmedPipelineIds="_draft.DeliveryPipelineIds" OnConfirmPipelines="ConfirmPipelines"
+                        Note="Performance gates as the pipelines that deliver this target define them — not every pipeline in the source. Choose the snapshot; none is selected automatically." />
+                }
             </ReviewDisclosure>
         </section>
         <section class="ptc-technical-section" aria-label="Technical details" data-testid="pt-technical-section">
@@ -253,6 +264,19 @@
 
     // The backend refuses Production; the button follows the same rule so it never offers what the backend will reject.
     private bool CanRun => !_isNew && !_dirty && _readiness?.Ready == true && !(_runs.FirstOrDefault()?.IsActive ?? false) && !D.IsProduction(_draft.EnvironmentType);
+
+    /// <summary>Run test is a flow, not a start: a draft is saved and readiness evaluated first; a run still needs the explicit confirmation in Run.</summary>
+    private bool RunEnabled => ActiveRun is not null || !D.IsProduction(_draft.EnvironmentType) && !_dirty && (!_isNew || DraftValid) && !_saving;
+
+    private bool DraftValid => D.DraftIssues(_draft).Count == 0;
+
+    /// <summary>What "Cannot run yet" offers: check readiness for a draft, save edits as a new version, otherwise review the blockers.</summary>
+    private string? RunBlockedAction => _isNew ? "check-readiness" : _dirty ? "save-version" : null;
+
+    private NextStep NextStepNow => D.Next(PageState, _isNew, _dirty, _readiness, _runs, ActiveBaseline, DraftValid);
+
+    /// <summary>The readiness item the next action resolves (for its label and disclosure).</summary>
+    private PerformanceReadinessItem? NextItem => _readiness?.Items.FirstOrDefault(i => i.Blocking && i.Action == NextStepNow.Action);
     private PerformanceTestRun? ActiveRun => _runs.FirstOrDefault(r => r.IsActive);
     private PerformanceBaseline? ActiveBaseline => _baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active && b.ComparisonFingerprint == _draft.ComparisonFingerprint);
 
@@ -262,13 +286,13 @@
 
     private string ImageText => _overview?.Provider is { Image: { } image } p ? $"{PerformanceEngineCapabilityPresentation.ShortImage(image)} — {(p.ImagePresent ? "present" : "missing")}" : "—";
 
-    private PtStatus PageState => D.PageStatus(_isNew, _dirty, _readiness, ActiveRun, _draft.EnvironmentType);
+    private PtStatus PageState => D.PageStatus(_isNew, _dirty, _readiness, ActiveRun, _draft.EnvironmentType, DraftValid);
 
     /// <summary>Why Run is unavailable, shown next to the button (never only in a tooltip).</summary>
     private string RunReason => ActiveRun is not null ? "A run is in progress."
         : D.IsProduction(_draft.EnvironmentType) ? "Blocked: Production is not allowed."
-        : _isNew ? "Save the definition before running."
-        : _dirty ? "Save your changes before running."
+        : _isNew ? DraftValid ? "Run test saves the draft as v1, checks readiness and then asks for confirmation." : "Complete the required fields first."
+        : _dirty ? "Save your changes as a new version before running."
         : _readiness is null ? "Readiness could not be evaluated."
         : _readiness.Ready ? "" : $"Not ready: {PageState.Reason ?? "see Readiness"}";
 
@@ -312,28 +336,107 @@
         </div>
     };
 
-    private async Task NextAction(string? action)
+    /// <summary>One dispatcher for every action (header, Overview, Readiness, Guided Setup): the same operation wherever it is offered.</summary>
+    private async Task PerformAction(string? action)
     {
+        if (action is not null && D.ActionHref(action) is { } href) { Nav.NavigateTo(href); return; }
         switch (action)
         {
-            case "save": await SaveAsync(); break;
-            case "run": _tab = Tab.Run; break;
+            case "check-readiness": await CheckReadinessAsync(); break;
+            case "save" or "save-version": await SaveAsync(); break;
+            case "run": await RunTestAsync(); break;
             case "history": _tab = Tab.History; break;
-            default: _tab = Tab.Readiness; break;
+            case "scenario" or PerformanceReadinessActions.EditScenario: _tab = Tab.Scenario; break;
+            case PerformanceReadinessActions.EditWorkload: _tab = Tab.Workload; break;
+            case PerformanceReadinessActions.EditThresholds: _tab = Tab.Thresholds; break;
+            case "resources": _tab = Tab.Resources; break;
+            case PerformanceReadinessActions.CheckNetwork: _tab = Tab.Readiness; await CheckNetworkAsync(); break;
+            default: _tab = Tab.Readiness; await FocusFirstBlockerAsync(); break;
         }
     }
+
+    /// <summary>
+    /// Check readiness: a new, complete draft is saved as v1 first (no extra confirmation for first persistence), then the backend evaluates the
+    /// saved version. Edits of a saved version are never versioned silently: they need "Save changes as new version". Nothing runs.
+    /// </summary>
+    private async Task CheckReadinessAsync()
+    {
+        if (_isNew)
+        {
+            if (!DraftValid) { _message = $"Complete the definition first: {string.Join(", ", D.DraftIssues(_draft))}."; _tab = Tab.Scenario; return; }
+            var saved = await SaveCoreAsync();
+            if (saved is null) return;
+            _message = $"Definition saved as v{saved.Version} before readiness evaluation.";
+        }
+        else if (_dirty)
+        {
+            _message = $"You changed v{_draft.Version}. Readiness is evaluated on saved versions: use Save changes as new version first.";
+            _tab = Tab.Readiness;
+            return;
+        }
+        else _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id);
+        _tab = Tab.Readiness;
+    }
+
+    /// <summary>Run test: autosave a new draft, evaluate readiness, stop at a blocker, otherwise open the explicit run confirmation. Never starts load.</summary>
+    private async Task RunTestAsync()
+    {
+        if (ActiveRun is not null) { _tab = Tab.Run; return; }
+        if (_dirty && !_isNew) { _message = "Save your changes as a new version before running; earlier runs keep their version."; _tab = Tab.Readiness; return; }
+        await CheckReadinessAsync();
+        if (_isNew) return; // the draft could not be saved (message shown)
+        if (_readiness?.Ready == true) _tab = Tab.Run;
+        else { _tab = Tab.Readiness; await FocusFirstBlockerAsync(); }
+    }
+
+    private async Task FocusFirstBlockerAsync()
+    {
+        if (_readiness?.Items.FirstOrDefault(i => i.Blocking) is not { } first) return;
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("birknextFocusElement", $"pt-blocker-{first.Key}"); } catch (JSException) { } catch (InvalidOperationException) { }
+    }
+
+    private void ConfirmPipelines(IReadOnlyList<string> pipelineIds)
+    {
+        Changed(_draft with { DeliveryPipelineIds = [.. pipelineIds] });
+        _message = _isNew ? "Pipeline mapping set on the draft; it is saved with the definition." : "Pipeline mapping confirmed in your changes — save them as a new version to keep it.";
+    }
+
+    /// <summary>An action as a control: a link to the owner page, or a button for an in-page action. <paramref name="primary"/> only for THE next action.</summary>
+    private RenderFragment ActionControl(string action, PerformanceReadinessItem? item, bool primary, string testId) => __builder =>
+    {
+        var label = D.ActionLabel(action, item);
+        var css = primary ? "btn-primary" : "btn-secondary";
+        if (D.ActionHref(action) is { } href) { <a class="@css ptc-action" href="@href" data-testid="@testId" data-action="@action">@label</a> }
+        else
+        {
+            var busy = action == PerformanceReadinessActions.CheckNetwork && _checkingNetwork || action is "check-readiness" or "save-version" && _saving;
+            <button type="button" class="@css ptc-action" @onclick="() => PerformAction(action)" disabled="@(busy || action == "check-readiness" && !DraftValid)" data-testid="@testId" data-action="@action"
+                aria-describedby="@(action == PerformanceReadinessActions.CheckNetwork ? $"{testId}-disclosure" : null)">@(busy ? "Working…" : label)</button>
+            @if (action == PerformanceReadinessActions.CheckNetwork)
+            {
+                <span class="ptc-check-detail ptc-disclosure" id="@($"{testId}-disclosure")" data-testid="@($"{testId}-disclosure")">This sends one request from the k6 container to the @(_draft.EnvironmentName) target. It is not a load test.</span>
+            }
+        }
+    };
 
     private PerformanceReachability? _reachability;
     private bool _checkingNetwork;
 
+    /// <summary>Exactly one request from the load-generator container (not a load test, not a run). Readiness refreshes on its own afterwards:
+    /// an unchanged definition is never re-saved.</summary>
     private async Task CheckNetworkAsync()
     {
+        if (_isNew || _dirty) { await CheckReadinessAsync(); if (_isNew || _dirty) return; }
         _checkingNetwork = true;
-        var result = await Api.NetworkCheckAsync(_profile!.Id, _draft.Id);
-        _checkingNetwork = false;
-        if (result.Value is null) { _message = result.Error; return; }
-        _reachability = result.Value;
-        _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id);
+        try
+        {
+            var result = await Api.NetworkCheckAsync(_profile!.Id, _draft.Id);
+            if (result.Value is null) { _message = result.Error; return; }
+            _reachability = result.Value;
+            _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id);
+        }
+        finally { _checkingNetwork = false; }
     }
 
     private string ProviderText => _overview?.Provider is { } p
@@ -349,8 +452,9 @@
         new("target", "Target configured", string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? new("Not configured", "!", PtTone.Attention) : new("Configured", "✓", PtTone.Ready), string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Configure the Target Environment." : _draft.TargetOrigin),
         new("engine", "Execution engine available", _overview?.Provider?.Availability == ProviderAvailability.Available ? new("Available", "✓", PtTone.Ready) : new("Not available", "!", PtTone.Attention), ProviderText),
         new("scenario", "Scenario configured", _draft.Scenario.Steps.Count > 0 ? new("Configured", "✓", PtTone.Ready) : new("No steps", "!", PtTone.Attention), $"{_draft.Scenario.Steps.Count} step(s)"),
-        new("saved", "Definition saved", new("Not saved", "!", PtTone.Attention), _isNew ? "Save the definition so the backend can evaluate it." : "Save the changes to re-evaluate."),
-        new("backend", "Backend checks", new("Pending", "○", PtTone.Neutral), "Runtime, image, container network, workload limits and environment safety are checked after saving."),
+        new("saved", "Definition version", _isNew ? new("Draft", "✎", PtTone.Attention) : new("Unsaved changes", "✎", PtTone.Attention),
+            _isNew ? "Saved automatically as v1 when you check readiness." : "Save the changes as a new version to re-evaluate."),
+        new("backend", "Backend checks", new("Pending", "○", PtTone.Neutral), "Runtime, image, container network, corporate CA trust, workload limits and environment safety are evaluated on the saved version."),
     ];
 
     private string ReadinessText => _isNew ? "Not saved yet" : _dirty ? "Unsaved changes" : _readiness is null ? "—" : _readiness.Ready ? "Ready" : $"Blocked — {_readiness.Blockers.Count} item(s)";
@@ -403,16 +507,22 @@
 
     private async Task SaveAsync()
     {
-        if (_saving) return;
+        if (await SaveCoreAsync() is { } saved) _message = $"Saved as version {saved.Version}. Earlier runs keep the version they ran with.";
+    }
+
+    /// <summary>Saves the editor's definition (a new version only when the content changed) and reloads its readiness.</summary>
+    private async Task<PerformanceTestDefinition?> SaveCoreAsync()
+    {
+        if (_saving) return null;
         _saving = true; _saveError = null;
         try
         {
             var result = await Api.SaveDefinitionAsync(_profile!.Id, _draft, _isNew);
             // A failed save keeps the draft and its unsaved state; it is never silently reverted.
-            if (result.Value is null) { _saveFailed = true; _saveError = result.Error ?? "The backend did not accept the definition."; return; }
+            if (result.Value is null) { _saveFailed = true; _saveError = result.Error ?? "The backend did not accept the definition."; return null; }
             _saveFailed = false;
-            _message = $"Saved as version {result.Value.Version}. Earlier runs keep the version they ran with.";
             await ReloadAsync(result.Value.Id);
+            return result.Value;
         }
         finally { _saving = false; }
     }
@@ -567,11 +677,16 @@
         <div class="ptc-next ptc-accent-@next.Tone.ToString().ToLowerInvariant()" data-testid="pt-next-step" data-tone="@next.Tone">
             <span class="ptc-next-label">Next step</span>
             <p>@next.Text</p>
-            @if (next.Action is { } action && action != "save")
+            @if (next.Action is { } action)
             {
-                <button type="button" class="@(action is "run" or "save" ? "btn-primary" : "btn-secondary")" @onclick="() => NextAction(action)" disabled="@(action == "run" && !CanRun)" data-testid="pt-next-action">@next.ActionLabel</button>
+                @if (action == "run")
+                {
+                    <button type="button" class="btn-primary" @onclick="RunTestAsync" disabled="@(!RunEnabled)" data-testid="pt-next-action" data-action="run">@next.ActionLabel</button>
+                }
+                else { @ActionControl(action, NextItem, action != "history", "pt-next-action") }
             }
         </div>
+        @SetupCard()
 
         <div class="ptc-overview">
             <article class="ptc-tile ptc-accent-info" data-testid="pt-overview-scenario">
@@ -641,6 +756,73 @@
         </div>
         <p class="sd-muted">Load-test metrics are their own evidence: they are not API Quality Review's single-request latency and not browser performance (Lighthouse / Core Web Vitals).</p>
     </section>;
+    }
+
+    private bool _showSetup;
+    private bool _focusSetup;
+    private SetupProfileMode? _profileMode;
+
+    /// <summary>The shared Guided Setup view for this definition (recomputed from the definition + backend readiness; nothing stored).</summary>
+    private BirkNext.Integrations.JourneySetupView Setup => PerformanceSetupModel.Build(_draft, _isNew, _dirty, DraftValid, _readiness);
+
+    private RenderFragment SetupCard() => __builder =>
+    {
+        var setup = Setup;
+        <article class="ptc-tile ptc-setup-card" aria-labelledby="pt-setup-h" data-testid="pt-setup-card" data-complete="@(setup.SetupComplete ? "true" : "false")">
+            <h3 id="pt-setup-h" class="ptc-tile-title">Setup</h3>
+            <p class="ptc-value" data-testid="pt-setup-progress">@JourneySetupPresentation.Progress(setup)</p>
+            <p class="ptc-sub" data-testid="pt-setup-next">@JourneySetupPresentation.Completion(setup)</p>
+            <p class="ptc-tile-actions">
+                <button type="button" class="btn-secondary" data-testid="pt-setup-continue" @onclick="ContinueSetup">Continue setup</button>
+                <button type="button" class="btn-secondary" data-testid="pt-setup-readiness" @onclick="() => _tab = Tab.Readiness">Review readiness</button>
+                <button type="button" class="btn-secondary" data-testid="pt-setup-import" @onclick="() => _profileMode = SetupProfileMode.Import">Import setup</button>
+                <button type="button" class="btn-secondary" data-testid="pt-setup-export" disabled="@_isNew" @onclick="() => _profileMode = SetupProfileMode.Export">Export safe setup</button>
+            </p>
+            @if (_profileMode is { } mode && _profile is not null)
+            {
+                <BirkNext.Web.Components.SetupProfilePanel EnvironmentId="@_profile.Id" PackId="@PerformanceSetupModel.PackId" Mode="mode" Transport="ProfileTransport"
+                    Closed="() => _profileMode = null" Applied="ReloadAfterProfileAsync" />
+            }
+        </article>
+    };
+
+    private void ContinueSetup() { _tab = Tab.Readiness; _showSetup = true; _focusSetup = true; }
+
+    private async Task ReloadAfterProfileAsync() => await ReloadAsync(_isNew ? null : _draft.Id);
+
+    /// <summary>Guided Setup step actions: the owner of each fix, or the same in-page action the readiness list offers.</summary>
+    private JourneySetupPresentation.StepAction SetupAction(BirkNext.Integrations.JourneySetupStep step) => step.Kind switch
+    {
+        BirkNext.Integrations.JourneySetupStepKind.Target or BirkNext.Integrations.JourneySetupStepKind.Environment =>
+            new("Open Target Environments", D.ActionHref(PerformanceReadinessActions.ConfigureTarget), "The target and environment come from the Target Environment; production is refused."),
+        BirkNext.Integrations.JourneySetupStepKind.Scenario => _isNew ? new("Check readiness", null, "The draft is saved as v1 automatically.", "check-readiness")
+            : _dirty ? new("Save changes as new version", null, null, "save-version") : new("Edit scenario", null, null, PerformanceReadinessActions.EditScenario),
+        BirkNext.Integrations.JourneySetupStepKind.ExecutionEngine or BirkNext.Integrations.JourneySetupStepKind.ContainerRuntime =>
+            new("Open Performance Test Engines", D.ActionHref(PerformanceReadinessActions.OpenEngines), null),
+        BirkNext.Integrations.JourneySetupStepKind.NetworkReachability => _isNew || _dirty ? new("Check readiness", null, null, "check-readiness")
+            : new("Check container network", null, $"Sends one request from the k6 container to the {_draft.EnvironmentName} target. It is not a load test.", PerformanceReadinessActions.CheckNetwork),
+        BirkNext.Integrations.JourneySetupStepKind.CaTrust => new("Open local execution setup", D.ActionHref(PerformanceReadinessActions.OpenLocalExecutionSetup),
+            "Configuration: PerformanceTests:Container:CaBundlePath (a PEM bundle of the corporate CA). TLS verification is never disabled."),
+        BirkNext.Integrations.JourneySetupStepKind.Authentication => new("Review authentication", null,
+            "Authenticated scenarios use approved non-interactive credentials from the existing authentication mechanisms; Performance Test Review never issues or stores credentials."),
+        BirkNext.Integrations.JourneySetupStepKind.Workload => new("Edit workload", null, null, PerformanceReadinessActions.EditWorkload),
+        BirkNext.Integrations.JourneySetupStepKind.Thresholds => new("Edit thresholds", null, "Thresholds are configured expectations, not universal standards.", PerformanceReadinessActions.EditThresholds),
+        BirkNext.Integrations.JourneySetupStepKind.ResourceObservation => new("Open Resources", null, "Optional; disabled observation is never a failure.", "resources"),
+        BirkNext.Integrations.JourneySetupStepKind.Baseline => new("Open history", null, "Promotion to baseline is explicit after a completed run.", "history"),
+        _ => _readiness?.Ready == true && !_isNew && !_dirty ? new("Run test", null, "Asks for confirmation before sending real load.", "run") : new("Check readiness", null, null, "check-readiness"),
+    };
+
+    private ISetupProfileTransport ProfileTransport => new PerformanceProfileTransport(this);
+
+    /// <summary>Performance setup profiles: same shared panel, Performance endpoints; the target is the page's current Target Environment.</summary>
+    private sealed class PerformanceProfileTransport(PerformanceTestReview page) : ISetupProfileTransport
+    {
+        public async Task<(BirkNext.Integrations.SetupProfilePreview? Value, string? Error)> PreviewAsync(BirkNext.Integrations.SetupProfileRequest request)
+        { var r = await page.Api.PreviewSetupAsync(page._profile!.Id, page._draft, request); return (r.Value, r.Error); }
+        public async Task<(BirkNext.Integrations.SetupApplyResult? Value, string? Error)> ApplyAsync(BirkNext.Integrations.SetupApplyRequest request)
+        { var r = await page.Api.ApplySetupAsync(page._profile!.Id, page._draft, request); return (r.Value, r.Error); }
+        public async Task<(BirkNext.Integrations.SetupProfileExport? Value, string? Error)> ExportAsync(bool example, BirkNext.Integrations.SetupProfileFormat format)
+        { var r = await page.Api.ExportSetupAsync(example ? null : page._profile!.Id, page._isNew ? null : page._draft.Id, format); return (r.Value, r.Error); }
     }
 
     private RenderFragment Scenario() => @<section class="pt-section" aria-labelledby="pt-scenario-h" data-testid="pt-scenario">
@@ -840,47 +1022,77 @@
         <h2 id="pt-readiness-h">Test readiness</h2>
         @if (_isNew || _dirty)
         {
-            <p class="sd-muted" data-testid="pt-readiness-unsaved">These are the checks known before saving. The backend evaluates the rest (runtime, image, network, limits) once the definition is saved — use Save definition above.</p>
+            <p class="sd-muted" data-testid="pt-readiness-unsaved">@(_isNew
+                ? DraftValid ? "This draft is not saved yet. Check readiness saves it as v1 automatically; the backend then evaluates runtime, image, container network, corporate CA trust, limits and environment safety. Nothing runs."
+                    : $"Complete the definition first: {string.Join(", ", D.DraftIssues(_draft))}."
+                : $"You changed v{_draft.Version}. Readiness is evaluated on saved versions: save the changes as a new version (earlier runs keep theirs).")</p>
             <ul class="ptc-prechecks" data-testid="pt-prechecks">
                 @foreach (var c in PreSaveChecks)
                 {
                     <li data-testid="pt-precheck" data-key="@c.Key" data-state="@c.Status.Label">@Pill(c.Status, c.Label) <strong>@c.Label</strong>@if (c.Detail is { } detail) { <span class="ptc-check-detail">@detail</span> }</li>
                 }
             </ul>
+            <p class="ptc-cta">@ActionControl(_isNew ? "check-readiness" : "save-version", null, true, "pt-readiness-primary")</p>
         }
         else if (_readiness is null) { <p class="sd-reason">Readiness could not be loaded.</p> }
         else
         {
-            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : "Cannot run yet:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests." : "")</p>
-            @if (_reachability is not null || _readiness.Items.Any(i => i.Key == "network" && i.State != PerformanceReadinessState.Optional))
+            var blocking = _readiness.Items.Where(i => i.Blocking).ToList();
+            var actionable = D.ActionableBlockers(_readiness);
+            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : "Cannot run yet:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests. Running still asks for confirmation." : PageState.Label)</p>
+            @if (blocking.Count > 0)
             {
-                <div class="pt-savebar">
-                    <button type="button" class="btn-secondary" @onclick="CheckNetworkAsync" disabled="@_checkingNetwork" data-testid="pt-network-check">@(_checkingNetwork ? "Checking…" : "Check container network")</button>
-                    <span class="sd-muted" role="status" aria-live="polite" data-testid="pt-network-result">@(_reachability is { } nr ? $"{nr.State}: {nr.Detail}" : "Sends one request from the k6 container (not the BirkNext host).")</span>
-                </div>
+                <section class="ptc-blocker-callout" aria-labelledby="pt-blocker-h" data-testid="pt-blocker-callout" data-count="@blocking.Count">
+                    <h3 id="pt-blocker-h">Cannot run yet</h3>
+                    @if (blocking.Count == 1)
+                    {
+                        var only = blocking[0];
+                        <p class="ptc-blocker-headline" data-testid="pt-blocker-headline"><strong>@(D.Headline(only) is { Length: > 0 } h ? h : only.Label)</strong></p>
+                        <p data-testid="pt-blocker-detail">@only.Detail</p>
+                        @if (only.Owner is { } owner) { <p class="ptc-check-detail" data-testid="pt-blocker-owner">Owner: @owner@if (only.ConfigurationKey is { } key) {<span> · Configuration: <code>@key</code></span>}</p> }
+                        @if (only.Action is { } a) { <p class="ptc-cta">@ActionControl(a, only, actionable.Count == 1, "pt-blocker-action")</p> }
+                    }
+                    <p><button type="button" class="ptc-link" data-testid="pt-blocker-count" @onclick="FocusFirstBlockerAsync">@($"Resolve {blocking.Count} required item{(blocking.Count == 1 ? "" : "s")} before running.")</button></p>
+                </section>
+            }
+            @if (_reachability is { } nr)
+            {
+                <p class="sd-muted" role="status" aria-live="polite" data-testid="pt-network-result" data-state="@nr.State"><strong>@D.ProbeTitle(nr.State)</strong> — @nr.Detail</p>
             }
             <div class="ptc-groups" data-testid="pt-readiness-items">
                 @foreach (var group in D.Groups(_isNew, _dirty, _readiness))
                 {
-                    <section class="ptc-group ptc-group-@group.Name.ToLowerInvariant()" aria-labelledby="@($"pt-group-{group.Name}")" data-testid="pt-readiness-group" data-group="@group.Name">
-                        <h3 id="@($"pt-group-{group.Name}")">@group.Name</h3>
+                    <section class="ptc-group ptc-group-@group.Name.ToLowerInvariant().Replace(' ', '-')" aria-labelledby="@($"pt-group-{group.Name.Replace(' ', '-')}")" data-testid="pt-readiness-group" data-group="@group.Name">
+                        <h3 id="@($"pt-group-{group.Name.Replace(' ', '-')}")">@group.Name</h3>
                         <ul>
                             @foreach (var c in group.Checks)
                             {
                                 var item = _readiness.Items.FirstOrDefault(i => i.Key == c.Key);
-                                <li data-testid="@(item is null ? "pt-readiness-local" : "pt-readiness-item")" data-key="@c.Key" data-state="@(item?.State.ToString() ?? c.Status.Label)">
+                                <li id="@($"pt-blocker-{c.Key}")" tabindex="-1" data-testid="@(item is null ? "pt-readiness-local" : "pt-readiness-item")" data-key="@c.Key" data-state="@(item?.State.ToString() ?? c.Status.Label)" data-status="@item?.Status" data-blocking="@(item?.Blocking == true ? "true" : "false")">
                                     @Pill(c.Status, c.Label) <strong>@c.Label</strong>@if (c.Detail is { } detail) { <span class="ptc-check-detail">@detail</span> }
+                                    @if (item is { Owner: { } owner } && (item.Blocking || item.Key == "ca-trust")) { <span class="ptc-check-detail" data-testid="pt-item-owner">Owner: @owner@if (item.ConfigurationKey is { } key) {<span> · Configuration: <code>@key</code></span>}</span> }
+                                    @if (item is { Action: { } action } && (item.Blocking || item.Key == "network") && !(blocking.Count == 1 && blocking[0].Key == item.Key))
+                                    {
+                                        <span class="ptc-item-action">@ActionControl(action, item, false, $"pt-item-action-{item.Key}")</span>
+                                    }
+                                    @if (item?.Technical is { } technical) { <details class="ptc-technical-detail" data-testid="pt-item-technical"><summary>Technical detail</summary><code>@technical</code></details> }
                                 </li>
                             }
                         </ul>
                     </section>
                 }
             </div>
+            <p class="sd-muted" data-testid="pt-tls-policy">TLS verification is never disabled: an untrusted certificate chain is fixed by trusting the corporate CA, never by skipping verification.</p>
             <div class="ptc-cta" data-testid="pt-readiness-cta">
-                @if (_readiness.Ready) { <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run">Run performance test</button> }
-                else { <p>@($"Resolve {_readiness.Items.Count(i => i.Blocking)} required item(s) before running.")</p> }
+                @if (_readiness.Ready) { <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run" data-testid="pt-readiness-run">Run performance test</button> }
             </div>
         }
+        <ReviewDisclosure Text="Guided setup" CollapseText="Hide guided setup" Hint="@JourneySetupPresentation.Progress(Setup)" TestId="pt-guided-setup" Class="disclosure-inline" @bind-Expanded="_showSetup">
+            @if (_showSetup)
+            {
+                <BirkNext.Web.Components.JourneySetupPanel SetupView="Setup" Actions="SetupAction" OnCommand="PerformAction" FocusNext="_focusSetup" />
+            }
+        </ReviewDisclosure>
     </section>;
 
     private RenderFragment RunView() => @<section class="pt-section" aria-labelledby="pt-run-h" data-testid="pt-run">
@@ -891,7 +1103,17 @@
             <div><dt>Load</dt><dd>@_draft.Workload.Purpose, @P.Load(_draft.Workload)</dd></div>
             <div><dt>Estimated duration</dt><dd>@P.Duration(_draft.Workload.TotalSeconds)</dd></div>
         </dl>
-        <p class="sd-muted">This applies real load to @(_draft.TargetOrigin). Production is refused by the backend; make sure the target owners expect the test.</p>
+        <section class="ptc-callout ptc-callout-traffic" aria-labelledby="pt-traffic-h" data-testid="pt-real-traffic">
+            <h3 id="pt-traffic-h">This sends real load to the @(_draft.EnvironmentType) target.</h3>
+            <dl class="sd-mini">
+                <div><dt>Target</dt><dd class="ptc-break">@_draft.TargetOrigin</dd></div>
+                <div><dt>Workload</dt><dd>@P.Load(_draft.Workload)</dd></div>
+                <div><dt>Estimated duration</dt><dd>@P.Duration(_draft.Workload.TotalSeconds)</dd></div>
+                @if (_readiness is { } r0) { <div><dt>At most</dt><dd>~@r0.EstimatedMaxRequests.ToString("N0", CultureInfo.InvariantCulture) requests</dd></div> }
+                @if (_readiness?.Limits is { } limits) { <div><dt>Safety limits</dt><dd data-testid="pt-run-limits">≤ @limits.MaxVirtualUsers VUs · ≤ @limits.MaxRequestsPerSecond.ToString("0.##", CultureInfo.InvariantCulture) req/s · ≤ @P.Duration(limits.MaxDurationSeconds) · ≤ @limits.MaxTotalRequests.ToString("N0", CultureInfo.InvariantCulture) requests</dd></div> }
+            </dl>
+            <p class="sd-muted">Production is refused by the backend; make sure the target owners expect the test. Nothing starts until you select Run performance test.</p>
+        </section>
         @if (ActiveRun is { } active)
         {
             <div class="sd-panel" data-testid="pt-progress">
@@ -915,8 +1137,8 @@
                     <span class="ptc-empty-icon" aria-hidden="true">!</span>
                     <div><h3>Cannot run yet</h3>
                         <p data-testid="pt-run-disabled">@RunReason</p>
-                        <p>@(_isNew || _dirty ? "Required: save the definition (Save definition, above)." : "Resolve the required items in Test readiness.")</p>
-                        <p><button type="button" class="btn-secondary" @onclick="() => _tab = Tab.Readiness" data-testid="pt-run-go-readiness">Review test readiness</button></p></div>
+                        <p>@(_isNew ? "Check readiness first — the draft is saved as v1 automatically." : _dirty ? "Save your changes as a new version first." : "Resolve the required items in Test readiness.")</p>
+                        <p><button type="button" class="btn-secondary" @onclick="() => PerformAction(RunBlockedAction)" data-testid="pt-run-go-readiness">@D.ActionLabel(RunBlockedAction ?? "readiness")</button></p></div>
                 </div>
             }
             @if (_startBlockers.Count > 0) { <ul class="sd-list" data-testid="pt-start-blockers">@foreach (var b in _startBlockers) { <li>@b</li> }</ul> }
