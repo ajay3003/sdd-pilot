@@ -1524,3 +1524,31 @@
 ::deep .fqr-issue,
 ::deep .fqr-recommendation { overflow-wrap: anywhere; }
 ::deep .fqr-issue-head > * { min-width: 0; }
+
+/* ── Post-run dimensions: execution · coverage · findings · manual · decision, each its own row ─────────────────── */
+::deep .fqr-result-headline { margin: .1rem 0 .35rem; font-size: 1rem; color: var(--clr-text-heading); }
+::deep .fqr-result-state .fqr-pill { margin: 0 .3rem .3rem 0; }
+::deep .fqr-run-dimensions { display: grid; gap: .45rem; margin: .9rem 0 0; }
+::deep .fqr-run-dimensions > div {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+    gap: .2rem 1rem;
+    padding: .5rem .65rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+::deep .fqr-run-dimensions dt { font-size: .8rem; color: var(--clr-text-subtle); }
+::deep .fqr-run-dimensions dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+::deep .fqr-dimension-list { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .88rem; }
+::deep .fqr-dimension-list li { margin: .15rem 0; }
+::deep .fqr-release-why { margin: .6rem 0 .2rem; }
+::deep .fqr-issue-policy { font-size: .8rem; }
+::deep .fqr-history-run-dimensions { display: flex; flex-wrap: wrap; gap: .25rem .5rem; }
+
+@media (max-width: 760px) {
+    ::deep .fqr-run-dimensions > div { grid-template-columns: 1fr; }
+}
+/* "Severity: " is read by assistive technology; the badge itself shows the value. */
+::deep .fqr-sr-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+::deep .fqr-severity { position: relative; }

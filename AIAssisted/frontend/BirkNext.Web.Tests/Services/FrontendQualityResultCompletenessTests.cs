@@ -79,7 +79,7 @@ public sealed class FrontendQualityResultCompletenessTests
         var completeness = FrontendQualityResultPresentation.Build(Report()).Completeness!;
 
         FrontendQualityResultStates.IsCompleted(completeness.Execution).Should().BeTrue();
-        completeness.ExecutionLabel.Should().Be("Completed");
+        completeness.ExecutionLabel.Should().Be("Complete");
     }
 
     // 2. Manual assessment is its own dimension and does not move with coverage.

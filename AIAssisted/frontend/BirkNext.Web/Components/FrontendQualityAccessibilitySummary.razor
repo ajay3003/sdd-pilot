@@ -17,14 +17,14 @@
         </div>
         @* The partition. These two always add up to the profile. *@
         <div data-testid="fqr-a11y-count" data-count="with-evidence">
-            <dt>With execution evidence</dt><dd>@Result.WithEvidence</dd>
+            <dt>Automated evidence available (not a pass count)</dt><dd>@Result.WithEvidence</dd>
         </div>
         <div data-testid="fqr-a11y-count" data-count="without-evidence">
-            <dt>Without execution evidence</dt><dd>@Result.WithoutExecutionEvidence</dd>
+            <dt>No automated evidence</dt><dd>@Result.WithoutExecutionEvidence</dd>
         </div>
         @* Inside the partition; overlapping on purpose. *@
         <div data-testid="fqr-a11y-count" data-count="failure-evidence">
-            <dt>With automated failure evidence</dt><dd>@Result.WithFailureEvidence</dd>
+            <dt>With detected issues</dt><dd>@Result.WithFailureEvidence</dd>
         </div>
         <div data-testid="fqr-a11y-count" data-count="manual">
             <dt>Require manual assessment</dt><dd>@Result.RequireManualAssessment</dd>

@@ -1,3 +1,4 @@
+using BirkNext.BrowserCompanion;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -47,9 +48,16 @@ public static class FrontendQualityPostRunPresentation
     public static string IssueImpactLabel(FrontendQualityReleaseImpact impact) => impact switch
     {
         FrontendQualityReleaseImpact.Blocking => "Blocks release (policy)",
-        FrontendQualityReleaseImpact.NonBlocking => "Does not block release",
+        FrontendQualityReleaseImpact.NonBlocking => "Not an automatic release blocker",
         _ => "No release impact",
     };
+
+    /// <summary>
+    /// A critical or high issue the policy does not block automatically still needs a person's decision: severity is not the policy, and
+    /// the policy not blocking is not "acceptable".
+    /// </summary>
+    public static bool RequiresHumanReview(FrontendQualityLogicalIssue issue, FrontendQualityReleaseImpact impact) =>
+        impact == FrontendQualityReleaseImpact.NonBlocking && issue.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High;
 
     // ── Coverage wording ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -208,6 +216,47 @@ public static class FrontendQualityPostRunPresentation
 
     public static FrontendQualityLogicalIssue? IssueFor(IReadOnlyDictionary<string, FrontendQualityLogicalIssue> map, FrontendQualityFinding finding) =>
         map.TryGetValue(ReportExportService.SanitizePassive(finding.Id), out var issue) ? issue : null;
+
+    /// <summary>
+    /// Where a source finding came from and how it was observed — the provider and the observation, from the stored finding alone:
+    /// an HTTP response of the deployed application is not a browser observation, and neither is a source-code analysis.
+    /// </summary>
+    public static string EvidenceSource(FrontendQualityFinding finding)
+    {
+        var how = finding.EngineId switch
+        {
+            FrontendQualityEngineId.StaticSecurity => "HTTP Security · HTTP responses and assets fetched from the deployed application",
+            FrontendQualityEngineId.PassivePerformance => "HTTP Performance · HTTP timing of the deployed application (observational)",
+            FrontendQualityEngineId.BrowserRuntime => "Browser Runtime · instrumented browser on the deployed application",
+            FrontendQualityEngineId.Accessibility => "Accessibility (axe) · rendered page of the deployed application",
+            FrontendQualityEngineId.Lighthouse => "Lighthouse · audit of the deployed application",
+            FrontendQualityEngineId.PassiveSecurity => "Passive Web Security (OWASP ZAP) · passive scan of the deployed application",
+            FrontendQualityEngineId.BrowserQuality => "Browser Companion · page evidence from your managed Edge",
+            FrontendQualityEngineId.PerformanceQuality => "Browser Performance · recorded Browser Companion / Local HTTPS proxy evidence",
+            _ => finding.Origin == FrontendQualityFindingOrigin.Derived ? "Derived from other evidence in this review" : "Recorded by this review",
+        };
+        var rule = finding.SourceRuleId is { Length: > 0 } id ? $" · rule {ReportExportService.SanitizePassive(id)}" : "";
+        var pass = finding.CoverageMode is { } mode ? $" · {FrontendQualityReviewScopes.Label(mode)} pass" : "";
+        return how + rule + pass;
+    }
+
+    /// <summary>
+    /// The WCAG success criteria a logical issue is evidence for, from the canonical rule mappings only (axe rule → criteria, Browser
+    /// Companion check → criterion). A source finding is evidence FOR a criterion; it is never the criterion's assessment.
+    /// </summary>
+    public static IReadOnlyList<string> WcagCriteria(FrontendQualityLogicalIssue issue) =>
+        issue.FindingInstances
+            .Where(i => !string.IsNullOrWhiteSpace(i.SourceRuleId))
+            .SelectMany(i => i.EngineId switch
+            {
+                FrontendQualityEngineId.Accessibility => AxeRuleCatalog.Criteria(i.SourceRuleId!),
+                FrontendQualityEngineId.BrowserQuality => WcagRegistry.All.Where(d => d.SupportedChecks.Contains(i.SourceRuleId!)).Select(d => d.CriterionId),
+                _ => [],
+            })
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .Select(id => WcagRegistry.All.FirstOrDefault(d => d.CriterionId == id) is { } criterion ? $"{id} {criterion.Title}" : id)
+            .ToList();
 
     // ── Recommended actions ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -129,7 +129,9 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         Order(page).Should().Equal(
             "fqr-result-summary", "fqr-key-issues", "fqr-recommendation-themes", "fqr-domain-results", "fqr-result-details");
         page.Find("#fqr-result-heading").TextContent.Should().Be("Review result");
-        page.Find("[data-testid=fqr-result-state]").TextContent.Should().Contain("Completed with manual review required");
+        page.Find("[data-testid=fqr-result-automation]").TextContent.Should().Be("Automation complete");
+        page.Find("[data-testid=fqr-result-manual]").TextContent.Should().Be("Manual assessment required");
+        page.Find("[data-testid=fqr-result-headline]").TextContent.Trim().Should().Be("Automated review complete — manual assessment required");
         page.Find("[data-testid=fqr-run-again]").TextContent.Trim().Should().Be("Run again");
     }
 
@@ -236,7 +238,7 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         var page = Result(CompletedReport(outcomes: outcomes));
 
         var performance = Domain(page, FrontendQualityCategory.Performance);
-        performance.QuerySelector("[data-testid=fqr-domain-result-state]")!.TextContent.Trim().Should().Be("Completed with limited evidence");
+        performance.QuerySelector("[data-testid=fqr-domain-result-state]")!.TextContent.Trim().Should().Be("Automated checks completed — limited evidence");
         // 33. Two different questions, answered separately: how many things to fix, and how much evidence there is.
         performance.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("1 logical issue · 1 source finding");
 
@@ -281,7 +283,10 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
         var page = Result(failed);
 
-        page.Find("[data-testid=fqr-result-state]").TextContent.Trim().Should().Be("Review failed to run");
+        // An execution problem: automation failed, and nothing that did not run is ever called covered.
+        page.Find("[data-testid=fqr-result-automation]").TextContent.Trim().Should().Be("Automation failed");
+        page.Find("[data-testid=fqr-result-coverage]").TextContent.Trim().Should().Be("Coverage not assessed");
+        page.Find("[data-testid=fqr-result-headline]").TextContent.Trim().Should().Be("Automated review failed to run");
         page.Find("[data-testid=fqr-result-summary-text]").TextContent.Should().Be("The review could not start.");
     }
 

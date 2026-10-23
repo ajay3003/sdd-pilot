@@ -70,6 +70,17 @@ public static class FrontendQualityLogicalIssueGrouper
             (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-X-FRAME-OPTIONS"),
             (FrontendQualityEngineId.StaticSecurity, "std-xframeoptions-missing"),
             (FrontendQualityEngineId.PassiveSecurity, "10020")),
+
+        // Insufficient text contrast is ONE fact (WCAG 1.4.3) that two independent engines check: axe's color-contrast rule in the
+        // Accessibility engine and the Browser Companion's native text-contrast check. Declared here by their exact rule identities —
+        // never by title — so the two stay one logical issue with both observations as provenance, not two apparently duplicate issues.
+        new("wcag:1.4.3:contrast-minimum", "Text contrast below the WCAG 1.4.3 minimum (Contrast (Minimum))", FrontendQualityCategory.Accessibility,
+            "Raise the text contrast to at least 4.5:1 (3:1 for large text) on the affected elements.",
+            new HashSet<(FrontendQualityEngineId, string)>
+            {
+                (FrontendQualityEngineId.Accessibility, "color-contrast"),
+                (FrontendQualityEngineId.BrowserQuality, "text-contrast"),
+            }),
     ];
 
     public static List<FrontendQualityLogicalIssue> Group(IReadOnlyList<FrontendQualityFinding> findings)

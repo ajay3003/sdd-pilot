@@ -185,7 +185,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         var surfaces = page.FindAll("[data-testid=fqr-result-summary] [data-testid=fqr-surface-status]");
         surfaces.Select(s => s.GetAttribute("data-surface")).Should().Equal("Public", "Authenticated");
-        surfaces[0].TextContent.Should().Contain("Completed").And.Contain("2 of 2 engines completed");
+        surfaces[0].TextContent.Should().Contain("Assessed").And.Contain("2 of 2 engines completed");
         surfaces[1].TextContent.Should().Contain("Not assessed");
     }
 
@@ -216,9 +216,9 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         var cards = page.Find("[data-testid=fqr-tabpanel-issues]").QuerySelectorAll("[data-testid=fqr-logical-issue]");
         cards.Single(c => c.TextContent.Contains("Content-Security-Policy")).QuerySelector("[data-testid=fqr-issue-impact]")!
-            .TextContent.Trim().Should().Be("Blocks release (policy)");
+            .TextContent.Trim().Should().Be("Release policy: Blocks release (policy)");
         cards.Single(c => c.TextContent.Contains("JavaScript payload")).QuerySelector("[data-testid=fqr-issue-impact]")!
-            .TextContent.Trim().Should().Be("Does not block release");
+            .TextContent.Trim().Should().Be("Release policy: Not an automatic release blocker");
 
         // Release impact filter.
         page.Find("[data-testid=fqr-issue-filter-impact]").Change(nameof(FrontendQualityReleaseImpact.Blocking));
@@ -263,7 +263,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
 
         coverage.QuerySelector("[data-testid=fqr-review-scope]")!.TextContent.Should().Be(FrontendQualityReviewScopes.Label(FrontendReviewAccessScope.PublicAndAuthenticated));
         coverage.QuerySelectorAll("[data-testid=fqr-coverage-surface]").Select(s => s.QuerySelector("strong")!.TextContent)
-            .Should().Equal("Completed", "Not assessed");
+            .Should().Equal("Assessed", "Not assessed");
         page.Find("[data-testid=fqr-engine-coverage-toggle]").GetAttribute("aria-expanded").Should().Be("false");
     }
 
@@ -429,7 +429,7 @@ public sealed class FrontendQualityPostRunViewsTests : BunitContext
         runs[0].QuerySelector("[data-testid=fqr-history-showing]").Should().NotBeNull("the newest run is the one on screen");
         runs[1].QuerySelector("[data-testid=fqr-history-scope]")!.TextContent.Should().Be(FrontendQualityReviewScopes.Label(FrontendReviewAccessScope.PublicAndAuthenticated));
         runs[1].QuerySelector("[data-testid=fqr-history-decision]")!.TextContent.Should().Be("Blocked");
-        runs[1].QuerySelector("[data-testid=fqr-history-issues]")!.TextContent.Should().Be("2 issues");
+        runs[1].QuerySelector("[data-testid=fqr-history-issues]")!.TextContent.Should().StartWith("2 issues · ").And.EndWith(" critical/high");
         runs[1].QuerySelector("[data-testid=fqr-history-required]")!.TextContent.Should().Be("1/2 required");
 
         runs[1].QuerySelector("[data-testid=fqr-history-open]")!.Click();

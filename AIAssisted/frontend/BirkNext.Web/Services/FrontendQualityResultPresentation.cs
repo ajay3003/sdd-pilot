@@ -165,9 +165,8 @@ public static class FrontendQualityResultPresentation
         IReadOnlyList<FrontendQualityDomainResult> domains,
         FrontendQualityAccessibilityResult? accessibility)
     {
-        if (report.CoveragePasses.Any(p => FrontendQualityReviewScopes.PassStatus(p) != "Completed")
-            && report.CoveragePasses.Any(p => p.Report.EngineOutcomes.Any(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)))
-            return FrontendQualityResultState.Incomplete;
+        // A coverage pass (e.g. the authenticated surface) that did not complete is a COVERAGE fact, reported by FrontendQualityRunSemantics
+        // with its stored reason. It used to make the whole result "Incomplete" even when every required engine completed.
         if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
             return FrontendQualityResultState.FailedToRun;
 
@@ -312,6 +311,8 @@ public static class FrontendQualityResultPresentation
     /// What this domain found, in result words. Never an engine name and never an engine's availability: an unavailable
     /// optional engine is a limitation on the evidence, not the domain's result.
     /// </summary>
+    public const string PerformanceEvidenceNote = "Automated performance checks are observational evidence, not a load test or representative end-user performance.";
+
     private static string Summary(
         FrontendQualityCategory category,
         FrontendQualityDomainResultState state,
@@ -342,7 +343,9 @@ public static class FrontendQualityResultPresentation
 
         return category switch
         {
-            FrontendQualityCategory.Performance => $"{found} for performance.",
+            // Automated performance checks are observational (page timings, resource sizes): never a load test, never representative
+            // end-user or production performance, whatever the engine's completion state says.
+            FrontendQualityCategory.Performance => $"{found} for performance. {PerformanceEvidenceNote}",
             FrontendQualityCategory.Security => $"{found} for security. Passive and static review cannot establish that an application is secure.",
             FrontendQualityCategory.Standards => $"{found} for standards compliance, derived from the checks this review ran.",
             FrontendQualityCategory.BlazorWasm => $"{found} for the Blazor/WASM delivery of this frontend.",

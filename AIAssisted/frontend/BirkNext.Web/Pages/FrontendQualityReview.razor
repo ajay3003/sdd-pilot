@@ -490,14 +490,15 @@
             <section class="fqr-section" aria-labelledby="fqr-scope-heading" data-testid="fqr-access-coverage">
                 <h2 id="fqr-scope-heading">Review scope</h2>
                 <p data-testid="fqr-review-scope">@ReviewScopeLabel(report)</p>
-                @if (FrontendQualityPostRunPresentation.SurfaceStatuses(report) is { Count: > 0 } surfaces)
+                @if (RunSemantics(report, result).Surfaces is { Count: > 0 } surfaces)
                 {
+                    @* Requested vs actual, per surface, with the reason stored for this run. Never re-derived from today's capabilities. *@
                     <dl class="fqr-surface-list" data-testid="fqr-surface-list">
                         @foreach (var surface in surfaces)
                         {
-                            <div data-testid="fqr-coverage-surface" data-surface="@surface.Surface">
+                            <div data-testid="fqr-coverage-surface" data-surface="@surface.Surface" data-state="@surface.State">
                                 <dt>@surface.Label surface</dt>
-                                <dd><strong>@surface.Status</strong>@if (surface.Detail is { Length: > 0 } detail) {<span class="fqr-muted"> — @detail</span>}</dd>
+                                <dd><strong>@surface.StateLabel</strong>@if (surface.Reason is { Length: > 0 } detail) {<span class="fqr-muted"> — @detail</span>}</dd>
                             </div>
                         }
                     </dl>
@@ -665,6 +666,7 @@
                                         <th scope="col"><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
                                         <th scope="col"><button type="button" @onclick='() => SortBy("category")'>Domain @SortGlyph("category")</button></th>
                                         <th scope="col"><button type="button" @onclick='() => SortBy("title")'>Finding @SortGlyph("title")</button></th>
+                                        <th scope="col">Evidence source</th>
                                         <th scope="col">Grouped into</th>
                                         <th scope="col">Recommendation</th>
                                     </tr>
@@ -687,6 +689,7 @@
                                                 }
                                                 <span class="fqr-finding-desc">@finding.Description</span>
                                             </td>
+                                            <td data-label="Evidence source" data-testid="fqr-finding-evidence-source">@FrontendQualityPostRunPresentation.EvidenceSource(finding)</td>
                                             <td data-label="Grouped into" data-testid="fqr-finding-grouped-into">@(FrontendQualityPostRunPresentation.IssueFor(groupedInto, finding)?.CanonicalTitle ?? "—")</td>
                                             <td data-label="Recommendation">@finding.Recommendation</td>
                                         </tr>
@@ -880,10 +883,19 @@
                             var current = ReferenceEquals(run.Report, report);
                             <li class="fqr-history-run @(current ? "fqr-history-current" : "")" data-testid="fqr-history-run" data-run-id="@run.Id">
                                 <span class="fqr-history-time" data-testid="fqr-history-time">@run.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                                @{ var runSemantics = HistorySemantics(run); }
                                 <span data-testid="fqr-history-scope">@(run.Scope is { } scope ? FrontendQualityReviewScopes.Label(scope) : "Scope not recorded")</span>
-                                <span data-testid="fqr-history-decision"><strong>@FrontendQualityReviewHistory.DispositionLabel(run.Disposition)</strong></span>
-                                <span data-testid="fqr-history-issues">@run.IssueCount issue@(run.IssueCount == 1 ? "" : "s")</span>
+                                <span class="fqr-history-run-dimensions">
+                                    <span data-testid="fqr-history-automation">@runSemantics.AutomationLabel</span>
+                                    <span data-testid="fqr-history-coverage">@runSemantics.CoverageLabel</span>
+                                    <span data-testid="fqr-history-decision"><strong>@FrontendQualityReviewHistory.DispositionLabel(run.Disposition)</strong></span>
+                                </span>
+                                <span data-testid="fqr-history-issues">@run.IssueCount issue@(run.IssueCount == 1 ? "" : "s") · @runSemantics.CriticalHighIssues critical/high</span>
                                 <span data-testid="fqr-history-required">@run.RequiredAssessed/@run.RequiredTotal required</span>
+                                @if (runSemantics.ManualAssessmentRequired)
+                                {
+                                    <span class="fqr-pill fqr-pill-info" data-testid="fqr-history-manual">Manual assessment required</span>
+                                }
                                 @if (current)
                                 {
                                     <span class="fqr-pill fqr-pill-muted" data-testid="fqr-history-showing">Showing</span>
@@ -1147,6 +1159,15 @@
     private bool ShowLegacyDecisionSupport => false;
 
     /// <summary>The accessibility profile THIS result was produced under, with its scope — read from the report, never from settings.</summary>
+    /// <summary>The run's semantics, projected once per stored report (history entries and the open run alike).</summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrontendQualityReviewReport, FrontendQualityRunSemantics> _runSemantics = new();
+
+    private FrontendQualityRunSemantics RunSemantics(FrontendQualityReviewReport report, FrontendQualityResultView result) =>
+        _runSemantics.GetValue(report, r => FrontendQualityRunSemanticsProjection.From(r, result));
+
+    private FrontendQualityRunSemantics HistorySemantics(FrontendQualityReviewHistoryEntry run) =>
+        _runSemantics.GetValue(run.Report, r => FrontendQualityRunSemanticsProjection.From(r));
+
     private static string? AccessibilityScope(FrontendQualityResultView result) =>
         result.ProfileLabel is { Length: > 0 } label
             ? result.CriteriaInScope is { } criteria ? $"{label} · {criteria} criteria in selected profile" : label

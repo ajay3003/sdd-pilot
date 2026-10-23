@@ -201,12 +201,12 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         var page = Result(RealisticReport());
 
         var completeness = page.Find("[data-testid=fqr-completeness]");
-        page.Find("[data-testid=fqr-completeness-execution]").TextContent.Should().Contain("Completed");
+        page.Find("[data-testid=fqr-completeness-execution]").TextContent.Should().Be("Automation complete");
         completeness.QuerySelector("[data-testid=fqr-completeness-required]")!.TextContent.Should().Contain("2 of 2 completed");
         completeness.QuerySelector("[data-testid=fqr-completeness-required-meaning]")!.TextContent.Trim().Should().Be("Satisfied");
         completeness.QuerySelector("[data-testid=fqr-completeness-optional]")!.TextContent.Should().Contain("2 of 3 completed");
         completeness.QuerySelector("[data-testid=fqr-completeness-optional-meaning]")!.TextContent.Trim().Should().Be("Non-blocking");
-        completeness.QuerySelector("[data-testid=fqr-completeness-manual]")!.TextContent.Should().Contain("Required");
+        page.Find("[data-testid=fqr-completeness-manual]").TextContent.Should().Contain("Required", "manual assessment is its own dimension, beside coverage");
 
         page.Markup.Should().NotContain("Assessment Completeness");
         completeness.TextContent.Should().NotContain("Full");
@@ -377,7 +377,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         visible.Should().NotContain("Large CSS payload", "derived indicators are not part of the default reading");
 
         // What IS on screen: the decision, the scale, the coverage meaning and the work.
-        visible.Should().Contain("Release decision").And.Contain("Logical issues").And.Contain("Required coverage")
+        visible.Should().Contain("Release decision").And.Contain("Logical issues").And.Contain("Required automated engines")
             .And.Contain("Recommended actions").And.Contain("Contrast (Minimum)");
 
         // The whole report is still reachable — one view away, not removed.

@@ -1,21 +1,94 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-@* The decision surface of a finished review: how it ended, the release decision with its EXACT blockers by type, the counts there are to
-   act on, and what required and optional coverage mean for the release, stated rather than left to inference. Run facts (target, URL,
-   timestamps) are one disclosure away; they describe the run, they are not the result. The state is always a text label, never colour. *@
+@* The decision surface of a finished review, in five separate answers read from one projection (FrontendQualityRunSemantics): did the
+   required automation run, what was covered (per surface, with the stored reason), what was found, what a person still has to assess, and
+   the release decision with why a human is still needed. None of them stands in for another: "Incomplete" is never used for a review whose
+   required engines all completed. Run facts are one disclosure away. Every state is a text label, never colour alone. *@
 <section class="fqr-card fqr-result-summary" aria-labelledby="fqr-result-heading" data-testid="fqr-result-summary">
     <div class="fqr-result-head">
         <h2 id="fqr-result-heading">Review result</h2>
         <p class="fqr-result-state" data-testid="fqr-result-state">
-            <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
-            @if (Result.Completeness is { ManualAssessment: FrontendQualityManualAssessmentState.Required })
+            @if (Semantics is { } badges)
             {
-                <span class="fqr-pill fqr-pill-info" data-testid="fqr-result-manual">Manual assessment required</span>
+                <span class="fqr-pill fqr-pill-@AutomationTone(badges.Automation)" data-testid="fqr-result-automation">@badges.AutomationLabel</span>
+                <span class="fqr-pill fqr-pill-@(badges.Coverage == FrontendQualityCoverageLevel.Complete ? "ready" : "warning")" data-testid="fqr-result-coverage">@badges.CoverageLabel</span>
+                @if (badges.ManualAssessmentRequired)
+                {
+                    <span class="fqr-pill fqr-pill-info" data-testid="fqr-result-manual">Manual assessment required</span>
+                }
+            }
+            else
+            {
+                <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
             }
         </p>
     </div>
+    @if (Semantics is { } headline)
+    {
+        <p class="fqr-result-headline" data-testid="fqr-result-headline"><strong>@headline.Headline</strong></p>
+    }
     <p class="fqr-result-summary-text" data-testid="fqr-result-summary-text">@Result.Summary</p>
+
+    @* ── The five dimensions, each its own answer ───────────────────────────────────────────────────────────────────────────────── *@
+    @if (Semantics is { } run)
+    {
+        <dl class="fqr-run-dimensions" data-testid="fqr-run-dimensions">
+            <div data-testid="fqr-dimension" data-dimension="automation">
+                <dt>Automated execution</dt>
+                <dd><strong data-testid="fqr-dimension-automation">@run.AutomationLabel</strong><span class="fqr-muted"> — @run.AutomationDetail</span></dd>
+            </div>
+            <div data-testid="fqr-dimension" data-dimension="coverage">
+                <dt>Coverage</dt>
+                <dd>
+                    <strong data-testid="fqr-dimension-coverage">@run.CoverageLabel</strong>
+                    @if (run.SelectedScope is { } selected)
+                    {
+                        <span class="fqr-muted" data-testid="fqr-dimension-scope"> — selected scope: @FrontendQualityReviewScopes.Label(selected)</span>
+                    }
+                    @if (run.Surfaces.Count > 0)
+                    {
+                        <ul class="fqr-dimension-list" data-testid="fqr-surface-coverage">
+                            @foreach (var surface in run.Surfaces)
+                            {
+                                <li data-testid="fqr-surface-status" data-surface="@surface.Surface" data-state="@surface.State">
+                                    @surface.Label surface: <strong>@surface.StateLabel</strong>@if (surface.Reason is { Length: > 0 } why) {<span class="fqr-muted"> — @why</span>}
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (run.CoverageReasons.Count > 0)
+                    {
+                        <ul class="fqr-dimension-list" data-testid="fqr-coverage-reasons">
+                            @foreach (var reason in run.CoverageReasons.Where(r => !run.Surfaces.Any(s => r.StartsWith(s.Label + " surface", StringComparison.Ordinal))))
+                            {
+                                <li>@reason</li>
+                            }
+                        </ul>
+                    }
+                </dd>
+            </div>
+            <div data-testid="fqr-dimension" data-dimension="findings">
+                <dt>Findings</dt>
+                <dd><strong data-testid="fqr-dimension-findings">@run.FindingsLabel</strong><span class="fqr-muted"> — @run.FindingsDetail</span></dd>
+            </div>
+            @if (run.Accessibility is { } a11y)
+            {
+                <div data-testid="fqr-dimension" data-dimension="accessibility">
+                    <dt>Accessibility profile</dt>
+                    <dd><strong data-testid="fqr-dimension-profile">@a11y.ProfileLabel</strong><span class="fqr-muted" data-testid="fqr-dimension-profile-counts"> — @run.AccessibilityDetail</span></dd>
+                </div>
+            }
+            <div data-testid="fqr-dimension" data-dimension="manual">
+                <dt>Manual assessment</dt>
+                <dd data-testid="fqr-completeness-manual"><strong>@(run.ManualAssessmentRequired ? "Required" : "Not required")</strong>@if (run.ManualDetail is { Length: > 0 } manual) {<span class="fqr-muted"> — @manual</span>}</dd>
+            </div>
+            <div data-testid="fqr-dimension" data-dimension="decision">
+                <dt>Decision</dt>
+                <dd><strong data-testid="fqr-dimension-decision">@run.DecisionLabel</strong></dd>
+            </div>
+        </dl>
+    }
 
     @* ── The release decision and, when blocked, exactly why — grouped by blocker type ─────────────────────────────────────────── *@
     @if (Result.Release is { } release)
@@ -48,10 +121,21 @@
                     }
                 </div>
             }
-            else if (release.Reasons.Count > 0)
+            else if (release.Reasons.Count > 0 && Semantics is not { DecisionReasons.Count: > 0 })
             {
                 <ul class="fqr-release-reasons" data-testid="fqr-release-reasons">
                     @foreach (var reason in release.Reasons)
+                    {
+                        <li>@reason</li>
+                    }
+                </ul>
+            }
+            @* Why a person still decides, from the actual state: critical/high issues, manual WCAG criteria, other manual items, coverage gaps. *@
+            @if (release.Disposition != FrontendQualityReleaseDisposition.Blocked && Semantics is { DecisionReasons.Count: > 0 } decision)
+            {
+                <p class="fqr-release-why" data-testid="fqr-release-why-heading"><strong>Human review remains because:</strong></p>
+                <ul class="fqr-release-reasons" data-testid="fqr-release-why">
+                    @foreach (var reason in decision.DecisionReasons)
                     {
                         <li>@reason</li>
                     }
@@ -75,15 +159,20 @@
         }
     </dl>
     <p class="fqr-result-metrics-note" data-testid="fqr-result-metrics-note">
+        @if (Semantics is { } counts)
+        {
+            @counts.CountRelationship
+        }
         Logical issues are grouped actionable problems. Source findings are individual engine observations and may map to the same logical issue, so the counts are not expected to match.
     </p>
 
     @* ── Coverage and its release meaning, side by side ─────────────────────────────────────────────────────────────────────────── *@
     @if (Result.Completeness is { } completeness)
     {
+        @* Engine-level coverage and its release meaning. Surfaces and manual assessment are in the dimensions above. *@
         <dl class="fqr-completeness" data-testid="fqr-completeness">
             <div>
-                <dt>Required coverage</dt>
+                <dt>Required automated engines</dt>
                 <dd data-testid="fqr-completeness-required">
                     @FrontendQualityPostRunPresentation.CoverageCount(completeness.RequiredAssessed, completeness.RequiredTotal)
                     <span class="fqr-pill fqr-pill-@(FrontendQualityPostRunPresentation.RequiredBlocking(completeness) ? "attention" : "muted")"
@@ -91,23 +180,12 @@
                 </dd>
             </div>
             <div>
-                <dt>Optional coverage</dt>
+                <dt>Optional automation coverage</dt>
                 <dd data-testid="fqr-completeness-optional">
                     @FrontendQualityPostRunPresentation.CoverageCount(completeness.OptionalAssessed, completeness.OptionalTotal)
                     <span class="fqr-pill fqr-pill-muted" data-testid="fqr-completeness-optional-meaning">@FrontendQualityPostRunPresentation.OptionalMeaning(completeness)</span>
                 </dd>
             </div>
-            @if (Report is not null && FrontendQualityPostRunPresentation.SurfaceStatuses(Report) is { Count: > 0 } surfaces)
-            {
-                @foreach (var surface in surfaces)
-                {
-                    <div data-testid="fqr-surface-status" data-surface="@surface.Surface">
-                        <dt>@surface.Label surface</dt>
-                        <dd>@surface.Status@if (surface.Detail is { Length: > 0 } detail) {<span class="fqr-muted"> — @detail</span>}</dd>
-                    </div>
-                }
-            }
-            <div><dt>Manual assessment</dt><dd data-testid="fqr-completeness-manual">@completeness.ManualAssessmentLabel</dd></div>
         </dl>
     }
 
@@ -122,9 +200,14 @@
             {
                 <div><dt>Completed</dt><dd data-testid="fqr-result-completed">@completed.ToString("u")</dd></div>
             }
-            @if (Result.Completeness is { } execution)
+            @if (Semantics is { } exec)
             {
-                <div><dt>Execution</dt><dd data-testid="fqr-completeness-execution">@execution.ExecutionLabel</dd></div>
+                <div><dt>Automated execution</dt><dd data-testid="fqr-completeness-execution">@exec.AutomationLabel</dd></div>
+                <div><dt>Coverage</dt><dd data-testid="fqr-run-coverage">@exec.CoverageLabel</dd></div>
+            }
+            else if (Result.Completeness is { } execution)
+            {
+                <div><dt>Automated execution</dt><dd data-testid="fqr-completeness-execution">@execution.ExecutionLabel</dd></div>
             }
             @if (Result.ProfileLabel is { Length: > 0 } profile)
             {
@@ -149,4 +232,28 @@
     [Parameter] public FrontendQualityReviewReport? Report { get; set; }
 
     private int CriticalHighIssues => Result.ActionableIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
+
+    private FrontendQualityRunSemantics? _semantics;
+    private FrontendQualityReviewReport? _semanticsFor;
+    /// <summary>Projected once per stored report, never on every render (the result view is rebuilt per render; the report is not).</summary>
+    private FrontendQualityRunSemantics? Semantics
+    {
+        get
+        {
+            if (Report is null) return null;
+            if (!ReferenceEquals(_semanticsFor, Report))
+            {
+                _semantics = FrontendQualityRunSemanticsProjection.From(Report, Result);
+                _semanticsFor = Report;
+            }
+            return _semantics;
+        }
+    }
+
+    private static string AutomationTone(FrontendQualityAutomationState state) => state switch
+    {
+        FrontendQualityAutomationState.Complete => "ready",
+        FrontendQualityAutomationState.Partial => "warning",
+        _ => "attention",
+    };
 }

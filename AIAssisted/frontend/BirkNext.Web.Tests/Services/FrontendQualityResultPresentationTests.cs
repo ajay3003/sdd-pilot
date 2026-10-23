@@ -72,7 +72,7 @@ public sealed class FrontendQualityResultPresentationTests
         var view = FrontendQualityResultPresentation.Build(Report());
 
         view.State.Should().Be(FrontendQualityResultState.Completed);
-        view.StateLabel.Should().Be("Completed");
+        view.StateLabel.Should().Be("Automated review complete");
         foreach (var claim in new[] { "Passed", "Compliant", "Secure", "Healthy", "Fully compatible" })
             view.StateLabel.Should().NotContain(claim);
     }

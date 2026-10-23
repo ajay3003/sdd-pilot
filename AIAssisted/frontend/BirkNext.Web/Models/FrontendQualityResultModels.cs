@@ -31,10 +31,11 @@ public static class FrontendQualityResultStates
     {
         FrontendQualityResultState.FailedToRun => "Review failed to run",
         FrontendQualityResultState.Blocked => "Review blocked",
-        FrontendQualityResultState.Incomplete => "Incomplete",
-        FrontendQualityResultState.CompletedWithManualReview => "Completed with manual review required",
-        FrontendQualityResultState.CompletedWithLimitations => "Completed with limitations",
-        _ => "Completed",
+        // Execution wording only: coverage, manual assessment and the decision are separate dimensions (FrontendQualityRunSemantics).
+        FrontendQualityResultState.Incomplete => "Required automation incomplete",
+        FrontendQualityResultState.CompletedWithManualReview => "Automated review complete — manual assessment required",
+        FrontendQualityResultState.CompletedWithLimitations => "Automated review complete — with limitations",
+        _ => "Automated review complete",
     };
 
     /// <summary>Visual tone only; the label always carries the meaning.</summary>
@@ -74,8 +75,10 @@ public static class FrontendQualityDomainResultStates
 {
     public static string Label(FrontendQualityDomainResultState state) => state switch
     {
-        FrontendQualityDomainResultState.Completed => "Completed",
-        FrontendQualityDomainResultState.CompletedWithLimitedEvidence => "Completed with limited evidence",
+        // "Automated checks completed", never a bare "Completed": manual criteria, provider limits or an unassessed surface can remain in a
+        // domain whose automated checks all ran.
+        FrontendQualityDomainResultState.Completed => "Automated checks completed",
+        FrontendQualityDomainResultState.CompletedWithLimitedEvidence => "Automated checks completed — limited evidence",
         FrontendQualityDomainResultState.NoEvidence => "No evidence",
         FrontendQualityDomainResultState.NotAssessed => "Not assessed",
         _ => "Failed to run",
@@ -162,7 +165,7 @@ public sealed record FrontendQualityCompleteness(
     int OptionalAssessed,
     int OptionalTotal)
 {
-    public string ExecutionLabel => FrontendQualityResultStates.IsCompleted(Execution) ? "Completed" : FrontendQualityResultStates.Label(Execution);
+    public string ExecutionLabel => FrontendQualityResultStates.IsCompleted(Execution) ? "Complete" : FrontendQualityResultStates.Label(Execution);
 
     public string RequiredCoverageLabel => RequiredCoverage switch
     {

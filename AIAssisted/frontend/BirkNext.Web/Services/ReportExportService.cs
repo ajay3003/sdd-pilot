@@ -277,14 +277,28 @@ public sealed class ReportExportService : IReportExportService
         if (report.DurationMs.HasValue)
             sb.Append($"<dt><strong>Duration:</strong></dt><dd>{report.DurationMs:N0} ms</dd>\n");
 
-        // Four dimensions, never one "Full": required coverage alone used to call a review with outstanding manual
-        // assessment and missing optional engines complete.
-        if (FrontendQualityResultPresentation.Build(report).Completeness is { } completeness)
+        // The same five dimensions as the result page (FrontendQualityRunSemantics): execution, coverage, findings, manual assessment
+        // and decision — never one overloaded status, so the export cannot say "Incomplete" where the page says "Automation complete".
+        if (FrontendQualityResultPresentation.Build(report) is { Completeness: { } completeness } view)
         {
-            sb.Append($"<dt><strong>Execution:</strong></dt><dd>{Esc(completeness.ExecutionLabel)}</dd>\n");
-            sb.Append($"<dt><strong>Required coverage:</strong></dt><dd>{Esc(completeness.RequiredCoverageLabel)} ({completeness.RequiredAssessed} of {completeness.RequiredTotal})</dd>\n");
-            sb.Append($"<dt><strong>Optional coverage:</strong></dt><dd>{Esc(completeness.OptionalCoverageLabel)} ({completeness.OptionalAssessed} of {completeness.OptionalTotal})</dd>\n");
-            sb.Append($"<dt><strong>Manual assessment:</strong></dt><dd>{Esc(completeness.ManualAssessmentLabel)}</dd>\n");
+            var run = FrontendQualityRunSemanticsProjection.From(report, view);
+            sb.Append($"<dt><strong>Result:</strong></dt><dd>{Esc(run.Headline)}</dd>\n");
+            sb.Append($"<dt><strong>Automated execution:</strong></dt><dd>{Esc(run.AutomationLabel)} — {Esc(run.AutomationDetail)}</dd>\n");
+            sb.Append($"<dt><strong>Required automated engines:</strong></dt><dd>{Esc(completeness.RequiredCoverageLabel)} ({completeness.RequiredAssessed} of {completeness.RequiredTotal})</dd>\n");
+            sb.Append($"<dt><strong>Optional automation coverage:</strong></dt><dd>{Esc(completeness.OptionalCoverageLabel)} ({completeness.OptionalAssessed} of {completeness.OptionalTotal}; non-blocking)</dd>\n");
+            sb.Append($"<dt><strong>Coverage:</strong></dt><dd>{Esc(run.CoverageLabel)}"
+                + (run.SelectedScope is { } selected ? $" — selected scope {Esc(FrontendQualityReviewScopes.Label(selected))}" : "") + "</dd>\n");
+            foreach (var surface in run.Surfaces)
+                sb.Append($"<dt><strong>{Esc(surface.Label)} surface:</strong></dt><dd>{Esc(surface.StateLabel)}{(surface.Reason is { Length: > 0 } why ? $" — {Esc(why)}" : "")}</dd>\n");
+            foreach (var reason in run.CoverageReasons.Where(r => !run.Surfaces.Any(s => r.StartsWith(s.Label + " surface", StringComparison.Ordinal))))
+                sb.Append($"<dt>Coverage limitation:</dt><dd>{Esc(reason)}</dd>\n");
+            sb.Append($"<dt><strong>Findings:</strong></dt><dd>{Esc(run.FindingsLabel)} — {Esc(run.FindingsDetail)}. {Esc(run.CountRelationship)}</dd>\n");
+            if (run.AccessibilityDetail is { } a11y)
+                sb.Append($"<dt><strong>Accessibility profile:</strong></dt><dd>{Esc(run.Accessibility!.ProfileLabel)} — {Esc(a11y)}</dd>\n");
+            sb.Append($"<dt><strong>Manual assessment:</strong></dt><dd>{Esc(run.ManualAssessmentRequired ? "Required" : "Not required")}{(run.ManualDetail is { Length: > 0 } manual ? $" — {Esc(manual)}" : "")}</dd>\n");
+            sb.Append($"<dt><strong>Decision:</strong></dt><dd>{Esc(run.DecisionLabel)}</dd>\n");
+            foreach (var reason in run.DecisionReasons)
+                sb.Append($"<dt>Human review remains because:</dt><dd>{Esc(reason)}</dd>\n");
         }
 
         sb.Append("</dl>\n");
@@ -621,6 +635,15 @@ public sealed class ReportExportService : IReportExportService
         foreach (var issue in report.LogicalIssues)
         {
             sb.Append($"<article><h3>{Esc(issue.CanonicalTitle)}</h3><p><strong>Logical ID:</strong> {Esc(issue.LogicalId)}</p><p><strong>Severity:</strong> {Esc(issue.PrimarySeverity.ToString())} &nbsp; <strong>Category:</strong> {Esc(issue.Category.ToString())}</p>\n");
+            if (issue.IsActionable)
+            {
+                // Severity, the automatic release policy and the human decision as three stated facts — as on the result page.
+                var impact = FrontendQualityPostRunPresentation.IssueImpact(report, issue);
+                sb.Append($"<p><strong>Release policy:</strong> {Esc(FrontendQualityPostRunPresentation.IssueImpactLabel(impact))}"
+                    + (FrontendQualityPostRunPresentation.RequiresHumanReview(issue, impact) ? " &nbsp; <strong>Human review required</strong>" : "") + "</p>\n");
+            }
+            if (FrontendQualityPostRunPresentation.WcagCriteria(issue) is { Count: > 0 } criteria)
+                sb.Append($"<p><strong>WCAG criteria (automated evidence):</strong> {Esc(string.Join(", ", criteria))}</p>\n");
             sb.Append($"<p><strong>Sources:</strong> {Esc(string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel)))}</p>\n");
             sb.Append($"<p><strong>Evidence strength:</strong> {Esc(issue.EvidenceStrength.ToString())} &nbsp; <strong>Confidence:</strong> {Esc(issue.Confidence?.ToString() ?? "Not assigned")}</p>\n");
             sb.Append($"<p><strong>Review disposition:</strong> {Esc(issue.ReviewDisposition.ToString())}</p><p><strong>Next step:</strong> {Esc(SanitizePassive(issue.Recommendation))}</p>\n");

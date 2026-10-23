@@ -71,8 +71,9 @@ public sealed class FrontendQualityReviewExportSecurityTest
         html.Should().Contain("Assessment Summary", "Assessment Summary section should be present");
         html.Should().Contain("Target URL:", "Target URL label should be present");
         html.Should().Contain("https://example.com", "Target URL value should be present");
-        // Four completeness dimensions, never the legacy single "Full Assessment".
-        html.Should().Contain("Execution:").And.Contain("Required coverage:").And.Contain("Optional coverage:").And.Contain("Manual assessment:");
+        // The same dimensions as the result page, never the legacy single "Full Assessment".
+        html.Should().Contain("Automated execution:").And.Contain("Required automated engines:").And.Contain("Optional automation coverage:")
+            .And.Contain("Coverage:").And.Contain("Findings:").And.Contain("Manual assessment:").And.Contain("Decision:");
         html.Should().NotContain("Full Assessment");
 
         // Verify engine status
