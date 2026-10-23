@@ -10,6 +10,7 @@
 @inject BirkNext.Web.Services.IWorkspaceSessionService Workspace
 @inject BirkNext.Web.Services.IReportExportService ExportService
 @inject BirkNext.Web.Services.IDataModelAnalysisService DataModelService
+@inject IArtifactExplorerContext ExplorerContext
 
 <PageTitle>Data Model Explorer — QA Review Studio</PageTitle>
 
@@ -29,13 +30,32 @@
                 <button type="button" class="btn-primary" @onclick="ExportHtml">Export HTML</button>
             </div>
             <div class="dme-page-body">
+                @if (_baseParsed is not null && _parsed is not null)
+                {
+                    @* A pack's own data model over the shared base of its module/project: both stay separate artifacts; the aggregate is derived. *@
+                    <fieldset class="dme-layers" data-testid="dme-layers">
+                        <legend>Data model layer</legend>
+                        @foreach (var (key, label) in LayerOptions)
+                        {
+                            <label class="dme-layer-option">
+                                <input type="radio" name="dme-layer" value="@key" checked="@(_layer == key)" data-testid="dme-layer-@key" @onchange="() => _layer = key" />
+                                @label
+                            </label>
+                        }
+                        <p class="dme-layer-note" data-testid="dme-layer-note">@LayerNote</p>
+                    </fieldset>
+                }
                 <DataModelExplorerPanel
-                    DataModelText="@_text"
-                    ParsedDataModel="@_parsed"
-                    SemanticModel="@_semanticModel"
+                    DataModelText="@(_layer == "base" ? _baseText : _text)"
+                    ParsedDataModel="@ShownModel"
+                    SemanticModel="@(_layer == "pack" ? _semanticModel : null)"
                     InitialView="@_initialView"
-                    ArtifactPath="@_artifactPath"
-                    ArtifactRevision="@_artifactRevision"
+                    ArtifactPath="@ShownPath"
+                    ArtifactRevision="@(_layer == "base" ? _baseRevision : _layer == "pack" ? _artifactRevision : null)"
+                    OriginOverride="@(_layer == "aggregate" ? "Derived aggregate — shared base plus this pack's model; read-only, never an authored artifact" : null)"
+                    EntityLayers="@(_layer == "aggregate" ? _aggregateOrigins : null)"
+                    BaseArtifactPath="@_basePath"
+                    PackArtifactPath="@_artifactPath"
                     OnTextChanged="ImportFromPanel" />
                 <ReviewDisclosure Text="Source data model evidence" CollapseText="Hide source data model evidence" Hint="The persistence model Source Analysis extracted · compared with this document"
                                   TestId="dme-source-evidence" Class="disclosure-inline" @bind-Expanded="_sourceEvidenceExpanded">
@@ -69,17 +89,60 @@
     private string? _artifactPath;
     private int? _artifactRevision;
 
-    private void OnArtifactChanged(ArtifactExplorerState state)
+    // ── Layers: pack model over a shared base data model ─────────────────────
+    private string _layer = "pack";
+    private string _baseText = string.Empty;
+    private string? _basePath;
+    private int? _baseRevision;
+    private DataModelDocument? _baseParsed;
+    private DataModelDocument? _aggregate;
+    private IReadOnlyDictionary<string, BirkNext.Web.Services.DataModelLayerOrigin>? _aggregateOrigins;
+
+    private static readonly (string Key, string Label)[] LayerOptions = [("pack", "Pack model"), ("base", "Shared base"), ("aggregate", "Derived aggregate")];
+
+    private DataModelDocument? ShownModel => _layer switch { "base" => _baseParsed, "aggregate" => _aggregate, _ => _parsed };
+    private string? ShownPath => _layer switch { "base" => _basePath, "aggregate" => $"{_basePath} + {_artifactPath}", _ => _artifactPath };
+
+    private string LayerNote => _layer switch
+    {
+        "base" => $"The shared base data model ({_basePath}) that applies to every pack of the module.",
+        "aggregate" => "Derived view: base structures plus this pack's own; a pack structure with the same name overrides the base one and is marked. Both documents stay separate.",
+        _ => $"This pack's own data model ({_artifactPath}). A shared base data model also applies ({_basePath}).",
+    };
+
+    private async Task LoadSharedBaseAsync()
+    {
+        _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _baseText = string.Empty; _basePath = null; _baseRevision = null;
+        if (_parsed is null) { _layer = "pack"; return; }
+        ArtifactExplorerState? shared;
+        try { shared = await ExplorerContext.GetSharedBaseAsync(WorkspaceArtifactType.DataModel); }
+        catch (Exception) { shared = null; }
+        if (shared is not { Content: { Length: > 0 } baseText, Selected: { } baseArtifact }) { _layer = "pack"; return; }
+        try
+        {
+            _baseParsed = DataModelService.Parse(baseText);
+            (_aggregate, _aggregateOrigins) = BirkNext.Web.Services.DataModelLayers.Aggregate(_baseParsed, _parsed);
+            _baseText = baseText;
+            _basePath = baseArtifact.SourcePath ?? baseArtifact.FileName;
+            _baseRevision = baseArtifact.Revision;
+        }
+        catch (Exception)
+        {
+            _baseParsed = null; _aggregate = null; _aggregateOrigins = null; _layer = "pack";
+        }
+    }
+
+    private async Task OnArtifactChanged(ArtifactExplorerState state)
     {
         _artifactPath = state.Selected?.SourcePath ?? state.Selected?.FileName;
         _artifactRevision = state.Selected?.Revision;
         var text = state.Content ?? string.Empty;
-        if (string.Equals(text, _text, StringComparison.Ordinal)) return;
+        if (string.Equals(text, _text, StringComparison.Ordinal)) { await LoadSharedBaseAsync(); return; }
         _text = text;
         _parsed = null;
         _semanticModel = null;
         _analysisError = null;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text)) { await LoadSharedBaseAsync(); return; }
         try
         {
             _parsed = DataModelService.Parse(text);
@@ -91,6 +154,7 @@
             _semanticModel = null;
             _analysisError = ex.Message;
         }
+        await LoadSharedBaseAsync();
     }
 
     private async Task ExportHtml()

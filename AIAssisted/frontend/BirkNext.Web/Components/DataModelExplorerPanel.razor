@@ -596,6 +596,17 @@ else
     /// <summary>The selected artifact's path and revision (provenance of every fact); a path under autodoc/ or generated-docs/ is derived documentation.</summary>
     [Parameter] public string?             ArtifactPath  { get; set; }
     [Parameter] public int?                ArtifactRevision { get; set; }
+    /// <summary>Replaces the origin label (e.g. for the derived aggregate of a shared base and a pack model).</summary>
+    [Parameter] public string?             OriginOverride { get; set; }
+    /// <summary>The layer of each structure in a derived aggregate (Shared base / Pack model / Overridden in pack); null for one document.</summary>
+    [Parameter] public IReadOnlyDictionary<string, DataModelLayerOrigin>? EntityLayers { get; set; }
+    /// <summary>With <see cref="EntityLayers"/>: the document each layer comes from, so a structure's lines name its own source.</summary>
+    [Parameter] public string?             BaseArtifactPath { get; set; }
+    [Parameter] public string?             PackArtifactPath { get; set; }
+
+    private string? SourceOf(DataEntity entity) => EntityLayers?.TryGetValue(entity.Name, out var layer) == true
+        ? layer == DataModelLayerOrigin.SharedBase ? BaseArtifactPath : PackArtifactPath
+        : ArtifactPath;
 
     private DataModelDocument? _document;
     private string             _localText   = string.Empty;
@@ -704,7 +715,7 @@ else
     private string _modelQuery = string.Empty, _modelFilter = "all";
 
     private bool GeneratedOrigin => ArtifactPath is { } path && (path.Contains("/autodoc/", StringComparison.OrdinalIgnoreCase) || path.Contains("generated-docs/", StringComparison.OrdinalIgnoreCase));
-    private string OriginLabel => GeneratedOrigin ? "Generated documentation — derived, never the canonical model" : "Authored document";
+    private string OriginLabel => OriginOverride ?? (GeneratedOrigin ? "Generated documentation — derived, never the canonical model" : "Authored document");
 
     private IEnumerable<DataEntity> ModelEntities(DataModelDocument document) => document.Entities
         .Where(e => _modelFilter switch
@@ -818,6 +829,10 @@ else
                         <li>
                             <button type="button" class="dme-model-item @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)" data-testid="dme-model-item" data-entity="@e.Name" @onclick="() => _selectedEntity = e.Name">
                                 <strong class="dme-wrap">@e.Name</strong>
+                                @if (EntityLayers?.TryGetValue(e.Name, out var layer) == true)
+                                {
+                                    <span class="dme-layer dme-layer-@layer.ToString().ToLowerInvariant()" data-testid="dme-model-layer">@DataModelLayers.Label(layer)</span>
+                                }
                                 <span class="dme-muted">@StructureKindLabel(e.Kind) · @e.Columns.Count field(s) · @(e.Columns.Any(c => c.IsPrimaryKey) ? "key declared" : "no key declared") · @RelationshipsOf(document, e.Name).Count() relationship(s)</span>
                             </button>
                         </li>
@@ -829,7 +844,7 @@ else
                 var relations = RelationshipsOf(document, selected.Name).ToList();
                 <section class="dme-model-detail" aria-labelledby="dme-model-detail-title" data-testid="dme-model-detail" data-entity="@selected.Name">
                     <h3 id="dme-model-detail-title" class="dme-wrap">@selected.Name</h3>
-                    <p class="dme-muted">@StructureKindLabel(selected.Kind) · @Lines(selected.Provenance) of @(ArtifactPath ?? "the document") · @OriginLabel</p>
+                    <p class="dme-muted">@StructureKindLabel(selected.Kind) · @Lines(selected.Provenance) of @(SourceOf(selected) ?? "the document") · @OriginLabel</p>
                     @if (!string.IsNullOrWhiteSpace(selected.Description))
                     {
                         <details class="dme-model-notes" data-testid="dme-model-notes"><summary>Notes from the document</summary><p class="dme-wrap">@selected.Description</p></details>

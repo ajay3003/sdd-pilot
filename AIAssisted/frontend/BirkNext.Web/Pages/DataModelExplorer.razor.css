@@ -16,3 +16,8 @@
     justify-content: flex-end;
     margin-bottom: 0.5rem;
 }
+
+.dme-layers { display: flex; flex-wrap: wrap; gap: .4rem 1rem; align-items: center; margin: 0 0 .75rem; padding: .5rem .75rem; border: 1px solid var(--border-color, #d0d7de); border-radius: 6px; min-inline-size: 0; }
+.dme-layers legend { font-weight: 600; font-size: .85rem; padding: 0 .25rem; }
+.dme-layer-option { display: inline-flex; gap: .3rem; align-items: center; font-size: .88rem; }
+.dme-layer-note { flex-basis: 100%; margin: 0; font-size: .8rem; color: var(--text-muted, #555); overflow-wrap: anywhere; }

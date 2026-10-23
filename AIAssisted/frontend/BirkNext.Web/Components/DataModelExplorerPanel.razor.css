@@ -795,3 +795,8 @@
 .dme-type-original { display: block; }
 .dme-model-notes { margin: .35rem 0; font-size: .875rem; }
 .dme-model-notes summary { cursor: pointer; color: var(--text-muted, #555); }
+
+/* Layer of a structure in a derived aggregate (shared base / pack model / overridden in pack). */
+.dme-layer { display: inline-block; align-self: flex-start; width: fit-content; margin: .15rem 0; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; background: #eef2ff; color: #3730a3; }
+.dme-layer-overriddeninpack { background: #fef3c7; color: #78350f; }
+.dme-layer-sharedbase { background: #f1f5f9; color: #334155; }

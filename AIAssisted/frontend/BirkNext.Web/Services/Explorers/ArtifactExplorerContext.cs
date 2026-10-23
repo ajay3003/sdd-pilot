@@ -177,6 +177,12 @@ public interface IArtifactExplorerContext
     /// </summary>
     Task<ArtifactExplorerState> GetPackStateAsync(WorkspaceArtifactType role, string pack, CancellationToken cancellationToken = default) => GetStateAsync(role, cancellationToken);
 
+    /// <summary>
+    /// The module-shared (else project-shared) artifact of the role that applies to the viewed pack, as if the pack had none of its own — the
+    /// "shared base" under a pack-local artifact (e.g. a base data model). Null when no single shared artifact applies. Changes nothing viewed.
+    /// </summary>
+    Task<ArtifactExplorerState?> GetSharedBaseAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default) => Task.FromResult<ArtifactExplorerState?>(null);
+
     /// <summary>Views a feature pack of the module (default: the focused module). Navigation only; nothing becomes authoritative.</summary>
     Task SelectPackAsync(string? pack, string? module = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -251,7 +257,15 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     public Task<ArtifactExplorerState> GetPackStateAsync(WorkspaceArtifactType role, string pack, CancellationToken cancellationToken = default) =>
         StateAsync(role, pack, cancellationToken);
 
-    private async Task<ArtifactExplorerState> StateAsync(WorkspaceArtifactType role, string? viewPack, CancellationToken cancellationToken)
+    public async Task<ArtifactExplorerState?> GetSharedBaseAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default)
+    {
+        var current = await StateAsync(role, null, cancellationToken);
+        if (current is not { Status: ExplorerArtifactStatus.Loaded, Pack: { } pack }) return null;
+        var shared = await StateAsync(role, pack, cancellationToken, sharedOnly: true);
+        return shared is { Status: ExplorerArtifactStatus.Loaded, Selected: not null } && shared.Selected.Id != current.Selected?.Id ? shared : null;
+    }
+
+    private async Task<ArtifactExplorerState> StateAsync(WorkspaceArtifactType role, string? viewPack, CancellationToken cancellationToken, bool sharedOnly = false)
     {
         var model = await LoadScopeAsync(cancellationToken);
         if (model.Failure is { } failure)
@@ -259,7 +273,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
 
         var all = model.Roles[role];
         if (!model.HasModules)
-            return Build(role, model, all, ArtifactModules.ProjectLevel, anyModule: true, modules: null, focus: null, viewPack);
+            return Build(role, model, all, ArtifactModules.ProjectLevel, anyModule: true, modules: null, focus: null, viewPack, sharedOnly);
 
         // Several modules: a role resolves within one module, never across the whole project.
         var modules = model.Modules.Select(m => ModuleState(role, model, m)).ToList();
@@ -271,7 +285,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             return new ArtifactExplorerState(role, listed.Count == 0 ? ExplorerArtifactStatus.Empty : ExplorerArtifactStatus.SelectionRequired,
                 model.Scope, model.ProjectName, listed, Modules: modules);
         }
-        return Build(role, model, all.Where(e => e.Artifact.Module == focus).ToList(), focus, anyModule: false, modules, focus, viewPack);
+        return Build(role, model, all.Where(e => e.Artifact.Module == focus).ToList(), focus, anyModule: false, modules, focus, viewPack, sharedOnly);
     }
 
     public async Task<ArtifactModuleOverview> GetModuleOverviewAsync(CancellationToken cancellationToken = default)
@@ -390,10 +404,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     }
 
     private ArtifactExplorerState Build(WorkspaceArtifactType role, ScopeModel model, List<ScopeEntry> entries, string module, bool anyModule,
-        IReadOnlyList<ArtifactModuleRoleState>? modules, string? focus, string? viewPack = null)
+        IReadOnlyList<ArtifactModuleRoleState>? modules, string? focus, string? viewPack = null, bool sharedOnly = false)
     {
         var packs = ModulePacks(model, module);
-        if (packs.Count > 0) return BuildInPack(role, model, entries, module, modules, focus, packs, viewPack: viewPack);
+        if (packs.Count > 0) return BuildInPack(role, model, entries, module, modules, focus, packs, viewPack: viewPack, sharedOnly: sharedOnly);
         if (viewPack is null) SetActiveRequirementScope(null);
 
         var listed = entries.Select(e => e.Artifact).ToList();
@@ -444,7 +458,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     /// user picks a pack to explore (navigation, not authority). Only two artifacts of the role in the same pack ask the user to choose.
     /// </summary>
     private ArtifactExplorerState BuildInPack(WorkspaceArtifactType role, ScopeModel model, List<ScopeEntry> entries, string module,
-        IReadOnlyList<ArtifactModuleRoleState>? modules, string? focus, IReadOnlyList<ArtifactPackSummary> packs, bool readContent = true, string? viewPack = null)
+        IReadOnlyList<ArtifactModuleRoleState>? modules, string? focus, IReadOnlyList<ArtifactPackSummary> packs, bool readContent = true, string? viewPack = null, bool sharedOnly = false)
     {
         var names = packs.Select(p => p.Pack).ToHashSet(StringComparer.Ordinal);
         var viewing = (viewPack is not null && names.Contains(viewPack) ? viewPack : null) ?? _workspace.SddLifecycle.PackFocus.LastOrDefault(f => f.WorkspaceScope == model.Scope && f.Module == module && names.Contains(f.Pack))?.Pack
@@ -483,7 +497,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             return State(entries.Count == 0 ? ExplorerArtifactStatus.Empty : ExplorerArtifactStatus.SelectionRequired, entries.Select(e => e.Artifact).ToList(), packRequired: true);
 
         // Resolution order: PackLocal → ModuleShared → ProjectShared → missing. Never a sibling pack.
-        var local = entries.Where(e => e.Artifact.Feature == viewing).ToList();
+        var local = sharedOnly ? [] : entries.Where(e => e.Artifact.Feature == viewing).ToList();
         var shared = entries.Where(e => e.Artifact.Feature is null).ToList();
         if (shared.Count == 0 && model.HasModules && module != ArtifactModules.ProjectLevel)
             shared = model.Roles[role].Where(e => e.Artifact.Module == ArtifactModules.ProjectLevel && e.Artifact.Feature is null).ToList();
