@@ -797,7 +797,7 @@
                 ApplyDefaultPackSelections();
             }
 
-            if (QualitySession.HasResult && IsSessionForCurrentProject())
+            if (QualitySession.HasResult && IsSessionForCurrentProject() && QualityReviewSessionService.InputsMatch(QualitySession.ReviewInputs, ArtifactPackReview.InputsOf(_roleStates.Values)))
                 RestoreReport(QualitySession.Report!);
 
             // Opening this page only resolves inputs. Analysis and persisted review runs are user initiated.

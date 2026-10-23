@@ -102,7 +102,7 @@ public static class ProjectImportPresentation
             var byModule = role.Documents.GroupBy(d => ArtifactModules.ModuleOf(d.RelativePath, roots), StringComparer.Ordinal).ToList();
             if (moduleCount > 1)
             {
-                var ambiguous = byModule.Count(g => ArtifactPacks.AmbiguousWithinPack(g.Select(d => d.RelativePath), roots));
+                var ambiguous = byModule.Count(g => ArtifactPacks.AmbiguousWithinPack(g.Select(d => d.RelativePath), roots, role.Role));
                 var detail = ambiguous == 0
                     ? $"One per module — selected automatically for each of {byModule.Count} module{(byModule.Count == 1 ? "" : "s")}"
                     : $"{byModule.Count - ambiguous} module{(byModule.Count - ambiguous == 1 ? "" : "s")} selected automatically · {ambiguous} need{(ambiguous == 1 ? "s" : "")} selection";
@@ -113,7 +113,7 @@ public static class ProjectImportPresentation
             {
                 // Feature packs (specs/001-…, specs/002-…): one document per pack is organisation, not ambiguity.
                 var packs = role.Documents.Select(d => ArtifactModules.FeatureOf(d.RelativePath)).OfType<string>().Distinct(StringComparer.Ordinal).Count();
-                var samePack = ArtifactPacks.AmbiguousWithinPack(role.Documents.Select(d => d.RelativePath), roots);
+                var samePack = ArtifactPacks.AmbiguousWithinPack(role.Documents.Select(d => d.RelativePath), roots, role.Role);
                 return new ProjectImportRoleRow(role.Role, label, samePack ? ProjectImportTone.Partial : ProjectImportTone.Available,
                     $"{Count(role.Documents.Count, "artifact")} across {Count(packs, "pack")}",
                     samePack ? "A pack has more than one — needs selection in that pack" : "One per artifact pack");

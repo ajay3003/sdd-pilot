@@ -131,7 +131,7 @@ public sealed class ArtifactPackTests : BunitContext
     [Fact]
     public async Task Two_artifacts_of_a_role_in_the_same_pack_are_the_only_ambiguity()
     {
-        var record = Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/spec-draft.md", Spec.Replace("store carts", "keep carts")),
+        var record = Import(("specs/001-cart/feature.md", Spec), ("specs/001-cart/feature-draft.md", Spec.Replace("store carts", "keep carts")),
             ("specs/002-refund/spec.md", SpecB));
 
         record.AmbiguousRoles.Should().Equal("Specification");
@@ -153,6 +153,28 @@ public sealed class ArtifactPackTests : BunitContext
 
         await _explorers.SelectPackAsync("002-refund");
         (await State(WorkspaceArtifactType.Specification)).Content.Should().Be(SpecB, "a choice in pack 001 never applies to pack 002");
+    }
+
+    [Fact]
+    public async Task The_spec_kit_feature_file_is_the_pack_s_artifact_when_supporting_documents_look_like_the_same_role()
+    {
+        // A quickstart that reads like a specification sits next to the pack's spec.md (seen in a real Spec-Kit repository).
+        var record = Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/quickstart.md", Spec.Replace("store carts", "try the cart")),
+            ("specs/002-refund/spec.md", SpecB));
+
+        record.AmbiguousRoles.Should().BeEmpty("spec.md is the pack's specification by Spec-Kit structure");
+        await _explorers.SelectPackAsync("001-cart");
+        var spec = await State(WorkspaceArtifactType.Specification);
+        spec.Should().Match<ArtifactExplorerState>(s => s.Status == ExplorerArtifactStatus.Loaded && s.Reason == ExplorerSelectionReason.PackFile);
+        spec.Selected!.SourcePath.Should().Be("specs/001-cart/spec.md");
+        spec.Artifacts.Should().Contain(a => a.SourcePath == "specs/001-cart/quickstart.md", "the other candidate stays selectable");
+        (await _explorers.GetModuleOverviewAsync()).Role(WorkspaceArtifactType.Specification)!.ModulesNeedingSelection.Should().Be(0);
+
+        _explorers.Select(WorkspaceArtifactType.Specification, "workspace:specs/001-cart/quickstart.md");
+        (await State(WorkspaceArtifactType.Specification)).Should().Match<ArtifactExplorerState>(s => s.Reason == ExplorerSelectionReason.Explicit && s.Selected!.SourcePath == "specs/001-cart/quickstart.md",
+            "an explicit choice always wins");
+        ArtifactPacks.IsPackFile("Person/specs/002-x/spec.md", WorkspaceArtifactType.Specification).Should().BeTrue();
+        ArtifactPacks.IsPackFile("Person/specs/002-x/contracts/spec.md", WorkspaceArtifactType.Specification).Should().BeFalse();
     }
 
     [Fact]
@@ -261,7 +283,7 @@ public sealed class ArtifactPackTests : BunitContext
     [Fact]
     public void Same_pack_ambiguity_is_worded_for_the_pack()
     {
-        Import(("specs/001-cart/spec.md", Spec), ("specs/001-cart/spec-draft.md", Spec.Replace("store carts", "keep carts")), ("specs/002-refund/spec.md", SpecB));
+        Import(("specs/001-cart/feature.md", Spec), ("specs/001-cart/feature-draft.md", Spec.Replace("store carts", "keep carts")), ("specs/002-refund/spec.md", SpecB));
         _explorers.SelectPackAsync("001-cart").GetAwaiter().GetResult();
         var cut = Host(WorkspaceArtifactType.Specification);
 

@@ -336,6 +336,25 @@ public sealed class PackEvidenceTests
     }
 
     [Fact]
+    public async Task A_saved_result_is_restored_only_for_the_inputs_it_read()
+    {
+        Import(("specs/001-cart/spec.md", Spec), ("specs/002-refund/spec.md", SpecB));
+        async Task<List<SddReviewInput>> InputsOf(string pack)
+        {
+            await _explorers.SelectPackAsync(pack);
+            var states = new List<ArtifactExplorerState>();
+            foreach (var role in CurrentWorkspaceSnapshot.WorkflowRoles) states.Add(await State(role));
+            return ArtifactPackReview.InputsOf(states);
+        }
+        var cart = await InputsOf("001-cart");
+        var refund = await InputsOf("002-refund");
+
+        QualityReviewSessionService.InputsMatch(cart, cart).Should().BeTrue();
+        QualityReviewSessionService.InputsMatch(cart, refund).Should().BeFalse("pack 001's result is never shown as pack 002's");
+        QualityReviewSessionService.InputsMatch([], refund).Should().BeTrue("a result saved without input records is treated as before");
+    }
+
+    [Fact]
     public void Readiness_says_a_missing_role_does_not_apply_to_the_pack()
     {
         var pack = new QualityReviewPackDescriptor("delivery-readiness", "Quality", "Delivery Readiness", "", true);

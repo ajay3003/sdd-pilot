@@ -85,7 +85,7 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
     [Fact]
     public void AmbiguousSpecification_WithinOnePack_IsNeverPicked_AndNamesTheRoleToSelect()
     {
-        Import(new string('d', 64), ("shop/specs/001/spec.md", Spec), ("shop/specs/001/spec-draft.md", Spec.Replace("Cart", "Checkout")),
+        Import(new string('d', 64), ("shop/specs/001/feature.md", Spec), ("shop/specs/001/feature-draft.md", Spec.Replace("Cart", "Checkout")),
             ("shop/specs/001/tasks.md", Tasks));
 
         var cut = Render<TaskToSpecAlignment>();
@@ -96,7 +96,7 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
         cut.Find("[data-testid=ir-needs]").TextContent.Should().StartWith("Specification needs selection");
 
         var spec = _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult();
-        cut.InvokeAsync(() => _explorers.Select(WorkspaceArtifactType.Specification, spec.Artifacts.Single(a => a.SourcePath!.EndsWith("/spec.md")).Id));
+        cut.InvokeAsync(() => _explorers.Select(WorkspaceArtifactType.Specification, spec.Artifacts.Single(a => a.SourcePath!.EndsWith("/feature.md")).Id));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=ir-status]").GetAttribute("data-state").Should().Be("Current"));
     }

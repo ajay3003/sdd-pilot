@@ -49,9 +49,34 @@ public static partial class ArtifactPacks
     /// </summary>
     public static string PathKey(string? path, IReadOnlySet<string> roots) => Key(ArtifactModules.ModuleOf(path, roots), ArtifactModules.FeatureOf(path) ?? "");
 
-    /// <summary>Whether two of <paramref name="paths"/> (one role's documents) are in the same pack (or both shared in the same module).</summary>
-    public static bool AmbiguousWithinPack(IEnumerable<string?> paths, IReadOnlySet<string> roots) =>
-        paths.GroupBy(p => PathKey(p, roots), StringComparer.Ordinal).Any(g => g.Count() > 1);
+    /// <summary>
+    /// Whether two of <paramref name="paths"/> (one role's documents) compete in the same pack (or both shared in the same module). A pack whose
+    /// candidates include exactly one Spec-Kit feature file for the role (<see cref="IsPackFile"/>) is not ambiguous: that file is the pack's.
+    /// </summary>
+    public static bool AmbiguousWithinPack(IEnumerable<string?> paths, IReadOnlySet<string> roots, WorkspaceArtifactType role) =>
+        paths.GroupBy(p => PathKey(p, roots), StringComparer.Ordinal).Any(g => g.Count() > 1 && g.Count(p => IsPackFile(p, role)) != 1);
+
+    /// <summary>The Spec-Kit file of a role in a feature folder (<c>spec.md</c>, <c>plan.md</c>, <c>tasks.md</c>, <c>data-model.md</c>).</summary>
+    public static string? PackFileName(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Specification => "spec.md",
+        WorkspaceArtifactType.Plan => "plan.md",
+        WorkspaceArtifactType.Tasks => "tasks.md",
+        WorkspaceArtifactType.DataModel => "data-model.md",
+        WorkspaceArtifactType.Constitution => "constitution.md",
+        _ => null,
+    };
+
+    /// <summary>
+    /// The document is the role's Spec-Kit file directly in its feature folder (<c>specs/002-x/spec.md</c>) — structure, not a guess from the
+    /// title. Another document of the role in the same pack (a quickstart, a contract under <c>contracts/</c>) is supporting material.
+    /// </summary>
+    public static bool IsPackFile(string? path, WorkspaceArtifactType role)
+    {
+        if (path is null || PackFileName(role) is not { } file || ArtifactModules.FeatureOf(path) is not { } feature) return false;
+        var normalized = path.Replace('\\', '/');
+        return normalized.EndsWith($"/{feature}/{file}", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>"Feature Specification: Cart" → "Cart": the spec title without the template's document-type prefix.</summary>
     public static string PackTitle(string title) => TitlePrefix().Replace(title, "").Trim() is { Length: > 0 } t ? t : title;

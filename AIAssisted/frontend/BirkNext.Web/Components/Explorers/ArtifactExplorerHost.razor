@@ -522,6 +522,7 @@
             ExplorerSelectionReason.OnlyArtifact => "Only artifact",
             ExplorerSelectionReason.PackArtifact => "This pack's artifact",
             ExplorerSelectionReason.SharedArtifact => "Shared artifact — this pack has none of its own",
+            ExplorerSelectionReason.PackFile => $"This pack's {Label} file — other candidates in the pack are listed",
             _ => null,
         };
         if (text is not null)

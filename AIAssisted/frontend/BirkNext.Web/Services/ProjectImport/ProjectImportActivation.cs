@@ -18,7 +18,7 @@ public sealed record ProjectImportArtifactDiscovery(
         get
         {
             var roots = ArtifactModules.RootsOf(ArtifactDocuments.Select(d => d.RelativePath));
-            return Roles.Where(r => r.State == SampleRoleState.Multiple && ArtifactPacks.AmbiguousWithinPack(r.Documents.Select(d => d.RelativePath), roots)).ToList();
+            return Roles.Where(r => r.State == SampleRoleState.Multiple && ArtifactPacks.AmbiguousWithinPack(r.Documents.Select(d => d.RelativePath), roots, r.Role)).ToList();
         }
     }
     public IReadOnlyList<DiscoveredDocument> NeedsReview => Documents.Where(d => d.Status == ArtifactDiscoveryStatus.NeedsReview).ToList();

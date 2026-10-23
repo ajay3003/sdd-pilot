@@ -64,11 +64,18 @@
                                     {
                                         var inPacks = module.Packs > 1;
                                         var packPeers = inPacks ? candidates.Count(c => c.Feature == candidate.Feature) : 0;
+                                        // Several candidates in one pack, exactly one of them the role's Spec-Kit file: that file is the pack's.
+                                        var packFile = inPacks && packPeers > 1 && ArtifactPacks.IsPackFile(candidate.SourcePath ?? candidate.FileName, role.Role)
+                                            && candidates.Count(c => c.Feature == candidate.Feature && ArtifactPacks.IsPackFile(c.SourcePath ?? c.FileName, role.Role)) == 1;
                                         var selected = module.SelectedId == candidate.Id || inPacks && packPeers == 1;
                                         <li class="pac-candidate @(selected ? "is-selected" : "")" data-testid="pac-candidate">
                                             <span class="pac-path">@(candidate.SourcePath ?? candidate.FileName)</span>
                                             <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · pack {f}" : inPacks ? " · shared by the module's packs" : "")</span>
-                                            @if (inPacks && packPeers == 1)
+                                            @if (packFile)
+                                            {
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">This pack's @label file</span>
+                                            }
+                                            else if (inPacks && packPeers == 1)
                                             {
                                                 <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(candidate.Feature is null ? "Shared artifact" : "This pack's artifact")</span>
                                             }

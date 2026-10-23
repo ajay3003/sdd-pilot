@@ -103,6 +103,8 @@ public enum ExplorerSelectionReason
     PackArtifact,
     /// <summary>The viewed pack has no artifact of the role; the module's (or project's) shared artifact applies.</summary>
     SharedArtifact,
+    /// <summary>Several candidates in the pack; the role's Spec-Kit feature file (e.g. <c>specs/002-x/spec.md</c>) is the pack's artifact.</summary>
+    PackFile,
 }
 
 public sealed record ArtifactExplorerState(
@@ -436,7 +438,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         if (packs.Count > 0)
         {
             var state = BuildInPack(role, model, entries, module, null, module, packs, readContent: false);
-            var ambiguous = entries.Where(e => e.Artifact.Feature is not null).GroupBy(e => e.Artifact.Feature).Any(g => g.Count() > 1 && !HasStoredChoice(role, model, module, g.Key, g));
+            var ambiguous = entries.Where(e => e.Artifact.Feature is not null).GroupBy(e => e.Artifact.Feature)
+                .Any(g => g.Count() > 1 && !HasStoredChoice(role, model, module, g.Key, g) && g.Count(e => ArtifactPacks.IsPackFile(e.Artifact.SourcePath ?? e.Artifact.FileName, role)) != 1);
             return new ArtifactModuleRoleState(module, entries.Count, state.Selected?.Id, state.Reason, packs.Count, ambiguous);
         }
         var (id, reason) = Resolve(role, model, entries, module, anyModule: !model.HasModules);
@@ -510,9 +513,14 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             return State(ExplorerArtifactStatus.Loaded, listed, Stored(local) ?? local[0], Stored(local) is not null ? ExplorerSelectionReason.Explicit
                 : entries.Count == 1 ? ExplorerSelectionReason.OnlyArtifact : ExplorerSelectionReason.PackArtifact);
         if (local.Count > 1)
-            return Stored(local) is { } chosen
-                ? State(ExplorerArtifactStatus.Loaded, listed, chosen, ExplorerSelectionReason.Explicit)
+        {
+            if (Stored(local) is { } chosen) return State(ExplorerArtifactStatus.Loaded, listed, chosen, ExplorerSelectionReason.Explicit);
+            // Spec-Kit structure decides: the role's feature file (specs/<pack>/spec.md) is the pack's; other candidates stay selectable.
+            var packFiles = local.Where(e => ArtifactPacks.IsPackFile(e.Artifact.SourcePath ?? e.Artifact.FileName, role)).ToList();
+            return packFiles.Count == 1
+                ? State(ExplorerArtifactStatus.Loaded, listed, packFiles[0], ExplorerSelectionReason.PackFile)
                 : State(ExplorerArtifactStatus.SelectionRequired, local.Select(e => e.Artifact).ToList(), ambiguous: true);
+        }
         if (shared.Count == 0) return State(ExplorerArtifactStatus.Empty, listed);
         if (Stored(shared) is { } chosenShared) return State(ExplorerArtifactStatus.Loaded, listed, chosenShared, ExplorerSelectionReason.Explicit);
         var authoritative = shared.Where(e => e.Artifact.IsAuthoritative).ToList();

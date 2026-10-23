@@ -27,6 +27,16 @@ public sealed class QualityReviewSessionService
     public IReadOnlyDictionary<WorkspaceArtifactKind, string> ArtifactSnapshot => _artifactSnapshot;
     public bool HasResult => Report is not null;
 
+    /// <summary>
+    /// Whether a saved result describes the inputs viewed now: the same role, artifact and content fingerprint for each input. A result for
+    /// another artifact pack (or changed documents) is never shown as current. A result saved without input records cannot be compared and is
+    /// treated as before.
+    /// </summary>
+    public static bool InputsMatch(IReadOnlyList<SddReviewInput> saved, IReadOnlyList<SddReviewInput> current) =>
+        saved.Count == 0 || saved.Select(Key).Order(StringComparer.Ordinal).SequenceEqual(current.Select(Key).Order(StringComparer.Ordinal));
+
+    private static string Key(SddReviewInput input) => $"{input.Role}|{input.ArtifactId}|{input.Fingerprint}";
+
     public void MarkRunning(
         IEnumerable<string> selectedPackIds,
         string? projectName,
