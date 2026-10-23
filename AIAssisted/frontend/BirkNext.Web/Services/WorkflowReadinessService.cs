@@ -335,9 +335,16 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
                 ExplorerRoute(moduleRole.Role), $"Open {moduleRole.Label} Explorer");
         }
 
+        if (workspace.PackRequired && workspace.Roles.FirstOrDefault(r => r.PackRequired) is { } packRole)
+        {
+            return Synthetic(ChooseArtifactsKey, "Select an artifact pack to explore",
+                $"The {(workspace.ModuleLabel is { } pm ? $"module {pm}" : "project")} is organised in {workspace.PackCount} artifact packs. Reviews read one pack and its shared artifacts; a pack with one artifact per role uses it automatically.",
+                ExplorerRoute(packRole.Role), $"Open {packRole.Label} Explorer");
+        }
+
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
         {
-            var where = workspace.ModuleLabel is { } module ? $"Module {module} has" : "The workspace has";
+            var where = workspace.PackLabel is { } pack ? $"Pack {pack} has" : workspace.ModuleLabel is { } module ? $"Module {module} has" : "The workspace has";
             return Synthetic(ChooseArtifactsKey, $"Needs selection: choose the {unresolved.Label} to review",
                 $"{where} {unresolved.ArtifactCount} {unresolved.Label} artifacts and none is selected. Reviews read the selected one.",
                 ExplorerRoute(unresolved.Role), $"Open {unresolved.Label} Explorer");

@@ -102,12 +102,21 @@ public static class ProjectImportPresentation
             var byModule = role.Documents.GroupBy(d => ArtifactModules.ModuleOf(d.RelativePath, roots), StringComparer.Ordinal).ToList();
             if (moduleCount > 1)
             {
-                var ambiguous = byModule.Count(g => g.Count() > 1);
+                var ambiguous = byModule.Count(g => ArtifactPacks.AmbiguousWithinPack(g.Select(d => d.RelativePath), roots));
                 var detail = ambiguous == 0
                     ? $"One per module — selected automatically for each of {byModule.Count} module{(byModule.Count == 1 ? "" : "s")}"
                     : $"{byModule.Count - ambiguous} module{(byModule.Count - ambiguous == 1 ? "" : "s")} selected automatically · {ambiguous} need{(ambiguous == 1 ? "s" : "")} selection";
                 return new ProjectImportRoleRow(role.Role, label, ambiguous == 0 ? ProjectImportTone.Available : ProjectImportTone.Partial,
                     $"{Count(role.Documents.Count, "candidate")} in {byModule.Count} module{(byModule.Count == 1 ? "" : "s")}", detail);
+            }
+            if (role.State == SampleRoleState.Multiple && role.Documents.Select(d => ArtifactModules.FeatureOf(d.RelativePath)).Distinct().Count() > 1)
+            {
+                // Feature packs (specs/001-…, specs/002-…): one document per pack is organisation, not ambiguity.
+                var packs = role.Documents.Select(d => ArtifactModules.FeatureOf(d.RelativePath)).OfType<string>().Distinct(StringComparer.Ordinal).Count();
+                var samePack = ArtifactPacks.AmbiguousWithinPack(role.Documents.Select(d => d.RelativePath), roots);
+                return new ProjectImportRoleRow(role.Role, label, samePack ? ProjectImportTone.Partial : ProjectImportTone.Available,
+                    $"{Count(role.Documents.Count, "artifact")} across {Count(packs, "pack")}",
+                    samePack ? "A pack has more than one — needs selection in that pack" : "One per artifact pack");
             }
             return role.State == SampleRoleState.Detected
                 ? new ProjectImportRoleRow(role.Role, label, ProjectImportTone.Available, "Detected", role.Documents[0].RelativePath)

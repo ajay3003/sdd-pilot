@@ -400,8 +400,9 @@
     font-size: 0.65rem;
     font-weight: 600;
     font-family: monospace;
-    background: var(--clr-accent-bg, #ede9fe);
-    color: var(--clr-accent, #7c3aed);
+    /* A fixed pair (not theme tokens): small monospace text needs AA contrast in every theme. */
+    background: #ede9fe;
+    color: #5b21b6;
     padding: 0.1rem 0.4rem;
     border-radius: 0.2rem;
     margin-left: 0.35rem;

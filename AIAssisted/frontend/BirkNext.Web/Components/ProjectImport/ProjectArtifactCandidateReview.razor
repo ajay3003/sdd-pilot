@@ -62,18 +62,24 @@
                                 <ul class="pac-candidates">
                                     @foreach (var candidate in candidates)
                                     {
-                                        var selected = module.SelectedId == candidate.Id;
+                                        var inPacks = module.Packs > 1;
+                                        var packPeers = inPacks ? candidates.Count(c => c.Feature == candidate.Feature) : 0;
+                                        var selected = module.SelectedId == candidate.Id || inPacks && packPeers == 1;
                                         <li class="pac-candidate @(selected ? "is-selected" : "")" data-testid="pac-candidate">
                                             <span class="pac-path">@(candidate.SourcePath ?? candidate.FileName)</span>
-                                            <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · feature {f}" : "")</span>
-                                            @if (selected)
+                                            <span class="pac-meta">@candidate.DisplayName@(candidate.Feature is { } f ? $" · pack {f}" : inPacks ? " · shared by the module's packs" : "")</span>
+                                            @if (inPacks && packPeers == 1)
+                                            {
+                                                <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(candidate.Feature is null ? "Shared artifact" : "This pack's artifact")</span>
+                                            }
+                                            else if (selected)
                                             {
                                                 <span class="pac-badge pac-badge-clear" data-testid="pac-selected">@(module.Reason == ExplorerSelectionReason.OnlyArtifact ? "Selected · only candidate" : "Selected")</span>
                                             }
                                             else
                                             {
                                                 <button type="button" class="btn-secondary pac-use" data-testid="pac-use" @onclick="() => UseAsync(role.Role, candidate.Id, module.Module)">
-                                                    @(_overview.HasModules ? $"Use for {module.Label}" : $"Use this {label}")
+                                                    @(inPacks && candidate.Feature is { } usePack ? $"Use for pack {usePack}" : _overview.HasModules ? $"Use for {module.Label}" : $"Use this {label}")
                                                 </button>
                                             }
                                         </li>
@@ -159,7 +165,9 @@
             : $"{role.SelectedModules} selected"
         : role.ModulesNeedingSelection > 0 ? "Needs selection" : "Selected";
 
-    private static string ModuleText(ArtifactModuleRoleState module) => module.NeedsSelection
+    private static string ModuleText(ArtifactModuleRoleState module) => module.Packs > 1
+        ? $"{module.Candidates} across {module.Packs} artifact packs" + (module.AmbiguousInPack ? " · a pack needs selection" : " · one per pack")
+        : module.NeedsSelection
         ? $"{module.Candidates} candidates · needs selection"
         : module.Candidates == 1 ? "1 candidate · selected automatically" : $"{module.Candidates} candidates · selected";
 

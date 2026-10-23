@@ -38,9 +38,15 @@ public sealed record ArtifactRoleStatus(
     string? Error,
     string? Fingerprint = null,
     IReadOnlyList<ArtifactModuleRoleState>? Modules = null,
-    string? Module = null)
+    string? Module = null,
+    IReadOnlyList<ArtifactPackSummary>? Packs = null,
+    string? Pack = null,
+    bool PackRequired = false)
 {
     public bool IsAvailable => Availability == ArtifactRoleAvailability.Available;
+
+    /// <summary>The (focused) module is organised in several feature packs; the selection describes the viewed pack only.</summary>
+    public bool HasPacks => Packs is { Count: > 1 };
 
     /// <summary>The project has several modules: <see cref="ArtifactCount"/> and the selection describe the focused module only.</summary>
     public bool HasModules => Modules is { Count: > 1 };
@@ -62,7 +68,7 @@ public sealed record ArtifactRoleStatus(
             if (!HasModules) return null;
             var withCandidates = Modules!.Count(m => m.Candidates > 0);
             var text = $"{DetectedCount} detected across {withCandidates} module{(withCandidates == 1 ? "" : "s")}";
-            var selected = Modules!.Count(m => m.SelectedId is not null);
+            var selected = Modules!.Count(m => m.Candidates > 0 && m.IsResolved);
             var needs = Modules!.Count(m => m.NeedsSelection);
             if (selected > 0) text += $" · {selected} selected";
             if (needs > 0) text += $" · {needs} need{(needs == 1 ? "s" : "")} selection";
@@ -142,6 +148,15 @@ public sealed record CurrentWorkspaceSnapshot(
     public bool ModuleRequired => Roles.Any(r => r.ModuleRequired);
 
     public int ModuleCount => Roles.Where(r => r.HasModules).Select(r => r.Modules!.Count).DefaultIfEmpty(0).Max();
+
+    /// <summary>Several feature packs and none viewed: the user selects a pack to explore — navigation, not a warning.</summary>
+    public bool PackRequired => Roles.Any(r => r.PackRequired);
+
+    public int PackCount => Roles.Where(r => r.HasPacks).Select(r => r.Packs!.Count).DefaultIfEmpty(0).Max();
+
+    /// <summary>The pack reviews currently read, as "Display name (folder)", or null.</summary>
+    public string? PackLabel => Roles.Where(r => r.HasPacks && r.Pack is not null).Select(r => r.Packs!.FirstOrDefault(p => p.Pack == r.Pack))
+        .Where(p => p is not null).Select(p => p!.DisplayName == p.Pack ? p.Pack : $"{p.DisplayName} ({p.Pack})").FirstOrDefault();
 
     /// <summary>
     /// The selected revision of every available role that has one: what review decisions are bound to. The artifact id is
@@ -334,7 +349,8 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         };
         // The fingerprint of the content the explorers show for the role: the same function the repository uses for revisions.
         var fingerprint = state.Selected is not null && !string.IsNullOrEmpty(state.Content) ? ArtifactFingerprint.Compute(state.Content) : null;
-        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint, state.Modules, state.Module);
+        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint, state.Modules, state.Module,
+            state.Packs, state.Pack, state.PackRequired);
     }
 
     /// <summary>An imported project is persisted without a Sample Project identity (its import is in the lifecycle), so it matches a blank project name.</summary>

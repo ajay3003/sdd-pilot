@@ -45,6 +45,14 @@
                     <strong>@reviewModule</strong>
                 </span>
             }
+            @if (ReviewPack is { } reviewPack)
+            {
+                <span class="qr-context-item" data-testid="qr-pack">
+                    <span class="qr-context-label">Artifact pack</span>
+                    <strong>@reviewPack.DisplayName</strong>
+                    @if (reviewPack.DisplayName != reviewPack.Pack) { <span>(@reviewPack.Pack)</span> }
+                </span>
+            }
             <span class="qr-context-item"><span class="qr-context-label">Artifacts</span> <span>@AvailableArtifactCount available</span></span>
             <span class="qr-context-item">
                 <span class="qr-context-label">Shared SDD evidence</span>
@@ -228,7 +236,9 @@
             <p class="qr-section-desc">Available means the artifact is present in the current workspace. It is not a review, an approval or a pass.</p>
             @if (_roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired))
             {
-                <p role="status" class="qr-inline-note" data-testid="qr-selection-required">@(ModuleRequired
+                <p role="status" class="qr-inline-note" data-testid="qr-selection-required">@(PackRequired
+                    ? "This project is organised in artifact packs. Select the pack to review in any document Explorer; the review reads that pack and its shared artifacts, never a sibling pack."
+                    : ModuleRequired
                     ? "This project has several modules with their own documents. Choose the module to review in any document Explorer; the review reads that module's selected artifacts."
                     : "Some roles have multiple artifacts. Select one in its Explorer before running Document Quality Review.")</p>
             }
@@ -372,6 +382,11 @@
             </section>
         }
     </div>
+
+    @if (ModulePacks is { } modulePacks)
+    {
+        <ArtifactPackReviewPanel Packs="modulePacks" ReviewPackIds="@_selectedPacks.ToList()" ModuleLabel="@ReviewModuleLabel" />
+    }
 
     <!-- ── Results ───────────────────────────────────────────────────────── -->
     @if (_report is not null)
@@ -828,10 +843,10 @@
     private void OnArtifactContextChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () =>
     {
         var previous = _selectedProject;
-        var previousModule = ReviewModuleLabel;
+        var previousModule = ReviewModuleLabel + "|" + ReviewPack?.Pack;
         await LoadCurrentWorkspaceArtifacts();
         // Another project or another module: an earlier result describes other documents and is not shown as current.
-        if (!string.Equals(previous, _selectedProject, StringComparison.Ordinal) || !string.Equals(previousModule, ReviewModuleLabel, StringComparison.Ordinal))
+        if (!string.Equals(previous, _selectedProject, StringComparison.Ordinal) || !string.Equals(previousModule, ReviewModuleLabel + "|" + ReviewPack?.Pack, StringComparison.Ordinal))
         {
             _report = null;
             _diagnosticSnapshot = null;
@@ -902,6 +917,11 @@
     /// <summary>The focused module of a monorepo: the review reads that module's selected artifacts only.</summary>
     private string? ReviewModuleLabel => _roleStates.Values.Select(s => s.ModuleLabel).FirstOrDefault(m => m is not null);
     private bool ModuleRequired => _roleStates.Values.Any(s => s.ModuleRequired);
+    private bool PackRequired => _roleStates.Values.Any(s => s.PackRequired);
+    /// <summary>The artifact packs of the focused module when it has several: each can be reviewed independently.</summary>
+    private IReadOnlyList<BirkNext.Web.Services.Explorers.ArtifactPackSummary>? ModulePacks => _roleStates.Values.FirstOrDefault(s => s.HasPacks)?.Packs;
+    /// <summary>The viewed artifact pack: the review reads that pack and shared artifacts only.</summary>
+    private BirkNext.Web.Services.Explorers.ArtifactPackSummary? ReviewPack => _roleStates.Values.Select(s => s.HasPacks ? s.PackSummary : null).FirstOrDefault(p => p is not null);
 
     private bool SelectionRequired => _roleStates.Values.Any(s => s.Status == BirkNext.Web.Services.Explorers.ExplorerArtifactStatus.SelectionRequired);
 
@@ -914,6 +934,7 @@
         {
             if (!AnyArtifactLoaded) return "Add artifacts to the current workspace to run a review.";
             if (ModuleRequired) return "Choose the module to review in a document Explorer before running.";
+            if (PackRequired) return "Select the artifact pack to review in a document Explorer before running.";
             if (SelectionRequired) return "Choose one artifact per role in its Explorer before running.";
             if (_selectedPacks.Count == 0) return "Select at least one review pack.";
             return "None of the selected packs can run: their required inputs are absent.";

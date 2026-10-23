@@ -60,6 +60,10 @@
             {
                 <p class="dd-context" data-testid="dd-revision-context" role="status">@DocumentationDrift.RevisionContext(_left, _right)@(DocumentationDrift.RevisionContext(_left, _right) == DocumentationDrift.DifferentRevisions ? " — these artifacts belong to different project revisions (context only, not a staleness verdict)." : "")</p>
             }
+            @if (_left is not null && _right is not null && DocumentationDrift.PackContext(_left, _right) is { } crossPack)
+            {
+                <p class="dd-context" data-testid="dd-cross-pack" role="status"><strong>@crossPack</strong></p>
+            }
             @if (DocumentationDrift.Guard(_left, _right) is { } guard) { <p class="dd-note" data-testid="dd-guard">@guard</p> }
             <button type="button" class="btn-primary" data-testid="dd-run" disabled="@(DocumentationDrift.Guard(_left, _right) is not null)" @onclick="Run">Compare</button>
         </div>

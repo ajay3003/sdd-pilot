@@ -12,7 +12,15 @@ public sealed record ProjectImportArtifactDiscovery(
     IReadOnlyList<ProjectImportSkippedDocument> Skipped)
 {
     public IReadOnlyList<SampleRoleSummary> DetectedRoles => Roles.Where(r => r.State != SampleRoleState.NotFound).ToList();
-    public IReadOnlyList<SampleRoleSummary> AmbiguousRoles => Roles.Where(r => r.State == SampleRoleState.Multiple).ToList();
+    /// <summary>Roles with two documents in the same artifact pack (or both shared in one module). Documents in sibling packs are not ambiguous.</summary>
+    public IReadOnlyList<SampleRoleSummary> AmbiguousRoles
+    {
+        get
+        {
+            var roots = ArtifactModules.RootsOf(ArtifactDocuments.Select(d => d.RelativePath));
+            return Roles.Where(r => r.State == SampleRoleState.Multiple && ArtifactPacks.AmbiguousWithinPack(r.Documents.Select(d => d.RelativePath), roots)).ToList();
+        }
+    }
     public IReadOnlyList<DiscoveredDocument> NeedsReview => Documents.Where(d => d.Status == ArtifactDiscoveryStatus.NeedsReview).ToList();
     public IReadOnlyList<DiscoveredDocument> Unclassified => Documents.Where(d => d.Status is ArtifactDiscoveryStatus.Unclassified or ArtifactDiscoveryStatus.ParseError).ToList();
     /// <summary>Documents that become artifact revisions: every detected document (a role with several keeps all of them, none selected).</summary>

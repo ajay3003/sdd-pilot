@@ -73,17 +73,27 @@
 
                 @if (_inputs.Status == BirkNext.Web.Services.Explorers.TraceabilityInputStatus.SelectionRequired)
                 {
-                    @if (_inputs.ModuleRequired)
+                    @if (_inputs.PackRequired)
+                    {
+                        <p role="status" class="at-selection-note" data-testid="at-pack-required">
+                            This project is organised in artifact packs. Select the pack to trace in any document Explorer;
+                            requirements are traced within one pack and its shared artifacts, never across sibling packs.
+                        </p>
+                    }
+                    else if (_inputs.ModuleRequired)
                     {
                         <p role="status" class="at-selection-note" data-testid="at-module-required">
                             This project has several modules with their own documents. Choose the module to trace in any document Explorer;
                             requirements are traced within one module, never across unrelated modules.
                         </p>
                     }
-                    <p role="status" class="at-selection-note" data-testid="at-selection-required">
-                        Several artifacts are available for @string.Join(", ", _inputs.SelectionRequired.Select(r => r.Label)).
-                        Choose one in its Explorer; Requirements Traceability never picks one for you.
-                    </p>
+                    @if (!_inputs.PackRequired)
+                    {
+                        <p role="status" class="at-selection-note" data-testid="at-selection-required">
+                            Several artifacts are available for @string.Join(", ", _inputs.SelectionRequired.Select(r => r.Label)).
+                            Choose one in its Explorer; Requirements Traceability never picks one for you.
+                        </p>
+                    }
                 }
 
                 @if (_inputExpanded || _inputs.Status != BirkNext.Web.Services.Explorers.TraceabilityInputStatus.Ready)

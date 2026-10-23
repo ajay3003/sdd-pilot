@@ -240,6 +240,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.GeneratedDocumentationSets ??= [];
             SddLifecycle.GeneratedDocumentContents ??= [];
             SddLifecycle.DocumentationDriftComparisons ??= [];
+            SddLifecycle.PackFocus ??= [];
             foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
             foreach (var (type, artifact) in GetAllArtifacts())
                 if (type is not (WorkspaceArtifactType.SchemaStudio or WorkspaceArtifactType.SchemaStudioPackages or WorkspaceArtifactType.SchemaStudioTestRuns or WorkspaceArtifactType.SchemaStudioDrafts or WorkspaceArtifactType.SchemaStudioGeneratedXml))

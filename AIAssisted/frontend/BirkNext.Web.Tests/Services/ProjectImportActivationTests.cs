@@ -98,19 +98,25 @@ public sealed class ProjectImportActivationTests
     }
 
     [Fact]
-    public async Task TwoCandidatesForARole_AreBothImported_AndTheUserChooses()
+    public async Task TwoFeaturePacks_AreBothImported_AndTheUserSelectsThePackToExplore()
     {
         var preview = Preview(new string('c', 64), source: false,
             ("specs/001-cart/spec.md", Spec), ("specs/002-checkout/spec.md", Spec.Replace("Cart", "Checkout")), ("specs/001-cart/plan.md", Plan));
 
         var record = Activate(preview);
 
-        record.AmbiguousRoles.Should().Equal("Specification");
+        record.AmbiguousRoles.Should().BeEmpty("one specification per artifact pack is not ambiguity");
         var spec = await State(WorkspaceArtifactType.Specification);
-        spec.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "never the first or the latest");
+        spec.Status.Should().Be(ExplorerArtifactStatus.SelectionRequired, "never the first or the latest pack");
+        spec.PackRequired.Should().BeTrue();
+        spec.AmbiguousInPack.Should().BeFalse();
+        spec.Packs!.Select(p => p.Pack).Should().Equal("001-cart", "002-checkout");
         spec.Artifacts.Should().HaveCount(2);
-        (await State(WorkspaceArtifactType.Plan)).Status.Should().Be(ExplorerArtifactStatus.Loaded, "an ambiguous role does not block the others");
         _repository.Get(WorkspaceArtifactType.Specification).Should().BeNull();
+
+        await _explorers.SelectPackAsync("001-cart");
+        (await State(WorkspaceArtifactType.Plan)).Status.Should().Be(ExplorerArtifactStatus.Loaded, "the viewed pack's plan");
+        (await State(WorkspaceArtifactType.Specification)).Selected!.SourcePath.Should().Be("specs/001-cart/spec.md");
     }
 
     [Fact]

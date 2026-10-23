@@ -33,6 +33,17 @@ public sealed class SddLifecycleState
     public Dictionary<string, string> GeneratedDocumentContents { get; set; } = [];
     /// <summary>Saved Documentation Drift comparisons: exact references and the result as computed (immutable).</summary>
     public List<SddDocumentationDriftComparison> DocumentationDriftComparisons { get; set; } = [];
+    /// <summary>The artifact pack explorers and reviews currently view, per scope and module. Navigation only — never authority.</summary>
+    public List<SddPackFocus> PackFocus { get; set; } = [];
+}
+
+/// <summary>Which feature pack of a module is being viewed (a pack folder such as <c>002-testcontainers</c>). Viewing is not choosing an authority.</summary>
+public sealed class SddPackFocus
+{
+    public string? WorkspaceScope { get; set; }
+    public string Module { get; set; } = "";
+    public string Pack { get; set; } = "";
+    public DateTimeOffset? ViewedAt { get; set; }
 }
 
 /// <summary>
@@ -251,6 +262,8 @@ public sealed class SddExplorerSelection
     /// which are read as project-level. Selecting for one module never changes another module's selection.
     /// </summary>
     public string? Module { get; set; }
+    /// <summary>The feature pack the selected artifact belongs to; null for shared artifacts and for selections saved before packs.</summary>
+    public string? Pack { get; set; }
     /// <summary>When the selection was made (history only; null for older selections).</summary>
     public DateTimeOffset? SelectedAt { get; set; }
 }

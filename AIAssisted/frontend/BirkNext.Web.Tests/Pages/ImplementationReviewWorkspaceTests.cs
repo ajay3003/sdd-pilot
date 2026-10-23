@@ -63,7 +63,7 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void AmbiguousSpecification_IsNeverPicked_AndNamesTheRoleToSelect()
+    public void SeveralArtifactPacks_AreNeverPicked_AndThePackIsSelectedFirst()
     {
         Import(new string('b', 64), ("shop/specs/001/spec.md", Spec), ("shop/specs/002/spec.md", Spec.Replace("Cart", "Checkout")),
             ("shop/specs/001/tasks.md", Tasks));
@@ -71,15 +71,32 @@ public sealed class ImplementationReviewWorkspaceTests : BunitContext
         var cut = Render<TaskToSpecAlignment>();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=ir-prerun]"));
-        cut.Find("[data-testid=ir-artifact-spec]").GetAttribute("data-state").Should().Be("selection-required");
-        cut.Find("[data-testid=ir-artifact-spec]").TextContent.Should().Contain("Needs selection");
+        cut.Find("[data-testid=ir-artifact-spec]").GetAttribute("data-state").Should().Be("pack-required");
+        cut.Find("[data-testid=ir-artifact-spec]").TextContent.Should().Contain("Select an artifact pack").And.NotContain("Needs selection");
         cut.Find("[data-testid=ir-artifact-spec-choose]").GetAttribute("href").Should().Be("specification-explorer");
+        cut.Find("[data-testid=ir-needs]").TextContent.Should().StartWith("Select the artifact pack to review");
+        _session.Report.Should().BeNull("nothing runs on an arbitrary pack");
+
+        cut.InvokeAsync(() => _explorers.SelectPackAsync("001"));
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ir-status]").GetAttribute("data-state").Should().Be("Current"));
+    }
+
+    [Fact]
+    public void AmbiguousSpecification_WithinOnePack_IsNeverPicked_AndNamesTheRoleToSelect()
+    {
+        Import(new string('d', 64), ("shop/specs/001/spec.md", Spec), ("shop/specs/001/spec-draft.md", Spec.Replace("Cart", "Checkout")),
+            ("shop/specs/001/tasks.md", Tasks));
+
+        var cut = Render<TaskToSpecAlignment>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ir-prerun]"));
+        cut.Find("[data-testid=ir-artifact-spec]").GetAttribute("data-state").Should().Be("selection-required");
         cut.Find("[data-testid=ir-artifact-tasks]").TextContent.Should().Contain("Selected");
         cut.Find("[data-testid=ir-needs]").TextContent.Should().StartWith("Specification needs selection");
-        _session.Report.Should().BeNull("nothing runs on an arbitrary candidate");
 
         var spec = _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult();
-        cut.InvokeAsync(() => _explorers.Select(WorkspaceArtifactType.Specification, spec.Artifacts.Single(a => a.SourcePath!.Contains("/001/")).Id));
+        cut.InvokeAsync(() => _explorers.Select(WorkspaceArtifactType.Specification, spec.Artifacts.Single(a => a.SourcePath!.EndsWith("/spec.md")).Id));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=ir-status]").GetAttribute("data-state").Should().Be("Current"));
     }

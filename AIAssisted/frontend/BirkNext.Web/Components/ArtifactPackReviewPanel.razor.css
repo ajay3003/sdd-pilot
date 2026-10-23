@@ -1,0 +1,58 @@
+.apr {
+    display: grid;
+    gap: .6rem;
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--border-color, #d0d7de);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    min-width: 0;
+}
+
+.apr > * { min-width: 0; }
+
+.apr-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.apr-head > div { flex: 1 1 18rem; min-width: 0; }
+
+.apr-title { margin: 0; font-size: 1rem; }
+
+.apr-text, .apr-aggregate { margin: .25rem 0 0; font-size: .85rem; color: var(--text-secondary, #57606a); overflow-wrap: anywhere; }
+
+.apr-headline { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+.apr-error { margin: 0; color: #b42318; }
+
+.apr-scroll { position: relative; overflow-x: auto; }
+
+.apr-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+
+.apr-table th, .apr-table td { padding: .4rem .5rem; border-bottom: 1px solid var(--border-color, #d0d7de); text-align: left; vertical-align: top; }
+
+.apr-table tbody th { font-weight: 400; }
+
+.apr-pack-name { display: block; font-weight: 600; }
+
+.apr-muted { display: block; color: var(--text-secondary, #57606a); font-size: .78rem; overflow-wrap: anywhere; }
+
+.apr-badge { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+
+.apr-badge-complete { background: #dafbe1; color: #116329; }
+
+.apr-badge-partial { background: #fff8c5; color: #7d4e00; }
+
+.apr-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 480px) {
+    .apr-table thead { display: none; }
+    .apr-table tr { display: grid; grid-template-columns: 1fr; border-bottom: 1px solid var(--border-color, #d0d7de); padding: .35rem 0; }
+    .apr-table th, .apr-table td { border: 0; padding: .15rem .25rem; }
+    .apr-table td[data-testid=apr-score]::before { content: "Pack score: "; color: var(--text-secondary, #57606a); }
+    .apr-table td[data-testid=apr-findings]::before { content: "Findings: "; color: var(--text-secondary, #57606a); }
+}

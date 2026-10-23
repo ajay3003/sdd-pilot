@@ -145,6 +145,19 @@ public static class DocumentationDrift
         left.ProjectImportId is null || right.ProjectImportId is null ? UnknownRevision
         : left.ProjectImportId == right.ProjectImportId ? SameRevision : DifferentRevisions;
 
+    /// <summary>
+    /// "Cross-pack comparison" when the two authored documents belong to different artifact packs (feature folders): allowed only because the
+    /// user chose both sides, and labelled so it is never read as revision drift. Null for the same pack or documents outside packs.
+    /// </summary>
+    public static string? PackContext(DriftDocument left, DriftDocument right)
+    {
+        if (left.Origin != DriftOrigin.Authored || right.Origin != DriftOrigin.Authored) return null;
+        var (a, b) = (Explorers.ArtifactModules.FeatureOf(left.Path), Explorers.ArtifactModules.FeatureOf(right.Path));
+        return a is not null && b is not null && !string.Equals(a, b, StringComparison.Ordinal)
+            ? $"Cross-pack comparison — pack {a} vs pack {b}. These are different features, not revisions of one artifact."
+            : null;
+    }
+
     /// <summary>Why a pair cannot be compared, or null. The same artifact at the same revision and fingerprint is never compared with itself.</summary>
     public static string? Guard(DriftDocument? left, DriftDocument? right)
     {

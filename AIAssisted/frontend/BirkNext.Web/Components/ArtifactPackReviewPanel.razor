@@ -1,0 +1,96 @@
+@using BirkNext.Web.Services.Explorers
+@inject IArtifactExplorerContext Explorer
+@inject IQualityReviewService Review
+@* Document Quality Review of every artifact pack of the module: each pack is assessed independently on its own artifacts plus the shared
+   ones, then aggregated. Pack scores come first; the module figure is labelled as an aggregate. Never compares across sibling packs. *@
+
+<section class="apr" aria-labelledby="@($"{_id}-title")" data-testid="apr">
+    <div class="apr-head">
+        <div>
+            <h2 class="apr-title" id="@($"{_id}-title")">All artifact packs</h2>
+            <p class="apr-text">
+                @Packs.Count packs@(ModuleLabel is { } module ? $" in module {module}" : ""). Each pack is reviewed on its own artifacts and the
+                shared artifacts that apply to it — never against a sibling pack.
+            </p>
+        </div>
+        <button type="button" class="btn-secondary" data-testid="apr-run" disabled="@(_running || ReviewPackIds.Count == 0)" @onclick="RunAsync">
+            @(_running ? "Reviewing packs…" : "Review every pack")
+        </button>
+    </div>
+    @if (ReviewPackIds.Count == 0)
+    {
+        <p class="apr-text" role="status">Select at least one review pack above.</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="apr-error" role="alert" data-testid="apr-error">@_error</p>
+    }
+    @if (_summary is { } summary)
+    {
+        <p class="apr-headline" role="status" data-testid="apr-headline">@summary.Headline</p>
+        <div class="apr-scroll">
+            <table class="apr-table" data-testid="apr-table">
+                <caption class="apr-sr">Document Quality Review per artifact pack</caption>
+                <thead>
+                    <tr><th scope="col">Pack</th><th scope="col">Artifacts present</th><th scope="col">Pack score</th><th scope="col">Findings</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var result in summary.Packs)
+                    {
+                        <tr data-testid="apr-row" data-pack="@result.Pack.Pack">
+                            <th scope="row">
+                                <span class="apr-pack-name">@result.Pack.DisplayName</span>
+                                <span class="apr-muted">Pack @result.Pack.Pack</span>
+                            </th>
+                            <td>
+                                <span class="apr-badge apr-badge-@(result.Complete ? "complete" : "partial")">@result.CompletenessLabel</span>
+                                <span class="apr-muted" data-testid="apr-inputs">@InputsText(result)</span>
+                            </td>
+                            <td data-testid="apr-score">@(result.Error is not null ? "Not assessed" : result.Score is { } score ? $"{score:0}%" : "Not assessed")</td>
+                            <td data-testid="apr-findings">
+                                @if (result.Error is not null) { <span class="apr-muted">@result.Error</span> }
+                                else { @result.Findings }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="apr-aggregate" data-testid="apr-aggregate">
+            Module aggregate (mean of assessed packs): <strong>@(summary.AggregateScore is { } aggregate ? $"{aggregate:0}%" : "Not assessed")</strong>.
+            Each pack's own score is the result for that pack.
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ArtifactPackSummary> Packs { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> ReviewPackIds { get; set; } = [];
+    [Parameter] public string? ModuleLabel { get; set; }
+
+    private readonly string _id = "apr-" + Guid.NewGuid().ToString("N")[..8];
+    private ArtifactPackReviewSummary? _summary;
+    private string? _key;
+    private bool _running;
+    private string? _error;
+
+    protected override void OnParametersSet()
+    {
+        // Another module or another pack set: an earlier result describes other documents.
+        var key = string.Join("|", Packs.Select(p => p.Key));
+        if (_key is not null && key != _key) _summary = null;
+        _key = key;
+    }
+
+    private async Task RunAsync()
+    {
+        _running = true;
+        _error = null;
+        try { _summary = await ArtifactPackReview.RunAsync(Explorer, Review, Packs, ReviewPackIds); }
+        catch (Exception ex) { _error = $"The packs could not be reviewed: {ex.Message}"; }
+        finally { _running = false; }
+    }
+
+    private static string InputsText(ArtifactPackReviewResult result) => result.Inputs.Count == 0 ? "None"
+        : string.Join(", ", result.Inputs.Select(i => ArtifactExplorerRoles.Label(i.Role) + (i.Scope == ArtifactScope.Pack ? "" : " (shared)")));
+}

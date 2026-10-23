@@ -83,9 +83,10 @@ public sealed class ModuleScopedArtifactSelectionTests
         spec.Candidates.Select(c => c.SourcePath).Should().BeEquivalentTo("cart/specs/001-cart/spec.md", "billing/specs/001-pay/spec.md", "billing/specs/002-refund/spec.md");
         spec.Candidates.Should().NotContain(c => c.SourcePath!.Contains("templates"), "Spec-Kit templates are never candidates");
         spec.Modules.Single(m => m.Module == "cart").Should().Match<ArtifactModuleRoleState>(m => m.Candidates == 1 && m.SelectedId == "workspace:cart/specs/001-cart/spec.md" && m.Reason == ExplorerSelectionReason.OnlyArtifact);
-        spec.Modules.Single(m => m.Module == "billing").Should().Match<ArtifactModuleRoleState>(m => m.Candidates == 2 && m.SelectedId == null && m.NeedsSelection);
-        spec.SelectedModules.Should().Be(1);
-        spec.ModulesNeedingSelection.Should().Be(1);
+        // billing's two specifications are two artifact packs (001-pay, 002-refund), not competing versions: nothing to choose.
+        spec.Modules.Single(m => m.Module == "billing").Should().Match<ArtifactModuleRoleState>(m => m.Candidates == 2 && m.Packs == 2 && !m.AmbiguousInPack && !m.NeedsSelection);
+        spec.SelectedModules.Should().Be(2);
+        spec.ModulesNeedingSelection.Should().Be(0);
     }
 
     [Fact]

@@ -33,6 +33,21 @@
                 <span class="axh-module-note">Reviews read the selected artifacts of this module.</span>
             </div>
         }
+        @if (_state.HasPacks && !_state.PackRequired && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
+        {
+            @* Feature packs: every role resolves within the viewed pack (plus shared artifacts); siblings are never mixed. *@
+            <div class="axh-module-bar axh-pack-bar" data-testid="artifact-explorer-pack-bar">
+                <label class="axh-select-label" for="@($"{_id}-pack")">Artifact pack</label>
+                <select id="@($"{_id}-pack")" class="axh-select" data-testid="artifact-explorer-pack-selector"
+                        value="@_state.Pack" @onchange="OnPackChanged">
+                    @foreach (var pack in _state.Packs!)
+                    {
+                        <option value="@pack.Pack">@PackOptionText(pack)</option>
+                    }
+                </select>
+                <span class="axh-module-note">Explorers and reviews read this pack and shared artifacts — never a sibling pack.</span>
+            </div>
+        }
         switch (_state.Status)
         {
             case ExplorerArtifactStatus.Error:
@@ -74,6 +89,18 @@
                             Import @Label.ToLowerInvariant() only
                         </button>
                     </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Empty when _state.PackSummary is { } emptyPack:
+                @* The viewed pack has no artifact of this role and nothing shared applies: neutral, and never borrowed from a sibling pack. *@
+                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty" data-state="NotInPack">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    <h2 class="axh-title">Not provided in this pack</h2>
+                    <p class="axh-text">
+                        Pack <strong>@emptyPack.DisplayName</strong> (@emptyPack.Pack) has no @Label artifact, and no shared @Label artifact applies.
+                        Other packs' @Label artifacts are never used for this pack. Every artifact role is optional.
+                    </p>
                 </div>
                 break;
 
@@ -124,12 +151,47 @@
                 </div>
                 break;
 
+            case ExplorerArtifactStatus.SelectionRequired when _state.PackRequired:
+                @* Several feature packs and none viewed: choosing a pack is navigation, not a warning and not an authority decision. *@
+                <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose-pack">
+                    <h2 class="axh-title">Select an artifact pack to explore</h2>
+                    <p class="axh-text" data-testid="artifact-explorer-pack-candidates">
+                        @(_state.ModuleLabel is { } packModule ? $"Module {packModule}" : WorkspaceName) is organised in @_state.Packs!.Count feature packs.
+                        Each pack keeps its own artifacts; shared artifacts apply to every pack.
+                    </p>
+                    <ul class="axh-choices axh-packs">
+                        @foreach (var pack in _state.Packs!)
+                        {
+                            <li>
+                                <button type="button" class="axh-choice" data-testid="artifact-explorer-pack-choice" data-pack="@pack.Pack"
+                                        @onclick="() => SelectPackAsync(pack.Pack)">
+                                    <span class="axh-choice-name">@pack.DisplayName</span>
+                                    <span class="axh-choice-meta">Pack @pack.Pack@(pack.FeatureId is { } fid ? $" · feature {fid}" : "") · @pack.Artifacts @(pack.Artifacts == 1 ? "artifact" : "artifacts")</span>
+                                    <span class="axh-badges">
+                                        @foreach (var role in pack.RolesPresent)
+                                        {
+                                            <span class="axh-badge">@ArtifactExplorerRoles.Label(role)</span>
+                                        }
+                                    </span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                </div>
+                break;
+
             case ExplorerArtifactStatus.SelectionRequired:
                 <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose">
                     <h2 class="axh-title">Choose a @Label artifact</h2>
                     <p class="axh-text" data-testid="artifact-explorer-candidates">
-                        @_state.Artifacts.Count candidate @Label artifacts were discovered in @ScopeLabel. No current @Label artifact is selected
-                        and none is marked authoritative, so BirkNext does not pick one. Choose which @Label artifact represents the current workspace.
+                        @if (_state.AmbiguousInPack && _state.PackSummary is { } ambiguousPack)
+                        {
+                            @($"{_state.Artifacts.Count} {Label} artifacts were found in pack {ambiguousPack.DisplayName} ({ambiguousPack.Pack}). One pack normally has one {Label} artifact, so BirkNext does not pick one. Choose the {Label} artifact this pack uses.")
+                        }
+                        else
+                        {
+                            @($"{_state.Artifacts.Count} candidate {Label} artifacts were discovered in {ScopeLabel}. No current {Label} artifact is selected and none is marked authoritative, so BirkNext does not pick one. Choose the {Label} artifact to explore.")
+                        }
                     </p>
                     <ul class="axh-choices">
                         @foreach (var artifact in _state.Artifacts)
@@ -171,6 +233,11 @@
                             {
                                 <div><dt>Module</dt><dd data-testid="artifact-explorer-module">@moduleLabel</dd></div>
                             }
+                            @if (_state.PackSummary is { } viewedPack)
+                            {
+                                <div><dt>Pack</dt><dd data-testid="artifact-explorer-pack">@viewedPack.DisplayName@(viewedPack.DisplayName != viewedPack.Pack ? $" ({viewedPack.Pack})" : "")</dd></div>
+                                <div><dt>Scope</dt><dd data-testid="artifact-explorer-scope">@ArtifactPacks.ScopeLabel(selected)</dd></div>
+                            }
                             <div><dt>File</dt><dd data-testid="artifact-explorer-file">@selected.FileName</dd></div>
                             @if (!string.IsNullOrWhiteSpace(selected.SourcePath) && selected.SourcePath != selected.FileName)
                             {
@@ -187,7 +254,7 @@
                     <div class="axh-context-actions">
                         @if (_state.Artifacts.Count > 1)
                         {
-                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts@(_state.ModuleLabel is { } m ? $" in {m}" : "")</label>
+                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts@(_state.PackSummary is { } p ? $" for pack {p.Pack}" : _state.ModuleLabel is { } m ? $" in {m}" : "")</label>
                             <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
                                     value="@selected.Id" @onchange="OnSelectorChanged">
                                 @foreach (var artifact in _state.Artifacts)
@@ -375,11 +442,29 @@
         await LoadAsync();
     }
 
+    private async Task OnPackChanged(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } pack) await SelectPackAsync(pack);
+    }
+
+    private async Task SelectPackAsync(string pack)
+    {
+        _suggestedRole = null;
+        await Explorer.SelectPackAsync(pack, _state?.Module);
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    private static string PackOptionText(ArtifactPackSummary pack) =>
+        pack.DisplayName == pack.Pack ? $"{pack.Pack} · {pack.Artifacts} artifacts" : $"{pack.DisplayName} ({pack.Pack}) · {pack.Artifacts} artifacts";
+
     private string ModuleOptionText(ArtifactModuleRoleState module) => $"{module.Label} — {ModuleStateText(module)}";
 
     private string ModuleStateText(ArtifactModuleRoleState module) => module switch
     {
         { Candidates: 0 } => $"no {Label} artifact",
+        { Packs: > 1, AmbiguousInPack: true } => $"{module.Packs} packs · a pack needs selection",
+        { Packs: > 1 } => $"{module.Packs} packs · {module.Candidates} {Label} artifacts",
         { SelectedId: not null, Candidates: 1 } => $"1 {Label} artifact",
         { SelectedId: not null } => $"{module.Candidates} {Label} artifacts · selected",
         _ => $"{module.Candidates} {Label} artifacts · needs selection",
@@ -435,6 +520,8 @@
             ExplorerSelectionReason.Explicit => "Selected",
             ExplorerSelectionReason.Authoritative => "Opened because it is authoritative",
             ExplorerSelectionReason.OnlyArtifact => "Only artifact",
+            ExplorerSelectionReason.PackArtifact => "This pack's artifact",
+            ExplorerSelectionReason.SharedArtifact => "Shared artifact — this pack has none of its own",
             _ => null,
         };
         if (text is not null)

@@ -18,6 +18,8 @@ public enum WorkspaceArtifactState
     RoleSelected,
     /// <summary>The project's documents cannot be read (the Sample Project left the catalog, or a read failed). Not "absent".</summary>
     Unsupported,
+    /// <summary>The module is organised in several artifact packs and none is viewed: the user selects a pack (navigation, not ambiguity).</summary>
+    PackRequired,
 }
 
 /// <summary>Where the current workspace's artifacts come from, for wording and the "review project artifacts" link.</summary>
@@ -30,6 +32,7 @@ public static class WorkspaceArtifactStates
     public static WorkspaceArtifactState Of(ArtifactExplorerState state, bool workspaceHasArtifacts) => state.Status switch
     {
         ExplorerArtifactStatus.Loaded => WorkspaceArtifactState.RoleSelected,
+        ExplorerArtifactStatus.SelectionRequired when state.PackRequired => WorkspaceArtifactState.PackRequired,
         ExplorerArtifactStatus.SelectionRequired => WorkspaceArtifactState.RoleAmbiguous,
         ExplorerArtifactStatus.ProjectUnavailable or ExplorerArtifactStatus.Error => WorkspaceArtifactState.Unsupported,
         _ => state.HasProject || workspaceHasArtifacts ? WorkspaceArtifactState.RoleUnavailable : WorkspaceArtifactState.NoWorkspace,

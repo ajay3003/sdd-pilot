@@ -115,26 +115,25 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void AmbiguousRole_IsNeverPicked_UntilTheUserSelectsOne()
+    public void SeveralArtifactPacks_AreNeverPicked_UntilTheUserSelectsAPack_AndOnlyThatPackIsTraced()
     {
         Import(new string('b', 64), ("shop/specs/001-cart/spec.md", Spec("FR-401")), ("shop/specs/002-pay/spec.md", Spec("FR-402")),
-            ("shop/specs/001-cart/plan.md", Plan));
+            ("shop/specs/001-cart/plan.md", Plan), ("shop/specs/002-pay/plan.md", Plan.Replace("Cart", "Pay")));
 
         var cut = Render<ArtifactTraceability>();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid='at-selection-required']").TextContent.Should().Contain("Specification"));
-        var spec = Role(cut, "specification");
-        spec.TextContent.Should().Contain("Needs selection").And.Contain("2 candidates");
-        spec.QuerySelector("a")!.GetAttribute("href").Should().Be("specification-explorer");
+        cut.WaitForAssertion(() => cut.Find("[data-testid='at-pack-required']").TextContent.Should().Contain("never across sibling packs"));
+        cut.FindAll("[data-testid='at-selection-required']").Should().BeEmpty("two packs are organisation, not two competing specifications");
         _published.Should().BeEmpty();
         cut.Markup.Should().NotContain("%");
         cut.Find("button.btn-primary, button[disabled]").HasAttribute("disabled").Should().BeTrue();
 
-        var state = _explorers.GetStateAsync(WorkspaceArtifactType.Specification).GetAwaiter().GetResult();
-        _explorers.Select(WorkspaceArtifactType.Specification, state.Artifacts.Single(a => a.SourcePath!.Contains("002-pay")).Id);
+        _explorers.SelectPackAsync("002-pay").GetAwaiter().GetResult();
 
         cut.WaitForAssertion(() => LatestRequirementIds.Should().Equal("FR-402"));
-        cut.FindAll("[data-testid='at-selection-required']").Should().BeEmpty();
+        cut.FindAll("[data-testid='at-pack-required']").Should().BeEmpty();
+        _explorers.GetStateAsync(WorkspaceArtifactType.Plan).GetAwaiter().GetResult().Selected!.SourcePath.Should().Be("shop/specs/002-pay/plan.md",
+            "pack 001-cart's plan never stands in for pack 002-pay");
     }
 
     [Fact]

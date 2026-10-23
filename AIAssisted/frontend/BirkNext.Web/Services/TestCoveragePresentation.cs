@@ -46,8 +46,11 @@ public static class TestCoveragePresentation
     public static string SpecificationScope(Explorers.ArtifactExplorerState specification) => specification switch
     {
         { ModuleRequired: true } => $"Needs selection — {specification.Modules!.Count} modules have their own documents; choose the module to review in the Specification Explorer. Requirement views stay empty until then.",
+        { PackRequired: true } => $"Select an artifact pack — {specification.Packs!.Count} packs have their own specifications; select the pack to explore in the Specification Explorer. Requirement views stay empty until then.",
+        { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } ps, PackSummary: { } pack } => (specification.ModuleLabel is { } pm ? $"Module {pm} · " : "") + $"Pack {pack.DisplayName}: " + (ps.SourcePath ?? ps.FileName),
         { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } s } => (specification.ModuleLabel is { } m ? $"Module {m}: " : "") + (s.SourcePath ?? s.FileName),
         { Status: Explorers.ExplorerArtifactStatus.SelectionRequired } => $"Needs selection — {specification.Artifacts.Count} candidates{(specification.ModuleLabel is { } m ? $" in module {m}" : "")}; choose one in the Specification Explorer.",
+        { Status: Explorers.ExplorerArtifactStatus.Empty, PackSummary: { } emptyPack } => $"Not provided in pack {emptyPack.DisplayName}",
         { Status: Explorers.ExplorerArtifactStatus.Empty } => specification.ModuleLabel is { } m ? $"Not detected in module {m}" : "Not detected",
         _ => "Unable to read",
     };

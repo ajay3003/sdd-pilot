@@ -77,6 +77,10 @@ public static class ProjectInputPresentation
             return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
                 $"{workspace.ModuleCount} modules have their own documents. Choose the module to review; documents are never merged across modules.",
                 "Choose module", ExplorerRoute(moduleRole.Role), facts);
+        if (workspace.PackRequired && workspace.Roles.FirstOrDefault(r => r.PackRequired) is { } packRole)
+            return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Select a pack",
+                $"{(workspace.ModuleLabel is { } pm ? $"Module {pm}" : workspace.ProjectDisplay)} is organised in {workspace.PackCount} artifact packs. Select the pack to explore; packs are never mixed.",
+                "Select pack", ExplorerRoute(packRole.Role), facts);
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
             return new(ProjectInputKind.Documents, ProjectInputStatus.NeedsAttention, title, requirement, "Needs selection",
                 $"{workspace.RoleSummary}{(workspace.ModuleLabel is { } m ? $" in module {m}" : "")}. Several {unresolved.Label} documents and none is selected.",

@@ -67,7 +67,7 @@
                     <li class="ir-artifact" data-state="@RoleDataState(state)" data-testid="@testId">
                         <span class="ir-artifact-name">@label</span>
                         <span class="ir-artifact-state">@RoleStateLabel(state)</span>
-                        @if (state == WorkspaceArtifactState.RoleAmbiguous)
+                        @if (state is WorkspaceArtifactState.RoleAmbiguous or WorkspaceArtifactState.PackRequired)
                         {
                             <a class="ir-artifact-action" href="@ProjectInputPresentation.ExplorerRoute(role)" data-testid="@($"{testId}-choose")">Open @(role == WorkspaceArtifactType.Tasks ? "Task" : "Specification") Explorer</a>
                         }
@@ -502,6 +502,7 @@
     {
         WorkspaceArtifactState.RoleSelected => "Selected",
         WorkspaceArtifactState.RoleAmbiguous => "Needs selection",
+        WorkspaceArtifactState.PackRequired => "Select an artifact pack",
         WorkspaceArtifactState.Unsupported => "Unable to read",
         _ => "Not available",
     };
@@ -510,6 +511,7 @@
     {
         WorkspaceArtifactState.RoleSelected => "loaded",
         WorkspaceArtifactState.RoleAmbiguous => "selection-required",
+        WorkspaceArtifactState.PackRequired => "pack-required",
         _ => "missing",
     };
 
@@ -517,6 +519,8 @@
     {
         get
         {
+            if (RoleState(WorkspaceArtifactType.Specification) == WorkspaceArtifactState.PackRequired || RoleState(WorkspaceArtifactType.Tasks) == WorkspaceArtifactState.PackRequired)
+                return "Select the artifact pack to review in an explorer: a pack's tasks are reviewed against that pack's specification only.";
             var needs = new[] { (WorkspaceArtifactType.Specification, "Specification"), (WorkspaceArtifactType.Tasks, "Tasks") }
                 .Where(r => RoleState(r.Item1) == WorkspaceArtifactState.RoleAmbiguous).Select(r => r.Item2).ToList();
             return needs.Count > 0
