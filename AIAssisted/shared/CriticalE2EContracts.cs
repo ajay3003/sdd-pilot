@@ -45,6 +45,11 @@ public enum CriticalE2EStatus
     /// <summary>A prerequisite was unavailable: pairing, page, session, configuration, integration, transport or environment.</summary>
     Blocked,
     Cancelled,
+    /// <summary>
+    /// Every action executed but nothing concrete proved the business outcome (a legacy assertion marker, or a provider-verified
+    /// outcome with no provider). Never Passed. Appended so stored values keep their meaning.
+    /// </summary>
+    Inconclusive,
 }
 
 // ── Browser automation vocabulary ──────────────────────────────────────────────
@@ -382,6 +387,17 @@ public sealed record CriticalE2EStepDefinition
     /// </summary>
     public bool IsFinalAssertion { get; init; }
 
+    // Page context (browser steps). Captured page, execution page and expected destination are separate facts: knowing where an
+    // element was picked never implies where the click leads.
+    /// <summary>Normalized route template the element was picked on (provenance).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CapturedOnRoute { get; init; }
+    /// <summary>Route template the bound live page must match before the action runs. Mismatch = Blocked "Page mismatch".</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ExecutionRoute { get; init; }
+    /// <summary>Route template the page must reach after the action. Mismatch = Failed. Never inferred from the captured page.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ExpectedDestination { get; init; }
+    /// <summary>A person reviewed this step's fragile selector and accepted it (no better unique selector existed).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool SelectorReviewed { get; init; }
+
     public bool IsBrowserStep => BrowserAction.HasValue;
     public bool IsIntegrationStep => IntegrationAction.HasValue;
 }
@@ -416,7 +432,21 @@ public sealed record CriticalE2EFlowDefinition
     public List<string> Tags { get; init; } = [];
     public int Version { get; init; } = 1;
 
-    public bool HasFinalAssertion => Steps.Any(s => s.IsFinalAssertion);
+    /// <summary>The concrete business outcome the flow proves (preferred over a final-marked assertion step).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EFinalOutcome? FinalOutcome { get; init; }
+    /// <summary>Structured automation boundary. <see cref="AutomationBoundary"/> stays as the legacy/explanatory text.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EAutomationBoundary? Boundary { get; init; }
+    /// <summary>Central Test Data assets this flow uses (aliases only; values stay in Test Data). <see cref="TestDataPolicy"/> is a legacy note.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAliases { get; init; }
+    /// <summary>Placeholders (${data:variable}) in step values, routes or the outcome mapped to central Test Data aliases.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<CriticalE2EDataMapping>? DataMappings { get; init; }
+    /// <summary>Provenance only — never execution truth.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EFlowSource? Source { get; init; }
+    /// <summary>Optional requirement / use-case id this flow verifies (a reference, the requirement text stays with its owner).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RequirementRef { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? UpdatedAt { get; init; }
+
+    public bool HasFinalAssertion => Steps.Any(s => s.IsFinalAssertion) || FinalOutcome is not null;
 
     /// <summary>
     /// Why this flow cannot run, or null when it can. Lives on the definition rather than in either the backend or the
@@ -429,6 +459,15 @@ public sealed record CriticalE2EFlowDefinition
         if (Steps.Count == 0) return "The flow has no steps.";
         // Without this, a flow can only ever report that its clicks executed — which is not a statement about M2LB.
         if (!HasFinalAssertion) return "The flow has no final business assertion.";
+        if (FinalOutcome is { } outcome && outcome.Kind is not CriticalE2EOutcomeKind.UrlEquals and not CriticalE2EOutcomeKind.UrlContains
+                and not CriticalE2EOutcomeKind.ProviderVerified and not CriticalE2EOutcomeKind.SuccessMessageVisible
+                && string.IsNullOrWhiteSpace(outcome.Selector?.Value) && string.IsNullOrWhiteSpace(outcome.Selector?.Role))
+            return "The final outcome has no element to check.";
+        if (FinalOutcome is { Kind: not CriticalE2EOutcomeKind.ElementVisible and not CriticalE2EOutcomeKind.ElementHidden and not CriticalE2EOutcomeKind.ProviderVerified } expected
+                && string.IsNullOrWhiteSpace(expected.Expected))
+            return "The final outcome has no expected value.";
+        if (FinalOutcome is { Kind: not CriticalE2EOutcomeKind.ProviderVerified } && Mode == CriticalE2EExecutionMode.AutomatedIntegration)
+            return "A browser outcome cannot conclude an integration flow.";
         if (string.IsNullOrWhiteSpace(ProfileId)) return "No Target Environment is selected.";
         if (Mode == CriticalE2EExecutionMode.CompanionBrowser && Steps.Any(s => s.IsIntegrationStep))
             return "A companion browser flow cannot contain integration steps.";
@@ -467,6 +506,8 @@ public sealed record CriticalE2EStepResult
     /// yesterday stand in for today.
     /// </summary>
     public BrowserCompanion.BrowserEvidenceFreshness? EvidenceFreshness { get; init; }
+    /// <summary>"Action" (executed), "Assertion" (proved something) or "Outcome" (the flow's final business outcome).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Kind { get; init; }
 }
 
 public sealed record CriticalE2ERunResult
@@ -500,6 +541,26 @@ public sealed record CriticalE2ERunResult
     /// </summary>
     public DateTimeOffset? ArchivedAt { get; init; }
     public string? ArchiveReason { get; init; }
+
+    /// <summary>The definition version this run executed. Older runs stay tied to the version they ran.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int FlowVersion { get; init; }
+    /// <summary>The run can count toward a release: critical, release-ready definition, build bound. Otherwise a diagnostic result.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ReleaseEvidence { get; init; }
+    /// <summary>Why the run is not release evidence (e.g. "Diagnostic result · does not count as release evidence").</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ReleaseEvidenceNote { get; init; }
+    /// <summary>True only when the flow's own boundary includes downstream and its steps verified it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool DownstreamVerified { get; init; }
+    /// <summary>"Not verified by this flow" / "Verified by this flow" — shown beside the browser result.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? DownstreamOutcome { get; init; }
+    /// <summary>The final outcome the run evaluated, as text.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? OutcomeText { get; init; }
+    /// <summary>"Manual" or "Delivery evidence": where the build identity came from.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? BuildSource { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EAutomationBoundary? Boundary { get; init; }
+    /// <summary>Central Test Data aliases used (references only, never values).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAliases { get; init; }
+    /// <summary>The Companion page the run was bound to (identity only).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CompanionPageId { get; init; }
 
     public int PassedSteps => StepResults.Count(s => s.Status == CriticalE2EStatus.Passed);
     public int TotalSteps => StepResults.Count;
@@ -615,7 +676,12 @@ public sealed record CriticalE2EModuleCoverage
 {
     public string Module { get; init; } = "";
     public List<CriticalE2EFlowSummary> Flows { get; init; } = [];
-    public bool Covered => Flows.Any(f => f.RequiredForRelease && f.Enabled && f.Kind == CriticalE2EFlowKind.Critical);
+    /// <summary>A registered delivery module. Manual labels are listed separately and never count.</summary>
+    public bool Registered { get; init; } = true;
+    /// <summary>Covered only by a required, enabled, critical flow whose definition is release-ready.</summary>
+    public bool Covered => Registered && Flows.Any(f => f.RequiredForRelease && f.Enabled && f.Kind == CriticalE2EFlowKind.Critical && f.Readiness.ReleaseReady);
+    /// <summary>"M01 · required flow ready · no build selected" style text.</summary>
+    public string Status { get; init; } = "";
 }
 
 public sealed record CriticalE2EFlowSummary
@@ -639,6 +705,19 @@ public sealed record CriticalE2EFlowSummary
     /// release: the latest result is still reported (LastStatus), it just is not release evidence.
     /// </summary>
     public bool LastResultMatchesRelease { get; init; }
+    public int Version { get; init; } = 1;
+    public int ActionSteps { get; init; }
+    public int Assertions { get; init; }
+    public string Outcome { get; init; } = "";
+    /// <summary>"Explicit" or "Not explicit" (shown as text, never only colour).</summary>
+    public string BoundaryStatus { get; init; } = "Not explicit";
+    public string? BoundaryText { get; init; }
+    public CriticalE2EFlowReadiness Readiness { get; init; } = new();
+    public CriticalE2EFlowSource? Source { get; init; }
+    /// <summary>The last run's own label (Diagnostic pass, Browser journey passed · downstream not verified …).</summary>
+    public string? LastResultLabel { get; init; }
+    /// <summary>The last run executed an older definition version: "Review required" before it is read as current.</summary>
+    public bool LastRunStale { get; init; }
 }
 
 /// <summary>The release verdict. Incomplete and Blocked are different answers and must not be merged into "not ready".</summary>
@@ -676,6 +755,10 @@ public sealed record CriticalE2EReleaseStatus
     public int RequiredFlowsFailed { get; init; }
     public int RequiredFlowsBlocked { get; init; }
     public string Summary { get; init; } = "";
+    /// <summary>Required flows whose definition is not release-ready (they block the gate).</summary>
+    public int RequiredFlowsNotReady { get; init; }
+    /// <summary>"Manual" or "Delivery evidence".</summary>
+    public string? BuildSource { get; init; }
 }
 
 // ── Page contracts (BirkNext UI ⇄ backend) ─────────────────────────────────────
@@ -715,7 +798,12 @@ public sealed record CriticalE2EOverviewRequest
     public string? BuildId { get; init; }
     public string? ReleaseId { get; init; }
     public string? CommitSha { get; init; }
-    /// <summary>Delivery modules this environment is expected to cover. Data-driven so a new module needs no code change.</summary>
+    /// <summary>"Manual" (typed) or "Delivery evidence" (chosen from a detected build). Typed values are never pipeline verified.</summary>
+    public string? BuildSource { get; init; }
+    /// <summary>
+    /// Module suggestions from the frontend's project evidence (proposals only). Release coverage is computed from the backend's
+    /// registered modules — a module named here or typed on a flow never becomes authoritative by being named.
+    /// </summary>
     public List<string> Modules { get; init; } = [];
     /// <summary>How BirkNext reaches authenticated APIs for this environment. Never a credential.</summary>
     public string? AuthenticationMethod { get; init; }
@@ -757,6 +845,30 @@ public sealed record CriticalE2EOverview
     public List<CriticalE2ERunResult> History { get; init; } = [];
     /// <summary>Archived runs stored for the environment, including any beyond the ones sent in <see cref="History"/>.</summary>
     public int ArchivedRunCount { get; init; }
+    /// <summary>Registered delivery modules (authoritative) and where they came from.</summary>
+    public List<CriticalE2ERegisteredModule> RegisteredModules { get; init; } = [];
+    /// <summary>Module names known to other evidence (projects, pipelines) that could be registered — proposals only.</summary>
+    public List<CriticalE2EModuleSuggestion> ModuleSuggestions { get; init; } = [];
+    /// <summary>Flow module labels that are not registered modules ("Unresolved module · manual label").</summary>
+    public List<string> UnresolvedModules { get; init; } = [];
+}
+
+/// <summary>A delivery module registered for release coverage. Registration is explicit; typing a label on a flow never registers one.</summary>
+public sealed record CriticalE2ERegisteredModule
+{
+    public string Name { get; init; } = "";
+    /// <summary>"Module administration", "Project module", "Delivery evidence".</summary>
+    public string Source { get; init; } = "Module administration";
+    public DateTimeOffset RegisteredAt { get; init; }
+}
+
+public sealed record CriticalE2EModuleSuggestion(string Name, string Source);
+
+public sealed record CriticalE2EModuleRequest
+{
+    public CriticalE2EOverviewRequest Context { get; init; } = new();
+    public string Name { get; init; } = "";
+    public string Source { get; init; } = "Module administration";
 }
 
 public sealed record CriticalE2ERunFlowRequest

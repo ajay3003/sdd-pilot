@@ -188,3 +188,11 @@
     .e2e-dialog-facts { grid-template-columns: 1fr; }
     .e2e-dialog-actions { flex-direction: column-reverse; align-items: stretch; }
 }
+
+/* Last run: browser journey, downstream and release evidence are separate lines. */
+.e2e-layers { margin: .4rem 0 0; padding-left: 1.1rem; font-size: .85rem; overflow-wrap: anywhere; }
+.e2e-unresolved ul { margin: .25rem 0 .5rem; padding-left: 1.1rem; font-size: .85rem; }
+/* The table scrolls inside its wrapper; positioning it keeps absolutely positioned (visually hidden) row text inside that scroll box. */
+.e2e-tablewrap { position: relative; }
+/* Link buttons sit on the tinted disclosure surface: the primary token keeps them above 4.5:1 there. */
+.e2e-secondary .btn-link { color: var(--clr-primary-hover, #1d4ed8); }

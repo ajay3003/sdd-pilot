@@ -50,7 +50,7 @@ public sealed class CriticalE2ERunnerTests
     [Fact]
     public async Task EveryStepPassingAndTheFinalAssertionHoldingIsAPass()
     {
-        var (result, _) = await RunAsync(Flow(Step("a"), Step("b"), Step("assert", final: true)), _ => CriticalE2EStatus.Passed);
+        var (result, _) = await RunAsync(Flow(Step("a"), Step("b"), Step("assert", final: true) with { BrowserAction = CompanionActionKind.AssertVisible }), _ => CriticalE2EStatus.Passed);
         result.Status.Should().Be(CriticalE2EStatus.Passed);
         result.PassedSteps.Should().Be(3);
         result.FailureReason.Should().BeNull();

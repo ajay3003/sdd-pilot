@@ -13,9 +13,15 @@ public interface ICriticalE2EStore
     bool Delete(string flowId);
     IReadOnlyList<CriticalE2ERunResult> History(string environmentId, int limit = 100);
     void Record(CriticalE2ERunResult result);
-    /// <summary>Modules BirkNext knows about for an environment, so coverage can report a module with no flow at all.</summary>
-    IReadOnlyList<string> Modules(string environmentId);
-    void SetModules(string environmentId, IReadOnlyList<string> modules);
+    /// <summary>
+    /// Registered delivery modules of an environment: the only modules release coverage counts. Registration is explicit
+    /// (module administration); a label typed on a flow never registers one.
+    /// </summary>
+    IReadOnlyList<string> Modules(string environmentId) => [.. RegisteredModules(environmentId).Select(m => m.Name)];
+    IReadOnlyList<CriticalE2ERegisteredModule> RegisteredModules(string environmentId) => [];
+    /// <summary>Registers a module (idempotent by name). Returns false when it already was.</summary>
+    bool RegisterModule(string environmentId, CriticalE2ERegisteredModule module) => false;
+    bool UnregisterModule(string environmentId, string name) => false;
     /// <summary>Every recorded run of one flow, newest first, archived included.</summary>
     IReadOnlyList<CriticalE2ERunResult> FlowHistory(string flowId);
     /// <summary>Sets (or, with null, removes) the archive marker on the named runs of one flow and nothing else. Returns how many changed.</summary>
@@ -50,10 +56,11 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
     private readonly object _gate = new();
     private readonly string _flowsPath;
     private readonly string _historyPath;
+    private readonly string _modulesPath;
     private readonly ILogger<CriticalE2EStore> _logger;
     private readonly Dictionary<string, CriticalE2EFlowDefinition> _flows = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CriticalE2ERunResult> _history = [];
-    private readonly Dictionary<string, List<string>> _modules = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<CriticalE2ERegisteredModule>> _modules = new(StringComparer.OrdinalIgnoreCase);
 
     public CriticalE2EStore(IHostEnvironment environment, ILogger<CriticalE2EStore> logger)
         : this(Path.Combine(environment.ContentRootPath, "App_Data", "critical-e2e"), logger) { }
@@ -64,8 +71,10 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
         Directory.CreateDirectory(directory);
         _flowsPath = Path.Combine(directory, "flows.json");
         _historyPath = Path.Combine(directory, "history.json");
+        _modulesPath = Path.Combine(directory, "modules.json");
         foreach (var flow in Read<List<CriticalE2EFlowDefinition>>(_flowsPath) ?? []) _flows[flow.Id] = flow;
         _history.AddRange(Read<List<CriticalE2ERunResult>>(_historyPath) ?? []);
+        foreach (var (environmentId, modules) in Read<Dictionary<string, List<CriticalE2ERegisteredModule>>>(_modulesPath) ?? []) _modules[environmentId] = modules;
     }
 
     public IReadOnlyList<CriticalE2EFlowDefinition> Flows(string environmentId)
@@ -92,11 +101,18 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
         stored = stored with { Steps = Number(stored.Steps) };
         lock (_gate)
         {
+            // Any change to the definition (steps, routes, selectors, outcome, Test Data, boundary, module, release state …) is
+            // a new version, so earlier runs stay tied to the definition they actually executed.
+            if (_flows.TryGetValue(stored.Id, out var existing))
+                stored = stored with { Version = Material(existing) == Material(stored) ? existing.Version : Math.Max(existing.Version, stored.Version) + 1 };
             _flows[stored.Id] = stored;
             Write(_flowsPath, _flows.Values.ToList());
         }
         return stored;
     }
+
+    /// <summary>The definition without its bookkeeping (version, timestamp): what makes two saves the same definition.</summary>
+    private static string Material(CriticalE2EFlowDefinition flow) => JsonSerializer.Serialize(flow with { Version = 0, UpdatedAt = null }, Json);
 
     private static List<CriticalE2EStepDefinition> Number(List<CriticalE2EStepDefinition> steps)
     {
@@ -174,16 +190,36 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
         }
     }
 
-    public IReadOnlyList<string> Modules(string environmentId)
+    public IReadOnlyList<string> Modules(string environmentId) => [.. RegisteredModules(environmentId).Select(m => m.Name)];
+
+    public IReadOnlyList<CriticalE2ERegisteredModule> RegisteredModules(string environmentId)
     {
-        lock (_gate) return _modules.TryGetValue(environmentId ?? "", out var modules) ? modules.ToList() : [];
+        lock (_gate) return _modules.TryGetValue(environmentId ?? "", out var modules) ? [.. modules.OrderBy(m => m.Name, StringComparer.CurrentCultureIgnoreCase)] : [];
     }
 
-    public void SetModules(string environmentId, IReadOnlyList<string> modules)
+    public bool RegisterModule(string environmentId, CriticalE2ERegisteredModule module)
+    {
+        var name = module.Name.Trim();
+        if (name.Length == 0 || name.Length > 80) throw new ArgumentException("A module name is required (at most 80 characters).");
+        lock (_gate)
+        {
+            var modules = _modules.TryGetValue(environmentId ?? "", out var existing) ? existing : _modules[environmentId ?? ""] = [];
+            if (modules.Any(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))) return false;
+            if (modules.Count >= 64) throw new ArgumentException("At most 64 modules can be registered for an environment.");
+            modules.Add(module with { Name = name });
+            Write(_modulesPath, _modules);
+            return true;
+        }
+    }
+
+    public bool UnregisterModule(string environmentId, string name)
     {
         lock (_gate)
-            _modules[environmentId ?? ""] = modules.Where(m => !string.IsNullOrWhiteSpace(m))
-                .Select(m => m.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(64).ToList();
+        {
+            if (!_modules.TryGetValue(environmentId ?? "", out var modules) || modules.RemoveAll(m => string.Equals(m.Name, name?.Trim(), StringComparison.OrdinalIgnoreCase)) == 0) return false;
+            Write(_modulesPath, _modules);
+            return true;
+        }
     }
 
     private T? Read<T>(string path)
@@ -207,6 +243,7 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
             _modules.Clear();
             Write(_flowsPath, new List<CriticalE2EFlowDefinition>());
             Write(_historyPath, new List<CriticalE2ERunResult>());
+            Write(_modulesPath, new Dictionary<string, List<CriticalE2ERegisteredModule>>());
             return removed;
         }
     }

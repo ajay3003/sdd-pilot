@@ -19,6 +19,7 @@ public sealed class CriticalE2ECoverageTests
         {
             Id = id, Module = module, Name = id, Mode = mode, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required,
+            Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             // A real assertion names the element it asserts about; one that does not cannot run, which is exactly what
             // the wellFormed: false case exercises.
             Steps = wellFormed
@@ -32,6 +33,7 @@ public sealed class CriticalE2ECoverageTests
     {
         RunId = $"{flowId}-run", FlowId = flowId, EnvironmentId = "env-1", Status = status,
         StartedAt = Now.AddMinutes(-minutesAgo), BuildId = buildId, RequiredForRelease = true,
+        FlowVersion = 1, ReleaseEvidence = buildId is not null,
     };
 
     private static CriticalE2EReleaseStatus Release(IReadOnlyList<CriticalE2EFlowDefinition> flows,
@@ -66,7 +68,12 @@ public sealed class CriticalE2ECoverageTests
     [Fact]
     public void BothExecutionModesCountAsRealCoverage()
     {
-        var flows = new[] { Flow("f1", "Person", mode: CriticalE2EExecutionMode.AutomatedIntegration), Flow("f2", "Tjeneste") };
+        var integration = Flow("f1", "Person", mode: CriticalE2EExecutionMode.AutomatedIntegration) with
+        {
+            Steps = [new CriticalE2EStepDefinition { StepId = "s1", IntegrationAction = CriticalE2EIntegrationKind.Http, IntegrationId = "api", Method = "GET",
+                PathOrOperation = "/health", Expect = new CriticalE2EExpectation(), IsFinalAssertion = true }],
+        };
+        var flows = new[] { integration, Flow("f2", "Tjeneste") };
         CriticalE2ECoverage.Modules(flows, [], Modules, "12345").Count(m => m.Covered).Should().Be(2);
     }
 

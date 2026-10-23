@@ -211,8 +211,8 @@ public sealed class CriticalE2EFlowEditorPickTests : BunitContext
         cut.Find("[data-testid=e2e-step-selector-details-1-body]").HasAttribute("hidden").Should().BeTrue();
         toggle.Click();
         cut.Find("[data-testid=e2e-step-candidates-1]").TextContent.Should().Contain("Role + name").And.Contain("1 (unique)").And.Contain("Text");
-        // The captured route is context, not a guard: the UI must not claim protection that does not exist.
-        cut.Find("[data-testid=e2e-step-route-note-1]").TextContent.Should().Be("The element was selected on /plassering. The route is not stored with the step, so it is not enforced when the flow runs.");
+        // The captured page is recorded with the step and the execution page is enforced at run time; the note says exactly that.
+        cut.Find("[data-testid=e2e-step-route-note-1]").TextContent.Should().Be("Captured on /plassering. The page the step runs on is stored with the step and enforced when the flow runs.");
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class CriticalE2EFlowEditorPickTests : BunitContext
         var cut = Editor(new PickApi(_ => new CriticalE2EElementPickResult()), Ready, flow);
 
         cut.Find("[data-testid=e2e-step-identity-0]").TextContent.Should().Be("Element at a structural CSS path", "a CSS path is never the identity shown");
-        cut.Find("[data-testid=e2e-step-fragile-0]").TextContent.Should().StartWith("Selector may be fragile.");
+        cut.Find("[data-testid=e2e-step-fragile-0]").TextContent.Should().Be("Fragile selector · layout changes may break this step");
         cut.Find("[data-testid=e2e-editor-save]").HasAttribute("disabled").Should().BeFalse();
     }
 

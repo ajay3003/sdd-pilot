@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.BrowserCompanion;
 using BirkNext.Api.Services.LocalHttpsProxy;
+using BirkNext.Api.Services.TestData;
 using BirkNext.BrowserCompanion;
 using BirkNext.CriticalE2E;
 using BirkNext.LocalHttpsProxy;
@@ -18,6 +19,8 @@ public interface ICriticalE2EService
     CriticalE2EHistoryActionResult ArchiveRuns(CriticalE2EArchiveRequest request);
     CriticalE2EHistoryActionResult RestoreRuns(CriticalE2ERestoreRequest request);
     CriticalE2EHistoryActionResult ClearHistory(CriticalE2EClearRequest request);
+    CriticalE2EOverview RegisterModule(CriticalE2EModuleRequest request);
+    CriticalE2EOverview UnregisterModule(CriticalE2EModuleRequest request);
 }
 
 /// <summary>
@@ -34,15 +37,62 @@ public sealed class CriticalE2EService(
     IAuthenticatedReviewGateway gateway,
     CriticalE2ERunner runner,
     TimeProvider time,
-    ILogger<CriticalE2EService> logger) : ICriticalE2EService
+    ILogger<CriticalE2EService> logger,
+    TestDataCatalog? catalog = null) : ICriticalE2EService
 {
     public IReadOnlyList<CriticalE2EFlowDefinition> Flows(string environmentId) => store.Flows(environmentId);
-    public CriticalE2EFlowDefinition SaveFlow(CriticalE2EFlowDefinition flow) => store.Save(flow);
+
+    /// <summary>
+    /// Saves a definition. Routes are stored as templates (identifier-like segments become {id}) so an observed identifier is never
+    /// persisted; nothing here runs the flow, registers a module or touches Test Data.
+    /// </summary>
+    public CriticalE2EFlowDefinition SaveFlow(CriticalE2EFlowDefinition flow)
+    {
+        static string? Route(string? route) => string.IsNullOrWhiteSpace(route) ? null : CriticalE2ERoutes.Normalize(route);
+        var outcome = flow.FinalOutcome is { Kind: CriticalE2EOutcomeKind.UrlEquals or CriticalE2EOutcomeKind.UrlContains } url && !string.IsNullOrWhiteSpace(url.Expected)
+            ? url with { Expected = url.Kind == CriticalE2EOutcomeKind.UrlEquals ? CriticalE2ERoutes.Normalize(url.Expected) : url.Expected.Trim() }
+            : flow.FinalOutcome;
+        return store.Save(flow with
+        {
+            Module = flow.Module.Trim(),
+            FinalOutcome = outcome,
+            Steps = [.. flow.Steps.Select(s => s with { CapturedOnRoute = Route(s.CapturedOnRoute), ExecutionRoute = Route(s.ExecutionRoute), ExpectedDestination = Route(s.ExpectedDestination) })],
+            TestDataAliases = flow.TestDataAliases is { Count: > 0 } aliases ? [.. aliases.Select(a => a.Trim()).Where(a => a.Length > 0).Distinct(StringComparer.Ordinal)] : null,
+            DataMappings = flow.DataMappings is { Count: > 0 } mappings ? mappings : null,
+            UpdatedAt = time.GetUtcNow(),
+        });
+    }
+
     public bool DeleteFlow(string flowId) => store.Delete(flowId);
+
+    // ── Delivery modules: explicit registration only ─────────────────────────────────────────────────────────────────
+
+    public CriticalE2EOverview RegisterModule(CriticalE2EModuleRequest request)
+    {
+        var added = store.RegisterModule(request.Context.EnvironmentId, new CriticalE2ERegisteredModule
+        {
+            Name = request.Name, Source = string.IsNullOrWhiteSpace(request.Source) ? "Module administration" : request.Source.Trim(), RegisteredAt = time.GetUtcNow(),
+        });
+        logger.LogInformation("Critical E2E module audit: register {Module} in {EnvironmentId} ({Source}): {Result}",
+            request.Name.Trim(), request.Context.EnvironmentId, request.Source, added ? "registered" : "already registered");
+        return Snapshot(request.Context);
+    }
+
+    public CriticalE2EOverview UnregisterModule(CriticalE2EModuleRequest request)
+    {
+        var removed = store.UnregisterModule(request.Context.EnvironmentId, request.Name);
+        logger.LogInformation("Critical E2E module audit: unregister {Module} in {EnvironmentId}: {Result}", request.Name.Trim(), request.Context.EnvironmentId, removed ? "removed" : "not registered");
+        return Snapshot(request.Context);
+    }
+
+    /// <summary>Problems of a flow's central Test Data right now; without a catalog, any reference is unresolvable.</summary>
+    private IReadOnlyList<string> TestDataIssues(CriticalE2EFlowDefinition flow, CriticalE2EOverviewRequest context) =>
+        catalog is null
+            ? CriticalE2ETestData.Aliases(flow).Count > 0 || CriticalE2ETestData.Placeholders(flow).Count > 0 ? ["Test Data review required: the Test Data catalog is unavailable."] : []
+            : CriticalE2ETestData.Issues(flow, catalog, time.GetUtcNow(), context.EnvironmentName, context.EnvironmentType);
 
     public CriticalE2EOverview Overview(CriticalE2EOverviewRequest request)
     {
-        if (request.Modules.Count > 0) store.SetModules(request.EnvironmentId, request.Modules);
         // Opening this surface is the signal that a run may be coming, so the companion starts polling at step speed
         // now rather than after the user has already pressed Run and waited out a heartbeat.
         if (!string.IsNullOrWhiteSpace(request.ProfileId)) companion.OpenAutomationWindow(request.ProfileId);
@@ -57,15 +107,23 @@ public sealed class CriticalE2EService(
     {
         var flows = store.Flows(request.EnvironmentId);
         var history = store.History(request.EnvironmentId, CriticalE2EStore.MaxHistoryPerEnvironment);
-        var modules = store.Modules(request.EnvironmentId);
+        // Only registered modules are authoritative. Modules the page names (project evidence) are suggestions until registered.
+        var registered = store.RegisteredModules(request.EnvironmentId);
+        var modules = registered.Select(m => m.Name).ToList();
+        CriticalE2ECoverage.TestDataIssues testData = flow => TestDataIssues(flow, request);
 
         return new CriticalE2EOverview
         {
             EnvironmentId = request.EnvironmentId,
             EnvironmentName = request.EnvironmentName,
-            Release = CriticalE2ECoverage.Release(flows, history, modules, request.EnvironmentId, request.BuildId, request.ReleaseId),
-            Modules = CriticalE2ECoverage.Modules(flows, history, modules, request.BuildId),
-            Flows = flows.Select(f => CriticalE2ECoverage.Summarize(f, history, request.BuildId)).ToList(),
+            Release = CriticalE2ECoverage.Release(flows, history, modules, request.EnvironmentId, request.BuildId, request.ReleaseId, testData, request.BuildSource),
+            Modules = CriticalE2ECoverage.Modules(flows, history, modules, request.BuildId, testData),
+            Flows = flows.Select(f => CriticalE2ECoverage.Summarize(f, history, request.BuildId, modules, testData)).ToList(),
+            RegisteredModules = [.. registered],
+            ModuleSuggestions = [.. request.Modules.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim())
+                .Where(m => !modules.Contains(m, StringComparer.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(m => new CriticalE2EModuleSuggestion(m, "Project module"))],
+            UnresolvedModules = CriticalE2ECoverage.UnresolvedModules(flows, modules),
             BrowserEngine = BrowserEngine(request, flows),
             IntegrationEngine = IntegrationEngine(request, flows),
             Attended = AttendedReadiness(request),
@@ -342,8 +400,11 @@ public sealed class CriticalE2EService(
         // be able to point the authenticated browser at an origin the user never approved.
         var live = companion.Status(context.ProfileId).Live;
         var runs = new List<CriticalE2ERunResult>();
+        var modules = store.Modules(context.EnvironmentId);
         foreach (var flow in selected)
         {
+            var issues = TestDataIssues(flow, context);
+            var usesData = (flow.DataMappings?.Count ?? 0) > 0 || CriticalE2ETestData.Placeholders(flow).Count > 0;
             var result = await runner.RunAsync(new CriticalE2ERunRequest
             {
                 Flow = flow,
@@ -353,6 +414,11 @@ public sealed class CriticalE2EService(
                 BuildId = context.BuildId,
                 ReleaseId = context.ReleaseId,
                 CommitSha = context.CommitSha,
+                BuildSource = context.BuildSource,
+                Readiness = CriticalE2EReleaseRules.Evaluate(flow, modules, issues),
+                // Values are revealed only for this run and only when every mapped reference is usable.
+                TestDataProblem = usesData && issues.Count > 0 ? issues[0] : null,
+                Data = usesData && issues.Count == 0 && catalog is not null ? CriticalE2ETestData.Resolve(flow, catalog) : null,
             }, cancellationToken).ConfigureAwait(false);
             store.Record(result);
             runs.Add(result);

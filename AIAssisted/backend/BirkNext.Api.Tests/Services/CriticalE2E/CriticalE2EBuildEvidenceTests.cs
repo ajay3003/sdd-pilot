@@ -20,6 +20,7 @@ public sealed class CriticalE2EBuildEvidenceTests
         {
             Id = id, Module = module, Name = id, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required, Kind = kind,
+            Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible,
                 Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "status" }, IsFinalAssertion = true }],
         };
@@ -28,6 +29,7 @@ public sealed class CriticalE2EBuildEvidenceTests
     {
         RunId = $"{flowId}-{build}-{minutesAgo}", FlowId = flowId, EnvironmentId = "env-1", Status = status,
         StartedAt = Now.AddMinutes(-minutesAgo), BuildId = build, RequiredForRelease = true,
+        FlowVersion = 1, ReleaseEvidence = build is not null,
     };
 
     private static CriticalE2EReleaseStatus Release(IReadOnlyList<CriticalE2EFlowDefinition> flows, IReadOnlyList<CriticalE2ERunResult> history, string? build) =>
@@ -125,7 +127,8 @@ public sealed class CriticalE2EBuildEvidenceTests
         var status = CriticalE2ECoverage.Release(flows, history, [.. Known, "SMOKE"], "env-1", "RC57", null);
         status.Disposition.Should().Be(CriticalE2EReleaseDisposition.Incomplete, "the smoke pass does not stand in for M02");
         status.RequiredFlowsTotal.Should().Be(1);
-        CriticalE2ECoverage.Modules(flows, history, [.. Known, "SMOKE"], "RC57").Select(m => m.Module).Should().NotContain("SMOKE");
+        // Even registered, a module carried only by diagnostic flows is never covered.
+        CriticalE2ECoverage.Modules(flows, history, [.. Known, "SMOKE"], "RC57").Single(m => m.Module == "SMOKE").Covered.Should().BeFalse();
 
         var onlySmoke = CriticalE2ECoverage.Release([flows[1]], history, [], "env-1", "RC57", null);
         onlySmoke.Disposition.Should().Be(CriticalE2EReleaseDisposition.NotConfigured);

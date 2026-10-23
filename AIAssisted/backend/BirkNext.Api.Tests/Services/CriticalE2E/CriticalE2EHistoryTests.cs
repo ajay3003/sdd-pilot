@@ -30,6 +30,8 @@ public sealed class CriticalE2EHistoryTests : IDisposable
     public CriticalE2EHistoryTests()
     {
         _store = new CriticalE2EStore(_dir, NullLogger<CriticalE2EStore>.Instance);
+        // Release coverage counts registered delivery modules only.
+        foreach (var module in new[] { "M02", "M03" }) _store.RegisterModule(Env, new CriticalE2ERegisteredModule { Name = module });
         _companion = new RecordingCompanion(new BrowserCompanionService(new BrowserCompanionEvidenceSanitizer(new BrowserEvidenceSanitizer()), TimeProvider.System, NullLogger<BrowserCompanionService>.Instance));
         _service = new CriticalE2EService(_store, _companion, new NoGateway(),
             new CriticalE2ERunner([_executor], TimeProvider.System, NullLogger<CriticalE2ERunner>.Instance), TimeProvider.System, NullLogger<CriticalE2EService>.Instance);
@@ -82,6 +84,7 @@ public sealed class CriticalE2EHistoryTests : IDisposable
         {
             Id = id, Module = module, Name = $"Flow {id}", Kind = kind, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = "dev", EnvironmentId = Env,
             Enabled = true, RequiredForRelease = required,
+            Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible,
                 Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "status" }, IsFinalAssertion = true }],
         });
@@ -93,6 +96,7 @@ public sealed class CriticalE2EHistoryTests : IDisposable
             RunId = $"{flowId}-run-{minute}", FlowId = flowId, FlowName = $"Flow {flowId}", Module = "M02", EnvironmentId = Env, ProfileId = "dev",
             StartedAt = T0.AddMinutes(minute), CompletedAt = T0.AddMinutes(minute).AddSeconds(30), DurationMs = 30_000, Status = status,
             FailureReason = status == CriticalE2EStatus.Failed ? "Setup: selector not found." : null, RequiredForRelease = required, BuildId = build,
+            FlowVersion = 1, ReleaseEvidence = build is not null,
             StepResults = [new CriticalE2EStepResult { StepId = "s1", Status = status, IsFinalAssertion = true }],
         };
         _store.Record(run);

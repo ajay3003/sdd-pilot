@@ -66,7 +66,7 @@ public sealed class CriticalE2EHistoryManagementTests : BunitContext
 
     private static CriticalE2ERunResult Run(string id, string flowId, int minute, CriticalE2EStatus status, bool archived = false) => new()
     {
-        RunId = id, FlowId = flowId, FlowName = flowId == "gradert" ? "Gradert tilgang" : flowId, Module = "M02", Status = status, StartedAt = T0.AddMinutes(minute),
+        RunId = id, FlowId = flowId, FlowName = flowId == "gradert" ? "Gradert tilgang" : flowId, Module = "M02", Status = status, StartedAt = T0.AddMinutes(minute), FlowVersion = 1, ReleaseEvidence = true,
         ArchivedAt = archived ? T0.AddHours(1) : null, ArchiveReason = archived ? "Archived: all runs except the latest" : null,
         StepResults = [new CriticalE2EStepResult { StepId = "s1", Status = status, Description = "Assert visible" }],
     };
@@ -180,7 +180,7 @@ public sealed class CriticalE2EHistoryManagementTests : BunitContext
         RowIds(page).Should().Equal("g3", "g2", "g1");
         page.Find("[data-testid=e2e-run-g1]").GetAttribute("data-archived").Should().Be("true");
         Text(page, "e2e-run-result-g1").Should().MatchRegex(@"^Archived ·\s+Failed$");
-        Text(page, "e2e-run-result-g3").Should().Be("Passed");
+        Text(page, "e2e-run-result-g3").Should().Be("Browser journey passed · downstream not verified by this flow", "a browser pass never reads as a full E2E pass");
 
         page.Find("[data-testid=e2e-restore-g1]").Click();
         api.Restores.Should().ContainSingle().Which.RunIds.Should().Equal("g1");

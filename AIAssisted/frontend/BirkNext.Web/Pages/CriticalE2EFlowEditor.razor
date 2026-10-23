@@ -2,6 +2,7 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Shared.Components.Common
+@using BirkNext.TestData
 @inject ICriticalE2EApiService Api
 
 @*
@@ -12,7 +13,26 @@
     <h2 id="e2e-editor-heading" tabindex="-1" @ref="_heading">@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h2>
 
     <div class="e2e-editor-grid">
-        <label>Module <input data-testid="e2e-editor-module" @bind="_draft.Module" placeholder="e.g. M02" /></label>
+        <label>Module
+            @* Modules come from the registered delivery modules. A typed label stays possible, but it is a manual label and never counts. *@
+            <select data-testid="e2e-editor-module" value="@ModuleChoice" @onchange="ModuleChanged" aria-describedby="e2e-editor-module-help">
+                <option value="">Unassigned / diagnostic</option>
+                @foreach (var module in RegisteredModules)
+                {
+                    <option value="@module">@module</option>
+                }
+                @if (ModuleUnresolved && !_manualModule)
+                {
+                    <option value="@_draft.Module">@_draft.Module · unresolved module</option>
+                }
+                <option value="@ManualChoice">Manual label…</option>
+            </select>
+            <span class="e2e-help @(ModuleUnresolved ? "e2e-fragile" : "")" id="e2e-editor-module-help" data-testid="e2e-editor-module-help">@ModuleHelp</span>
+        </label>
+        @if (_manualModule)
+        {
+            <label>Manual label <input data-testid="e2e-editor-module-manual" @bind="_draft.Module" aria-describedby="e2e-editor-module-help" /></label>
+        }
         <label class="e2e-editor-name">Flow name <input data-testid="e2e-editor-name" @bind="_draft.Name" placeholder="e.g. Foreta plassering" /></label>
         <label>Purpose
             <select data-testid="e2e-editor-kind" value="@_draft.Kind" @onchange="e => _draft.Kind = Enum.Parse<CriticalE2EFlowKind>(e.Value!.ToString()!)">
@@ -41,13 +61,96 @@
         <p class="e2e-help" data-testid="e2e-editor-diagnostic-required">Smoke / diagnostic flows never count toward release coverage, even when marked required.</p>
     }
 
-    <ReviewDisclosure Text="Flow details" CollapseText="Hide flow details" Hint="Automation boundary, test data, description" TestId="e2e-editor-details" Class="e2e-disclosure">
+    <ReviewDisclosure Text="Flow details" CollapseText="Hide flow details" Hint="@DetailsHint" TestId="e2e-editor-details" Class="e2e-disclosure">
+        @* Where automation starts and stops, structured, with where the proposal came from. Shown with every result: a browser pass
+           never claims what lies beyond the boundary. *@
+        <fieldset class="e2e-fieldset" data-testid="e2e-editor-boundary">
+            <legend>Automation boundary</legend>
+            <div class="e2e-editor-grid">
+                <label>Start <input data-testid="e2e-editor-boundary-start" value="@_draft.BoundaryStart" placeholder="Approved application page" @onchange="BoundaryStartChanged" /></label>
+                <label>End <input data-testid="e2e-editor-boundary-end" value="@_draft.BoundaryEnd" placeholder="Browser-visible outcome" @onchange="BoundaryEndChanged" /></label>
+                <label class="e2e-editor-wide">Downstream verification <input data-testid="e2e-editor-boundary-downstream" value="@_draft.BoundaryDownstream" placeholder="e.g. Service Bus / Bufdata verified separately" @onchange="BoundaryDownstreamChanged" /></label>
+                <label class="e2e-editor-check e2e-editor-wide">
+                    <input type="checkbox" data-testid="e2e-editor-boundary-covers" checked="@_draft.BoundaryCoversDownstream" @onchange="BoundaryCoversChanged" />
+                    This flow's own steps also verify the downstream result
+                </label>
+            </div>
+            <p class="e2e-help" data-testid="e2e-editor-boundary-source">Source: @_draft.BoundarySource@(_draft.BoundaryNote is { Length: > 0 } boundaryNote ? $" · {boundaryNote}" : "")</p>
+            <button type="button" class="btn-secondary btn-small" data-testid="e2e-editor-boundary-suggest" @onclick="SuggestBoundary">Suggest from Integration Topology</button>
+            @if (_draft.AutomationBoundary.Length > 0)
+            {
+                <p class="e2e-help" data-testid="e2e-editor-boundary-legacy">Legacy note: @_draft.AutomationBoundary</p>
+            }
+        </fieldset>
+
+        @* Central Test Data owns reusable approved data. The flow keeps references (aliases); values stay in Test Data and reach only the
+           backend while a run executes. *@
+        <fieldset class="e2e-fieldset" data-testid="e2e-editor-testdata">
+            <legend>Test Data</legend>
+            <p class="e2e-help">Source: Test Data · status <strong data-testid="e2e-editor-testdata-status">@TestDataStatus</strong></p>
+            @if (TestDataAssets.Count == 0)
+            {
+                <p class="e2e-muted" data-testid="e2e-editor-testdata-none">No Test Data assets are available. Create or approve them in Test Data.</p>
+            }
+            else
+            {
+                <label class="e2e-toggle"><input type="checkbox" data-testid="e2e-editor-testdata-all" @bind="_showUnapproved" /> Show assets that are not approved</label>
+                <ul class="e2e-assets" data-testid="e2e-editor-testdata-assets" aria-label="Test Data assets used by this flow">
+                    @foreach (var asset in CriticalE2EPresentation.CompatibleAssets(TestDataAssets, EnvironmentName, _showUnapproved))
+                    {
+                        var alias = asset.Alias;
+                        <li>
+                            <label class="e2e-toggle">
+                                <input type="checkbox" data-testid="e2e-editor-asset-@alias" checked="@_draft.TestDataAliases.Contains(alias)" @onchange="e => ToggleAsset(alias, (bool)e.Value!)" />
+                                <span class="e2e-mono">@alias</span>
+                            </label>
+                            <span class="e2e-help">@CriticalE2EPresentation.AssetLine(asset)</span>
+                        </li>
+                    }
+                </ul>
+            }
+            @foreach (var variable in _draft.Placeholders())
+            {
+                var mapping = _draft.DataMappings.FirstOrDefault(m => m.Variable == variable);
+                var type = mapping?.DataType ?? TestDataDataType.SimpleValues;
+                <div class="e2e-step-fields" data-testid="e2e-editor-mapping-@variable">
+                    <label>@("${data:" + variable + "}") type
+                        <select data-testid="e2e-editor-mapping-type-@variable" value="@type" @onchange="e => MapVariable(variable, mapping?.AssetAliases ?? [], Enum.Parse<TestDataDataType>(e.Value!.ToString()!))">
+                            @foreach (var dataType in Enum.GetValues<TestDataDataType>())
+                            {
+                                <option value="@dataType">@TestDataDataTypes.Label(dataType)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Test Data asset
+                        <select data-testid="e2e-editor-mapping-asset-@variable" value="@(mapping?.AssetAliases.FirstOrDefault() ?? "")" @onchange="e => MapVariable(variable, AliasList(e.Value?.ToString()), type)">
+                            <option value="">Not mapped</option>
+                            @foreach (var asset in CriticalE2EPresentation.CompatibleAssets(TestDataAssets, EnvironmentName, _showUnapproved).Where(a => TestDataDataTypes.Of(a) == type))
+                            {
+                                <option value="@asset.Alias">@asset.Alias</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
+            <p class="e2e-help">Use <span class="e2e-mono">${data:name}</span> in a value, route or outcome to map it to a Test Data asset.
+                <a class="e2e-link" data-testid="e2e-editor-testdata-open" href="@TestDataHref">Open Test Data</a></p>
+            @if (_draft.TestDataPolicy.Length > 0)
+            {
+                <p class="e2e-help" data-testid="e2e-editor-testdata-legacy">Legacy note: @_draft.TestDataPolicy</p>
+            }
+        </fieldset>
+
         <div class="e2e-editor-grid">
-            <label class="e2e-editor-wide">Automation boundary
-                @* Where automation starts and stops, in the author's own words. It is shown with every result. *@
-                <input data-testid="e2e-editor-boundary" @bind="_draft.AutomationBoundary" placeholder="e.g. Event Hub → M2LB; BiRK → Debezium is not automated" />
+            <label>Flow source
+                <select data-testid="e2e-editor-source" value="@_draft.Source" @onchange="e => _draft.Source = Enum.Parse<CriticalE2EFlowSource>(e.Value!.ToString()!)">
+                    @foreach (var source in new[] { CriticalE2EFlowSource.Manual, CriticalE2EFlowSource.BrowserDiscovery, CriticalE2EFlowSource.ObservedJourney, CriticalE2EFlowSource.RequirementDriven })
+                    {
+                        <option value="@source">@CriticalE2EPresentation.FlowSourceLabel(source)</option>
+                    }
+                </select>
             </label>
-            <label class="e2e-editor-wide">Test data policy <input data-testid="e2e-editor-testdata" @bind="_draft.TestDataPolicy" /></label>
+            <label>Requirement / use case (optional) <input data-testid="e2e-editor-requirement" @bind="_draft.RequirementRef" placeholder="e.g. FR-012" /></label>
             <label class="e2e-editor-wide">Description <input data-testid="e2e-editor-description" @bind="_draft.Description" /></label>
         </div>
     </ReviewDisclosure>
@@ -92,6 +195,8 @@
                     </div>
                 </div>
                 <div class="e2e-step-fields">
+                    <label>Step name <input data-testid="e2e-step-name-@i" value="@step.Description" placeholder="e.g. Open Generelle roller"
+                           @onchange="e => Replace(i, step with { Description = Text(e) })" /></label>
                     <label>Action
                         @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
                         {
@@ -155,9 +260,18 @@
                                     <div><dt>Captured on</dt><dd class="e2e-mono" data-testid="e2e-step-captured-@i">@e.PageRoute</dd></div>
                                 }
                             </dl>
-                            @if (target.Fragile)
+                            @if (step.Selector is { } selected && target.Strategy.Length > 0)
                             {
-                                <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">Selector may be fragile. No stronger unique selector was available.</p>
+                                var stability = CompanionSelectorQuality.Stability(selected);
+                                <p class="e2e-help" data-testid="e2e-step-stability-@i">Selector stability: <strong>@CompanionSelectorQuality.Label(stability)</strong></p>
+                                @if (CompanionSelectorQuality.Warning(selected) is { } warning)
+                                {
+                                    <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">@warning</p>
+                                    <label class="e2e-editor-check">
+                                        <input type="checkbox" data-testid="e2e-step-reviewed-@i" checked="@step.SelectorReviewed" @onchange="e => Replace(i, step with { SelectorReviewed = (bool)e.Value! })" />
+                                        Reviewed: no stronger unique selector exists (required before release use)
+                                    </label>
+                                }
                             }
                             <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i" @ref="_pickButtons[step.StepId]"
                                     disabled="@(!PickReady || _picking is not null)"
@@ -223,9 +337,31 @@
                                         }
                                     </tbody>
                                 </table>
-                                <p class="e2e-help" data-testid="e2e-step-route-note-@i">The element was selected on @described.PageRoute. The route is not stored with the step, so it is not enforced when the flow runs.</p>
+                                <p class="e2e-help" data-testid="e2e-step-route-note-@i">Captured on @CriticalE2ERoutes.Normalize(described.PageRoute). The page the step runs on is stored with the step and enforced when the flow runs.</p>
                             }
                         </ReviewDisclosure>
+                    }
+                    @if (step.BrowserAction is not CompanionActionKind.Navigate)
+                    {
+                        @* Captured page, execution page and expected destination are three facts. A destination is never inferred. *@
+                        <div class="e2e-step-fields" data-testid="e2e-step-page-@i">
+                            @if (step.CapturedOnRoute is { Length: > 0 } captured)
+                            {
+                                <p class="e2e-help" data-testid="e2e-step-captured-on-@i">Captured on <span class="e2e-mono">@captured</span></p>
+                            }
+                            <label>Runs on page <input data-testid="e2e-step-execution-route-@i" value="@(step.ExecutionRoute ?? "")" placeholder="/admin/emergency-access"
+                                   @onchange="e => Replace(i, step with { ExecutionRoute = Blank(e.Value?.ToString()) })" /></label>
+                            @if (!CriticalE2EAuthoring.IsAssertion(step.BrowserAction))
+                            {
+                                <label>Expected destination <input data-testid="e2e-step-destination-@i" value="@(step.ExpectedDestination ?? "")" placeholder="optional, e.g. /admin/general-roles"
+                                       @onchange="e => Replace(i, step with { ExpectedDestination = Blank(e.Value?.ToString()) })" /></label>
+                            }
+                        </div>
+                        @if (_suggestedDestination.TryGetValue(step.StepId, out var proposal) && proposal != step.ExpectedDestination)
+                        {
+                            <p class="e2e-help" data-testid="e2e-step-destination-suggestion-@i">Suggested destination <span class="e2e-mono">@proposal</span> (from the link target).
+                                <button type="button" class="btn-link" data-testid="e2e-step-destination-use-@i" @onclick="() => Replace(i, step with { ExpectedDestination = proposal })">Use</button></p>
+                        }
                     }
                     @if (NeedsValue(step))
                     {
@@ -243,10 +379,19 @@
                         </div>
                     }
                 }
-                <label class="e2e-editor-check e2e-step-final">
-                    <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
-                           @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" /> Final business assertion
-                </label>
+                @if (CriticalE2EAuthoring.IsAssertion(step.BrowserAction) || step.IsIntegrationStep && step.Expect is not null)
+                {
+                    <label class="e2e-editor-check e2e-step-final">
+                        <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
+                               @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" /> This assertion is the final business outcome
+                    </label>
+                }
+                else if (step.IsFinalAssertion)
+                {
+                    @* The old boolean is kept as legacy metadata; it never proves anything on its own. *@
+                    <p class="e2e-fragile e2e-step-final" data-testid="e2e-step-legacy-final-@i">Legacy assertion marker · concrete outcome required
+                        <button type="button" class="btn-link" data-testid="e2e-step-legacy-clear-@i" @onclick="() => Replace(i, step with { IsFinalAssertion = false })">Remove marker</button></p>
+                }
             </li>
         }
     </ol>
@@ -254,6 +399,71 @@
          ondragover="event.preventDefault()" @ondragenter='() => _dropBefore = ""' @ondrop='() => DropBefore("")'>@(_dragged is not null ? "Drop here to move to the end" : "")</div>
     <p class="e2e-order-status" role="status" aria-live="polite" data-testid="e2e-order-status">@_orderStatus</p>
     <button type="button" class="btn-secondary" data-testid="e2e-step-add" @ref="_addButton" disabled="@(_picking is not null)" @onclick="AddStep">Add step</button>
+
+    @* The final business outcome: what must be true. "The last click succeeded" is not one. *@
+    <fieldset class="e2e-fieldset e2e-outcome" data-testid="e2e-editor-outcome">
+        <legend>Final business outcome</legend>
+        @if (CriticalE2EReleaseRules.LegacyAssertionMarker(Definition))
+        {
+            <p class="e2e-fragile" role="status" data-testid="e2e-editor-outcome-legacy">Legacy assertion marker · concrete outcome required</p>
+        }
+        <div class="e2e-step-fields">
+            <label>Outcome
+                <select data-testid="e2e-editor-outcome-kind" value="@(_draft.FinalOutcome?.Kind.ToString() ?? "")" @onchange="OutcomeKindChanged">
+                    <option value="">None defined</option>
+                    @foreach (var kind in Enum.GetValues<CriticalE2EOutcomeKind>())
+                    {
+                        <option value="@kind">@CriticalE2EPresentation.OutcomeKindLabel(kind)</option>
+                    }
+                </select>
+            </label>
+            @if (_draft.FinalOutcome is { } outcome)
+            {
+                @if (CriticalE2EPresentation.OutcomeNeedsExpected(outcome.Kind))
+                {
+                    <label>@(outcome.Kind is CriticalE2EOutcomeKind.UrlEquals or CriticalE2EOutcomeKind.UrlContains ? "Expected path" : "Expected text or value")
+                        <input data-testid="e2e-editor-outcome-expected" value="@(outcome.Expected ?? "")" @onchange="e => _draft.FinalOutcome = outcome with { Expected = Blank(e.Value?.ToString()) }" /></label>
+                }
+                @if (CriticalE2EPresentation.OutcomeNeedsElement(outcome.Kind) || outcome.Kind == CriticalE2EOutcomeKind.SuccessMessageVisible)
+                {
+                    <label>Element role <input data-testid="e2e-editor-outcome-role" value="@(outcome.Selector?.Role ?? "")" placeholder="status"
+                           @onchange="e => _draft.FinalOutcome = outcome with { Selector = (outcome.Selector ?? new CompanionSelector { Kind = CompanionSelectorKind.Role }) with { Kind = CompanionSelectorKind.Role, Role = Blank(e.Value?.ToString()) } }" /></label>
+                    <label>Accessible name <input data-testid="e2e-editor-outcome-name" value="@(outcome.Selector?.Name ?? "")"
+                           @onchange="e => _draft.FinalOutcome = outcome with { Selector = (outcome.Selector ?? new CompanionSelector { Kind = CompanionSelectorKind.Role }) with { Kind = CompanionSelectorKind.Role, Name = Blank(e.Value?.ToString()) } }" /></label>
+                }
+                @if (outcome.Kind == CriticalE2EOutcomeKind.ProviderVerified)
+                {
+                    <label>Verification provider <input data-testid="e2e-editor-outcome-provider" value="@(outcome.ProviderId ?? "")"
+                           @onchange="e => _draft.FinalOutcome = outcome with { ProviderId = Blank(e.Value?.ToString()) }" /></label>
+                    <p class="e2e-help">Without an approved verification provider the run is Inconclusive, never Passed.</p>
+                }
+            }
+        </div>
+        <p class="e2e-help" data-testid="e2e-editor-outcome-text">@CriticalE2EReleaseRules.OutcomeText(Definition)</p>
+        @if (_draft.FinalOutcome is null && SuggestedOutcome is { } suggestion)
+        {
+            <p class="e2e-help" data-testid="e2e-editor-outcome-suggestion">Suggested: @CriticalE2EReleaseRules.Describe(suggestion)
+                <button type="button" class="btn-link" data-testid="e2e-editor-outcome-use" @onclick="() => _draft.FinalOutcome = suggestion">Use</button></p>
+        }
+    </fieldset>
+
+    @if (_draft.Kind == CriticalE2EFlowKind.Critical && _draft.RequiredForRelease)
+    {
+        var readiness = Readiness;
+        <section class="e2e-editor-readiness" data-testid="e2e-editor-readiness" aria-label="Release readiness">
+            <p><strong data-testid="e2e-editor-readiness-summary">@readiness.Summary</strong></p>
+            @if (readiness.Blockers.Count > 0)
+            {
+                <ul data-testid="e2e-editor-readiness-blockers">
+                    @foreach (var blocker in readiness.Blockers)
+                    {
+                        <li data-key="@blocker.Key">@blocker.Text</li>
+                    }
+                </ul>
+            }
+            <p class="e2e-help">A build identity is needed as well before a run counts as release evidence.</p>
+        </section>
+    }
 
     @* Say it before the run does. A flow with no final assertion can never pass, and finding that out at run time wastes
        a signed-in browser session. *@
@@ -280,6 +490,80 @@
     [Parameter] public EventCallback OnCheckElementPick { get; set; }
     /// <summary>Where Browser Companion is set up: the Target Environment, never this page.</summary>
     [Parameter] public string SetupHref { get; set; } = "/admin/system-settings?section=target-environments&tab=browser";
+    /// <summary>Registered delivery modules: the module choices. Anything else is a manual label.</summary>
+    [Parameter] public IReadOnlyList<string> RegisteredModules { get; set; } = [];
+    /// <summary>Central Test Data summaries (no values): what the flow can reference.</summary>
+    [Parameter] public IReadOnlyList<TestDataAssetSummary> TestDataAssets { get; set; } = [];
+    /// <summary>The environment's Integration Topology, for boundary proposals. Null when none is available.</summary>
+    [Parameter] public BirkNext.IntegrationTopology.IntegrationTopologyView? Topology { get; set; }
+    [Parameter] public string? EnvironmentName { get; set; }
+
+    private const string ManualChoice = "__manual";
+    private bool _manualModule;
+    private bool _showUnapproved;
+    private readonly Dictionary<string, string> _suggestedDestination = [];
+
+    private CriticalE2EFlowDefinition Definition => _draft.ToDefinition(ProfileId, EnvironmentId);
+    private bool ModuleUnresolved => _draft.Module.Trim().Length > 0 && !RegisteredModules.Contains(_draft.Module.Trim(), StringComparer.OrdinalIgnoreCase);
+    private string ModuleChoice => _manualModule ? ManualChoice : RegisteredModules.FirstOrDefault(m => string.Equals(m, _draft.Module.Trim(), StringComparison.OrdinalIgnoreCase)) ?? _draft.Module;
+    private string ModuleHelp => _draft.Module.Trim().Length == 0
+        ? RegisteredModules.Count == 0 ? "No registered delivery modules. Register modules under Module coverage." : "Unassigned · never counts toward release coverage"
+        : ModuleUnresolved ? $"Unresolved module · {CriticalE2EPresentation.ManualModuleNote}" : "Registered delivery module";
+    private IReadOnlyList<string> TestDataIssues => CriticalE2EPresentation.TestDataIssues(Definition, _draft.Placeholders(), TestDataAssets);
+    private CriticalE2EFlowReadiness Readiness => CriticalE2EReleaseRules.Evaluate(Definition, RegisteredModules, TestDataIssues);
+    private string TestDataStatus => Readiness.TestDataStatus;
+    private string DetailsHint => $"Boundary {(Definition.Boundary is { Explicit: true } ? "explicit" : "not explicit")} · Test Data {TestDataStatus.ToLowerInvariant()}";
+    private string TestDataHref => $"/test-data?consumer={CriticalE2ETestDataConsumer}";
+    private const string CriticalE2ETestDataConsumer = "critical-e2e";
+
+    /// <summary>A proposal only: the last action's own expected destination becomes "page is loaded".</summary>
+    private CriticalE2EFinalOutcome? SuggestedOutcome => _draft.Steps.LastOrDefault(s => s.ExpectedDestination is { Length: > 0 }) is { } last
+        ? new CriticalE2EFinalOutcome { Kind = CriticalE2EOutcomeKind.UrlEquals, Expected = last.ExpectedDestination } : null;
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static List<string> AliasList(string? alias) => string.IsNullOrWhiteSpace(alias) ? [] : [alias];
+
+    private void ModuleChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString() ?? "";
+        _manualModule = value == ManualChoice;
+        if (!_manualModule) _draft.Module = value;
+    }
+
+    private void OutcomeKindChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        _draft.FinalOutcome = string.IsNullOrEmpty(value) ? null : (_draft.FinalOutcome ?? new CriticalE2EFinalOutcome()) with { Kind = Enum.Parse<CriticalE2EOutcomeKind>(value) };
+    }
+
+    private void EditBoundary(Action change)
+    {
+        change();
+        _draft.BoundaryEdited();
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString() ?? "";
+    private void BoundaryStartChanged(ChangeEventArgs e) => EditBoundary(() => _draft.BoundaryStart = Text(e));
+    private void BoundaryEndChanged(ChangeEventArgs e) => EditBoundary(() => _draft.BoundaryEnd = Text(e));
+    private void BoundaryDownstreamChanged(ChangeEventArgs e) => EditBoundary(() => _draft.BoundaryDownstream = Text(e));
+    private void BoundaryCoversChanged(ChangeEventArgs e) => EditBoundary(() => _draft.BoundaryCoversDownstream = e.Value is true);
+
+    private void SuggestBoundary() => _draft.ApplyBoundary(CriticalE2EBoundarySuggestion.For(_draft.Mode, Topology));
+
+    private void ToggleAsset(string alias, bool used)
+    {
+        _draft.TestDataAliases.Remove(alias);
+        if (used) _draft.TestDataAliases.Add(alias);
+    }
+
+    private void MapVariable(string variable, IReadOnlyList<string> aliases, TestDataDataType type)
+    {
+        // A type change keeps an alias only if it still fits.
+        var fitting = aliases.Where(a => TestDataAssets.FirstOrDefault(x => x.Alias == a) is { } asset && TestDataDataTypes.Of(asset) == type).ToList();
+        _draft.Map(variable, fitting, type, _draft.Steps.Any(s => s.ExecutionRoute?.Contains("${data:" + variable + "}") == true || s.ExpectedDestination?.Contains("${data:" + variable + "}") == true) ? "route parameter"
+            : _draft.FinalOutcome?.Expected?.Contains("${data:" + variable + "}") == true ? "expected result" : "step value");
+    }
 
     private CriticalE2EFlowDraft _draft = new();
     private CriticalE2EFlowDefinition? _source;
@@ -399,8 +683,25 @@
             if (!ReferenceEquals(draft, _draft)) return;
             index = _draft.Steps.FindIndex(s => s.StepId == id);
             if (index < 0) return;
-            if (result is { Status: CriticalE2EStatus.Passed, Element: { Recommended: { } recommended } })
-                _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
+            if (result is { Status: CriticalE2EStatus.Passed, Element: { Recommended: { } recommended } element })
+            {
+                // The pick proposes; the author edits. The action and name follow the element, the page it was picked on is
+                // recorded, and a link's own target is offered as the destination — never applied silently.
+                var current = _draft.Steps[index];
+                var action = current.BrowserAction is CompanionActionKind.Click or null && !CriticalE2EAuthoring.IsAssertion(current.BrowserAction) ? CriticalE2EAuthoring.SuggestAction(element) : current.BrowserAction!.Value;
+                var captured = CriticalE2ERoutes.Normalize(element.PageRoute);
+                _draft.Steps[index] = current with
+                {
+                    Selector = recommended,
+                    BrowserAction = action,
+                    Description = string.IsNullOrWhiteSpace(current.Description) ? CriticalE2EAuthoring.SuggestName(action, element) : current.Description,
+                    CapturedOnRoute = captured.Length > 0 ? captured : null,
+                    ExecutionRoute = current.ExecutionRoute ?? (captured.Length > 0 ? captured : null),
+                    SelectorReviewed = false,
+                };
+                if (CriticalE2EAuthoring.SuggestDestination(element) is { } destination) _suggestedDestination[id] = destination;
+                else _suggestedDestination.Remove(id);
+            }
             _picks[id] = result;
         }
         catch (Exception ex)

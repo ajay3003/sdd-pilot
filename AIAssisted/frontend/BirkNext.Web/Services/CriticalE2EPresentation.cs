@@ -1,4 +1,5 @@
 using BirkNext.CriticalE2E;
+using BirkNext.TestData;
 
 namespace BirkNext.Web.Services;
 
@@ -34,7 +35,9 @@ public sealed record CriticalE2EFlowRow(
     string FlowId, string Module, string Name, CriticalE2EFlowKind Kind, int Steps, string Execution,
     bool Enabled, bool RequiredForRelease, string? ConfigurationProblem,
     DateTimeOffset? LastRunAt, string Result, CriticalE2ETone ResultTone, string? ResultDetail,
-    bool Runnable, string? RunBlockedReason);
+    bool Runnable, string? RunBlockedReason,
+    string Outcome = "", int ActionSteps = 0, int Assertions = 0, string TestData = "Not required", string Boundary = "Not explicit",
+    bool ModuleResolved = true, string? ReleaseStatus = null, string? ReleaseBlocker = null, string? BoundaryText = null);
 
 /// <summary>The one global run action, or none. Never a large disabled control with nothing to run behind it.</summary>
 public sealed record CriticalE2ERunAction(CriticalE2EExecutionMode Mode, string Label, int FlowCount, bool Enabled, string? Reason);
@@ -104,9 +107,21 @@ public static class CriticalE2EPresentation
         };
     }
 
-    /// <summary>"0 / 1 modules covered" — definition coverage by required critical flows. Diagnostic modules never count.</summary>
+    /// <summary>"0 / 4 modules covered" — registered delivery modules covered by release-ready required flows. A typed module label never counts.</summary>
     public static string Coverage(CriticalE2EReleaseStatus release) =>
-        release.ModulesTotal == 0 ? "No delivery modules yet" : $"{release.ModulesCovered} / {release.ModulesTotal} modules covered";
+        release.ModulesTotal == 0 ? "No registered delivery modules" : $"{release.ModulesCovered} / {release.ModulesTotal} modules covered";
+
+    /// <summary>"1 unresolved module label · does not count", when flows carry labels that are not registered modules.</summary>
+    public static string? UnresolvedNote(CriticalE2EOverview overview) => overview.UnresolvedModules.Count == 0 ? null
+        : $"{overview.UnresolvedModules.Count} unresolved module {Plural(overview.UnresolvedModules.Count, "label", "labels")} · {Plural(overview.UnresolvedModules.Count, "does", "do")} not count";
+
+    public const string ManualModuleNote = "Manual label · does not count toward release coverage";
+
+    /// <summary>"Manual · not pipeline verified": a typed build is never presented as detected.</summary>
+    public static string BuildSourceLabel(string? buildId, string? source) => string.IsNullOrWhiteSpace(buildId) ? "No build selected"
+        : source is null or "Manual" ? "Manual · not pipeline verified" : source;
+
+    public const string DetectedBuildNote = "No pipeline run evidence is available to detect a build for this environment, so build, release and commit are entered manually and labelled Manual.";
 
     public static string BuildLabel(string? buildId) => string.IsNullOrWhiteSpace(buildId) ? "Not set" : buildId.Trim();
 
@@ -154,9 +169,14 @@ public static class CriticalE2EPresentation
                     : !flow.Configured ? flow.ConfigurationProblem ?? "This flow cannot run as configured."
                     : !engine.Ready ? engine.Message
                     : null;
+                var readiness = flow.Readiness;
                 return new CriticalE2EFlowRow(flow.FlowId, flow.Module, flow.Name, flow.Kind, flow.StepCount, ExecutionLabel(flow.Mode),
                     flow.Enabled, flow.RequiredForRelease, flow.Configured ? null : flow.ConfigurationProblem,
-                    flow.LastRunAt, result, tone, detail, blocked is null, blocked);
+                    flow.LastRunAt, result, tone, detail, blocked is null, blocked,
+                    Outcome: flow.Outcome.Length > 0 ? flow.Outcome : "No final outcome", ActionSteps: flow.ActionSteps, Assertions: flow.Assertions,
+                    TestData: readiness.TestDataStatus, Boundary: flow.BoundaryStatus, ModuleResolved: readiness.ModuleResolved,
+                    ReleaseStatus: flow.Kind == CriticalE2EFlowKind.Critical && flow.RequiredForRelease ? readiness.ReleaseReady ? "Release-ready" : "Not release-ready" : null,
+                    ReleaseBlocker: flow.RequiredForRelease ? readiness.Blockers.FirstOrDefault()?.Text : null, BoundaryText: flow.BoundaryText);
             }).ToList();
 
     /// <summary>
@@ -166,12 +186,18 @@ public static class CriticalE2EPresentation
     private static (string Label, CriticalE2ETone Tone, string? Detail) Result(CriticalE2EFlowSummary flow, bool buildNamed)
     {
         if (flow.LastStatus == CriticalE2EStatus.NotRun) return ("Not run", CriticalE2ETone.Neutral, null);
+        // A run of an earlier definition says nothing about this one until it runs again.
+        if (flow.LastRunStale)
+            return ("Review required", CriticalE2ETone.Warning, $"The flow changed after its last run ({StatusLabel(flow.LastStatus)}); run it again.");
         // "Pending" is about a named build. With none, the latest result is simply the latest result.
         if (buildNamed && !flow.LastResultMatchesRelease)
-            return ("Pending", CriticalE2ETone.Warning, $"Last result was {flow.LastStatus} on build {flow.LastBuildId ?? "unknown"}.");
+            return ("Pending", CriticalE2ETone.Warning, $"Last result was {flow.LastStatus} on build {flow.LastBuildId ?? "unknown"}"
+                + (flow.LastBuildId is not null && flow.Readiness.ReleaseReady ? "." : " and is not release evidence."));
         return flow.LastStatus switch
         {
-            CriticalE2EStatus.Passed => ("Passed", CriticalE2ETone.Good, null),
+            // The run's own label: a diagnostic or browser-only pass never reads as a plain release pass.
+            CriticalE2EStatus.Passed => (flow.LastResultLabel is { Length: > 0 } label && label != "Passed" ? label : "Passed", CriticalE2ETone.Good, null),
+            CriticalE2EStatus.Inconclusive => ("Inconclusive", CriticalE2ETone.Warning, "Every action ran, but nothing concrete proved the outcome."),
             CriticalE2EStatus.Failed => ("Failed", CriticalE2ETone.Bad, null),
             CriticalE2EStatus.Blocked => ("Blocked", CriticalE2ETone.Warning, "A prerequisite was unavailable, so the flow did not finish."),
             CriticalE2EStatus.Cancelled => ("Cancelled", CriticalE2ETone.Neutral, null),
@@ -260,7 +286,8 @@ public static class CriticalE2EPresentation
             {
                 var kind = !flows.TryGetValue(run.FlowId, out var f) ? CriticalE2EHistoryKind.Removed
                     : f.Kind == CriticalE2EFlowKind.Diagnostic ? CriticalE2EHistoryKind.Smoke : CriticalE2EHistoryKind.Critical;
-                var evidence = kind == CriticalE2EHistoryKind.Critical && run.RequiredForRelease && OnBuild(run, buildId);
+                // Release evidence is what the run recorded about itself (build bound, definition release-ready), on the build now named.
+                var evidence = kind == CriticalE2EHistoryKind.Critical && run.RequiredForRelease && run.ReleaseEvidence && OnBuild(run, buildId);
                 return new CriticalE2EHistoryRow(run, kind, evidence, run.Status == CriticalE2EStatus.Passed ? null : ShortProblem(run),
                     Archivable: kind != CriticalE2EHistoryKind.Removed && !run.Archived && !kept.Contains(run.RunId));
             })
@@ -311,6 +338,76 @@ public static class CriticalE2EPresentation
         CriticalE2EStatus.NotRun => "Not run",
         _ => status.ToString(),
     };
+
+    /// <summary>"Browser journey passed · downstream not verified by this flow", "Diagnostic pass" … — never "E2E passed" for a partial boundary.</summary>
+    public static string RunLabel(CriticalE2ERunResult run) =>
+        // A run recorded before runs carried their definition version keeps its plain status; it is never release evidence.
+        run.FlowVersion == 0 ? StatusLabel(run.Status) : CriticalE2EReleaseRules.ResultLabel(run);
+
+    /// <summary>Browser journey and downstream verification, said separately.</summary>
+    public static (string Browser, string Downstream) Layers(CriticalE2ERunResult run) =>
+        ($"{(run.Mode == CriticalE2EExecutionMode.CompanionBrowser ? "Browser journey" : "Integration flow")}: {StatusLabel(run.Status)}",
+         $"Downstream integration: {run.DownstreamOutcome ?? "Not verified by this flow"}");
+
+    public static string OutcomeKindLabel(CriticalE2EOutcomeKind kind) => kind switch
+    {
+        CriticalE2EOutcomeKind.UrlEquals => "Page path equals",
+        CriticalE2EOutcomeKind.UrlContains => "Page path contains",
+        CriticalE2EOutcomeKind.ElementVisible => "Element is visible",
+        CriticalE2EOutcomeKind.ElementHidden => "Element is hidden",
+        CriticalE2EOutcomeKind.TextEquals => "Text equals",
+        CriticalE2EOutcomeKind.TextContains => "Text contains",
+        CriticalE2EOutcomeKind.ValueEquals => "Value equals",
+        CriticalE2EOutcomeKind.SuccessMessageVisible => "Success message is visible",
+        CriticalE2EOutcomeKind.ListContains => "Table / list contains",
+        _ => "Verified by an approved evidence provider",
+    };
+
+    public static bool OutcomeNeedsElement(CriticalE2EOutcomeKind kind) => kind is CriticalE2EOutcomeKind.ElementVisible or CriticalE2EOutcomeKind.ElementHidden
+        or CriticalE2EOutcomeKind.TextEquals or CriticalE2EOutcomeKind.TextContains or CriticalE2EOutcomeKind.ValueEquals or CriticalE2EOutcomeKind.ListContains;
+
+    public static bool OutcomeNeedsExpected(CriticalE2EOutcomeKind kind) => kind is not (CriticalE2EOutcomeKind.ElementVisible or CriticalE2EOutcomeKind.ElementHidden or CriticalE2EOutcomeKind.ProviderVerified);
+
+    public static string FlowSourceLabel(CriticalE2EFlowSource source) => source switch
+    {
+        CriticalE2EFlowSource.BrowserDiscovery => "Browser Discovery",
+        CriticalE2EFlowSource.ObservedJourney => "Observed journey",
+        CriticalE2EFlowSource.RequirementDriven => "Requirement-driven",
+        CriticalE2EFlowSource.Imported => "Imported",
+        _ => "Manual",
+    };
+
+    /// <summary>
+    /// What the editor can tell about mapped central Test Data from the catalog summaries it holds (no values): unmapped
+    /// placeholders, unknown aliases, not approved, wrong type. The backend re-checks everything (scope, value availability) at run time.
+    /// </summary>
+    public static List<string> TestDataIssues(CriticalE2EFlowDefinition flow, IReadOnlyList<string> placeholders, IReadOnlyList<TestDataAssetSummary> assets)
+    {
+        var byAlias = assets.GroupBy(a => a.Alias, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var issues = new List<string>();
+        string? Problem(string alias, TestDataDataType? type) =>
+            !byAlias.TryGetValue(alias, out var asset) ? $"Test Data review required: {alias} no longer exists in Test Data."
+            : asset.Approval != TestDataApproval.Approved ? $"Test Data review required: {alias} is {asset.Approval.ToString().ToLowerInvariant()}."
+            : type is { } t && TestDataDataTypes.Of(asset) != t ? $"Test Data review required: {alias} is {TestDataDataTypes.Label(TestDataDataTypes.Of(asset))}, but the mapping needs {TestDataDataTypes.Label(t)}."
+            : null;
+        foreach (var mapping in flow.DataMappings ?? [])
+        {
+            if (mapping.AssetAliases.Count == 0) { issues.Add($"Test Data missing for ${{data:{mapping.Variable}}} ({mapping.Target})."); continue; }
+            issues.AddRange(mapping.AssetAliases.Select(a => Problem(a, mapping.DataType)).OfType<string>());
+        }
+        issues.AddRange((flow.TestDataAliases ?? []).Select(a => Problem(a, null)).OfType<string>().Where(p => !issues.Contains(p)));
+        issues.AddRange(placeholders.Where(v => !(flow.DataMappings ?? []).Any(m => m.Variable == v)).Select(v => $"Test Data missing for ${{data:{v}}} (no Test Data asset is mapped)."));
+        return issues;
+    }
+
+    /// <summary>Approved assets first (the default choice); the rest only when the reader asks for them.</summary>
+    public static List<TestDataAssetSummary> CompatibleAssets(IReadOnlyList<TestDataAssetSummary> assets, string? environment, bool includeUnapproved) =>
+        [.. assets.Where(a => includeUnapproved || a.Approval == TestDataApproval.Approved)
+            .Where(a => a.Environment is null || environment is null || string.Equals(a.Environment, environment, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(a => a.Approval != TestDataApproval.Approved).ThenBy(a => a.Alias, StringComparer.Ordinal)];
+
+    public static string AssetLine(TestDataAssetSummary asset) =>
+        $"{TestDataDataTypes.Label(TestDataDataTypes.Of(asset))} · {asset.Approval} · {asset.Environment ?? "Shared"} · {asset.Source}";
 
     public static string StepGlyph(CriticalE2EStatus status) => status switch
     {

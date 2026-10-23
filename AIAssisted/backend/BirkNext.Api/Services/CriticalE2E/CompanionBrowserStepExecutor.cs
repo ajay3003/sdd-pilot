@@ -57,6 +57,41 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
         return "The page did not come back after navigating; the step's tab no longer has an approved page.";
     }
 
+    private BrowserCompanionLivePage? BoundPage(CriticalE2ERunContext context) =>
+        companion.Status(context.Flow.ProfileId).Live.LivePages.FirstOrDefault(p => p.PageId == context.PageId);
+
+    /// <summary>
+    /// Polls the bound tab until its page route matches the destination. A click that loads a new document replaces the bound page
+    /// in the same tab; the run follows that tab (same origin) and never another one. Bounded by attempts.
+    /// </summary>
+    private async Task<(bool Matched, string? Route)?> AwaitDestinationAsync(CriticalE2ERunContext context, string destination, int timeoutMs, CancellationToken cancellationToken)
+    {
+        var tab = BoundPage(context)?.TabKey ?? (context.PageId is { } id && id.LastIndexOf('-') is > 0 and var dash ? id[..dash] : null);
+        string? lastRoute = null;
+        var attempts = Math.Clamp(timeoutMs, 1_000, 60_000) / 250;
+        for (var i = 0; i < attempts; i++)
+        {
+            var pages = companion.Status(context.Flow.ProfileId).Live.LivePages;
+            var page = pages.FirstOrDefault(p => p.PageId == context.PageId)
+                ?? pages.FirstOrDefault(p => tab is not null && p.TabKey == tab && string.Equals(p.Origin, context.TargetOrigin, StringComparison.OrdinalIgnoreCase));
+            if (page is not null)
+            {
+                lastRoute = page.Route;
+                if (CriticalE2ERoutes.Matches(destination, page.Route))
+                {
+                    if (page.PageId != context.PageId)
+                    {
+                        logger.LogInformation("Critical E2E run {RunId} followed its navigation to {PageId}", context.RunId, page.PageId);
+                        context.PageId = page.PageId;
+                    }
+                    return (true, page.Route);
+                }
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+        }
+        return lastRoute is null ? null : (false, lastRoute);
+    }
+
     public async Task<CriticalE2EStepResult> ExecuteAsync(CriticalE2EStepDefinition step, CriticalE2ERunContext context, CancellationToken cancellationToken)
     {
         var startedAt = time.GetUtcNow();
@@ -64,6 +99,11 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
 
         if (string.IsNullOrWhiteSpace(context.TargetOrigin))
             return Blocked("No approved application origin is configured for this environment.");
+
+        // Page context is enforced, not documented: the step runs only on the page it was written for.
+        var executionRoute = CriticalE2EVariables.Resolve(step.ExecutionRoute, context, startedAt);
+        if (!string.IsNullOrWhiteSpace(executionRoute) && BoundPage(context) is { } bound && !CriticalE2ERoutes.Matches(executionRoute, bound.Route))
+            return Blocked($"Page mismatch: the step runs on {step.ExecutionRoute}, but the bound page is on {CriticalE2ERoutes.Normalize(bound.Route)}.");
 
         var commandId = $"{context.RunId}:{step.StepId}";
         var command = new CompanionAutomationCommand
@@ -111,6 +151,21 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
             return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), CriticalE2EStatus.Blocked,
                 summary: result.SafeSummary, error: lost, route: result.ObservedRoute);
         if (!string.IsNullOrWhiteSpace(result.ObservedValue)) context.Outputs[step.StepId] = result.ObservedValue;
+
+        // The expected destination is the action's own assertion: the bound tab must reach it (following a full page load in
+        // the same tab), otherwise the action executed but the flow went somewhere else — Failed, not Blocked.
+        if (result.Status == CriticalE2EStatus.Passed && !string.IsNullOrWhiteSpace(step.ExpectedDestination))
+        {
+            var destination = CriticalE2EVariables.Resolve(step.ExpectedDestination, context, startedAt)!;
+            var reached = await AwaitDestinationAsync(context, destination, step.TimeoutMs, cancellationToken).ConfigureAwait(false);
+            if (reached is not { Matched: true })
+                return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), CriticalE2EStatus.Failed, summary: result.SafeSummary,
+                    error: $"Expected destination {step.ExpectedDestination}, but the page is on {(reached?.Route is { } r ? CriticalE2ERoutes.Normalize(r) : "an unknown route")}.",
+                    route: reached?.Route ?? result.ObservedRoute);
+            return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), CriticalE2EStatus.Passed,
+                summary: $"Reached {step.ExpectedDestination}.", route: reached.Value.Route, value: result.ObservedValue,
+                evidence: result.EvidenceReference, freshness: Freshness(context, result.EvidenceReference));
+        }
 
         return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), result.Status,
             summary: result.SafeSummary, error: result.SanitizedError, route: result.ObservedRoute,

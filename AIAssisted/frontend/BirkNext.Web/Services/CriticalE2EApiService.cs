@@ -20,6 +20,10 @@ public interface ICriticalE2EApiService
     Task<CriticalE2EHistoryActionResult> RestoreRunsAsync(CriticalE2ERestoreRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     /// <summary>Permanent. The backend re-checks the typed confirmation and the release-evidence rule.</summary>
     Task<CriticalE2EHistoryActionResult> ClearHistoryAsync(CriticalE2EClearRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    // Delivery modules: explicit registration only. A module label typed on a flow never registers one.
+    Task<CriticalE2EOverview> RegisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<CriticalE2EOverview> UnregisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiService
@@ -60,6 +64,12 @@ public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiServ
 
     public Task<CriticalE2EHistoryActionResult> ClearHistoryAsync(CriticalE2EClearRequest request, CancellationToken ct = default) =>
         PostAsync<CriticalE2EHistoryActionResult>("api/critical-e2e/history/clear", request, ct);
+
+    public Task<CriticalE2EOverview> RegisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EOverview>("api/critical-e2e/modules/register", request, ct);
+
+    public Task<CriticalE2EOverview> UnregisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EOverview>("api/critical-e2e/modules/unregister", request, ct);
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
     {

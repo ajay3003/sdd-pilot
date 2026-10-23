@@ -14,6 +14,14 @@ public sealed record CriticalE2ERunRequest
     public string? BuildId { get; init; }
     public string? ReleaseId { get; init; }
     public string? CommitSha { get; init; }
+    /// <summary>"Manual" or "Delivery evidence".</summary>
+    public string? BuildSource { get; init; }
+    /// <summary>The definition's release readiness when the run started (computed by the service: modules, Test Data, outcome …).</summary>
+    public CriticalE2EFlowReadiness? Readiness { get; init; }
+    /// <summary>Central Test Data values for this run (variable → value). Transient; never part of a result.</summary>
+    public IReadOnlyDictionary<string, string>? Data { get; init; }
+    /// <summary>Why the run's central Test Data cannot be used (missing / needs review). The run is then Blocked before any step.</summary>
+    public string? TestDataProblem { get; init; }
 }
 
 /// <summary>
@@ -32,11 +40,15 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
         {
             Flow = flow, RunId = runId, CorrelationId = CriticalE2ECorrelation.New(startedAt), StartedAt = startedAt,
             ApiIdentity = request.ApiIdentity, TargetOrigin = request.TargetOrigin, PageId = request.PageId,
+            Data = request.Data ?? new Dictionary<string, string>(StringComparer.Ordinal),
         };
+        var boundPage = request.PageId;
 
         CriticalE2ERunResult Finish(CriticalE2EStatus status, List<CriticalE2EStepResult> steps, string? reason)
         {
             var completedAt = time.GetUtcNow();
+            var (evidence, note) = ReleaseEvidence(flow, request);
+            var coversDownstream = flow.Boundary?.CoversDownstream == true;
             return new CriticalE2ERunResult
             {
                 RunId = runId, FlowId = flow.Id, FlowName = flow.Name, Module = flow.Module, Mode = flow.Mode,
@@ -51,6 +63,18 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
                     ["stepsExecuted"] = steps.Count(s => s.Status != CriticalE2EStatus.NotRun).ToString(),
                     ["stepsDefined"] = flow.Steps.Count.ToString(),
                 },
+                FlowVersion = flow.Version,
+                ReleaseEvidence = evidence,
+                ReleaseEvidenceNote = note,
+                DownstreamVerified = coversDownstream && status == CriticalE2EStatus.Passed,
+                DownstreamOutcome = coversDownstream
+                    ? status == CriticalE2EStatus.Passed ? "Verified by this flow" : "Not verified"
+                    : "Not verified by this flow" + (flow.Boundary?.Downstream is { Length: > 0 } downstream ? $" · {downstream}" : ""),
+                OutcomeText = CriticalE2EReleaseRules.OutcomeText(flow),
+                BuildSource = string.IsNullOrWhiteSpace(request.BuildId) ? null : request.BuildSource ?? "Manual",
+                Boundary = flow.Boundary,
+                TestDataAliases = CriticalE2ETestData.Aliases(flow) is { Count: > 0 } aliases ? [.. aliases] : null,
+                CompanionPageId = flow.Mode == CriticalE2EExecutionMode.CompanionBrowser ? boundPage : null,
             };
         }
 
@@ -59,6 +83,8 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
         if (flow.Steps.Count == 0) return Finish(CriticalE2EStatus.Blocked, [], "The flow has no steps.");
         if (!flow.HasFinalAssertion)
             return Finish(CriticalE2EStatus.Blocked, [], "The flow has no final business assertion, so a pass would mean nothing more than that the steps ran.");
+
+        if (request.TestDataProblem is { } dataProblem) return Finish(CriticalE2EStatus.Blocked, [], dataProblem);
 
         logger.LogInformation("Critical E2E run {RunId} started for flow {FlowId} ({Mode}, correlation {CorrelationId})",
             runId, flow.Id, flow.Mode, context.CorrelationId);
@@ -107,12 +133,79 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
         if (stopped is not null)
             return Finish(stopped.Status, results, $"{stopped.Description}: {stopped.SanitizedError ?? stopped.Status.ToString()}");
 
-        // Every step passed — but a pass is the final assertion's to give, not the step count's.
-        var final = results.Where(r => r.IsFinalAssertion).ToList();
-        if (final.Count == 0 || final.Any(r => r.Status != CriticalE2EStatus.Passed))
-            return Finish(CriticalE2EStatus.Blocked, results, "The final business assertion did not run, so the flow proves nothing.");
+        // Every step passed — but a pass is the final outcome's to give, not the step count's.
+        if (flow.FinalOutcome is { } outcome)
+        {
+            var outcomeResult = (await OutcomeAsync(outcome, flow, context, cancellationToken).ConfigureAwait(false)) with { Kind = "Outcome" };
+            results.Add(outcomeResult);
+            if (outcomeResult.Status != CriticalE2EStatus.Passed)
+                return Finish(outcomeResult.Status, results, $"{outcomeResult.Description}: {outcomeResult.SanitizedError ?? outcomeResult.Status.ToString()}");
+        }
+        else if (!CriticalE2EReleaseRules.HasConcreteOutcome(flow))
+            // A final-marked click proves that the click happened. The flow ran; nothing concrete was asserted.
+            return Finish(CriticalE2EStatus.Inconclusive, results, "Legacy assertion marker · concrete outcome required. Every action executed, but no assertion proved the business outcome.");
+        else
+        {
+            var final = results.Where(r => r.IsFinalAssertion).ToList();
+            if (final.Count == 0 || final.Any(r => r.Status != CriticalE2EStatus.Passed))
+                return Finish(CriticalE2EStatus.Blocked, results, "The final business assertion did not run, so the flow proves nothing.");
+        }
 
         logger.LogInformation("Critical E2E run {RunId} passed ({Steps} steps)", runId, results.Count);
         return Finish(CriticalE2EStatus.Passed, results, null);
+    }
+
+    /// <summary>Whether this run can count toward a release, and if not, why. Status does not matter here: a failed release run is evidence too.</summary>
+    private static (bool Evidence, string? Note) ReleaseEvidence(CriticalE2EFlowDefinition flow, CriticalE2ERunRequest request)
+    {
+        if (flow.Kind != CriticalE2EFlowKind.Critical) return (false, "Diagnostic flow · never release evidence");
+        if (string.IsNullOrWhiteSpace(request.BuildId)) return (false, "Diagnostic result · does not count as release evidence (no build identity)");
+        if (request.Readiness is not { ReleaseReady: true } readiness)
+            return (false, $"Diagnostic result · does not count as release evidence: {request.Readiness?.Blockers.FirstOrDefault()?.Text ?? "release readiness was not evaluated."}");
+        return (true, null);
+    }
+
+    /// <summary>The step the final outcome becomes. Browser outcomes are assertions through the same executor; a provider outcome needs a provider.</summary>
+    public static CriticalE2EStepDefinition? OutcomeStep(CriticalE2EFinalOutcome outcome)
+    {
+        var description = CriticalE2EReleaseRules.Describe(outcome);
+        CriticalE2EStepDefinition Assert(CompanionActionKind action, CompanionSelector? selector, CompanionTextMatch match = CompanionTextMatch.Equals) => new()
+        {
+            StepId = "final-outcome", Description = $"Final outcome: {description}", BrowserAction = action, Selector = selector,
+            Expected = outcome.Expected, Match = match, IsFinalAssertion = true,
+        };
+        return outcome.Kind switch
+        {
+            CriticalE2EOutcomeKind.UrlEquals => Assert(CompanionActionKind.AssertRoute, null),
+            CriticalE2EOutcomeKind.UrlContains => Assert(CompanionActionKind.AssertRoute, null, CompanionTextMatch.Contains),
+            CriticalE2EOutcomeKind.ElementVisible => Assert(CompanionActionKind.AssertVisible, outcome.Selector),
+            CriticalE2EOutcomeKind.ElementHidden => Assert(CompanionActionKind.AssertHidden, outcome.Selector),
+            CriticalE2EOutcomeKind.TextEquals => Assert(CompanionActionKind.AssertText, outcome.Selector),
+            CriticalE2EOutcomeKind.TextContains or CriticalE2EOutcomeKind.ListContains => Assert(CompanionActionKind.AssertText, outcome.Selector, CompanionTextMatch.Contains),
+            CriticalE2EOutcomeKind.ValueEquals => Assert(CompanionActionKind.AssertValue, outcome.Selector),
+            CriticalE2EOutcomeKind.SuccessMessageVisible => outcome.Selector is { } region
+                ? Assert(CompanionActionKind.AssertText, region, CompanionTextMatch.Contains)
+                : Assert(CompanionActionKind.AssertVisible, new CompanionSelector { Kind = CompanionSelectorKind.Text, Value = outcome.Expected ?? "" }),
+            _ => null,
+        };
+    }
+
+    private async Task<CriticalE2EStepResult> OutcomeAsync(CriticalE2EFinalOutcome outcome, CriticalE2EFlowDefinition flow, CriticalE2ERunContext context, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        var step = OutcomeStep(outcome);
+        if (step is null)
+            // No approved verification provider is registered for Critical E2E: the state is unverified, never assumed.
+            return CriticalE2EStepOutcome.From(new CriticalE2EStepDefinition { StepId = "final-outcome", Description = $"Final outcome: {CriticalE2EReleaseRules.Describe(outcome)}", IsFinalAssertion = true },
+                now, now, CriticalE2EStatus.Inconclusive, error: $"No verification provider {(outcome.ProviderId is { Length: > 0 } id ? $"'{id}' " : "")}is available, so the business state is not verified.");
+        if (flow.Mode != CriticalE2EExecutionMode.CompanionBrowser || executors.FirstOrDefault(e => e.CanExecute(step)) is not { } executor)
+            return CriticalE2EStepOutcome.From(step, now, now, CriticalE2EStatus.Blocked, error: "No executor can check this outcome.");
+        try { return await executor.ExecuteAsync(step, context, cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return CriticalE2EStepOutcome.From(step, now, time.GetUtcNow(), CriticalE2EStatus.Cancelled, error: "Cancelled."); }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Critical E2E final outcome of run {RunId} threw", context.RunId);
+            return CriticalE2EStepOutcome.From(step, now, time.GetUtcNow(), CriticalE2EStatus.Blocked, error: "The outcome could not be checked.");
+        }
     }
 }

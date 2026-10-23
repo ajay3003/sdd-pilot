@@ -24,6 +24,13 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
     [HttpPost("flows")]
     public IActionResult SaveFlow(CriticalE2EFlowDefinition flow) => Run(() => Ok(service.SaveFlow(flow)));
 
+    /// <summary>Registers a delivery module for release coverage (explicit; a flow's module label never does this).</summary>
+    [HttpPost("modules/register")]
+    public IActionResult RegisterModule(CriticalE2EModuleRequest request) => Run(() => Ok(service.RegisterModule(request)));
+
+    [HttpPost("modules/unregister")]
+    public IActionResult UnregisterModule(CriticalE2EModuleRequest request) => Run(() => Ok(service.UnregisterModule(request)));
+
     [HttpDelete("flows/{flowId}")]
     public IActionResult DeleteFlow(string flowId) => Run(() => service.DeleteFlow(flowId) ? Ok(new { deleted = true }) : NotFound());
 

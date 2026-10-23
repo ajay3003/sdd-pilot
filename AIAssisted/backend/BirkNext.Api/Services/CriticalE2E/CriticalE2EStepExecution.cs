@@ -24,6 +24,11 @@ public sealed record CriticalE2ERunContext
     public string? PageId { get; set; }
     /// <summary>Values produced by earlier steps, addressable as <c>${step:&lt;stepId&gt;}</c>.</summary>
     public Dictionary<string, string> Outputs { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Central Test Data values for this run, addressable as <c>${data:&lt;variable&gt;}</c>. Resolved by the backend at run start, held
+    /// only here: never logged, never returned, never written to a result.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Data { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -50,6 +55,8 @@ public static class CriticalE2EVariables
             var name = match.Groups[1].Value;
             if (name.StartsWith("step:", StringComparison.OrdinalIgnoreCase))
                 return context.Outputs.TryGetValue(name[5..], out var output) ? output : match.Value;
+            if (name.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                return context.Data.TryGetValue(name[5..], out var data) ? data : match.Value;
             return name.ToLowerInvariant() switch
             {
                 "runid" => context.RunId,
@@ -61,6 +68,13 @@ public static class CriticalE2EVariables
                 _ => match.Value,
             };
         });
+
+    /// <summary>The ${data:variable} names a text uses.</summary>
+    public static IEnumerable<string> DataPlaceholders(string? text) => text is null ? [] :
+        Token.Matches(text).Select(m => m.Groups[1].Value).Where(n => n.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && n.Length > 5).Select(n => n[5..]);
+
+    /// <summary>Does a step's text draw on central Test Data? Its observed values are then never kept in a result.</summary>
+    public static bool UsesData(params string?[] texts) => texts.Any(t => DataPlaceholders(t).Any());
 }
 
 /// <summary>Shared result shaping, so every executor reports Blocked and Failed the same way.</summary>
@@ -75,13 +89,15 @@ public static class CriticalE2EStepOutcome
             Description = string.IsNullOrWhiteSpace(step.Description) ? Describe(step) : step.Description,
             Status = status,
             IsFinalAssertion = step.IsFinalAssertion,
+            Kind = step.IsFinalAssertion && CriticalE2EAuthoring.IsAssertion(step.BrowserAction) ? "Outcome"
+                : CriticalE2EAuthoring.IsAssertion(step.BrowserAction) || step.IsIntegrationStep && step.Expect is not null ? "Assertion" : "Action",
             StartedAt = startedAt,
             CompletedAt = completedAt,
             DurationMs = (completedAt - startedAt).TotalMilliseconds,
             SafeSummary = summary,
             SanitizedError = error,
             ObservedRoute = route,
-            ObservedValue = value,
+            ObservedValue = CriticalE2EVariables.UsesData(step.Value, step.Expected) ? null : value,
             EvidenceReference = evidence,
             EvidenceFreshness = freshness,
         };

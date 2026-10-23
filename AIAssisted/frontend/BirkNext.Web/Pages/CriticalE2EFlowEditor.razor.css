@@ -84,3 +84,13 @@
     .e2e-step-head { justify-content: flex-start; }
     .e2e-editor-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Structured flow details, final outcome and release readiness. Status is always said in words. */
+.e2e-fieldset { display: grid; gap: .5rem; margin: .25rem 0; padding: .6rem .75rem .75rem; border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 8px; min-width: 0; }
+.e2e-fieldset legend { padding: 0 .3rem; font-size: .85rem; font-weight: 700; color: var(--clr-text-heading, #111); }
+.e2e-assets { display: grid; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.e2e-assets li { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.e2e-outcome { border-color: var(--clr-primary, #1d4ed8); }
+.e2e-editor-readiness { padding: .6rem .75rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; background: var(--clr-surface, #f9fafb); font-size: .85rem; }
+.e2e-editor-readiness p { margin: 0 0 .3rem; }
+.e2e-editor-readiness ul { margin: 0 0 .3rem; padding-left: 1.1rem; overflow-wrap: anywhere; }

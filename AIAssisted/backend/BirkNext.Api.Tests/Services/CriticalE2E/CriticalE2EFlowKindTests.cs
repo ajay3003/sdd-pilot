@@ -22,20 +22,21 @@ public sealed class CriticalE2EFlowKindTests
         {
             Id = id, Module = module, Name = id, Kind = kind, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required,
+            Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible,
                 Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "status" }, IsFinalAssertion = true }],
         };
 
     [Fact]
-    public void ADiagnosticOnlyModuleIsNotADeliveryModule_EvenWhenPreviouslyRecordedAsKnown()
+    public void ADiagnosticOnlyModuleIsNeverCovered_EvenWhenRegistered()
     {
         var flows = new[] { Flow("smoke-1", "SMOKE", CriticalE2EFlowKind.Diagnostic, required: false), Flow("smoke-2", "SMOKE", CriticalE2EFlowKind.Diagnostic) };
 
-        var modules = CriticalE2ECoverage.Modules(flows, [], knownModules: ["SMOKE"], buildId: null);
+        var modules = CriticalE2ECoverage.Modules(flows, [], registeredModules: ["SMOKE"], buildId: null);
         var release = CriticalE2ECoverage.Release(flows, [], ["SMOKE"], "env-1", null, null);
 
-        modules.Should().BeEmpty();
-        release.ModulesTotal.Should().Be(0);
+        modules.Single().Covered.Should().BeFalse("diagnostic flows never cover a module");
+        release.ModulesCovered.Should().Be(0);
         release.Disposition.Should().Be(CriticalE2EReleaseDisposition.NotConfigured, "a required diagnostic flow is not release coverage");
         release.Summary.Should().Be("No critical flow is currently marked as required for release.");
     }
@@ -45,7 +46,7 @@ public sealed class CriticalE2EFlowKindTests
     {
         var flows = new[] { Flow("m02-smoke", "M02", CriticalE2EFlowKind.Diagnostic), Flow("m02", "M02", required: false) };
 
-        var module = CriticalE2ECoverage.Modules(flows, [], [], null).Single();
+        var module = CriticalE2ECoverage.Modules(flows, [], ["M02"], null).Single();
 
         module.Module.Should().Be("M02");
         module.Covered.Should().BeFalse("only a required, enabled CRITICAL flow covers a module");

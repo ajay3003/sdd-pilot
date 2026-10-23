@@ -63,6 +63,7 @@
     <Compile Include="../../shared/RuntimeSecurityContracts.cs" Link="Models/RuntimeSecurityContracts.cs" />
     <Compile Include="../../shared/StandardsReferenceContracts.cs" Link="Models/StandardsReferenceContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
+    <Compile Include="../../shared/CriticalE2EEvidenceContracts.cs" Link="Models/CriticalE2EEvidenceContracts.cs" />
     <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
     <Compile Include="../../shared/IntegrationIdentityContracts.cs" Link="Models/IntegrationIdentityContracts.cs" />
     <Compile Include="../../shared/JourneySetupContracts.cs" Link="Models/JourneySetupContracts.cs" />

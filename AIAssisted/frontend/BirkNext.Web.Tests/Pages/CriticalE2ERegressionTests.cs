@@ -113,10 +113,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     {
         var page = Render(Overview(), out _);
         page.FindAll("[data-testid=e2e-flow-table] thead th").Select(th => th.TextContent.Trim())
-            .Should().Equal("Module", "Critical flow", "Steps", "Execution", "Required", "Last run", "Result", "Actions");
+            .Should().Equal("Module", "Critical flow", "Execution", "Steps", "Final outcome", "Test Data", "Boundary", "Required", "Last run", "Result", "Actions");
         var row = page.Find("[data-testid=e2e-flow-m02-plassering]");
         row.QuerySelector("[data-label=Execution]")!.TextContent.Should().Be("Attended browser");
-        row.QuerySelector("[data-label=Steps]")!.TextContent.Should().Be("5");
+        row.QuerySelector("[data-label=Steps]")!.TextContent.Should().MatchRegex(@"^\d+ actions? · \d+ assertions?$", "actions and assertions are counted separately");
     }
 
     // ── Page states ────────────────────────────────────────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         page.Find("[data-testid=e2e-no-flows] [data-testid=e2e-add-flow]").ClassList.Should().Contain("btn-primary");
         page.FindAll("[data-testid=e2e-show-diagnostic]").Should().BeEmpty("there is nothing to reveal");
         page.FindAll("[data-testid=e2e-run-browser]").Should().BeEmpty("no disabled run button with nothing behind it");
-        Text(page, "e2e-coverage").Should().Be("No delivery modules yet");
+        Text(page, "e2e-coverage").Should().Be("No registered delivery modules");
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         page.FindAll("[data-testid^=e2e-flow-smoke-]").Should().HaveCount(15);
         page.Find("[data-testid=e2e-kind-smoke-1]").TextContent.Should().Be("Smoke");
         page.Find("[data-testid=e2e-required-smoke-1]").TextContent.Should().Be("No");
-        Text(page, "e2e-coverage").Should().Be("No delivery modules yet", "smoke flows never add a delivery module");
+        Text(page, "e2e-coverage").Should().Be("No registered delivery modules", "smoke flows never add a delivery module");
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     public void RequiredIsItsOwnColumn()
     {
         var page = Render(Overview([Flow("req", required: true), Flow("opt", required: false)]), out _);
-        Text(page, "e2e-required-req").Should().Be("Required");
+        Text(page, "e2e-required-req").Should().StartWith("Required");
         Text(page, "e2e-required-opt").Should().Be("Optional");
     }
 
@@ -472,7 +472,7 @@ public sealed class CriticalE2ERegressionTests : BunitContext
 
     private static CriticalE2ERunResult RunOf(string id, string flowId, string? build, CriticalE2EStatus status = CriticalE2EStatus.Passed, bool required = true) => new()
     {
-        RunId = id, FlowId = flowId, FlowName = flowId, Module = "M02", Status = status, BuildId = build, RequiredForRelease = required,
+        RunId = id, FlowId = flowId, FlowName = flowId, Module = "M02", Status = status, BuildId = build, RequiredForRelease = required, FlowVersion = 1, ReleaseEvidence = build is not null,
         StartedAt = new DateTimeOffset(2026, 9, 24, 8, 0, 0, TimeSpan.Zero),
         StepResults = status == CriticalE2EStatus.Failed
             ? [new CriticalE2EStepResult { Status = CriticalE2EStatus.Failed, Description = "Assert visible Lagre", SanitizedError = "No element matched the selector." }]
