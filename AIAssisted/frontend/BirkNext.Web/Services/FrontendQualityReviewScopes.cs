@@ -127,6 +127,63 @@ public static class FrontendQualityReviewScopes
         };
     }
 
+    /// <summary>
+    /// The one place the default review scope is decided: Public + authenticated when both paths are usable, the single usable path
+    /// otherwise, and null when neither is. Callers never derive a default on their own.
+    /// </summary>
+    public static FrontendReviewAccessScope? Recommended(bool publicAvailable, bool authenticatedReady) => Combine(publicAvailable, authenticatedReady);
+
+    /// <summary>
+    /// Which paths a review could reach right now, asked through the same machinery that scopes a run: each single-path scope is
+    /// resolved with <see cref="Resolve"/> over the capability rows for that scope, so a path counts only when an active, available
+    /// engine's own access decision can use it. Authenticated readiness is therefore the testing context plus a consuming engine,
+    /// never "authentication is configured". <paramref name="capabilitiesFor"/> builds the rows for a given access (rows depend on
+    /// each engine's access decision). Pure: nothing is started, signed in or saved.
+    /// </summary>
+    public static FrontendQualityScopeRecommendation Recommend(
+        FrontendAnalysisContext context,
+        FrontendQualityTargetAccessContext access,
+        Func<FrontendAnalysisContext, FrontendQualityTargetAccessContext, IReadOnlyList<FrontendQualityCapabilityRow>> capabilitiesFor)
+    {
+        FrontendQualityReviewScope Probe(FrontendReviewAccessScope mode)
+        {
+            var modeAccess = FrontendQualityTargetAccess.ForScope(access, mode);
+            var modeContext = context.ForReviewScope(mode);
+            return Resolve(modeContext, modeAccess, capabilitiesFor(modeContext, modeAccess));
+        }
+        static bool Reaches(FrontendQualityReviewScope scope, FrontendQualityEngineAccessPath path) =>
+            scope.Engines.Any(e => e.Available && e.Path == path);
+
+        var publicAvailable = context.HasTargetUrl && Reaches(Probe(FrontendReviewAccessScope.PublicOnly), FrontendQualityEngineAccessPath.Public);
+        var authenticated = Probe(FrontendReviewAccessScope.AuthenticatedOnly);
+        var authenticatedReady = access.AuthenticationType != FrontendAuthenticationType.None
+            && authenticated.AuthenticatedAccess == FrontendQualityAccessPathState.Available
+            && Reaches(authenticated, FrontendQualityEngineAccessPath.Authenticated);
+        return new(context.ActiveProfile.Id, publicAvailable, authenticatedReady, Recommended(publicAvailable, authenticatedReady));
+    }
+
+    /// <summary>One sentence under the scope choices; null when there is nothing worth saying.</summary>
+    public static string? RecommendationSentence(FrontendQualityScopeRecommendation? recommendation) => recommendation?.Scope switch
+    {
+        FrontendReviewAccessScope.PublicAndAuthenticated => "Recommended because both public and authenticated review access are ready.",
+        null when recommendation is not null => NoRunnableScope,
+        _ => null,
+    };
+
+    public const string NoRunnableScope = "No runnable access scope available. Neither the public frontend nor an authenticated testing context can be reviewed right now.";
+    public const string AuthenticatedNowAvailable = "Authenticated access is now available.";
+    public const string ScopeNeedsReview = "Scope needs review: authenticated access is not ready.";
+
+    /// <summary>
+    /// What changed since an explicit scope was chosen, without changing it: authenticated access became available to a scope that
+    /// leaves it out, or a scope that includes it can no longer reach it. Null for a recommended (not chosen) scope.
+    /// </summary>
+    public static string? ExplicitScopeNotice(FrontendReviewAccessScope? saved, FrontendQualityScopeRecommendation? recommendation) =>
+        saved is not { } chosen || recommendation is null ? null
+        : chosen == FrontendReviewAccessScope.PublicOnly && recommendation.AuthenticatedReady ? AuthenticatedNowAvailable
+        : chosen != FrontendReviewAccessScope.PublicOnly && !recommendation.AuthenticatedReady ? ScopeNeedsReview
+        : null;
+
     /// <summary>Post-run: the paths the ASSESSED engines used. Echoing the configured scope would claim coverage that never ran.</summary>
     public static FrontendQualityExecutedScope Executed(FrontendQualityReviewReport report)
     {

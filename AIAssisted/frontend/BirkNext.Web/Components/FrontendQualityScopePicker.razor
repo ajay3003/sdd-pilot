@@ -4,18 +4,37 @@
 @implements IAsyncDisposable
 
 <button @ref="_trigger" type="button" class="btn-secondary" data-testid="fqr-change-scope" @onclick="Open">Change scope</button>
+@if (Notice is { } notice)
+{
+    <span class="scope-notice" role="status" data-testid="fqr-scope-notice">@notice</span>
+}
 <dialog @ref="_dialog" class="fqr-scope-dialog" aria-labelledby="fqr-scope-title">
     <h2 id="fqr-scope-title">Review scope</h2>
-    <fieldset disabled="@_saving">
+    <fieldset disabled="@_saving" aria-describedby="@(RecommendationText is null ? null : "fqr-scope-recommendation")">
         <legend>Choose the access to include in this review</legend>
         @foreach (var scope in Enum.GetValues<FrontendReviewAccessScope>())
         {
-            <label class="scope-choice">
+            <label class="scope-choice" data-testid="@($"fqr-scope-option-{scope}")">
                 <input type="radio" name="fqr-review-scope" value="@scope" checked="@(_draft == scope)" @onchange="() => _draft = scope" />
-                <span><strong>@FrontendQualityReviewScopes.Label(scope)</strong><small>@Description(scope)</small></span>
+                <span>
+                    <strong>@FrontendQualityReviewScopes.Label(scope)</strong>
+                    @if (IsRecommended(scope))
+                    {
+                        <span class="scope-recommended" data-testid="fqr-scope-recommended">Recommended</span>
+                    }
+                    <small>@Description(scope)</small>
+                </span>
             </label>
         }
     </fieldset>
+    @if (RecommendationText is { } recommendation)
+    {
+        <p id="fqr-scope-recommendation" class="scope-recommendation" data-testid="fqr-scope-recommendation">@recommendation</p>
+    }
+    @if (Notice is { } dialogNotice)
+    {
+        <p class="scope-recommendation" data-testid="fqr-scope-dialog-notice">@dialogNotice</p>
+    }
     <dl>
         <dt>Authentication configuration</dt><dd>@Configuration</dd>
         <dt>Authentication testing context</dt><dd>@TestingContext</dd>
@@ -25,30 +44,42 @@
     @if (_error is not null) { <p role="alert">@_error</p> }
     <div class="scope-actions">
         <button type="button" class="btn-secondary" disabled="@_saving" @onclick="Close">Cancel</button>
-        <button type="button" class="btn-primary" disabled="@_saving" @onclick="Apply">Apply</button>
+        <button type="button" class="btn-primary" disabled="@(_saving || _draft is null)" @onclick="Apply">Apply</button>
     </div>
 </dialog>
 
 @code {
-    [Parameter] public FrontendReviewAccessScope Selected { get; set; }
+    /// <summary>The scope the review uses now; null when nothing was chosen and nothing can run, so no option is pre-selected.</summary>
+    [Parameter] public FrontendReviewAccessScope? Selected { get; set; }
     [Parameter] public EventCallback<FrontendReviewAccessScope> SelectedChanged { get; set; }
+    /// <summary>The capability-aware recommendation, when known. Marks the recommended option; never selects over an explicit choice.</summary>
+    [Parameter] public FrontendQualityScopeRecommendation? Recommendation { get; set; }
+    /// <summary>A change since an explicit scope was chosen (authenticated access became available, or is no longer ready).</summary>
+    [Parameter] public string? Notice { get; set; }
     [Parameter] public string TestingContext { get; set; } = "Not ready";
     [Parameter] public string Provider { get; set; } = "Not configured";
     [Parameter] public string Configuration { get; set; } = "Not assessed";
     [Parameter] public string Verification { get; set; } = "Not assessed";
-    private FrontendReviewAccessScope _draft;
+    private FrontendReviewAccessScope? _draft;
     private ElementReference _dialog, _trigger;
     private IJSObjectReference? _module;
     private bool _saving;
     private string? _error;
+
+    // Only the broadest scope earns the badge: marking a single path "Recommended" would make the other valid choices look wrong.
+    private bool IsRecommended(FrontendReviewAccessScope scope) =>
+        scope == FrontendReviewAccessScope.PublicAndAuthenticated && Recommendation?.Scope == scope;
+    private string? RecommendationText => FrontendQualityReviewScopes.RecommendationSentence(Recommendation);
+
     private static string Description(FrontendReviewAccessScope scope) => scope switch
     {
-        FrontendReviewAccessScope.PublicOnly => "Test only publicly accessible pages and requests. Authentication is not used.",
-        FrontendReviewAccessScope.AuthenticatedOnly => "Run the review only with the configured authenticated testing context.",
-        _ => "Review both public and authenticated application surfaces."
+        FrontendReviewAccessScope.PublicOnly => "Review publicly accessible pages and requests without using authentication.",
+        FrontendReviewAccessScope.AuthenticatedOnly => "Review authenticated application surfaces using the configured testing context.",
+        _ => "Review both public and authenticated application surfaces for the broadest available coverage."
     };
     private async Task Open()
     {
+        // The current scope, never re-defaulted because the dialog opened.
         _draft = Selected;
         _error = null;
         _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/frontendReviewScope.js");
@@ -60,8 +91,9 @@
     }
     private async Task Apply()
     {
+        if (_draft is not { } draft) return;
         _saving = true;
-        try { await SelectedChanged.InvokeAsync(_draft); await Close(); }
+        try { await SelectedChanged.InvokeAsync(draft); await Close(); }
         catch { _error = "The review scope could not be saved. Try again."; }
         finally { _saving = false; }
     }

@@ -40,6 +40,13 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         };
     }
 
+    /// <summary>A scope the person chose for this Target Environment (saved on the profile), as opposed to the recommended default.</summary>
+    private static FrontendAnalysisContext Explicit(FrontendAnalysisContext context, FrontendReviewAccessScope scope)
+    {
+        context.ActiveProfile.FrontendReviewScope = scope;
+        return context;
+    }
+
     /// <summary>Only the two HTTP engines enabled: no backend status probe, Run enabled immediately.</summary>
     private static FrontendAnalysisContext HttpOnlyContext(bool requiresAuth = false, AuthenticatedTestingMethod method = AuthenticatedTestingMethod.ManagedEdgeCdp, string? url = Url) =>
         Context(t =>
@@ -265,7 +272,8 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
     [Fact]
     public void Coverage_ProtectedTargetWithoutSession_RendersNotAvailableWithNextStep()
     {
-        Register(HttpOnlyContext(requiresAuth: true));
+        // An explicitly chosen Public + authenticated scope keeps the unavailable authenticated path visible with its next step.
+        Register(Explicit(HttpOnlyContext(requiresAuth: true), FrontendReviewAccessScope.PublicAndAuthenticated));
 
         var page = Render<FrontendQualityReview>();
 
@@ -364,10 +372,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.FindAll("[data-testid=fqr-auth-steps] li").Should().HaveCount(3);
         page.Find("[data-testid=fqr-auth-evidence]").TextContent.Should().Contain("Browser session").And.Contain("Authenticated DOM").And.Contain("Not connected");
         page.Find("[data-testid=fqr-auth-sign-in]").TextContent.Should().Be("Sign in for review");
-        // The requested scope stays visible even when one path is unavailable.
-        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public + authenticated");
-        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Requested but unavailable");
-        page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready with limitations");
+        // Nothing chosen and no session: the recommended scope is Public only (authenticated access is not ready), while the
+        // sign-in route that would make it ready stays offered. The scope is never widened before access is ready.
+        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public only");
+        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Not included in this review");
+        page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready");
         // Raw capability rows are behind a collapsed disclosure.
         page.Find("[data-testid=fqr-auth-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
     }
@@ -495,7 +504,8 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
     [Fact]
     public void BothScopesWithoutSession_PublicEnginesStayReady_AuthenticatedAccessRemainsUnavailable()
     {
-        Register(Context(requiresAuth: true), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
+        Register(Explicit(Context(requiresAuth: true), FrontendReviewAccessScope.PublicAndAuthenticated),
+            [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
 
         var page = Render<FrontendQualityReview>();
 

@@ -59,7 +59,8 @@
                         <ScopeControl>
                             @if (_context is not null)
                             {
-                                <FrontendQualityScopePicker Selected="@(_context.ReviewScope ?? FrontendReviewAccessScope.PublicOnly)"
+                                <FrontendQualityScopePicker Selected="@PickerSelection" Recommendation="CurrentRecommendation"
+                                    Notice="@FrontendQualityReviewScopes.ExplicitScopeNotice(_context.ActiveProfile.FrontendReviewScope, CurrentRecommendation)"
                                     SelectedChanged="ApplyReviewScope" TestingContext="@ScopeTestingContext" Configuration="@(_context.AuthenticationConfiguration ?? "Not assessed")"
                                     Provider="@FrontendQualityReviewScopes.ConfiguredProviderLabel(_context.AuthenticationType)" Verification="@ScopeVerification" />
                             }
@@ -954,6 +955,69 @@
     private string ScopeVerification => FrontendQualityReviewScopes.VerificationLabel(_access);
     private string ScopeTestingContext => FrontendQualityReviewScopes.TestingContextLabel(_access);
 
+    /// <summary>The latest recommendation, for the profile it was computed for. Never saved: it only fills in when nothing was chosen.</summary>
+    private FrontendQualityScopeRecommendation? _recommendation;
+
+    private FrontendQualityScopeRecommendation? CurrentRecommendation =>
+        _recommendation is { } r && _context is not null && r.ProfileId == _context.ActiveProfile.Id ? r : null;
+
+    /// <summary>
+    /// The scope this review uses: the person's explicit choice for this Target Environment, else the capability-aware
+    /// recommendation, else (before it is known, or when nothing can run) the legacy derivation from the sign-in rule.
+    /// </summary>
+    /// <summary>The dialog's selection: the scope in use, or none when nothing was chosen and no scope can run.</summary>
+    private FrontendReviewAccessScope? PickerSelection =>
+        _context?.ActiveProfile.FrontendReviewScope is null && CurrentRecommendation is { Scope: null } ? null : _context?.ReviewScope;
+
+    /// <summary>
+    /// Whether the way to make authenticated access ready (sign in for review / proxy steps) is offered although the review scope
+    /// itself is public: nothing was chosen and the Target Environment uses sign-in. Without it a recommended Public only scope would
+    /// hide the only route to the authenticated readiness that would recommend Public + authenticated. It never widens the scope.
+    /// </summary>
+    private bool OfferAuthenticatedSetup =>
+        _context is { ReviewScope: FrontendReviewAccessScope.PublicOnly } c && c.ActiveProfile.FrontendReviewScope is null
+        && (c.ActiveProfile.Authentication.RequiresAuthentication || c.AuthenticationType != FrontendAuthenticationType.None);
+
+    private FrontendAnalysisContext? AuthenticatedReviewContext =>
+        OfferAuthenticatedSetup ? _context!.ForReviewScope(FrontendReviewAccessScope.AuthenticatedOnly) : _context;
+
+    private FrontendQualityTargetAccessContext? AuthenticatedReviewAccess =>
+        OfferAuthenticatedSetup && _access is { } access ? FrontendQualityTargetAccess.ForScope(access, FrontendReviewAccessScope.AuthenticatedOnly) : _access;
+
+    private FrontendReviewAccessScope SelectedScope(FrontendAnalysisContext context) =>
+        context.ActiveProfile.FrontendReviewScope
+        ?? (_recommendation is { Scope: { } recommended } r && r.ProfileId == context.ActiveProfile.Id ? recommended
+            : FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication));
+
+    private IReadOnlyList<FrontendQualityCapabilityRow> CapabilityRows(FrontendAnalysisContext context, FrontendQualityTargetAccessContext? access) =>
+        _activeEngines is null ? [] : FrontendQualityLandingPresentation.Capabilities(context, _activeEngines, _engineStatus, _engineStatusPending,
+            _readinessPending, access, CompanionState, RecordedEvidence);
+
+    /// <summary>
+    /// Re-evaluates the recommendation from the current access and engine status, and applies it when no scope was chosen. An explicit
+    /// choice is never replaced. When the applied scope changes, access is re-resolved for it and the engine status is fetched again
+    /// for its authentication mode, so the execution snapshot matches the scope that will run: in the background on the landing page
+    /// (<paramref name="forRun"/> false), awaited (Layer 1–2 only) when a run is starting. Returns whether the applied scope changed.
+    /// </summary>
+    private async Task<bool> ApplyRecommendedScopeAsync(bool forRun = false)
+    {
+        if (_context is null || _context.ActiveTargetError is not null || _activeEngines is null || _engineStatusPending)
+            return false;
+        // Without a Frontend URL there is no resolved access; configuration alone still answers "nothing can run".
+        _recommendation = FrontendQualityReviewScopes.Recommend(_context, _access ?? FrontendQualityTargetAccess.FromContext(_context), CapabilityRows);
+        var scope = SelectedScope(_context);
+        if (_context.ReviewScope == scope) return false;
+        _context = _context.ForReviewScope(scope);
+        await ResolveTargetAccess();
+        if (!forRun) StartEngineStatusFetch();
+        else if (ActiveBackendEngineIds.Count > 0)
+        {
+            try { await FetchEngineStatus(withReadiness: false); }
+            catch { _engineStatus = null; }
+        }
+        return true;
+    }
+
     private async Task ApplyReviewScope(FrontendReviewAccessScope scope)
     {
         if (_context is null || ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) is not IFrontendAnalysisSettingsService settings)
@@ -1026,10 +1090,11 @@
             FrontendQualityLandingPresentation.Readiness(_context, _activeEngines, capabilities, _engineStatusPending), scope);
         var target = _context is null
             ? new FrontendQualityTargetSummaryModel("Loading…", "—", "—", "—", "—", "Loading", false)
-            : FrontendQualityLandingPresentation.TargetSummary(_context, scope);
+            : FrontendQualityLandingPresentation.TargetSummary(_context, scope) is var summary && PickerSelection is null
+                ? summary with { ReviewScope = "No runnable access scope available" } : summary;
         var technical = _context is null ? [] : FrontendQualityLandingPresentation.TechnicalTargetFields(_context, scope);
         var auth = _context is null || _context.ActiveTargetError is not null ? null
-            : FrontendQualityLandingPresentation.AuthenticatedReview(_context, _access, _caps, _authSession);
+            : FrontendQualityLandingPresentation.AuthenticatedReview(AuthenticatedReviewContext, AuthenticatedReviewAccess, _caps, _authSession);
         return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities, SelectedWcagProfile), technical, auth, scope);
     }
 
@@ -1131,7 +1196,7 @@
     {
         _companionRuntime = ServiceProvider.GetService(typeof(BrowserCompanionRuntime)) as BrowserCompanionRuntime;
         _context = await ContextFactory.GetActiveContextAsync();
-        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
+        _context = _context.ForReviewScope(SelectedScope(_context));
         _report  = RuntimeReviews.QualityReview.Report;
         ResolveActiveEngines();
         // Optional like the Companion runtime: a host without the history store simply has no History entries.
@@ -1142,6 +1207,7 @@
         // Expensive Layer 3 readiness is fetched for the ACTIVE backend engines only and never blocks the first render.
         // With no active backend engine (e.g. only HTTP Security + HTTP Performance) nothing is fetched at all.
         StartEngineStatusFetch();
+        if (!_engineStatusPending) await ApplyRecommendedScopeAsync();
         if (_report is null && _companionRuntime is not null && _context.ActiveTargetError is null)
         {
             // Read the existing owner's status and captured history even when FQR is opened directly.
@@ -1193,8 +1259,10 @@
         finally
         {
             _engineStatusPending = false;
-            await InvokeAsync(StateHasChanged);
         }
+        // The recommendation needs the engine status; a changed scope restarts this fetch for its authentication mode.
+        if (!_running && await ApplyRecommendedScopeAsync()) { await InvokeAsync(StateHasChanged); return; }
+        await InvokeAsync(StateHasChanged);
         if (_engineStatus is null) return;
         _ = FetchReadinessAndRenderAsync(); // informational; Run does not wait for it
     }
@@ -1213,8 +1281,10 @@
         finally
         {
             _readinessPending = false;
-            await InvokeAsync(StateHasChanged);
         }
+        // Runtime readiness can narrow what is reachable; an unchosen scope follows it, a chosen one only gets a notice.
+        if (!_running) await ApplyRecommendedScopeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ResolveAuthenticatedCapabilities()
@@ -1327,7 +1397,7 @@
         var previousContext = _context;
         _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
-        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
+        _context = _context.ForReviewScope(SelectedScope(_context));
         if (_context.ActiveTargetError is not null || !_context.HasTargetUrl)
         {
             // The run attempt itself is reported, not only the landing configuration state: the
@@ -1356,6 +1426,8 @@
         if (_engineStatusTask is { } pendingStatus)
             await pendingStatus; // Layer 1–3 status for the active backend engines feeds the execution snapshot.
         await ResolveAuthenticatedCapabilities();
+        // Capabilities are checked again now, not taken from the landing page: an unchosen scope is recommended from this state.
+        await ApplyRecommendedScopeAsync(forRun: true);
         _secError    = null;
         _perfError   = null;
         _report      = null;
@@ -1604,10 +1676,11 @@
         if (_running) return;
         _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
-        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
+        _context = _context.ForReviewScope(SelectedScope(_context));
         ResolveActiveEngines();
         await ResolveAuthenticatedCapabilities();
         StartEngineStatusFetch();
+        if (!_engineStatusPending) await ApplyRecommendedScopeAsync();
     }
 
     private void SetCategoryFilter(FrontendQualityCategory cat)

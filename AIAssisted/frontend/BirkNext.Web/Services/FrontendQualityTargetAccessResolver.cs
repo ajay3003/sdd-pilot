@@ -87,8 +87,6 @@ public static class FrontendQualityTargetAccess
         var method = ReviewAuthenticationIdentity.ForContext(context).Method;
         var apiStatus = capabilities?.ContextStatus ?? AuthenticatedApiContextStatus.NotApplicable;
         var apiAvailable = capabilities?.AuthenticatedApi == true;
-        var enterpriseBlocked = managedEdgeState == ManagedEdgeState.TargetTabNotInspectable;
-        var domAvailable = context.RequiresAuthentication && method == AuthenticatedTestingMethod.ManagedEdgeCdp && authenticatedBrowserSessionAvailable;
         // Prefer the factory-resolved status (computed against the saved profile); fall back to the profile copy for contexts built by hand.
         var manual = context.ManualVerificationStatus
             ?? profile.ManualVerification?.StatusFor(profile)
@@ -96,46 +94,68 @@ public static class FrontendQualityTargetAccess
                 ? ManualAuthenticationVerificationStatus.Required
                 : ManualAuthenticationVerificationStatus.NotRequired);
 
-        var mode = !context.RequiresAuthentication ? FrontendQualityTargetAccessMode.PublicDirect
-            : method switch
-            {
-                AuthenticatedTestingMethod.ManualOnly => FrontendQualityTargetAccessMode.ManualOnly,
-                AuthenticatedTestingMethod.LocalHttpsProxy => apiAvailable ? FrontendQualityTargetAccessMode.LocalHttpsProxy : FrontendQualityTargetAccessMode.AuthRequiredContextMissing,
-                _ => domAvailable ? FrontendQualityTargetAccessMode.ManagedEdgeCdp
-                    : enterpriseBlocked ? FrontendQualityTargetAccessMode.EnterpriseBlocked
-                    : FrontendQualityTargetAccessMode.AuthRequiredContextMissing,
-            };
-
-        // Scope, not a fact about the application: a public review of an Entra ID application is still a public review.
-        var reason = !context.RequiresAuthentication ? "Review scope is public only; engines access the public frontend directly."
-            : method switch
-            {
-                AuthenticatedTestingMethod.ManualOnly => ManualOnlyReason,
-                AuthenticatedTestingMethod.LocalHttpsProxy => capabilities?.Reason is { Length: > 0 } r ? r
-                    : apiStatus == AuthenticatedApiContextStatus.Expired ? ProxyContextExpiredReason : ProxyContextMissingReason,
-                _ => domAvailable ? "Authenticated browser session available for DOM/runtime engines."
-                    : enterpriseBlocked ? EnterpriseBlockedReason
-                    : SessionRequiredReason,
-            };
-
-        return new FrontendQualityTargetAccessContext
+        var facts = new FrontendQualityTargetAccessContext
         {
-            ReviewScope = context.ReviewScope,
             AuthenticationConfiguration = context.AuthenticationConfiguration,
             EnvironmentName = profile.Name,
             EnvironmentType = profile.EnvironmentType.ToString(),
             TargetUrl = context.TargetUrl,
-            RequiresAuthentication = context.RequiresAuthentication,
             AuthenticationType = context.AuthenticationType,
             Method = method,
-            Mode = mode,
             ApiContextStatus = apiStatus,
             AuthenticatedApiAvailable = apiAvailable,
             ProxyState = proxyState,
             AuthenticatedBrowserSessionAvailable = authenticatedBrowserSessionAvailable,
-            AuthenticatedBrowserDomAvailable = domAvailable,
             ManagedEdgeState = managedEdgeState,
             ManualVerificationStatus = manual,
+        };
+        return WithScope(facts, context.ReviewScope, context.RequiresAuthentication, capabilities?.Reason);
+    }
+
+    /// <summary>
+    /// The same access re-derived for another review scope. The runtime facts (session, proxy context, Managed Edge state) do not
+    /// depend on scope; only what the scope lets engines use does, and that derivation is shared with <see cref="Build"/>. Used to
+    /// ask "what could a public-only / authenticated-only review reach right now" without re-resolving or changing anything.
+    /// </summary>
+    public static FrontendQualityTargetAccessContext ForScope(FrontendQualityTargetAccessContext access, FrontendReviewAccessScope scope) =>
+        access.ReviewScope == scope ? access
+            : WithScope(access, scope, scope != FrontendReviewAccessScope.PublicOnly,
+                access.RequiresAuthentication && access.Method == AuthenticatedTestingMethod.LocalHttpsProxy ? access.Reason : null);
+
+    private static FrontendQualityTargetAccessContext WithScope(
+        FrontendQualityTargetAccessContext facts, FrontendReviewAccessScope? scope, bool requiresAuthentication, string? proxyReason)
+    {
+        var method = facts.Method;
+        var domAvailable = requiresAuthentication && method == AuthenticatedTestingMethod.ManagedEdgeCdp && facts.AuthenticatedBrowserSessionAvailable;
+
+        var mode = !requiresAuthentication ? FrontendQualityTargetAccessMode.PublicDirect
+            : method switch
+            {
+                AuthenticatedTestingMethod.ManualOnly => FrontendQualityTargetAccessMode.ManualOnly,
+                AuthenticatedTestingMethod.LocalHttpsProxy => facts.AuthenticatedApiAvailable ? FrontendQualityTargetAccessMode.LocalHttpsProxy : FrontendQualityTargetAccessMode.AuthRequiredContextMissing,
+                _ => domAvailable ? FrontendQualityTargetAccessMode.ManagedEdgeCdp
+                    : facts.EnterpriseBlocked ? FrontendQualityTargetAccessMode.EnterpriseBlocked
+                    : FrontendQualityTargetAccessMode.AuthRequiredContextMissing,
+            };
+
+        // Scope, not a fact about the application: a public review of an Entra ID application is still a public review.
+        var reason = !requiresAuthentication ? "Review scope is public only; engines access the public frontend directly."
+            : method switch
+            {
+                AuthenticatedTestingMethod.ManualOnly => ManualOnlyReason,
+                AuthenticatedTestingMethod.LocalHttpsProxy => proxyReason is { Length: > 0 } r ? r
+                    : facts.ApiContextStatus == AuthenticatedApiContextStatus.Expired ? ProxyContextExpiredReason : ProxyContextMissingReason,
+                _ => domAvailable ? "Authenticated browser session available for DOM/runtime engines."
+                    : facts.EnterpriseBlocked ? EnterpriseBlockedReason
+                    : SessionRequiredReason,
+            };
+
+        return facts with
+        {
+            ReviewScope = scope,
+            RequiresAuthentication = requiresAuthentication,
+            Mode = mode,
+            AuthenticatedBrowserDomAvailable = domAvailable,
             Reason = reason,
         };
     }

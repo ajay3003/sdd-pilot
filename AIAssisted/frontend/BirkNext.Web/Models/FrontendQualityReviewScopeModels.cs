@@ -66,6 +66,19 @@ public sealed record FrontendQualityReviewScope(
     public bool CompanionOnly => Effective is null && Engines.Any(e => e.Available && e.Path == FrontendQualityEngineAccessPath.CompanionEvidence);
 }
 
+/// <summary>
+/// The scope a review starts from when the person has not chosen one for this Target Environment: the widest scope the active
+/// engines can actually reach right now. A recommendation, never a policy — an explicit choice always wins and is never reset by it.
+/// </summary>
+public sealed record FrontendQualityScopeRecommendation(
+    string ProfileId,
+    /// <summary>At least one active, available engine can review the public frontend.</summary>
+    bool PublicAvailable,
+    /// <summary>Authentication is configured, the testing context is ready, and at least one active, available engine can use it.</summary>
+    bool AuthenticatedReady,
+    /// <summary>The recommended scope; null when neither path can run, so no runnable scope is pretended.</summary>
+    FrontendReviewAccessScope? Scope);
+
 /// <summary>One active engine's access path for this review, and whether it can use it right now.</summary>
 public sealed record FrontendQualityEngineScopeEntry(
     FrontendQualityEngineId EngineId,
