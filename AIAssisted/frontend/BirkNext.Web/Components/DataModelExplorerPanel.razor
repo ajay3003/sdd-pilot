@@ -54,29 +54,32 @@ else
         </div>
         <div class="dme-header-right">
             <div class="dme-tab-bar" role="tablist">
+                <button class="dme-tab @(_activeTab == "model" ? "is-active" : "")"
+                        role="tab" aria-selected="@(_activeTab == "model" ? "true" : "false")" data-testid="dme-tab-model"
+                        @onclick='() => SetTab("model")'>Model</button>
                 <button class="dme-tab @(_activeTab == "overview" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "overview")"
+                        role="tab" aria-selected="@(_activeTab == "overview" ? "true" : "false")"
                         @onclick='() => SetTab("overview")'>Overview</button>
                 <button class="dme-tab @(_activeTab == "design" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "design")"
+                        role="tab" aria-selected="@(_activeTab == "design" ? "true" : "false")"
                         @onclick='() => SetTab("design")'>
                     Data Structures @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
                 </button>
                 <button class="dme-tab @(_activeTab == "relationships" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "relationships")"
+                        role="tab" aria-selected="@(_activeTab == "relationships" ? "true" : "false")"
                         @onclick='() => SetTab("relationships")'>
                     Relationships @if (_document.RelationshipCount > 0) { <span class="dme-tab-count">@_document.RelationshipCount</span> }
                 </button>
                 <button class="dme-tab @(_activeTab == "indexes" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "indexes")"
+                        role="tab" aria-selected="@(_activeTab == "indexes" ? "true" : "false")"
                         @onclick='() => SetTab("indexes")'>
                     Indexes &amp; Constraints @if (_document.IndexCount > 0) { <span class="dme-tab-count">@_document.IndexCount</span> }
                 </button>
                 <button class="dme-tab @(_activeTab == "traceability" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "traceability")"
+                        role="tab" aria-selected="@(_activeTab == "traceability" ? "true" : "false")"
                         @onclick='() => SetTab("traceability")'>Traceability</button>
                 <button class="dme-tab @(_activeTab == "findings" ? "is-active" : "")"
-                        role="tab" aria-selected="@(_activeTab == "findings")"
+                        role="tab" aria-selected="@(_activeTab == "findings" ? "true" : "false")"
                         @onclick='() => SetTab("findings")'>
                     Findings @if (_document.FindingCount > 0) { <span class="dme-tab-count @(_document.ErrorCount > 0 ? "dme-tab-count-warn" : "")">@_document.FindingCount</span> }
                 </button>
@@ -103,6 +106,12 @@ else
 
     @* ── Tab body ──────────────────────────────────────────────────────────────── *@
     <div class="dme-tab-body">
+
+        @* ── Model (primary): the normalized model — structures, fields, relationships, enums, provenance. Parser structure is only in technical details. *@
+        @if (_activeTab == "model")
+        {
+            @ModelView(_document)
+        }
 
         @* ── Overview ────────────────────────────────────────────────────────── *@
         @if (_activeTab == "overview")
@@ -576,7 +585,7 @@ else
     </div>
 }
 
-<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" />
+<MarkdownSourceNotesPanel Blocks="@(_document?.UnmappedSourceBlocks)" Lazy="true" Summary="Parsed document structure — technical details" />
 
 @code {
     [Parameter] public string              DataModelText { get; set; } = string.Empty;
@@ -584,6 +593,9 @@ else
     [Parameter] public DataModelSemanticModel? SemanticModel { get; set; }
     [Parameter] public string?             InitialView   { get; set; }
     [Parameter] public EventCallback<string> OnTextChanged { get; set; }
+    /// <summary>The selected artifact's path and revision (provenance of every fact); a path under autodoc/ or generated-docs/ is derived documentation.</summary>
+    [Parameter] public string?             ArtifactPath  { get; set; }
+    [Parameter] public int?                ArtifactRevision { get; set; }
 
     private DataModelDocument? _document;
     private string             _localText   = string.Empty;
@@ -647,8 +659,9 @@ else
     {
         if (ParsedDataModel is not null)
         {
+            if (!ReferenceEquals(_document, ParsedDataModel)) _selectedEntity = null;
             _document = ParsedDataModel;
-            _activeTab = InitialView ?? "overview";
+            _activeTab = InitialView ?? "model";
             _searchQuery = string.Empty;
         }
         else if (!string.IsNullOrWhiteSpace(DataModelText) && _document is null)
@@ -673,7 +686,8 @@ else
     {
         if (string.IsNullOrWhiteSpace(_localText)) return;
         _document    = AnalysisService.Parse(_localText);
-        _activeTab   = InitialView ?? "overview";
+        _activeTab   = InitialView ?? "model";
+        _selectedEntity = null;
         _searchQuery = string.Empty;
     }
 
@@ -683,6 +697,199 @@ else
         _localText = string.Empty;
         _importRef?.Reset();
     }
+
+    // ── Model view ───────────────────────────────────────────────────────────────
+
+    private string? _selectedEntity;
+    private string _modelQuery = string.Empty, _modelFilter = "all";
+
+    private bool GeneratedOrigin => ArtifactPath is { } path && (path.Contains("/autodoc/", StringComparison.OrdinalIgnoreCase) || path.Contains("generated-docs/", StringComparison.OrdinalIgnoreCase));
+    private string OriginLabel => GeneratedOrigin ? "Generated documentation — derived, never the canonical model" : "Authored document";
+
+    private IEnumerable<DataEntity> ModelEntities(DataModelDocument document) => document.Entities
+        .Where(e => _modelFilter switch
+        {
+            "tables" => e.IsTable || e.Kind == DataStructureKind.Table,
+            "records" => e.Kind == DataStructureKind.Record,
+            "events" => e.Kind is DataStructureKind.Event or DataStructureKind.Message,
+            "relationships" => RelationshipsOf(document, e.Name).Any(),
+            _ => true,
+        })
+        .Where(e => _modelQuery.Trim() is not { Length: > 0 } q || e.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || e.Columns.Any(c => c.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || (c.Type ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<DataRelationship> RelationshipsOf(DataModelDocument document, string entity) =>
+        document.Relationships.Where(r => string.Equals(r.SourceEntity, entity, StringComparison.OrdinalIgnoreCase) || string.Equals(r.TargetEntity, entity, StringComparison.OrdinalIgnoreCase));
+
+    private static string Required(DataColumn c) => c.Nullable switch { false => "Required", true => "Optional", _ => "Unknown" };
+    private static string NullableText(DataColumn c) => c.Nullable switch { true => "Yes", false => "No", _ => "Unknown" };
+
+    private static string Cardinality(DataColumn c) => c.Type is not { Length: > 0 } t ? "Unknown"
+        : t.EndsWith("[]", StringComparison.Ordinal) || System.Text.RegularExpressions.Regex.IsMatch(t, @"^(I?List|IReadOnlyList|IEnumerable|ICollection|IReadOnlyCollection|HashSet|Collection)<", System.Text.RegularExpressions.RegexOptions.CultureInvariant)
+            || t.Contains("array", StringComparison.OrdinalIgnoreCase) ? "Many" : "One";
+
+    private string NormalizedType(DataColumn c)
+    {
+        if (c.Type is not { Length: > 0 } raw) return "Unknown";
+        var t = raw.Trim('`').TrimEnd('?').ToLowerInvariant();
+        if (Cardinality(c) == "Many") return "collection";
+        if (_document?.Enums.Any(e => string.Equals(e.Name, raw.Trim('`').TrimEnd('?'), StringComparison.OrdinalIgnoreCase)) == true) return "enum";
+        return t switch
+        {
+            "string" or "text" or "varchar" or "nvarchar" or "char" or "uuid" or "guid" or "uniqueidentifier" => t is "uuid" or "guid" or "uniqueidentifier" ? "identifier" : "string",
+            "int" or "integer" or "long" or "bigint" or "smallint" or "short" or "int32" or "int64" or "serial" => "integer",
+            "decimal" or "numeric" or "double" or "float" or "money" or "real" => "decimal",
+            "bool" or "boolean" or "bit" => "boolean",
+            "date" or "dateonly" => "date",
+            "datetime" or "datetimeoffset" or "timestamp" or "timestamptz" or "datetime2" => "datetime",
+            _ when t.StartsWith("varchar(", StringComparison.Ordinal) || t.StartsWith("nvarchar(", StringComparison.Ordinal) || t.StartsWith("char(", StringComparison.Ordinal) => "string",
+            _ when t.StartsWith("decimal(", StringComparison.Ordinal) || t.StartsWith("numeric(", StringComparison.Ordinal) => "decimal",
+            _ => "object",
+        };
+    }
+
+    private static string Key(DataColumn c) => c.IsPrimaryKey ? c.KeyInferred ? "Primary key (inferred from name)" : "Primary key"
+        : c.IsForeignKey ? c.KeyInferred ? "Foreign key (inferred from name)" : "Foreign key"
+        : c.Name.EndsWith("Id", StringComparison.Ordinal) && c.Name.Length > 2 ? "Identifier (inferred from name)" : "—";
+
+    private string Constraints(DataEntity entity, DataColumn c)
+    {
+        var items = new List<string>();
+        if (c.IsUnique) items.Add("Unique");
+        items.AddRange((_document?.Constraints ?? []).Where(k => string.Equals(k.EntityName, entity.Name, StringComparison.OrdinalIgnoreCase)
+            && (k.Definition ?? "").Contains(c.Name, StringComparison.OrdinalIgnoreCase)).Select(k => k.ConstraintType));
+        return items.Count == 0 ? "—" : string.Join(", ", items.Distinct());
+    }
+
+    private static string Lines(ProjectionProvenance? provenance) => provenance?.Sources.FirstOrDefault() is { } s
+        ? s.StartLine == s.EndLine ? $"Line {s.StartLine}" : $"Lines {s.StartLine}–{s.EndLine}" : "—";
+
+    private RenderFragment ModelView(DataModelDocument document) => __builder =>
+    {
+        var unresolved = document.EvidenceGaps.Count + document.Findings.Count(f => f.Category == "Model discrepancy");
+        var partial = document.UnmappedSourceBlocks.Count > 0 || document.EvidenceGaps.Count > 0;
+        <section class="dme-model-summary" aria-label="Data model summary" data-testid="dme-model-summary">
+            <dl class="dme-model-counts">
+                <div><dt>Data structures</dt><dd data-testid="dme-model-entities">@document.EntityCount</dd></div>
+                <div><dt>Fields</dt><dd data-testid="dme-model-fields">@document.ColumnCount</dd></div>
+                <div><dt>Relationships</dt><dd>@(document.RelationshipEvidence is DataModelEvidenceState.Extracted or DataModelEvidenceState.NoneDeclared ? document.RelationshipCount.ToString() : "Not assessed")</dd></div>
+                <div><dt>Enums / reference types</dt><dd data-testid="dme-model-enums">@document.Enums.Count</dd></div>
+                <div><dt>Unresolved</dt><dd>@unresolved</dd></div>
+            </dl>
+            <p class="dme-model-source" data-testid="dme-model-source">Source: <span class="dme-wrap">@(ArtifactPath ?? "Pasted or imported document")</span>@(ArtifactRevision is { } rev ? $" · revision {rev}" : "") · @OriginLabel</p>
+            @if (partial) { <p class="dme-model-partial" role="status" data-testid="dme-model-partial">Partial model coverage — @document.UnmappedSourceBlocks.Count section(s) of the document were not mapped to the model. They are listed under technical details; nothing is guessed from them.</p> }
+        </section>
+        if (document.EntityCount == 0 && document.Enums.Count == 0)
+        {
+            <div class="dme-model-empty" data-testid="dme-model-empty">
+                <p><strong>No normalized data model could be derived from the selected evidence.</strong></p>
+                <ul class="dme-plain">
+                    <li>Source available: @(string.IsNullOrWhiteSpace(DataModelText) && ParsedDataModel is null ? "No" : "Yes")</li>
+                    <li>Document parsed: Yes — @document.UnmappedSourceBlocks.Count block(s) were not recognised as data structures.</li>
+                    <li>Recognised notations: entity/table headings with field tables, field lists, C# class/record/enum declarations and SQL CREATE TABLE in code blocks.</li>
+                </ul>
+                <p class="dme-muted">Open “Parsed document structure — technical details” below to see the unmapped blocks.</p>
+            </div>
+            return;
+        }
+        var visible = ModelEntities(document).ToList();
+        var selected = document.Entities.FirstOrDefault(e => e.Name == _selectedEntity) ?? visible.FirstOrDefault();
+        <div class="dme-model-tools" role="group" aria-label="Find in the model">
+            <label class="dme-model-field">Search <input type="search" data-testid="dme-model-search" value="@_modelQuery" @oninput="e => _modelQuery = e.Value?.ToString() ?? string.Empty" placeholder="Structure, field or type" /></label>
+            <label class="dme-model-field">Show
+                <select data-testid="dme-model-filter" value="@_modelFilter" @onchange="e => _modelFilter = e.Value?.ToString() ?? string.Empty">
+                    <option value="all">All structures</option>
+                    @if (document.Entities.Any(e => e.IsTable || e.Kind == DataStructureKind.Table)) { <option value="tables">Tables</option> }
+                    @if (document.Entities.Any(e => e.Kind == DataStructureKind.Record)) { <option value="records">Records / DTOs</option> }
+                    @if (document.Entities.Any(e => e.Kind is DataStructureKind.Event or DataStructureKind.Message)) { <option value="events">Events / messages</option> }
+                    @if (document.Relationships.Count > 0) { <option value="relationships">With relationships</option> }
+                </select>
+            </label>
+        </div>
+        <div class="dme-model" data-testid="dme-model">
+            <nav class="dme-model-list" aria-label="Data structures">
+                @if (visible.Count == 0) { <p class="dme-muted" data-testid="dme-model-no-match">No data structure matches the search.</p> }
+                <ul class="dme-plain">
+                    @foreach (var entity in visible)
+                    {
+                        var e = entity;
+                        var isSelected = selected is not null && e.Name == selected.Name;
+                        <li>
+                            <button type="button" class="dme-model-item @(isSelected ? "is-selected" : "")" aria-current="@(isSelected ? "true" : null)" data-testid="dme-model-item" data-entity="@e.Name" @onclick="() => _selectedEntity = e.Name">
+                                <strong class="dme-wrap">@e.Name</strong>
+                                <span class="dme-muted">@StructureKindLabel(e.Kind) · @e.Columns.Count field(s) · @(e.Columns.Any(c => c.IsPrimaryKey) ? "key declared" : "no key declared") · @RelationshipsOf(document, e.Name).Count() relationship(s)</span>
+                            </button>
+                        </li>
+                    }
+                </ul>
+            </nav>
+            @if (selected is not null)
+            {
+                var relations = RelationshipsOf(document, selected.Name).ToList();
+                <section class="dme-model-detail" aria-labelledby="dme-model-detail-title" data-testid="dme-model-detail" data-entity="@selected.Name">
+                    <h3 id="dme-model-detail-title" class="dme-wrap">@selected.Name</h3>
+                    <p class="dme-muted">@StructureKindLabel(selected.Kind) · @Lines(selected.Provenance) of @(ArtifactPath ?? "the document") · @OriginLabel</p>
+                    @if (!string.IsNullOrWhiteSpace(selected.Description))
+                    {
+                        <details class="dme-model-notes" data-testid="dme-model-notes"><summary>Notes from the document</summary><p class="dme-wrap">@selected.Description</p></details>
+                    }
+                    <h4>Fields</h4>
+                    @if (selected.Columns.Count == 0) { <p class="dme-muted" data-testid="dme-model-no-fields">No fields are declared for this structure in the document.</p> }
+                    else
+                    {
+                        <div class="dme-model-scroll" tabindex="0" role="region" aria-label="@($"Fields of {selected.Name}")">
+                            <table class="dme-model-table" data-testid="dme-model-fields-table">
+                                <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Nullable</th><th scope="col">Cardinality</th><th scope="col">Key</th><th scope="col">Constraints</th><th scope="col">Source</th></tr></thead>
+                                <tbody>
+                                    @foreach (var column in selected.Columns)
+                                    {
+                                        <tr data-testid="dme-model-field" data-field="@column.Name">
+                                            <th scope="row" class="dme-wrap">@column.Name</th>
+                                            <td>@NormalizedType(column)@if (column.Type is { Length: > 0 } original) { <small class="dme-muted dme-wrap dme-type-original">@original</small> }</td>
+                                            <td>@Required(column)</td>
+                                            <td>@NullableText(column)</td>
+                                            <td>@Cardinality(column)</td>
+                                            <td>@Key(column)</td>
+                                            <td>@Constraints(selected, column)</td>
+                                            <td>@Lines(column.Provenance)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    <h4>Relationships</h4>
+                    @if (relations.Count == 0)
+                    {
+                        <p class="dme-muted" data-testid="dme-model-relationships">@(document.RelationshipEvidence == DataModelEvidenceState.Extracted ? "None declared for this structure." : "Not assessed — the document declares no relationships that could be extracted.")</p>
+                    }
+                    else
+                    {
+                        <ul class="dme-plain" data-testid="dme-model-relationships">
+                            @foreach (var r in relations) { <li class="dme-wrap">@r.Source → @r.Target · @(r.RelationshipType ?? "relationship") · @Lines(r.Provenance)</li> }
+                        </ul>
+                    }
+                    @foreach (var discrepancy in document.Findings.Where(f => f.Category == "Model discrepancy" && f.EntityName == selected.Name))
+                    {
+                        <p class="dme-model-partial" data-testid="dme-model-discrepancy">Model discrepancy — review required: @discrepancy.Description</p>
+                    }
+                </section>
+            }
+        </div>
+        @if (document.Enums.Count > 0)
+        {
+            <section class="dme-model-enums" aria-labelledby="dme-model-enums-title" data-testid="dme-model-enum-list">
+                <h3 id="dme-model-enums-title">Enums and reference values</h3>
+                <ul class="dme-plain">
+                    @foreach (var en in document.Enums.Where(x => _modelQuery.Trim() is not { Length: > 0 } q || x.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || x.Values.Any(v => v.Contains(q, StringComparison.OrdinalIgnoreCase))))
+                    {
+                        <li data-testid="dme-model-enum" class="dme-wrap"><strong>@en.Name</strong> · @string.Join(", ", en.Values) <span class="dme-muted">· @Lines(en.Provenance)</span></li>
+                    }
+                </ul>
+            </section>
+        }
+    };
 
     private void SetTab(string tab)
     {

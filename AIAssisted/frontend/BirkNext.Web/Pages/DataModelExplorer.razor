@@ -34,6 +34,8 @@
                     ParsedDataModel="@_parsed"
                     SemanticModel="@_semanticModel"
                     InitialView="@_initialView"
+                    ArtifactPath="@_artifactPath"
+                    ArtifactRevision="@_artifactRevision"
                     OnTextChanged="ImportFromPanel" />
                 <ReviewDisclosure Text="Source data model evidence" CollapseText="Hide source data model evidence" Hint="The persistence model Source Analysis extracted · compared with this document"
                                   TestId="dme-source-evidence" Class="disclosure-inline" @bind-Expanded="_sourceEvidenceExpanded">
@@ -64,8 +66,13 @@
     // The panel's own paste box goes through the repository like every other import.
     private Task ImportFromPanel(string text) => _host?.ImportPastedAsync(text) ?? Task.CompletedTask;
 
+    private string? _artifactPath;
+    private int? _artifactRevision;
+
     private void OnArtifactChanged(ArtifactExplorerState state)
     {
+        _artifactPath = state.Selected?.SourcePath ?? state.Selected?.FileName;
+        _artifactRevision = state.Selected?.Revision;
         var text = state.Content ?? string.Empty;
         if (string.Equals(text, _text, StringComparison.Ordinal)) return;
         _text = text;

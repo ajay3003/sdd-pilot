@@ -49,6 +49,9 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
         constitution.Markup.Should().Contain(tail, constitution.Markup);
         plan.Markup.Should().Contain(tail, plan.Markup);
         tasks.Markup.Should().Contain(tail, tasks.Markup);
+        // Data Model keeps parser structure out of the primary view: technical details render only on request.
+        dataModel.Markup.Should().NotContain(tail, "technical details are collapsed and lazy");
+        dataModel.Find("[data-testid=markdown-source-notes-toggle]").Click();
         dataModel.Markup.Should().Contain(tail, dataModel.Markup);
         spec.Find("article[data-source-block-id]").TextContent.Should().Contain(tail);
         spec.Find("article[data-source-block-id]").GetAttribute("data-source-block-id").Should().NotBeNullOrWhiteSpace();

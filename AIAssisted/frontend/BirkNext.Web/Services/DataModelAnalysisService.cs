@@ -392,7 +392,10 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             // ── Entity description (any non-heading, non-blank content before
             //    the first subsection, matching the original line-based check) ──
 
-            if (currentEntityName is not null && currentSection == string.Empty)
+            // Table rows are not description: they reach the field-table auto-detection below (previously this captured them first, so a
+            // field table directly under an entity heading was never read).
+            if (currentEntityName is not null && currentSection == string.Empty
+                && token.Kind is not (MarkdownTokenKind.TableRow or MarkdownTokenKind.TableSeparator))
             {
                 currentEntityDesc = (currentEntityDesc ?? "") + " " + token.RawLine.Trim();
                 continue;
@@ -558,12 +561,14 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         FlushEntity();
         FlushEnum();
+        var codeFindings = ExtractCodeDeclarations(tokens, documentFingerprint, entities, enums, globalRelationships);
 
         relationships.AddRange(globalRelationships);
         indexes.AddRange(globalIndexes);
         constraints.AddRange(globalConstraints);
 
         var findings = GenerateFindings(entities, relationships);
+        findings.AddRange(codeFindings);
         var columnEvidence = EvidenceState(entities.Sum(e => e.Columns.Count), columnSectionDeclared, DataModelEvidenceState.NotExtracted);
         var relationshipEvidence = EvidenceState(relationships.Count, relationshipSectionDeclared, DataModelEvidenceState.NotRepresented);
         // Relational-only evidence applies only when the artifact explicitly identifies a table.
@@ -612,6 +617,164 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
     // ── Parsing helpers ────────────────────────────────────────────────────────
 
+    // ── Structured declarations in fenced code blocks ─────────────────────────────────────────────────────────────────────────
+
+    private static readonly Regex TypeDeclarationRe = new(
+        @"^\s*(?:\[[^\]]*\]\s*)*(?:(?:public|internal|private|protected|sealed|abstract|static|partial|readonly)\s+)*(?<kind>record\s+struct|record\s+class|record|class|struct|enum)\s+(?<name>[A-Za-z_]\w*)(?:<[^>]*>)?\s*(?:\((?<params>[^)]*)\))?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex PropertyRe = new(
+        @"^\s*(?:\[[^\]]*\]\s*)*(?:public|internal|protected)\s+(?<mods>(?:(?:required|virtual|override|new|static|readonly)\s+)*)(?<type>[A-Za-z_][\w.<>,\[\]? ]*?)\s+(?<name>[A-Za-z_]\w*)\s*(?:\{|=>|=|;)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex CreateTableRe = new(@"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?<name>[\[\]""\w.]+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex ReferencesRe = new(@"REFERENCES\s+(?<table>[\[\]""\w.]+)\s*\(\s*(?<column>[\[\]""\w]+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Data structures declared in fenced code blocks of the document (C# class/record/struct properties and positional parameters, C# enums,
+    /// SQL CREATE TABLE columns): the same parser, one more notation. Requiredness is only what the syntax proves — <c>?</c> → nullable,
+    /// <c>required</c> or <c>NOT NULL</c>/<c>PRIMARY KEY</c> → not nullable, anything else unknown. A structure already defined in Markdown is
+    /// completed from code only when Markdown has no fields; differing definitions are both kept visible as a model discrepancy, never merged.
+    /// </summary>
+    private static List<DataModelFinding> ExtractCodeDeclarations(IReadOnlyList<MarkdownToken> tokens, string fingerprint, List<DataEntity> entities,
+        List<DataEnum> enums, List<DataRelationship> relationships)
+    {
+        var findings = new List<DataModelFinding>();
+        var blocks = new List<(string Language, List<(int Line, string Text)> Lines)>();
+        List<(int, string)>? open = null;
+        var language = "";
+        foreach (var token in tokens)
+        {
+            if (token.Kind == MarkdownTokenKind.FencedCodeStart) { open = []; language = token.Content.Trim().ToLowerInvariant(); continue; }
+            if (token.Kind == MarkdownTokenKind.FencedCodeEnd) { if (open is not null) blocks.Add((language, open)); open = null; continue; }
+            if (token.Kind == MarkdownTokenKind.FencedCodeLine && open is not null) open.Add((token.LineIndex, token.RawLine));
+        }
+        foreach (var (lang, lines) in blocks)
+        {
+            if (lang is "sql" or "tsql" or "postgresql" || lines.Any(l => CreateTableRe.IsMatch(l.Text))) ExtractSql(lines);
+            else if (lang is "" or "csharp" or "cs" or "c#") ExtractCSharp(lines);
+        }
+        return findings;
+
+        ProjectionProvenance Provenance(string kind, string name, int start, int end) =>
+            ProjectionProvenance.Create("Data Model", kind == "DataEnum" ? "Enum" : kind == "DataColumn" ? "Field" : "Entity", name,
+                ProjectionProvenance.Source(fingerprint, start + 1, Math.Max(start, end) + 1, kind, name));
+
+        void AddEntity(string name, DataStructureKind kind, bool isTable, List<DataColumn> columns, int start, int end, string notation)
+        {
+            // A declaration without fields (a one-line example such as "CREATE TABLE x (id INT);") never becomes a data structure.
+            if (columns.Count == 0) return;
+            var existing = entities.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                entities.Add(new DataEntity { Name = name, Kind = kind, IsTable = isTable, Columns = columns, Provenance = Provenance("DataEntity", name, start, end), Description = $"Declared in a {notation} code block." });
+                return;
+            }
+            if (existing.Columns.Count == 0)
+            {
+                entities[entities.IndexOf(existing)] = new DataEntity
+                {
+                    Name = existing.Name, Kind = existing.Kind, IsTable = existing.IsTable || isTable, Description = existing.Description, TraceabilityIds = existing.TraceabilityIds,
+                    Provenance = existing.Provenance, Columns = columns,
+                };
+                return;
+            }
+            var markdownFields = existing.Columns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var codeFields = columns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!markdownFields.SetEquals(codeFields))
+                findings.Add(new DataModelFinding
+                {
+                    Severity = DataModelSeverity.Info, Category = "Model discrepancy", EntityName = existing.Name,
+                    Description = $"The {notation} code block (lines {start + 1}–{end + 1}) declares fields that differ from the Markdown definition. Both are kept; review required.",
+                });
+        }
+
+        void ExtractCSharp(List<(int Line, string Text)> lines)
+        {
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var declaration = TypeDeclarationRe.Match(lines[i].Text);
+                if (!declaration.Success) continue;
+                var name = declaration.Groups["name"].Value;
+                var start = lines[i].Line;
+                var end = start;
+                var body = new List<(int Line, string Text)>();
+                for (var j = i + 1; j < lines.Count && !TypeDeclarationRe.IsMatch(lines[j].Text); j++) { body.Add(lines[j]); end = lines[j].Line; }
+                if (declaration.Groups["kind"].Value == "enum")
+                {
+                    var text = string.Join("\n", body.Select(b => b.Text));
+                    var inline = lines[i].Text.IndexOf('{') is var brace and >= 0 ? lines[i].Text[(brace + 1)..] + "\n" : "";
+                    var values = (inline + text).Split(['\n', ','], StringSplitOptions.RemoveEmptyEntries)
+                        .Select(v => v.Split("//")[0].Split('=')[0].Trim().Trim('{', '}', ';').Trim())
+                        .Where(v => v.Length > 0 && Regex.IsMatch(v, @"^[A-Za-z_]\w*$")).Distinct().ToList();
+                    if (values.Count > 0 && !enums.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)))
+                        enums.Add(new DataEnum { Name = name, Values = values, Provenance = Provenance("DataEnum", name, start, end), Description = "Declared in a C# code block." });
+                    i += body.Count;
+                    continue;
+                }
+                var columns = new List<DataColumn>();
+                if (declaration.Groups["params"].Success)
+                    foreach (var parameter in declaration.Groups["params"].Value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var parts = parameter.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2) columns.Add(Column(parts[^1].Split('=')[0].Trim(), string.Join(' ', parts[..^1]), required: false, start));
+                    }
+                foreach (var (line, text) in body)
+                {
+                    var property = PropertyRe.Match(text);
+                    if (!property.Success || text.Contains('(') && !text.Contains("=>")) continue;
+                    columns.Add(Column(property.Groups["name"].Value, property.Groups["type"].Value.Trim(), property.Groups["mods"].Value.Contains("required"), line));
+                }
+                var kind = declaration.Groups["kind"].Value.StartsWith("record", StringComparison.Ordinal) ? DataStructureKind.Record : InferDataStructureKind(name);
+                AddEntity(name, kind, isTable: false, columns, start, end, "C#");
+                i += body.Count;
+            }
+
+            DataColumn Column(string name, string type, bool required, int line) => new()
+            {
+                Name = name, Type = type.TrimEnd('?'), Nullable = type.EndsWith('?') ? true : required ? false : null,
+                IsPrimaryKey = false, Provenance = Provenance("DataColumn", name, line, line),
+            };
+        }
+
+        void ExtractSql(List<(int Line, string Text)> lines)
+        {
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var create = CreateTableRe.Match(lines[i].Text);
+                if (!create.Success) continue;
+                var table = create.Groups["name"].Value.Trim('[', ']', '"');
+                var start = lines[i].Line;
+                var end = start;
+                var columns = new List<DataColumn>();
+                for (var j = i + 1; j < lines.Count && !CreateTableRe.IsMatch(lines[j].Text); j++)
+                {
+                    end = lines[j].Line;
+                    var text = lines[j].Text.Trim().TrimEnd(',');
+                    if (text.StartsWith(")", StringComparison.Ordinal)) { i = j; break; }
+                    var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 2 || parts[0].ToUpperInvariant() is "CONSTRAINT" or "PRIMARY" or "FOREIGN" or "UNIQUE" or "INDEX" or "CHECK" or "KEY" or "--") continue;
+                    var column = parts[0].Trim('[', ']', '"');
+                    var upper = text.ToUpperInvariant();
+                    var primary = upper.Contains("PRIMARY KEY");
+                    var reference = ReferencesRe.Match(text);
+                    columns.Add(new DataColumn
+                    {
+                        Name = column, Type = parts[1], IsPrimaryKey = primary, IsForeignKey = reference.Success, IsUnique = upper.Contains(" UNIQUE"),
+                        Nullable = primary || upper.Contains("NOT NULL") ? false : Regex.IsMatch(upper, @"(?<!NOT )\bNULL\b") ? true : null,
+                        Provenance = Provenance("DataColumn", column, lines[j].Line, lines[j].Line),
+                    });
+                    if (reference.Success)
+                        relationships.Add(new DataRelationship
+                        {
+                            Source = $"{table}.{column}", Target = $"{reference.Groups["table"].Value.Trim('[', ']', '"')}.{reference.Groups["column"].Value.Trim('[', ']', '"')}",
+                            RelationshipType = "Foreign key", Provenance = ProjectionProvenance.Create("Data Model", "Relationship", $"{table}.{column}",
+                                ProjectionProvenance.Source(fingerprint, lines[j].Line + 1, lines[j].Line + 1, "DataRelationship", $"{table}.{column}")),
+                        });
+                }
+                AddEntity(table, DataStructureKind.Table, isTable: true, columns, start, end, "SQL");
+            }
+        }
+    }
+
     private static bool IsColumnHeaderRow(IReadOnlyList<string> cells)
     {
         if (cells.Count == 0) return false;
@@ -649,10 +812,11 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
         var descLow  = (desc ?? "").ToLowerInvariant();
         var nameLow  = name.ToLowerInvariant();
-        var isPk     = descLow.Contains("primary key") || descLow.Contains("pk") ||
-                       nameLow == "id" || nameLow.EndsWith(".id");
-        var isFk     = descLow.Contains("foreign key") || descLow.Contains("fk") ||
-                       (nameLow.EndsWith("_id") && nameLow.Length > 3);
+        // Declared in the document ("primary key", "PK", "foreign key", "FK", "→ Target") vs inferred from the name only.
+        var declaredPk = descLow.Contains("primary key") || Regex.IsMatch(descLow, @"\bpk\b");
+        var declaredFk = descLow.Contains("foreign key") || Regex.IsMatch(descLow, @"\bfk\b");
+        var isPk     = declaredPk || nameLow == "id" || nameLow.EndsWith(".id");
+        var isFk     = declaredFk || (nameLow.EndsWith("_id") && nameLow.Length > 3);
         var isUnique = descLow.Contains("unique");
 
         return new DataColumn
@@ -665,6 +829,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             IsForeignKey = isFk,
             IsUnique     = isUnique,
             Description  = desc,
+            KeyInferred  = isPk ? !declaredPk : isFk && !declaredFk,
         };
     }
 
@@ -947,6 +1112,9 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         if (emdashIdx > 0)
         {
             var entityName = s[..emdashIdx].Trim();
+            // "BarnRegistrert (incoming — consumed via handler)": the dash sits inside a parenthetical qualifier; never keep a half-open "(".
+            if (entityName.Count(c => c == '(') > entityName.Count(c => c == ')') && entityName.LastIndexOf(" (", StringComparison.Ordinal) is var open and > 0)
+                return (entityName[..open].Trim(), null);
             var rest = s[(emdashIdx + 3)..].Trim();
 
             // Extract table name — it's typically the first word(s) before "table" keyword or space
@@ -1164,6 +1332,12 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var parenIdx = h.IndexOf('(');
         if (parenIdx > 0)
             h = h[..parenIdx].Trim();
+        // "Domain Entities — Schema: `tjeneste`", "Staging Entities - schema x", "Entities: core" → the section name before the qualifier.
+        foreach (var separator in new[] { " — ", " – ", " - ", ":" })
+        {
+            var at = h.IndexOf(separator, StringComparison.Ordinal);
+            if (at > 0) h = h[..at].Trim();
+        }
         return h;
     }
 

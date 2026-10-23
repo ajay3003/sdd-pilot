@@ -13,3 +13,8 @@
     overflow-wrap: anywhere;
     white-space: pre-wrap;
 }
+
+/* The lazy "Show technical details" toggle wraps instead of widening the page. */
+.markdown-source-notes > button { white-space: normal; max-width: 100%; text-align: left; }
+.markdown-source-notes { min-width: 0; max-width: 100%; }
+.markdown-source-notes pre { white-space: pre-wrap; overflow-wrap: anywhere; }

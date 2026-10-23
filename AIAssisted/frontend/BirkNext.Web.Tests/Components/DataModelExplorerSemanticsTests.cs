@@ -116,7 +116,7 @@ public sealed class DataModelExplorerSemanticsTests : BunitContext
     }
 
     private IRenderedComponent<DataModelExplorerPanel> RenderDocument(DataModelDocument document) =>
-        Render<DataModelExplorerPanel>(parameters => parameters.Add(p => p.ParsedDataModel, document));
+        Render<DataModelExplorerPanel>(parameters => parameters.Add(p => p.ParsedDataModel, document).Add(p => p.InitialView, "overview"));
 
     private static void ClickTab(IRenderedComponent<DataModelExplorerPanel> cut, string label) =>
         cut.FindAll(".dme-tab").Single(button => button.TextContent.Contains(label, StringComparison.Ordinal)).Click();

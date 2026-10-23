@@ -3,20 +3,38 @@
 @if (Blocks is { Count: > 0 })
 {
     <section class="markdown-source-notes" aria-label="Source text not mapped to structured fields" data-testid="markdown-source-notes">
-        <details>
-            <summary>Source notes and unmapped text (@Blocks.Count blocks)</summary>
-            <p>These authored blocks are retained verbatim because they were not mapped to a structured Explorer field.</p>
-            @foreach (var block in Blocks)
-            {
-                <article class="markdown-source-note" data-source-block-id="@block.BlockId" data-source-start-line="@block.StartLine" data-source-end-line="@block.EndLine">
-                    <h4>Lines @block.StartLine–@block.EndLine · @block.BlockType</h4>
-                    <pre>@block.Text</pre>
-                </article>
-            }
-        </details>
+        @if (Lazy)
+        {
+            @* Technical details render only on request (large documents never put parser blocks in the page by default). *@
+            <button type="button" class="btn-secondary btn-small" aria-expanded="@(_open ? "true" : "false")" data-testid="markdown-source-notes-toggle" @onclick="() => _open = !_open">@(_open ? "Hide" : "Show") @(Summary ?? "source notes") (@Blocks.Count blocks)</button>
+            @if (_open) { @Notes(Blocks) }
+        }
+        else
+        {
+            <details>
+                <summary>@(Summary ?? "Source notes and unmapped text") (@Blocks.Count blocks)</summary>
+                @Notes(Blocks)
+            </details>
+        }
     </section>
 }
 
 @code {
     [Parameter] public IReadOnlyList<MarkdownSourceNote>? Blocks { get; set; }
+    /// <summary>Render the blocks only after an explicit "Show" (technical details), instead of a closed &lt;details&gt; with everything in it.</summary>
+    [Parameter] public bool Lazy { get; set; }
+    [Parameter] public string? Summary { get; set; }
+    private bool _open;
+
+    private static RenderFragment Notes(IReadOnlyList<MarkdownSourceNote> blocks) => __builder =>
+    {
+        <p>These authored blocks are retained verbatim because they were not mapped to a structured Explorer field.</p>
+        @foreach (var block in blocks)
+        {
+            <article class="markdown-source-note" data-source-block-id="@block.BlockId" data-source-start-line="@block.StartLine" data-source-end-line="@block.EndLine">
+                <h4>Lines @block.StartLine–@block.EndLine · @block.BlockType</h4>
+                <pre>@block.Text</pre>
+            </article>
+        }
+    };
 }

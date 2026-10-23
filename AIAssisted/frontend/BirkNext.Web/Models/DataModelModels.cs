@@ -81,6 +81,8 @@ public sealed class DataColumn
     public bool    IsForeignKey { get; init; }
     public bool    IsUnique     { get; init; }
     public string? Description  { get; init; }
+    /// <summary>True when the key flag comes only from the name (an "Id" column, a "_id" suffix), not from a declaration in the document.</summary>
+    public bool    KeyInferred  { get; init; }
 }
 
 public sealed class DataRelationship

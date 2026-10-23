@@ -760,3 +760,38 @@
 @media (max-width: 600px) {
     .dme-evidence-gap-row { grid-template-columns: 1fr; gap: 0.15rem; }
 }
+
+/* ── Model (primary view): uses the available width; list + detail side by side, stacked when narrow ──────────────── */
+
+.dme-model-summary { display: grid; gap: .35rem; margin-bottom: .75rem; }
+.dme-model-counts { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; }
+.dme-model-counts dt { font-size: .78rem; color: var(--text-muted, #555); }
+.dme-model-counts dd { margin: 0; font-size: 1.15rem; font-weight: 700; }
+.dme-model-source, .dme-muted { color: var(--text-muted, #555); font-size: .85rem; margin: 0; }
+.dme-model-partial { margin: 0; padding: .45rem .7rem; border-left: 4px solid var(--clr-warning-border, #f0a800); background: var(--clr-warning-bg, #fff8e6); border-radius: 6px; font-size: .875rem; }
+.dme-model-empty { padding: 1rem; border: 1px dashed var(--clr-border, #cbd5e1); border-radius: 8px; }
+.dme-model-tools { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: flex-end; margin-bottom: .75rem; }
+.dme-model-field { display: grid; gap: .2rem; font-size: .85rem; flex: 1 1 14rem; min-width: 0; }
+.dme-model-field input, .dme-model-field select { width: 100%; max-width: 100%; min-width: 0; }
+.dme-model { display: grid; grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); gap: 1rem; align-items: start; min-width: 0; }
+.dme-model > * { min-width: 0; }
+.dme-model-list { max-height: 70vh; overflow-y: auto; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .35rem; }
+.dme-plain { list-style: none; padding: 0; margin: 0; display: grid; gap: .25rem; }
+.dme-model-item { display: grid; gap: .1rem; width: 100%; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: .4rem .55rem; cursor: pointer; font: inherit; color: inherit; }
+.dme-model-item:hover { background: var(--clr-surface-hover, #f1f5f9); }
+.dme-model-item.is-selected { border-color: var(--clr-primary, #2563eb); background: var(--clr-primary-bg, #eff6ff); }
+.dme-model-item:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.dme-model-detail { border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; padding: .75rem 1rem; background: var(--clr-surface, #fff); }
+.dme-model-detail h3 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.dme-model-detail h4 { margin: .9rem 0 .35rem; font-size: .95rem; }
+.dme-model-scroll { overflow-x: auto; max-width: 100%; position: relative; }
+.dme-model-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.dme-model-table th, .dme-model-table td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); vertical-align: top; }
+.dme-model-table thead th { font-size: .78rem; color: var(--text-muted, #555); white-space: nowrap; }
+.dme-model-enums { margin-top: 1rem; }
+.dme-model-enums h3 { font-size: 1rem; margin: 0 0 .4rem; }
+.dme-wrap { overflow-wrap: anywhere; }
+@media (max-width: 900px) { .dme-model { grid-template-columns: minmax(0, 1fr); } .dme-model-list { max-height: 18rem; } }
+.dme-type-original { display: block; }
+.dme-model-notes { margin: .35rem 0; font-size: .875rem; }
+.dme-model-notes summary { cursor: pointer; color: var(--text-muted, #555); }
