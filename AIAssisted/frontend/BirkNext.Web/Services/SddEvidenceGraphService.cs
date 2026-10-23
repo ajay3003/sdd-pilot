@@ -82,7 +82,16 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
 
     private SddLifecycleProjection Projection(IWorkspaceSessionService workspace, ReviewContext? context, LifecycleProjectionMode mode, Guid? baselineId,
         IReadOnlyList<Guid> ids, IReadOnlyList<string> fingerprints, IReadOnlyList<string> limitations, DateTimeOffset? evidenceCutoff = null) =>
-        new(new(mode, baselineId, ids, fingerprints, DateTimeOffset.UtcNow, limitations), BuildRows(workspace, context, mode, evidenceCutoff));
+        new(new(mode, baselineId, ids, fingerprints, DateTimeOffset.UtcNow, [.. limitations, .. ScopeLimitations(workspace.SddLifecycle)]), BuildRows(workspace, context, mode, evidenceCutoff));
+
+    /// <summary>Evidence recorded before packs (no requirement scope) is kept but never applied to a pack's requirements; say so.</summary>
+    public static IReadOnlyList<string> ScopeLimitations(SddLifecycleState state)
+    {
+        if (state.ActiveRequirementScope is not { } scope) return [];
+        var legacy = state.ImplementationEvidence.Count(x => x.RequirementScope is null) + state.TestEvidence.Count(x => x.RequirementScope is null)
+            + state.TestExecutions.Count(x => x.RequirementScope is null && (x.RequirementReferences.Count > 0 || x.AcceptanceCriterionReferences.Count > 0));
+        return legacy == 0 ? [] : [$"{legacy} legacy unscoped evidence item{(legacy == 1 ? " is" : "s are")} not applied to {RequirementScopes.Label(scope)}: they were recorded before artifact packs and name no pack."];
+    }
 
     private ReviewContext? BuildFromRevisions(IReadOnlyList<SddArtifactRevision> revisions, List<string> limitations)
     {
@@ -108,18 +117,22 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
     private static IReadOnlyList<SddRequirementGraphRow> BuildRows(IWorkspaceSessionService workspace, ReviewContext? context, LifecycleProjectionMode mode, DateTimeOffset? evidenceCutoff)
     {
         var state = workspace.SddLifecycle;
+        // A requirement is identified by its pack scope and local id: only links and evidence of the active scope apply. A sibling pack's
+        // FR-001 evidence, and unscoped legacy evidence in a pack-organised module, never satisfy this pack's FR-001.
+        var scope = state.ActiveRequirementScope;
+        bool InScope(string? itemScope) => RequirementScopes.Matches(itemScope, scope);
         return context?.GetRequirements().Select(r => new SddRequirementGraphRow(r,
             mode == LifecycleProjectionMode.ActiveWorkspace
-                ? state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementPlansTo" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
+                ? state.Links.Where(x => InScope(x.RequirementScope) && x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementPlansTo" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
                 : context.GetLinkedPlans(r.Id).ToArray(),
             mode == LifecycleProjectionMode.ActiveWorkspace
-                ? state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
+                ? state.Links.Where(x => InScope(x.RequirementScope) && x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
                 : context.GetLinkedTasks(r.Id).ToArray(),
-            state.ImplementationEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || (x.RecordedAt ?? x.ObservedAt) is not { } recorded || recorded <= evidenceCutoff)).ToArray(),
-            state.TestEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || x.Timestamp is null || x.Timestamp <= evidenceCutoff)).ToArray(),
-            state.TestExecutions.Where(x => (evidenceCutoff is null || x.ExecutedAt is null || x.ExecutedAt <= evidenceCutoff) && (x.RequirementReferences.Contains(r.Id, StringComparer.OrdinalIgnoreCase) ||
+            state.ImplementationEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || (x.RecordedAt ?? x.ObservedAt) is not { } recorded || recorded <= evidenceCutoff)).ToArray(),
+            state.TestEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || x.Timestamp is null || x.Timestamp <= evidenceCutoff)).ToArray(),
+            state.TestExecutions.Where(x => InScope(x.RequirementScope) && (evidenceCutoff is null || x.ExecutedAt is null || x.ExecutedAt <= evidenceCutoff) && (x.RequirementReferences.Contains(r.Id, StringComparer.OrdinalIgnoreCase) ||
                 r.LinkedAcceptanceScenarios.Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase)))).ToArray(),
-            state.Questions.Any(q => (q.Status is "Open" or "NeedsAnswer") && q.RequirementIds.Contains(r.Id, StringComparer.OrdinalIgnoreCase)))).ToArray() ?? [];
+            state.Questions.Any(q => InScope(q.RequirementScope) && (q.Status is "Open" or "NeedsAnswer") && q.RequirementIds.Contains(r.Id, StringComparer.OrdinalIgnoreCase)))).ToArray() ?? [];
     }
     public void SynchronizeCurrentArtifacts(IWorkspaceSessionService workspace)
     {
@@ -135,8 +148,8 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
             {
                 var acId = ac.Id ?? ac.Title;
                 SddLifecycleReviewService.AddOrRefreshLink(state, requirement.Id, acId, "TestDesignedFor", "StronglySupported");
-                if (!state.TestEvidence.Any(x => x.RequirementId == requirement.Id && x.AcceptanceCriterionId == acId && x.State == "Designed"))
-                    state.TestEvidence.Add(new SddTestEvidence { RequirementId = requirement.Id, AcceptanceCriterionId = acId, TestReference = acId, State = "Designed", Provenance = "SpecificationAcceptanceScenario" });
+                if (!state.TestEvidence.Any(x => x.RequirementId == requirement.Id && x.AcceptanceCriterionId == acId && x.State == "Designed" && RequirementScopes.Matches(x.RequirementScope, state.ActiveRequirementScope)))
+                    state.TestEvidence.Add(new SddTestEvidence { RequirementId = requirement.Id, AcceptanceCriterionId = acId, TestReference = acId, State = "Designed", Provenance = "SpecificationAcceptanceScenario", RequirementScope = state.ActiveRequirementScope });
             }
         }
     }
@@ -281,7 +294,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
                 ResultSource = record.ResultSource.Trim(), ProviderResultId = record.ProviderResultId, EnvironmentReference = record.EnvironmentReference,
                 BuildReference = record.BuildReference, SourceSnapshotId = record.SourceSnapshotId, SourceFingerprint = record.SourceFingerprint,
                 StartedAt = record.StartedAt, FinishedAt = record.FinishedAt, ExecutedAt = record.ExecutedAt,
-                Fingerprint = fingerprint
+                Fingerprint = fingerprint, RequirementScope = state.ActiveRequirementScope
             });
             foreach (var req in record.RequirementReferences.Distinct(StringComparer.OrdinalIgnoreCase))
                 SddLifecycleReviewService.AddOrRefreshLink(state, req, record.TestId, "RequirementVerifiedBy", "Confirmed");
@@ -301,9 +314,11 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
         {
             var reqRef = known.FirstOrDefault(id => ContainsExplicitReference(codeLink.RequirementReference, id));
             if (reqRef is null) continue;
-            var key = $"codelink:{codeLink.LinkId}:{snapshot.Id}";
+            // The requirement scope is part of the key: the same CodeLink naming FR-001 is separate evidence for each pack's FR-001.
+            var key = $"codelink:{codeLink.LinkId}:{snapshot.Id}" + (state.ActiveRequirementScope is { } linkScope ? $":{linkScope}" : "");
             if (state.ImplementationEvidence.Any(x => x.StableKey == key)) continue;
-            var previous = state.ImplementationEvidence.Where(x => x.StableKey?.StartsWith($"codelink:{codeLink.LinkId}:", StringComparison.Ordinal) == true && x.Currentness == "Current").ToList();
+            var previous = state.ImplementationEvidence.Where(x => x.StableKey?.StartsWith($"codelink:{codeLink.LinkId}:", StringComparison.Ordinal) == true && x.Currentness == "Current"
+                && RequirementScopes.Matches(x.RequirementScope, state.ActiveRequirementScope)).ToList();
             if (previous.Any(x => x.SourceFingerprint == fingerprint)) continue;
             foreach (var old in previous)
             {
@@ -314,7 +329,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
             }
             state.ImplementationEvidence.Add(new SddImplementationEvidence
             {
-                RequirementId = reqRef, EvidenceType = "CodeLink", Reference = codeLink.FilePath,
+                RequirementId = reqRef, RequirementScope = state.ActiveRequirementScope, EvidenceType = "CodeLink", Reference = codeLink.FilePath,
                 SourceSnapshotId = snapshot.Id.ToString(), SourceFingerprint = fingerprint, SourceEvidenceId = codeLink.LinkId,
                 ProviderId = "CodeTraceability", ObservedAt = snapshot.AnalyzedAt, FilePath = codeLink.FilePath,
                 RecordedAt = DateTimeOffset.UtcNow,

@@ -35,6 +35,11 @@ public sealed class SddLifecycleState
     public List<SddDocumentationDriftComparison> DocumentationDriftComparisons { get; set; } = [];
     /// <summary>The artifact pack explorers and reviews currently view, per scope and module. Navigation only — never authority.</summary>
     public List<SddPackFocus> PackFocus { get; set; } = [];
+    /// <summary>
+    /// The requirement scope (workspace|module|pack) of the viewed artifact pack, or null when the module is not organised in several packs.
+    /// Requirements, links and evidence recorded now carry it; only items of this scope apply. Follows the pack focus; never authority.
+    /// </summary>
+    public string? ActiveRequirementScope { get; set; }
 }
 
 /// <summary>Which feature pack of a module is being viewed (a pack folder such as <c>002-testcontainers</c>). Viewing is not choosing an authority.</summary>
@@ -201,6 +206,25 @@ public sealed class SddQualityReviewRun
     public Guid? BaselineId { get; set; }
     public List<Guid> ArtifactRevisionIds { get; set; } = [];
     public List<string> ArtifactFingerprints { get; set; } = [];
+    /// <summary>The exact inputs the review read (role, path, pack, scope, fingerprint); empty for runs saved before packs.</summary>
+    public List<SddReviewInput> Inputs { get; set; } = [];
+    /// <summary>The requirement scope (workspace|module|pack) the run's findings belong to; null without packs.</summary>
+    public string? RequirementScope { get; set; }
+}
+
+/// <summary>
+/// One artifact a review read, as it was read: never re-resolved from a later selection. <see cref="Scope"/> is PackLocal, ModuleShared or
+/// ProjectShared.
+/// </summary>
+public sealed class SddReviewInput
+{
+    public string Role { get; set; } = "";
+    public string ArtifactId { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string? Module { get; set; }
+    public string? Pack { get; set; }
+    public string Scope { get; set; } = "";
+    public string Fingerprint { get; set; } = "";
 }
 
 public sealed record SddQualityReviewFinding(string Code, string Severity, string RequirementId, string Message, string EvidenceReference);
@@ -208,6 +232,8 @@ public sealed record SddQualityReviewFinding(string Code, string Severity, strin
 public sealed class SddRequirementSnapshot
 {
     public string RequirementId { get; set; } = "";
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
     public string Fingerprint { get; set; } = "";
     public string AcceptanceCriteriaFingerprint { get; set; } = "";
     public List<string> AcceptanceCriterionIds { get; set; } = [];
@@ -219,6 +245,8 @@ public sealed class SddRequirementSnapshot
 public sealed class SddRequirementChange
 {
     public string RequirementId { get; set; } = "";
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
     public string Change { get; set; } = "NeedsReview";
     public string PreviousFingerprint { get; set; } = "";
     public string CurrentFingerprint { get; set; } = "";
@@ -287,6 +315,8 @@ public sealed class SddClarification
     public DateTimeOffset? ResolvedAt { get; set; }
     public Guid? SourceRevisionId { get; set; }
     public List<string> RequirementIds { get; set; } = [];
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
 }
 
 public sealed class SddDecision
@@ -313,12 +343,16 @@ public sealed class SddTraceabilityLink
     public string? Reason { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastValidatedAt { get; set; }
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
 }
 
 public sealed class SddImplementationEvidence
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string RequirementId { get; set; } = "";
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
     public string EvidenceType { get; set; } = "ManualEvidence";
     public string Reference { get; set; } = "";
     public string? SourceSnapshotId { get; set; }
@@ -347,6 +381,8 @@ public sealed class SddTestExecutionEvidence
     public string TestName { get; set; } = "";
     public List<string> RequirementReferences { get; set; } = [];
     public List<string> AcceptanceCriterionReferences { get; set; } = [];
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
     public string EvidenceKind { get; set; } = "Executed";
     public string ExecutionState { get; set; } = "Unknown";
     public string Result { get; set; } = "Unknown";
@@ -406,6 +442,8 @@ public sealed class SddTestEvidence
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string RequirementId { get; set; } = "";
+    /// <summary>Requirement scope (workspace|module|pack) this item belongs to; null without packs (and for items saved before packs).</summary>
+    public string? RequirementScope { get; set; }
     public string? AcceptanceCriterionId { get; set; }
     public string TestReference { get; set; } = "";
     public string State { get; set; } = "Unknown";

@@ -43,6 +43,32 @@ public sealed record ArtifactPackReviewSummary(IReadOnlyList<ArtifactPackReviewR
 
 public static class ArtifactPackReview
 {
+    /// <summary>"PackLocal", "ModuleShared" or "ProjectShared" — how an input applies to the reviewed pack.</summary>
+    public static string ScopeName(ArtifactScope scope) => scope switch
+    {
+        ArtifactScope.Pack => "PackLocal",
+        ArtifactScope.Module => "ModuleShared",
+        _ => "ProjectShared",
+    };
+
+    public static string ScopeLabel(string scope) => scope switch
+    {
+        "PackLocal" => "Pack-local",
+        "ModuleShared" => "Shared module artifact",
+        "ProjectShared" => "Shared project artifact",
+        _ => scope,
+    };
+
+    /// <summary>The exact inputs of a review from the explorer states it read: role, artifact id, path, pack, scope and content fingerprint.</summary>
+    public static List<SddReviewInput> InputsOf(IEnumerable<ArtifactExplorerState> states) =>
+        [.. states.Where(s => s is { Status: ExplorerArtifactStatus.Loaded, Selected: not null } && !string.IsNullOrEmpty(s.Content))
+            .Select(s => new SddReviewInput
+            {
+                Role = s.Role.ToString(), ArtifactId = s.Selected!.Id, Path = s.Selected.SourcePath ?? s.Selected.FileName,
+                Module = s.HasModules ? s.Module : null, Pack = s.HasPacks ? s.Pack : null,
+                Scope = ScopeName(ArtifactPacks.ScopeOf(s.Selected)), Fingerprint = ArtifactFingerprint.Compute(s.Content!),
+            })];
+
     /// <summary>The roles that make a pack complete for review. Constitution and data model are optional (and often shared).</summary>
     public static readonly IReadOnlyList<WorkspaceArtifactType> CoreRoles =
         [WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan, WorkspaceArtifactType.Tasks];

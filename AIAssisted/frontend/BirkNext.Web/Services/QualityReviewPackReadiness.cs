@@ -10,7 +10,8 @@ namespace BirkNext.Web.Services;
 public enum PackReadinessState { Ready, Partial, Blocked, NotApplicable }
 
 /// <summary>Which artifact roles currently have usable (loaded) content.</summary>
-public sealed record ReviewArtifactPresence(bool Constitution, bool Specification, bool Plan, bool Tasks, bool DataModel)
+/// <param name="Pack">The artifact pack under review when the module has several: a missing role is "not applicable to this pack", never borrowed.</param>
+public sealed record ReviewArtifactPresence(bool Constitution, bool Specification, bool Plan, bool Tasks, bool DataModel, string? Pack = null)
 {
     public bool AnyDocument => Constitution || Specification || Plan || Tasks;
     public int DocumentCount => new[] { Constitution, Specification, Plan, Tasks }.Count(x => x);
@@ -48,6 +49,18 @@ public static class QualityReviewPackReadiness
     };
 
     public static PackReadiness Evaluate(QualityReviewPackDescriptor pack, ReviewArtifactPresence p)
+    {
+        var readiness = EvaluateInputs(pack, p);
+        if (p.Pack is not { } artifactPack) return readiness;
+        // In an artifact pack a missing role means no pack-local or shared artifact applies to that pack; a sibling pack's is never used.
+        return readiness with
+        {
+            Limitations = readiness.Limitations.Select(l => MissingDocuments(p).Aggregate(l, (text, role) =>
+                text.StartsWith($"No {role}:", StringComparison.Ordinal) ? $"No {role} artifact applies to this artifact pack ({artifactPack}):{text[$"No {role}:".Length..]}" : text)).ToList(),
+        };
+    }
+
+    private static PackReadiness EvaluateInputs(QualityReviewPackDescriptor pack, ReviewArtifactPresence p)
     {
         if (pack.PackGroup is "Standards Documentation" or "Standards")
             return Standards(pack, p);

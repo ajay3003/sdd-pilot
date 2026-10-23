@@ -120,7 +120,8 @@ public sealed record ArtifactExplorerState(
     IReadOnlyList<ArtifactPackSummary>? Packs = null,
     string? Pack = null,
     bool PackRequired = false,
-    bool AmbiguousInPack = false)
+    bool AmbiguousInPack = false,
+    string? Resolution = null)
 {
     public bool HasProject => ProjectSlug is not null;
 
@@ -265,6 +266,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var focus = FocusOf(model);
         if (focus is null)
         {
+            if (viewPack is null) SetActiveRequirementScope(null);
             var listed = all.Select(e => e.Artifact).ToList();
             return new ArtifactExplorerState(role, listed.Count == 0 ? ExplorerArtifactStatus.Empty : ExplorerArtifactStatus.SelectionRequired,
                 model.Scope, model.ProjectName, listed, Modules: modules);
@@ -294,7 +296,8 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         // One selection per role, module and pack: choosing in one pack never replaces another pack's choice.
         selections.RemoveAll(s => s.WorkspaceScope == scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == key && s.Pack == pack);
         selections.Add(new SddExplorerSelection { WorkspaceScope = scope, Role = role.ToString(), ArtifactId = artifactId, Module = key, Pack = pack, SelectedAt = DateTimeOffset.UtcNow });
-        // Choosing a pack's artifact means viewing that pack.
+        // Choosing a pack's artifact means viewing that pack; the other roles then follow that pack too.
+        var packChanged = pack is not null && _workspace.SddLifecycle.PackFocus.LastOrDefault(f => f.WorkspaceScope == scope && f.Module == key)?.Pack != pack;
         if (pack is not null) SetPackFocus(scope, key, pack);
 
         // Only the focused module (or a project without modules) is mirrored into the repository's current selection and the Sample
@@ -308,6 +311,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
 
         _updates?.NotifyMutation();
         OnRepositoryChanged(this, EventArgs.Empty);
+        if (packChanged && (module is null || module == focus)) _ = MirrorFocusAsync(scope, CancellationToken.None);
     }
 
     public async Task SelectModuleAsync(string? module, CancellationToken cancellationToken = default)
@@ -326,6 +330,12 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         if (pack is null) _workspace.SddLifecycle.PackFocus.RemoveAll(f => f.WorkspaceScope == scope && f.Module == key);
         else SetPackFocus(scope, key, pack);
         await MirrorFocusAsync(scope, cancellationToken);
+    }
+
+    private void SetActiveRequirementScope(string? scope)
+    {
+        if (!string.Equals(_workspace.SddLifecycle.ActiveRequirementScope, scope, StringComparison.Ordinal))
+            _workspace.SddLifecycle.ActiveRequirementScope = scope;
     }
 
     private void SetPackFocus(string? scope, string module, string pack)
@@ -384,6 +394,7 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
     {
         var packs = ModulePacks(model, module);
         if (packs.Count > 0) return BuildInPack(role, model, entries, module, modules, focus, packs, viewPack: viewPack);
+        if (viewPack is null) SetActiveRequirementScope(null);
 
         var listed = entries.Select(e => e.Artifact).ToList();
         if (listed.Count == 0)
@@ -441,6 +452,14 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             ?? _workspace.SddLifecycle.ExplorerSelections.Where(s => s.WorkspaceScope == model.Scope && (s.Module ?? ArtifactModules.ProjectLevel) == module)
                 .Select(s => s.Pack ?? model.Roles.Values.SelectMany(l => l).FirstOrDefault(e => e.Artifact.Id == s.ArtifactId)?.Artifact.Feature)
                 .LastOrDefault(p => p is not null && names.Contains(p));
+        if (readContent && viewPack is null)
+        {
+            // An earlier selection that resolved the viewed pack (saved before packs) becomes the pack last viewed, and the viewed pack is the
+            // scope requirements, links and evidence are recorded and matched in. Reading the same state again changes nothing.
+            if (viewing is not null && packs.Count > 1 && !_workspace.SddLifecycle.PackFocus.Any(f => f.WorkspaceScope == model.Scope && f.Module == module && f.Pack == viewing))
+                SetPackFocus(model.Scope, module, viewing);
+            SetActiveRequirementScope(packs.Count > 1 ? RequirementScopes.Of(model.Scope, module, viewing) : null);
+        }
         ArtifactExplorerState State(ExplorerArtifactStatus status, IReadOnlyList<ExplorerArtifact> listed, ScopeEntry? selected = null,
             ExplorerSelectionReason? reason = null, bool packRequired = false, bool ambiguous = false)
         {
@@ -448,15 +467,26 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
             if (selected is not null && readContent && string.IsNullOrEmpty(text))
                 return new ArtifactExplorerState(role, ExplorerArtifactStatus.Error, model.Scope, model.ProjectName, listed, selected.Artifact, reason,
                     Error: $"{selected.Artifact.SourcePath ?? selected.Artifact.FileName} could not be read.", Modules: modules, Module: focus, Packs: packs, Pack: viewing);
+            var resolution = selected is null
+                ? status == ExplorerArtifactStatus.Empty && viewing is not null ? $"No PackLocal, ModuleShared or ProjectShared {ArtifactExplorerRoles.Label(role)} applies." : null
+                : ArtifactPacks.ScopeOf(selected.Artifact) switch
+                {
+                    ArtifactScope.Pack => "Exact pack-local match",
+                    ArtifactScope.Module => "Module-shared artifact",
+                    _ => "Project-shared artifact",
+                };
             return new ArtifactExplorerState(role, status, model.Scope, model.ProjectName, listed, selected?.Artifact, reason, text, Modules: modules, Module: focus,
-                Packs: packs, Pack: viewing, PackRequired: packRequired, AmbiguousInPack: ambiguous);
+                Packs: packs, Pack: viewing, PackRequired: packRequired, AmbiguousInPack: ambiguous, Resolution: resolution);
         }
 
         if (viewing is null)
             return State(entries.Count == 0 ? ExplorerArtifactStatus.Empty : ExplorerArtifactStatus.SelectionRequired, entries.Select(e => e.Artifact).ToList(), packRequired: true);
 
+        // Resolution order: PackLocal → ModuleShared → ProjectShared → missing. Never a sibling pack.
         var local = entries.Where(e => e.Artifact.Feature == viewing).ToList();
         var shared = entries.Where(e => e.Artifact.Feature is null).ToList();
+        if (shared.Count == 0 && model.HasModules && module != ArtifactModules.ProjectLevel)
+            shared = model.Roles[role].Where(e => e.Artifact.Module == ArtifactModules.ProjectLevel && e.Artifact.Feature is null).ToList();
         var listed = local.Concat(shared).Select(e => e.Artifact).ToList();
         ScopeEntry? Stored(IEnumerable<ScopeEntry> candidates) => _workspace.SddLifecycle.ExplorerSelections
             .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module)

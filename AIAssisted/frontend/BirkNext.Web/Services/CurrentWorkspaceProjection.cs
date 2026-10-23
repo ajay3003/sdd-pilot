@@ -41,9 +41,22 @@ public sealed record ArtifactRoleStatus(
     string? Module = null,
     IReadOnlyList<ArtifactPackSummary>? Packs = null,
     string? Pack = null,
-    bool PackRequired = false)
+    bool PackRequired = false,
+    bool SharedAvailable = false,
+    string? Resolution = null)
 {
     public bool IsAvailable => Availability == ArtifactRoleAvailability.Available;
+
+    /// <summary>
+    /// "Plan applicable to pack 002-x: Ready · PackLocal · specs/002-x/plan.md" (or "Missing — No PackLocal, ModuleShared or ProjectShared Plan
+    /// applies."); null without several packs or while no pack is viewed. Availability is per pack: another pack's plan never counts.
+    /// </summary>
+    public string? PackApplicability => !HasPacks || Pack is null ? null
+        : SelectedArtifact is { } selected
+            ? $"{Label} applicable to pack {Pack}: Ready · {ArtifactPackReview.ScopeName(ArtifactPacks.ScopeOf(selected))} · {selected.SourcePath ?? selected.FileName}"
+            : Selection == ArtifactRoleSelection.SelectionRequired
+                ? $"{Label} in pack {Pack}: needs selection — several {Label} artifacts in this pack"
+                : $"{Label} applicable to pack {Pack}: Missing — {Resolution ?? $"No PackLocal, ModuleShared or ProjectShared {Label} applies."}";
 
     /// <summary>The (focused) module is organised in several feature packs; the selection describes the viewed pack only.</summary>
     public bool HasPacks => Packs is { Count: > 1 };
@@ -153,6 +166,30 @@ public sealed record CurrentWorkspaceSnapshot(
     public bool PackRequired => Roles.Any(r => r.PackRequired);
 
     public int PackCount => Roles.Where(r => r.HasPacks).Select(r => r.Packs!.Count).DefaultIfEmpty(0).Max();
+
+    /// <summary>
+    /// "3 artifact packs · 3 Specifications · 2 Plans · 3 Tasks · 1 pack missing Plan": counts per pack (a shared artifact covers every pack);
+    /// null without several packs. A missing role in a pack is reported, never covered by a sibling pack.
+    /// </summary>
+    public string? PackOverview
+    {
+        get
+        {
+            var packs = Roles.Where(r => r.HasPacks).Select(r => r.Packs!).FirstOrDefault();
+            if (packs is null) return null;
+            var parts = new List<string> { $"{packs.Count} artifact packs" };
+            var missing = new List<string>();
+            foreach (var role in new[] { WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan, WorkspaceArtifactType.Tasks })
+            {
+                var local = packs.Count(p => p.RolesPresent.Contains(role));
+                var label = ArtifactExplorerRoles.Label(role);
+                parts.Add($"{local} {label}{(label.EndsWith('s') ? "" : local == 1 ? "" : "s")}");
+                var lacking = Role(role).SharedAvailable ? 0 : packs.Count - local;
+                if (lacking > 0) missing.Add($"{lacking} pack{(lacking == 1 ? "" : "s")} missing {label}");
+            }
+            return string.Join(" · ", parts.Concat(missing));
+        }
+    }
 
     /// <summary>The pack reviews currently read, as "Display name (folder)", or null.</summary>
     public string? PackLabel => Roles.Where(r => r.HasPacks && r.Pack is not null).Select(r => r.Packs!.FirstOrDefault(p => p.Pack == r.Pack))
@@ -350,7 +387,7 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
         // The fingerprint of the content the explorers show for the role: the same function the repository uses for revisions.
         var fingerprint = state.Selected is not null && !string.IsNullOrEmpty(state.Content) ? ArtifactFingerprint.Compute(state.Content) : null;
         return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint, state.Modules, state.Module,
-            state.Packs, state.Pack, state.PackRequired);
+            state.Packs, state.Pack, state.PackRequired, state.Artifacts.Any(a => a.Feature is null), state.Resolution);
     }
 
     /// <summary>An imported project is persisted without a Sample Project identity (its import is in the lifecycle), so it matches a blank project name.</summary>

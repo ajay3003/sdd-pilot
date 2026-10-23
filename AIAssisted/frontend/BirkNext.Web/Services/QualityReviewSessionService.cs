@@ -22,15 +22,19 @@ public sealed class QualityReviewSessionService
     public string? ErrorMessage { get; private set; }
 
     public IReadOnlyList<string> SelectedPackIds => _selectedPackIds;
+    /// <summary>The exact inputs of the run (pack, scope, path, fingerprint) — kept with the result, so a later selection never rewrites it.</summary>
+    public IReadOnlyList<SddReviewInput> ReviewInputs { get; private set; } = [];
     public IReadOnlyDictionary<WorkspaceArtifactKind, string> ArtifactSnapshot => _artifactSnapshot;
     public bool HasResult => Report is not null;
 
     public void MarkRunning(
         IEnumerable<string> selectedPackIds,
         string? projectName,
-        IReadOnlyDictionary<WorkspaceArtifactKind, string> artifactSnapshot)
+        IReadOnlyDictionary<WorkspaceArtifactKind, string> artifactSnapshot,
+        IReadOnlyList<SddReviewInput>? inputs = null)
     {
         Status = AnalysisSessionStatus.Running;
+        ReviewInputs = inputs ?? [];
         Report = null;
         ProjectName = projectName;
         RunTimestamp = DateTimeOffset.UtcNow;
@@ -43,9 +47,11 @@ public sealed class QualityReviewSessionService
         QualityReviewReport report,
         IEnumerable<string> selectedPackIds,
         string? projectName,
-        IReadOnlyDictionary<WorkspaceArtifactKind, string> artifactSnapshot)
+        IReadOnlyDictionary<WorkspaceArtifactKind, string> artifactSnapshot,
+        IReadOnlyList<SddReviewInput>? inputs = null)
     {
         Status = AnalysisSessionStatus.Completed;
+        ReviewInputs = inputs ?? ReviewInputs;
         Report = report;
         ProjectName = projectName;
         RunTimestamp = report.RunAt;
@@ -76,6 +82,7 @@ public sealed class QualityReviewSessionService
         ProjectName = null;
         RunTimestamp = null;
         ErrorMessage = null;
+        ReviewInputs = [];
         _selectedPackIds.Clear();
         _artifactSnapshot.Clear();
     }

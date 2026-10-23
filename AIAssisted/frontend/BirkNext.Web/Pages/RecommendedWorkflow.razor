@@ -413,7 +413,8 @@
         ArtifactRoleAvailability.Unknown => $"{role.Label}: availability unknown",
         ArtifactRoleAvailability.Missing => $"{role.Label}: missing",
         _ => $"{role.Label}: {role.ArtifactCount} artifact{(role.ArtifactCount == 1 ? "" : "s")}"
-             + (role.Selection == ArtifactRoleSelection.SelectionRequired ? ", needs selection" : "") + (role.ModuleSummary is { } modules ? $" ({modules})" : ""),
+             + (role.PackRequired ? ", select an artifact pack" : role.Selection == ArtifactRoleSelection.SelectionRequired ? ", needs selection" : "") + (role.ModuleSummary is { } modules ? $" ({modules})" : "")
+             + (role.PackApplicability is { } applicability ? $" — {applicability}" : ""),
     };
 
     private string? ReleaseReadinessVariant =>

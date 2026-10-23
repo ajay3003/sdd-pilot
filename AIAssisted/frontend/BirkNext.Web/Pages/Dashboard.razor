@@ -97,6 +97,10 @@
                                 : $"{_workspace.ModuleCount} modules · needs selection: choose the module to review in a document Explorer")
                         </span>
                     }
+                    @if (_workspace.PackOverview is { } packOverview)
+                    {
+                        <span class="db-workspace-count" data-testid="db-workspace-packs">@packOverview</span>
+                    }
                 </div>
 
                 <div class="db-workspace-badges">
@@ -882,6 +886,10 @@
         if (status?.ModuleSummary is { } moduleSummary)
         {
             <div class="db-artifact-stats"><span class="db-stat-pill" data-testid="db-artifact-modules">@moduleSummary</span></div>
+        }
+        if (status?.PackApplicability is { } applicability)
+        {
+            <div class="db-artifact-stats"><span class="db-stat-pill" data-testid="db-artifact-pack">@applicability</span></div>
         }
         if (status is not { IsAvailable: true }) return;
         <div class="db-artifact-stats">

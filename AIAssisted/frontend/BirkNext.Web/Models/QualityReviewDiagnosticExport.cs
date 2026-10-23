@@ -27,6 +27,10 @@ public sealed class ArtifactInputDiagnostic
     public bool IsAvailable { get; init; }
     public long ContentLength { get; init; }
     public string Sha256 { get; init; } = string.Empty;
+    /// <summary>The exact relative path read (not a generic "spec.md"), its artifact pack and how it applied (PackLocal/ModuleShared/ProjectShared).</summary>
+    public string? Path { get; init; }
+    public string? Pack { get; init; }
+    public string? Scope { get; init; }
 
     public static ArtifactInputDiagnostic FromContent(string artifactType, string fileName, string? content)
     {

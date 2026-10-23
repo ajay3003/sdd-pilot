@@ -395,9 +395,29 @@
             <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportHtml">Export HTML</button>
             @if (_diagnosticSnapshot is not null)
             {
-                <button style="background:#10b981;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportJson">Export diagnostic JSON</button>
+                <button style="background:#047857;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem" @onclick="ExportJson">Export diagnostic JSON</button>
             }
         </div>
+
+        @if (QualitySession.ReviewInputs.Count > 0)
+        {
+            @* What this result read, as it was read: pack, scope and exact path. A later selection does not change it. *@
+            <section class="qr-provenance" aria-label="Reviewed inputs" data-testid="qr-provenance">
+                <span class="qr-context-label">Reviewed</span>
+                @if (QualitySession.ReviewInputs.Select(i => i.Pack).FirstOrDefault(p => p is not null) is { } reviewedPack)
+                {
+                    <span class="qr-provenance-pack" data-testid="qr-provenance-pack">Artifact pack @reviewedPack</span>
+                }
+                <ul class="qr-provenance-list">
+                    @foreach (var input in QualitySession.ReviewInputs)
+                    {
+                        <li data-testid="qr-provenance-input" data-role="@input.Role">
+                            <strong>@input.Role</strong> · @ArtifactPackReview.ScopeLabel(input.Scope) · <span class="qr-provenance-path">@input.Path</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
 
         <!-- ── Overall summary ────────────────────────────────────────── -->
         <section class="qr-review-summary" aria-labelledby="qr-summary-title">
@@ -717,7 +737,7 @@
     private IEnumerable<string> PackGroups => DocumentPacks.Select(p => p.PackGroup).Distinct()
         .OrderBy(g => _groupOrder.GetValueOrDefault(g, 99));
 
-    private ReviewArtifactPresence Presence => new(HasConstitution, HasSpec, HasPlan, HasTasks, HasDataModel);
+    private ReviewArtifactPresence Presence => new(HasConstitution, HasSpec, HasPlan, HasTasks, HasDataModel, ReviewPack?.Pack);
 
     private PackReadiness Readiness(QualityReviewPackDescriptor pack) => QualityReviewPackReadiness.Evaluate(pack, Presence);
 
@@ -1024,13 +1044,24 @@
         var projects = await DocumentResolver.GetAvailableProjectsAsync();
         var projectName = projects.FirstOrDefault(p => p.Slug == _selectedProject)?.Name ?? _selectedProject ?? string.Empty;
 
+        ArtifactInputDiagnostic Input(string type, string fallback, string text)
+        {
+            var diagnostic = ArtifactInputDiagnostic.FromContent(type, fallback, text);
+            return QualitySession.ReviewInputs.FirstOrDefault(i => i.Role == type) is { } input
+                ? new ArtifactInputDiagnostic
+                {
+                    ArtifactType = diagnostic.ArtifactType, FileName = System.IO.Path.GetFileName(input.Path), IsAvailable = diagnostic.IsAvailable,
+                    ContentLength = diagnostic.ContentLength, Sha256 = diagnostic.Sha256, Path = input.Path, Pack = input.Pack, Scope = input.Scope,
+                }
+                : diagnostic;
+        }
         var artifacts = new List<ArtifactInputDiagnostic>
         {
-            ArtifactInputDiagnostic.FromContent("Constitution", "constitution.md", _constitutionText),
-            ArtifactInputDiagnostic.FromContent("Specification", "spec.md", _specText),
-            ArtifactInputDiagnostic.FromContent("Plan", "plan.md", _planText),
-            ArtifactInputDiagnostic.FromContent("Tasks", "tasks.md", _taskText),
-            ArtifactInputDiagnostic.FromContent("DataModel", "data-model.md", _dataModelText),
+            Input("Constitution", "constitution.md", _constitutionText),
+            Input("Specification", "spec.md", _specText),
+            Input("Plan", "plan.md", _planText),
+            Input("Tasks", "tasks.md", _taskText),
+            Input("DataModel", "data-model.md", _dataModelText),
         };
 
         var packs = report.PackResults.Select(r => PackDiagnostic.FromPackResult(r)).ToList();
@@ -1061,7 +1092,9 @@
         {
             var artifactSnapshot = BuildArtifactSnapshot();
             var selectedPackIds = DocumentPacks.Where(p => _selectedPacks.Contains(p.PackId) && IsPackAvailable(p)).Select(p => p.PackId).ToArray();
-            QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
+            // The exact inputs (pack, scope, path, fingerprint) stay with this result; a later selection never rewrites them.
+            var inputs = ArtifactPackReview.InputsOf(_roleStates.Values);
+            QualitySession.MarkRunning(selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
 
             _report = await QrService.RunAsync(
                 string.IsNullOrWhiteSpace(_constitutionText) ? null : _constitutionText,
@@ -1071,7 +1104,7 @@
                 string.IsNullOrWhiteSpace(_dataModelText)    ? null : _dataModelText,
                 selectedPackIds);
 
-            QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
+            QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
 
             if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph && sddGraph.Project(sddWorkspace, SddProjectionMode).Rows.Count > 0)
             {
@@ -1084,6 +1117,7 @@
                     Findings = sddGraph.QualityFindings(sddWorkspace, SddProjectionMode).ToList(),
                     ProjectionMode = projection.Metadata.Mode.ToString(), BaselineId = projection.Metadata.BaselineId,
                     ArtifactRevisionIds = projection.Metadata.ArtifactRevisionIds.ToList(), ArtifactFingerprints = projection.Metadata.ArtifactFingerprints.ToList(),
+                    Inputs = inputs, RequirementScope = sddWorkspace.SddLifecycle.ActiveRequirementScope,
                     Currentness = "Current"
                 });
                 if (Services.GetService<IWorkspaceAutoSaveService>() is { } autoSave) await autoSave.SaveNowAsync();

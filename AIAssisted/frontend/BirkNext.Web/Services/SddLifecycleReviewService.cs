@@ -11,10 +11,10 @@ public static class SddLifecycleReviewService
     {
         if (string.IsNullOrWhiteSpace(resolution) || string.IsNullOrWhiteSpace(authorityReference))
             throw new ArgumentException("An explicit resolution and its authoritative reference are required.");
-        var question = lifecycle.Questions.FirstOrDefault(x => x.Id == id);
+        var question = lifecycle.Questions.FirstOrDefault(x => x.Id == id && RequirementScopes.Matches(x.RequirementScope, lifecycle.ActiveRequirementScope));
         if (question is null)
         {
-            question = new SddClarification { Id = id, Text = text };
+            question = new SddClarification { Id = id, Text = text, RequirementScope = lifecycle.ActiveRequirementScope };
             lifecycle.Questions.Add(question);
         }
         question.Status = "Resolved";
@@ -37,9 +37,16 @@ public static class SddLifecycleReviewService
         }
     }
 
+    /// <summary>
+    /// Compares the requirements of the current specification with the previous current snapshots of the same requirement scope (the viewed
+    /// artifact pack, see <see cref="SddLifecycleState.ActiveRequirementScope"/>). Another pack's FR-001 is a different requirement: its
+    /// snapshots, links and evidence are never compared, staled or retired here.
+    /// </summary>
     public static void ReconcileRequirements(SddLifecycleState lifecycle, IEnumerable<SemanticRequirement> requirements, Guid? artifactRevisionId = null)
     {
-        var current = lifecycle.RequirementSnapshots.Where(x => x.IsCurrent).ToList();
+        var scope = lifecycle.ActiveRequirementScope;
+        bool InScope(string? itemScope) => RequirementScopes.Matches(itemScope, scope);
+        var current = lifecycle.RequirementSnapshots.Where(x => x.IsCurrent && InScope(x.RequirementScope)).ToList();
         foreach (var snapshot in current) snapshot.IsCurrent = false;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var requirement in requirements)
@@ -52,7 +59,7 @@ public static class SddLifecycleReviewService
                 .OrderByDescending(x => x.CapturedAt).FirstOrDefault();
             if (prior is null)
             {
-                lifecycle.RequirementChanges.Add(new SddRequirementChange { RequirementId = requirement.Id, Change = "Added", CurrentFingerprint = combined });
+                lifecycle.RequirementChanges.Add(new SddRequirementChange { RequirementScope = scope, RequirementId = requirement.Id, Change = "Added", CurrentFingerprint = combined });
             }
             else if (prior.Fingerprint == combined)
             {
@@ -66,30 +73,32 @@ public static class SddLifecycleReviewService
                 var previousCriterionIds = prior.AcceptanceCriterionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 lifecycle.RequirementChanges.Add(new SddRequirementChange
                 {
+                    RequirementScope = scope,
                     RequirementId = requirement.Id,
                     Change = "Modified",
                     ChangeDetail = criteriaChanged ? "Requirement or acceptance criteria changed" : "Requirement text changed",
                     PreviousFingerprint = prior.Fingerprint,
                     CurrentFingerprint = combined
                 });
-                foreach (var link in lifecycle.Links.Where(x => x.Currentness == "Current" &&
+                foreach (var link in lifecycle.Links.Where(x => x.Currentness == "Current" && InScope(x.RequirementScope) &&
                     (x.FromId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) || x.ToId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase))))
                 {
                     link.Currentness = "PotentiallyStale";
                     link.Reason = criteriaChanged ? "Requirement or acceptance criteria revision changed; reconfirm this link." : "Requirement revision changed; reconfirm this link.";
                 }
-                foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
                 { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed; source evidence requires review."; }
-                foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                foreach (var evidence in lifecycle.TestEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
                 { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed; test design requires review."; }
-                foreach (var evidence in lifecycle.TestExecutions.Where(x => x.RequirementReferences.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                foreach (var evidence in lifecycle.TestExecutions.Where(x => InScope(x.RequirementScope) && x.RequirementReferences.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current"))
                 { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed after this execution was recorded; the historical result is retained."; }
-                foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" &&
+                foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" && InScope(x.RequirementScope) &&
                     x.AcceptanceCriterionReferences.Any(id => criterionIds.Contains(id) || previousCriterionIds.Contains(id))))
                 { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Acceptance criterion changed after this execution was recorded; the historical result is retained."; }
             }
             lifecycle.RequirementSnapshots.Add(new SddRequirementSnapshot
             {
+                RequirementScope = scope,
                 RequirementId = requirement.Id,
                 Fingerprint = combined,
                 AcceptanceCriteriaFingerprint = acFingerprint,
@@ -100,24 +109,25 @@ public static class SddLifecycleReviewService
         }
         foreach (var removed in current.Where(x => !seen.Contains(x.RequirementId)))
         {
-            lifecycle.RequirementChanges.Add(new SddRequirementChange { RequirementId = removed.RequirementId, Change = "Removed", PreviousFingerprint = removed.Fingerprint });
-            foreach (var link in lifecycle.Links.Where(x => x.Currentness == "Current" &&
+            lifecycle.RequirementChanges.Add(new SddRequirementChange { RequirementScope = scope, RequirementId = removed.RequirementId, Change = "Removed", PreviousFingerprint = removed.Fingerprint });
+            foreach (var link in lifecycle.Links.Where(x => x.Currentness == "Current" && InScope(x.RequirementScope) &&
                 (x.FromId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) || x.ToId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase))))
             {
                 link.Currentness = "Historical";
                 link.Reason = "Requirement was removed from the current specification revision.";
             }
-            foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
-            foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
-            foreach (var evidence in lifecycle.TestExecutions.Where(x => x.RequirementReferences.Contains(removed.RequirementId, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision; execution result retained as history."; }
-            foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" &&
+            foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
+            foreach (var evidence in lifecycle.TestEvidence.Where(x => InScope(x.RequirementScope) && x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
+            foreach (var evidence in lifecycle.TestExecutions.Where(x => InScope(x.RequirementScope) && x.RequirementReferences.Contains(removed.RequirementId, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision; execution result retained as history."; }
+            foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" && InScope(x.RequirementScope) &&
                 x.AcceptanceCriterionReferences.Any(id => removed.AcceptanceCriterionIds.Contains(id, StringComparer.OrdinalIgnoreCase)))) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Acceptance criterion was removed with its requirement; execution result retained as history."; }
         }
     }
 
     public static void AddOrRefreshLink(SddLifecycleState lifecycle, string from, string to, string relationship, string confidence)
     {
-        var existing = lifecycle.Links.FirstOrDefault(x => x.FromId == from && x.ToId == to && x.Relationship == relationship);
+        var scope = lifecycle.ActiveRequirementScope;
+        var existing = lifecycle.Links.FirstOrDefault(x => x.FromId == from && x.ToId == to && x.Relationship == relationship && RequirementScopes.Matches(x.RequirementScope, scope));
         if (existing is not null)
         {
             // Rebuilding a view is not evidence revalidation. Preserve targeted stale/history decisions
@@ -130,7 +140,7 @@ public static class SddLifecycleReviewService
         }
         lifecycle.Links.Add(new SddTraceabilityLink
         {
-            FromId = from, ToId = to, Relationship = relationship, Confidence = confidence,
+            FromId = from, ToId = to, Relationship = relationship, Confidence = confidence, RequirementScope = scope,
             Provenance = "SharedReviewContext", Currentness = "Current", LastValidatedAt = DateTimeOffset.UtcNow
         });
     }

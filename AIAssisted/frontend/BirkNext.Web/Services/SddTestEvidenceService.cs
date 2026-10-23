@@ -153,6 +153,8 @@ public static class SddTestEvidenceService
                 DurationMs = e.DurationMs, ErrorMessage = e.ErrorMessage, StackTrace = e.StackTrace, TestDefinitionId = definition?.TestDefinitionId,
                 CorrelationState = e.Correlation.State.ToString(), CorrelationBasis = e.Correlation.Basis, CandidateRequirementReferences = candidates,
                 SourceCurrentness = bound ? "BoundToSnapshot" : "NotAssessed",
+                // Requirement references name the viewed pack's requirements; another pack's FR-001 is a different requirement.
+                RequirementScope = requirementRefs.Count > 0 || acRefs.Count > 0 ? state.ActiveRequirementScope : null,
                 CurrentnessReason = bound ? null : "Source version unknown: not verification of a specific source snapshot.",
             };
             state.TestExecutions.Add(execution);
@@ -180,8 +182,9 @@ public static class SddTestEvidenceService
 
     private static void AddLink(SddLifecycleState state, string from, string to, string relationship, string confidence, string provenance)
     {
-        if (state.Links.Any(l => l.FromId.Equals(from, StringComparison.OrdinalIgnoreCase) && l.ToId == to && l.Relationship == relationship)) return;
-        state.Links.Add(new SddTraceabilityLink { FromId = from, ToId = to, Relationship = relationship, Confidence = confidence, Provenance = provenance, Currentness = "Current", LastValidatedAt = DateTimeOffset.UtcNow });
+        var scope = state.ActiveRequirementScope;
+        if (state.Links.Any(l => l.FromId.Equals(from, StringComparison.OrdinalIgnoreCase) && l.ToId == to && l.Relationship == relationship && RequirementScopes.Matches(l.RequirementScope, scope))) return;
+        state.Links.Add(new SddTraceabilityLink { FromId = from, ToId = to, Relationship = relationship, Confidence = confidence, Provenance = provenance, Currentness = "Current", LastValidatedAt = DateTimeOffset.UtcNow, RequirementScope = scope });
     }
 
     // ── Queries ────────────────────────────────────────────────────────────────────────────────────────────────────────

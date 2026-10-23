@@ -581,7 +581,8 @@
 
 .qr-review-summary {
     display: grid;
-    grid-template-columns: minmax(220px, 1.1fr) minmax(220px, 1fr) auto;
+    /* Columns follow the available width (the sidebar narrows the page well above the 760px breakpoint), never wider than it. */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 0.8rem 1.5rem;
     align-items: center;
     padding: 1rem 1.25rem;
@@ -589,6 +590,8 @@
     border: 1px solid var(--clr-border, #e2e8f0);
     border-radius: var(--radius-lg, 8px);
 }
+
+.qr-review-summary > * { min-width: 0; }
 
 .qr-summary-heading {
     grid-column: 1 / -1;
@@ -1151,7 +1154,7 @@
 
 .qr-issue-fix {
     font-size: 0.78rem;
-    color: #10b981;
+    color: #047857;
     font-weight: 500;
     line-height: 1.3;
 }
@@ -1171,3 +1174,20 @@
 
 .qr-empty-state .qr-empty-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 0.75rem; }
 .qr-empty-actions a { text-decoration: none; }
+
+.qr-provenance {
+    display: grid;
+    gap: .25rem;
+    margin: 0 0 .75rem;
+    padding: .6rem .8rem;
+    border: 1px solid var(--border-color, #d0d7de);
+    border-radius: 6px;
+    font-size: .82rem;
+    min-width: 0;
+}
+
+.qr-provenance-pack { font-weight: 600; overflow-wrap: anywhere; }
+
+.qr-provenance-list { margin: 0; padding-left: 1.1rem; display: grid; gap: .15rem; }
+
+.qr-provenance-list li, .qr-provenance-path { min-width: 0; overflow-wrap: anywhere; }

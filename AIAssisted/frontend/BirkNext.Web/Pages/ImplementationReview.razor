@@ -18,9 +18,14 @@
         <div><strong>@Requirements.Count</strong><span>documented requirements</span></div>
         <div><strong>@PlanLinkedCount</strong><span>with plan links</span></div>
         <div><strong>@TaskLinkedCount</strong><span>with task links</span></div>
-        <div><strong>@Artifacts.SddLifecycle.ImplementationEvidence.Count</strong><span>registered implementation evidence</span></div>
-        <div><strong>@Artifacts.SddLifecycle.TestEvidence.Count</strong><span>registered test evidence</span></div>
+        <div><strong>@Artifacts.SddLifecycle.ImplementationEvidence.Count(x => RequirementScopes.Matches(x.RequirementScope, Artifacts.SddLifecycle.ActiveRequirementScope))</strong><span>registered implementation evidence</span></div>
+        <div><strong>@Artifacts.SddLifecycle.TestEvidence.Count(x => RequirementScopes.Matches(x.RequirementScope, Artifacts.SddLifecycle.ActiveRequirementScope))</strong><span>registered test evidence</span></div>
     </section>
+    @if (Artifacts.SddLifecycle.ActiveRequirementScope is { } requirementScope)
+    {
+        @* Requirement identity is module + pack + id: these counts and the evidence below belong to the viewed pack only. *@
+        <p role="status" data-testid="ir-requirement-scope">@RequirementScopes.Label(requirementScope) · @Requirements.Count requirement@(Requirements.Count == 1 ? "" : "s") — evidence of other packs is not counted here.</p>
+    }
     <section aria-label="Lifecycle projection">
         <h2>Evidence projection</h2>
         <label for="implementation-projection">View</label>
@@ -59,7 +64,7 @@
         }
         else
         {
-            <div class="table-wrap"><table>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Requirements and evidence table"><table>
                 <thead><tr><th>Requirement</th><th>Plan</th><th>Tasks</th><th>Implementation evidence</th><th>Test evidence</th><th>Assessment</th></tr></thead>
                 <tbody>
                 @foreach (var requirement in Requirements)
@@ -120,7 +125,7 @@
         @foreach (var group in Artifacts.SddLifecycle.Revisions.GroupBy(x => x.Role).OrderBy(x => x.Key))
         {
             <h3>@group.Key</h3>
-            <div class="table-wrap"><table><thead><tr><th>Revision</th><th>Authority</th><th>Selection</th><th>Fingerprint</th><th>Captured</th><th>Action</th></tr></thead><tbody>
+            <div class="table-wrap" tabindex="0" role="region" aria-label="Artifact revisions table"><table><thead><tr><th>Revision</th><th>Authority</th><th>Selection</th><th>Fingerprint</th><th>Captured</th><th>Action</th></tr></thead><tbody>
             @foreach (var revision in group.OrderByDescending(x => x.Revision))
             {
                 <tr><td>@revision.Revision</td><td>

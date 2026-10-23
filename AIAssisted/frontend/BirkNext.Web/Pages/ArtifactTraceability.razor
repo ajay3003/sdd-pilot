@@ -32,6 +32,11 @@
             {
                 <div><dt>Module</dt><dd data-testid="at-module">@traceModule</dd></div>
             }
+            @if (_inputs.PackSummary is { } tracePack)
+            {
+                @* Requirements are identified by module + pack + id: FR-001 here is this pack's FR-001, never a sibling pack's. *@
+                <div><dt>Artifact pack</dt><dd data-testid="at-pack">@tracePack.DisplayName (@tracePack.Pack) · requirements are traced within this pack and its shared artifacts</dd></div>
+            }
             <div><dt>Artifact source</dt><dd>@_inputs.SourceLabel</dd></div>
         </dl>
 
